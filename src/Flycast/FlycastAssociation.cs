@@ -28,6 +28,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 
 namespace LbIntegrations.Flycast
@@ -48,6 +49,41 @@ namespace LbIntegrations.Flycast
         /// host asks which emulators we claim often; the work must happen once.</summary>
         private static readonly HashSet<string> Done = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly object Gate = new object();
+
+        /// <summary>Complete every Flycast emulator the library holds, without waiting to be asked.
+        ///
+        /// EnsurePlatforms alone only runs when the host asks which emulators we claim, which can be
+        /// AFTER a page has already drawn its platform list - the user then sees the wrong thing once
+        /// and has to reopen it. Both hosts announce when they are up, so we do it then instead:
+        /// LaunchBox raises LaunchBoxStartupCompleted, LiteBox raises PluginInitialized when its
+        /// window is shown. Idempotent, so being called from both costs nothing.</summary>
+        public static void SweepAll()
+        {
+            try
+            {
+                var dm = PluginHelper.DataManager;
+                if (dm == null)
+                {
+                    // Before the host has a data manager there is nothing to walk. Not an error: the
+                    // per-emulator path still catches it later.
+                    Log.Info("no data manager yet - platforms will be completed when an emulator is claimed");
+                    return;
+                }
+
+                var emulators = dm.GetAllEmulators() ?? Array.Empty<IEmulator>();
+                int seen = 0;
+                foreach (var emu in emulators)
+                {
+                    string path;
+                    try { path = emu?.ApplicationPath; } catch { continue; }
+                    if (!FlycastPaths.IsFlycastExecutable(path)) continue;
+                    seen++;
+                    EnsurePlatforms(emu);
+                }
+                Log.Info("startup sweep: " + seen + " Flycast emulator(s) in the library");
+            }
+            catch (Exception ex) { Log.Warn("startup sweep failed", ex); }
+        }
 
         /// <summary>Give this emulator the platforms Flycast actually covers, if it has none of them.
         /// Never throws: a plugin that cannot complete an association must still claim the emulator.</summary>

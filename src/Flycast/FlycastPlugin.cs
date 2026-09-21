@@ -35,7 +35,7 @@ namespace LbIntegrations.Flycast
                && All.Any(p => string.Equals(p, platform, StringComparison.InvariantCultureIgnoreCase));
     }
 
-    public partial class FlycastPlugin : EmulatorPlugin
+    public partial class FlycastPlugin : EmulatorPlugin, ISystemEventsPlugin
     {
         private const string Repo = "flyinghead/flycast";
 
@@ -54,6 +54,30 @@ namespace LbIntegrations.Flycast
         }
 
         public override string EmulatorName => "Flycast";
+
+        // ── the host is up ────────────────────────────────────────────
+
+        /// <summary>Complete the emulator entries as soon as the host has finished loading, rather
+        /// than waiting to be asked. Three event names are accepted because the two hosts do not
+        /// raise the same one: LaunchBox raises LaunchBoxStartupCompleted (and BigBox its own),
+        /// LiteBox raises PluginInitialized when its window is shown. The work is idempotent, so
+        /// hearing several of them is free.
+        ///
+        /// Anything else is ignored in silence - a plugin that logs every SelectionChanged would
+        /// drown its own log.</summary>
+        public void OnEventRaised(string eventType)
+        {
+            try
+            {
+                if (eventType != SystemEventTypes.PluginInitialized
+                    && eventType != SystemEventTypes.LaunchBoxStartupCompleted
+                    && eventType != SystemEventTypes.BigBoxStartupCompleted) return;
+
+                Log.Info("host event \"" + eventType + "\"");
+                FlycastAssociation.SweepAll();
+            }
+            catch (Exception ex) { Log.Warn("OnEventRaised", ex); }
+        }
 
         // ── claiming ─────────────────────────────────────────────────────────
 

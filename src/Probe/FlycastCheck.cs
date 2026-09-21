@@ -59,6 +59,7 @@ namespace LbIntegrations.Probe
                 ok &= NoIdNoSave(plugin, exe, romDir);
                 ok &= PlatformsCompleted(plugin, exe);
                 ok &= UserChoiceRespected(plugin, exe);
+                ok &= StartupSweep(plugin, exe);
 
                 Console.WriteLine();
                 Console.WriteLine("  " + (ok ? "OK - the plugin matches our reading of Flycast" : "NOT OK - see above"));
@@ -318,6 +319,42 @@ namespace LbIntegrations.Probe
         }
 
         // ── the negative case ────────────────────────────────────────────────
+
+        // ── the startup sweep ─────────────────────────────────────
+
+        /// <summary>The host announcing that it is up must complete the entries WITHOUT being asked
+        /// which emulators we claim. Without this the completion only lands when something calls
+        /// GetApplicableEmulators, which can be after a page has already drawn the wrong list.
+        ///
+        /// Both hosts are covered: LiteBox raises PluginInitialized, LaunchBox raises
+        /// LaunchBoxStartupCompleted. An unrelated event must change nothing.</summary>
+        private static bool StartupSweep(EmulatorPlugin plugin, string exe)
+        {
+            Console.WriteLine();
+            if (plugin is not ISystemEventsPlugin events)
+            {
+                Console.WriteLine("  FAIL - the plugin does not implement ISystemEventsPlugin");
+                return false;
+            }
+
+            var emu = new StubEmulator { Title = "Flycast (swept)", ApplicationPath = exe };
+            PluginHelper.DataManager = new StubDataManager(emu);
+
+            // An event we do not care about must do nothing at all.
+            events.OnEventRaised(SystemEventTypes.SelectionChanged);
+            int afterNoise = (emu.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>()).Length;
+            bool quiet = afterNoise == 0;
+            Console.WriteLine("  an unrelated event changes nothing   " + (quiet ? "OK" : "FAIL"));
+
+            events.OnEventRaised(SystemEventTypes.LaunchBoxStartupCompleted);
+            var platforms = emu.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>();
+            bool swept = platforms.Length == 4;
+            Console.WriteLine("  platforms after the startup event : "
+                              + string.Join(", ", platforms.Select(p => p.Platform)));
+            Console.WriteLine("  the startup event completes the entry unasked   " + (swept ? "OK" : "FAIL"));
+
+            return quiet && swept;
+        }
 
         // ── the emulator entry the user made by hand ─────────────────────────
 
