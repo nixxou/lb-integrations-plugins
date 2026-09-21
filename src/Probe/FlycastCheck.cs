@@ -58,7 +58,7 @@ namespace LbIntegrations.Probe
                 }
                 ok &= NoIdNoSave(plugin, exe, romDir);
                 ok &= PlatformsCompleted(plugin, exe);
-                ok &= UserChoiceRespected(plugin, exe);
+                ok &= ExistingRowsLeftAlone(plugin, exe);
                 ok &= StartupSweep(plugin, exe);
 
                 Console.WriteLine();
@@ -451,39 +451,55 @@ namespace LbIntegrations.Probe
             return ok && defaultOk && cmdOk;
         }
 
-        /// <summary>The other half, and the one that matters more: an entry the user ALREADY shaped
-        /// must be added to, never rewritten. Someone who pointed their Flycast at Naomi on purpose
-        /// should not find it silently turned into a Dreamcast entry.</summary>
-        private static bool UserChoiceRespected(EmulatorPlugin plugin, string exe)
+        /// <summary>An entry that already has ANY platform row must be left completely alone.
+        ///
+        /// This is the measured defect, not a hypothetical. While the user adds a row in the
+        /// Associated Platforms grid, the row exists before its name is committed to the object; a
+        /// check that only skipped the NAMES it recognised saw one empty name, concluded there were
+        /// no platforms, and added all four beside the one being typed. The user got two Sega
+        /// Dreamcast rows. So the rule is the blunt one: any row at all, hands off.</summary>
+        private static bool ExistingRowsLeftAlone(EmulatorPlugin plugin, string exe)
         {
             Console.WriteLine();
-            var emu = new StubEmulator
+            bool ok = true;
+
+            // (a) a row the user has filled in
+            var shaped = new StubEmulator
             {
                 Title = "Flycast (arcade)",
                 ApplicationPath = exe,
                 CommandLine = "-config window:fullscreen=no",
             };
-            var chosen = emu.AddNewEmulatorPlatform();
+            var chosen = shaped.AddNewEmulatorPlatform();
             chosen.Platform = "Sega Naomi";
             chosen.IsDefault = true;
 
-            plugin.GetApplicableEmulators(new[] { emu });
+            plugin.GetApplicableEmulators(new[] { shaped });
 
-            var platforms = emu.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>();
-            bool noDuplicate = platforms.Count(p => p.Platform == "Sega Naomi") == 1;
-            var def = platforms.FirstOrDefault(p => p.IsDefault);
-            bool keptDefault = def != null && def.Platform == "Sega Naomi";
-            bool keptCommandLine = emu.CommandLine == "-config window:fullscreen=no";
-            bool completed = platforms.Length == 4;
+            var after = shaped.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>();
+            bool untouched = after.Length == 1 && after[0].Platform == "Sega Naomi" && after[0].IsDefault;
+            bool keptCommandLine = shaped.CommandLine == "-config window:fullscreen=no";
+            Console.WriteLine("  a filled row : " + string.Join(", ", after.Select(p => p.Platform)));
+            Console.WriteLine("  an entry the user shaped is left untouched   " + (untouched ? "OK" : "FAIL"));
+            Console.WriteLine("  their command line is left untouched         " + (keptCommandLine ? "OK" : "FAIL"));
+            ok &= untouched && keptCommandLine;
 
-            Console.WriteLine("  platforms : " + string.Join(", ", platforms.Select(p => p.Platform))
-                              + "   default=" + (def?.Platform ?? "(none)"));
-            Console.WriteLine("  the three missing platforms were added   " + (completed ? "OK" : "FAIL"));
-            Console.WriteLine("  the platform the user chose is not duplicated   " + (noDuplicate ? "OK" : "FAIL"));
-            Console.WriteLine("  their default was NOT stolen   " + (keptDefault ? "OK" : "FAIL"));
-            Console.WriteLine("  their command line was NOT overwritten   " + (keptCommandLine ? "OK" : "FAIL"));
-            return completed && noDuplicate && keptDefault && keptCommandLine;
+            // (b) THE bug: a row that exists but has no name yet, as the grid leaves it mid-edit
+            var editing = new StubEmulator { Title = "Flycast (being edited)", ApplicationPath = exe };
+            var blank = editing.AddNewEmulatorPlatform();
+            blank.Platform = "";
+
+            plugin.GetApplicableEmulators(new[] { editing });
+
+            var rows = editing.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>();
+            bool noDuplicate = rows.Length == 1;
+            Console.WriteLine("  a BLANK row, as the grid leaves it mid-edit : " + rows.Length + " row(s)");
+            Console.WriteLine("  nothing is added beside a row being typed   " + (noDuplicate ? "OK" : "FAIL"));
+            ok &= noDuplicate;
+
+            return ok;
         }
+
 
         /// <summary>A disc with no IP.BIN must yield no VMU row. Without this the listing assertion
         /// could pass on a plugin that hands out a save for anything at all.</summary>

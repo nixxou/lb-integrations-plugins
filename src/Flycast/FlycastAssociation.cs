@@ -100,26 +100,29 @@ namespace LbIntegrations.Flycast
                 }
 
                 var existing = emu.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>();
-                var have = new HashSet<string>(
-                    existing.Select(p => { try { return p.Platform ?? ""; } catch { return ""; } }),
-                    StringComparer.InvariantCultureIgnoreCase);
 
-                // Does the entry already point somewhere deliberate? If the user attached platforms of
-                // their own - even ones we do not cover - they made a choice, and adding to it is
-                // helping; REPLACING it would not be.
-                bool hadAny = have.Any(p => p.Length > 0);
+                // ANY row at all means hands off - including a BLANK one. That is not caution for its
+                // own sake, it is a measured defect: while the user adds a row in the Associated
+                // Platforms grid, the row exists before its name is committed to the object. Reading
+                // the list then sees one empty name, concludes "no platforms", and adds all four
+                // beside the one being typed - which is how a second Sega Dreamcast appeared.
+                //
+                // A blank row means someone is editing. Completing an entry is only ever helpful when
+                // there is nothing there to disturb.
+                if (existing.Length > 0)
+                {
+                    Log.Info("\"" + Safe(() => emu.Title) + "\" already has " + existing.Length
+                             + " platform row(s) - leaving it alone");
+                    return;
+                }
+
                 var added = new List<string>();
-
                 foreach (var name in FlycastPlatforms.All)
                 {
-                    if (have.Contains(name)) continue;
                     var platform = emu.AddNewEmulatorPlatform();
                     if (platform == null) continue;
                     platform.Platform = name;
-                    // Only claim the default slot when nothing held it: an entry the user pointed at
-                    // Naomi on purpose should not silently become a Dreamcast entry.
-                    platform.IsDefault = !hadAny
-                                         && string.Equals(name, FlycastPlatforms.Dreamcast, StringComparison.Ordinal);
+                    platform.IsDefault = string.Equals(name, FlycastPlatforms.Dreamcast, StringComparison.Ordinal);
                     added.Add(name);
                 }
 
@@ -136,7 +139,7 @@ namespace LbIntegrations.Flycast
 
                 try
                 {
-                    if (!hadAny && string.IsNullOrWhiteSpace(emu.DefaultPlatform))
+                    if (string.IsNullOrWhiteSpace(emu.DefaultPlatform))
                         emu.DefaultPlatform = FlycastPlatforms.Dreamcast;
                 }
                 catch { }
