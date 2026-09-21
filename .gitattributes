@@ -1,0 +1,6 @@
+# Normalize to LF in the repository, check out CRLF on Windows. Set from the
+# start so a script-written file never lands with bare LF among CRLF siblings.
+* text=auto
+
+# The vendored SDK is a binary; never touch it.
+*.dll binary
