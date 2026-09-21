@@ -111,8 +111,13 @@ namespace LbIntegrations.Flycast
                 // there is nothing there to disturb.
                 if (existing.Length > 0)
                 {
-                    Log.Info("\"" + Safe(() => emu.Title) + "\" already has " + existing.Length
-                             + " platform row(s) - leaving it alone");
+                    // The id is logged too: the Add Emulator window appears to hand us an emulator
+                    // object that is NOT the one we created during the install, and only the ids can
+                    // settle that.
+                    Log.Info("\"" + Safe(() => emu.Title) + "\" (id=" + (Safe(() => emu.Id) ?? "?")
+                             + ") already has " + existing.Length + " platform row(s) ["
+                             + string.Join(", ", existing.Select(x => { try { return x.Platform; } catch { return "?"; } }))
+                             + "] - leaving it alone");
                     return;
                 }
 

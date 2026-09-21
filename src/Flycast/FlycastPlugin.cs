@@ -205,6 +205,17 @@ namespace LbIntegrations.Flycast
             string archive = null;
             try
             {
+                // What the host actually asked for. Guessing at this cost two wrong diagnoses, so it
+                // is written down: whether it handed us an emulator to reinstall, whether it wants us
+                // to create one, and for which platform.
+                Log.Info("InstallEmulator: existing=" + (args?.ExistingEmulator == null
+                             ? "(none)"
+                             : "\"" + Safe(() => args.ExistingEmulator.Title) + "\" path="
+                               + Safe(() => args.ExistingEmulator.ApplicationPath)
+                               + " platforms=" + PlatformCount(args.ExistingEmulator))
+                         + ", shouldCreate=" + (args?.ShouldCreateEmulator.ToString() ?? "?")
+                         + ", platform=\"" + (args?.Platform ?? "") + "\"");
+
                 string url = args?.Version;
                 string label = null;
                 if (string.IsNullOrWhiteSpace(url))
@@ -257,6 +268,7 @@ namespace LbIntegrations.Flycast
                         "Flycast was installed to " + targetDir + ", but no emulator entry was requested.");
 
                 var created = EnsureEmulator(exe, label);
+                DumpFlycastEntries("just after EnsureEmulator");
                 if (created == null)
                     return new EmulatorInstallResponse(
                         "Flycast was installed to " + targetDir
@@ -530,6 +542,37 @@ namespace LbIntegrations.Flycast
                     : Path.GetFullPath(Path.Combine(LaunchBoxRoot(), maybeRelative));
             }
             catch { return maybeRelative; }
+        }
+
+        /// <summary>How many platform rows an emulator carries, for a log line. Never throws.</summary>
+        private static string PlatformCount(IEmulator emu)
+        {
+            try { return (emu.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>()).Length.ToString(); }
+            catch { return "?"; }
+        }
+
+        /// <summary>Every Flycast entry the data manager currently reports, with its platforms. This is
+        /// diagnosis, not behaviour: the Add Emulator window appears to work on an emulator object of
+        /// its own, and the only way to tell that from a refresh problem is to see what the library
+        /// holds at the moment we hand our answer back.</summary>
+        private static void DumpFlycastEntries(string when)
+        {
+            try
+            {
+                var dm = PluginHelper.DataManager;
+                var all = dm?.GetAllEmulators() ?? Array.Empty<IEmulator>();
+                var ours = all.Where(e => FlycastPaths.IsFlycastExecutable(Safe(() => e?.ApplicationPath))).ToList();
+                Log.Info("library " + when + ": " + ours.Count + " Flycast entry(ies)");
+                foreach (var e in ours)
+                {
+                    var names = (Safe(() => e.GetAllEmulatorPlatforms()) ?? Array.Empty<IEmulatorPlatform>())
+                                .Select(p => Safe(() => p.Platform) + (Safe(() => p.IsDefault.ToString()) == "True" ? "*" : ""));
+                    Log.Info("   id=" + (Safe(() => e.Id) ?? "?") + " title=\"" + Safe(() => e.Title)
+                             + "\" default=\"" + Safe(() => e.DefaultPlatform) + "\" platforms=["
+                             + string.Join(", ", names) + "]");
+                }
+            }
+            catch (Exception ex) { Log.Warn("could not dump the Flycast entries", ex); }
         }
 
         private static void Report(InstallEmulatorArgs args, string message, double? progress)
