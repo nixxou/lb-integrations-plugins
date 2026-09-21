@@ -124,6 +124,23 @@ namespace LbIntegrations.Flycast
 
                     if (_installed) return;
 
+                    // A KILL SWITCH, for telling this feature's effects apart from everything else's.
+                    // Create an empty file
+                    //
+                    //     %LOCALAPPDATA%\lb-integrations-plugins\no-metadata
+                    //
+                    // and LaunchBox goes back to not knowing Flycast exists: no rows are added to any
+                    // query, the Add Emulator window has nothing to narrow, and every other part of
+                    // the plugin behaves exactly as it does now. Deleting the file restores it. This
+                    // is here because "is it the metadata injection?" is a question worth being able
+                    // to answer by measurement rather than by argument.
+                    if (Log.Disabled("no-metadata"))
+                    {
+                        Log.Info("metadata injection DISABLED by the no-metadata marker");
+                        _installed = true;
+                        return;
+                    }
+
                     var owner = AppDomain.CurrentDomain.GetData(OwnerKey) as string;
                     if (owner != null)
                     {

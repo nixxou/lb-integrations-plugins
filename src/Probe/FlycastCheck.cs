@@ -61,6 +61,7 @@ namespace LbIntegrations.Probe
                 ok &= PlatformsCompleted(plugin, exe);
                 ok &= ExistingRowsLeftAlone(plugin, exe);
                 ok &= ForeignPlatformsUnchecked(plugin, exe);
+                ok &= Versions(plugin);
                 ok &= StartupSweep(plugin, exe);
 
                 Console.WriteLine();
@@ -74,6 +75,30 @@ namespace LbIntegrations.Probe
         }
 
         // ── the fixture ──────────────────────────────────────────────────────
+
+        /// <summary>The plugin's own log file, so an assertion can be made about what it SAID. Some
+        /// defects only ever show up as a sentence - "X is one slip away from X" was one.</summary>
+        private static string LogPath()
+            => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                            "lb-integrations-plugins", "flycast.log");
+
+        private static long LogLength()
+        {
+            try { return new FileInfo(LogPath()).Length; } catch { return 0; }
+        }
+
+        private static string LogSince(long offset)
+        {
+            try
+            {
+                using var stream = new FileStream(LogPath(), FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                if (offset > stream.Length) return "";
+                stream.Seek(offset, SeekOrigin.Begin);
+                using var reader = new StreamReader(stream);
+                return reader.ReadToEnd();
+            }
+            catch { return ""; }
+        }
 
         private static (string exe, string data, string romDir) Forge(string root)
         {
@@ -429,6 +454,45 @@ namespace LbIntegrations.Probe
             return nothingRemoved && foreignCleared && oursKept && oursCompleted;
         }
 
+        /// <summary>The version comparison, which decides whether LaunchBox shows the update cloud.
+        ///
+        /// Offline on purpose: the rule is a string rule, and the interesting case is a MEASURED one -
+        /// the official v2.7 build calls itself "v2.7-1-g44e4c7b50", so the plain string can never
+        /// equal its own tag and the update badge stayed lit forever.</summary>
+        private static bool Versions(EmulatorPlugin plugin)
+        {
+            Console.WriteLine();
+            var type = plugin.GetType().Assembly.GetType("LbIntegrations.Flycast.FlycastPlugin");
+            var normalize = type?.GetMethod("NormalizeVersion", BindingFlags.NonPublic | BindingFlags.Static);
+            var release = type?.GetMethod("ReleasePart", BindingFlags.NonPublic | BindingFlags.Static);
+            if (normalize == null || release == null)
+            {
+                Console.WriteLine("  FAIL - the version helpers are not where we expect them");
+                return false;
+            }
+
+            string N(string v) => (string)normalize.Invoke(null, new object[] { v });
+            string R(string v) => (string)release.Invoke(null, new object[] { v });
+
+            bool ok = true;
+            void Check(string what, bool good)
+            {
+                ok &= good;
+                Console.WriteLine("  " + what.PadRight(46) + (good ? "OK" : "FAIL"));
+            }
+
+            // What the installed 2.7 really reports, read off the release asset.
+            const string Installed = "v2.7-1-g44e4c7b50";
+            Check("the leading v is dropped", N(Installed) == "2.7-1-g44e4c7b50");
+            Check("the build tail is kept for display", N(Installed).EndsWith("-g44e4c7b50"));
+            Check("the 2.7 release matches the 2.7 tag",
+                  R(N(Installed)) == R(N("v2.7")));
+            Check("an older release does not match", R(N("v2.6-3-gdeadbeef")) != R(N("v2.7")));
+            Check("a tag with no tail survives", R("2.7") == "2.7");
+            Check("a placeholder resource is refused", N("1.0.0.0") == null && N("") == null);
+            return ok;
+        }
+
         // ── the startup sweep ─────────────────────────────────────
 
         /// <summary>The host announcing that it is up must complete the entries WITHOUT being asked
@@ -531,6 +595,105 @@ namespace LbIntegrations.Probe
             Console.WriteLine("  the three Flycast also runs were added       " + (completed ? "OK" : "FAIL"));
             Console.WriteLine("  their command line is left untouched         " + (keptCommandLine ? "OK" : "FAIL"));
             ok &= keptTheirs && completed && keptCommandLine;
+
+            // (a1b) DefaultPlatform must be left EMPTY, and a value we wrote before must be cleared.
+            // Measured on a real library: the Edit Emulator window turns this field into an extra
+            // platform row on top of the association that already exists, every time it opens, and
+            // saves the duplicate if the user clicks OK. The three emulators carrying the field were
+            // the only three with duplicates; every emulator with it empty was clean.
+            var withDefault = new StubEmulator
+            {
+                Title = "Flycast (with default)",
+                ApplicationPath = exe,
+                DefaultPlatform = "Sega Dreamcast",
+            };
+            var ownChoice = new StubEmulator
+            {
+                Title = "Flycast (user's choice)",
+                ApplicationPath = exe,
+                DefaultPlatform = "Sega Naomi 2",
+            };
+            plugin.GetApplicableEmulators(new IEmulator[] { withDefault, ownChoice });
+
+            bool cleared = string.IsNullOrEmpty(withDefault.DefaultPlatform);
+            bool keptChoice = ownChoice.DefaultPlatform == "Sega Naomi 2";
+            Console.WriteLine("  the DefaultPlatform we used to write is cleared " + (cleared ? "OK" : "FAIL"));
+            Console.WriteLine("  another value is somebody's choice, and stays   " + (keptChoice ? "OK" : "FAIL"));
+            ok &= cleared && keptChoice;
+
+            // The library's platforms, needed from here on: several checks only mean something when
+            // the plugin can tell a name this library HAS from one it does not.
+            StubDataManager.Platforms = new IPlatform[]
+            {
+                StubGame.Platform("Sega Dreamcast"), StubGame.Platform("Sega Naomi"),
+                StubGame.Platform("Sega Naomi 2"), StubGame.Platform("Sammy Atomiswave"),
+            };
+
+            // (a2) A PLATFORM ASSOCIATED TWICE is reported and LEFT ALONE. Nothing in this plugin
+            // deletes a platform row: an earlier version collapsed the surplus, never caught anything
+            // on a real library, and would have hidden the symptom that led to the real cause
+            // (DefaultPlatform). The assertion is that the rows survive, both of them.
+            var doubled = new StubEmulator { Title = "Flycast (doubled)", ApplicationPath = exe };
+            var firstRow = doubled.AddNewEmulatorPlatform();
+            firstRow.Platform = "Sega Dreamcast";
+            var secondRow = doubled.AddNewEmulatorPlatform();
+            secondRow.Platform = "Sega Dreamcast";
+            secondRow.IsDefault = true;
+
+            plugin.GetApplicableEmulators(new IEmulator[] { doubled });
+            plugin.GetApplicableEmulators(new IEmulator[] { doubled });   // and again, on reopen
+
+            var afterDup = doubled.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>();
+            int dreamcasts = afterDup.Count(p => p.Platform == "Sega Dreamcast");
+            Console.WriteLine("  a platform associated twice : "
+                              + string.Join(", ", afterDup.Select(p => p.Platform + (p.IsDefault ? "*" : ""))));
+            Console.WriteLine("  both rows survive, we delete nothing        " + (dreamcasts == 2 ? "OK" : "FAIL"));
+            ok &= dreamcasts == 2;
+
+            // (a4) A MISTYPED platform name, which is what actually happened: "Sega Dreamcaxst" is one
+            // character from the real thing and renders in the grid as an identical-looking duplicate
+            // row. It must be left exactly where it is - it may be a platform about to be created -
+            // and it must be named in the log, because the eye cannot tell it apart.
+            StubDataManager.Platforms = new IPlatform[]
+            {
+                StubGame.Platform("Sega Dreamcast"), StubGame.Platform("Sega Naomi"),
+                StubGame.Platform("Sega Naomi 2"), StubGame.Platform("Sammy Atomiswave"),
+            };
+            var typo = new StubEmulator { Title = "Flycast (typo)", ApplicationPath = exe };
+            var good = typo.AddNewEmulatorPlatform(); good.Platform = "Sega Dreamcast"; good.IsDefault = true;
+            var wrong = typo.AddNewEmulatorPlatform(); wrong.Platform = "Sega Dreamcaxst"; wrong.IsDefault = true;
+
+            plugin.GetApplicableEmulators(new[] { typo });
+
+            var typoRows = typo.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>();
+            bool keptTypo = typoRows.Any(p => p.Platform == "Sega Dreamcaxst");
+            bool untickedTypo = !typoRows.Any(p => p.Platform == "Sega Dreamcaxst" && p.IsDefault);
+            Console.WriteLine("  a mistyped platform name : "
+                              + string.Join(", ", typoRows.Select(p => p.Platform + (p.IsDefault ? "*" : ""))));
+            // A platform Flycast runs that the library simply does not have yet is the ordinary
+            // state of most libraries, and must never be called a typo. Asserted because the first
+            // version of this said "Sammy Atomiswave is one slip away from Sammy Atomiswave".
+            var absent = new StubEmulator { Title = "Flycast (absent platform)", ApplicationPath = exe };
+            var absentRow = absent.AddNewEmulatorPlatform(); absentRow.Platform = "Sega Naomi";
+            StubDataManager.Platforms = new IPlatform[] { StubGame.Platform("Sega Dreamcast") };
+
+            var logBefore = LogLength();
+            plugin.GetApplicableEmulators(new[] { absent });
+            var said = LogSince(logBefore);
+
+            StubDataManager.Platforms = new IPlatform[]
+            {
+                StubGame.Platform("Sega Dreamcast"), StubGame.Platform("Sega Naomi"),
+                StubGame.Platform("Sega Naomi 2"), StubGame.Platform("Sammy Atomiswave"),
+            };
+            bool quiet = said.IndexOf("Sega Naomi\", which this library does not have",
+                                      StringComparison.Ordinal) < 0;
+            Console.WriteLine("  a platform we run is never called a typo    " + (quiet ? "OK" : "FAIL"));
+            ok &= quiet;
+
+            Console.WriteLine("  it is NOT removed, it may be deliberate     " + (keptTypo ? "OK" : "FAIL"));
+            Console.WriteLine("  but it loses \"default emulator\"             " + (untickedTypo ? "OK" : "FAIL"));
+            ok &= keptTypo && untickedTypo;
 
             // (b) THE bug: a row that exists but has no name yet, as the grid leaves it mid-edit
             var editing = new StubEmulator { Title = "Flycast (being edited)", ApplicationPath = exe };

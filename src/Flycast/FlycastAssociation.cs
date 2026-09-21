@@ -101,10 +101,16 @@ namespace LbIntegrations.Flycast
         {
             if (emu == null) return;
 
-            // FIRST, and deliberately outside everything below. The platform work has three early
-            // returns - a row being edited, an id already seen, and above all "every platform we
-            // cover is already there", which is the normal case - and the hotkey scripts have
-            // nothing to do with any of them. Hung off the tail, they were almost never set.
+            WarnAboutUnknownPlatforms(emu);
+
+            var call = NextCall();
+            var before = Dump(emu, call, "in ");
+            ClearOurDefaultPlatform(emu);
+
+            // OUTSIDE the platform work below, which has three early returns - a row being edited,
+            // an id already seen, and above all "every platform we cover is already there", the
+            // normal case. The hotkey scripts have nothing to do with any of them; hung off that
+            // method's tail, they were almost never set.
             EnsureHotkeyScripts(emu);
 
             try
@@ -116,7 +122,7 @@ namespace LbIntegrations.Flycast
                     if (id.Length > 0 && !Done.Add(id)) return;
                 }
 
-                var existing = emu.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>();
+                IEmulatorPlatform[] existing = emu.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>();
 
                 // A row with no name yet means someone is typing in the grid. Adding anything beside
                 // it produced a duplicate Sega Dreamcast once already; wait until they are done.
@@ -182,18 +188,39 @@ namespace LbIntegrations.Flycast
                 }
                 catch { }
 
-                try
-                {
-                    if (string.IsNullOrWhiteSpace(emu.DefaultPlatform))
-                        emu.DefaultPlatform = FlycastPlatforms.Dreamcast;
-                }
-                catch { }
 
                 Log.Info("completed \"" + Safe(() => emu.Title) + "\" with " + added.Count
                          + " platform(s) in memory: " + string.Join(", ", added)
                          + " (not saved - LaunchBox's metadata does not know Flycast)");
             }
             catch (Exception ex) { Log.Warn("could not complete the emulator's platforms", ex); }
+            finally
+            {
+                // LAST, whichever way we left: the point of the pair is to show what WE changed, and
+                // an "out" taken before the unticking and the adding showed nothing of the kind.
+                var after = Dump(emu, call, "out");
+                if (after == before) Log.Verbose("call #" + call + " out - we changed nothing");
+            }
+        }
+
+        /// <summary>Undo the DefaultPlatform earlier versions of this plugin wrote - see
+        /// FlycastPlugin.EnsureEmulator for what it costs.
+        ///
+        /// ONLY when it is exactly the value we used to write. A user who chose Sega Dreamcast
+        /// himself would have chosen the same string, and there is no telling the two apart; the
+        /// trade is deliberate, because the field buys nothing visible and costs a phantom row on
+        /// every open. Anything else in there is somebody's decision and stays.</summary>
+        private static void ClearOurDefaultPlatform(IEmulator emu)
+        {
+            try
+            {
+                if (!string.Equals(Safe(() => emu.DefaultPlatform), FlycastPlatforms.Dreamcast,
+                                   StringComparison.InvariantCultureIgnoreCase)) return;
+                emu.DefaultPlatform = "";
+                Log.Info("cleared DefaultPlatform on \"" + Safe(() => emu.Title)
+                         + "\" - the edit window turns it into a duplicate platform row");
+            }
+            catch { }
         }
 
         /// <summary>Describe Flycast's save-state and exit keys in the emulator's AutoHotkey fields,
@@ -265,6 +292,130 @@ namespace LbIntegrations.Flycast
             }
             catch { return false; }
         }
+
+        /// <summary>Every platform row this emulator carries right now, as one line, with a call
+        /// number so two successive calls can be compared.
+        ///
+        /// This is how you tell "the host re-adds a row each time the window opens" apart from "there
+        /// are two emulator entries" - the question that cost two wrong guesses. Verbose, so it costs
+        /// nothing unless the trace marker is there.</summary>
+        /// <summary>Say so when a row names a platform the library does not have.
+        ///
+        /// Worth its own line because of what it looks like in the grid: a row reading
+        /// "Sega Dreamcaxst" is one character from the real thing and renders as an identical-looking
+        /// duplicate. Measured - it cost a wrong diagnosis and a feature built on it. A typo cannot
+        /// be corrected for the user (the name may be a platform they are about to create), but it
+        /// can be named.</summary>
+        private static void WarnAboutUnknownPlatforms(IEmulator emu)
+        {
+            try
+            {
+                var dm = PluginHelper.DataManager;
+                if (dm == null) return;
+
+                var known = new HashSet<string>(
+                    (dm.GetAllPlatforms() ?? Array.Empty<IPlatform>()).Select(p => Safe(() => p.Name)),
+                    StringComparer.InvariantCultureIgnoreCase);
+                if (known.Count == 0) return;
+
+                var seen = new HashSet<string>(StringComparer.InvariantCultureIgnoreCase);
+                foreach (var row in emu.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>())
+                {
+                    var name = (Safe(() => row.Platform) ?? "").Trim();
+                    if (name.Length == 0) continue;
+
+                    // TWICE THE SAME PLATFORM: said, never repaired.
+                    //
+                    // An earlier version removed the surplus row. It never caught anything on a real
+                    // library - the duplicate people actually saw came from DefaultPlatform, which is
+                    // no longer written - and a silent repair is the wrong trade here twice over. It
+                    // is the only thing in this plugin that would DELETE a row, and it would hide the
+                    // very symptom that led to the real cause. A line in the log keeps the diagnosis
+                    // and costs nobody a row they cannot get back.
+                    if (!seen.Add(name)
+                        && FlycastPlatforms.All.Contains(name, StringComparer.InvariantCultureIgnoreCase))
+                    {
+                        lock (Gate) { if (!UnknownSaid.Add("dup:" + name)) continue; }
+                        Log.Warn("\"" + Safe(() => emu.Title) + "\" is associated with \"" + name
+                                 + "\" more than once - nothing here removes it, but it is worth"
+                                 + " knowing where the second row came from");
+                        continue;
+                    }
+
+                    if (known.Contains(name)) continue;
+
+                    // A platform WE run is never a typo, whatever the library happens to hold. Not
+                    // having a Sega Naomi platform yet is the ordinary state of most libraries, and
+                    // saying a name is "one slip away" from itself is nonsense - measured, it is
+                    // what this said on Mehdi's install.
+                    if (FlycastPlatforms.All.Contains(name, StringComparer.InvariantCultureIgnoreCase))
+                        continue;
+
+                    // Only a NEAR MISS of a platform we run. An unknown platform is ordinary - the
+                    // user may be about to create it - but a name one or two characters from one of
+                    // ours is the confusing one: it renders in the grid as an identical-looking
+                    // duplicate row, which is exactly how this was misdiagnosed.
+                    var near = FlycastPlatforms.All.FirstOrDefault(ours => Distance(name, ours) <= 2);
+                    if (near == null) continue;
+
+                    lock (Gate) { if (!UnknownSaid.Add(name)) continue; }
+                    Log.Warn("\"" + Safe(() => emu.Title) + "\" is associated with \"" + name
+                             + "\", which this library does not have and is one slip away from \""
+                             + near + "\" - in the grid the two rows look identical");
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>Levenshtein distance, capped by the caller at 2. Small and iterative because it
+        /// runs over a handful of short names and nothing here deserves a dependency.</summary>
+        private static int Distance(string a, string b)
+        {
+            a = (a ?? "").ToLowerInvariant();
+            b = (b ?? "").ToLowerInvariant();
+            if (Math.Abs(a.Length - b.Length) > 2) return int.MaxValue;
+
+            var previous = new int[b.Length + 1];
+            var current = new int[b.Length + 1];
+            for (var j = 0; j <= b.Length; j++) previous[j] = j;
+
+            for (var i = 1; i <= a.Length; i++)
+            {
+                current[0] = i;
+                for (var j = 1; j <= b.Length; j++)
+                    current[j] = Math.Min(Math.Min(current[j - 1] + 1, previous[j] + 1),
+                                          previous[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1));
+                Array.Copy(current, previous, current.Length);
+            }
+            return previous[b.Length];
+        }
+
+        private static readonly HashSet<string> UnknownSaid =
+            new HashSet<string>(StringComparer.InvariantCultureIgnoreCase);
+
+        private static int NextCall() { lock (Gate) return ++_dumpCount; }
+
+        private static string Dump(IEmulator emu, int call, string phase)
+        {
+            try
+            {
+                var rows = emu.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>();
+                var line = rows.Length + " row(s): " + string.Join(", ", rows.Select(p =>
+                {
+                    var name = Safe(() => p.Platform);
+                    bool def = false;
+                    try { def = p.IsDefault; } catch { }
+                    return (name.Length == 0 ? "(blank)" : name) + (def ? "*" : "");
+                }));
+
+                Log.Verbose("call #" + call + " " + phase + " \"" + Safe(() => emu.Title) + "\" id="
+                            + (Safe(() => emu.Id) ?? "?") + " - " + line);
+                return line;
+            }
+            catch { return ""; }
+        }
+
+        private static int _dumpCount;
 
         private static string Safe(Func<string> f)
         {

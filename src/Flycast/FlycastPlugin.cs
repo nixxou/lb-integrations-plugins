@@ -207,9 +207,8 @@ namespace LbIntegrations.Flycast
             catch (Exception ex) { Log.Warn("could not read the version of " + applicationPath, ex); return null; }
         }
 
-        /// <summary>Strips the leading "v". A development build keeps its "-31-gabc123456" tail: it is
-        /// part of the identity, and dropping it would make a build between releases look like the
-        /// release itself and suppress the update it needs.</summary>
+        /// <summary>Strips the leading "v". The "-1-g44e4c7b50" tail is KEPT: it is what the binary
+        /// actually says about itself, and the grid should show it.</summary>
         internal static string NormalizeVersion(string raw)
         {
             if (string.IsNullOrWhiteSpace(raw)) return null;
@@ -219,6 +218,24 @@ namespace LbIntegrations.Flycast
             // A resource left at its placeholder tells us nothing.
             if (v.Length == 0 || v == "1.0.0.0" || v.StartsWith("0.0.0")) return null;
             return v;
+        }
+
+        /// <summary>The release a version string belongs to: everything before the first "-".
+        ///
+        /// Flycast stamps its binaries with `git describe`, and the OFFICIAL v2.7 build calls itself
+        /// "v2.7-1-g44e4c7b50" - one commit past its own tag. Measured on the release asset this
+        /// plugin downloads. So the full string can never equal the tag, and comparing them made
+        /// LaunchBox offer the same update forever - which is what the user saw.
+        ///
+        /// Comparing the release part is right in every case, not just this one. On the 2.7 release
+        /// against tag 2.7 there is no update, correctly. On a development build 2.7-31-g… against
+        /// tag 2.8 there is one, correctly. And a development build newer than the latest release is
+        /// not nagged into downgrading itself, which is also correct.</summary>
+        internal static string ReleasePart(string version)
+        {
+            if (string.IsNullOrWhiteSpace(version)) return version;
+            var dash = version.IndexOf('-');
+            return dash < 0 ? version : version.Substring(0, dash);
         }
 
         public override IEnumerable<EmulatorControllerVersion> GetInstallableVersions()
@@ -244,9 +261,11 @@ namespace LbIntegrations.Flycast
                 .ToList();
         }
 
-        /// <summary>Compare the installed version string with the latest tag. Both come from
-        /// `git describe`, so equality is the right test and ordering is not needed: a build that is
-        /// not the latest tag differs from it, whichever way it sorts.</summary>
+        /// <summary>Is the installed Flycast older than the latest release?
+        ///
+        /// Compared on the RELEASE PART of both strings - see ReleasePart, and the measurement that
+        /// forced it. Equality is the right test and ordering is not needed: a build belonging to a
+        /// release that is not the latest differs from it, whichever way the two would sort.</summary>
         public override bool IsUpdateAvailable(string emulatorAppPath, out EmulatorControllerVersion version)
         {
             version = null;
@@ -258,7 +277,14 @@ namespace LbIntegrations.Flycast
 
                 var current = GetCurrentVersion(emulatorAppPath);
                 if (current == null) return false;                       // unreadable; don't nag
-                return !string.Equals(current, version.Label, StringComparison.OrdinalIgnoreCase);
+
+                var mine = ReleasePart(current);
+                var theirs = ReleasePart(version.Label);
+                var stale = !string.Equals(mine, theirs, StringComparison.OrdinalIgnoreCase);
+                Log.Verbose("update check: installed \"" + current + "\" (" + mine + ") against \""
+                            + version.Label + "\" (" + theirs + ") -> "
+                            + (stale ? "update available" : "up to date"));
+                return stale;
             }
             catch (Exception ex) { Log.Warn("update check failed", ex); return false; }
         }
@@ -342,7 +368,6 @@ namespace LbIntegrations.Flycast
                         "Flycast was installed to " + targetDir + ", but no emulator entry was requested.");
 
                 var created = EnsureEmulator(exe, label);
-                DumpFlycastEntries("just after EnsureEmulator");
                 if (created == null)
                     return new EmulatorInstallResponse(
                         "Flycast was installed to " + targetDir
@@ -387,8 +412,23 @@ namespace LbIntegrations.Flycast
                 emu.Title = "Flycast";
                 emu.ApplicationPath = MakeRelativeToLaunchBox(exePath);
                 emu.CommandLine = FlycastDefaults.CommandLine;
-                emu.DefaultPlatform = FlycastPlatforms.Dreamcast;
             }
+
+            // DefaultPlatform IS NOT SET, and that is the point.
+            //
+            // Measured on a real library: the Edit Emulator window adds a platform row for whatever
+            // this field names, ON TOP of the association that already exists - so an emulator whose
+            // DefaultPlatform is set grows a duplicate row every time its window is opened, and the
+            // duplicate is saved if the user clicks OK. In Mehdi's data the only three emulators with
+            // the field set were the two of ours that wrote it and a hand-made RetroArch copy, and
+            // that copy already carried its duplicate on disk. Every emulator with the field empty
+            // was clean.
+            //
+            // None of Unbroken's own plugins set it either - Xemu, the one native plugin that assigns
+            // its properties by hand rather than reading them from the metadata, sets fifteen fields
+            // and not this one. What actually matters is IsDefault on each platform row, which says
+            // "this emulator is the default FOR that platform", and we do set that.
+
 
             // Right here too, not only from the association sweep: this is the entry the Add Emulator
             // window is looking at, and it is the one moment we know the mapping file has just been
@@ -642,30 +682,6 @@ namespace LbIntegrations.Flycast
         {
             try { return (emu.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>()).Length.ToString(); }
             catch { return "?"; }
-        }
-
-        /// <summary>Every Flycast entry the data manager currently reports, with its platforms. This is
-        /// diagnosis, not behaviour: the Add Emulator window appears to work on an emulator object of
-        /// its own, and the only way to tell that from a refresh problem is to see what the library
-        /// holds at the moment we hand our answer back.</summary>
-        private static void DumpFlycastEntries(string when)
-        {
-            try
-            {
-                var dm = PluginHelper.DataManager;
-                var all = dm?.GetAllEmulators() ?? Array.Empty<IEmulator>();
-                var ours = all.Where(e => FlycastPaths.IsFlycastExecutable(Safe(() => e?.ApplicationPath))).ToList();
-                Log.Verbose("library " + when + ": " + ours.Count + " Flycast entry(ies)");
-                foreach (var e in ours)
-                {
-                    var names = (Safe(() => e.GetAllEmulatorPlatforms()) ?? Array.Empty<IEmulatorPlatform>())
-                                .Select(p => Safe(() => p.Platform) + (Safe(() => p.IsDefault.ToString()) == "True" ? "*" : ""));
-                    Log.Verbose("   id=" + (Safe(() => e.Id) ?? "?") + " title=\"" + Safe(() => e.Title)
-                             + "\" default=\"" + Safe(() => e.DefaultPlatform) + "\" platforms=["
-                             + string.Join(", ", names) + "]");
-                }
-            }
-            catch (Exception ex) { Log.Warn("could not dump the Flycast entries", ex); }
         }
 
         private static void Report(InstallEmulatorArgs args, string message, double? progress)

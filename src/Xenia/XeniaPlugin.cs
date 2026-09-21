@@ -56,7 +56,20 @@ namespace LbIntegrations.Xenia
                 if (emu == null) continue;
                 string path;
                 try { path = emu.ApplicationPath; } catch { continue; }
-                if (XeniaPaths.IsXeniaExecutable(path)) claimed.Add(emu);
+                if (!XeniaPaths.IsXeniaExecutable(path)) continue;
+                claimed.Add(emu);
+
+                // Undo what earlier versions wrote - see the note in InstallEmulator.
+                try
+                {
+                    if (string.Equals(emu.DefaultPlatform, Xbox360Platform,
+                                      StringComparison.InvariantCultureIgnoreCase))
+                    {
+                        emu.DefaultPlatform = "";
+                        Log.Info("cleared DefaultPlatform - the edit window turns it into a duplicate row");
+                    }
+                }
+                catch { }
             }
             Log.Info("GetApplicableEmulators: claimed " + claimed.Count + " emulator(s)");
             return claimed;
@@ -231,7 +244,21 @@ namespace LbIntegrations.Xenia
             emu.Title = "Xenia";
             emu.ApplicationPath = MakeRelativeToLaunchBox(exePath);
             emu.CommandLine = DefaultCommandLine;
-            emu.DefaultPlatform = Xbox360Platform;
+
+            // DefaultPlatform IS NOT SET, and that is the point.
+            //
+            // Measured on a real library: the Edit Emulator window adds a platform row for whatever
+            // this field names, ON TOP of the association that already exists - so an emulator whose
+            // DefaultPlatform is set grows a duplicate row every time its window is opened, and the
+            // duplicate is saved if the user clicks OK. In a real library the only three emulators with
+            // the field set were the two of ours that wrote it and a hand-made RetroArch copy, and
+            // that copy already carried its duplicate on disk. Every emulator with the field empty
+            // was clean.
+            //
+            // None of Unbroken's own plugins set it either - Xemu, the one native plugin that assigns
+            // its properties by hand rather than reading them from the metadata, sets fifteen fields
+            // and not this one. What actually matters is IsDefault on each platform row, which says
+            // "this emulator is the default FOR that platform", and we do set that.
 
             var platform = emu.AddNewEmulatorPlatform();
             platform.Platform = Xbox360Platform;

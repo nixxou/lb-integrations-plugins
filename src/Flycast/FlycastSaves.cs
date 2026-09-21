@@ -117,7 +117,7 @@ namespace LbIntegrations.Flycast
 
                 WarnAboutSharedVmus(layout);
 
-                Log.Info("found " + found.Count + " save(s) under " + layout.DataDir);
+                Log.Verbose("found " + found.Count + " save(s) under " + layout.DataDir);
                 return new GetSavesResponse(found);
             }
             catch (Exception ex)

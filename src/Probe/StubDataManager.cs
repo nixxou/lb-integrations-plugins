@@ -30,7 +30,12 @@ namespace LbIntegrations.Probe
 
         public IGame[] GetAllGames() => Array.Empty<IGame>();
         public IParent[] GetAllParents() => Array.Empty<IParent>();
-        public IPlatform[] GetAllPlatforms() => Array.Empty<IPlatform>();
+        /// <summary>A few real platform names. Not empty on purpose: a plugin that checks whether an
+        /// association names a platform this library HAS cannot be exercised against nothing, and
+        /// that check is what tells a mistyped name apart from a duplicate row.</summary>
+        public IPlatform[] GetAllPlatforms() => Platforms;
+
+        public static IPlatform[] Platforms = Array.Empty<IPlatform>();
         public IPlatformCategory[] GetAllPlatformCategories() => Array.Empty<IPlatformCategory>();
         public IPlaylist[] GetAllPlaylists() => Array.Empty<IPlaylist>();
         public IList<IGameController> GetGameControllers() => new List<IGameController>();

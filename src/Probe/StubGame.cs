@@ -44,6 +44,16 @@ namespace LbIntegrations.Probe
             return DefaultOf(targetMethod.ReturnType);
         }
 
+        /// <summary>An IPlatform that knows its name, built the same way and for the same reason.
+        /// The plugin only ever asks a platform what it is called.</summary>
+        public static IPlatform Platform(string name)
+        {
+            var platform = DispatchProxy.Create<IPlatform, StubGame>();
+            ((StubGame)(object)platform)._values =
+                new Dictionary<string, object>(StringComparer.Ordinal) { ["Name"] = name };
+            return platform;
+        }
+
         private static object DefaultOf(Type t)
         {
             if (t == null || t == typeof(void)) return null;

@@ -45,6 +45,23 @@ namespace LbIntegrations.Flycast
         public static void Verbose(string message) { if (Tracing) Write(message); }
 
         public static bool Tracing => _tracing ??= Exists("trace");
+
+        /// <summary>Is a feature switched off by a marker file beside the log? Read once per name, so
+        /// creating the file takes effect at the next start - which is what a kill switch for
+        /// something installed during construction can promise anyway.</summary>
+        public static bool Disabled(string marker)
+        {
+            lock (Gate)
+            {
+                if (_switches.TryGetValue(marker, out var off)) return off;
+                off = Exists(marker);
+                _switches[marker] = off;
+                return off;
+            }
+        }
+
+        private static readonly System.Collections.Generic.Dictionary<string, bool> _switches =
+            new System.Collections.Generic.Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         private static bool? _tracing;
 
         private static bool Exists(string marker)

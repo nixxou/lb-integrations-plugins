@@ -71,6 +71,17 @@ namespace LbIntegrations.Probe
 
             injection.GetMethod("Install", BindingFlags.Public | BindingFlags.Static)
                      .Invoke(null, new object[] { "com.nixxou.lbip.probe", rows });
+
+            // The kill switch turns this whole feature off. Saying so beats twenty failures that all
+            // mean "you asked for it to be off".
+            var marker = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "lb-integrations-plugins", "no-metadata");
+            if (File.Exists(marker))
+            {
+                Console.WriteLine("  skipped - the injection is switched off by " + marker);
+                return true;
+            }
             // CHAINING. A second plugin's rows, registered through the same entry point a second
             // integration plugin would use. Harmony chains postfixes, so both sets must come back -
             // and this is what an earlier design got wrong, electing one installer and silently
