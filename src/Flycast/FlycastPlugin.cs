@@ -45,11 +45,6 @@ namespace LbIntegrations.Flycast
         private static readonly string[] AssetRequired = { "flycast", "win64", ".zip" };
         private static readonly string[] AssetExcluded = { "macos", "appimage", "appx", "apk", "nro", "symbols", "pdb" };
 
-        /// <summary>Fullscreen, transiently. `-config section:key=value` is Flycast's documented way to
-        /// set a value for one run (core/cfg/cl.cpp), and transient is what we want: Flycast REWRITES
-        /// emu.cfg on exit, including the window geometry (core/sdl/sdl.cpp), so a persisted setting
-        /// would fight the user's own window every time they close it.</summary>
-        private const string DefaultCommandLine = "-config window:fullscreen=yes";
 
         // Traced because a plugin is a black box inside LaunchBox: the only way to tell "the host
         // never asked us" from "we answered badly" is to see which members it actually calls.
@@ -73,7 +68,13 @@ namespace LbIntegrations.Flycast
                 if (emu == null) continue;
                 string path;
                 try { path = emu.ApplicationPath; } catch { continue; }
-                if (FlycastPaths.IsFlycastExecutable(path)) claimed.Add(emu);
+                if (!FlycastPaths.IsFlycastExecutable(path)) continue;
+
+                claimed.Add(emu);
+                // LaunchBox's metadata does not know Flycast, so an entry the user created by hand
+                // arrives with no platforms at all and looks like it covers everything. We know the
+                // four; fill them in. In memory only - see FlycastAssociation.
+                FlycastAssociation.EnsurePlatforms(emu);
             }
             Log.Info("GetApplicableEmulators: claimed " + claimed.Count + " emulator(s)");
             return claimed;
@@ -261,7 +262,7 @@ namespace LbIntegrations.Flycast
             var emu = dm.AddNewEmulator();
             emu.Title = "Flycast";
             emu.ApplicationPath = MakeRelativeToLaunchBox(exePath);
-            emu.CommandLine = DefaultCommandLine;
+            emu.CommandLine = FlycastDefaults.CommandLine;
             emu.DefaultPlatform = FlycastPlatforms.Dreamcast;
 
             foreach (var name in FlycastPlatforms.All)

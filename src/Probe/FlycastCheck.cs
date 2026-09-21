@@ -57,6 +57,8 @@ namespace LbIntegrations.Probe
                     ok &= Delete(plugin, arcade);
                 }
                 ok &= NoIdNoSave(plugin, exe, romDir);
+                ok &= PlatformsCompleted(plugin, exe);
+                ok &= UserChoiceRespected(plugin, exe);
 
                 Console.WriteLine();
                 Console.WriteLine("  " + (ok ? "OK - the plugin matches our reading of Flycast" : "NOT OK - see above"));
@@ -316,6 +318,69 @@ namespace LbIntegrations.Probe
         }
 
         // ── the negative case ────────────────────────────────────────────────
+
+        // ── the emulator entry the user made by hand ─────────────────────────
+
+        /// <summary>An emulator created by hand arrives with NO platforms, because LaunchBox's
+        /// metadata knows nothing about Flycast. Claiming it must complete it, in memory.</summary>
+        private static bool PlatformsCompleted(EmulatorPlugin plugin, string exe)
+        {
+            Console.WriteLine();
+            var emu = new StubEmulator { Title = "Flycast", ApplicationPath = exe };
+
+            plugin.GetApplicableEmulators(new[] { emu });
+
+            var platforms = emu.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>();
+            var names = platforms.Select(p => p.Platform).OrderBy(n => n, StringComparer.Ordinal).ToList();
+            var expected = new[] { "Sammy Atomiswave", "Sega Dreamcast", "Sega Naomi", "Sega Naomi 2" }
+                           .OrderBy(n => n, StringComparer.Ordinal).ToList();
+
+            Console.WriteLine("  platforms : " + string.Join(", ", names));
+            bool ok = names.SequenceEqual(expected, StringComparer.Ordinal);
+            Console.WriteLine("  a hand-made entry is completed with the four platforms   " + (ok ? "OK" : "FAIL"));
+
+            var def = platforms.FirstOrDefault(p => p.IsDefault);
+            bool defaultOk = def != null && def.Platform == "Sega Dreamcast";
+            Console.WriteLine("  the Dreamcast is the default   " + (defaultOk ? "OK" : "FAIL"));
+
+            bool cmdOk = !string.IsNullOrWhiteSpace(emu.CommandLine);
+            Console.WriteLine("  an empty command line was filled   " + (cmdOk ? "OK" : "FAIL"));
+            return ok && defaultOk && cmdOk;
+        }
+
+        /// <summary>The other half, and the one that matters more: an entry the user ALREADY shaped
+        /// must be added to, never rewritten. Someone who pointed their Flycast at Naomi on purpose
+        /// should not find it silently turned into a Dreamcast entry.</summary>
+        private static bool UserChoiceRespected(EmulatorPlugin plugin, string exe)
+        {
+            Console.WriteLine();
+            var emu = new StubEmulator
+            {
+                Title = "Flycast (arcade)",
+                ApplicationPath = exe,
+                CommandLine = "-config window:fullscreen=no",
+            };
+            var chosen = emu.AddNewEmulatorPlatform();
+            chosen.Platform = "Sega Naomi";
+            chosen.IsDefault = true;
+
+            plugin.GetApplicableEmulators(new[] { emu });
+
+            var platforms = emu.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>();
+            bool noDuplicate = platforms.Count(p => p.Platform == "Sega Naomi") == 1;
+            var def = platforms.FirstOrDefault(p => p.IsDefault);
+            bool keptDefault = def != null && def.Platform == "Sega Naomi";
+            bool keptCommandLine = emu.CommandLine == "-config window:fullscreen=no";
+            bool completed = platforms.Length == 4;
+
+            Console.WriteLine("  platforms : " + string.Join(", ", platforms.Select(p => p.Platform))
+                              + "   default=" + (def?.Platform ?? "(none)"));
+            Console.WriteLine("  the three missing platforms were added   " + (completed ? "OK" : "FAIL"));
+            Console.WriteLine("  the platform the user chose is not duplicated   " + (noDuplicate ? "OK" : "FAIL"));
+            Console.WriteLine("  their default was NOT stolen   " + (keptDefault ? "OK" : "FAIL"));
+            Console.WriteLine("  their command line was NOT overwritten   " + (keptCommandLine ? "OK" : "FAIL"));
+            return completed && noDuplicate && keptDefault && keptCommandLine;
+        }
 
         /// <summary>A disc with no IP.BIN must yield no VMU row. Without this the listing assertion
         /// could pass on a plugin that hands out a save for anything at all.</summary>
