@@ -19,8 +19,21 @@
 //    assumes members sharing a stem and differing by a tail; PARAM.SFO, ICON0.PNG and DATA.BIN share
 //    no stem. Hence GetCompanionSaveFiles returns nothing and the container path does the work.
 //
-// Save STATES are not handled here. They do not travel (the server answers 501) and LiteBox drops
-// companions for every state, so a .ppst's sibling .jpg thumbnail could not follow it anyway.
+// Save STATES are handled too, and they are the other shape entirely: one FILE per slot, not a set
+// of directories. They therefore take none of the container path - IsSaveContainer says false, the
+// host copies the file itself, and TryBackupSave is never asked for one. Their naming, and the undo
+// pair that a careless glob would mistake for a slot, are in PpssppState.cs.
+//
+// An earlier version of this file refused to handle states, on the grounds that they do not
+// synchronise with RomM (the server answers 501). That was a bad reason: it is a statement about
+// what travels to a server, and it says nothing about listing, backing up or restoring a state on
+// this machine - which is what the Game Saves page is for.
+//
+// One real limit, measured rather than assumed: LiteBox drops companions for every state
+// (SaveManager.cs, `save is GameSaveState ? new List<string>()`). GetCompanionSaveFiles still
+// returns the sibling .jpg, because the SDK contract asks for it and LaunchBox honours it - but
+// under LiteBox a restored state comes back without its screenshot. PPSSPP writes a fresh one the
+// next time that slot is saved, so the cost is cosmetic.
 
 using System;
 using System.Collections.Generic;
@@ -36,7 +49,26 @@ namespace LbIntegrations.Ppsspp
         private const string GroupPrefix = "ppsspp:";
         private const string ChipText = "Memory Stick";
 
+        /// <summary>Group id prefix for a state. Deliberately NOT built on GroupPrefix: every
+        /// container predicate keys on that prefix, and a state must fall on the other side of all
+        /// of them. The discriminator is the SDK's own GameSaveState type; the prefix only keeps our
+        /// rows apart from another plugin's.</summary>
+        private const string StatePrefix = "ppsspp-state:";
+        private const string StateChipText = "Save State";
+        private const string StateGroupName = "My Save State";
+
         public override bool SupportsSaveManagement() => true;
+
+        /// <summary>The slots a state can live in. PPSSPP's `SaveStateSlotCount` defaults to 5 and the
+        /// file name carries the slot 0-based, while PPSSPP's own UI labels them from 1 - hence the
+        /// key/label split rather than two conflicting numbers.</summary>
+        public override IReadOnlyDictionary<int, string> GetPotentialSaveSlots()
+        {
+            var slots = new Dictionary<int, string>();
+            for (int i = 0; i < PpssppStates.DefaultSlotCount; i++)
+                slots[i] = (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return slots;
+        }
 
         // ── listing ──────────────────────────────────────────────────────────
 
@@ -51,30 +83,49 @@ namespace LbIntegrations.Ppsspp
                     return new GetSavesResponse("This emulator is not PPSSPP.");
 
                 var layout = PpssppPaths.Resolve(appPath);
-                if (!Directory.Exists(layout.SaveDataDir))
+                // Each folder gates only its own kind: a memstick can perfectly well hold states and
+                // no save yet, which is exactly what a freshly installed game looks like.
+                bool haveSaveData = Directory.Exists(layout.SaveDataDir);
+                bool haveStates = Directory.Exists(layout.SaveStateDir);
+                if (!haveSaveData && !haveStates)
                 {
-                    Log.Info("no SAVEDATA directory at " + layout.SaveDataDir + " (" + layout.Reason + ")");
+                    Log.Info("neither SAVEDATA nor PPSSPP_STATE under " + layout.PspDir + " (" + layout.Reason + ")");
                     return new GetSavesResponse(new List<GameSaveBase>());
                 }
 
                 var found = new List<GameSaveBase>();
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var seenStates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                int stateCount = 0;
 
                 // Additional applications first, then games, each resolved to its own ROM: a version
                 // has its own file and therefore its own disc id.
                 foreach (var app in args.AdditionalApplications ?? (IReadOnlyCollection<IAdditionalApplication>)Array.Empty<IAdditionalApplication>())
                 {
                     var game = SafeGame(Safe(() => app.GameId));
-                    var save = SaveFor(layout, Safe(() => app.ApplicationPath), game, app, seen);
-                    if (save != null) found.Add(save);
+                    var romPath = Safe(() => app.ApplicationPath);
+                    if (haveSaveData)
+                    {
+                        var save = SaveFor(layout, romPath, game, app, seen);
+                        if (save != null) found.Add(save);
+                    }
+                    if (haveStates)
+                        stateCount += AddStates(found, layout, romPath, game, app, seenStates);
                 }
                 foreach (var game in args.Games ?? (IReadOnlyCollection<IGame>)Array.Empty<IGame>())
                 {
-                    var save = SaveFor(layout, Safe(() => game.ApplicationPath), game, null, seen);
-                    if (save != null) found.Add(save);
+                    var romPath = Safe(() => game.ApplicationPath);
+                    if (haveSaveData)
+                    {
+                        var save = SaveFor(layout, romPath, game, null, seen);
+                        if (save != null) found.Add(save);
+                    }
+                    if (haveStates)
+                        stateCount += AddStates(found, layout, romPath, game, null, seenStates);
                 }
 
-                Log.Info("found " + found.Count + " save(s) under " + layout.SaveDataDir);
+                Log.Info("found " + (found.Count - stateCount) + " save(s) and " + stateCount
+                         + " state(s) under " + layout.PspDir);
                 return new GetSavesResponse(found);
             }
             catch (Exception ex)
@@ -82,6 +133,53 @@ namespace LbIntegrations.Ppsspp
                 Log.Warn("GetSaves failed", ex);
                 return new GetSavesResponse("Could not read PPSSPP saves: " + ex.Message);
             }
+        }
+
+        /// <summary>Append one row per occupied state slot of this game. Returns how many were added.
+        ///
+        /// The disc id comes from the ROM and from nowhere else. SaveFor's title fallback is
+        /// deliberately NOT reused: it exists to recognise a SAVEDATA folder written by a game whose
+        /// disc we could not read, whereas a state file name already carries its own disc id - so a
+        /// title guess here would only ever attach one game's states to another.</summary>
+        private int AddStates(List<GameSaveBase> into, PpssppLayout layout, string romPath,
+                              IGame game, IAdditionalApplication app, HashSet<string> seen)
+        {
+            if (game == null) return 0;
+
+            string discId = PspDiscId.Of(romPath);
+            if (discId == null) return 0;
+
+            string gameId = Safe(() => game.Id) ?? "";
+            string appId = app != null ? Safe(() => app.Id) : null;
+            string context = appId ?? gameId;
+            int added = 0;
+
+            foreach (var st in PpssppStates.ForDiscId(layout.SaveStateDir, discId))
+            {
+                // Same rule as a save: one row per slot per context, so a game and one of its
+                // versions pointing at the same disc do not list the slot twice.
+                if (!seen.Add(st.DiscId + "|" + st.Slot + "|" + context)) continue;
+
+                into.Add(new GameSaveState
+                {
+                    GameId = gameId,
+                    AdditionalApplicationId = appId,
+                    FileLocation = st.Path,
+                    // Carries the disc VERSION, which the group id deliberately does not. A restore
+                    // reads it back from here; see AddSaveFile.
+                    OriginalFileName = st.FileName,
+                    Slot = st.Slot,
+                    // Disc id and slot only: a game patched from 1.00 to 1.01 keeps its history
+                    // instead of orphaning it, the way Dolphin's "<game>-<disc>-State-<slot>" does.
+                    SaveGroupId = StatePrefix + st.DiscId + ":" + st.Slot,
+                    SaveGroupName = StateGroupName,
+                    DisplayChipText = StateChipText,
+                    ReportedFileSizeBytes = st.SizeBytes > 0 ? st.SizeBytes : (long?)null,
+                    ReportedLastModifiedUtc = st.LastWriteUtc == default ? (DateTime?)null : st.LastWriteUtc,
+                });
+                added++;
+            }
+            return added;
         }
 
         private GameSaveGame SaveFor(PpssppLayout layout, string romPath, IGame game,
@@ -146,40 +244,71 @@ namespace LbIntegrations.Ppsspp
 
         // ── the container contract ───────────────────────────────────────────
 
+        /// <summary>A save is a container; a STATE is a single file and must never be one, or the host
+        /// would ask TryBackupSave to extract a folder that does not exist.</summary>
         public override bool IsSaveContainer(GameSaveBase save) => IsOurs(save);
 
         /// <summary>Match persisted rows by group id rather than by path: a memstick that moves, or a
-        /// game whose primary folder changes name, must not orphan its backup history.</summary>
-        public override bool UseSaveGroupIdForPersistedMatch(GameSaveBase save) => IsOurs(save);
+        /// game whose primary folder changes name, must not orphan its backup history. True for a
+        /// state too - its group id is disc id plus slot, which survives the game being patched.</summary>
+        public override bool UseSaveGroupIdForPersistedMatch(GameSaveBase save)
+            => IsOurs(save) || IsOurState(save);
 
         /// <summary>Defensive: LiteBox only calls this on what GetSaves returned, but the SDK contract
-        /// says a file inside a save must not become a save of its own.</summary>
+        /// says a file inside a save must not become a save of its own. Two kinds here: anything under
+        /// a SAVEDATA unit, and - inside PPSSPP_STATE - a slot's screenshot or its undo buffer.</summary>
         public override bool IsSecondarySaveFile(string filePath)
         {
             try
             {
                 if (string.IsNullOrWhiteSpace(filePath)) return false;
+
+                var name = Path.GetFileName(filePath);
+                var dir = Path.GetFileName(Path.GetDirectoryName(filePath) ?? "");
+                if (string.Equals(dir, PpssppPaths.SaveStateDirName, StringComparison.OrdinalIgnoreCase))
+                    return PpssppStates.IsUndo(name)
+                           || name.EndsWith(PpssppStates.ThumbnailExtension, StringComparison.OrdinalIgnoreCase);
+
                 var parent = Path.GetFileName(Path.GetDirectoryName(Path.GetDirectoryName(filePath)) ?? "");
                 return string.Equals(parent, "SAVEDATA", StringComparison.OrdinalIgnoreCase);
             }
             catch { return false; }
         }
 
-        /// <summary>Nothing. A PSP save is a set of DIRECTORIES, and LiteBox's companion mechanism is
-        /// for sibling FILES - CompanionsOf filters on File.Exists, so a folder would be dropped.</summary>
+        /// <summary>For a SAVEDATA unit, nothing: it is a set of DIRECTORIES, and the companion
+        /// mechanism is for sibling FILES - CompanionsOf filters on File.Exists, so a folder would be
+        /// dropped. For a STATE, the sibling screenshot, which is a file and does qualify.
+        ///
+        /// LiteBox ignores this for states (it hands back an empty companion list for every one), so
+        /// the screenshot only really follows under LaunchBox. Returning it anyway is the contract,
+        /// and costs nothing where it is ignored.</summary>
         public override IReadOnlyList<string> GetCompanionSaveFiles(string primaryFilePath)
-            => Array.Empty<string>();
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(primaryFilePath)) return Array.Empty<string>();
+                if (!primaryFilePath.EndsWith(PpssppStates.Extension, StringComparison.OrdinalIgnoreCase))
+                    return Array.Empty<string>();
+                var jpg = PpssppStates.ThumbnailFor(primaryFilePath);
+                return jpg == null ? Array.Empty<string>() : new[] { jpg };
+            }
+            catch { return Array.Empty<string>(); }
+        }
 
-        /// <summary>Is this save on the memstick the emulator is actually configured with?</summary>
+        /// <summary>Is this save on the memstick the emulator is actually configured with? A state is
+        /// judged against PPSSPP_STATE, a save against SAVEDATA - same question, different folder.</summary>
         public override bool IsSaveActive(GameSaveBase save, string emulatorApplicationPath)
         {
             try
             {
-                if (!IsOurs(save) || string.IsNullOrWhiteSpace(emulatorApplicationPath)) return true;
+                bool ours = IsOurs(save), state = IsOurState(save);
+                if ((!ours && !state) || string.IsNullOrWhiteSpace(emulatorApplicationPath)) return true;
+
                 var layout = PpssppPaths.Resolve(emulatorApplicationPath);
+                var root = state ? layout.SaveStateDir : layout.SaveDataDir;
                 var loc = save.FileLocation;
-                if (string.IsNullOrWhiteSpace(loc) || string.IsNullOrWhiteSpace(layout.SaveDataDir)) return true;
-                return Path.GetFullPath(loc).StartsWith(Path.GetFullPath(layout.SaveDataDir),
+                if (string.IsNullOrWhiteSpace(loc) || string.IsNullOrWhiteSpace(root)) return true;
+                return Path.GetFullPath(loc).StartsWith(Path.GetFullPath(root),
                                                         StringComparison.OrdinalIgnoreCase);
             }
             catch { return true; }
@@ -201,6 +330,16 @@ namespace LbIntegrations.Ppsspp
             error = null;
             try
             {
+                // A state is not a container and the host copies its file itself, so this should
+                // never be reached for one. The guard is not decoration: without it, LiveUnit would
+                // take "ULUS10516_1.01_0.ppst", read its first nine characters as a disc id, and
+                // cheerfully back up the game's SAVEDATA instead of the state.
+                if (save is GameSaveState)
+                {
+                    error = "A PPSSPP save state is a single file, not a container.";
+                    return false;
+                }
+
                 var unit = LiveUnit(save, emulatorApplicationPath);
                 if (unit == null) { error = "This PPSSPP save is no longer on the memstick."; return false; }
 
@@ -233,6 +372,7 @@ namespace LbIntegrations.Ppsspp
             {
                 var save = args?.SaveToAdd;
                 if (save == null) return new AddSaveResponse("No save was supplied.");
+                if (save is GameSaveState state) return RestoreState(state, args);
 
                 string source = save.FileLocation;
                 if (string.IsNullOrWhiteSpace(source) || !Directory.Exists(source))
@@ -290,6 +430,76 @@ namespace LbIntegrations.Ppsspp
             }
         }
 
+        /// <summary>Put a state back in PPSSPP_STATE.
+        ///
+        /// The whole difficulty is the FILE NAME. PPSSPP loads a slot by looking for
+        /// "&lt;disc id&gt;_&lt;disc version&gt;_&lt;slot&gt;.ppst" exactly, and the group id carries
+        /// only disc id and slot - on purpose, so that patching a game does not orphan its history.
+        /// The version is therefore looked for in three places, in order: the name the backup still
+        /// carries, the name the row was listed under, and any state already in the folder for this
+        /// game. If none of them answers, the restore is REFUSED. Writing a file under a guessed
+        /// version would report success and leave the user with a slot the emulator never shows.</summary>
+        private AddSaveResponse RestoreState(GameSaveState state, AddSaveArgs args)
+        {
+            string source = state.FileLocation;
+            if (string.IsNullOrWhiteSpace(source) || !File.Exists(source))
+                return new AddSaveResponse("This PPSSPP save state is not a file: " + (source ?? "(none)"));
+
+            var (discId, slot) = StateKeyOf(state);
+            if (discId == null)
+                return new AddSaveResponse("Could not work out which game this save state belongs to.");
+            if (slot == null) slot = state.Slot;
+            if (slot == null)
+                return new AddSaveResponse("A PPSSPP save state needs a slot.");
+
+            string stateDir = SaveStateDirFor(state);
+            if (stateDir == null)
+                return new AddSaveResponse("Could not locate PPSSPP's memory stick for this game.");
+
+            string version = VersionFrom(Path.GetFileName(source), discId)
+                             ?? VersionFrom(state.OriginalFileName, discId)
+                             ?? PpssppStates.VersionFromFolder(stateDir, discId);
+            if (version == null)
+                return new AddSaveResponse(
+                    "This backup does not say which disc version it belongs to, and PPSSPP_STATE holds "
+                    + "nothing for " + discId + " to learn it from. Save a state in PPSSPP once, then "
+                    + "restore again.");
+
+            string target = Path.Combine(stateDir, PpssppStates.NameFor(discId, version, slot.Value));
+            if (File.Exists(target))
+            {
+                bool overwrite = true;
+                try { overwrite = args?.ShouldOverwriteFunc?.Invoke() ?? true; } catch { }
+                if (!overwrite) return new AddSaveResponse("Restore cancelled.");
+            }
+
+            Directory.CreateDirectory(stateDir);
+            File.Copy(source, target, overwrite: true);
+
+            // The screenshot when the backup kept one. Absent is normal - LiteBox drops companions for
+            // states - and PPSSPP writes a new one the next time this slot is saved.
+            var jpg = PpssppStates.ThumbnailFor(source);
+            if (jpg != null)
+            {
+                try { File.Copy(jpg, Path.ChangeExtension(target, PpssppStates.ThumbnailExtension), overwrite: true); }
+                catch (Exception ex) { Log.Warn("could not restore the state screenshot", ex); }
+            }
+            Log.Info("restored state " + discId + " slot " + slot.Value + " -> " + target);
+
+            return new AddSaveResponse(new GameSaveState
+            {
+                GameId = state.GameId,
+                AdditionalApplicationId = state.AdditionalApplicationId,
+                FileLocation = target,
+                OriginalFileName = Path.GetFileName(target),
+                Slot = slot,
+                SaveGroupId = StatePrefix + discId + ":" + slot.Value,
+                SaveGroupName = string.IsNullOrWhiteSpace(state.SaveGroupName) ? StateGroupName : state.SaveGroupName,
+                DisplayChipText = StateChipText,
+                Title = state.Title,
+            });
+        }
+
         // ── delete ───────────────────────────────────────────────────────────
 
         /// <summary>Must be overridden: the SDK default deletes the one path in FileLocation, which
@@ -298,6 +508,7 @@ namespace LbIntegrations.Ppsspp
         {
             try
             {
+                if (save is GameSaveState) return RemoveState(save);
                 if (!IsOurs(save)) return base.RemoveSave(save);
 
                 string loc = save?.FileLocation;
@@ -322,11 +533,82 @@ namespace LbIntegrations.Ppsspp
             }
         }
 
+        /// <summary>Delete one state slot: the file, its screenshot, and the undo pair PPSSPP keeps
+        /// for that same slot.
+        ///
+        /// The undo pair goes too, and that is a decision rather than an obvious truth. It is the
+        /// state this slot held before it was last overwritten, so leaving it behind would let
+        /// "undo last save state" resurrect something the user has just deleted, and would leave
+        /// megabytes on the memstick under a name nothing lists any more.</summary>
+        private PluginResponse RemoveState(GameSaveBase save)
+        {
+            string loc = save?.FileLocation;
+            if (string.IsNullOrWhiteSpace(loc)) return new PluginResponse(false, "This save state has no location.");
+
+            string stem = loc.EndsWith(PpssppStates.Extension, StringComparison.OrdinalIgnoreCase)
+                ? loc.Substring(0, loc.Length - PpssppStates.Extension.Length)
+                : loc;
+
+            var targets = new[]
+            {
+                stem + PpssppStates.Extension,
+                stem + PpssppStates.ThumbnailExtension,
+                stem + ".undo" + PpssppStates.Extension,
+                stem + ".undo" + PpssppStates.ThumbnailExtension,
+            };
+
+            int removed = 0;
+            foreach (var path in targets)
+            {
+                try { if (File.Exists(path)) { File.Delete(path); removed++; } }
+                catch (Exception ex) { Log.Warn("could not delete " + path, ex); }
+            }
+            Log.Info("deleted state " + Path.GetFileName(stem) + ": " + removed + " file(s)");
+            return new PluginResponse(true);
+        }
+
         // ── plumbing ─────────────────────────────────────────────────────────
 
+        /// <summary>A SAVEDATA save of ours. A state is excluded by TYPE, not by prefix: every
+        /// container predicate hangs off this, and the SDK already gives us the distinction.</summary>
         private static bool IsOurs(GameSaveBase save)
-            => save?.SaveGroupId != null
+            => save is not GameSaveState
+               && save?.SaveGroupId != null
                && save.SaveGroupId.StartsWith(GroupPrefix, StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsOurState(GameSaveBase save)
+            => save is GameSaveState
+               && save.SaveGroupId != null
+               && save.SaveGroupId.StartsWith(StatePrefix, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>Disc id and slot out of a state's group id, "ppsspp-state:&lt;disc&gt;:&lt;slot&gt;".
+        /// Falls back to the file name when the row carries no group id of ours.</summary>
+        private static (string DiscId, int? Slot) StateKeyOf(GameSaveState state)
+        {
+            var id = state?.SaveGroupId;
+            if (id != null && id.StartsWith(StatePrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                var rest = id.Substring(StatePrefix.Length);
+                int colon = rest.LastIndexOf(':');
+                if (colon > 0)
+                {
+                    var disc = rest.Substring(0, colon).Trim().ToUpperInvariant();
+                    if (int.TryParse(rest.Substring(colon + 1).Trim(), out var slot) && disc.Length > 0)
+                        return (disc, slot);
+                }
+            }
+
+            foreach (var name in new[] { Path.GetFileName(state?.FileLocation ?? ""), state?.OriginalFileName })
+                if (PpssppStates.TryParseName(name, out var d, out _, out var s)) return (d, s);
+
+            return (null, null);
+        }
+
+        /// <summary>The disc version inside a state file name, when that name belongs to this game.</summary>
+        private static string VersionFrom(string fileName, string discId)
+            => PpssppStates.TryParseName(fileName, out var d, out var ver, out _)
+               && string.Equals(d, discId, StringComparison.OrdinalIgnoreCase)
+                ? ver : null;
 
         private static string DiscIdOf(GameSaveBase save)
         {
@@ -365,9 +647,17 @@ namespace LbIntegrations.Ppsspp
             return PspSaveUnits.ForDiscId(saveDataDir, discId);
         }
 
-        /// <summary>PSP\SAVEDATA for the emulator this save's game is assigned to. AddSaveArgs carries
-        /// no emulator, so it is re-resolved through the public data manager.</summary>
+        /// <summary>PSP\SAVEDATA for the emulator this save's game is assigned to.</summary>
         private static string SaveDataDirFor(GameSaveBase save)
+            => MemstickFolderFor(save, l => l.SaveDataDir);
+
+        /// <summary>PSP\PPSSPP_STATE for the emulator this state's game is assigned to.</summary>
+        private static string SaveStateDirFor(GameSaveBase save)
+            => MemstickFolderFor(save, l => l.SaveStateDir);
+
+        /// <summary>One folder of the memstick behind a save row. AddSaveArgs carries no emulator, so
+        /// it is re-resolved through the public data manager.</summary>
+        private static string MemstickFolderFor(GameSaveBase save, Func<PpssppLayout, string> pick)
         {
             try
             {
@@ -377,13 +667,13 @@ namespace LbIntegrations.Ppsspp
                 var emu = string.IsNullOrEmpty(emuId) ? null : dm.GetEmulatorById(emuId);
                 var appPath = Safe(() => emu?.ApplicationPath);
                 if (PpssppPaths.IsPpssppExecutable(appPath))
-                    return PpssppPaths.Resolve(appPath).SaveDataDir;
+                    return pick(PpssppPaths.Resolve(appPath));
 
                 // No usable emulator: fall back to any PPSSPP the library knows.
                 var any = dm?.GetAllEmulators()?
                     .FirstOrDefault(e => PpssppPaths.IsPpssppExecutable(Safe(() => e.ApplicationPath)));
                 var anyPath = Safe(() => any?.ApplicationPath);
-                return anyPath == null ? null : PpssppPaths.Resolve(anyPath).SaveDataDir;
+                return anyPath == null ? null : pick(PpssppPaths.Resolve(anyPath));
             }
             catch (Exception ex) { Log.Warn("could not resolve the memory stick", ex); return null; }
         }

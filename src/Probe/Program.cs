@@ -28,7 +28,7 @@ namespace LbIntegrations.Probe
         {
             if (args.Length == 0 || args[0].StartsWith("-"))
             {
-                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>]");
+                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>]");
                 return 2;
             }
 
@@ -227,11 +227,20 @@ namespace LbIntegrations.Probe
                 if (!SaveUnitCheck.Run(plugin, saveDataDir, discId, expected, emuPath)) return 1;
             }
 
+            // The save-state assertion. Reads the real install; writes only in a temp sandbox.
+            bool states = Has(args, "--states");
+            if (states)
+            {
+                string rom = Arg(args, "--rom");
+                if (!StateCheck.Run(plugin, emuPath, rom)) return 1;
+            }
+
             Console.WriteLine();
             var wroteTo = new List<string>();
             if (Has(args, "--inject-ra-test")) wroteTo.Add("the emulator's RetroAchievements configuration");
             if (saveDataDir != null && emuPath != null) wroteTo.Add("SAVEDATA (the restore round-trip)");
             if (unit != null && Has(args, "--round-trip")) wroteTo.Add("the emulator's save folder (the restore round-trip)");
+            if (states) wroteTo.Add("a throwaway PPSSPP in the temp folder (states)");
             Console.WriteLine(wroteTo.Count == 0
                 ? "done. Nothing was written."
                 : "done. This run WROTE to: " + string.Join(", ", wroteTo) + ".");

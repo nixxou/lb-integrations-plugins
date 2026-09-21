@@ -13,6 +13,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- IGame has a member typed from System.Drawing, and DispatchProxy materialises EVERY method of
+         an interface before it can build a proxy - so StubGame cannot be created without this.
+         The plugin itself never touches it. -->
+    <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- The probe DOES need the SDK beside it: it is the host here, so it must provide the types
          the plugin resolves against. This is the one project where Private=true is correct. -->
     <Reference Include="Unbroken.LaunchBox.Plugins">

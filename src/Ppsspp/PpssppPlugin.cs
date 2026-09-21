@@ -456,14 +456,6 @@ namespace LbIntegrations.Ppsspp
             return new PrepareForLaunchResponse(success: true);
         }
 
-        // ── save management: not yet ─────────────────────────────────────────
-
-        // PSP saves are directories under <memstick>\PSP\SAVEDATA\<DISC_ID><suffix>\, titled by
-        // PARAM.SFO and illustrated by ICON0.PNG; save states are
-        // <memstick>\PSP\PPSSPP_STATE\<DISC_ID>_<DISC_VERSION>_<slot>.ppst with a sibling .jpg. All of
-        // that is well understood, but none of it is implemented, and reporting support without the
-        // implementation would show the user an empty saves page.
-
         // ── paths ────────────────────────────────────────────────────────────
 
         /// <summary>The LaunchBox installation root. LaunchBox's own plugins read NamingHelper.RootFolder

@@ -50,6 +50,11 @@ namespace LbIntegrations.Ppsspp
 
     internal static class PpssppPaths
     {
+        /// <summary>The state folder's name under PSP\. Named here because two files need it:
+        /// the layout below, and the predicate that decides whether a loose file sitting in it
+        /// could be a save of its own.</summary>
+        public const string SaveStateDirName = "PPSSPP_STATE";
+
         /// <summary>Executable names PPSSPP actually ships, most likely first. The order matters:
         /// ppsspp.org's zip carries BOTH the 32- and 64-bit builds, and we want the 64-bit one.</summary>
         public static readonly string[] ExecutableNames =
@@ -161,7 +166,7 @@ namespace LbIntegrations.Ppsspp
             layout.ConfigFile = Path.Combine(layout.SystemDir, "ppsspp.ini");
             layout.RetroAchievementsTokenFile = Path.Combine(layout.SystemDir, "ppsspp_retroachievements.dat");
             layout.SaveDataDir = Path.Combine(layout.PspDir, "SAVEDATA");
-            layout.SaveStateDir = Path.Combine(layout.PspDir, "PPSSPP_STATE");
+            layout.SaveStateDir = Path.Combine(layout.PspDir, SaveStateDirName);
             return layout;
         }
 
