@@ -242,6 +242,12 @@ namespace LbIntegrations.Probe
                 if (!FlycastCheck.Run(plugin)) return 1;
             }
 
+            // The same plugin against a real installation: --flycast-real --emu <exe> --rom <rom>.
+            if (Has(args, "--flycast-real"))
+            {
+                if (!FlycastCheck.AgainstReal(plugin, emuPath, Arg(args, "--rom"))) return 1;
+            }
+
             Console.WriteLine();
             var wroteTo = new List<string>();
             if (Has(args, "--inject-ra-test")) wroteTo.Add("the emulator's RetroAchievements configuration");

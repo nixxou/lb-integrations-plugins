@@ -320,6 +320,72 @@ namespace LbIntegrations.Probe
 
         // ── the negative case ────────────────────────────────────────────────
 
+        // ── against a REAL install ─────────────────────────────────
+
+        /// <summary>The confrontation the forged fixture cannot give: a real Flycast, a real game,
+        /// and the VMU FLYCAST ITSELF named. Everything else in this file proves the plugin agrees
+        /// with our reading of the source; this proves the reading.
+        ///
+        /// The test is simply: Flycast wrote "&lt;something&gt;_vmu_save_A1.bin", we read a disc id
+        /// out of the ROM, and the two must be the same string. Read-only.</summary>
+        public static bool AgainstReal(EmulatorPlugin plugin, string exe, string romPath)
+        {
+            Console.WriteLine();
+            Console.WriteLine("-- flycast, against a REAL install  [read only] " + new string('-', 16));
+            Console.WriteLine("  emulator : " + exe);
+            Console.WriteLine("  rom      : " + romPath);
+
+            if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
+            { Console.WriteLine("  no emulator there"); return false; }
+            if (string.IsNullOrWhiteSpace(romPath) || !File.Exists(romPath))
+            { Console.WriteLine("  no rom there"); return false; }
+
+            var data = Path.Combine(Path.GetDirectoryName(exe), "data");
+            var written = Directory.Exists(data)
+                ? Directory.GetFiles(data, "*_vmu_save_A1.bin").Select(Path.GetFileName).ToList()
+                : new List<string>();
+
+            if (written.Count == 0)
+            {
+                Console.WriteLine("  Flycast has written no per-game VMU yet - play the game once first");
+                return false;
+            }
+            Console.WriteLine("  Flycast wrote : " + string.Join(", ", written));
+
+            var emulator = new StubEmulator { Title = "Flycast", ApplicationPath = exe };
+            var game = StubGame.Create(Guid.NewGuid().ToString(), "Game", romPath, emulator.Id);
+            var response = plugin.GetSaves(new GetSavesArgs { Emulator = emulator, Games = new[] { game } });
+            if (response is not { WasSuccess: true })
+            { Console.WriteLine("  GetSaves failed: " + (response?.Message ?? "no reason given")); return false; }
+
+            var all = (response.FoundSaves ?? (IReadOnlyCollection<GameSaveBase>)Array.Empty<GameSaveBase>()).ToList();
+            foreach (var row in all)
+                Console.WriteLine("    " + (row is GameSaveState st ? "slot " + st.Slot + "  " : "          ")
+                                  + Path.GetFileName(row.FileLocation) + "   group=" + row.SaveGroupId);
+
+            var vmu = all.FirstOrDefault(r => (r.SaveGroupId ?? "")
+                        .StartsWith("flycast-vmu:", StringComparison.OrdinalIgnoreCase));
+            if (vmu == null)
+            {
+                Console.WriteLine("  FAIL - no VMU row: the disc id we read does not match what Flycast named");
+                return false;
+            }
+
+            var ours = Path.GetFileName(vmu.FileLocation);
+            bool match = written.Contains(ours, StringComparer.Ordinal);
+            Console.WriteLine("  we matched   : " + ours);
+            Console.WriteLine("  the disc id we read of the ROM is the one Flycast used   " + (match ? "OK" : "FAIL"));
+
+            bool refusedMachine = plugin.IsSecondarySaveFile(Path.Combine(data, "dc_nvmem.bin"));
+            Console.WriteLine("  the console's own NVRAM is refused as a game save   " + (refusedMachine ? "OK" : "FAIL"));
+
+            bool ok = match && refusedMachine;
+            Console.WriteLine();
+            Console.WriteLine("  " + (ok ? "OK - our reading of Flycast is the emulator's own behaviour"
+                                        : "NOT OK - see above"));
+            return ok;
+        }
+
         // ── the startup sweep ─────────────────────────────────────
 
         /// <summary>The host announcing that it is up must complete the entries WITHOUT being asked
