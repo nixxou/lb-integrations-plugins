@@ -47,6 +47,9 @@ namespace LbIntegrations.Xenia
 
         // ── claiming ─────────────────────────────────────────────────────────
 
+        /// <summary>The last set we reported claiming, so the log says it once.</summary>
+        private static string _lastClaimed;
+
         public override IEnumerable<IEmulator> GetApplicableEmulators(IEnumerable<IEmulator> emulators)
         {
             var claimed = new List<IEmulator>();
@@ -71,7 +74,15 @@ namespace LbIntegrations.Xenia
                 }
                 catch { }
             }
-            Log.Info("GetApplicableEmulators: claimed " + claimed.Count + " emulator(s)");
+            // The host asks this constantly - twenty-three times in one second, measured - and the
+            // answer almost never changes. Said once, then only when it does.
+            var signature = string.Join("|", claimed.Select(e => { try { return e.Title; } catch { return "?"; } })
+                                                    .OrderBy(t => t));
+            if (signature != _lastClaimed)
+            {
+                _lastClaimed = signature;
+                Log.Info("GetApplicableEmulators: claimed " + claimed.Count + " emulator(s)");
+            }
             return claimed;
         }
 
@@ -79,7 +90,7 @@ namespace LbIntegrations.Xenia
         {
             bool supported = string.Equals((platform ?? "").Trim(), Xbox360Platform,
                                            StringComparison.InvariantCultureIgnoreCase);
-            Log.Info("IsPlatformSupported(\"" + platform + "\") -> " + supported);
+            Log.Verbose("IsPlatformSupported(\"" + platform + "\") -> " + supported);
             return new EmulatorSupportResponse(supported, supported);
         }
 

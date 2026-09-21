@@ -58,6 +58,9 @@ namespace LbIntegrations.Ppsspp
 
         /// <summary>Which of the user's emulators this plugin speaks for. Matched on the executable
         /// file name, the same way LaunchBox's metadata database identifies PPSSPP ("PPSSPP*.exe").</summary>
+        /// <summary>The last set we reported claiming, so the log says it once.</summary>
+        private static string _lastClaimed;
+
         public override IEnumerable<IEmulator> GetApplicableEmulators(IEnumerable<IEmulator> emulators)
         {
             var claimed = new List<IEmulator>();
@@ -83,7 +86,15 @@ namespace LbIntegrations.Ppsspp
                 }
                 catch { }
             }
-            Log.Info("GetApplicableEmulators: claimed " + claimed.Count + " emulator(s)");
+            // The host asks this constantly - twenty-three times in one second, measured - and the
+            // answer almost never changes. Said once, then only when it does.
+            var signature = string.Join("|", claimed.Select(e => { try { return e.Title; } catch { return "?"; } })
+                                                    .OrderBy(t => t));
+            if (signature != _lastClaimed)
+            {
+                _lastClaimed = signature;
+                Log.Info("GetApplicableEmulators: claimed " + claimed.Count + " emulator(s)");
+            }
             return claimed;
         }
 
@@ -93,7 +104,7 @@ namespace LbIntegrations.Ppsspp
                                            StringComparison.InvariantCultureIgnoreCase);
             // Supported implies recommended here: PPSSPP is the reference PSP emulator, and the only
             // standalone one LaunchBox knows about.
-            Log.Info("IsPlatformSupported(\"" + platform + "\") -> " + supported);
+            Log.Verbose("IsPlatformSupported(\"" + platform + "\") -> " + supported);
             return new EmulatorSupportResponse(supported, supported);
         }
 

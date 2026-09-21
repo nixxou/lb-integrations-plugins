@@ -77,7 +77,7 @@ namespace LbIntegrations.Xenia
                     if (save != null) found.Add(save);
                 }
 
-                Log.Info("found " + found.Count + " save(s) under " + layout.ContentRoot);
+                Log.Verbose("found " + found.Count + " save(s) under " + layout.ContentRoot);
                 return new GetSavesResponse(found);
             }
             catch (Exception ex)
