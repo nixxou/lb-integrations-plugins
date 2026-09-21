@@ -36,6 +36,13 @@ namespace LbIntegrations.Xenia
         private static readonly string[] AssetRequired = { "xenia_canary", "windows" };
         private static readonly string[] AssetExcluded = { "linux", "appimage", "symbols", "pdb" };
 
+        // Traced because a plugin is a black box inside LaunchBox: the only way to tell "the host
+        // never asked us" from "we answered badly" is to see which members it actually calls.
+        public XeniaPlugin()
+        {
+            Log.Info("plugin constructed, assembly " + typeof(XeniaPlugin).Assembly.Location);
+        }
+
         public override string EmulatorName => "Xenia";
 
         // ── claiming ─────────────────────────────────────────────────────────
@@ -51,6 +58,7 @@ namespace LbIntegrations.Xenia
                 try { path = emu.ApplicationPath; } catch { continue; }
                 if (XeniaPaths.IsXeniaExecutable(path)) claimed.Add(emu);
             }
+            Log.Info("GetApplicableEmulators: claimed " + claimed.Count + " emulator(s)");
             return claimed;
         }
 
@@ -58,6 +66,7 @@ namespace LbIntegrations.Xenia
         {
             bool supported = string.Equals((platform ?? "").Trim(), Xbox360Platform,
                                            StringComparison.InvariantCultureIgnoreCase);
+            Log.Info("IsPlatformSupported(\"" + platform + "\") -> " + supported);
             return new EmulatorSupportResponse(supported, supported);
         }
 
@@ -88,6 +97,7 @@ namespace LbIntegrations.Xenia
         /// GitHub answers by publication date.</summary>
         public override IEnumerable<EmulatorControllerVersion> GetInstallableVersions()
         {
+            Log.Info("GetInstallableVersions: asked");
             var release = GitHubReleases.GetLatest(CanaryRepo);
             if (release == null) { Log.Warn("no release information for " + CanaryRepo); return null; }
 

@@ -45,6 +45,13 @@ namespace LbIntegrations.Ppsspp
         private static readonly string[] AssetRequiredArm64 = { "Windows", "ARM64", ".zip" };
         private static readonly string[] AssetExcluded = { "debug", "symbols", "VR" };
 
+        // Traced because a plugin is a black box inside LaunchBox: the only way to tell "the host
+        // never asked us" from "we answered badly" is to see which members it actually calls.
+        public PpssppPlugin()
+        {
+            Log.Info("plugin constructed, assembly " + typeof(PpssppPlugin).Assembly.Location);
+        }
+
         public override string EmulatorName => "PPSSPP";
 
         // ── claiming the emulator ────────────────────────────────────────────
@@ -62,6 +69,7 @@ namespace LbIntegrations.Ppsspp
                 try { path = emu.ApplicationPath; } catch { continue; }
                 if (PpssppPaths.IsPpssppExecutable(path)) claimed.Add(emu);
             }
+            Log.Info("GetApplicableEmulators: claimed " + claimed.Count + " emulator(s)");
             return claimed;
         }
 
@@ -71,6 +79,7 @@ namespace LbIntegrations.Ppsspp
                                            StringComparison.InvariantCultureIgnoreCase);
             // Supported implies recommended here: PPSSPP is the reference PSP emulator, and the only
             // standalone one LaunchBox knows about.
+            Log.Info("IsPlatformSupported(\"" + platform + "\") -> " + supported);
             return new EmulatorSupportResponse(supported, supported);
         }
 
@@ -114,6 +123,7 @@ namespace LbIntegrations.Ppsspp
 
         public override IEnumerable<EmulatorControllerVersion> GetInstallableVersions()
         {
+            Log.Info("GetInstallableVersions: asked");
             var release = GitHubReleases.GetLatest(Repo);
             if (release == null) { Log.Warn("no release information for " + Repo); return null; }
 
