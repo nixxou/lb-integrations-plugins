@@ -28,7 +28,7 @@ namespace LbIntegrations.Probe
         {
             if (args.Length == 0 || args[0].StartsWith("-"))
             {
-                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>]");
+                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast]");
                 return 2;
             }
 
@@ -235,12 +235,20 @@ namespace LbIntegrations.Probe
                 if (!StateCheck.Run(plugin, emuPath, rom)) return 1;
             }
 
+            // The Flycast assertion. Builds its own forged install in the temp folder and cleans up.
+            bool flycast = Has(args, "--flycast");
+            if (flycast)
+            {
+                if (!FlycastCheck.Run(plugin)) return 1;
+            }
+
             Console.WriteLine();
             var wroteTo = new List<string>();
             if (Has(args, "--inject-ra-test")) wroteTo.Add("the emulator's RetroAchievements configuration");
             if (saveDataDir != null && emuPath != null) wroteTo.Add("SAVEDATA (the restore round-trip)");
             if (unit != null && Has(args, "--round-trip")) wroteTo.Add("the emulator's save folder (the restore round-trip)");
             if (states) wroteTo.Add("a throwaway PPSSPP in the temp folder (states)");
+            if (flycast) wroteTo.Add("a forged Flycast in the temp folder");
             Console.WriteLine(wroteTo.Count == 0
                 ? "done. Nothing was written."
                 : "done. This run WROTE to: " + string.Join(", ", wroteTo) + ".");

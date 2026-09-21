@@ -12,6 +12,7 @@ is published by Unbroken Software), so these are installed by hand.
 |---|---|---|---|
 | `src/Ppsspp` | PPSSPP | Sony PSP | download / update, BIOS, RetroAchievements, launch, save management |
 | `src/Xenia` | Xenia (canary) | Microsoft Xbox 360 | download / update, launch fixes, save management |
+| `src/Flycast` | Flycast | Sega Dreamcast, Sega Naomi, Sega Naomi 2, Sammy Atomiswave | download / update, BIOS, RetroAchievements, launch, save management |
 
 ## Building
 
@@ -36,9 +37,16 @@ prefers it automatically. See `THIRD-PARTY.md` for what is folded in and under w
 .\deploy-dev.ps1 -LbRoot 'G:\LB'
 ```
 
-Or by hand: copy the DLL to `<LaunchBox>\Plugins\PPSSPP Integration\Ppsspp.dll`. Use `Plugins\`, not
-`System\Plugins\` — the latter belongs to LaunchBox's own plugin manager, which will not know about
-this file.
+Or by hand. LaunchBox 14 reads three plugin roots and the choice matters:
+
+| root | for | our plugins |
+|---|---|---|
+| `System\Plugins\` | Unbroken's own, `SourceKind: "LaunchBox"` | **no** - the core refuses a manifest whose declared origin does not match the root, with *"The plugin manifest does not match its managed install location"* |
+| `Local\Plugins\` | third-party, managed, `SourceKind: "Local"` | **yes**, with a `manifest.json` beside the DLL |
+| `Plugins\` | the legacy root, no manifest needed | works, but is not the managed location |
+
+So: `<LaunchBox>\Local\Plugins\<Name>\<Plugin>.dll` plus its `manifest.json`. Before LaunchBox 14,
+`Plugins\` is the only option.
 
 Plugins are loaded once at start-up, so restart the frontend. Under LiteBox, tick the plugin in
 **Options ▸ Plugins** the first time; it is not auto-enabled, deliberately, because the name that

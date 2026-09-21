@@ -22,6 +22,24 @@ one non-framework entry — `Unbroken.LaunchBox.Plugins` — so there is nothing
 its partition-base probing order are sigil's work; the C# is ours. MPL-2.0 is file-scoped copyleft:
 that one file stays MPL and its source is in this repository, which is what the licence asks.
 
+## Merged into `Flycast.dll`
+
+| Component | Licence | Used for |
+|---|---|---|
+| [CHDSharp](https://github.com/purelogiccode/CHDSharp) | MIT | reading `.chd` disc images |
+| VendoredLZMA (LZMA SDK) | public domain | a CHD codec |
+| VendoredZLib | zlib | a CHD codec |
+| VendoredZSTD | MIT | a CHD codec |
+| **VendoredFlac** | **LGPL-2.1** | a CHD codec - see below |
+| Microsoft.Extensions.Logging.Abstractions | MIT | a CHDSharp dependency |
+| Microsoft.Extensions.DependencyInjection.Abstractions | MIT | idem |
+| System.Diagnostics.DiagnosticSource | MIT | idem |
+| System.IO.Hashing | MIT | idem |
+
+Dreamcast discs are distributed as `.chd` as often as `.gdi`, and the disc id lives inside the
+image, so reading CHD is not optional here. Flycast's release archive is a plain `.zip`, so unlike
+the Xenia plugin this one needs no SharpCompress - `System.IO.Compression` reads it.
+
 ## Merged into `Ppsspp.dll`
 
 | Component | Licence | Used for |
@@ -53,6 +71,7 @@ Concretely, to relink with a different FLAC:
 ```
 dotnet tool restore                      # pins ILRepack, see dotnet-tools.json
 dotnet build src\Ppsspp\Ppsspp.csproj -c Release
+dotnet build src\Flycast\Flycast.csproj -c Release
 ```
 
 The merge is the `MergePlugin` target at the end of `src\Ppsspp\Ppsspp.csproj`. Replace
