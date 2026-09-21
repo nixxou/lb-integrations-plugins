@@ -256,7 +256,7 @@ namespace LbIntegrations.Flycast
                     return new EmulatorInstallResponse(
                         "Flycast was installed to " + targetDir + ", but no emulator entry was requested.");
 
-                var created = CreateEmulator(exe, label);
+                var created = EnsureEmulator(exe, label);
                 if (created == null)
                     return new EmulatorInstallResponse(
                         "Flycast was installed to " + targetDir
@@ -275,31 +275,88 @@ namespace LbIntegrations.Flycast
             }
         }
 
-        /// <summary>Create the LaunchBox emulator entry, with every platform Flycast covers attached.
-        /// The Dreamcast is the default; the arcade platforms are added so a user importing Naomi ROMs
-        /// finds the emulator already associated.</summary>
-        private static IEmulator CreateEmulator(string exePath, string versionLabel)
+        /// <summary>The LaunchBox emulator entry for this installation, created if it is not there and
+        /// REUSED if it is.
+        ///
+        /// Reuse is not a refinement, it is a bug fix. The first version called AddNewEmulator
+        /// unconditionally, so pressing Download twice produced two Flycast entries pointing at the
+        /// same executable, each with its own four platforms - measured in the plugin's own log,
+        /// "created emulator entry" twice a minute apart. A second entry is worse than useless: the
+        /// user's games are assigned to one of them and the other quietly shadows it in every list.
+        ///
+        /// Platforms are added only where they are MISSING, for the same reason. An entry that
+        /// already carries Sega Naomi must not end up carrying it twice.</summary>
+        private static IEmulator EnsureEmulator(string exePath, string versionLabel)
         {
             var dm = PluginHelper.DataManager;
             if (dm == null) return null;
 
-            var emu = dm.AddNewEmulator();
-            emu.Title = "Flycast";
-            emu.ApplicationPath = MakeRelativeToLaunchBox(exePath);
-            emu.CommandLine = FlycastDefaults.CommandLine;
-            emu.DefaultPlatform = FlycastPlatforms.Dreamcast;
+            var full = Safe(() => Path.GetFullPath(exePath));
+            var existing = FindByExecutable(dm, full);
+            var emu = existing ?? dm.AddNewEmulator();
+            if (emu == null) return null;
 
+            if (existing == null)
+            {
+                emu.Title = "Flycast";
+                emu.ApplicationPath = MakeRelativeToLaunchBox(exePath);
+                emu.CommandLine = FlycastDefaults.CommandLine;
+                emu.DefaultPlatform = FlycastPlatforms.Dreamcast;
+            }
+
+            // Only what is missing. A name is "present" whatever its case and whatever spacing the
+            // grid left around it; a blank row belongs to no platform and is ignored here, because
+            // this path runs when WE are installing, not while someone is typing.
+            var have = new HashSet<string>(
+                (emu.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>())
+                    .Select(p => Safe(() => p.Platform) ?? "")
+                    .Where(n => n.Trim().Length > 0)
+                    .Select(n => n.Trim()),
+                StringComparer.InvariantCultureIgnoreCase);
+
+            bool hadAny = have.Count > 0;
+            var added = new List<string>();
             foreach (var name in FlycastPlatforms.All)
             {
+                if (have.Contains(name)) continue;
                 var platform = emu.AddNewEmulatorPlatform();
+                if (platform == null) continue;
                 platform.Platform = name;
-                platform.IsDefault = string.Equals(name, FlycastPlatforms.Dreamcast, StringComparison.Ordinal);
+                // Only claim the default when nothing already held one.
+                platform.IsDefault = !hadAny
+                                     && string.Equals(name, FlycastPlatforms.Dreamcast, StringComparison.Ordinal);
+                added.Add(name);
             }
 
             try { dm.Save(false); } catch (Exception ex) { Log.Warn("data manager save failed", ex); }
-            Log.Info("created emulator entry \"Flycast\""
-                     + (versionLabel != null ? " (" + versionLabel + ")" : "") + " -> " + emu.ApplicationPath);
+
+            Log.Info((existing != null ? "reused" : "created") + " emulator entry \"" + Safe(() => emu.Title) + "\""
+                     + (versionLabel != null ? " (" + versionLabel + ")" : "")
+                     + " -> " + Safe(() => emu.ApplicationPath)
+                     + (added.Count > 0 ? "; added " + added.Count + " platform(s): " + string.Join(", ", added)
+                                        : "; platforms already complete"));
             return emu;
+        }
+
+        /// <summary>An emulator already pointing at this executable, or null. Compared on the RESOLVED
+        /// path: LaunchBox stores it relative to its own folder, and two entries can spell the same
+        /// file differently.</summary>
+        private static IEmulator FindByExecutable(IDataManager dm, string fullExePath)
+        {
+            if (string.IsNullOrWhiteSpace(fullExePath)) return null;
+            try
+            {
+                foreach (var candidate in dm.GetAllEmulators() ?? Array.Empty<IEmulator>())
+                {
+                    var raw = Safe(() => candidate?.ApplicationPath);
+                    if (string.IsNullOrWhiteSpace(raw)) continue;
+                    var resolved = Safe(() => Path.GetFullPath(ResolveFullPath(raw)));
+                    if (string.Equals(resolved, fullExePath, StringComparison.OrdinalIgnoreCase))
+                        return candidate;
+                }
+            }
+            catch (Exception ex) { Log.Warn("could not look for an existing emulator entry", ex); }
+            return null;
         }
 
         // ── BIOS ─────────────────────────────────────────────────────────────
