@@ -48,9 +48,58 @@ namespace LbIntegrations.Flycast
 
         // Traced because a plugin is a black box inside LaunchBox: the only way to tell "the host
         // never asked us" from "we answered badly" is to see which members it actually calls.
+        /// <summary>The last set of emulators we reported claiming, so the log says it once.</summary>
+        private static string _lastClaimed;
+
         public FlycastPlugin()
         {
             Log.Info("plugin constructed, assembly " + typeof(FlycastPlugin).Assembly.Location);
+
+            // As early as possible: the patch only sees connections opened AFTER it is installed, and
+            // LaunchBox reads its metadata the moment a window asks for it.
+            LbipRowInjection.Install("com.nixxou.lbip.flycast", MetadataRows());
+        }
+
+        /// <summary>What LaunchBox's emulator metadata should say about Flycast, published through a
+        /// side database rather than written into theirs - see LbipSideDb.
+        ///
+        /// Every value here is one this plugin already answers elsewhere: the platforms are
+        /// FlycastPlatforms, the recommendation matches IsPlatformSupported, the required BIOS matches
+        /// the one FlycastBios marks required, and the command line is FlycastDefaults. Deriving them
+        /// from the same facts is what stops the two drifting apart.</summary>
+        private static IEnumerable<LbipEmulatorRow> MetadataRows()
+        {
+            // Dreamcast discs, plus .elf for homebrew (core/emulator.cpp treats it as a special case).
+            const string discExtensions = ".chd; .gdi; .cdi; .cue";
+            // Naomi, Naomi 2 and Atomiswave romsets. NOT extracted - see AutoExtract below.
+            const string arcadeExtensions = ".zip; .7z; .lst; .bin; .dat";
+
+            yield return new LbipEmulatorRow
+            {
+                Name = "Flycast",
+                CommandLine = FlycastDefaults.CommandLine,
+                ApplicableFileExtensions = discExtensions + "; " + arcadeExtensions + "; .elf",
+                Url = "https://flycast.org/",
+                BinaryFileName = "flycast.exe",
+                // Crucial: the arcade ROMs ARE zips and Flycast reads them as such. Extracting one
+                // would hand it a folder it cannot load.
+                AutoExtract = false,
+                Platforms =
+                {
+                    new LbipPlatformRow { Platform = FlycastPlatforms.Dreamcast,
+                                          ApplicableFileExtensions = discExtensions,
+                                          Recommended = true },
+                    new LbipPlatformRow { Platform = FlycastPlatforms.Naomi,
+                                          ApplicableFileExtensions = arcadeExtensions,
+                                          RequiredBiosFile = "naomi.zip" },
+                    new LbipPlatformRow { Platform = FlycastPlatforms.Naomi2,
+                                          ApplicableFileExtensions = arcadeExtensions,
+                                          RequiredBiosFile = "naomi2.zip" },
+                    new LbipPlatformRow { Platform = FlycastPlatforms.Atomiswave,
+                                          ApplicableFileExtensions = arcadeExtensions,
+                                          RequiredBiosFile = "awbios.zip" },
+                },
+            };
         }
 
         public override string EmulatorName => "Flycast";
@@ -74,6 +123,15 @@ namespace LbIntegrations.Flycast
                     && eventType != SystemEventTypes.BigBoxStartupCompleted) return;
 
                 Log.Info("host event \"" + eventType + "\"");
+
+                // Try again to install the metadata patch. The constructor is the earliest moment,
+                // which is what we want, but it may be TOO early: the patch needs
+                // Microsoft.Data.Sqlite to be loaded already, and assemblies load on first use -
+                // measured, the probe constructs this plugin before anything has touched SQLite and
+                // the patch declines. Install is a no-op once it has succeeded, so retrying here
+                // costs nothing and removes the dependency on load order.
+                LbipRowInjection.Install("com.nixxou.lbip.flycast", MetadataRows());
+
                 FlycastAssociation.SweepAll();
             }
             catch (Exception ex) { Log.Warn("OnEventRaised", ex); }
@@ -100,7 +158,14 @@ namespace LbIntegrations.Flycast
                 // four; fill them in. In memory only - see FlycastAssociation.
                 FlycastAssociation.EnsurePlatforms(emu);
             }
-            Log.Info("GetApplicableEmulators: claimed " + claimed.Count + " emulator(s)");
+            // The host asks this constantly - six times in a row, measured - and the answer almost
+            // never changes. Said once, then only when it does.
+            var signature = string.Join("|", claimed.Select(e => Safe(() => e.Title)).OrderBy(t => t));
+            if (signature != _lastClaimed)
+            {
+                _lastClaimed = signature;
+                Log.Info("GetApplicableEmulators: claimed " + claimed.Count + " emulator(s)");
+            }
             return claimed;
         }
 
@@ -117,7 +182,7 @@ namespace LbIntegrations.Flycast
                 .Any(p => string.Equals(p, name, StringComparison.InvariantCultureIgnoreCase));
             bool recommended = string.Equals(name, FlycastPlatforms.Dreamcast,
                                              StringComparison.InvariantCultureIgnoreCase);
-            Log.Info("IsPlatformSupported(\"" + platform + "\") -> " + supported
+            Log.Verbose("IsPlatformSupported(\"" + platform + "\") -> " + supported
                      + (supported && !recommended ? " (supported, not recommended)" : ""));
             return new EmulatorSupportResponse(supported, recommended);
         }
@@ -158,7 +223,7 @@ namespace LbIntegrations.Flycast
 
         public override IEnumerable<EmulatorControllerVersion> GetInstallableVersions()
         {
-            Log.Info("GetInstallableVersions: asked");
+            Log.Verbose("GetInstallableVersions: asked");
             var release = GitHubReleases.GetLatest(Repo);
             if (release == null) { Log.Warn("no release information for " + Repo); return null; }
 
@@ -562,12 +627,12 @@ namespace LbIntegrations.Flycast
                 var dm = PluginHelper.DataManager;
                 var all = dm?.GetAllEmulators() ?? Array.Empty<IEmulator>();
                 var ours = all.Where(e => FlycastPaths.IsFlycastExecutable(Safe(() => e?.ApplicationPath))).ToList();
-                Log.Info("library " + when + ": " + ours.Count + " Flycast entry(ies)");
+                Log.Verbose("library " + when + ": " + ours.Count + " Flycast entry(ies)");
                 foreach (var e in ours)
                 {
                     var names = (Safe(() => e.GetAllEmulatorPlatforms()) ?? Array.Empty<IEmulatorPlatform>())
                                 .Select(p => Safe(() => p.Platform) + (Safe(() => p.IsDefault.ToString()) == "True" ? "*" : ""));
-                    Log.Info("   id=" + (Safe(() => e.Id) ?? "?") + " title=\"" + Safe(() => e.Title)
+                    Log.Verbose("   id=" + (Safe(() => e.Id) ?? "?") + " title=\"" + Safe(() => e.Title)
                              + "\" default=\"" + Safe(() => e.DefaultPlatform) + "\" platforms=["
                              + string.Join(", ", names) + "]");
                 }

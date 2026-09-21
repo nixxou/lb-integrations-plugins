@@ -28,7 +28,7 @@ namespace LbIntegrations.Probe
         {
             if (args.Length == 0 || args[0].StartsWith("-"))
             {
-                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast]");
+                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--rows]");
                 return 2;
             }
 
@@ -236,6 +236,12 @@ namespace LbIntegrations.Probe
             }
 
             // The Flycast assertion. Builds its own forged install in the temp folder and cleans up.
+            if (Has(args, "--rows"))
+            {
+                if (!RowInjectionCheck.Run(plugin)) return 1;
+                return 0;
+            }
+
             bool flycast = Has(args, "--flycast");
             if (flycast)
             {

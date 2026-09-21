@@ -17,6 +17,11 @@
          an interface before it can build a proxy - so StubGame cannot be created without this.
          The plugin itself never touches it. -->
     <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
+    <!-- The row injection runs inside somebody else's query, so it is confronted with a real
+         provider rather than asserted about. Here a PackageReference is exactly right and in the
+         plugin it would be exactly wrong: the probe is the host, and the plugin must patch whatever
+         copy its host already loaded. The version matches what LaunchBox 14 ships. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
   </ItemGroup>
 
   <ItemGroup>

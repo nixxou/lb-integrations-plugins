@@ -35,6 +35,15 @@
     <!-- Dreamcast discs are distributed as .chd as often as .gdi, and the disc id lives inside the
          image, so reading CHD is not optional here. Same library the PPSSPP plugin uses. -->
     <PackageReference Include="CHDSharp" Version="1.4.3" />
+    <!-- Flycast is absent from LaunchBox's emulator metadata, so the Add Emulator window has no
+         platforms to offer for it. LbipSqlUnion patches the SQLite reads to union in a side database
+         of ours rather than writing into LaunchBox's own. Harmony merges and internalizes cleanly
+         HERE - measured: it fails only when the merged assembly is a process ENTRY POINT, because
+         its module initializer then runs before System.Runtime resolves. Loaded as a plugin into a
+         running host, which is our case, it patches normally.
+         Version 2.4.2 matches what ExtendDB ships, so HarmonySharedState (found by module name
+         across assemblies) is shared and the two coordinate. -->
+    <PackageReference Include="Lib.Harmony" Version="2.4.2" />
   </ItemGroup>
 
   <!-- Fold every dependency INTO Flycast.dll, internalized.
