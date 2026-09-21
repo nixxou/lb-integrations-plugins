@@ -1,0 +1,19 @@
+{
+  "SchemaVersion": 1,
+  "PluginId": "9d2eed8a-4647-46b4-8495-ca776ce47036",
+  "UserId": 0,
+  "Name": "Flycast Integration",
+  "Developer": "nixxou",
+  "Description": "Download, update, BIOS checks, RetroAchievements and save management for the Flycast emulator (Sega Dreamcast, Naomi, Naomi 2, Atomiswave).",
+  "Credits": "Many thanks to the developers of Flycast!",
+  "OperatingSystemFamily": "Windows",
+  "InstalledVersion": "1.0",
+  "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
+  "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
+  "HomePageUrl": "https://flycast.org/",
+  "TipJarUrl": "",
+  "SourceKind": "Local",
+  "Tags": [
+    "5aae585f-ffc5-42bc-9f95-e5e190ef99e2"
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "SchemaVersion": 1,
+  "PluginId": "8d266d9f-aa30-4036-9cf0-cf8398840658",
+  "UserId": 0,
+  "Name": "Xenia Integration",
+  "Developer": "nixxou",
+  "Description": "Download, update and save management for the Xenia Canary emulator (Microsoft Xbox 360).",
+  "Credits": "Many thanks to the developers of Xenia!",
+  "OperatingSystemFamily": "Windows",
+  "InstalledVersion": "1.0",
+  "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
+  "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
+  "HomePageUrl": "https://xenia.jp/",
+  "TipJarUrl": "",
+  "SourceKind": "Local",
+  "Tags": [
+    "5aae585f-ffc5-42bc-9f95-e5e190ef99e2"
+  ]
+}

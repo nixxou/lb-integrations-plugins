@@ -1,4 +1,4 @@
-# Build a plugin and drop it into a LaunchBox / LiteBox install.
+﻿# Build a plugin and drop it into a LaunchBox / LiteBox install.
 #
 # The deployed file is verified BY HASH, not by "Copy-Item didn't throw": a copy onto a file held
 # open by a running host silently leaves the old bytes in place, and a deploy script that reports
@@ -18,7 +18,7 @@ param(
     # The LaunchBox install to deploy into. G:\LB1326 is the LaunchBox 14 test install.
     [string] $LbRoot = 'G:\LB1326',
 
-    # Folder name under <LbRoot>\Plugins. Deliberately NOT "<name> LaunchBox Integration": that
+    # Folder name under <LbRoot>\Local\Plugins. Deliberately NOT "<name> LaunchBox Integration": that
     # wording makes LiteBox treat the plugin as LaunchBox-owned and enable it implicitly, and it
     # impersonates Unbroken's naming next to their real plugins.
     [string] $FolderName,
@@ -55,9 +55,27 @@ if (Test-Path $merged) {
     throw "Build produced no $Plugin.dll under $projectDirin\$Configuration"
 }
 
-$targetDir = Join-Path $LbRoot "Plugins\$FolderName"
+# Local\Plugins, which is the root LaunchBox 14 manages, and the manifest goes WITH the DLL.
+#
+# The legacy Plugins\ root takes a bare DLL and is where this script used to put one. LaunchBox 14
+# then loads nothing at all and says nothing about it - measured: a Xenia plugin sat there for a day
+# with no manifest, never ran, wrote no log line, and simply had no install option in the Add
+# Emulator window. A manifest is not optional in the managed root, and its SourceKind must match the
+# root it sits in or the core refuses it.
+$targetDir = Join-Path $LbRoot "Local\Plugins\$FolderName"
 $target = Join-Path $targetDir "$Plugin.dll"
+$manifestSource = Join-Path $projectDir "manifest.json"
+$manifestTarget = Join-Path $targetDir "manifest.json"
+if (-not (Test-Path $manifestSource)) {
+    throw "No manifest.json beside $Plugin.csproj. LaunchBox 14 will not load a plugin without one."
+}
 New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+
+# A copy left behind in the legacy root would load a SECOND, older copy of the same plugin.
+$legacy = Join-Path $LbRoot "Plugins\$FolderName"
+if (Test-Path (Join-Path $legacy "$Plugin.dll")) {
+    Write-Host "  ! $legacy still holds a $Plugin.dll - remove it, or two copies will load." -ForegroundColor Yellow
+}
 
 # Warn, don't act. Killing a host the user is testing with looks exactly like a crash.
 $hosts = Get-Process -ErrorAction SilentlyContinue |
@@ -79,7 +97,14 @@ if ($sourceHash -ne $targetHash) {
     throw "Deployed file does not match the build: $target still holds different bytes. Nothing was updated."
 }
 
+Copy-Item $manifestSource $manifestTarget -Force
+if ((Get-FileHash $manifestSource -Algorithm SHA256).Hash -ne
+    (Get-FileHash $manifestTarget -Algorithm SHA256).Hash) {
+    throw "The manifest was not written: $manifestTarget. The plugin would not load."
+}
+
 Write-Host "Deployed -> $target" -ForegroundColor Green
+Write-Host "           $manifestTarget"
 Write-Host "  sha256 $($targetHash.Substring(0,16))...  $((Get-Item $target).Length) bytes"
 Write-Host ""
 Write-Host "Plugins are loaded once at start-up. Restart the host, then look for:" -ForegroundColor Cyan

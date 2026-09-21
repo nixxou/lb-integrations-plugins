@@ -34,8 +34,14 @@ prefers it automatically. See `THIRD-PARTY.md` for what is folded in and under w
 
 ```
 .\deploy-dev.ps1                      # builds, copies into G:\LB1326, verifies by hash
+.\deploy-dev.ps1 -Plugin Xenia
 .\deploy-dev.ps1 -LbRoot 'G:\LB'
 ```
+
+It deploys the DLL **and** `src\<Plugin>\manifest.json` into `Local\Plugins\`, and verifies both by
+hash. The manifest is not optional there: LaunchBox 14 loads nothing without one and says nothing
+about it - a plugin can sit in a plugin folder for a day, never run, write no log line, and simply
+have no install option in the Add Emulator window.
 
 Or by hand. LaunchBox 14 reads three plugin roots and the choice matters:
 
