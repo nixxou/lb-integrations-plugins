@@ -101,29 +101,42 @@ namespace LbIntegrations.Flycast
 
                 var existing = emu.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>();
 
-                // ANY row at all means hands off - including a BLANK one. That is not caution for its
-                // own sake, it is a measured defect: while the user adds a row in the Associated
-                // Platforms grid, the row exists before its name is committed to the object. Reading
-                // the list then sees one empty name, concludes "no platforms", and adds all four
-                // beside the one being typed - which is how a second Sega Dreamcast appeared.
-                //
-                // A blank row means someone is editing. Completing an entry is only ever helpful when
-                // there is nothing there to disturb.
-                if (existing.Length > 0)
+                // A row with no name yet means someone is typing in the grid. Adding anything beside
+                // it produced a duplicate Sega Dreamcast once already; wait until they are done.
+                if (existing.Any(p => string.IsNullOrWhiteSpace(Safe(() => p.Platform))))
                 {
-                    // The id is logged too: the Add Emulator window appears to hand us an emulator
-                    // object that is NOT the one we created during the install, and only the ids can
-                    // settle that.
-                    Log.Info("\"" + Safe(() => emu.Title) + "\" (id=" + (Safe(() => emu.Id) ?? "?")
-                             + ") already has " + existing.Length + " platform row(s) ["
-                             + string.Join(", ", existing.Select(x => { try { return x.Platform; } catch { return "?"; } }))
-                             + "] - leaving it alone");
+                    Log.Info("\"" + Safe(() => emu.Title) + "\" has a row being edited - leaving it alone");
                     return;
+                }
+
+                var mine = new HashSet<string>(FlycastPlatforms.All, StringComparer.InvariantCultureIgnoreCase);
+                var have = new HashSet<string>(
+                    existing.Select(p => (Safe(() => p.Platform) ?? "").Trim()).Where(n => n.Length > 0),
+                    StringComparer.InvariantCultureIgnoreCase);
+
+                // UNCHECK what is not ours, never remove it.
+                //
+                // When LaunchBox does not know an emulator it associates it with everything, every row
+                // marked "Default Emulator" - and that column means "this emulator is the DEFAULT for
+                // this platform", so Flycast ends up the default for the SNES and everything else. That
+                // is the mess. Clearing the flag fixes it and destroys nothing: the association stays,
+                // the user keeps whatever they set up, and a wrong guess on our side costs one tick
+                // rather than a row they cannot get back.
+                var unchecked_ = new List<string>();
+                foreach (var row in existing)
+                {
+                    var name = (Safe(() => row.Platform) ?? "").Trim();
+                    if (name.Length == 0 || mine.Contains(name)) continue;
+                    bool isDefault = false;
+                    try { isDefault = row.IsDefault; } catch { }
+                    if (!isDefault) continue;
+                    try { row.IsDefault = false; unchecked_.Add(name); } catch { }
                 }
 
                 var added = new List<string>();
                 foreach (var name in FlycastPlatforms.All)
                 {
+                    if (have.Contains(name)) continue;
                     var platform = emu.AddNewEmulatorPlatform();
                     if (platform == null) continue;
                     platform.Platform = name;
@@ -132,7 +145,16 @@ namespace LbIntegrations.Flycast
                     added.Add(name);
                 }
 
+                if (unchecked_.Count > 0)
+                    Log.Info("\"" + Safe(() => emu.Title) + "\": cleared \"default emulator\" on "
+                             + unchecked_.Count + " platform(s) Flycast does not run: "
+                             + string.Join(", ", unchecked_.Take(8))
+                             + (unchecked_.Count > 8 ? ", ..." : ""));
+
+                // The unchecking above already happened and is logged; nothing more to do when
+                // every platform we cover was already there.
                 if (added.Count == 0) return;
+
 
                 // A blank command line is worth filling once, for the same reason: it is a default the
                 // user never chose, not a decision.

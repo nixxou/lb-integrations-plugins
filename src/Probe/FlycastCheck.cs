@@ -59,6 +59,7 @@ namespace LbIntegrations.Probe
                 ok &= NoIdNoSave(plugin, exe, romDir);
                 ok &= PlatformsCompleted(plugin, exe);
                 ok &= ExistingRowsLeftAlone(plugin, exe);
+                ok &= ForeignPlatformsUnchecked(plugin, exe);
                 ok &= StartupSweep(plugin, exe);
 
                 Console.WriteLine();
@@ -386,6 +387,47 @@ namespace LbIntegrations.Probe
             return ok;
         }
 
+        /// <summary>When LaunchBox does not know an emulator it associates it with EVERYTHING, every
+        /// row ticked "Default Emulator" - which means Flycast becomes the default emulator for the
+        /// SNES, the NES and the rest. We clear that flag on the platforms Flycast cannot run.
+        ///
+        /// We do NOT remove those rows. A row the user set up by hand, under a name we do not know,
+        /// must survive a wrong guess on our side; a cleared tick costs them one click, a deleted row
+        /// costs them their configuration.</summary>
+        private static bool ForeignPlatformsUnchecked(EmulatorPlugin plugin, string exe)
+        {
+            Console.WriteLine();
+            var emu = new StubEmulator { Title = "Flycast (over-associated)", ApplicationPath = exe };
+            foreach (var name in new[] { "Super Nintendo Entertainment System", "Nintendo 64",
+                                         "Sega Dreamcast", "Sony Playstation" })
+            {
+                var row = emu.AddNewEmulatorPlatform();
+                row.Platform = name;
+                row.IsDefault = true;              // as LaunchBox leaves them
+            }
+
+            plugin.GetApplicableEmulators(new[] { emu });
+
+            var rows = emu.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>();
+            var byName = rows.ToDictionary(r => r.Platform, r => r.IsDefault);
+
+            bool nothingRemoved = rows.Length >= 4
+                && byName.ContainsKey("Super Nintendo Entertainment System")
+                && byName.ContainsKey("Nintendo 64") && byName.ContainsKey("Sony Playstation");
+            bool foreignCleared = byName["Super Nintendo Entertainment System"] == false
+                && byName["Nintendo 64"] == false && byName["Sony Playstation"] == false;
+            bool oursKept = byName.TryGetValue("Sega Dreamcast", out var dc) && dc;
+            bool oursCompleted = byName.ContainsKey("Sega Naomi") && byName.ContainsKey("Sega Naomi 2")
+                && byName.ContainsKey("Sammy Atomiswave");
+
+            Console.WriteLine("  rows : " + string.Join(", ", rows.Select(r => r.Platform + (r.IsDefault ? "*" : ""))));
+            Console.WriteLine("  nothing was removed                              " + (nothingRemoved ? "OK" : "FAIL"));
+            Console.WriteLine("  platforms Flycast cannot run are unchecked       " + (foreignCleared ? "OK" : "FAIL"));
+            Console.WriteLine("  a platform it does run keeps its tick            " + (oursKept ? "OK" : "FAIL"));
+            Console.WriteLine("  the ones it runs that were missing were added    " + (oursCompleted ? "OK" : "FAIL"));
+            return nothingRemoved && foreignCleared && oursKept && oursCompleted;
+        }
+
         // ── the startup sweep ─────────────────────────────────────
 
         /// <summary>The host announcing that it is up must complete the entries WITHOUT being asked
@@ -452,13 +494,14 @@ namespace LbIntegrations.Probe
             return ok && defaultOk && cmdOk;
         }
 
-        /// <summary>An entry that already has ANY platform row must be left completely alone.
+        /// <summary>An entry the user already shaped is COMPLETED, never rewritten - and an entry
+        /// with a row being typed is not touched at all.
         ///
-        /// This is the measured defect, not a hypothetical. While the user adds a row in the
-        /// Associated Platforms grid, the row exists before its name is committed to the object; a
-        /// check that only skipped the NAMES it recognised saw one empty name, concluded there were
-        /// no platforms, and added all four beside the one being typed. The user got two Sega
-        /// Dreamcast rows. So the rule is the blunt one: any row at all, hands off.</summary>
+        /// The blank-row case is the measured defect, not a hypothetical. While the user adds a row in
+        /// the Associated Platforms grid, the row exists before its name is committed to the object; a
+        /// check that only skipped the NAMES it recognised saw one empty name, concluded there were no
+        /// platforms, and added all four beside the one being typed. The user got two Sega Dreamcast
+        /// rows.</summary>
         private static bool ExistingRowsLeftAlone(EmulatorPlugin plugin, string exe)
         {
             Console.WriteLine();
@@ -478,12 +521,15 @@ namespace LbIntegrations.Probe
             plugin.GetApplicableEmulators(new[] { shaped });
 
             var after = shaped.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>();
-            bool untouched = after.Length == 1 && after[0].Platform == "Sega Naomi" && after[0].IsDefault;
+            var naomi = after.FirstOrDefault(p => p.Platform == "Sega Naomi");
+            bool keptTheirs = naomi != null && naomi.IsDefault;
+            bool completed = after.Length == 4;
             bool keptCommandLine = shaped.CommandLine == "-config window:fullscreen=no";
-            Console.WriteLine("  a filled row : " + string.Join(", ", after.Select(p => p.Platform)));
-            Console.WriteLine("  an entry the user shaped is left untouched   " + (untouched ? "OK" : "FAIL"));
+            Console.WriteLine("  a filled row : " + string.Join(", ", after.Select(p => p.Platform + (p.IsDefault ? "*" : ""))));
+            Console.WriteLine("  the platform they chose keeps its tick       " + (keptTheirs ? "OK" : "FAIL"));
+            Console.WriteLine("  the three Flycast also runs were added       " + (completed ? "OK" : "FAIL"));
             Console.WriteLine("  their command line is left untouched         " + (keptCommandLine ? "OK" : "FAIL"));
-            ok &= untouched && keptCommandLine;
+            ok &= keptTheirs && completed && keptCommandLine;
 
             // (b) THE bug: a row that exists but has no name yet, as the grid leaves it mid-edit
             var editing = new StubEmulator { Title = "Flycast (being edited)", ApplicationPath = exe };
