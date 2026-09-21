@@ -11,6 +11,7 @@ is published by Unbroken Software), so these are installed by hand.
 | Plugin | Emulator | Platform | Status |
 |---|---|---|---|
 | `src/Ppsspp` | PPSSPP | Sony PSP | download / update, BIOS, RetroAchievements, launch, save management |
+| `src/Xenia` | Xenia (canary) | Microsoft Xbox 360 | download / update, launch fixes, save management |
 
 ## Building
 
@@ -121,6 +122,49 @@ for every state, so a `.ppst`'s sibling `.jpg` thumbnail could not travel with i
 **Downloads come from GitHub.** ppsspp.org publishes a different set of Windows packages — a zip with
 both the 32- and 64-bit builds, plus an Inno installer and a paid Gold variant. This plugin installs
 the GitHub x64 zip and does not offer the installer, but it recognises an install made either way.
+
+## Notes on Xenia
+
+**Canary, not master.** `xenia-project/xenia` has been frozen since February 2026 and xenia.jp marks
+it inactive; `xenia-canary` ships almost daily. The plugin **claims** both (`xenia_canary.exe` and
+`xenia.exe`) and **reads saves from both** content layouts, but only **installs** canary.
+
+**There is no version to read.** Xenia has no Win32 version resource and no `--version` flag, and
+`--help` opens a modal dialog in a windowed app - never invoke it. What exists is a build string
+compiled into the binary (`canary_experimental@74c4e4a on Sep 21 2026`), which this plugin reads out
+of the file. Canary's "version" is a 7-character git SHA, so releases are ordered by publication
+date, never by tag.
+
+**A save is the `00000001` folder, not the title folder.** Under one title id sit `00000001` (saved
+games), `00000002` (downloadable content) and `000B0000` (title updates). Only the first is a save.
+This is also where Argosy stops, and matching it is what lets a save sync between the two.
+
+**Two content layouts, sometimes in the same install.** Canary keys content by profile before title
+(`content\<XUID>\<TITLEID>\<TYPE>\`); master does not (`content\<TITLEID>\<TYPE>\`). Canary
+migrates in place, so a real install can hold both at once - at the top of `content\`, a 16-hex name
+is a profile and an 8-hex name is a legacy title id.
+
+**The save's `.header` travels outside the fingerprint.** Display name, thumbnail and license mask
+live in a file one level above the save, which Argosy does not send. Including it would move the
+content hash and the two ends could never agree; leaving it behind would lose the name and the
+picture. It goes into LiteBox's reserved `.litebox-plugin` folder inside the backup, which is
+excluded from every hash and from the zip served to clients.
+
+**A restore merges, and never invents a profile.** Argosy deletes nothing on an Xbox 360 restore, so
+neither does this. And a save can only be restored into a profile that exists: constructing a XUID
+would produce a directory the emulator never reads, so with no profile the plugin says so instead.
+
+**Two launch defaults are corrected** on the command line, because Xenia regenerates its TOML on
+every start and exit so writing there is pointless: `--license_mask=1` (the default `0` boots many
+XBLA titles in trial mode and hides owned DLC - the most common Xenia support question) and
+`--discord=false`. Anything you set yourself is left alone.
+
+**No RetroAchievements.** Neither fork supports it. Canary has native Xbox 360 achievements written
+into the profile's `.gpd` files, which is unrelated machinery.
+
+**Title ids** are read from the content: STFS containers (`CON`/`LIVE`/`PIRS` - Games on Demand,
+XBLA, DLC), `.xex` files, extracted folders, and disc images through XDVDFS. `.zar` is not supported
+- it carries its magic in a footer and holds no metadata.
 
 ## License
 

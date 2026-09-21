@@ -1,0 +1,62 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <!-- net9 and not net10: a net9 assembly loads on the .NET 9 runtime (LaunchBox 13.27)
+         AND on .NET 10 (13.28+, 14), so one build covers every host. -->
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Platforms>AnyCPU;x64</Platforms>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>Xenia</AssemblyName>
+    <RootNamespace>LbIntegrations.Xenia</RootNamespace>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <!-- true so the CHD libraries land in bin\ for the merge step below. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- MSB3277: the vendored 13.27 SDK and a host's newer one differ in version; that is the
+         point of Private=false, so the warning is noise. -->
+    <MSBuildWarningsAsMessages>MSB3277</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Reference the SDK but DON'T copy it: the host loads the plugin into ITS assembly load
+         context and provides the SDK, so the types unify. Shipping our own copy beside the DLL
+         would give us a second, incompatible set of EmulatorPlugin/IEmulator types and the host
+         would never recognise the plugin. See vendor\README.md. -->
+    <Reference Include="Unbroken.LaunchBox.Plugins">
+      <HintPath>..\..\vendor\Unbroken.LaunchBox.Plugins.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SharpCompress" Version="0.41.0" />
+  </ItemGroup>
+
+  <!-- Fold every dependency INTO Ppsspp.dll, internalized.
+       Two reasons, both measured. A plugin folder is a shared namespace: the host resolves a
+       dependency by simple name across every plugin's folder, so two plugins shipping different
+       versions of the same library is a real hazard. After this step the assembly's reference table
+       holds exactly one non-framework entry, Unbroken.LaunchBox.Plugins - there is nothing left to
+       collide. And the plugin stays one file, which is what makes it obvious what to copy.
+       The SDK is NOT merged: Private=false keeps it out of bin\, and the host must provide it so
+       the interface types unify. -->
+  <Target Name="MergePlugin" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <PropertyGroup>
+      <MergedDir>$(OutDir)merged\</MergedDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <MergeInput Include="$(OutDir)$(AssemblyName).dll" />
+      <MergeInput Include="$(OutDir)*.dll" Exclude="$(OutDir)$(AssemblyName).dll" />
+      <!-- The trailing "." keeps a directory ending in \ from escaping the closing quote. -->
+      <MergeLib Include="@(ReferencePath->'%(RootDir)%(Directory).')" />
+    </ItemGroup>
+    <MakeDir Directories="$(MergedDir)" />
+    <Exec Command="dotnet ilrepack /out:&quot;$(MergedDir)$(AssemblyName).dll&quot; /internalize @(MergeLib->Distinct()->'/lib:&quot;%(Identity)&quot;', ' ') @(MergeInput->'&quot;%(FullPath)&quot;', ' ')"
+          WorkingDirectory="$(MSBuildProjectDirectory)" StandardOutputImportance="low" />
+    <Message Importance="high" Text="  merged -> $(MergedDir)$(AssemblyName).dll" />
+  </Target>
+
+</Project>

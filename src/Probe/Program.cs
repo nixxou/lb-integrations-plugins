@@ -69,7 +69,7 @@ namespace LbIntegrations.Probe
             if (emuPath == null) Console.WriteLine("  skipped (pass --emu <emulator.exe>)");
             else
             {
-                var mine = new StubEmulator { Title = "PPSSPP", ApplicationPath = emuPath };
+                var mine = new StubEmulator { Title = Safe(() => plugin.EmulatorName) ?? "ours", ApplicationPath = emuPath };
                 var other = new StubEmulator { Title = "Some other emulator", ApplicationPath = @"C:\emus\retroarch.exe" };
                 var claimed = Safe(() => plugin.GetApplicableEmulators(new IEmulator[] { mine, other }));
                 if (claimed == null) Console.WriteLine("  threw");
@@ -80,7 +80,7 @@ namespace LbIntegrations.Probe
                                       + string.Join(", ", list.Select(e => "\"" + e.Title + "\"")));
                     Console.WriteLine("  " + (list.Count == 1 && ReferenceEquals(list[0], mine)
                         ? "OK - claimed ours and refused the other"
-                        : "UNEXPECTED - should claim exactly the PPSSPP entry"));
+                        : "UNEXPECTED - should claim exactly its own entry"));
                 }
             }
 
@@ -122,6 +122,29 @@ namespace LbIntegrations.Probe
             else
                 foreach (var v in versions.ToList())
                     Console.WriteLine($"    {v.Label,-12} {v.Description}\n                 {v.Identifier}");
+
+            Section("PrepareEmulatorForLaunch");
+            if (emuPath == null) Console.WriteLine("  skipped (pass --emu <emulator.exe>)");
+            else
+            {
+                // What the host hands over right before the spawn. A plugin may rewrite the command
+                // line here; most leave it alone, and either is worth seeing.
+                var emu = new StubEmulator { Title = Safe(() => plugin.EmulatorName), ApplicationPath = emuPath };
+                const string launchCmd = "--fullscreen";
+                var prepared = Safe(() => plugin.PrepareEmulatorForLaunch(
+                    new PrepareForLaunchArgs(emu, null, launchCmd)));
+                if (prepared == null) Console.WriteLine("  threw");
+                else
+                {
+                    Console.WriteLine($"  WasSuccess={prepared.WasSuccess}");
+                    Console.WriteLine("  \"" + launchCmd + "\"");
+                    Console.WriteLine("    -> \"" + (prepared.NewCommandLine ?? launchCmd) + "\""
+                                      + (prepared.NewCommandLine == null ? "   (unchanged)" : "   (REWRITTEN)"));
+                    Console.WriteLine("  " + (prepared.WasSuccess
+                        ? "OK - a launch is never blocked here"
+                        : "UNEXPECTED - this must not fail a launch"));
+                }
+            }
 
             Section("NormalizeCommandLineForExecutable");
             if (emuPath == null) Console.WriteLine("  skipped (pass --emu <emulator.exe>)");
@@ -176,14 +199,26 @@ namespace LbIntegrations.Probe
             if (discIdRom != null)
             {
                 Section("disc id of " + Path.GetFileName(discIdRom));
-                var discIdType = asm.GetType("LbIntegrations.Ppsspp.PspDiscId");
+                var discIdType = asm.GetType("LbIntegrations.Ppsspp.PspDiscId")
+                                 ?? asm.GetType("LbIntegrations.Xenia.XeniaTitleId");
                 var of = discIdType?.GetMethod("Of", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
                 Console.WriteLine(of == null
                     ? "  this plugin exposes no PspDiscId"
                     : "  " + ((string)of.Invoke(null, new object[] { discIdRom }) ?? "(none)"));
             }
 
-            // The interop assertion. Writes only into a temp folder of its own.
+            // The generic interop assertion: hand the plugin a FileLocation and a SaveGroupId, exactly
+            // what LiteBox hands it, and check the shape and the hash of what comes back.
+            string unit = Arg(args, "--unit");
+            if (unit != null)
+            {
+                string groupId = Arg(args, "--group-id");
+                string expect = Arg(args, "--expect-hash");
+                bool roundTrip = Has(args, "--round-trip");
+                if (!UnitCheck.Run(plugin, unit, groupId, expect, emuPath, roundTrip)) return 1;
+            }
+
+            // The PPSSPP-shaped assertion. Writes only into a temp folder of its own.
             string saveDataDir = Arg(args, "--save-unit");
             if (saveDataDir != null)
             {
@@ -196,6 +231,7 @@ namespace LbIntegrations.Probe
             var wroteTo = new List<string>();
             if (Has(args, "--inject-ra-test")) wroteTo.Add("the emulator's RetroAchievements configuration");
             if (saveDataDir != null && emuPath != null) wroteTo.Add("SAVEDATA (the restore round-trip)");
+            if (unit != null && Has(args, "--round-trip")) wroteTo.Add("the emulator's save folder (the restore round-trip)");
             Console.WriteLine(wroteTo.Count == 0
                 ? "done. Nothing was written."
                 : "done. This run WROTE to: " + string.Join(", ", wroteTo) + ".");

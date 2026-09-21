@@ -9,6 +9,19 @@ dependency by simple name across every plugin's folder, so two plugins carrying 
 of the same library is a real hazard. After the merge the assembly's reference table holds exactly
 one non-framework entry — `Unbroken.LaunchBox.Plugins` — so there is nothing left to collide.
 
+## Merged into `Xenia.dll`
+
+| Component | Licence | Used for |
+|---|---|---|
+| [SharpCompress](https://github.com/adamhathcock/sharpcompress) | MIT | reading the release archive - canary's Windows asset became a `.7z` in June 2026 |
+
+## Under its own licence inside `Xenia.dll`
+
+`src/Xenia/Xdvdfs.cs` is **MPL-2.0**, derived from `sigil/src/xdvdfs.c` in
+[argosy-launcher](https://github.com/abduznik/Freegosy). Its structure, its two-magic validation and
+its partition-base probing order are sigil's work; the C# is ours. MPL-2.0 is file-scoped copyleft:
+that one file stays MPL and its source is in this repository, which is what the licence asks.
+
 ## Merged into `Ppsspp.dll`
 
 | Component | Licence | Used for |
