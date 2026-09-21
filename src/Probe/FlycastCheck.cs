@@ -442,9 +442,10 @@ namespace LbIntegrations.Probe
             bool ok = names.SequenceEqual(expected, StringComparer.Ordinal);
             Console.WriteLine("  a hand-made entry is completed with the four platforms   " + (ok ? "OK" : "FAIL"));
 
-            var def = platforms.FirstOrDefault(p => p.IsDefault);
-            bool defaultOk = def != null && def.Platform == "Sega Dreamcast";
-            Console.WriteLine("  the Dreamcast is the default   " + (defaultOk ? "OK" : "FAIL"));
+            // IsDefault is per PLATFORM - "this emulator is the default emulator for it" - so every
+            // platform we claim carries it. Setting it on one only made LaunchBox prune the others.
+            bool defaultOk = platforms.Length > 0 && platforms.All(p => p.IsDefault);
+            Console.WriteLine("  every platform marks Flycast as its default emulator   " + (defaultOk ? "OK" : "FAIL"));
 
             bool cmdOk = !string.IsNullOrWhiteSpace(emu.CommandLine);
             Console.WriteLine("  an empty command line was filled   " + (cmdOk ? "OK" : "FAIL"));

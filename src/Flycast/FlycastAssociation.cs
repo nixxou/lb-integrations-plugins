@@ -122,7 +122,8 @@ namespace LbIntegrations.Flycast
                     var platform = emu.AddNewEmulatorPlatform();
                     if (platform == null) continue;
                     platform.Platform = name;
-                    platform.IsDefault = string.Equals(name, FlycastPlatforms.Dreamcast, StringComparison.Ordinal);
+                    // See FlycastPlugin.EnsureEmulator: IsDefault is per PLATFORM, not per emulator.
+                    platform.IsDefault = true;
                     added.Add(name);
                 }
 

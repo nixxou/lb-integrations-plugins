@@ -314,7 +314,6 @@ namespace LbIntegrations.Flycast
                     .Select(n => n.Trim()),
                 StringComparer.InvariantCultureIgnoreCase);
 
-            bool hadAny = have.Count > 0;
             var added = new List<string>();
             foreach (var name in FlycastPlatforms.All)
             {
@@ -322,9 +321,13 @@ namespace LbIntegrations.Flycast
                 var platform = emu.AddNewEmulatorPlatform();
                 if (platform == null) continue;
                 platform.Platform = name;
-                // Only claim the default when nothing already held one.
-                platform.IsDefault = !hadAny
-                                     && string.Equals(name, FlycastPlatforms.Dreamcast, StringComparison.Ordinal);
+                // IsDefault means "this emulator is the DEFAULT EMULATOR FOR THIS PLATFORM", not "this
+                // is the emulator's default platform" - the SDK's own words, and the grid column is
+                // headed "Default Emulator". Setting it on one platform only left the other three as
+                // rows LaunchBox pruned when the dialog saved: of the four we created, only the one
+                // carrying IsDefault survived. Every platform we claim gets it, which is also what
+                // Unbroken's own example does and what the PPSSPP and Xenia plugins already did.
+                platform.IsDefault = true;
                 added.Add(name);
             }
 
