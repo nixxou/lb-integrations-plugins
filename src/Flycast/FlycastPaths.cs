@@ -10,13 +10,16 @@
 // There is no %APPDATA% branch, no Documents fallback, no installed.txt to interpret: a Windows
 // Flycast is always portable. The only UWP branch is irrelevant to a LaunchBox install.
 //
-// Four settings in emu.cfg can redirect parts of that, all under the [config] section with the
-// "Dreamcast." prefix (core/cfg/option.cpp:143-147):
+// Five settings in emu.cfg can redirect parts of that, all under the [config] section with the
+// "Dreamcast." prefix (core/cfg/option.cpp:143-151):
 //
 //     Dreamcast.BiosPath        a LIST of folders searched for BIOS files, before data\
 //     Dreamcast.VMUPath         one folder for VMU files
 //     Dreamcast.SavestatePath   a LIST of folders for save states
 //     Dreamcast.SavePath        one folder for arcade NVRAM/EEPROM/card files
+//     Dreamcast.MappingsPath    a LIST of folders for input mappings - whose fallback is NOT
+//                               data\ but <exe dir>\mappings, because Flycast resolves it
+//                               with get_writable_config_path, not the user data dir
 //
 // Each is honoured here the way Flycast honours it: a redirect wins for reading AND writing when
 // set, and data\ is the fallback. A list is searched in order.
@@ -47,6 +50,10 @@ namespace LbIntegrations.Flycast
         public List<string> StateDirs = new List<string>();
         /// <summary>Folders to search for BIOS files, most specific first.</summary>
         public List<string> BiosDirs = new List<string>();
+        /// <summary>Folders holding controller and keyboard mappings, most specific first. NOT under
+        /// data\ like the others: Flycast resolves these with get_writable_config_path("mappings/"),
+        /// which for a portable install is &lt;install&gt;\mappings.</summary>
+        public List<string> MappingsDirs = new List<string>();
 
         /// <summary>Flycast's PerGameVmu, default TRUE (core/cfg/option.cpp:234). When false, even
         /// port A1 falls back to the shared vmu_save_A1.bin and no save can be attributed to a game.</summary>
@@ -59,6 +66,13 @@ namespace LbIntegrations.Flycast
         public string PrimaryVmuDir => VmuDirs.FirstOrDefault() ?? DataDir;
         public string PrimaryArcadeDir => ArcadeDirs.FirstOrDefault() ?? DataDir;
         public string PrimaryStateDir => StateDirs.FirstOrDefault() ?? DataDir;
+
+        /// <summary>Where a mapping file we write must go. Falls back beside the executable, not into
+        /// data\ - see MappingsDirs.</summary>
+        public string PrimaryMappingsDir => MappingsDirs.FirstOrDefault()
+                                            ?? System.IO.Path.Combine(InstallDir, MappingsDirName);
+
+        public const string MappingsDirName = "mappings";
     }
 
     internal static class FlycastPaths
@@ -81,6 +95,7 @@ namespace LbIntegrations.Flycast
         private const string KeyVmuPath = "Dreamcast.VMUPath";
         private const string KeyStatePath = "Dreamcast.SavestatePath";
         private const string KeySavePath = "Dreamcast.SavePath";
+        private const string KeyMappingsPath = "Dreamcast.MappingsPath";
         private const string KeyPerGameVmu = "PerGameVmu";
 
         /// <summary>Is this path one of Flycast's executables? Matched on the file name, never on the
@@ -131,7 +146,8 @@ namespace LbIntegrations.Flycast
             layout.DataDir = Path.Combine(layout.InstallDir, DataDirName);
 
             var cfg = FlycastIni.Read(layout.ConfigFile, Section,
-                                      KeyBiosPath, KeyVmuPath, KeyStatePath, KeySavePath, KeyPerGameVmu);
+                                      KeyBiosPath, KeyVmuPath, KeyStatePath, KeySavePath,
+                                      KeyMappingsPath, KeyPerGameVmu);
 
             layout.PerGameVmu = cfg.TryGetValue(KeyPerGameVmu, out var pgv)
                 ? FlycastIni.AsBool(pgv, true)
@@ -141,6 +157,10 @@ namespace LbIntegrations.Flycast
             layout.ArcadeDirs = Redirected(cfg, KeySavePath, layout.DataDir);
             layout.StateDirs = Redirected(cfg, KeyStatePath, layout.DataDir);
             layout.BiosDirs = Redirected(cfg, KeyBiosPath, layout.DataDir);
+
+            // The odd one out: Flycast writes mappings beside the executable, not under data\.
+            layout.MappingsDirs = Redirected(cfg, KeyMappingsPath,
+                                             Path.Combine(layout.InstallDir, FlycastLayout.MappingsDirName));
 
             layout.Reason = File.Exists(layout.ConfigFile)
                 ? "portable install, emu.cfg read"

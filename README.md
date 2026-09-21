@@ -61,7 +61,7 @@ read-only half of the contract, printing what comes back — seconds instead of 
 dotnet run --project src\Probe -- src\Ppsspp\bin\Release\Ppsspp.dll --emu "D:\Emulators\PPSSPP\PPSSPPWindows64.exe"
 ```
 
-It writes nothing unless you ask it to. Two modes do:
+It writes nothing unless you ask it to. These modes do — the last two only inside the temp folder:
 
 ```
 --inject-ra-test
@@ -71,11 +71,23 @@ It writes nothing unless you ask it to. Two modes do:
     extracts that save the way a backup would, checks the layout, prints the hash RomM and
     Argosy compute for it, and - when --emu is given - restores it and re-extracts to prove
     the round trip is lossless. The restore DELETES and rewrites that disc id's folders.
+
+--flycast
+    the whole Flycast contract against a forged install: disc ids, the three save regimes,
+    BIOS, and how an emulator entry gets its platforms.
+
+--hotkeys
+    writes Flycast's keyboard mapping on a forged install and checks that none of Flycast's
+    own default keys were lost in the process.
 ```
 
-Point both at a throwaway install and a throwaway account.
+Point the first two at a throwaway install and a throwaway account.
 
-`--disc-id-of <rom>` reads a disc id out of a `.pbp`, `.iso`, `.cso` or `.zso` and writes nothing.
+Two modes write nothing at all: `--disc-id-of <rom>` reads a disc id out of a `.pbp`, `.iso`, `.cso`
+or `.zso`, and `--rows` confronts the metadata row injection with a real `Microsoft.Data.Sqlite`.
+
+`--flycast-real --emu <flycast.exe> --rom <game>` is the one that needs a real Flycast; it reads and
+compares, and writes nothing.
 
 ## Notes on PPSSPP
 
@@ -130,6 +142,40 @@ for every state, so a `.ppst`'s sibling `.jpg` thumbnail could not travel with i
 **Downloads come from GitHub.** ppsspp.org publishes a different set of Windows packages — a zip with
 both the 32- and 64-bit builds, plus an Inno installer and a paid Gold variant. This plugin installs
 the GitHub x64 zip and does not offer the installer, but it recognises an install made either way.
+
+## Notes on Flycast
+
+**Portable, always.** On Windows `setupPath()` (core/windows/winmain.cpp) unconditionally puts
+`emu.cfg` beside the executable and everything written under `<exe>\data\`. There is no `%APPDATA%`
+branch and no installed/portable choice to interpret, unlike PPSSPP.
+
+**One emulator, four platforms.** Dreamcast, Naomi, Naomi 2 and Atomiswave. The arcade three read
+their ROMs straight out of `.zip`, so the emulator entry must NOT auto-extract — handing Flycast an
+extracted folder gives it something it cannot load.
+
+**The BIOS are optional, and declared per romset.** Dreamcast runs most games without one; the arcade
+platforms do not run at all without theirs. Both are declared so the frontend can tell the user which
+file is missing instead of letting a game fail silently.
+
+**It ships with no save-state keys, so this plugin adds them.** Flycast's default keyboard mapping
+binds Tab, Space and F12 and nothing else: `EMU_BTN_SAVESTATE`, `EMU_BTN_LOADSTATE` and even
+`EMU_BTN_ESCAPE` work but are attached to no key. On install the plugin writes
+`mappings\SDL_Keyboard.cfg` with **F2** save, **F4** load, **F6**/**F7** slot, **Escape** quit — F2 and
+F4 because that is what LaunchBox's own scripts already assume for RetroArch, and Escape because a
+frontend's Exit button means Escape and `dc_exit()` closes the VMU files properly where a killed
+process does not.
+
+Two things make that file delicate, and both are why it carries more than four lines. A mapping file
+REPLACES Flycast's defaults rather than adding to them (`GamepadDevice::find_mapping` falls back to
+`getDefaultMapping()` only when no file exists), so it must also carry all nineteen default bindings
+or the user loses his controls — `--hotkeys` exists to check exactly that. And one file covers all
+four platforms: with no `_arcade` file, Flycast clones the Dreamcast mapping for arcade.
+
+A mapping file that already exists is never rewritten. An action the user has bound keeps his key, a
+key he already uses is never taken, and the emulator's AutoHotkey fields quote whatever the file
+really says — a script naming a key the emulator ignores would fail silently, which is worse than no
+script. Those fields are used by LaunchBox's and BigBox's pause screen; LiteBox stores them but has
+no pause screen yet.
 
 ## Notes on Xenia
 

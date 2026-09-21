@@ -48,6 +48,16 @@ namespace LbIntegrations.Flycast
         /// <summary>Emulator ids already completed, so this costs nothing after the first call. The
         /// host asks which emulators we claim often; the work must happen once.</summary>
         private static readonly HashSet<string> Done = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>What each Flycast executable's keyboard mapping says, so the file is read once.
+        ///
+        /// The CACHE IS THE TABLE, never the fact of having run: an earlier version remembered which
+        /// executables it had handled and skipped them, which meant the FIRST object carrying a given
+        /// Flycast got the scripts and every later one did not - and the later one is exactly the
+        /// object the Add Emulator window is showing. Measured: the log said the scripts were set,
+        /// and the window stayed empty.</summary>
+        private static readonly Dictionary<string, object> HotkeyTables =
+            new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
         private static readonly object Gate = new object();
 
         /// <summary>Complete every Flycast emulator the library holds, without waiting to be asked.
@@ -90,6 +100,13 @@ namespace LbIntegrations.Flycast
         public static void EnsurePlatforms(IEmulator emu)
         {
             if (emu == null) return;
+
+            // FIRST, and deliberately outside everything below. The platform work has three early
+            // returns - a row being edited, an id already seen, and above all "every platform we
+            // cover is already there", which is the normal case - and the hotkey scripts have
+            // nothing to do with any of them. Hung off the tail, they were almost never set.
+            EnsureHotkeyScripts(emu);
+
             try
             {
                 string id;
@@ -177,6 +194,76 @@ namespace LbIntegrations.Flycast
                          + " (not saved - LaunchBox's metadata does not know Flycast)");
             }
             catch (Exception ex) { Log.Warn("could not complete the emulator's platforms", ex); }
+        }
+
+        /// <summary>Describe Flycast's save-state and exit keys in the emulator's AutoHotkey fields,
+        /// which is what LaunchBox's and BigBox's pause screen sends.
+        ///
+        /// Here rather than in EnsureEmulator because that one only touches a BRAND NEW entry, while
+        /// an entry the user made himself deserves these too - and this runs on the startup sweep.
+        ///
+        /// Only a blank field is filled. A script the user wrote is his answer to the same question,
+        /// and ours has no business replacing it.</summary>
+        internal static void EnsureHotkeyScripts(IEmulator emu)
+        {
+            try
+            {
+                var path = Safe(() => emu.ApplicationPath);
+                if (string.IsNullOrWhiteSpace(path)) return;
+                if (!FlycastPaths.IsFlycastExecutable(path)) return;
+
+                // Nothing to do only when there is nothing left to fill. This is the idempotence, and
+                // it belongs on the OBJECT rather than on the executable: the host hands us the same
+                // Flycast under a new object every time a window asks, and each of those objects
+                // needs filling in its own right.
+                if (!IsBlank(() => emu.SaveStateAutoHotkeyScript)
+                    && !IsBlank(() => emu.LoadStateAutoHotkeyScript)
+                    && !IsBlank(() => emu.ExitAutoHotkeyScript)) return;
+
+                HotkeyTable table;
+                var full = FlycastPlugin.ResolveFullPath(path);
+                lock (Gate)
+                {
+                    // Read-only: here we are only describing what the emulator already does. Cached
+                    // because this reads a file and the host asks often.
+                    if (!HotkeyTables.TryGetValue(full, out var cached))
+                    {
+                        cached = FlycastHotkeys.Ensure(FlycastPaths.Resolve(full), mayEditExisting: false);
+                        HotkeyTables[full] = cached;
+                    }
+                    table = (HotkeyTable)cached;
+                }
+
+                var set = new List<string>();
+                if (Fill(() => emu.SaveStateAutoHotkeyScript,
+                         v => emu.SaveStateAutoHotkeyScript = v, FlycastAhk.SaveState(table))) set.Add("save");
+                if (Fill(() => emu.LoadStateAutoHotkeyScript,
+                         v => emu.LoadStateAutoHotkeyScript = v, FlycastAhk.LoadState(table))) set.Add("load");
+                if (Fill(() => emu.ExitAutoHotkeyScript,
+                         v => emu.ExitAutoHotkeyScript = v, FlycastAhk.Exit(table))) set.Add("exit");
+
+                if (set.Count > 0)
+                    Log.Info("hotkey scripts on \"" + Safe(() => emu.Title) + "\": set "
+                             + string.Join(", ", set));
+            }
+            catch (Exception ex) { Log.Warn("could not describe the hotkeys on the emulator entry", ex); }
+        }
+
+        private static bool IsBlank(Func<string> get)
+        {
+            try { return string.IsNullOrWhiteSpace(get()); } catch { return false; }
+        }
+
+        /// <summary>Write the script only into a field the user has left blank. True when it landed.</summary>
+        private static bool Fill(Func<string> get, Action<string> set, string value)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(get())) return false;
+                set(value);
+                return true;
+            }
+            catch { return false; }
         }
 
         private static string Safe(Func<string> f)

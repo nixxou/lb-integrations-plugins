@@ -323,9 +323,18 @@ namespace LbIntegrations.Flycast
                 var layout = FlycastPaths.Resolve(exe);
                 Log.Info("installed to " + targetDir + " - data: " + layout.DataDir + " (" + layout.Reason + ")");
 
+                // Flycast ships with no key bound to saving a state, loading one, or quitting. This
+                // is the moment to fix that: the install is ours, and a mapping written now is in
+                // place before the first launch. See FlycastHotkeys for why the file has to carry
+                // Flycast's own defaults as well as ours.
+                FlycastHotkeys.Ensure(layout, mayEditExisting: true);
+
                 if (reinstall)
                 {
                     try { args.ExistingEmulator.ApplicationPath = MakeRelativeToLaunchBox(exe); } catch { }
+                    // An update is also the moment an entry that predates this plugin can be given
+                    // the scripts it never had.
+                    FlycastAssociation.EnsureHotkeyScripts(args.ExistingEmulator);
                     return new EmulatorInstallResponse(args.ExistingEmulator, "Flycast updated.");
                 }
                 if (args != null && !args.ShouldCreateEmulator)
@@ -380,6 +389,11 @@ namespace LbIntegrations.Flycast
                 emu.CommandLine = FlycastDefaults.CommandLine;
                 emu.DefaultPlatform = FlycastPlatforms.Dreamcast;
             }
+
+            // Right here too, not only from the association sweep: this is the entry the Add Emulator
+            // window is looking at, and it is the one moment we know the mapping file has just been
+            // written.
+            FlycastAssociation.EnsureHotkeyScripts(emu);
 
             // Only what is missing. A name is "present" whatever its case and whatever spacing the
             // grid left around it; a blank row belongs to no platform and is ignored here, because
@@ -554,6 +568,18 @@ namespace LbIntegrations.Flycast
                         Log.Warn("RetroAchievements credentials were not applied: "
                                  + (response.Message ?? "no reason given") + " - launching anyway");
                 }
+
+                // A Flycast the user added by hand never went through our installer, so it may still
+                // have no way to save a state. mayEditExisting: false is the whole care here: an
+                // existing mapping file is read, never rewritten, because the user may have made it.
+                try
+                {
+                    var exePath = Safe(() => args?.EmulatorBeingLaunched?.ApplicationPath);
+                    if (!string.IsNullOrWhiteSpace(exePath))
+                        FlycastHotkeys.Ensure(FlycastPaths.Resolve(ResolveFullPath(exePath)),
+                                              mayEditExisting: false);
+                }
+                catch { }
             }
             catch (Exception ex) { Log.Warn("PrepareEmulatorForLaunch", ex); }
 
@@ -597,7 +623,9 @@ namespace LbIntegrations.Flycast
             catch { return fullPath; }
         }
 
-        private static string ResolveFullPath(string maybeRelative)
+        /// <summary>An ApplicationPath as LaunchBox stores it - often relative to its root - made
+        /// absolute. Internal because FlycastAssociation needs the very same answer.</summary>
+        internal static string ResolveFullPath(string maybeRelative)
         {
             try
             {

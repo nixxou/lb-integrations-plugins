@@ -28,7 +28,7 @@ namespace LbIntegrations.Probe
         {
             if (args.Length == 0 || args[0].StartsWith("-"))
             {
-                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--rows]");
+                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--rows] [--hotkeys]");
                 return 2;
             }
 
@@ -242,6 +242,9 @@ namespace LbIntegrations.Probe
                 return 0;
             }
 
+            bool hotkeys = Has(args, "--hotkeys");
+            if (hotkeys && !HotkeyCheck.Run(plugin)) return 1;
+
             bool flycast = Has(args, "--flycast");
             if (flycast)
             {
@@ -261,6 +264,7 @@ namespace LbIntegrations.Probe
             if (unit != null && Has(args, "--round-trip")) wroteTo.Add("the emulator's save folder (the restore round-trip)");
             if (states) wroteTo.Add("a throwaway PPSSPP in the temp folder (states)");
             if (flycast) wroteTo.Add("a forged Flycast in the temp folder");
+            if (hotkeys) wroteTo.Add("a forged Flycast in the temp folder (keyboard mapping)");
             Console.WriteLine(wroteTo.Count == 0
                 ? "done. Nothing was written."
                 : "done. This run WROTE to: " + string.Join(", ", wroteTo) + ".");
