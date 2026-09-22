@@ -303,6 +303,22 @@ namespace LbIntegrations.Probe
             if (Has(args, "--ahk"))
             {
                 if (emuPath == null) { Console.Error.WriteLine("--ahk needs --emu <emulator.exe>"); return 2; }
+
+                // --write asks the plugin to put its bindings in place first, the way installing does.
+                if (Has(args, "--write"))
+                {
+                    var hk = plugin.GetType().Assembly.GetTypes()
+                                   .FirstOrDefault(t => t.Name.EndsWith("Hotkeys", StringComparison.Ordinal));
+                    var paths = plugin.GetType().Assembly.GetTypes()
+                                      .FirstOrDefault(t => t.Name.EndsWith("Paths", StringComparison.Ordinal));
+                    if (hk != null && paths != null)
+                    {
+                        var layout = paths.GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static)
+                                          .Invoke(null, new object[] { emuPath });
+                        hk.GetMethod("Ensure", BindingFlags.Public | BindingFlags.Static)
+                          .Invoke(null, new[] { layout, (object)true });
+                    }
+                }
                 Section("AutoHotkey scripts  [" + Path.GetFileName(emuPath) + "]");
                 int bad = 0;
                 void Check(string what, bool good)
@@ -330,8 +346,17 @@ namespace LbIntegrations.Probe
                 // first and leaves the rest empty - measured on Flycast.
                 var second = new StubEmulator { Title = "emulator", ApplicationPath = emuPath };
                 plugin.GetApplicableEmulators(new IEmulator[] { second });
+                // Whatever the first object got, the second must get: a plugin that sets only the
+                // state scripts is as valid as one that sets the exit script too.
                 Check("a second object for the same emulator is filled too",
-                      !string.IsNullOrWhiteSpace(second.ExitAutoHotkeyScript));
+                      second.AutoHotkeyScript == blank.AutoHotkeyScript
+                      && second.ExitAutoHotkeyScript == blank.ExitAutoHotkeyScript
+                      && second.SaveStateAutoHotkeyScript == blank.SaveStateAutoHotkeyScript
+                      && second.LoadStateAutoHotkeyScript == blank.LoadStateAutoHotkeyScript);
+                Check("the plugin set at least one script",
+                      new[] { blank.AutoHotkeyScript, blank.ExitAutoHotkeyScript,
+                              blank.SaveStateAutoHotkeyScript, blank.LoadStateAutoHotkeyScript }
+                          .Any(v => !string.IsNullOrWhiteSpace(v)));
 
                 var mine = new StubEmulator
                 {

@@ -85,6 +85,8 @@ namespace LbIntegrations.Ppsspp
                     }
                 }
                 catch { }
+
+                EnsureHotkeyScripts(emu);
             }
             // The host asks this constantly - twenty-three times in one second, measured - and the
             // answer almost never changes. Said once, then only when it does.
@@ -96,6 +98,55 @@ namespace LbIntegrations.Ppsspp
                 Log.Info("GetApplicableEmulators: claimed " + claimed.Count + " emulator(s)");
             }
             return claimed;
+        }
+
+        /// <summary>Describe PPSSPP's save-state keys in the emulator's AutoHotkey fields - what the
+        /// pause screen of LaunchBox and BigBox sends.
+        ///
+        /// Read-only on controls.ini here: the bindings are written at install time, and a mapping
+        /// the user has since edited is his. Only a blank script field is filled, and the idempotence
+        /// is on the OBJECT - the host hands us the same emulator under a new object every time a
+        /// window asks, and remembering "this executable is done" fills the first and leaves every
+        /// later one empty, which is the shape that cost an evening on Flycast.</summary>
+        private static void EnsureHotkeyScripts(IEmulator emu)
+        {
+            try
+            {
+                if (!IsBlank(() => emu.SaveStateAutoHotkeyScript)
+                    && !IsBlank(() => emu.LoadStateAutoHotkeyScript)) return;
+
+                var path = Safe(() => emu.ApplicationPath);
+                if (string.IsNullOrWhiteSpace(path)) return;
+
+                var table = PpssppHotkeys.Ensure(PpssppPaths.Resolve(ResolveFullPath(path)),
+                                                 mayEditExisting: false);
+
+                var set = new List<string>();
+                if (Fill(() => emu.SaveStateAutoHotkeyScript,
+                         v => emu.SaveStateAutoHotkeyScript = v, PpssppAhk.SaveState(table))) set.Add("save");
+                if (Fill(() => emu.LoadStateAutoHotkeyScript,
+                         v => emu.LoadStateAutoHotkeyScript = v, PpssppAhk.LoadState(table))) set.Add("load");
+
+                if (set.Count > 0) Log.Info("hotkey scripts set: " + string.Join(", ", set));
+            }
+            catch (Exception ex) { Log.Warn("could not describe the hotkeys on the emulator entry", ex); }
+        }
+
+        private static bool IsBlank(Func<string> get)
+        {
+            try { return string.IsNullOrWhiteSpace(get()); } catch { return false; }
+        }
+
+        /// <summary>Write the script only into a field the user left blank. True when it landed.</summary>
+        private static bool Fill(Func<string> get, Action<string> set, string value)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(get())) return false;
+                set(value);
+                return true;
+            }
+            catch { return false; }
         }
 
         public override EmulatorSupportResponse IsPlatformSupported(string platform)
@@ -340,6 +391,11 @@ namespace LbIntegrations.Ppsspp
             emu.ApplicationPath = MakeRelativeToLaunchBox(exePath);
             emu.CommandLine = DefaultCommandLine;
 
+            // The install is ours, so this is the moment to add the save-state bindings PPSSPP ships
+            // without. controls.ini is additive - see PpssppHotkeys - so nothing else is disturbed.
+            try { PpssppHotkeys.Ensure(PpssppPaths.Resolve(exePath), mayEditExisting: true); } catch { }
+            EnsureHotkeyScripts(emu);
+
             // DefaultPlatform IS NOT SET, and that is the point.
             //
             // Measured on a real library: the Edit Emulator window adds a platform row for whatever
@@ -487,6 +543,20 @@ namespace LbIntegrations.Ppsspp
                         Log.Warn("RetroAchievements credentials were not applied: "
                                  + (response.Message ?? "no reason given") + " — launching anyway");
                 }
+
+                // A PPSSPP the user set up himself never went through our installer and would keep
+                // no save-state keys at all. Adding them here is safe in a way the same move on
+                // Flycast is NOT: Flycast's mapping file REPLACES its defaults, so touching one is
+                // dangerous, while PPSSPP's controls.ini spells every binding out - a missing line is
+                // a missing binding and nothing else. Only absent entries are added, and only with
+                // keys the file does not already use.
+                try
+                {
+                    var exe = Safe(() => args?.EmulatorBeingLaunched?.ApplicationPath);
+                    if (!string.IsNullOrWhiteSpace(exe))
+                        PpssppHotkeys.Ensure(PpssppPaths.Resolve(ResolveFullPath(exe)), mayEditExisting: true);
+                }
+                catch { }
             }
             catch (Exception ex) { Log.Warn("PrepareEmulatorForLaunch", ex); }
 
