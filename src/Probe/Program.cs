@@ -28,7 +28,7 @@ namespace LbIntegrations.Probe
         {
             if (args.Length == 0 || args[0].StartsWith("-"))
             {
-                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--rows] [--hotkeys] [--saves --emu <exe> --rom <rom>]");
+                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--rows] [--hotkeys] [--saves --emu <exe> --rom <rom>] [--ahk --emu <exe>]");
                 return 2;
             }
 
@@ -296,6 +296,55 @@ namespace LbIntegrations.Probe
                     }
                 }
                 return 0;
+            }
+
+            // The AutoHotkey fields a plugin puts on an emulator entry, and the three ways that goes
+            // wrong - none of them caught by reading the code.
+            if (Has(args, "--ahk"))
+            {
+                if (emuPath == null) { Console.Error.WriteLine("--ahk needs --emu <emulator.exe>"); return 2; }
+                Section("AutoHotkey scripts  [" + Path.GetFileName(emuPath) + "]");
+                int bad = 0;
+                void Check(string what, bool good)
+                {
+                    if (!good) bad++;
+                    Console.WriteLine("  " + what.PadRight(50) + (good ? "OK" : "FAIL"));
+                }
+
+                var blank = new StubEmulator { Title = "emulator", ApplicationPath = emuPath };
+                plugin.GetApplicableEmulators(new IEmulator[] { blank });
+                foreach (var (name, value) in new[]
+                         {
+                             ("Running", blank.AutoHotkeyScript), ("Exit", blank.ExitAutoHotkeyScript),
+                             ("SaveState", blank.SaveStateAutoHotkeyScript),
+                             ("LoadState", blank.LoadStateAutoHotkeyScript),
+                         })
+                {
+                    Console.WriteLine("  " + name + ":");
+                    foreach (var line in (value ?? "(none)").Replace("\r", "").Split('\n'))
+                        Console.WriteLine("      " + line);
+                }
+
+                // A SECOND object for the same emulator: the host hands us the same entry under a new
+                // object every time a window asks, and remembering "this executable is done" fills the
+                // first and leaves the rest empty - measured on Flycast.
+                var second = new StubEmulator { Title = "emulator", ApplicationPath = emuPath };
+                plugin.GetApplicableEmulators(new IEmulator[] { second });
+                Check("a second object for the same emulator is filled too",
+                      !string.IsNullOrWhiteSpace(second.ExitAutoHotkeyScript));
+
+                var mine = new StubEmulator
+                {
+                    Title = "emulator", ApplicationPath = emuPath,
+                    ExitAutoHotkeyScript = "Send {F9}",
+                };
+                plugin.GetApplicableEmulators(new IEmulator[] { mine });
+                Check("a script the user wrote is not replaced", mine.ExitAutoHotkeyScript == "Send {F9}");
+
+                Console.WriteLine();
+                Console.WriteLine(bad == 0 ? "  OK - the scripts reach the entry"
+                                           : "  " + bad + " FAILURE(S)");
+                return bad == 0 ? 0 : 1;
             }
 
             if (Has(args, "--rows"))
