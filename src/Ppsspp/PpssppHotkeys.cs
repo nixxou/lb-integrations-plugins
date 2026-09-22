@@ -114,9 +114,21 @@ namespace LbIntegrations.Ppsspp
 
                 if (!File.Exists(path))
                 {
-                    // PPSSPP has not run yet. Writing a mapping now would be guessing at every
-                    // binding; it writes the complete file itself on first launch.
+                    // PPSSPP HAS NOT RUN YET, and this is the one case the shortcuts cannot reach in
+                    // time. controls.ini is authoritative and COMPLETE: LoadFromIni erases the
+                    // default mapping of every named action and re-reads it from the file
+                    // (Core/KeyMap.cpp:830-862), so a partial file forged here would unbind
+                    // everything it did not list. Writing the whole default set instead is no better
+                    // - the keyboard defaults depend on the keyboard LAYOUT, qwerty, qwertz or
+                    // azerty (Core/KeyMapDefaults.cpp:389-398), which is the host's business.
+                    //
+                    // So the first session after a fresh install runs on PPSSPP's own defaults:
+                    // Escape opens the menu, and no key saves state. PPSSPP writes the file when it
+                    // exits, and the next pass through here adds the bindings for every session
+                    // after that. Said out loud, because the silent version of this cost an evening.
                     table.Skipped = "controls.ini does not exist yet - PPSSPP writes it on first run";
+                    Log.Info("no controls.ini yet at " + path
+                             + " - PPSSPP writes it when it first exits, the shortcuts go in after that");
                     return table;
                 }
 
@@ -165,10 +177,23 @@ namespace LbIntegrations.Ppsspp
                     added.Add("Escape -> " + ExitApp);
                 }
 
-                if (add.Count == 0) { table.Skipped = "every shortcut was already bound"; return table; }
+                if (add.Count == 0)
+                {
+                    table.Skipped = "every shortcut was already bound";
+                    Log.Verbose("controls.ini: nothing to add");
+                    return table;
+                }
 
                 var error = PpssppIni.Write(path, Section, add);
-                if (error != null) { table.Skipped = error; return table; }
+                if (error != null)
+                {
+                    // The table must not keep keys we failed to write, or the AutoHotkey scripts
+                    // would quote bindings that are not in the file.
+                    foreach (var entry in add.Keys) table.Keys.Remove(entry);
+                    table.Skipped = error;
+                    Log.Warn("controls.ini not updated: " + error);
+                    return table;
+                }
 
                 table.Written = true;
                 Log.Info("added to " + path + ": " + string.Join(", ", added));

@@ -320,6 +320,39 @@ namespace LbIntegrations.Probe
                     }
                 }
                 Section("AutoHotkey scripts  [" + Path.GetFileName(emuPath) + "]");
+
+                // What the plugin's own hotkey pass says it did, which is the only way to tell
+                // "nothing to add" from "could not write" from "not this plugin's business".
+                var hkType = plugin.GetType().Assembly.GetTypes()
+                                   .FirstOrDefault(t => t.Name.EndsWith("Hotkeys", StringComparison.Ordinal));
+                var pathsType = plugin.GetType().Assembly.GetTypes()
+                                      .FirstOrDefault(t => t.Name.EndsWith("Paths", StringComparison.Ordinal));
+                if (hkType != null && pathsType != null)
+                {
+                    var layout = pathsType.GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static)
+                                          .Invoke(null, new object[] { emuPath });
+                    var t = hkType.GetMethod("Ensure", BindingFlags.Public | BindingFlags.Static)
+                                  .Invoke(null, new[] { layout, (object)false });
+                    foreach (var pr in t.GetType().GetProperties().Concat<System.Reflection.MemberInfo>(
+                                        t.GetType().GetFields()).OrderBy(m => m.Name, StringComparer.Ordinal))
+                    {
+                        object v = null;
+                        try
+                        {
+                            v = pr is System.Reflection.PropertyInfo pi ? pi.GetValue(t)
+                              : ((System.Reflection.FieldInfo)pr).GetValue(t);
+                        }
+                        catch { }
+                        if (v is System.Collections.IDictionary d)
+                        {
+                            var parts = new List<string>();
+                            foreach (System.Collections.DictionaryEntry de in d)
+                                parts.Add(de.Key + "=" + de.Value);
+                            v = parts.Count == 0 ? "(empty)" : string.Join(", ", parts);
+                        }
+                        Console.WriteLine("  hotkeys." + pr.Name.PadRight(12) + (v?.ToString() ?? "(null)"));
+                    }
+                }
                 int bad = 0;
                 void Check(string what, bool good)
                 {
