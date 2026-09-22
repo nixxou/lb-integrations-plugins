@@ -22,14 +22,29 @@
 // F2 AND F4 are ours to match RetroArch, which is what LaunchBox's own AutoHotkey scripts already
 // assume, and what this repository's Flycast plugin uses.
 //
-// ESCAPE IS FREED, and that is the one binding this file MOVES rather than adds. PPSSPP binds Pause
-// to Escape, but Escape is also what every frontend's Exit sends, and PPSSPP has a --escape-exit
-// flag that makes it quit on that key - listed in its own option table beside --pause-menu-exit. Two
-// things fighting over one key is the worst of both, so the menu goes to F1, which nothing else
-// uses, and Escape quits. Only the KEYBOARD part of Pause moves; its pad bindings stay.
+// THE MENU MOVES TO F1 AND ESCAPE QUITS, which takes one move and one addition.
 //
-// The move happens only when Pause still holds exactly the default Escape and F1 is free. A user who
-// changed either has already decided.
+// PPSSPP binds Pause to Escape, and Escape is what every frontend's Exit sends. The menu therefore
+// goes to F1, which nothing else uses, and the dedicated "Exit App" action takes Escape. Only the
+// KEYBOARD part of Pause moves; its pad bindings stay.
+//
+// NOT --escape-exit, and its help text is why this was got wrong once. It reads "Escape key exits
+// the application", but Core/CmdLine.cpp assigns it to bPauseExitsEmulator, and NativeApp.cpp acts
+// on it like this:
+//
+//     if (g_Config.bPauseExitsEmulator) {
+//       if (pspKeys contains VIRTKEY_PAUSE) { System_ExitApp(); return true; }
+//     }
+//
+// It intercepts whatever key is bound to PAUSE - so with the menu on F1 it made F1 quit and left
+// Escape doing nothing. The flag cannot coexist with a menu key at all.
+//
+// VIRTKEY_EXIT_APP is the real one, and it may ask for confirmation: GetConfirmExitMessage returns a
+// prompt when the network is up, or after AskForExitConfirmationAfterSeconds of unsaved progress -
+// 300 by default. That is PPSSPP protecting the user's progress, not something to work around here.
+//
+// Both changes happen only while the defaults are untouched: Pause must still hold exactly Escape,
+// and the key we want must be free. A user who moved either has already decided.
 
 using System;
 using System.Collections.Generic;
@@ -56,6 +71,7 @@ namespace LbIntegrations.Ppsspp
         public const string Section = "ControlMapping";
 
         public const string Pause = "Pause";
+        public const string ExitApp = "Exit App";
         public const string SaveState = "Save State";
         public const string LoadState = "Load State";
         public const string PreviousSlot = "Previous Slot";
@@ -134,7 +150,19 @@ namespace LbIntegrations.Ppsspp
                 {
                     add[Pause] = Rebind(pauseValue, PauseFromKey, PauseToKey);
                     table.Keys[Pause] = PauseToKey;
-                    added.Add("F1 -> " + Pause + " (was Escape, now free to quit)");
+                    taken.Remove(PauseFromKey);          // Escape is free from this moment
+                    taken.Add(PauseToKey);
+                    added.Add("F1 -> " + Pause);
+                }
+
+                // And Escape, once free, quits - through the action PPSSPP has for it.
+                var exit = PpssppIni.Read(path, Section, ExitApp);
+                var exitValue = exit.TryGetValue(ExitApp, out var e) ? e : null;
+                if (string.IsNullOrWhiteSpace(exitValue) && !taken.Contains(PauseFromKey))
+                {
+                    add[ExitApp] = KeyboardDevice + "-" + PauseFromKey;
+                    table.Keys[ExitApp] = PauseFromKey;
+                    added.Add("Escape -> " + ExitApp);
                 }
 
                 if (add.Count == 0) { table.Skipped = "every shortcut was already bound"; return table; }

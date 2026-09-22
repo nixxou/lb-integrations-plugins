@@ -34,12 +34,33 @@ namespace LbIntegrations.Ppsspp
         public static string LoadState(PpssppHotkeyTable table)
             => Script(table, PpssppHotkeys.LoadState, "loads state");
 
+        /// <summary>The first line of every fallback we write, so a later run can tell its own stale
+        /// output from a script the user wrote and replace only the former.</summary>
+        public const string FallbackMark = "; (written by the PPSSPP integration plugin)";
+
+        /// <summary>The first line the very first version of this fallback used, before the marker
+        /// above existed. Recognised too, so an entry written by that version is repaired instead of
+        /// keeping "this plugin could not add one" over bindings that are now in place.</summary>
+        private const string LegacyMark = "; PPSSPP binds no key to";
+
+        public static bool IsOurFallback(string script)
+        {
+            if (script == null) return false;
+            var head = script.TrimStart();
+            return head.StartsWith(FallbackMark, System.StringComparison.Ordinal)
+                || head.StartsWith(LegacyMark, System.StringComparison.Ordinal);
+        }
+
         private static string Script(PpssppHotkeyTable table, string entry, string what)
         {
             var code = table?.KeyFor(entry);
             if (code == null || !KeyNames.TryGetValue(code.Value, out var key))
-                return "; PPSSPP binds no key to \"" + entry + "\" by default, and this plugin could not\r\n"
-                     + "; add one. Map it under Settings > Controls > Keyboard, then set this script.";
+                return FallbackMark + "\r\n"
+                     + "; PPSSPP binds no key to \"" + entry + "\" and this plugin normally adds one:\r\n"
+                     + ";     F2 Save State   F4 Load State   F6/F7 slot   F1 menu   Escape quit\r\n"
+                     + "; It could not this time - controls.ini was not writable, or you had already\r\n"
+                     + "; used that key. Map it under Settings > Controls > Keyboard, then set this\r\n"
+                     + "; script to send it.";
 
             return "; PPSSPP " + what + " with the " + key + " key\r\n"
                  + "Send {" + key + " down}\r\n"

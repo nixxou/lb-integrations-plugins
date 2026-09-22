@@ -358,6 +358,21 @@ namespace LbIntegrations.Probe
                               blank.SaveStateAutoHotkeyScript, blank.LoadStateAutoHotkeyScript }
                           .Any(v => !string.IsNullOrWhiteSpace(v)));
 
+                // A stale fallback OUR OWN earlier version wrote must be repaired, not kept: it says
+                // no key is bound over bindings that are now in place.
+                var stale = new StubEmulator
+                {
+                    Title = "emulator", ApplicationPath = emuPath,
+                    SaveStateAutoHotkeyScript = "; PPSSPP binds no key to \"Save State\" by default, and this plugin could not add one.",
+                };
+                plugin.GetApplicableEmulators(new IEmulator[] { stale });
+                // Reported, not asserted: only a plugin that HAS written such a fallback can
+                // recognise its own, and most have nothing to repair. The text below is PPSSPP's.
+                Console.WriteLine("  a stale fallback of PPSSPP's shape: "
+                                  + ((stale.SaveStateAutoHotkeyScript ?? "")
+                                         .IndexOf("could not", StringComparison.Ordinal) < 0
+                                     ? "replaced" : "left alone (not this plugin's)"));
+
                 var mine = new StubEmulator
                 {
                     Title = "emulator", ApplicationPath = emuPath,

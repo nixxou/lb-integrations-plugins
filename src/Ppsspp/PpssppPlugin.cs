@@ -36,10 +36,11 @@ namespace LbIntegrations.Ppsspp
         /// <summary>The LaunchBox default for this emulator, straight out of the metadata database.
         /// --pause-menu-exit keeps the pause menu reachable while still letting the frontend regain
         /// control, which is why it is preferred to --escape-exit.</summary>
-        /// <summary>--escape-exit makes Escape quit, which is what every frontend's Exit sends;
-        /// --pause-menu-exit makes the pause menu's Exit leave the app rather than return to the
-        /// game list. The menu itself is on F1 - see PpssppHotkeys.</summary>
-        private const string DefaultCommandLine = "--fullscreen --escape-exit --pause-menu-exit";
+        /// <summary>--pause-menu-exit turns the pause menu's "Exit to menu" into a plain "Exit", which
+        /// is what a frontend wants. NOT --escape-exit: despite its help text it sets
+        /// bPauseExitsEmulator, which makes the MENU key quit - see PpssppHotkeys. Escape quits
+        /// through the Exit App binding instead.</summary>
+        private const string DefaultCommandLine = "--fullscreen --pause-menu-exit";
 
         // Asset selection, declarative. ARM64 names contain "ARM64" but not "x64", so the two sets
         // stay disjoint. The exclusions are defensive: upstream does not currently publish debug or
@@ -121,8 +122,11 @@ namespace LbIntegrations.Ppsspp
                 var path = Safe(() => emu.ApplicationPath);
                 if (string.IsNullOrWhiteSpace(path)) return;
 
+                // WRITING, not reading. Composing the scripts from a controls.ini that has no
+                // save-state line yet produced the "could not add one" fallback and then kept it
+                // forever, because a filled field is never refilled. The bindings go in first.
                 var table = PpssppHotkeys.Ensure(PpssppPaths.Resolve(ResolveFullPath(path)),
-                                                 mayEditExisting: false);
+                                                 mayEditExisting: true);
 
                 var set = new List<string>();
                 if (Fill(() => emu.SaveStateAutoHotkeyScript,
@@ -140,12 +144,16 @@ namespace LbIntegrations.Ppsspp
             try { return string.IsNullOrWhiteSpace(get()); } catch { return false; }
         }
 
-        /// <summary>Write the script only into a field the user left blank. True when it landed.</summary>
+        /// <summary>Write the script into a field the user left blank - or into one still holding a
+        /// fallback WE wrote earlier, which said no key was bound because at that moment none was.
+        /// Recognised by its own first line, so nothing anybody else wrote is ever touched.</summary>
         private static bool Fill(Func<string> get, Action<string> set, string value)
         {
             try
             {
-                if (!string.IsNullOrWhiteSpace(get())) return false;
+                var current = get();
+                if (!string.IsNullOrWhiteSpace(current) && !PpssppAhk.IsOurFallback(current)) return false;
+                if (current == value) return false;
                 set(value);
                 return true;
             }
@@ -565,18 +573,6 @@ namespace LbIntegrations.Ppsspp
                 }
                 catch { }
 
-                // ESCAPE QUITS. PPSSPP has a flag for exactly this, listed beside --pause-menu-exit
-                // in its own option table, so there is nothing to simulate with keystrokes: the
-                // emulator does it itself. Escape is what every frontend's Exit sends, and the menu
-                // has moved to F1 (see PpssppHotkeys) so the two no longer fight over one key.
-                //
-                // Anything the user already set is left alone.
-                var current = args?.CurrentCommandLine ?? "";
-                if (!HasOption(current, "escape-exit"))
-                    return new PrepareForLaunchResponse(success: true)
-                    {
-                        NewCommandLine = (current.Trim() + " --escape-exit").Trim(),
-                    };
             }
             catch (Exception ex) { Log.Warn("PrepareEmulatorForLaunch", ex); }
 
