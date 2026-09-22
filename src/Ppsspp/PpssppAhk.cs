@@ -8,9 +8,9 @@
 // including a binding the user made himself. A script naming a key the emulator does not listen to
 // fails silently, and the user has no way to tell which of the two is lying.
 //
-// EXIT IS LEFT TO THE COMMAND LINE. The emulator entry carries --pause-menu-exit, so Escape opens
-// the pause menu and the menu is the way out; PPSSPP's own "Exit App" action is unbound and taking
-// Escape for it would cost the pause screen.
+// EXIT IS LEFT TO THE COMMAND LINE, and needs no script: --escape-exit makes PPSSPP quit on Escape
+// by itself, which is what a frontend's Exit sends. Simulating keystrokes for something the
+// emulator already has a flag for would be strictly worse. The menu is on F1 - see PpssppHotkeys.
 
 using System.Collections.Generic;
 

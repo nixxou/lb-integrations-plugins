@@ -22,9 +22,14 @@
 // F2 AND F4 are ours to match RetroArch, which is what LaunchBox's own AutoHotkey scripts already
 // assume, and what this repository's Flycast plugin uses.
 //
-// ESCAPE IS LEFT ALONE. It is PPSSPP's Pause, and the emulator entry's command line carries
-// --pause-menu-exit so that the pause menu is the way out. Rebinding it to "Exit App" would take
-// away the pause screen to gain an exit the frontend already has.
+// ESCAPE IS FREED, and that is the one binding this file MOVES rather than adds. PPSSPP binds Pause
+// to Escape, but Escape is also what every frontend's Exit sends, and PPSSPP has a --escape-exit
+// flag that makes it quit on that key - listed in its own option table beside --pause-menu-exit. Two
+// things fighting over one key is the worst of both, so the menu goes to F1, which nothing else
+// uses, and Escape quits. Only the KEYBOARD part of Pause moves; its pad bindings stay.
+//
+// The move happens only when Pause still holds exactly the default Escape and F1 is free. A user who
+// changed either has already decided.
 
 using System;
 using System.Collections.Generic;
@@ -50,6 +55,7 @@ namespace LbIntegrations.Ppsspp
     {
         public const string Section = "ControlMapping";
 
+        public const string Pause = "Pause";
         public const string SaveState = "Save State";
         public const string LoadState = "Load State";
         public const string PreviousSlot = "Previous Slot";
@@ -57,6 +63,15 @@ namespace LbIntegrations.Ppsspp
 
         /// <summary>Device 1 is the keyboard; the rest of a value's comma-separated parts are pads.</summary>
         private const int KeyboardDevice = 1;
+
+        /// <summary>The menu key, and the one binding this plugin MOVES rather than adds.
+        ///
+        /// PPSSPP binds Pause to Escape. Escape is also what a frontend's Exit sends, and PPSSPP has
+        /// a --escape-exit flag that makes it quit on that key - so leaving Pause there means the two
+        /// fight over one key. The menu goes to F1, which nothing else uses, and Escape is left to
+        /// quitting. The pad bindings on Pause are untouched: only the keyboard part moves.</summary>
+        private const int PauseFromKey = 111;    // KEYCODE_ESCAPE
+        private const int PauseToKey = 131;      // KEYCODE_F1
 
         /// <summary>Ours, with the Android keycode each F-key has.</summary>
         private static readonly (string Entry, int Code, string Key)[] OurKeys =
@@ -109,6 +124,19 @@ namespace LbIntegrations.Ppsspp
                     added.Add(key + " -> " + entry);
                 }
 
+                // THE ONE MOVE. Everything else here only fills a blank; this takes Escape away from
+                // the menu so it can quit. Done only when Pause still holds exactly the default
+                // Escape and F1 is free - a user who moved either has decided already.
+                var pause = PpssppIni.Read(path, Section, Pause);
+                if (pause.TryGetValue(Pause, out var pauseValue)
+                    && KeyboardCodeOf(pauseValue) == PauseFromKey
+                    && !taken.Contains(PauseToKey))
+                {
+                    add[Pause] = Rebind(pauseValue, PauseFromKey, PauseToKey);
+                    table.Keys[Pause] = PauseToKey;
+                    added.Add("F1 -> " + Pause + " (was Escape, now free to quit)");
+                }
+
                 if (add.Count == 0) { table.Skipped = "every shortcut was already bound"; return table; }
 
                 var error = PpssppIni.Write(path, Section, add);
@@ -143,6 +171,17 @@ namespace LbIntegrations.Ppsspp
                 var code = KeyboardCodeOf(pair.Value);
                 if (code != null) table.Keys[pair.Key] = code.Value;
             }
+        }
+
+        /// <summary>The same value with one keyboard code swapped, every other part kept in place -
+        /// the pad bindings on the same action are none of our business.</summary>
+        private static string Rebind(string value, int from, int to)
+        {
+            var parts = (value ?? "").Split(',');
+            for (var i = 0; i < parts.Length; i++)
+                if (parts[i].Trim() == KeyboardDevice + "-" + from)
+                    parts[i] = KeyboardDevice + "-" + to;
+            return string.Join(",", parts.Select(x => x.Trim()).Where(x => x.Length > 0));
         }
 
         /// <summary>The keyboard code in a value like "1-132,20-4036": the first part whose device is

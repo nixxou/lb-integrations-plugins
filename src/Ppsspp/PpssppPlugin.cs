@@ -36,7 +36,10 @@ namespace LbIntegrations.Ppsspp
         /// <summary>The LaunchBox default for this emulator, straight out of the metadata database.
         /// --pause-menu-exit keeps the pause menu reachable while still letting the frontend regain
         /// control, which is why it is preferred to --escape-exit.</summary>
-        private const string DefaultCommandLine = "--fullscreen --pause-menu-exit";
+        /// <summary>--escape-exit makes Escape quit, which is what every frontend's Exit sends;
+        /// --pause-menu-exit makes the pause menu's Exit leave the app rather than return to the
+        /// game list. The menu itself is on F1 - see PpssppHotkeys.</summary>
+        private const string DefaultCommandLine = "--fullscreen --escape-exit --pause-menu-exit";
 
         // Asset selection, declarative. ARM64 names contain "ARM64" but not "x64", so the two sets
         // stay disjoint. The exclusions are defensive: upstream does not currently publish debug or
@@ -148,6 +151,10 @@ namespace LbIntegrations.Ppsspp
             }
             catch { return false; }
         }
+
+        private static bool HasOption(string commandLine, string name)
+            => !string.IsNullOrEmpty(commandLine)
+               && commandLine.IndexOf("--" + name, StringComparison.OrdinalIgnoreCase) >= 0;
 
         public override EmulatorSupportResponse IsPlatformSupported(string platform)
         {
@@ -557,6 +564,19 @@ namespace LbIntegrations.Ppsspp
                         PpssppHotkeys.Ensure(PpssppPaths.Resolve(ResolveFullPath(exe)), mayEditExisting: true);
                 }
                 catch { }
+
+                // ESCAPE QUITS. PPSSPP has a flag for exactly this, listed beside --pause-menu-exit
+                // in its own option table, so there is nothing to simulate with keystrokes: the
+                // emulator does it itself. Escape is what every frontend's Exit sends, and the menu
+                // has moved to F1 (see PpssppHotkeys) so the two no longer fight over one key.
+                //
+                // Anything the user already set is left alone.
+                var current = args?.CurrentCommandLine ?? "";
+                if (!HasOption(current, "escape-exit"))
+                    return new PrepareForLaunchResponse(success: true)
+                    {
+                        NewCommandLine = (current.Trim() + " --escape-exit").Trim(),
+                    };
             }
             catch (Exception ex) { Log.Warn("PrepareEmulatorForLaunch", ex); }
 
