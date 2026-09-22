@@ -28,7 +28,7 @@ namespace LbIntegrations.Probe
         {
             if (args.Length == 0 || args[0].StartsWith("-"))
             {
-                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--rows] [--hotkeys]");
+                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--rows] [--hotkeys] [--saves --emu <exe> --rom <rom>]");
                 return 2;
             }
 
@@ -236,6 +236,68 @@ namespace LbIntegrations.Probe
             }
 
             // The Flycast assertion. Builds its own forged install in the temp folder and cleans up.
+            // What the plugin says the LIVE saves are, for one game on one emulator. The question
+            // "the vault copy shows but the active save does not" has no other honest answer.
+            if (Has(args, "--saves"))
+            {
+                var rom = Arg(args, "--rom");
+                if (emuPath == null || rom == null)
+                {
+                    Console.Error.WriteLine("--saves needs --emu <emulator.exe> and --rom <rom>");
+                    return 2;
+                }
+                Section("GetSaves  [" + Path.GetFileName(rom) + "]");
+                var emulator = new StubEmulator { Title = "emulator", ApplicationPath = emuPath };
+                var game = StubGame.Create(Guid.NewGuid().ToString(), Path.GetFileNameWithoutExtension(rom),
+                                           rom, emulator.Id);
+                var saves = plugin.GetSaves(new GetSavesArgs { Emulator = emulator, Games = new[] { game } });
+                if (saves?.WasSuccess != true)
+                {
+                    Console.WriteLine("  GetSaves failed: " + (saves?.Message ?? "no reason given"));
+                    return 1;
+                }
+                // The other half of the contract: a save the plugin then calls a "secondary file" is
+                // one the host is told to ignore. Asked about each save's OWN location.
+                // A PLUGIN MUST NEVER CALL ITS OWN SAVE SECONDARY. "Secondary" tells the host to
+                // ignore the path, so a plugin that answers true for something it just returned in
+                // GetSaves is instructing the host to drop it - measured on Xenia, whose unit IS the
+                // folder named 00000001 and whose test matched any segment of that name, its own
+                // last one included. The host obeyed and the game showed only its vault copies.
+                var selfDenied = false;
+                foreach (var one in saves.FoundSaves ?? (IReadOnlyCollection<GameSaveBase>)Array.Empty<GameSaveBase>())
+                {
+                    var secondary = plugin.IsSecondarySaveFile(one.FileLocation);
+                    selfDenied |= secondary;
+                    Console.WriteLine("  IsSecondarySaveFile(\"" + one.FileLocation + "\") -> " + secondary
+                                      + (secondary ? "   <<< the plugin disowns its own save" : "")
+                                      + "      IsSaveContainer -> " + plugin.IsSaveContainer(one));
+                }
+                if (selfDenied)
+                {
+                    Console.WriteLine();
+                    Console.WriteLine("  FAIL - a save returned by GetSaves is declared a secondary file");
+                    return 1;
+                }
+
+                var list = saves.FoundSaves ?? (IReadOnlyCollection<GameSaveBase>)Array.Empty<GameSaveBase>();
+                Console.WriteLine("  " + list.Count + " save(s)");
+                foreach (var one in list)
+                {
+                    // EVERY property, because the interesting difference between two plugins is
+                    // whichever field one of them leaves null.
+                    Console.WriteLine("    " + one.GetType().Name);
+                    foreach (var prop in one.GetType().GetProperties()
+                                            .OrderBy(pr => pr.Name, StringComparer.Ordinal))
+                    {
+                        object v;
+                        try { v = prop.GetValue(one); } catch (Exception ex) { v = "<" + ex.GetType().Name + ">"; }
+                        Console.WriteLine("        " + prop.Name.PadRight(28)
+                                          + (v == null ? "(null)" : v.ToString()));
+                    }
+                }
+                return 0;
+            }
+
             if (Has(args, "--rows"))
             {
                 if (!RowInjectionCheck.Run(plugin)) return 1;

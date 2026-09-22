@@ -189,6 +189,11 @@ namespace LbIntegrations.Flycast
                 GameId = gameId,
                 AdditionalApplicationId = appId,
                 FileLocation = path,
+                // Every save Flycast writes is a FILE - a VMU image, an arcade NVRAM blob, a state.
+                // Said explicitly because the flag matters: a host that believes a directory is a
+                // file finds nothing there and treats the save as gone. See XeniaSaves, where the
+                // unit is a folder and leaving this unset cost an evening.
+                IsDirectory = false,
                 OriginalFileName = Path.GetFileName(path),
                 SaveGroupId = groupId,
                 SaveGroupName = groupName,
@@ -444,7 +449,17 @@ namespace LbIntegrations.Flycast
                          : layout.VmuDirs;
 
                 var full = Path.GetFullPath(loc);
-                return dirs.Any(d => full.StartsWith(d, StringComparison.OrdinalIgnoreCase));
+                if (!dirs.Any(d => full.StartsWith(d, StringComparison.OrdinalIgnoreCase))) return false;
+
+                // AND IT MUST STILL BE THERE. Being under the emulator's folder is not enough: the
+                // path can name a place that no longer exists, and "active" means the save the
+                // emulator would actually read.
+                //
+                // Measured on Xenia, where reinstalling the emulator moved every save under a new
+                // profile folder: the old records still passed the prefix test, the host picked a dead
+                // one as the group's active save, and the game showed its vault copy and nothing live.
+                // The same shape is reachable here - a redirected VMU path, a deleted state folder.
+                return Exists(loc);
             }
             catch { return true; }
         }
@@ -546,6 +561,12 @@ namespace LbIntegrations.Flycast
         }
 
         // ── plumbing ─────────────────────────────────────────────────────────
+
+        /// <summary>A path that is there, file or folder.</summary>
+        private static bool Exists(string path)
+        {
+            try { return File.Exists(path) || Directory.Exists(path); } catch { return false; }
+        }
 
         private static bool IsOurs(GameSaveBase save)
             => save?.SaveGroupId != null

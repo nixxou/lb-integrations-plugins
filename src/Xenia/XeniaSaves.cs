@@ -109,6 +109,13 @@ namespace LbIntegrations.Xenia
                 // The content-type folder itself. Pointing at the title folder would drag DLC and title
                 // updates into every size and freshness reading.
                 FileLocation = unit.UnitPath,
+                // A DIRECTORY, and the host must be told so. Measured on LaunchBox 14: it asked for
+                // this save on every page open, got it, and still drew the card from the vault copies
+                // alone with the violet "In Vault" pill - because a save whose FileLocation it treats
+                // as a file simply is not there, and a save that is not there cannot be the active
+                // one. LiteBox never showed the fault: it computes ActiveIsDirectory as
+                // `save.IsDirectory || Directory.Exists(path)` and so covered for the missing flag.
+                IsDirectory = true,
                 OriginalFileName = XeniaContent.SavedGameType,
                 SaveGroupId = GroupPrefix + unit.TitleId,
                 SaveGroupName = SaveNameOf(unit, game),
@@ -137,14 +144,24 @@ namespace LbIntegrations.Xenia
 
         public override bool UseSaveGroupIdForPersistedMatch(GameSaveBase save) => IsOurs(save);
 
-        /// <summary>Defensive only: a file inside a save must not become a save of its own.</summary>
+        /// <summary>A file INSIDE a save must not become a save of its own - but the save itself must
+        /// never be called secondary.
+        ///
+        /// The unit IS the folder named 00000001, and the earlier test answered "true whenever any
+        /// segment is 00000001", which is true of the unit's own path. Measured: the plugin told the
+        /// host to ignore the very save it had just returned, LaunchBox obeyed, and the game's page
+        /// showed nothing but its vault copies under a violet "In Vault" pill. PPSSPP answers false
+        /// for its own unit and has always displayed correctly - that contrast is what found this.
+        ///
+        /// Secondary means STRICTLY INSIDE: the 00000001 segment must be followed by another.</summary>
         public override bool IsSecondarySaveFile(string filePath)
         {
             try
             {
                 if (string.IsNullOrWhiteSpace(filePath)) return false;
-                foreach (var segment in filePath.Split('\\', '/'))
-                    if (string.Equals(segment, XeniaContent.SavedGameType, StringComparison.OrdinalIgnoreCase))
+                var segments = filePath.Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries);
+                for (var i = 0; i < segments.Length - 1; i++)      // - 1: never the LAST segment
+                    if (string.Equals(segments[i], XeniaContent.SavedGameType, StringComparison.OrdinalIgnoreCase))
                         return true;
                 return false;
             }
@@ -163,8 +180,18 @@ namespace LbIntegrations.Xenia
                 var layout = XeniaPaths.Resolve(emulatorApplicationPath);
                 var loc = save.FileLocation;
                 if (string.IsNullOrWhiteSpace(loc) || string.IsNullOrWhiteSpace(layout.ContentRoot)) return true;
-                return Path.GetFullPath(loc).StartsWith(Path.GetFullPath(layout.ContentRoot),
-                                                        StringComparison.OrdinalIgnoreCase);
+                if (!Path.GetFullPath(loc).StartsWith(Path.GetFullPath(layout.ContentRoot),
+                                                      StringComparison.OrdinalIgnoreCase)) return false;
+
+                // AND IT MUST STILL BE THERE. Being under the emulator's folder is not enough: the
+                // path can name a place that no longer exists, and "active" means the save the
+                // emulator would actually read.
+                //
+                // Measured on Xenia. Reinstalling it created a NEW profile, so the content path went
+                // from content\<old XUID>\<title>\00000001 to content\<new XUID>\... Both records
+                // survived, both passed the prefix test, and the host picked the dead one as the
+                // group's active save - so the game showed its vault copy and no live save at all.
+                return Exists(loc);
             }
             catch { return true; }
         }
@@ -257,6 +284,7 @@ namespace LbIntegrations.Xenia
                     GameId = save.GameId,
                     AdditionalApplicationId = save.AdditionalApplicationId,
                     FileLocation = destination,
+                    IsDirectory = true,          // the unit is a folder - see the note above
                     OriginalFileName = XeniaContent.SavedGameType,
                     SaveGroupId = GroupPrefix + titleId,
                     SaveGroupName = save.SaveGroupName,
@@ -338,6 +366,13 @@ namespace LbIntegrations.Xenia
         }
 
         // ── plumbing ─────────────────────────────────────────────────────────
+
+        /// <summary>A path that is there, whether it is a file or a folder. A Xenia unit is a
+        /// directory, so File.Exists alone would answer no to every save we manage.</summary>
+        private static bool Exists(string path)
+        {
+            try { return Directory.Exists(path) || File.Exists(path); } catch { return false; }
+        }
 
         private static bool IsOurs(GameSaveBase save)
             => save?.SaveGroupId != null

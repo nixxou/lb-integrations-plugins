@@ -62,6 +62,7 @@ namespace LbIntegrations.Probe
                 ok &= ExistingRowsLeftAlone(plugin, exe);
                 ok &= ForeignPlatformsUnchecked(plugin, exe);
                 ok &= Versions(plugin);
+                ok &= SaveLiveness(plugin, exe, data);
                 ok &= StartupSweep(plugin, exe);
 
                 Console.WriteLine();
@@ -452,6 +453,64 @@ namespace LbIntegrations.Probe
             Console.WriteLine("  a platform it does run keeps its tick            " + (oursKept ? "OK" : "FAIL"));
             Console.WriteLine("  the ones it runs that were missing were added    " + (oursCompleted ? "OK" : "FAIL"));
             return nothingRemoved && foreignCleared && oursKept && oursCompleted;
+        }
+
+        /// <summary>IsSaveActive, which decides whether the host shows a live save or only its vault
+        /// copy.
+        ///
+        /// A path under the emulator's folder that NO LONGER EXISTS must not be called active.
+        /// Measured on Xenia: reinstalling it moved every save under a new profile folder, the stale
+        /// record still passed the prefix test, and the host picked the dead one as the group's
+        /// active save - so the game showed a vault copy and no live save at all.</summary>
+        private static bool SaveLiveness(EmulatorPlugin plugin, string exe, string data)
+        {
+            Console.WriteLine();
+            bool ok = true;
+            void Check(string what, bool good)
+            {
+                ok &= good;
+                Console.WriteLine("  " + what.PadRight(46) + (good ? "OK" : "FAIL"));
+            }
+
+            var real = Path.Combine(data, "T44102N_vmu_save_A1.bin");
+            Directory.CreateDirectory(data);
+            if (!File.Exists(real)) File.WriteAllBytes(real, new byte[128]);
+
+            var present = new GameSaveGame { FileLocation = real, SaveGroupId = "flycast-vmu:T44102N" };
+            var gone = new GameSaveGame
+            {
+                FileLocation = Path.Combine(data, "GONE_vmu_save_A1.bin"),
+                SaveGroupId = "flycast-vmu:GONE",
+            };
+
+            // IsDirectory must say what the save IS. A host that believes a folder is a file finds
+            // nothing at that path and treats the save as gone - measured on LaunchBox 14, which then
+            // drew the card from the vault copies alone. Flycast's saves are files; Xenia's unit is a
+            // folder; both must say so.
+            var listed = plugin.GetSaves(new GetSavesArgs
+            {
+                Emulator = new StubEmulator { Title = "Flycast", ApplicationPath = exe },
+                Games = new[] { StubGame.Create("g", "game", Path.Combine(data, "..", "roms", "disc.chd")) },
+            })?.FoundSaves ?? (IReadOnlyCollection<GameSaveBase>)Array.Empty<GameSaveBase>();
+            // "Secondary" tells the host to ignore a path. Answering true for a save the plugin
+            // itself just returned is an instruction to drop it - see XeniaSaves, where it cost an
+            // evening of looking everywhere but here.
+            Check("no save is declared secondary by its own plugin",
+                  listed.All(sv => !plugin.IsSecondarySaveFile(sv.FileLocation)));
+
+            Check("every save says whether it is a directory",
+                  listed.All(sv => sv.IsDirectory == Directory.Exists(sv.FileLocation ?? "")));
+
+            Check("a save that is on disk is active", plugin.IsSaveActive(present, exe));
+            Check("a save whose file is gone is NOT active", !plugin.IsSaveActive(gone, exe));
+
+            var elsewhere = new GameSaveGame
+            {
+                FileLocation = Path.Combine(Path.GetTempPath(), "somewhere-else.bin"),
+                SaveGroupId = "flycast-vmu:T44102N",
+            };
+            Check("a save outside the emulator is NOT active", !plugin.IsSaveActive(elsewhere, exe));
+            return ok;
         }
 
         /// <summary>The version comparison, which decides whether LaunchBox shows the update cloud.

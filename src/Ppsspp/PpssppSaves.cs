@@ -202,6 +202,13 @@ namespace LbIntegrations.Ppsspp
                 AdditionalApplicationId = appId,
                 // The unit's primary folder - never the SAVEDATA parent. See the header note.
                 FileLocation = unit.PrimaryPath,
+                // A DIRECTORY, and the host must be told so. Measured on LaunchBox 14: it asked for
+                // this save on every page open, got it, and still drew the card from the vault copies
+                // alone with the violet "In Vault" pill - because a save whose FileLocation it treats
+                // as a file simply is not there, and a save that is not there cannot be the active
+                // one. LiteBox never showed the fault: it computes ActiveIsDirectory as
+                // `save.IsDirectory || Directory.Exists(path)` and so covered for the missing flag.
+                IsDirectory = true,
                 OriginalFileName = Path.GetFileName(unit.PrimaryPath),
                 SaveGroupId = GroupPrefix + unit.DiscId,
                 SaveGroupName = unit.Title,
@@ -308,8 +315,18 @@ namespace LbIntegrations.Ppsspp
                 var root = state ? layout.SaveStateDir : layout.SaveDataDir;
                 var loc = save.FileLocation;
                 if (string.IsNullOrWhiteSpace(loc) || string.IsNullOrWhiteSpace(root)) return true;
-                return Path.GetFullPath(loc).StartsWith(Path.GetFullPath(root),
-                                                        StringComparison.OrdinalIgnoreCase);
+                if (!Path.GetFullPath(loc).StartsWith(Path.GetFullPath(root),
+                                                      StringComparison.OrdinalIgnoreCase)) return false;
+
+                // AND IT MUST STILL BE THERE. Being under the emulator's folder is not enough: the
+                // path can name a place that no longer exists, and "active" means the save the
+                // emulator would actually read.
+                //
+                // Measured on Xenia, where reinstalling the emulator moved every save under a new
+                // profile folder: the old records still passed the prefix test, the host picked a dead
+                // one as the group's active save, and the game showed its vault copy and nothing live.
+                // A memory stick moved or a state deleted by hand reaches the same state here.
+                return Exists(loc);
             }
             catch { return true; }
         }
@@ -417,6 +434,7 @@ namespace LbIntegrations.Ppsspp
                     GameId = save.GameId,
                     AdditionalApplicationId = save.AdditionalApplicationId,
                     FileLocation = restored?.PrimaryPath ?? Path.Combine(saveDataDir, Path.GetFileName(incoming[0])),
+                    IsDirectory = true,          // a PSP save is a folder - see the note above
                     OriginalFileName = Path.GetFileName(incoming[0]),
                     SaveGroupId = GroupPrefix + discId,
                     SaveGroupName = restored?.Title ?? save.SaveGroupName,
@@ -571,6 +589,12 @@ namespace LbIntegrations.Ppsspp
 
         /// <summary>A SAVEDATA save of ours. A state is excluded by TYPE, not by prefix: every
         /// container predicate hangs off this, and the SDK already gives us the distinction.</summary>
+        /// <summary>A path that is there, file or folder - a PSP save is a directory, a state a file.</summary>
+        private static bool Exists(string path)
+        {
+            try { return File.Exists(path) || Directory.Exists(path); } catch { return false; }
+        }
+
         private static bool IsOurs(GameSaveBase save)
             => save is not GameSaveState
                && save?.SaveGroupId != null
