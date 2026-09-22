@@ -13,6 +13,25 @@
 // The discriminator at the top of content\ is the name length: 16 hex digits is an XUID, 8 is a
 // legacy title id.
 //
+// IS IT ALWAYS 00000001? Yes, and the source says why rather than merely showing it. At the creation
+// site (kernel/xam/xam_content.cc) a profile's XUID is used for ONE content type and no other:
+//
+//     if (profile && content_data.content_type == XContentType::kSavedGame) {
+//       xuid = profile->xuid();
+//     }
+//
+// Everything else falls back to xuid = 0, the common XUID, which is also where DLC is forced
+// (ResolvePackagePath overrides kMarketplaceContent to 0) and where updates land. So under a profile
+// folder the only content type that can appear is 00000001 - plus the profile package itself, at the
+// dashboard title id FFFE07D1 with type 00010000, written by the profile manager rather than through
+// this path, and excluded here by type.
+//
+// The enum (xbox.h) does carry a second save type, kXboxSavedGame = 0x00060000, for original-Xbox
+// titles. It is dead: a search of the whole kernel finds no use of it, nor of kStorageDownload. The
+// types the kernel actually handles are kProfile, kSavedGame, kMarketplaceContent, kPublisher,
+// kInstaller, kGamerPicture, kXbox360Title, kTheme, kInstalledGame and kGameTrailer - and of those,
+// only kSavedGame is a game's save.
+//
 // THE UNIT IS THE CONTENT-TYPE FOLDER 00000001, not the title folder. Under the same title id sit
 // 00000002 (downloadable content) and 000B0000 (title updates); syncing those as though they were
 // progress would push gigabytes of add-ons around. This is also exactly where Argosy stops, and
@@ -108,7 +127,13 @@ namespace LbIntegrations.Xenia
                 TitleId = titleId.ToUpperInvariant(),
                 Xuid = xuid,
                 UnitPath = unitPath,
-                Packages = SafeDirs(unitPath).ToList(),
+                // Directories AND files. A package is normally a folder - ContentManager::CreatePackage
+                // has its container branch behind `#if 0`, so Canary only ever writes directories -
+                // but OpenPackage reads either: `is_directory(host_path) ? ContentPackageDirectory :
+                // ContentPackageContainer`, the second being a single STFS file. A save lifted off a
+                // real Xbox 360 arrives that way and Xenia loads it, so counting only folders would
+                // report "0 package(s)" over a save that is really there.
+                Packages = SafeDirs(unitPath).Concat(SafeTopLevelFiles(unitPath)).ToList(),
             };
 
             var headers = Path.Combine(titleDir, HeadersDirName, SavedGameType);
@@ -181,6 +206,13 @@ namespace LbIntegrations.Xenia
         private static IEnumerable<string> SafeDirs(string p)
         {
             try { return Directory.EnumerateDirectories(p).ToList(); } catch { return Array.Empty<string>(); }
+        }
+
+        /// <summary>Entries at the TOP of the unit only. SafeFiles below is recursive - it exists for
+        /// the last-write scan - and using it here counted a package's contents as packages.</summary>
+        private static IEnumerable<string> SafeTopLevelFiles(string p)
+        {
+            try { return Directory.EnumerateFiles(p).ToList(); } catch { return Array.Empty<string>(); }
         }
 
         private static IEnumerable<string> SafeFiles(string p)
