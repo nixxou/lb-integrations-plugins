@@ -97,32 +97,29 @@ namespace LbIntegrations.MelonDs
 
         // ── the receipt itself ───────────────────────────────────────────────
 
-        /// <summary>The title, then one line per file, sorted by name so the text is the same
-        /// whatever order the filesystem hands them back in.</summary>
+        /// <summary>The title, then one line per member of the save, sorted by name so the text is
+        /// the same whatever order they come back in.
+        ///
+        /// THE CONTENT, NEVER THE CONTAINER. A save is one zip now, and hashing its bytes would have
+        /// been shorter - but it would tie this receipt to whatever a zip writer decides to do with
+        /// its headers, and this receipt is what decides whether a session is thrown away. So the
+        /// entries are read out and summed one by one, exactly as the loose files used to be. The
+        /// determinism of the archive is a convenience for the host; it is not load-bearing here.
+        ///
+        /// A save that cannot be opened yields just the title, which reads as a change - the same
+        /// answer the folder form gave for a file something else was holding open.</summary>
         private static string Of(MelonDsLayout layout, string titleId)
         {
             var lines = new List<string> { titleId };
             try
             {
-                var dir = MelonDsDsi.StateDirFor(layout, titleId);
-                if (dir != null && Directory.Exists(dir))
-                {
-                    var names = new List<string>();
-                    foreach (var file in Directory.GetFiles(dir)) names.Add(file);
-                    names.Sort(StringComparer.OrdinalIgnoreCase);
-
-                    foreach (var file in names)
-                    {
-                        byte[] bytes;
-                        try { bytes = File.ReadAllBytes(file); }
-                        catch { continue; }          // held open by something: left out, so it reads as a change
-                        lines.Add(Crc32(bytes).ToString("x8", CultureInfo.InvariantCulture)
-                                  + "\t" + bytes.Length.ToString(CultureInfo.InvariantCulture)
-                                  + "\t" + Path.GetFileName(file));
-                    }
-                }
+                var save = MelonDsDsi.SavePathFor(layout, titleId);
+                foreach (var entry in MelonDsSaveFile.Entries(save))
+                    lines.Add(Crc32(entry.Value).ToString("x8", CultureInfo.InvariantCulture)
+                              + "\t" + entry.Value.Length.ToString(CultureInfo.InvariantCulture)
+                              + "\t" + entry.Key);
             }
-            catch (Exception ex) { Log.Verbose("could not sum a state folder - " + ex.Message); }
+            catch (Exception ex) { Log.Verbose("could not sum a save - " + ex.Message); }
             return string.Join("\n", lines);
         }
 

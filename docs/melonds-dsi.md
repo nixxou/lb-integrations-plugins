@@ -531,8 +531,19 @@ Pour comparaison, et pour savoir ce qu'un fork rend inutile.
 <install>\dsi\identities.txt         identité de chaque console, en cache
 <install>\dsi\<titleid>\title.tmd    les métadonnées retenues
 <install>\dsi\<titleid>\reference.txt  le parcours d'une install fraîche
-<install>\dsi\<titleid>\state\       les fichiers qui en diffèrent — LA sauvegarde
+<install>\dsi\<titleid>\state.dsisave  ce qui en diffère, empaqueté — LA sauvegarde
 ```
+
+**La sauvegarde est UN FICHIER**, un zip déterministe (entrées triées, date constante, aucune
+compression), écrit par SharpCompress qui est épinglé et fusionné dans le greffon. Dedans : `files.txt`
+l'index, un fichier par ligne `F`, plus `base.zip` / `base.txt`, la recette de la console. C'était un
+dossier jusqu'à ce que la forme se paie : l'hôte choisit sur `IsSaveContainer` entre un chemin qui
+extrait un conteneur vers le coffre **en dossier** et un chemin qui copie **un fichier**, et les trois
+défauts de gestion de sauvegarde du greffon venaient tous du premier. Le coffre s'appelle donc
+`Saves\Nintendo DSiware\<jeu>.dsisave`.
+
+La sauvegarde elle-même est **un `.dsisave`**, zip déterministe (§ 5.3) : l'hôte le copie tel quel
+dans le coffre, et `work.sum` en somme les **entrées**, jamais les octets du conteneur.
 
 Au lancement d'un DSiWare, **deux questions au lieu d'une**. D'abord : *la sauvegarde de ce titre
 nomme-t-elle une console ?* Si oui c'est elle, et rien d'autre n'a voix au chapitre — reconstruite

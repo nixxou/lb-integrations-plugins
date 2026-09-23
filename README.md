@@ -658,11 +658,14 @@ re-obtain.
 the console setup touches `shared1/TWLCFG0.dat`, `TWLCFG1.dat` and the launcher's `private.sav`. Tens
 of kilobytes.
 
-**And it is a zip, which is not a preference.** `TryBackupSave` and `RestoreSave` both copy
-`Directory.GetFiles` - top level only, no recursion - because a state folder is flat by construction
-(`FlatName` turns `0:/shared1/TWLCFG0.dat` into `0__shared1_TWLCFG0.dat`). A recipe *folder* inside a
-state folder would be the first subdirectory in the tree, and it would be lost at the first backup.
-One file survives both without a line of code.
+**And it is a zip, which was not a preference and is now the house style.** When a save was a folder
+that folder was flat by construction (`FlatName` turns `0:/shared1/TWLCFG0.dat` into
+`0__shared1_TWLCFG0.dat`), and backup and restore both copied its top level only - so a recipe
+*folder* inside it would have been the first subdirectory in the tree and would have been lost at the
+first backup. One file survived both without a line of code. The save has since been packed the same
+way, by the same writer, so the recipe is now simply one entry inside it - and it is written
+deterministically for the same reason the save is: it is copied into every save made on that console,
+so a recipe that varied would make all of them vary with it.
 
 **The identity is derived, never assigned.** It is a hash of the entries the recipe names, read out of
 the *image* rather than the recipe, and cached in `dsi\identities.txt` on size and write time. Three
@@ -790,32 +793,58 @@ DSi menu refused, and this. An empty file named `dsi-direct-boot` beside the log
 over for anyone who wants to re-run the measurement; it is read on every launch rather than
 remembered, so it can be flipped with the host running, and the log names which way each launch went.
 
-**A DSiWare save is the whole state folder, and it is a DIRECTORY.** Not the image - 240 MB is far
-too much to hash for a freshness dot or to copy into a vault. But not one file out of it either,
-which is what this used to hand over and it was wrong: measured on one real session, the game's own
-`public.sav` was **16 KB out of 4.2 MB across eleven files**. The console settings, the menu's data
-and the built-in applications' saves had all moved too, so a backup would have captured a fifth of a
-save and a restore would have put a game's progress back into a console that had forgotten it.
+**A DSiWare save is the whole difference, packed into one file: `.dsisave`.** Not the image - 240 MB
+is far too much to hash for a freshness dot or to copy into a vault. But not one file out of it
+either, which is what this used to hand over and it was wrong: measured on one real session, the
+game's own `public.sav` was **16 KB out of 4.2 MB across eleven files**. The console settings, the
+menu's data and the built-in applications' saves had all moved too, so a backup would have captured a
+fifth of a save and a restore would have put a game's progress back into a console that had forgotten
+it.
 
-So `dsi\<title id>\state\` is what the host lists, backs up and hands back, with `IsDirectory` set -
-the contract has a shape for that, and Xenia in this same repository uses it because an Xbox 360 save
-is a folder too. A folder beats packing it into an archive: nothing to pack, nothing to unpack, and
-no archive quietly changing its own bytes between two identical writes and making the host think the
-save moved.
+```
+<install>\dsi\0003000412345678\state.dsisave     what the host lists, backs up and hands back
+Saves\Nintendo DSiware\The Game (USA).dsisave     what a backup of it is called
+```
+
+It was a folder first, with `IsDirectory` set - the contract has a shape for that, and Xenia in this
+same repository uses it because an Xbox 360 save is a folder too. And this paragraph used to argue
+for it: *a folder beats packing it into an archive - nothing to pack, nothing to unpack, and no
+archive quietly changing its own bytes between two identical writes and making the host think the
+save moved.*
+
+**The objection was right, and it is the reason the packing is careful.** The host fingerprints a
+file save by hashing its bytes, so an archive that came out different from identical content would
+make the freshness dot flicker at every launch. Three rules settle it - entries sorted by name, one
+constant timestamp, no compression at all - and the probe packs the same content twice, in two
+orders, from files stamped years apart, and requires the same sha256. Stored rather than a fixed
+compression level because this assembly targets `net9.0-windows` and .NET 9 moved to zlib-ng: pinning
+the level would not pin the bytes. The writer is SharpCompress, pinned at 0.41.0 and merged into the
+DLL, so its header layout ships with us instead of coming from whatever runtime the host is on.
+
+**What the folder cost in exchange was the host's container path**, and that is what settled it.
+`IsSaveContainer` picks between a branch that asks the plugin to extract a save into a temp folder -
+which then lands in the vault as a folder with no extension - and a branch that copies one file. The
+container branch is where all three of this plugin's save-management defects lived. The file branch
+is the one every other save in this repository takes.
 
 **The working image carries a receipt, so a save that arrived from elsewhere is not overwritten.**
 A session is written down at the START of the next launch, because nothing says the emulator has
 quit. That is correct while the image is the newest thing on disk - and it stops being true the
-moment something else writes the state folder: a RomM sync, a restore from another machine, a file
-dropped in by hand. The folder then holds the new save, the image still holds the old session, and
-the capture puts the old session back on top. Nothing errors. The sync is simply undone.
+moment something else writes the save: a RomM sync, a restore from another machine, a file dropped
+in by hand. The save then holds the new session, the image still holds the old one, and the capture
+puts the old one back on top. Nothing errors. The sync is simply undone.
 
-So `dsi\work.sum` lists every file of the state folder the image was last agreed with, by CRC32,
-size and name, written at the two moments the two are in step - just after a capture, and just after
-a rebuild. Before a capture the folder is summed again: same, and the capture is the newest thing and
+So `dsi\work.sum` lists every member of the save the image was last agreed with, by CRC32, size and
+name, written at the two moments the two are in step - just after a capture, and just after a
+rebuild. Before a capture the save is summed again: same, and the capture is the newest thing and
 goes ahead; different, and somebody else got there first, so the image is dropped instead of written
 and the next launch rebuilds around the save that arrived. An image is always rebuildable in a
 quarter of a second; a save that came from elsewhere is not.
+
+**The receipt reads the members, never the file's own bytes**, and that is deliberate even though
+the bytes are now deterministic. Hashing the container would tie the decision "is this session worth
+keeping" to whatever a zip writer does with its headers. The determinism is a convenience for the
+host; it is not a foundation for us.
 
 A restore still throws the image away itself rather than leaning on this, which is the one place
 that duplication is deliberate. The receipt exists to notice writers who do not know about us; a
@@ -838,45 +867,52 @@ what somebody claims it is". There is no adversary, only two writers who do not 
 other. No receipt at all - an installation from before this existed - means no opinion, never
 "assume the worst".
 
-**Calling a save a container is a promise, and the host takes it literally.** `IsSaveContainer` says
-yes for a DSiWare save, so the host makes a destination folder, asks `TryBackupSave` to lay the save
-out in it, and records a backup from whatever turns up. Refusing there does not produce "no backup" -
+**Calling a save a container is a promise, and the host takes it literally.** It is worth recording
+what that cost, because the answer is now "no" for all three kinds. `IsSaveContainer` used to say yes
+for a DSiWare save, so the host made a destination folder, asked `TryBackupSave` to lay the save out
+in it, and recorded a backup from whatever turned up. Refusing there does not produce "no backup" -
 it produces an EMPTY FOLDER and no backup, once per session, with nothing on screen to say why. That
 is exactly what happened: 0 backups after several evenings and a trail of empty directories in
 `Saves\Nintendo DSiware\`, because the refusal was written when a DSiWare save was still one
-extracted file and was never revisited when it became a folder. The state folder is flat by
-construction, so extracting it is a copy.
+extracted file and was never revisited when it became a folder.
+
+That branch also carried the last hook before a backup: it refreshed the save first, since a backup
+asked for outside the save window has not been through `GetSaves` and the working image may hold a
+session nobody wrote down. Measured in the host, every route to a backup lists first - the on-close
+service scans, the sweep scans per game, the Edit Game window rebuilds its groups - and listing is
+what refreshes. The residue, if some host ever backed up without listing, is one session of lag.
 
 A capture happens only when this title is the one the working image holds AND melonDS has written to
 it since the last one, so the steady state costs two calls to `GetLastWriteTimeUtc`. A restore
-replaces the folder rather than merging into it - a state describes one moment, and a file that
-stopped differing has to stop being restored - and a folder with no `files.txt` in it is refused
-rather than half-applied.
+replaces the save rather than merging into it - a state describes one moment, and a file that stopped
+differing has to stop being restored - which one file gets for free where a folder had to be swapped
+wholesale. Anything that is not an archive carrying `files.txt` is refused rather than half-applied.
 
 **And a restore has to work on nothing at all**, because that is what a delete leaves behind: the
-title folder is gone, the reference walk and the cached metadata with it. It does. The state is
+title folder is gone, the reference walk and the cached metadata with it. It does. The save is
 written into a folder created on the spot, and the next launch rebuilds the image, reinstalls the
 title, takes a fresh reference walk and applies the restored state onto it, in that order. Nothing in
-the restore depends on what the delete removed. The guard at the top of the restore path used to
-demand a *file*, though, so every DSiWare backup - a folder - was rejected with "this backup is not a
-file" before the folder branch three lines below could ever see it. Back up, delete, restore is now
+the restore depends on what the delete removed. The guard at the top of the restore path once
+demanded a *file* while a DSiWare backup was a folder, and rejected every one of them with "this
+backup is not a file" before the folder branch three lines below could ever see it - a guard that
+outlived a change of shape, which is now the shape it was written for. Back up, delete, restore is
 one sequence the probe performs end to end, through the host's own entry points.
 
 **A restore drops the working image; it does not write into it.** Applying a state onto an image that
 has been played looks like the same thing and is not: the apply puts back the files the state names
 and takes away nothing the current session added. Restore a save that has A and B onto an image that
-has A, B and C, and C survives into play - and the next capture writes C back into the state folder,
+has A, B and C, and C survives into play - and the next capture writes C back into the save,
 growing the restored save back into what it was restored to be rid of. A state describes a fresh
 install and nothing else, so that is the only surface it is allowed to land on. The image is scratch;
 the next launch rebuilds it in a quarter of a second.
 
 **A deletion has to reach three places, or it is not one.** *Delete Save* on a DSiWare row means "this
-title has never been played", and three things hold that: the state folder, the working image when it
+title has never been played", and three things hold that: the save file, the working image when it
 still happens to hold the same title - the next question about this game's saves would capture it
 straight back out - and, on an installation without the native library, the per-title image, which
 *is* the save and where nothing else holds it.
 
-So the whole title folder goes, not just the state inside it - the reference walk and the cached
+So the whole title folder goes, not just the save inside it - the reference walk and the cached
 `.tmd` are not saves and keeping them would cost nothing, but a folder named after the game still
 sitting there after somebody deleted that game's save reads as a delete that did not work. Both are
 recovered on the next launch, the metadata from the carried index, which is in the assembly and needs
@@ -885,11 +921,11 @@ no network.
 The working image is **left where it is**, and used to be thrown away here. Two independent things
 now stop it putting the save back, and neither of them is the delete's to remember: the reference
 walk went with the folder, and nothing can be captured without one; and the receipt below no longer
-matches a state folder that is not there, so the next launch drops the image before deciding
+matches a save that is not there, so the next launch drops the image before deciding
 anything. An image nothing can read is scratch, and the next DSiWare launch rebuilds over it.
 
 The title's `.tmd` is kept in `dsi\tmd\` rather than in the title's own folder, for the same reason
-read the other way: it describes the TITLE, not the save. It used to sit beside the state folder,
+read the other way: it describes the TITLE, not the save. It used to sit inside the title folder,
 which was tidy and wrong - a delete took it too. For the titles the carried index holds that costs
 nothing; for one that came from Nintendo's server it costs a second download, and on a machine that
 is offline at the next launch it costs the metadata altogether, leaving an unsigned TMD built from

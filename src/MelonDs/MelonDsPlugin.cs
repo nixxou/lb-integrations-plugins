@@ -1131,14 +1131,19 @@ namespace LbIntegrations.MelonDs
             lost = null;
             try
             {
-                var stateDir = MelonDsDsi.StateDirFor(layout, rom.TitleId);
-                if (stateDir == null) return null;
+                var save = MelonDsDsi.SavePathFor(layout, rom.TitleId);
+                if (save == null || !File.Exists(save)) return null;
 
+                // READ OUT OF THE SAVE FILE, IN MEMORY. This runs on every DSiWare launch, and what
+                // it costs is one 400-byte entry and one 30 KB entry out of a 70 KB archive - a zip
+                // is random-access through its central directory, so neither the rest of the save
+                // nor the disk is touched. Nothing is unpacked unless the console turns out to be
+                // missing, which is the rare path.
                 var record = MelonDsBase.ReadRecord(
-                    System.IO.Path.Combine(stateDir, MelonDsBase.RecordInState));
+                    MelonDsSaveFile.Bytes(save, MelonDsBase.RecordInState));
                 if (record == null) return null;            // no record, no opinion
 
-                var recipe = System.IO.Path.Combine(stateDir, MelonDsBase.RecipeInState);
+                var recipe = MelonDsSaveFile.Bytes(save, MelonDsBase.RecipeInState);
 
                 // Already on disk, under the name it was built from or as a rebuild: use it.
                 var here = ConsoleWithIdentity(layout, record.Identity, bios7, recipe);
@@ -1151,14 +1156,30 @@ namespace LbIntegrations.MelonDs
                 var original = MelonDsBase.FindOriginal(Dumps(layout), record);
                 if (original == null) { lost = record; return null; }
 
-                var archive = MelonDsBase.ArchiveFor(layout, record.Identity);
-                if (MelonDsBase.RebuildFrom(original, recipe, archive, bios7, record.Identity,
-                                            record.Region, out var error))
-                    return archive;
+                // THE ONE PLACE A SAVE IS WRITTEN OUT TO READ IT. Rebuilding lays the recipe down as
+                // a folder to apply it, so it wants a file rather than bytes. This happens when a
+                // console has gone missing, not on an ordinary launch.
+                var onDisk = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+                                                    "lbip-recipe-" + Guid.NewGuid().ToString("N") + ".zip");
+                try
+                {
+                    if (!MelonDsSaveFile.Extract(save, MelonDsBase.RecipeInState, onDisk, out var why))
+                    {
+                        Log.Warn("this save carries no recipe, so its console cannot be rebuilt - " + why);
+                        lost = record;
+                        return null;
+                    }
 
-                Log.Warn("could not rebuild the console this save belongs to - " + error);
-                lost = record;
-                return null;
+                    var archive = MelonDsBase.ArchiveFor(layout, record.Identity);
+                    if (MelonDsBase.RebuildFrom(original, onDisk, archive, bios7, record.Identity,
+                                                record.Region, out var error))
+                        return archive;
+
+                    Log.Warn("could not rebuild the console this save belongs to - " + error);
+                    lost = record;
+                    return null;
+                }
+                finally { try { File.Delete(onDisk); } catch { } }
             }
             catch (Exception ex)
             {
@@ -1170,7 +1191,7 @@ namespace LbIntegrations.MelonDs
         /// <summary>An image on disk whose identity is the one asked for: a rebuild kept in bases\,
         /// or a console named after its dump. Null when none of them is.</summary>
         private static string ConsoleWithIdentity(MelonDsLayout layout, string identity, string bios7,
-                                                  string recipe)
+                                                  byte[] recipe)
         {
             try
             {

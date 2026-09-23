@@ -1,7 +1,8 @@
 // Save management for melonDS.
 //
-// THREE KINDS. Two are plain FILES named after the ROM rather than after anything read out of it.
-// The third is a DIRECTORY, and that difference is the whole DSiWare story.
+// THREE KINDS, ALL THREE ONE FILE. Two are named after the ROM rather than after anything read out
+// of it; the third is named after nothing the user chose, because it is assembled rather than
+// written - and that is the whole DSiWare story.
 //
 //   Battery save   <asset name>.sav
 //   Save states    <asset name>.ml1 .. .ml8
@@ -28,11 +29,16 @@
 // A THIRD KIND, and it is the odd one: a DSiWare save. It lives INSIDE the title's NAND, at
 // title/<category>/<id>/data/public.sav (DSi_NAND.cpp:1077-1092), and the image is 240 MB of which a
 // few kilobytes are the save. Handing the image to the host would mean hashing all of it to draw a
-// freshness dot, and a vault copy of 240 MB per backup. So the save is extracted beside the NAND and
-// THAT is what is listed - the state FOLDER beside the image, not the image - while the NAND stays
-// the truth: a restore goes back through it, and a deletion throws the folder away and forgets the
-// working image, so the next launch rebuilds a console that has never played this title.
+// freshness dot, and a vault copy of 240 MB per backup. So the difference the session made is taken
+// out of the NAND and THAT is what is listed - as one file, <title id>\state.dsisave - while the
+// NAND stays the truth: a restore goes back through it, and a deletion throws the save away and
+// forgets the working image, so the next launch rebuilds a console that has never played this title.
 // See MelonDsDsi.RefreshSave and MelonDsDsi.DropState.
+//
+// IT WAS A FOLDER UNTIL IT WAS PACKED, and the reason it stopped being one is the host's dispatch,
+// not tidiness: IsSaveContainer picks between a path that copies a directory into the vault and a
+// path that copies a file, and the container path is where every defect this file ever had came
+// from. See MelonDsSaveFile.
 
 using System;
 using System.Collections.Generic;
@@ -129,14 +135,15 @@ namespace LbIntegrations.MelonDs
             // A DSiWare title keeps its save INSIDE its NAND, not beside the ROM, and what comes
             // out is not one file. Measured on one real session: the game's own public.sav was
             // 16 KB out of 4.2 MB across eleven files - the console settings, the menu's data and
-            // the built-in apps' saves had all moved too. So the unit is the whole state folder.
+            // the built-in apps' saves had all moved too. So the unit is the whole difference -
+            // packed into one .dsisave, which is what makes it a file here. See MelonDsSaveFile.
             if (rom.IsDSiWare)
             {
                 var state = MelonDsDsi.RefreshSave(layout, rom.TitleId, Bios7Of(layout));
-                if (state != null && Directory.Exists(state)
+                if (state != null && File.Exists(state)
                     && seen.Add("dsiware|" + state + "|" + context))
                     into.Add(Row(state, gameId, appId, DsiWarePrefix + rom.TitleId,
-                                 DsiWareGroupName, DsiWareChipText, directory: true));
+                                 DsiWareGroupName, DsiWareChipText));
                 return 0;                                 // no .sav and no .ml<n> for DSiWare
             }
 
@@ -181,20 +188,10 @@ namespace LbIntegrations.MelonDs
         internal static string StateExtension(int slot) => ".ml" + (char)('0' + slot);
 
         private static GameSaveGame Row(string path, string gameId, string appId,
-                                        string groupId, string groupName, string chip,
-                                        bool directory = false)
+                                        string groupId, string groupName, string chip)
         {
             long size = 0; DateTime when = default;
-            try
-            {
-                if (directory)
-                {
-                    var d = new DirectoryInfo(path);
-                    when = d.LastWriteTimeUtc;
-                    foreach (var f in d.EnumerateFiles()) size += f.Length;
-                }
-                else { var i = new FileInfo(path); size = i.Length; when = i.LastWriteTimeUtc; }
-            }
+            try { var i = new FileInfo(path); size = i.Length; when = i.LastWriteTimeUtc; }
             catch { }
 
             return new GameSaveGame
@@ -202,13 +199,14 @@ namespace LbIntegrations.MelonDs
                 GameId = gameId,
                 AdditionalApplicationId = appId,
                 FileLocation = path,
-                // SAID EXPLICITLY, because the flag matters and its absence is invisible. A host that
-                // believes a directory is a file finds nothing there and treats the save as gone -
-                // measured on LaunchBox 14 with Xenia, where the card was drawn from vault copies
-                // alone under a violet "In Vault" pill while the real save sat right there. LiteBox
-                // covered for it - it computes the same thing from Directory.Exists - so the fault
-                // only ever showed in one of the two hosts.
-                IsDirectory = directory,
+                // SAID EXPLICITLY, because the flag matters and its absence is invisible. It is
+                // false for all three kinds now, but the cost of getting it wrong is worth recording:
+                // a host that believes a directory is a file finds nothing there and treats the save
+                // as gone - measured on LaunchBox 14 with Xenia, where the card was drawn from vault
+                // copies alone under a violet "In Vault" pill while the real save sat right there.
+                // LiteBox covered for it, computing the same thing from Directory.Exists, so the
+                // fault only ever showed in one of the two hosts.
+                IsDirectory = false,
                 OriginalFileName = Path.GetFileName(path),
                 SaveGroupId = groupId,
                 SaveGroupName = groupName,
@@ -220,74 +218,42 @@ namespace LbIntegrations.MelonDs
 
         // ── the contract ─────────────────────────────────────────────────────
 
-        /// <summary>A DSiWare state is a container - a folder of files that only mean anything
-        /// together - and the other two are not: a battery save is one file and a savestate is one
-        /// file. Saying otherwise for those would make the host ask TryBackupSave to extract
-        /// something that does not exist.</summary>
-        public override bool IsSaveContainer(GameSaveBase save) => IsDsiWare(save);
+        /// <summary>NONE OF THE THREE IS A CONTAINER ANY MORE, and that single answer is what
+        /// moves a DSiWare save from the host's folder path to its file path.
+        ///
+        /// The host dispatches a backup on this: a container is extracted by the plugin into a temp
+        /// folder and lands in the vault as a FOLDER with no extension; a file is copied straight in
+        /// and lands as "&lt;game name&gt;&lt;extension&gt;". A DSiWare state really is several files, and
+        /// saying so was honest - but it bought the container path, which is where every defect this
+        /// plugin had in save management came from: backups that made empty folders, restores
+        /// refused for not being a file, a delete that quietly did nothing. Packing the state into
+        /// one .dsisave buys the other path, the one every other save in this repository takes.</summary>
+        public override bool IsSaveContainer(GameSaveBase save) => false;
 
         public override bool UseSaveGroupIdForPersistedMatch(GameSaveBase save) => IsOurs(save);
 
-        /// <summary>Guarded, not decorative: the host should never reach this, and if it does the
-        /// honest answer is that there is nothing to extract.</summary>
-        /// <summary>Lay a DSiWare save out in the folder the host just made for it.
+        /// <summary>Guarded, not decorative. IsSaveContainer answers false, so the host never asks
+        /// - and if it ever did, the honest answer is that a .dsisave IS the extract.
         ///
-        /// THIS IS THE OTHER HALF OF IsSaveContainer. Saying a save is a container is a promise that
-        /// this method can extract it, and the host takes it: it creates a destination, asks, and
-        /// records a backup from what turns up. Refusing here - which this did, with a message that
-        /// said the save was a plain file after it had stopped being one - leaves the host an empty
-        /// folder and no backup, on every session, silently. Measured on Zelda: Four Swords, 0
-        /// backups after several evenings and a trail of empty directories.
+        /// This used to do the work, and the history is worth keeping: saying a save is a container
+        /// is a promise that this method can extract it, and the host takes it literally - it makes
+        /// a destination, asks, and records a backup from whatever turns up. Refusing here, which an
+        /// earlier version did with a message claiming the save was a plain file, left the host an
+        /// empty folder and no backup, every session, silently. Measured on Zelda: Four Swords, 0
+        /// backups after several evenings and a trail of empty directories in the vault.
         ///
-        /// The state folder is flat by construction - an index and one file per captured entry - so
-        /// extracting it is a copy. It is refreshed first: a backup asked for outside the save window
-        /// has not been through GetSaves, and the working image may be holding a session that was
-        /// never written down.</summary>
+        /// WHAT THAT PATH ALSO CARRIED was the last hook before a backup: this refreshed the save
+        /// first, because a backup asked for outside the save window has not been through GetSaves
+        /// and the working image may hold a session nobody wrote down. Measured in the host, every
+        /// route to a backup lists first - SaveBackupService.OnGameClosed calls ScanBase, the sweep
+        /// calls it per game, the Edit Game window rebuilds its groups - and listing is what calls
+        /// RefreshSave. The residue, if some host ever backed up without listing, is one session of
+        /// lag; it is not a loss.</summary>
         public override bool TryBackupSave(GameSaveBase save, string emulatorApplicationPath,
                                            string destinationFolder, out string error)
         {
-            error = null;
-            try
-            {
-                if (!IsDsiWare(save))
-                {
-                    error = "A melonDS cartridge save or savestate is one file, not a container.";
-                    return false;
-                }
-
-                var layout = LayoutForSave(save, emulatorApplicationPath);
-                if (layout != null) MelonDsDsi.RefreshSave(layout, TitleIdOf(save), Bios7Of(layout));
-
-                var source = save?.FileLocation;
-                if (string.IsNullOrWhiteSpace(source) || !Directory.Exists(source))
-                {
-                    error = "This DSiWare save is no longer on disk.";
-                    return false;
-                }
-                if (!File.Exists(Path.Combine(source, MelonDsDelta.IndexName)))
-                {
-                    error = "This folder is not a melonDS state - it has no " + MelonDsDelta.IndexName + ".";
-                    return false;
-                }
-
-                Directory.CreateDirectory(destinationFolder);
-                int copied = 0;
-                foreach (var file in Directory.GetFiles(source))
-                {
-                    File.Copy(file, Path.Combine(destinationFolder, Path.GetFileName(file)), overwrite: true);
-                    copied++;
-                }
-
-                Log.Info("extracted the DSiWare save for " + TitleIdOf(save) + ": "
-                         + copied + " file(s) -> " + destinationFolder);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Log.Warn("TryBackupSave failed", ex);
-                error = ex.Message;
-                return false;
-            }
+            error = "A melonDS save is one file, not a container.";
+            return false;
         }
 
         /// <summary>The melonDS a save belongs to, from the emulator path when the host supplied one
@@ -395,8 +361,8 @@ namespace LbIntegrations.MelonDs
                 // for a save whose whole point is that it is not a file.
                 if (IsDsiWare(save))
                 {
-                    if (!Directory.Exists(source))
-                        return new AddSaveResponse("This DSiWare backup is not a folder: " + source);
+                    if (!File.Exists(source))
+                        return new AddSaveResponse("This DSiWare backup is not a file: " + source);
                     return RestoreDsiWare(save, source);
                 }
 
@@ -468,11 +434,11 @@ namespace LbIntegrations.MelonDs
                 Log.Info("restored the DSiWare save of " + titleId
                          + "; the next launch rebuilds its console around it");
 
-                // directory: true here too - the row that comes back describes the same folder the
-                // listing does, and a host told it is a file would not find it.
+                // The row that comes back has to describe the same thing the listing does, or the
+                // host looks for it in the wrong shape and decides the save is not there.
                 return new AddSaveResponse(Row(mirror ?? source, save.GameId, save.AdditionalApplicationId,
                                                save.SaveGroupId, save.SaveGroupName ?? DsiWareGroupName,
-                                               DsiWareChipText, directory: true));
+                                               DsiWareChipText));
             }
             catch (Exception ex)
             {

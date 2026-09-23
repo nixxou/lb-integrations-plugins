@@ -45,7 +45,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -301,12 +300,12 @@ namespace LbIntegrations.MelonDs
                     if (kept < 0) { error = captureError; return false; }
                 }
 
+                // The same writer as a save, and for the same reason: this file is copied into
+                // every save made on this console, so a recipe that came out different between two
+                // identical writes would make every one of those saves differ with it.
                 var target = RecipeFor(initialPath);
-                var partial = target + ".part";
-                try { if (File.Exists(partial)) File.Delete(partial); } catch { }
-                ZipFile.CreateFromDirectory(built, partial, CompressionLevel.Optimal, false);
-                if (File.Exists(target)) File.Delete(target);
-                File.Move(partial, target);
+                if (!MelonDsSaveFile.Pack(built, target, out var packError))
+                { error = packError; return false; }
 
                 // And the record beside it, computed once here rather than at every capture.
                 var identity = IdentityOf(initialPath, bios7Path, PathsIn(target));
@@ -327,17 +326,21 @@ namespace LbIntegrations.MelonDs
         /// <summary>The NAND paths a recipe names, F and X alike. This is the list the identity is
         /// computed over - the recipe says WHICH files matter, the image says what is in them.</summary>
         public static List<string> PathsIn(string recipeZip)
+            => PathsFrom(MelonDsSaveFile.Bytes(recipeZip, MelonDsDelta.IndexName));
+
+        /// <summary>The same, from a recipe already in memory - which is how it is read on the
+        /// ordinary launch path, where the recipe is one entry inside a save file and nothing has to
+        /// touch the disk to look at it.</summary>
+        public static List<string> PathsIn(byte[] recipeZip)
+            => PathsFrom(MelonDsSaveFile.BytesIn(recipeZip, MelonDsDelta.IndexName));
+
+        private static List<string> PathsFrom(byte[] index)
         {
             var paths = new List<string>();
             try
             {
-                if (!File.Exists(recipeZip)) return paths;
-                using var zip = ZipFile.OpenRead(recipeZip);
-                var entry = zip.GetEntry(MelonDsDelta.IndexName);
-                if (entry == null) return paths;
-
-                using var stream = entry.Open();
-                using var reader = new StreamReader(stream);
+                if (index == null) return paths;
+                using var reader = new StreamReader(new MemoryStream(index));
                 string line;
                 while ((line = reader.ReadLine()) != null)
                 {
@@ -345,7 +348,7 @@ namespace LbIntegrations.MelonDs
                     if (parts.Length == 3 && parts[2].Length > 0) paths.Add(parts[2]);
                 }
             }
-            catch (Exception ex) { Log.Verbose("could not read " + recipeZip + " - " + ex.Message); }
+            catch (Exception ex) { Log.Verbose("could not read a recipe index - " + ex.Message); }
             paths.Sort(StringComparer.Ordinal);
             return paths;
         }
@@ -446,7 +449,8 @@ namespace LbIntegrations.MelonDs
                 Directory.CreateDirectory(Path.GetDirectoryName(targetPath));
 
                 unpacked = Path.Combine(Path.GetTempPath(), "lbip-apply-" + Guid.NewGuid().ToString("N"));
-                ZipFile.ExtractToDirectory(recipeZip, unpacked);
+                if (!MelonDsSaveFile.Unpack(recipeZip, unpacked, out var openRecipe))
+                { error = openRecipe; return false; }
 
                 // Through a temporary name: a 240 MB copy interrupted halfway must not leave
                 // something that looks like a finished base.
@@ -599,12 +603,23 @@ namespace LbIntegrations.MelonDs
         /// before any of this existed has no record, and the only honest answer to "is this the right
         /// base" is then "no opinion" - the same rule work.sum follows.</summary>
         public static BaseRecord ReadRecord(string path)
+            => path == null || !File.Exists(path) ? null : ReadRecord(File.ReadAllLines(path));
+
+        /// <summary>The same, from a record already in memory: inside a save file it is one entry of
+        /// about 400 bytes, read on every DSiWare launch.</summary>
+        public static BaseRecord ReadRecord(byte[] text)
+        {
+            if (text == null) return null;
+            try { return ReadRecord(Encoding.UTF8.GetString(text).Split('\n')); }
+            catch (Exception ex) { Log.Verbose("could not read a record - " + ex.Message); return null; }
+        }
+
+        private static BaseRecord ReadRecord(string[] lines)
         {
             try
             {
-                if (path == null || !File.Exists(path)) return null;
                 var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var line in File.ReadAllLines(path))
+                foreach (var line in lines)
                 {
                     var parts = line.Split(new[] { '\t' }, 2);
                     if (parts.Length == 2) map[parts[0].Trim()] = parts[1].Trim();
@@ -624,7 +639,7 @@ namespace LbIntegrations.MelonDs
                     Region = Get(map, "region"),
                 };
             }
-            catch (Exception ex) { Log.Verbose("could not read " + path + " - " + ex.Message); return null; }
+            catch (Exception ex) { Log.Verbose("could not read a record - " + ex.Message); return null; }
         }
 
         private static string Get(Dictionary<string, string> map, string key)

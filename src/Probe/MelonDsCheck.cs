@@ -78,6 +78,7 @@ namespace LbIntegrations.Probe
                 ok &= DsiWareWithoutANand(exe, romDir);
                 ok &= NandFirstUse(exe);
                 ok &= TwoOfTheSameRegion();
+                ok &= SaveFileIsDeterministic();
                 ok &= DsiWareDelete(exe);
                 ok &= DsiWareRestore(exe);
                 ok &= DsiWareBackup(plugin, exe);
@@ -1011,6 +1012,164 @@ namespace LbIntegrations.Probe
         ///
         /// And nothing of this title survives afterwards. A folder named after the game, still there
         /// once its save is deleted, reads the same way.</summary>
+        /// <summary>The same content packs to the same bytes, and that is the whole reason a save
+        /// can be a file at all.
+        ///
+        /// On the file path the host fingerprints a save by hashing its BYTES - DirManifestMd5 is for
+        /// folders, SetSignatureMd5 for files. A zip that came out different from identical content
+        /// would make the freshness dot flicker at every launch and make a sync see a change that
+        /// never happened. Three things could make that happen, and all three are tested here: the
+        /// order the filesystem hands files back, the files' own timestamps, and the compression.
+        ///
+        /// This is also the assertion that says whether the writer slipped something variable in -
+        /// an extra field carrying a timestamp, say. If it ever fails for content that is genuinely
+        /// identical, the answer is to emit the zip bytes by hand; STORE without Zip64 is about sixty
+        /// lines.</summary>
+        private static bool SaveFileIsDeterministic()
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- the same save packs to the same bytes");
+
+            var type = TypeIn("MelonDsSaveFile");
+            var pack = type?.GetMethod("Pack", BindingFlags.Public | BindingFlags.Static);
+            var bytes = type?.GetMethod("Bytes", BindingFlags.Public | BindingFlags.Static);
+            var holds = type?.GetMethod("Holds", BindingFlags.Public | BindingFlags.Static);
+            var unpack = type?.GetMethod("Unpack", BindingFlags.Public | BindingFlags.Static);
+            if (pack == null || bytes == null || holds == null || unpack == null)
+            { Console.WriteLine("    no MelonDsSaveFile to call"); return false; }
+
+            string dir = Path.Combine(Path.GetTempPath(), "lbip-dsisave-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            try
+            {
+                bool ok = true;
+
+                // Two folders holding the same four files, written in opposite orders and stamped
+                // years apart. Everything a filesystem can differ in, and nothing a save differs in.
+                var names = new[] { "files.txt", "0__shared1_TWLCFG0.dat",
+                                    "0__shared1_TWLCFG1.dat", "base.txt" };
+                var content = new Dictionary<string, byte[]>
+                {
+                    ["files.txt"] = Encoding.UTF8.GetBytes("F\t0__shared1_TWLCFG0.dat\t0:/shared1/TWLCFG0.dat\r\n"),
+                    ["0__shared1_TWLCFG0.dat"] = Bytes(16384, 3),
+                    ["0__shared1_TWLCFG1.dat"] = Bytes(16384, 5),
+                    ["base.txt"] = Encoding.UTF8.GetBytes("identity\tee4aca9911223344\r\n"),
+                };
+
+                string Build(string name, bool reversed, DateTime when)
+                {
+                    var folder = Path.Combine(dir, name);
+                    Directory.CreateDirectory(folder);
+                    var order = new List<string>(names);
+                    if (reversed) order.Reverse();
+                    foreach (var file in order)
+                    {
+                        var full = Path.Combine(folder, file);
+                        File.WriteAllBytes(full, content[file]);
+                        File.SetLastWriteTimeUtc(full, when);
+                    }
+                    return folder;
+                }
+
+                var first = Build("one", reversed: false, when: new DateTime(2001, 2, 3, 4, 5, 6, DateTimeKind.Utc));
+                var second = Build("two", reversed: true, when: new DateTime(2026, 9, 23, 22, 11, 0, DateTimeKind.Utc));
+
+                var a = Path.Combine(dir, "one.dsisave");
+                var b = Path.Combine(dir, "two.dsisave");
+                ok &= Check("a folder packs into a save file",
+                            (bool)pack.Invoke(null, new object[] { first, a, null }) && File.Exists(a));
+                ok &= Check("and so does the other one",
+                            (bool)pack.Invoke(null, new object[] { second, b, null }) && File.Exists(b));
+
+                ok &= Check("THE SAME CONTENT IS THE SAME BYTES - whatever order it arrived in, "
+                            + "whatever the files' own dates say",
+                            Sha256(a) == Sha256(b));
+
+                // Packing the same folder twice must also agree with itself - a writer that stamped
+                // "now" would pass the test above and fail this one.
+                var again = Path.Combine(dir, "one-again.dsisave");
+                pack.Invoke(null, new object[] { first, again, null });
+                ok &= Check("and packing the same folder an hour later gives the same file again",
+                            Sha256(a) == Sha256(again));
+
+                // The other direction, or the assertion above would pass on an empty archive.
+                File.WriteAllBytes(Path.Combine(first, "0__shared1_TWLCFG0.dat"), Bytes(16384, 4));
+                var changed = Path.Combine(dir, "changed.dsisave");
+                pack.Invoke(null, new object[] { first, changed, null });
+                ok &= Check("one byte of one entry changes the file", Sha256(a) != Sha256(changed));
+
+                // What the rest of the plugin asks of a save file.
+                ok &= Check("a save file says it holds a state, by its index",
+                            (bool)holds.Invoke(null, new object[] { a }));
+                ok &= Check("its record reads back in memory, without unpacking anything",
+                            Encoding.UTF8.GetString((byte[])bytes.Invoke(null, new object[] { a, "base.txt" }))
+                                .Contains("ee4aca9911223344"));
+                ok &= Check("an entry it does not carry is simply absent, not an error",
+                            bytes.Invoke(null, new object[] { a, "nothing.txt" }) == null);
+
+                var back = Path.Combine(dir, "unpacked");
+                ok &= Check("and it lays back out as the folder it came from",
+                            (bool)unpack.Invoke(null, new object[] { a, back, null })
+                            && Directory.GetFiles(back).Length == names.Length
+                            && File.ReadAllBytes(Path.Combine(back, "0__shared1_TWLCFG1.dat")).Length == 16384);
+
+                var junk = Path.Combine(dir, "junk.dsisave");
+                File.WriteAllBytes(junk, Encoding.UTF8.GetBytes("this is not a zip at all"));
+                ok &= Check("something that is not an archive holds nothing, and does not throw",
+                            !(bool)holds.Invoke(null, new object[] { junk }));
+
+                return ok;
+            }
+            finally { try { Directory.Delete(dir, recursive: true); } catch { } }
+        }
+
+        /// <summary>A .dsisave on disk, from alternating names and contents. Built through the
+        /// plugin's OWN packer, so a fixture can never quietly disagree with what a real capture
+        /// writes - which is the failure mode of every hand-rolled archive in a test.</summary>
+        private static void MakeSave(string target, params string[] pairs)
+        {
+            var folder = target + ".build";
+            try
+            {
+                if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
+                Directory.CreateDirectory(folder);
+                for (int i = 0; i + 1 < pairs.Length; i += 2)
+                    File.WriteAllText(Path.Combine(folder, pairs[i]), pairs[i + 1]);
+
+                var pack = TypeIn("MelonDsSaveFile").GetMethod("Pack", BindingFlags.Public | BindingFlags.Static);
+                var args = new object[] { folder, target, null };
+                if (!(bool)pack.Invoke(null, args))
+                    Console.WriteLine("    could not build a fixture save: " + args[2]);
+            }
+            catch (Exception ex) { Console.WriteLine("    could not build a fixture save: " + ex.Message); }
+            finally { try { Directory.Delete(folder, recursive: true); } catch { } }
+        }
+
+        /// <summary>One entry of a .dsisave, as text, or null when it is not in there.</summary>
+        private static string InSave(string savePath, string entry)
+        {
+            try
+            {
+                var bytes = (byte[])TypeIn("MelonDsSaveFile")
+                    .GetMethod("Bytes", BindingFlags.Public | BindingFlags.Static)
+                    .Invoke(null, new object[] { savePath, entry });
+                return bytes == null ? null : Encoding.UTF8.GetString(bytes);
+            }
+            catch { return null; }
+        }
+
+        /// <summary>A file's sha256, as hex. Two saves of the same content must give the same one.</summary>
+        private static string Sha256(string path)
+        {
+            try
+            {
+                using var sha = System.Security.Cryptography.SHA256.Create();
+                using var stream = File.OpenRead(path);
+                return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
+            }
+            catch { return null; }
+        }
+
         private static bool DsiWareDelete(string exe)
         {
             Console.WriteLine();
@@ -1025,14 +1184,13 @@ namespace LbIntegrations.Probe
 
             const string titleId = "000300044b393945";
             string dsi = Path.Combine(Path.GetDirectoryName(exe), "dsi");
-            string state = Path.Combine(dsi, titleId, "state");
+            string save = Path.Combine(dsi, titleId, "state.dsisave");
             string marker = Path.Combine(dsi, "work.title");
             string work = Path.Combine(dsi, "work.bin");
             string legacy = Path.Combine(dsi, titleId, "nand.bin");
 
-            Directory.CreateDirectory(state);
-            File.WriteAllText(Path.Combine(state, "files.txt"), "F\t0\t0:/sys/HWINFO_S.dat\r\n");
-            File.WriteAllText(Path.Combine(state, "0"), "a captured file");
+            Directory.CreateDirectory(Path.Combine(dsi, titleId));
+            MakeSave(save, "files.txt", "F\t0\t0:/sys/HWINFO_S.dat\r\n", "0", "a captured file");
             File.WriteAllText(Path.Combine(dsi, titleId, "reference.txt"), "the fresh install");
 
             // Metadata about the TITLE, which has nothing to do with somebody's progress.
@@ -1049,7 +1207,7 @@ namespace LbIntegrations.Probe
             bool ok = true;
             ok &= Check("the delete is reported done", done);
             if (!done) Console.WriteLine("    it said: " + args[2]);
-            ok &= Check("the state folder is gone", !Directory.Exists(state));
+            ok &= Check("the save file is gone", !File.Exists(save));
             ok &= Check("the per-title image goes too - there, it IS the save",
                         !File.Exists(legacy));
             ok &= Check("the working image is LEFT - it is scratch, and rebuilt over next launch",
@@ -1064,7 +1222,7 @@ namespace LbIntegrations.Probe
                               BindingFlags.Public | BindingFlags.Static);
             capture.Invoke(null, new object[] { layout, null, null });
             ok &= Check("and a capture afterwards cannot bring the save back",
-                        !Directory.Exists(state));
+                        !File.Exists(save));
             ok &= Check("the title's metadata survives - deleting progress is not losing a download",
                         File.Exists(tmd));
 
@@ -1102,24 +1260,21 @@ namespace LbIntegrations.Probe
             const string titleId = "000300044b393945";
             string install = Path.GetDirectoryName(exe);
             string dsi = Path.Combine(install, "dsi");
-            string state = Path.Combine(dsi, titleId, "state");
+            string save = Path.Combine(dsi, titleId, "state.dsisave");
             string marker = Path.Combine(dsi, "work.title");
             string work = Path.Combine(dsi, "work.bin");
-            string vault = Path.Combine(install, "vault-copy");
+            string vault = Path.Combine(install, "vault-copy.dsisave");
 
             // What is on disk now: a session with three files in it, and the image that played it.
-            Directory.CreateDirectory(state);
-            File.WriteAllText(Path.Combine(state, "files.txt"),
-                              "F\t0\t0:/a\r\nF\t1\t0:/b\r\nF\t2\t0:/c\r\n");
-            foreach (var n in new[] { "0", "1", "2" }) File.WriteAllText(Path.Combine(state, n), "today " + n);
+            Directory.CreateDirectory(Path.Combine(dsi, titleId));
+            MakeSave(save, "files.txt", "F\t0\t0:/a\r\nF\t1\t0:/b\r\nF\t2\t0:/c\r\n",
+                     "0", "today 0", "1", "today 1", "2", "today 2");
             File.WriteAllText(marker, titleId + "\tsomewhere\t1\t2\tnand.bin");
             File.WriteAllText(work, "not really an image");
 
             // What comes back out of the vault: an older save, which never had the third file.
-            if (Directory.Exists(vault)) Directory.Delete(vault, recursive: true);
-            Directory.CreateDirectory(vault);
-            File.WriteAllText(Path.Combine(vault, "files.txt"), "F\t0\t0:/a\r\nF\t1\t0:/b\r\n");
-            foreach (var n in new[] { "0", "1" }) File.WriteAllText(Path.Combine(vault, n), "backup " + n);
+            MakeSave(vault, "files.txt", "F\t0\t0:/a\r\nF\t1\t0:/b\r\n",
+                     "0", "backup 0", "1", "backup 1");
 
             var args = new object[] { layout, titleId, null, vault, null };
             bool done = (bool)restore.Invoke(null, args);
@@ -1127,90 +1282,103 @@ namespace LbIntegrations.Probe
             bool ok = true;
             ok &= Check("the restore is reported done", done);
             if (!done) Console.WriteLine("    it said: " + args[4]);
-            ok &= Check("the backup's files are back",
-                        File.Exists(Path.Combine(state, "0"))
-                        && File.ReadAllText(Path.Combine(state, "0")) == "backup 0");
+            ok &= Check("the backup's files are back", InSave(save, "0") == "backup 0");
+
+            // REPLACED, NOT MERGED - which one file gets for free, where a folder had to be swapped
+            // wholesale to achieve it. A file that stopped differing has to stop being restored.
             ok &= Check("the file the backup never had is gone, not merged in",
-                        !File.Exists(Path.Combine(state, "2")));
+                        InSave(save, "2") == null);
             ok &= Check("the played image is dropped, not written onto", !File.Exists(work));
             ok &= Check("and its marker with it, so nothing reuses it", !File.Exists(marker));
 
-            // A folder that is not a state is refused rather than half-applied.
-            string junk = Path.Combine(install, "not-a-state");
-            Directory.CreateDirectory(junk);
-            File.WriteAllText(Path.Combine(junk, "something.bin"), "nope");
-            ok &= Check("a folder with no files.txt is refused",
+            // Two ways of not being a save, and both are refused rather than half-applied: a file
+            // that is not an archive at all, and an archive carrying no index.
+            string junk = Path.Combine(install, "not-a-state.dsisave");
+            File.WriteAllText(junk, "nope, this is just text");
+            ok &= Check("a file that is not an archive is refused",
                         !(bool)restore.Invoke(null, new object[] { layout, titleId, null, junk, null }));
 
-            foreach (var leftover in new[] { vault, junk, Path.Combine(dsi, titleId) })
-                try { Directory.Delete(leftover, recursive: true); } catch { }
-            try { File.Delete(work); } catch { }
-            try { File.Delete(marker); } catch { }
+            string headless = Path.Combine(install, "no-index.dsisave");
+            MakeSave(headless, "something.bin", "an archive, but not a save");
+            ok &= Check("and so is an archive with no " + "files.txt" + " in it",
+                        !(bool)restore.Invoke(null, new object[] { layout, titleId, null, headless, null }));
+
+            ok &= Check("neither of them touched the save that was there",
+                        InSave(save, "0") == "backup 0");
+
+            try { Directory.Delete(Path.Combine(dsi, titleId), recursive: true); } catch { }
+            foreach (var leftover in new[] { vault, junk, headless, work, marker })
+                try { File.Delete(leftover); } catch { }
             return ok;
         }
 
-        /// <summary>Backing a DSiWare save up, which is the other half of calling it a container.
+        /// <summary>Which of the host's two backup paths a DSiWare save takes, and it is the file
+        /// one.
         ///
-        /// Saying IsSaveContainer is a promise that TryBackupSave can extract the thing. The host
-        /// takes it literally: it makes a destination folder, asks, and records a backup from what
-        /// turns up. A refusal therefore does not mean "no backup" - it means an EMPTY FOLDER and no
-        /// backup, once per session, with nothing on screen to say why. That is what it did.</summary>
+        /// THE HOST DISPATCHES ON IsSaveContainer, and the two branches end somewhere different: a
+        /// container is extracted by the plugin into a temp folder and lands in the vault as a
+        /// FOLDER with no extension, while a file is copied straight in and lands as
+        /// "&lt;game name&gt;&lt;extension&gt;". That is the whole reason a DSiWare save is packed - it is what
+        /// turns a folder in the vault into "Zelda....dsisave".
+        ///
+        /// Saying "container" was honest while the save was several files, but the promise came with
+        /// the branch, and that branch is where this plugin's save management failed three separate
+        /// ways: a refusal left the host an empty folder and no backup, once per session, silently -
+        /// measured on Zelda: Four Swords, 0 backups after several evenings.</summary>
         private static bool DsiWareBackup(EmulatorPlugin plugin, string exe)
         {
             Console.WriteLine();
-            Console.WriteLine("  -- backing a DSiWare save up");
+            Console.WriteLine("  -- what the host is handed for a DSiWare save");
 
             const string titleId = "000300044b513945";
             string install = Path.GetDirectoryName(exe);
-            string state = Path.Combine(install, "dsi", titleId, "state");
-            string vault = Path.Combine(install, "vault-here");
+            string save = Path.Combine(install, "dsi", titleId, "state.dsisave");
+            string vault = Path.Combine(install, "The Game (USA).dsisave");
 
-            Directory.CreateDirectory(state);
-            File.WriteAllText(Path.Combine(state, "files.txt"), "F\t0\t0:/a\r\nX\t-\t0:/b\r\n");
-            File.WriteAllText(Path.Combine(state, "0"), "the save");
+            Directory.CreateDirectory(Path.GetDirectoryName(save));
+            MakeSave(save, "files.txt", "F\t0\t0:/a\r\nX\t-\t0:/b\r\n", "0", "the save");
 
             var row = new GameSaveGame
             {
                 GameId = "probe",
-                FileLocation = state,
-                IsDirectory = true,
-                OriginalFileName = "state",
+                FileLocation = save,
+                IsDirectory = false,
+                OriginalFileName = "state.dsisave",
                 SaveGroupId = "melonds:dsiware:" + titleId,
                 SaveGroupName = "DSiWare save",
             };
 
             bool ok = true;
-            ok &= Check("a DSiWare save says it is a container", plugin.IsSaveContainer(row));
+            ok &= Check("a DSiWare save is NOT a container - the host copies the file itself",
+                        !plugin.IsSaveContainer(row));
+            ok &= Check("and neither is a cartridge save or a savestate",
+                        !plugin.IsSaveContainer(new GameSaveGame
+                        {
+                            GameId = "probe",
+                            FileLocation = Path.Combine(install, "whatever.sav"),
+                            SaveGroupId = "melonds:save:whatever",
+                        }));
 
-            if (Directory.Exists(vault)) Directory.Delete(vault, recursive: true);
-            bool done = plugin.TryBackupSave(row, exe, vault, out var error);
-            ok &= Check("and can therefore be extracted, as it promised", done);
-            if (!done) Console.WriteLine("    it said: " + (error ?? "no reason given"));
+            bool done = plugin.TryBackupSave(row, exe, Path.Combine(install, "nowhere"), out var error);
+            ok &= Check("asking the plugin to extract one is refused, and says why",
+                        !done && !string.IsNullOrWhiteSpace(error));
 
-            ok &= Check("the index is in the backup", File.Exists(Path.Combine(vault, "files.txt")));
-            ok &= Check("and so is the file it names", File.Exists(Path.Combine(vault, "0")));
-            ok &= Check("the backup is not an empty folder",
-                        Directory.Exists(vault) && Directory.GetFiles(vault).Length == 2);
+            // What the host does instead, and the only property that makes it enough: the file
+            // carries the whole save, so a plain copy of it is a whole backup.
+            try { File.Delete(vault); } catch { }
+            File.Copy(save, vault);
+            ok &= Check("a plain copy of the file IS the backup - index and all",
+                        InSave(vault, "files.txt") != null && InSave(vault, "0") == "the save");
+            ok &= Check("and the vault copy is the same bytes, so nothing reads as changed",
+                        Sha256(save) == Sha256(vault));
 
-            // Without an emulator path: the host does not always supply one, and the install is
-            // reachable from the save's own location.
-            string second = Path.Combine(install, "vault-again");
-            ok &= Check("it works with no emulator path, from the save's location alone",
-                        plugin.TryBackupSave(row, null, second, out _)
-                        && File.Exists(Path.Combine(second, "files.txt")));
+            // The extension is what the host builds the vault name from: SaveVault.Extension reads
+            // Path.GetExtension off the active path. Get this wrong and the vault entry loses it.
+            ok &= Check("the save is named with the extension the vault copy will inherit",
+                        Path.GetExtension(save) == ".dsisave");
 
-            // A cartridge save is one file: the host copies those itself and must never be told
-            // otherwise, or it would ask for a container that does not exist.
-            var plain = new GameSaveGame
-            {
-                GameId = "probe",
-                FileLocation = Path.Combine(install, "whatever.sav"),
-                SaveGroupId = "melonds:save:whatever",
-            };
-            ok &= Check("a cartridge save is NOT a container", !plugin.IsSaveContainer(plain));
-
-            foreach (var leftover in new[] { vault, second, Path.Combine(install, "dsi", titleId) })
-                try { Directory.Delete(leftover, recursive: true); } catch { }
+            try { File.Delete(vault); } catch { }
+            try { Directory.Delete(Path.Combine(install, "dsi", titleId), recursive: true); } catch { }
             return ok;
         }
 
@@ -1230,8 +1398,8 @@ namespace LbIntegrations.Probe
             string install = Path.GetDirectoryName(exe);
             string dsi = Path.Combine(install, "dsi");
             string titleDir = Path.Combine(dsi, titleId);
-            string state = Path.Combine(titleDir, "state");
-            string vault = Path.Combine(install, "vault-roundtrip");
+            string save = Path.Combine(titleDir, "state.dsisave");
+            string vault = Path.Combine(install, "The Evening (USA).dsisave");
 
             var was = PluginHelper.DataManager;
             try
@@ -1241,31 +1409,32 @@ namespace LbIntegrations.Probe
                     new StubEmulator { Title = "melonDS", ApplicationPath = exe });
 
                 // A good evening, and the metadata that sits beside it.
-                Directory.CreateDirectory(state);
-                File.WriteAllText(Path.Combine(state, "files.txt"), "F\t0\t0:/a\r\nF\t1\t0:/b\r\n");
-                File.WriteAllText(Path.Combine(state, "0"), "the good save");
-                File.WriteAllText(Path.Combine(state, "1"), "and its neighbour");
+                Directory.CreateDirectory(titleDir);
+                MakeSave(save, "files.txt", "F\t0\t0:/a\r\nF\t1\t0:/b\r\n",
+                         "0", "the good save", "1", "and its neighbour");
                 File.WriteAllText(Path.Combine(titleDir, "reference.txt"), "the fresh install");
                 File.WriteAllText(Path.Combine(titleDir, "title.tmd"), "metadata");
 
                 var row = new GameSaveGame
                 {
                     GameId = "probe",
-                    FileLocation = state,
-                    IsDirectory = true,
-                    OriginalFileName = "state",
+                    FileLocation = save,
+                    IsDirectory = false,
+                    OriginalFileName = "state.dsisave",
                     SaveGroupId = "melonds:dsiware:" + titleId,
                     SaveGroupName = "DSiWare save",
                 };
 
                 bool ok = true;
 
-                if (Directory.Exists(vault)) Directory.Delete(vault, recursive: true);
-                ok &= Check("the evening goes into the vault",
-                            plugin.TryBackupSave(row, exe, vault, out var why) && File.Exists(Path.Combine(vault, "0")));
-                if (!File.Exists(Path.Combine(vault, "0"))) Console.WriteLine("    it said: " + why);
+                // THE HOST'S OWN FILE ARM, spelled out: not a container, so it copies the file into
+                // the vault under the game's name and the save's extension.
+                try { File.Delete(vault); } catch { }
+                ok &= Check("the host takes the file path for this save", !plugin.IsSaveContainer(row));
+                File.Copy(save, vault);
+                ok &= Check("the evening goes into the vault", InSave(vault, "0") == "the good save");
 
-                // Then it is all thrown away - the folder, the reference walk, the metadata.
+                // Then it is all thrown away - the save, the reference walk, the metadata.
                 var response = plugin.RemoveSave(row);
                 ok &= Check("the delete takes the whole title folder",
                             response is { WasSuccess: true } && !Directory.Exists(titleDir));
@@ -1277,30 +1446,34 @@ namespace LbIntegrations.Probe
                     {
                         GameId = "probe",
                         FileLocation = vault,
-                        IsDirectory = true,
+                        IsDirectory = false,
+                        OriginalFileName = Path.GetFileName(vault),
                         SaveGroupId = "melonds:dsiware:" + titleId,
                         SaveGroupName = "DSiWare save",
                     },
                     ShouldOverwriteFunc = () => true,
                 });
 
-                ok &= Check("a folder out of the vault is restored, not rejected for being a folder",
+                ok &= Check("a file out of the vault is restored onto nothing at all",
                             restored is { WasSuccess: true });
                 if (restored is not { WasSuccess: true }) Console.WriteLine("    " + Why(restored));
 
-                ok &= Check("the evening is back, byte for byte",
-                            File.Exists(Path.Combine(state, "0"))
-                            && File.ReadAllText(Path.Combine(state, "0")) == "the good save");
+                // AND IT LANDS UNDER OUR NAME, not the vault's. The vault copy is called after the
+                // game; the active save is always <title id>\state.dsisave, because that is what
+                // every other part of the plugin looks for.
+                ok &= Check("the evening is back, byte for byte", InSave(save, "0") == "the good save");
                 ok &= Check("and its index with it, so a launch knows what to put where",
-                            File.Exists(Path.Combine(state, "files.txt")));
+                            InSave(save, "files.txt") != null);
+                ok &= Check("under the name we choose, whatever the vault copy was called",
+                            File.Exists(save));
 
                 return ok;
             }
             finally
             {
                 PluginHelper.DataManager = was;
-                foreach (var leftover in new[] { vault, titleDir })
-                    try { if (Directory.Exists(leftover)) Directory.Delete(leftover, recursive: true); } catch { }
+                try { File.Delete(vault); } catch { }
+                try { Directory.Delete(titleDir, recursive: true); } catch { }
             }
         }
 
@@ -1333,15 +1506,14 @@ namespace LbIntegrations.Probe
             const string titleId = "000300044b393945";
             string install = Path.GetDirectoryName(exe);
             string dsi = Path.Combine(install, "dsi");
-            string state = Path.Combine(dsi, titleId, "state");
+            string save = Path.Combine(dsi, titleId, "state.dsisave");
             string marker = Path.Combine(dsi, "work.title");
             string work = Path.Combine(dsi, "work.bin");
             string sum = Path.Combine(dsi, "work.sum");
             string rom = Path.Combine(install, "pretend.nds");
 
-            Directory.CreateDirectory(state);
-            File.WriteAllText(Path.Combine(state, "files.txt"), "F\t0\t0:/a\r\n");
-            File.WriteAllText(Path.Combine(state, "0"), "the save as melonDS left it");
+            Directory.CreateDirectory(Path.Combine(dsi, titleId));
+            MakeSave(save, "files.txt", "F\t0\t0:/a\r\n", "0", "the save as melonDS left it");
             File.WriteAllText(Path.Combine(dsi, titleId, "reference.txt"), "the fresh install");
             File.WriteAllText(rom, "not really a rom");
             File.WriteAllText(work, "not really an image");
@@ -1351,7 +1523,9 @@ namespace LbIntegrations.Probe
             // A launch that built the image around this state writes down what it agreed with.
             remember.Invoke(null, new object[] { layout, titleId, rom, "some-nand.bin" });
             ok &= Check("the image keeps a receipt of the save it was built around", File.Exists(sum));
-            ok &= Check("and the receipt names the files, not just a count",
+            // THE MEMBERS, not the archive. A receipt that hashed the file's bytes would be shorter
+            // and would tie this to a zip writer's headers; this one names every entry.
+            ok &= Check("and the receipt names the members, not just a count",
                         File.Exists(sum) && File.ReadAllText(sum).Contains("files.txt"));
 
             // Nothing has touched the save, so a capture is allowed to proceed - it will fail later
@@ -1365,7 +1539,7 @@ namespace LbIntegrations.Probe
                         && File.Exists(work));
 
             // Now something else writes the save: a sync, a restore, a file dropped in by hand.
-            File.WriteAllText(Path.Combine(state, "0"), "the save as the sync left it");
+            MakeSave(save, "files.txt", "F\t0\t0:/a\r\n", "0", "the save as the sync left it");
 
             // THE CHECK COMES FIRST, before anything decides whether to reuse. Merely declining to
             // reuse would not do: a launch that does not reuse goes on to capture the image, and
@@ -1382,7 +1556,8 @@ namespace LbIntegrations.Probe
             File.WriteAllText(work, "not really an image");
             File.WriteAllText(marker, titleId + "	x	1	2	nand.bin");
             remember.Invoke(null, new object[] { layout, titleId, rom, "some-nand.bin" });
-            File.WriteAllText(Path.Combine(state, "0"), "moved again, while another game launches");
+            MakeSave(save, "files.txt", "F\t0\t0:/a\r\n",
+                     "0", "moved again, while another game launches");
             mark = LogLength();
             capture.Invoke(null, new object[] { layout, null, null });
             said = LogSince(mark);
@@ -1395,24 +1570,25 @@ namespace LbIntegrations.Probe
             if (!said.Contains("changed outside melonDS")) Console.WriteLine("    log said: " + said.Trim());
 
             ok &= Check("the save itself is untouched throughout - it is the thing being protected",
-                        File.ReadAllText(Path.Combine(state, "0"))
-                        == "moved again, while another game launches");
+                        InSave(save, "0") == "moved again, while another game launches");
 
-            // THE CARRIED RECIPE IS PART OF WHAT THE RECEIPT COVERS, and that is what makes the
-            // order of the two writes matter inside CaptureWork. Capture replaces the state folder
-            // wholesale, so base.zip and base.txt are written fresh after every capture; a receipt
-            // taken before them describes a folder that no longer exists, and the next launch reads
-            // that as "the save changed outside melonDS" and throws the working image away.
-            // Measured on a real session before this assertion existed.
-            File.WriteAllText(Path.Combine(state, "0"), "the save as melonDS left it");
-            File.WriteAllText(Path.Combine(state, "base.zip"), "the recipe");
-            File.WriteAllText(Path.Combine(state, "base.txt"), "identity	abc");
+            // THE CARRIED RECIPE IS PART OF WHAT THE RECEIPT COVERS. When the save was a folder
+            // this made the ORDER of two writes load-bearing inside CaptureWork: Capture replaced
+            // the folder wholesale, base.zip and base.txt were copied back in after it, and a
+            // receipt taken before them described a folder that no longer existed - which the next
+            // launch read as "the save changed outside melonDS" and answered by throwing the working
+            // image away. Measured on a real session. Packing removes the window entirely, since the
+            // receipt reads a file that does not exist until the recipe is inside it; the assertion
+            // stays because the property it protects has not changed.
+            MakeSave(save, "files.txt", "F\t0\t0:/a\r\n", "0", "the save as melonDS left it",
+                     "base.zip", "the recipe", "base.txt", "identity	abc");
             File.WriteAllText(work, "not really an image");
             remember.Invoke(null, new object[] { layout, titleId, rom, "some-nand.bin" });
-            ok &= Check("a receipt taken after the recipe was carried in agrees with the folder",
+            ok &= Check("a receipt taken after the recipe was carried in agrees with the save",
                         !(bool)moved.Invoke(null, new object[] { layout, titleId }));
 
-            File.Delete(Path.Combine(state, "base.zip"));
+            MakeSave(save, "files.txt", "F\t0\t0:/a\r\n", "0", "the save as melonDS left it",
+                     "base.txt", "identity	abc");
             ok &= Check("and losing the recipe counts as the save having changed",
                         (bool)moved.Invoke(null, new object[] { layout, titleId }));
 
@@ -1537,7 +1713,8 @@ namespace LbIntegrations.Probe
             { Console.WriteLine("    no MelonDsBase to call"); return false; }
 
             var write = baseType.GetMethod("WriteRecord", BindingFlags.Public | BindingFlags.Static);
-            var read = baseType.GetMethod("ReadRecord", BindingFlags.Public | BindingFlags.Static);
+            var read = baseType.GetMethod("ReadRecord", BindingFlags.Public | BindingFlags.Static,
+                                          null, new[] { typeof(string) }, null);
             var find = baseType.GetMethod("FindOriginal", BindingFlags.Public | BindingFlags.Static);
             var isArchive = baseType.GetMethod("IsArchive", BindingFlags.Public | BindingFlags.Static);
             var sha = baseType.GetMethod("Sha256OfFile", BindingFlags.Public | BindingFlags.Static);
@@ -1692,12 +1869,12 @@ namespace LbIntegrations.Probe
                 var rebuilt = Path.Combine(bases, "feedfacedeadbeef.bin");
                 File.WriteAllBytes(rebuilt, new byte[64]);
 
-                ok &= Check("a console already rebuilt is taken as it is",
+                ok &= Check("a console already rebuilt is taken as it is, with nothing opened",
                             (string)withIdentity.Invoke(null,
-                                new object[] { layout, "feedfacedeadbeef", null, "absent.zip" }) == rebuilt);
+                                new object[] { layout, "feedfacedeadbeef", null, (byte[])null }) == rebuilt);
                 ok &= Check("and an identity nothing on disk carries gets no console",
                             withIdentity.Invoke(null,
-                                new object[] { layout, "0123456789abcdef", null, "absent.zip" }) == null);
+                                new object[] { layout, "0123456789abcdef", null, (byte[])null }) == null);
 
                 // ── what is offered instead must be bootable ─────────────────
                 void Console_(string name, string region)
@@ -1728,28 +1905,29 @@ namespace LbIntegrations.Probe
                             fresh.Invoke(null, new object[] { layout, lost }) == null);
 
                 // ── starting again does not delete what was there ────────────
-                var state = Path.Combine(titleDir, "state");
-                Directory.CreateDirectory(state);
-                File.WriteAllText(Path.Combine(state, "0__shared1_TWLCFG0.dat"), "the old save");
+                Directory.CreateDirectory(titleDir);
+                var state = Path.Combine(titleDir, "state.dsisave");
+                MakeSave(state, "files.txt", "F\t0__shared1_TWLCFG0.dat\t0:/shared1/TWLCFG0.dat\r\n",
+                         "0__shared1_TWLCFG0.dat", "the old save");
 
                 ok &= Check("the old state is set aside",
                             (bool)park.Invoke(null, new object[] { layout, title, "feedfacedeadbeef" }));
 
-                var parked = Path.Combine(titleDir, "state.orphan-feedface");
+                // THE SUFFIX GOES BEFORE THE EXTENSION, so what was set aside is still a save file
+                // anything can open - a folder could be renamed freely, a file cannot.
+                var parked = Path.Combine(titleDir, "state.orphan-feedface.dsisave");
                 ok &= Check("under a name that says which console it is waiting for",
-                            Directory.Exists(parked));
+                            File.Exists(parked));
                 ok &= Check("MOVED, not copied and not emptied",
-                            !Directory.Exists(state)
-                            && File.ReadAllText(Path.Combine(parked, "0__shared1_TWLCFG0.dat"))
-                               == "the old save");
+                            !File.Exists(state)
+                            && InSave(parked, "0__shared1_TWLCFG0.dat") == "the old save");
 
-                Directory.CreateDirectory(state);
-                File.WriteAllText(Path.Combine(state, "0__shared1_TWLCFG0.dat"), "a newer one");
+                MakeSave(state, "files.txt", "F\t0__shared1_TWLCFG0.dat\t0:/shared1/TWLCFG0.dat\r\n",
+                         "0__shared1_TWLCFG0.dat", "a newer one");
                 park.Invoke(null, new object[] { layout, title, "feedfacedeadbeef" });
                 ok &= Check("and a second one lands beside the first, never on it",
-                            File.ReadAllText(Path.Combine(parked, "0__shared1_TWLCFG0.dat"))
-                                == "the old save"
-                            && Directory.GetDirectories(titleDir, "state.orphan-*").Length == 2);
+                            InSave(parked, "0__shared1_TWLCFG0.dat") == "the old save"
+                            && Directory.GetFiles(titleDir, "state.orphan-*.dsisave").Length == 2);
 
                 ok &= Check("a title with no state at all is simply nothing to set aside",
                             !(bool)park.Invoke(null,
@@ -2055,7 +2233,7 @@ namespace LbIntegrations.Probe
 
                 bool ok = true;
                 string work = Path.Combine(dsi, "work.bin");
-                string state = Path.Combine(dsi, titleId, "state");
+                string state = Path.Combine(dsi, titleId, "state.dsisave");
 
                 // ── the launch ──────────────────────────────────────────────
                 choose.Invoke(null, new object[] { layout, romPath });
@@ -2077,15 +2255,13 @@ namespace LbIntegrations.Probe
                 if (played != null)
                 {
                     ok &= Check("the old per-title NAND is gone, its 240 MB reclaimed", !File.Exists(played));
-                    ok &= Check("its state was written down first",
-                                File.Exists(Path.Combine(state, "files.txt")));
+                    ok &= Check("its state was written down first", InSave(state, "files.txt") != null);
 
-                    var index = File.Exists(Path.Combine(state, "files.txt"))
-                        ? File.ReadAllLines(Path.Combine(state, "files.txt")) : Array.Empty<string>();
-                    long bytes = Directory.Exists(state)
-                        ? Directory.EnumerateFiles(state).Sum(f => new FileInfo(f).Length) : 0;
+                    var index = (InSave(state, "files.txt") ?? "")
+                        .Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+                    long bytes = File.Exists(state) ? new FileInfo(state).Length : 0;
                     Console.WriteLine("    a whole session is " + index.Length + " file(s), "
-                                      + bytes.ToString("N0") + " bytes");
+                                      + bytes.ToString("N0") + " bytes packed");
                     foreach (var line in index)
                     {
                         var parts = line.Split(new[] { '\t' }, 3);
@@ -2127,43 +2303,44 @@ namespace LbIntegrations.Probe
                 // and one day hands it back. If what it listed was one file out of a state, the
                 // round trip loses the rest - and that is exactly what the earlier design did:
                 // measured, a game's own public.sav was 16 KB of a 4.2 MB state across eleven files.
-                var stateDir = MelonDsDsi_SavePathFor(layout, titleId);
-                ok &= Check("what the host is offered is the whole state folder",
-                            stateDir != null && Directory.Exists(stateDir)
-                            && File.Exists(Path.Combine(stateDir, "files.txt")));
+                var savePath = MelonDsDsi_SavePathFor(layout, titleId);
+                ok &= Check("what the host is offered is the whole state, as one file",
+                            savePath != null && File.Exists(savePath)
+                            && InSave(savePath, "files.txt") != null);
 
-                if (stateDir != null && Directory.Exists(stateDir))
+                if (savePath != null && File.Exists(savePath))
                 {
-                    int files = Directory.GetFiles(stateDir).Length;
-                    long bytes = Directory.EnumerateFiles(stateDir).Sum(f => new FileInfo(f).Length);
-                    Console.WriteLine("    it is " + files + " file(s), " + bytes.ToString("N0") + " bytes");
+                    int files = (InSave(savePath, "files.txt") ?? "")
+                        .Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries).Length;
+                    Console.WriteLine("    it is " + files + " file(s) in "
+                                      + new FileInfo(savePath).Length.ToString("N0") + " packed bytes");
 
-                    // Copy it away the way a vault would, scribble on the live one, hand the copy
-                    // back, and require the live one to come back to exactly what was taken.
-                    var vault = Path.Combine(root, "vault");
-                    Directory.CreateDirectory(vault);
-                    foreach (var f in Directory.GetFiles(stateDir))
-                        File.Copy(f, Path.Combine(vault, Path.GetFileName(f)));
-                    var taken = Fingerprint(stateDir);
+                    // Copy it away the way a vault would - one File.Copy, which is the whole point -
+                    // scribble on the live one, hand the copy back, and require the live one to come
+                    // back to exactly what was taken.
+                    var vault = Path.Combine(root, "vault.dsisave");
+                    try { File.Delete(vault); } catch { }
+                    File.Copy(savePath, vault);
+                    var taken = Fingerprint(savePath);
+                    ok &= Check("a vault copy is byte-for-byte the same file",
+                                Sha256(savePath) == Sha256(vault));
 
-                    File.WriteAllText(Path.Combine(stateDir, "files.txt"), "wrecked");
-                    File.Delete(Directory.GetFiles(stateDir)[0]);
-                    ok &= Check("a wrecked state really is different", Fingerprint(stateDir) != taken);
+                    File.WriteAllText(savePath, "wrecked");
+                    ok &= Check("a wrecked state really is different", Fingerprint(savePath) != taken);
 
                     var restore = TypeIn("MelonDsDsi").GetMethod("RestoreSave",
                                       BindingFlags.Public | BindingFlags.Static);
                     var args = new object[] { layout, titleId, bios7, vault, null };
                     bool done = (bool)restore.Invoke(null, args);
-                    ok &= Check("the host can hand the folder back", done);
+                    ok &= Check("the host can hand the file back", done);
                     if (!done) Console.WriteLine("    " + (args[4] as string ?? "no reason given"));
-                    ok &= Check("and the state is exactly what was taken", Fingerprint(stateDir) == taken);
+                    ok &= Check("and the state is exactly what was taken", Fingerprint(savePath) == taken);
 
-                    // And a folder that is not one of ours is refused rather than half-applied.
-                    var junk = Path.Combine(root, "junk");
-                    Directory.CreateDirectory(junk);
-                    File.WriteAllText(Path.Combine(junk, "hello.txt"), "not a state");
+                    // And something that is not one of ours is refused rather than half-applied.
+                    var junk = Path.Combine(root, "junk.dsisave");
+                    File.WriteAllText(junk, "not a state");
                     var bad = new object[] { layout, titleId, bios7, junk, null };
-                    ok &= Check("a folder that is not a melonDS state is refused",
+                    ok &= Check("a file that is not a melonDS save is refused",
                                 !(bool)restore.Invoke(null, bad));
                 }
 
@@ -2243,18 +2420,27 @@ namespace LbIntegrations.Probe
             catch { return null; }
         }
 
-        /// <summary>Everything in a state folder, as one string. Enough to notice a change.</summary>
-        private static string Fingerprint(string dir)
+        /// <summary>Everything IN a save, as one string. Enough to notice a change - and taken from
+        /// the members rather than the file's own bytes, so it says the same thing a receipt does
+        /// and does not quietly become a test of the zip writer.</summary>
+        private static string Fingerprint(string savePath)
         {
             try
             {
-                if (!Directory.Exists(dir)) return "";
+                if (!File.Exists(savePath)) return "";
+                var entries = TypeIn("MelonDsSaveFile")
+                    .GetMethod("Entries", BindingFlags.Public | BindingFlags.Static)
+                    .Invoke(null, new object[] { savePath }) as System.Collections.IEnumerable;
+                if (entries == null) return "";
+
                 var parts = new List<string>();
-                foreach (var file in Directory.EnumerateFiles(dir).OrderBy(f => f, StringComparer.Ordinal))
+                foreach (var entry in entries)
                 {
+                    var type = entry.GetType();
+                    var name = (string)type.GetProperty("Key").GetValue(entry);
+                    var bytes = (byte[])type.GetProperty("Value").GetValue(entry);
                     using var sha = System.Security.Cryptography.SHA1.Create();
-                    using var stream = File.OpenRead(file);
-                    parts.Add(Path.GetFileName(file) + ":" + Convert.ToBase64String(sha.ComputeHash(stream)));
+                    parts.Add(name + ":" + Convert.ToBase64String(sha.ComputeHash(bytes)));
                 }
                 return string.Join("|", parts);
             }
