@@ -82,6 +82,7 @@ namespace LbIntegrations.Probe
                 ok &= DsiWareRestore(exe);
                 ok &= DsiWareBackup(plugin, exe);
                 ok &= DsiWareRoundTrip(plugin, exe);
+                ok &= SaveChangedElsewhere(exe);
                 ok &= RegionCascade(romDir);
                 ok &= ArchiveFormats(exe, romDir);
                 ok &= CarriedIndex(exe, romDir);
@@ -1267,6 +1268,90 @@ namespace LbIntegrations.Probe
                 foreach (var leftover in new[] { vault, titleDir })
                     try { if (Directory.Exists(leftover)) Directory.Delete(leftover, recursive: true); } catch { }
             }
+        }
+
+        /// <summary>A save written by somebody other than melonDS, and the capture that must not
+        /// overwrite it.
+        ///
+        /// THIS IS THE SYNC CASE. A session is written down at the START of the next launch, because
+        /// there is no event saying the emulator has quit. That is correct while the image is the
+        /// newest thing on disk - and stops being true the moment a sync, a restore from another
+        /// machine, or a file dropped in by hand writes the state folder. The folder then holds the
+        /// new save, the image still holds the old session, and the capture puts the old session
+        /// back on top. Nothing errors; the sync is just undone.
+        ///
+        /// So the image carries a receipt of the folder it was last agreed with, and a capture that
+        /// finds the folder changed drops the image instead of writing it.</summary>
+        private static bool SaveChangedElsewhere(string exe)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- a save that changed outside melonDS");
+
+            var dsiType = TypeIn("MelonDsDsi");
+            var remember = dsiType?.GetMethod("RememberWork", BindingFlags.Public | BindingFlags.Static);
+            var capture = dsiType?.GetMethod("CaptureWork", BindingFlags.Public | BindingFlags.Static);
+            if (remember == null || capture == null)
+            { Console.WriteLine("    no RememberWork / CaptureWork to call"); return false; }
+
+            var resolve = TypeIn("MelonDsPaths").GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static);
+            var layout = resolve.Invoke(null, new object[] { exe });
+
+            const string titleId = "000300044b393945";
+            string install = Path.GetDirectoryName(exe);
+            string dsi = Path.Combine(install, "dsi");
+            string state = Path.Combine(dsi, titleId, "state");
+            string marker = Path.Combine(dsi, "work.title");
+            string work = Path.Combine(dsi, "work.bin");
+            string sum = Path.Combine(dsi, "work.sum");
+            string rom = Path.Combine(install, "pretend.nds");
+
+            Directory.CreateDirectory(state);
+            File.WriteAllText(Path.Combine(state, "files.txt"), "F\t0\t0:/a\r\n");
+            File.WriteAllText(Path.Combine(state, "0"), "the save as melonDS left it");
+            File.WriteAllText(Path.Combine(dsi, titleId, "reference.txt"), "the fresh install");
+            File.WriteAllText(rom, "not really a rom");
+            File.WriteAllText(work, "not really an image");
+
+            bool ok = true;
+
+            // A launch that built the image around this state writes down what it agreed with.
+            remember.Invoke(null, new object[] { layout, titleId, rom, "some-nand.bin" });
+            ok &= Check("the image keeps a receipt of the save it was built around", File.Exists(sum));
+            ok &= Check("and the receipt names the files, not just a count",
+                        File.Exists(sum) && File.ReadAllText(sum).Contains("files.txt"));
+
+            // Nothing has touched the save, so a capture is allowed to proceed - it will fail later
+            // for want of a real NAND, but it must not have thrown the image away first.
+            capture.Invoke(null, new object[] { layout, null, null });
+            ok &= Check("an untouched save leaves the image alone", File.Exists(work));
+
+            // Now something else writes the save: a sync, a restore, a file dropped in by hand.
+            File.WriteAllText(Path.Combine(state, "0"), "the save as the sync left it");
+
+            long mark = LogLength();
+            capture.Invoke(null, new object[] { layout, null, null });
+            var said = LogSince(mark);
+
+            ok &= Check("a save that moved is NOT overwritten by the old session", !File.Exists(work));
+            ok &= Check("the marker goes too, so nothing reuses the image", !File.Exists(marker));
+            ok &= Check("and the receipt with it", !File.Exists(sum));
+            ok &= Check("the log says the save changed outside melonDS",
+                        said.Contains("changed outside melonDS"));
+            if (!said.Contains("changed outside melonDS")) Console.WriteLine("    log said: " + said.Trim());
+
+            ok &= Check("the save itself is untouched - it is the thing being protected",
+                        File.ReadAllText(Path.Combine(state, "0")) == "the save as the sync left it");
+
+            // No receipt at all - an installation from before this existed - is not an opinion.
+            File.WriteAllText(work, "not really an image");
+            File.WriteAllText(marker, titleId + "\tx\t1\t2\tnand.bin");
+            capture.Invoke(null, new object[] { layout, null, null });
+            ok &= Check("with no receipt, nothing is assumed and the image stays", File.Exists(work));
+
+            try { Directory.Delete(Path.Combine(dsi, titleId), recursive: true); } catch { }
+            foreach (var leftover in new[] { work, marker, sum, rom })
+                try { File.Delete(leftover); } catch { }
+            return ok;
         }
 
         /// <summary>Two dumps of one region, which is the case that silently breaks saves.

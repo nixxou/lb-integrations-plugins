@@ -693,6 +693,25 @@ is a folder too. A folder beats packing it into an archive: nothing to pack, not
 no archive quietly changing its own bytes between two identical writes and making the host think the
 save moved.
 
+**The working image carries a receipt, so a save that arrived from elsewhere is not overwritten.**
+A session is written down at the START of the next launch, because nothing says the emulator has
+quit. That is correct while the image is the newest thing on disk - and it stops being true the
+moment something else writes the state folder: a RomM sync, a restore from another machine, a file
+dropped in by hand. The folder then holds the new save, the image still holds the old session, and
+the capture puts the old session back on top. Nothing errors. The sync is simply undone.
+
+So `dsi\work.sum` lists every file of the state folder the image was last agreed with, by CRC32,
+size and name, written at the two moments the two are in step - just after a capture, and just after
+a rebuild. Before a capture the folder is summed again: same, and the capture is the newest thing and
+goes ahead; different, and somebody else got there first, so the image is dropped instead of written
+and the next launch rebuilds around the save that arrived. An image is always rebuildable in a
+quarter of a second; a save that came from elsewhere is not.
+
+CRC32 rather than a cryptographic hash, on purpose: the question is "did this change", not "is this
+what somebody claims it is". There is no adversary, only two writers who do not know about each
+other. No receipt at all - an installation from before this existed - means no opinion, never
+"assume the worst".
+
 **Calling a save a container is a promise, and the host takes it literally.** `IsSaveContainer` says
 yes for a DSiWare save, so the host makes a destination folder, asks `TryBackupSave` to lay the save
 out in it, and records a backup from whatever turns up. Refusing there does not produce "no backup" -

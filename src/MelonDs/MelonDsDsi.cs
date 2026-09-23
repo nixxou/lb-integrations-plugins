@@ -271,6 +271,15 @@ namespace LbIntegrations.MelonDs
                 var reference = ReferencePathFor(layout, rom.TitleId);
                 if (reference == null || !File.Exists(reference)) return false;
 
+                // And nothing may have written the save since. Reusing an image whose save has been
+                // replaced would hand the player the session the sync just superseded.
+                if (MelonDsWorkSum.Moved(layout, rom.TitleId, out var how))
+                {
+                    Log.Info("the save of " + rom.TitleId + " changed outside melonDS (" + how
+                             + "), so the working image is rebuilt rather than reused");
+                    return false;
+                }
+
                 return !MelonDsNand.EmulatorRunning();
             }
             catch { return false; }
@@ -299,6 +308,19 @@ namespace LbIntegrations.MelonDs
                 var work = WorkPath(layout);
                 if (work == null || !File.Exists(work)) { Forget(layout); return; }
 
+                // SOMEBODY ELSE GOT THERE FIRST. The state folder is not what this image was last
+                // agreed with, so it holds a save that did not come from this image - a sync, a
+                // restore, a file dropped in by hand. Capturing now would write the old session over
+                // it and undo that silently. The image is always rebuildable; the save is not.
+                if (MelonDsWorkSum.Moved(layout, titleId, out var how))
+                {
+                    Log.Info("the save of " + titleId + " changed outside melonDS (" + how
+                             + "), so the working image is out of date and is dropped rather than "
+                             + "captured. The next launch rebuilds around the save that is there.");
+                    DropWorkIfItHolds(layout, titleId, "because its save changed elsewhere");
+                    return;
+                }
+
                 var reference = ReferencePathFor(layout, titleId);
                 if (reference == null || !File.Exists(reference))
                 {
@@ -318,6 +340,8 @@ namespace LbIntegrations.MelonDs
                                                 TitleDir(layout, titleId), out var why);
                 if (kept < 0) { Log.Verbose("could not capture " + titleId + " - " + why); return; }
 
+                // The two are in step again, so the receipt is rewritten to say so.
+                MelonDsWorkSum.Write(layout, titleId);
                 Log.Verbose("captured " + kept + " file(s) of state for " + titleId);
             }
             catch (Exception ex) { Log.Warn("could not capture the working NAND", ex); }
@@ -328,9 +352,12 @@ namespace LbIntegrations.MelonDs
             try { if (File.Exists(path)) File.Delete(path); } catch { }
         }
 
+        /// <summary>Forget which title the image holds - and the receipt with it, which describes
+        /// an agreement that no longer has two parties.</summary>
         private static void Forget(MelonDsLayout layout)
         {
             try { var m = MarkerPath(layout); if (m != null && File.Exists(m)) File.Delete(m); } catch { }
+            MelonDsWorkSum.Forget(layout);
         }
 
         /// <summary>The first design's per-title NAND, kept for ONE case: no native library.
@@ -515,6 +542,10 @@ namespace LbIntegrations.MelonDs
                 File.WriteAllText(marker, fingerprint == null
                     ? titleId
                     : titleId + "\t" + fingerprint + "\t" + (sourceNand ?? ""));
+
+                // The image has just been built around this state, so the two are in step: written
+                // down here, and checked before the next capture is allowed to overwrite anything.
+                MelonDsWorkSum.Write(layout, titleId);
             }
             catch (Exception ex) { Log.Verbose("could not write the work marker - " + ex.Message); }
         }
