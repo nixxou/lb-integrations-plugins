@@ -441,6 +441,21 @@ namespace LbIntegrations.Probe
             catch (Exception ex) { Console.WriteLine("  " + ex.GetType().Name + ": " + ex.Message); return false; }
         }
 
+        /// <summary>The folder the plugin declares its BIOS files in, ASKED OF IT rather than
+        /// written here. It moved once already - from a private one beside the executable to
+        /// RetroArch's system folder - and a harness that hardcoded it went on passing while
+        /// testing a directory nothing used.</summary>
+        private static string BiosDir(object layout)
+        {
+            try
+            {
+                return (string)TypeIn("MelonDsBios")
+                    .GetMethod("Dir", BindingFlags.Public | BindingFlags.Static)
+                    .Invoke(null, new[] { layout });
+            }
+            catch { return null; }
+        }
+
         /// <summary>A BIOS file name, ASKED OF THE PLUGIN rather than written here. These names are
         /// a contract with the user, so they will be argued about and changed; a harness that
         /// hardcoded them would go on passing while testing the wrong thing.</summary>
@@ -537,7 +552,7 @@ namespace LbIntegrations.Probe
 
             string install = Path.GetDirectoryName(exe);
             string dsi = Path.Combine(install, "dsi");
-            string bios = Path.Combine(install, "bios");
+            string bios = BiosDir(resolve.Invoke(null, new object[] { exe }));
             string toml = ConfigPath(exe);
             string ware = Path.Combine(romDir, WareRom);
 
@@ -647,6 +662,25 @@ namespace LbIntegrations.Probe
                         said.Contains("1234 bytes") && said.Contains("melonDS wants"));
 
             try { Directory.Delete(bios, true); } catch { }
+
+            // 3b-bis. RETROARCH'S FOLDER AND RETROARCH'S NAMES. Two conventions exist for the same
+            //     seven files - RetroArch imposes its own through its cores' .info files - and
+            //     somebody who set that up already has them. Making them copy seven files under
+            //     seven other names would be inventing work.
+            try { Directory.Delete(bios, true); } catch { }
+            string shared = bios;                          // the declared folder IS RetroArch's now
+            Directory.CreateDirectory(shared);
+            Write(shared, "bios7.bin", 0x4000);           // RetroArch's name for biosnds7.bin
+            Write(shared, "bios9.bin", 0x1000);
+            Write(shared, "firmware.bin", 0x40000);
+
+            File.WriteAllText(toml, "[Emu]\r\nConsoleType = 0\r\n");
+            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }),
+                                        Path.Combine(romDir, PlainRom) });
+            ok &= Check("a BIOS in RetroArch's system folder, under RetroArch's name, is found",
+                        (TomlValues(toml, "DS").TryGetValue("BIOS7Path", out var ra) ? ra : "")
+                            .Replace('/', Path.DirectorySeparatorChar).Contains(shared));
+            try { Directory.Delete(shared, true); } catch { }
 
             // 3c. A KEYBOARD, because melonDS ships without one. Every key is -1 in its default
             //     table and there is no table of defaults anywhere else, so an install nobody has
@@ -933,7 +967,10 @@ namespace LbIntegrations.Probe
                 // Into the bios folder, UNDER A NAME THAT SAYS NOTHING. The plugin reads a dump's
                 // region out of its contents, and a name it could have leaned on instead would hide
                 // whether it really does.
-                string bios = Path.Combine(install, "bios");
+                // Resolved here rather than reusing `layout`, which is built further down.
+                string bios = BiosDir(TypeIn("MelonDsPaths")
+                    .GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static)
+                    .Invoke(null, new object[] { exe }));
                 Directory.CreateDirectory(bios);
                 File.Copy(basePath, Path.Combine(bios, "a-dump-with-an-unhelpful-name.bin"));
                 File.Copy(bios7, Path.Combine(bios, BiosName("DsiBios7")));

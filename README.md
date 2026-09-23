@@ -435,8 +435,15 @@ and `loadFirmware` (`:1012-1050`) rather than out of a wiki:
 | a DS game, with your own console's | `biosnds7.bin`, `biosnds9.bin`, `dsfirmware.bin` |
 | **DSiWare** | `biosdsi7.bin`, `biosdsi9.bin`, `dsifirmware.bin`, **and a NAND of the right region** |
 
-Those names are melonDS's own community's, so a file you already have you already have under the
-right name.
+Those names are melonDS's own community's. **RetroArch's are accepted just as well** - `bios7.bin`,
+`dsi_bios7.bin` and the rest, as its melonDS cores declare them in their own `.info` files. Two
+conventions exist for the same seven files and neither is wrong, so a file is found under either.
+
+The dependency list names the file really **in the declared folder**, under whichever of the two
+names it has; only a file that is nowhere falls back to RetroArch's name, since that is whose folder
+it is. A file in the legacy folder still works and is deliberately NOT named there - pointing the
+host's own check at a folder that does not hold it is the defect this arrangement exists to remove
+rather than to move around.
 
 **Setting the paths is the plugin's job, not yours.** Drop a file in `bios\` and it gets configured.
 Nobody should have to go into Config > Emu settings and type three paths to make a game start.
@@ -464,9 +471,16 @@ not: `loadFirmware`'s built-in branch for DSi mode is an empty `// TODO` that fa
 to opening `DSi.FirmwarePath` anyway. Believing the verify step would have meant declaring a file
 unnecessary that melonDS then fails without.
 
-They go in `Emulators\melonDS\bios\`, which the install creates with a note in it saying what
-belongs there. Drop a file in and launch: the plugin finds it and points melonDS at it. A path you
-configured yourself, anywhere you like, is left alone - only what is absent or broken is looked up.
+**They go in `Emulators\RetroArch\system\`**, which the install creates when it is not there.
+Somebody else's folder, on purpose: nearly everybody running LaunchBox has RetroArch, and anybody who
+ever set up a DS core there already has these seven files in it. Asking for a second copy, in a
+second folder, under a second set of names, would be inventing work for the sake of owning a
+directory.
+
+`Emulators\melonDS\bios\`, where this plugin used to ask, is still searched - an installation set up
+before the move keeps working untouched. Drop a file in either and launch: the plugin finds it and
+points melonDS at it. A path you configured yourself, anywhere you like, is left alone; only what is
+absent or broken is looked up.
 
 **A DSi NAND is region locked, so the right one is chosen per game.** The system menu that launches an
 installed title is built for one region and refuses titles from another - which is a blank screen and

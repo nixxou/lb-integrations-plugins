@@ -562,9 +562,9 @@ namespace LbIntegrations.MelonDs
                 // all anybody needs to go and find a file.
                 var files = new List<EmulatorBiosFile>
                 {
-                    File_(MelonDsBios.DsiBios7, "DSi ARM7 BIOS", required: true),
-                    File_(MelonDsBios.DsiBios9, "DSi ARM9 BIOS", required: true),
-                    File_(MelonDsBios.DsiFirmware, "DSi firmware", required: true),
+                    File_(Named(layout, MelonDsBios.DsiBios7), "DSi ARM7 BIOS", required: true),
+                    File_(Named(layout, MelonDsBios.DsiBios9), "DSi ARM9 BIOS", required: true),
+                    File_(Named(layout, MelonDsBios.DsiFirmware), "DSi firmware", required: true),
                 };
                 files.AddRange(NandFiles(layout));
                 return files;
@@ -574,13 +574,18 @@ namespace LbIntegrations.MelonDs
 
             return new[]
             {
-                File_(MelonDsBios.DsBios7, "DS ARM7 BIOS - optional",
+                File_(Named(layout, MelonDsBios.DsBios7), "DS ARM7 BIOS - optional",
                       required: false, md5: "df692a80a5b1bc90728bc3dfc76cd948"),
-                File_(MelonDsBios.DsBios9, "DS ARM9 BIOS - optional",
+                File_(Named(layout, MelonDsBios.DsBios9), "DS ARM9 BIOS - optional",
                       required: false, md5: "a392174eb3e572fed6447e956bde4b25"),
-                File_(MelonDsBios.DsFirmware, "DS firmware - optional", required: false),
+                File_(Named(layout, MelonDsBios.DsFirmware), "DS firmware - optional", required: false),
             };
         }
+
+        /// <summary>What to call a file in the list. With no installation in hand there is nothing
+        /// to look at, so the plugin's own name stands.</summary>
+        private static string Named(MelonDsLayout layout, string ourName)
+            => layout == null ? ourName : MelonDsBios.PreferredName(layout, ourName);
 
         /// <summary>One entry per DSi region, named after the dump that is there when there is one.
         ///
@@ -598,9 +603,19 @@ namespace LbIntegrations.MelonDs
                 {
                     var bios7 = MelonDsBios.Find(layout, MelonDsBios.DsiBios7)
                                 ?? AbsoluteTo(layout.ConfigDir, ValueOf(layout, "BIOS7Path"));
+                    var declared = MelonDsBios.Dir(layout);
                     foreach (var dump in MelonDsBios.Nands(layout, bios7))
+                    {
+                        // ONLY A DUMP IN THE DECLARED FOLDER IS NAMED HERE. One sitting elsewhere
+                        // still works - every search folder is looked in at launch - but naming it
+                        // would point the host's own check at a folder that does not hold it.
+                        var where = System.IO.Path.GetDirectoryName(dump.Path);
+                        if (declared == null || !string.Equals(System.IO.Path.GetFullPath(where),
+                                                               declared, StringComparison.OrdinalIgnoreCase))
+                            continue;
                         if (!have.ContainsKey(dump.Region))
                             have[dump.Region] = System.IO.Path.GetFileName(dump.Path);
+                    }
                 }
             }
             catch { }

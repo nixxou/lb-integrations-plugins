@@ -43,7 +43,24 @@ namespace LbIntegrations.MelonDs
 
     internal static class MelonDsBios
     {
-        public const string DirName = "bios";
+        /// <summary>The folder these files are DECLARED in, and the one an install creates:
+        /// RetroArch's system folder, beside this emulator.
+        ///
+        /// WHY SOMEBODY ELSE'S FOLDER. Nearly everybody running LaunchBox already has RetroArch, and
+        /// anybody who has ever set up a DS core there already has these seven files sitting in it.
+        /// Asking for a second copy, in a second folder, under a second set of names, would be
+        /// inventing work for the sake of owning a directory.
+        ///
+        /// It is created at install time when it is not there, so declaring it is safe even for
+        /// somebody who has no RetroArch at all - they get an empty folder with a note in it, which
+        /// is exactly what the old private one gave them.</summary>
+        public const string DirName = ".." + SEP + "RetroArch" + SEP + "system";
+
+        private const string SEP = "\\";
+
+        /// <summary>Where this plugin used to ask for them. Still searched, so an installation set
+        /// up before the move keeps working without anybody touching it.</summary>
+        public const string LegacyDirName = "bios";
 
         /// <summary>The names this plugin asks for. They are the ones melonDS's own community uses,
         /// so somebody who already has these files already has them under these names.
@@ -67,6 +84,25 @@ namespace LbIntegrations.MelonDs
         /// want their own console's BIOS or melonDS's replacement.</summary>
         public static readonly string[] DsFiles = { DsBios7, DsBios9, DsFirmware };
 
+        /// <summary>The other name each file is known by: RetroArch's, declared in the melonDS
+        /// cores' own .info files - read there rather than remembered, and identical in both
+        /// melonds_libretro and melondsds_libretro.
+        ///
+        /// Two conventions exist for the same seven files and neither is wrong. RetroArch imposes
+        /// its own through those .info files; the melonDS standalone community uses the other. So
+        /// both are accepted: somebody who has already set up RetroArch has these files, and telling
+        /// them to make a second copy under a second name would be inventing work.</summary>
+        private static readonly Dictionary<string, string[]> AlsoKnownAs =
+            new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+            {
+                [DsiBios7] = new[] { "dsi_bios7.bin" },
+                [DsiBios9] = new[] { "dsi_bios9.bin" },
+                [DsiFirmware] = new[] { "dsi_firmware.bin" },
+                [DsBios7] = new[] { "bios7.bin" },
+                [DsBios9] = new[] { "bios9.bin" },
+                [DsFirmware] = new[] { "firmware.bin" },
+            };
+
         private const string NoteName = "WHICH-FILES-GO-HERE.txt";
         private const string IndexName = "nands.txt";
 
@@ -75,8 +111,44 @@ namespace LbIntegrations.MelonDs
         private const long NandBytes = 251658304L;
         private const long NandSlack = 4L * 1024 * 1024;
 
+        /// <summary>The folder to put things in and to name in a message. Absolute, and normalised
+        /// so a message says G:\...\RetroArch\system rather than G:\...\melonDS\..\RetroArch\system.</summary>
         public static string Dir(MelonDsLayout layout)
-            => layout?.InstallDir == null ? null : Path.Combine(layout.InstallDir, DirName);
+        {
+            try
+            {
+                if (layout?.InstallDir == null) return null;
+                return Path.GetFullPath(Path.Combine(layout.InstallDir, DirName));
+            }
+            catch { return null; }
+        }
+
+        /// <summary>The folder this plugin used to make, if it is still there.</summary>
+        public static string LegacyDir(MelonDsLayout layout)
+            => layout?.InstallDir == null ? null : Path.Combine(layout.InstallDir, LegacyDirName);
+
+        /// <summary>Everywhere a file may be, best first.
+        ///
+        /// OURS IS FIRST AND IS THE ONE DECLARED, because it is the one that always exists - this
+        /// plugin makes it at install time. RetroArch's system folder is looked in as well when it
+        /// is there, which costs nothing and saves somebody a second copy of seven files under seven
+        /// other names: RetroArch's melonDS cores declare exactly these, and anybody who set that up
+        /// already has them.
+        ///
+        /// It is looked in, NOT declared, and that distinction is deliberate. The declaration is a
+        /// path relative to the emulator, and whether a "..\RetroArch\system" resolves in that field
+        /// is something this plugin cannot test without the host's own dependency window - so it is
+        /// not bet on. Nor should a melonDS depend on RetroArch being installed at all.</summary>
+        public static IEnumerable<string> SearchFolders(MelonDsLayout layout)
+        {
+            var shared = Dir(layout);
+            if (shared != null) yield return shared;
+
+            // The folder this plugin used to ask for. Searched second so the declared one wins, and
+            // searched at all so nobody has to move files because we changed our mind.
+            var old = LegacyDir(layout);
+            if (old != null) yield return old;
+        }
 
         /// <summary>Make the folder and leave a note in it saying what belongs there. Called at the
         /// end of an install, for the same reason PrepareFolder was: a message naming a path that
@@ -96,6 +168,11 @@ namespace LbIntegrations.MelonDs
                 {
                     "Files melonDS needs and cannot generate. Drop them here and the plugin points",
                     "melonDS at them; you do not have to configure anything.",
+                    "",
+                    "THIS IS RETROARCH'S SYSTEM FOLDER, on purpose: if you have ever set up a DS core",
+                    "there, these files are already here and there is nothing to do. Both naming",
+                    "conventions are accepted - RetroArch's dsi_bios7.bin and melonDS's biosdsi7.bin",
+                    "are the same file to this plugin.",
                     "",
                     "FOR DSiWARE, all four are required:",
                     "",
@@ -181,14 +258,48 @@ namespace LbIntegrations.MelonDs
         {
             try
             {
-                var dir = Dir(layout);
-                if (dir == null || !Directory.Exists(dir)) return null;
-                foreach (var path in Directory.EnumerateFiles(dir))
-                    if (string.Equals(Path.GetFileName(path), fileName, StringComparison.OrdinalIgnoreCase))
-                        return path;
+                var names = new List<string> { fileName };
+                if (AlsoKnownAs.TryGetValue(fileName, out var others)) names.AddRange(others);
+
+                // Folder by folder, and within a folder the declared name before the alias: a user
+                // who has both should get the one this plugin told them to make.
+                foreach (var dir in SearchFolders(layout))
+                {
+                    if (!Directory.Exists(dir)) continue;
+                    foreach (var name in names)
+                        foreach (var path in Directory.EnumerateFiles(dir))
+                            if (string.Equals(Path.GetFileName(path), name, StringComparison.OrdinalIgnoreCase))
+                                return path;
+                }
                 return null;
             }
             catch { return null; }
+        }
+
+        /// <summary>The name to SHOW for a file: the one actually sitting in a search folder when
+        /// there is one, otherwise RetroArch's.
+        ///
+        /// RetroArch's is the fallback because the folder is RetroArch's - somebody sent there by a
+        /// dependency list should read a name that fits what else is in it. Both conventions are
+        /// accepted either way; this only decides what the list says when nothing is there yet.</summary>
+        public static string PreferredName(MelonDsLayout layout, string ourName)
+        {
+            // ONLY THE DECLARED FOLDER IS LOOKED AT. A file sitting in the legacy one still works -
+            // it is searched at launch - but naming it here would point the host's own check at a
+            // folder that does not hold it, which is the defect this whole arrangement exists to
+            // avoid rather than to move around.
+            var here = Dir(layout);
+            if (here != null && Directory.Exists(here))
+            {
+                var names = new List<string> { ourName };
+                if (AlsoKnownAs.TryGetValue(ourName, out var aliases)) names.AddRange(aliases);
+                foreach (var name in names)
+                    foreach (var path in Directory.EnumerateFiles(here))
+                        if (string.Equals(Path.GetFileName(path), name, StringComparison.OrdinalIgnoreCase))
+                            return name;
+            }
+            return AlsoKnownAs.TryGetValue(ourName, out var others) && others.Length > 0
+                ? others[0] : ourName;
         }
 
         /// <summary>Which of the files a DSiWare launch needs are not in the folder.</summary>
@@ -208,14 +319,15 @@ namespace LbIntegrations.MelonDs
             var found = new List<NandDump>();
             try
             {
-                var dir = Dir(layout);
-                if (dir == null || !Directory.Exists(dir)) return found;
-
                 var known = ReadIndex(layout);
                 var fresh = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 bool changed = false;
 
-                foreach (var path in Directory.EnumerateFiles(dir, "*.bin"))
+                var candidates = new List<string>();
+                foreach (var dir in SearchFolders(layout))
+                    if (Directory.Exists(dir)) candidates.AddRange(Directory.EnumerateFiles(dir, "*.bin"));
+
+                foreach (var path in candidates)
                 {
                     long length;
                     DateTime written;

@@ -100,6 +100,24 @@ namespace LbIntegrations.Probe
                     Console.WriteLine($"    {b.FileName}  required={b.Required}  md5={b.Md5}  {b.Description}");
             }
 
+            // AND THE SAME QUESTION WITH THE INSTALLATION IN HAND, which is the overload LaunchBox
+            // actually calls. A plugin may answer differently - MelonDs names the file that is
+            // really there rather than a convention - so showing only the other one would show
+            // something the host never sees.
+            if (emuPath != null)
+            {
+                Section("GetBiosFilesForPlatform(<install>, \"" + platform + "\", ...)");
+                var withPath = Safe(() => plugin.GetBiosFilesForPlatform(emuPath, platform, null));
+                if (withPath == null) Console.WriteLine("  threw");
+                else
+                {
+                    var list = withPath.ToList();
+                    Console.WriteLine("  " + list.Count + " file(s)");
+                    foreach (var b in list)
+                        Console.WriteLine($"    {b.Location}\\{b.FileName}  required={b.Required}  {b.Description}");
+                }
+            }
+
             Section("SupportsSaveManagement");
             Console.WriteLine("  " + Safe(() => (object)plugin.SupportsSaveManagement()));
 
