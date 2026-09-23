@@ -230,8 +230,8 @@ namespace LbIntegrations.MelonDs
         /// title, and it goes away with it.</summary>
         private static string KeptPath(MelonDsLayout layout, string titleId)
         {
-            var nand = MelonDsDsi.NandPathFor(layout, titleId);
-            return nand == null ? null : Path.Combine(Path.GetDirectoryName(nand), "title.tmd");
+            var dir = MelonDsDsi.TitleDir(layout, titleId);
+            return dir == null ? null : Path.Combine(dir, "title.tmd");
         }
 
         private static byte[] Sha1Of(string path)

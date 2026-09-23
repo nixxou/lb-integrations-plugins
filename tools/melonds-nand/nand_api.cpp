@@ -31,6 +31,12 @@
 
 #include "sha1/sha1.hpp"
 
+// fatfs directly, for the walk. The filesystem is already mounted by NANDMount - it keeps a global
+// pointer, which is why only one NAND can be open at a time - so these calls act on it.
+#include "fatfs/ff.h"
+
+#include <algorithm>
+
 #include <cstdio>
 #include <cstring>
 #include <memory>
@@ -203,7 +209,7 @@ bool Valid(mdsnand_handle* handle)
 extern "C"
 {
 
-int mdsnand_abi_version(void) { return 3; }
+int mdsnand_abi_version(void) { return 4; }
 
 int mdsnand_last_tmd_was_generated(void) { return g_tmdGenerated ? 1 : 0; }
 
@@ -374,6 +380,134 @@ int mdsnand_import_save(mdsnand_handle* handle, unsigned int category, unsigned 
             std::string("could not read the save from ") + inPath
             + " - melonDS refuses one whose size does not match the title's");
     return MDSNAND_OK;
+}
+
+namespace
+{
+
+/// One file's SHA-1, read through fatfs in chunks rather than into one buffer: a NAND holds files of
+/// a few bytes and files of several megabytes, and there is no reason to size for the worst.
+bool HashInNand(const char* path, unsigned long long& size, char out[41])
+{
+    FF_FIL file;
+    if (f_open(&file, path, FA_OPEN_EXISTING | FA_READ) != FR_OK) return false;
+
+    SHA1_CTX sha;
+    SHA1Init(&sha);
+    std::vector<u8> chunk(64 * 1024);
+    size = 0;
+    for (;;)
+    {
+        UINT read = 0;
+        if (f_read(&file, chunk.data(), (UINT)chunk.size(), &read) != FR_OK) { f_close(&file); return false; }
+        if (read == 0) break;
+        SHA1Update(&sha, chunk.data(), (uint32_t)read);
+        size += read;
+    }
+    f_close(&file);
+
+    u8 digest[20] = {};
+    SHA1Final(digest, &sha);
+    for (int i = 0; i < 20; i++) std::snprintf(out + i * 2, 3, "%02x", digest[i]);
+    out[40] = 0;
+    return true;
+}
+
+/// Depth-first, collecting lines. Recursion depth is bounded by the tree itself - a DSi NAND is a
+/// handful of levels - but it is capped anyway rather than trusting an image we did not write.
+void WalkInto(const std::string& path, std::vector<std::string>& lines, int depth)
+{
+    if (depth > 16) return;
+
+    FF_DIR dir;
+    if (f_opendir(&dir, path.c_str()) != FR_OK) return;
+
+    std::vector<std::string> subdirs;
+    for (;;)
+    {
+        FF_FILINFO info;
+        if (f_readdir(&dir, &info) != FR_OK) break;
+        if (!info.fname[0]) break;
+
+        std::string full = path + "/" + info.fname;
+        if (info.fattrib & AM_DIR)
+        {
+            lines.push_back("D -\t-\t" + full);
+            subdirs.push_back(full);
+            continue;
+        }
+
+        unsigned long long size = 0;
+        char digest[41] = {};
+        if (!HashInNand(full.c_str(), size, digest))
+        {
+            lines.push_back("F ?\t?\t" + full);      // there, but unreadable - worth saying so
+            continue;
+        }
+        lines.push_back("F " + std::to_string(size) + "\t" + digest + "\t" + full);
+    }
+    f_closedir(&dir);
+
+    // The directory is closed before descending: fatfs holds state per open directory, and a walk
+    // that kept one open per level would hold as many as the tree is deep for no reason.
+    for (const auto& sub : subdirs) WalkInto(sub, lines, depth + 1);
+}
+
+}
+
+int mdsnand_import_file(mdsnand_handle* handle, const char* nandPath, const char* inPath)
+{
+    if (!Valid(handle) || !nandPath || !inPath) return MDSNAND_ERR_ARGUMENT;
+    handle->Clear();
+
+    if (!handle->Mount->ImportFile(nandPath, inPath))
+        return handle->Fail(MDSNAND_ERR_FAILED,
+            std::string("could not write ") + inPath + " into the NAND at " + nandPath);
+    return MDSNAND_OK;
+}
+
+int mdsnand_remove_file(mdsnand_handle* handle, const char* nandPath)
+{
+    if (!Valid(handle) || !nandPath) return MDSNAND_ERR_ARGUMENT;
+    handle->Clear();
+
+    // RemoveFile returns void upstream, so the only way to know is to look afterwards.
+    handle->Mount->RemoveFile(nandPath);
+
+    FF_FILINFO info;
+    if (f_stat(nandPath, &info) == FR_OK)
+        return handle->Fail(MDSNAND_ERR_FAILED,
+            std::string("could not remove ") + nandPath + " - it is still there");
+    return MDSNAND_OK;
+}
+
+int mdsnand_walk(mdsnand_handle* handle, const char* root, const char* manifestPath)
+{
+    if (!Valid(handle) || !manifestPath) return MDSNAND_ERR_ARGUMENT;
+    handle->Clear();
+
+    std::string start = (root && *root) ? root : "0:";
+    while (start.size() > 1 && start.back() == '/') start.pop_back();
+
+    std::vector<std::string> lines;
+    WalkInto(start, lines, 0);
+
+    // Sorted, so two manifests can be compared line by line. fatfs returns directory entries in
+    // whatever order they sit in the FAT, which is an artefact of when things were written.
+    std::sort(lines.begin(), lines.end(),
+              [](const std::string& a, const std::string& b)
+              {
+                  auto pa = a.find_last_of('\t'), pb = b.find_last_of('\t');
+                  return a.compare(pa, std::string::npos, b, pb, std::string::npos) < 0;
+              });
+
+    FILE* out = std::fopen(manifestPath, "wb");
+    if (!out)
+        return handle->Fail(MDSNAND_ERR_OPEN, std::string("cannot write ") + manifestPath);
+    for (const auto& line : lines) std::fprintf(out, "%s\n", line.c_str());
+    std::fclose(out);
+
+    return (int)lines.size();
 }
 
 int mdsnand_export_file(mdsnand_handle* handle, const char* nandPath, const char* outPath)

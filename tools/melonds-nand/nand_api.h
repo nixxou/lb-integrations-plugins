@@ -125,6 +125,32 @@ MDSNAND_API int mdsnand_import_save(mdsnand_handle* handle, unsigned int categor
 /// which is the only way to compare ours with the one melonDS's own dialog makes.
 MDSNAND_API int mdsnand_export_file(mdsnand_handle* handle, const char* nandPath, const char* outPath);
 
+/// Write an arbitrary file INTO the NAND's filesystem, at `nandPath`, from `inPath` on disk.
+/// The counterpart of mdsnand_export_file. Ordinary data only: the ticket, the TMD and the system
+/// settings block are signed, ES-encrypted or hashed, and have their own functions upstream -
+/// writing them through here would produce a file the console does not accept.
+MDSNAND_API int mdsnand_import_file(mdsnand_handle* handle, const char* nandPath, const char* inPath);
+
+/// Delete a file from the NAND's filesystem.
+MDSNAND_API int mdsnand_remove_file(mdsnand_handle* handle, const char* nandPath);
+
+/// WALK THE WHOLE FILESYSTEM and write what is in it to `manifestPath`, one entry per line:
+///
+///     F <size> <sha1 of the contents> <path>
+///     D -      -                      <path>
+///
+/// sorted by path, UTF-8, LF endings. Comparing two of these is comparing two NANDs BY FILE rather
+/// than by byte, which is the only comparison that means anything: a FAT directory entry carries the
+/// wall clock (get_fattime, ffsystem.c:107) and the allocator places clusters in whatever order the
+/// operations happened, so two images built from identical inputs differ in raw bytes while holding
+/// exactly the same files. Measured: two installs of one title into one base NAND differed in four
+/// 64 KB blocks and not one byte of content.
+///
+/// `root` is where to start, normally "0:". Returns the number of entries written, or a negative
+/// error. Nothing upstream offers this - melonDS iterates directories in several places but never
+/// exposes it (DSi_NAND.cpp:599, :760, :830).
+MDSNAND_API int mdsnand_walk(mdsnand_handle* handle, const char* root, const char* manifestPath);
+
 /// The last failure on this handle, as UTF-8, or "" when there was none. Valid until the next call
 /// on the same handle. Pass null for failures that happened before a handle existed.
 MDSNAND_API const char* mdsnand_last_error(mdsnand_handle* handle);

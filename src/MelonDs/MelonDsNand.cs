@@ -81,6 +81,40 @@ namespace LbIntegrations.MelonDs
             return code == MelonDsNand.Ok;
         }
 
+        /// <summary>Copy one file out of the NAND's filesystem, by its path inside the image.</summary>
+        public bool ExportFile(string nandPath, string outPath, out string error)
+        {
+            var code = MelonDsNand.ExportFile(_handle, nandPath, outPath);
+            error = code == MelonDsNand.Ok ? null : MelonDsNand.LastError(_handle);
+            return code == MelonDsNand.Ok;
+        }
+
+        /// <summary>Write a file back INTO the NAND's filesystem. Only ever used to put back a copy
+        /// the emulator itself produced: the settings blocks carry their own hash and the ticket is
+        /// ES-encrypted, so a file assembled rather than restored would not be accepted.</summary>
+        public bool ImportFile(string nandPath, string inPath, out string error)
+        {
+            var code = MelonDsNand.ImportFile(_handle, nandPath, inPath);
+            error = code == MelonDsNand.Ok ? null : MelonDsNand.LastError(_handle);
+            return code == MelonDsNand.Ok;
+        }
+
+        public bool RemoveFile(string nandPath, out string error)
+        {
+            var code = MelonDsNand.RemoveFile(_handle, nandPath);
+            error = code == MelonDsNand.Ok ? null : MelonDsNand.LastError(_handle);
+            return code == MelonDsNand.Ok;
+        }
+
+        /// <summary>Write out every file in the image with its size and hash, sorted by path.
+        /// Returns how many entries, or -1. See MelonDsDelta for what two of these are for.</summary>
+        public int Walk(string manifestPath, out string error)
+        {
+            var count = MelonDsNand.Walk(_handle, "0:", manifestPath);
+            error = count < 0 ? MelonDsNand.LastError(_handle) : null;
+            return count;
+        }
+
         public void Dispose()
         {
             if (_handle == IntPtr.Zero) return;
@@ -109,7 +143,7 @@ namespace LbIntegrations.MelonDs
 
         /// <summary>The ABI this plugin was written against. A library that answers anything else is
         /// refused rather than called - a signature that moved underneath us would not fail politely.</summary>
-        private const int ExpectedAbi = 3;
+        private const int ExpectedAbi = 4;
 
         internal const int Ok = 0;
         internal const int No = 1;
@@ -222,6 +256,10 @@ namespace LbIntegrations.MelonDs
             }
             catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; return null; }
         }
+
+        /// <summary>Is melonDS running right now? Asked wherever one of its files is about to be
+        /// touched - a NAND it holds is not ours to open, and certainly not ours to delete.</summary>
+        public static bool EmulatorRunning() => RunningEmulatorProcess() != null;
 
         /// <summary>The name of a running melonDS process, or null. The same test MelonDsToml uses,
         /// and for a related reason: melonDS owns its files for the length of a session.</summary>
@@ -355,6 +393,22 @@ namespace LbIntegrations.MelonDs
         [DllImport(LibraryName, EntryPoint = "mdsnand_import_save", CallingConvention = CallingConvention.Cdecl)]
         internal static extern int ImportSave(IntPtr handle, uint category, uint titleId, int kind,
                                               [MarshalAs(UnmanagedType.LPUTF8Str)] string inPath);
+
+        [DllImport(LibraryName, EntryPoint = "mdsnand_export_file", CallingConvention = CallingConvention.Cdecl,
+                   CharSet = CharSet.Ansi, BestFitMapping = false)]
+        internal static extern int ExportFile(IntPtr handle, string nandPath, string outPath);
+
+        [DllImport(LibraryName, EntryPoint = "mdsnand_import_file", CallingConvention = CallingConvention.Cdecl,
+                   CharSet = CharSet.Ansi, BestFitMapping = false)]
+        internal static extern int ImportFile(IntPtr handle, string nandPath, string inPath);
+
+        [DllImport(LibraryName, EntryPoint = "mdsnand_remove_file", CallingConvention = CallingConvention.Cdecl,
+                   CharSet = CharSet.Ansi, BestFitMapping = false)]
+        internal static extern int RemoveFile(IntPtr handle, string nandPath);
+
+        [DllImport(LibraryName, EntryPoint = "mdsnand_walk", CallingConvention = CallingConvention.Cdecl,
+                   CharSet = CharSet.Ansi, BestFitMapping = false)]
+        internal static extern int Walk(IntPtr handle, string root, string manifestPath);
 
         [DllImport(LibraryName, EntryPoint = "mdsnand_last_error", CallingConvention = CallingConvention.Cdecl)]
         private static extern IntPtr LastErrorRaw(IntPtr handle);

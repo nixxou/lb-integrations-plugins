@@ -399,12 +399,12 @@ namespace LbIntegrations.Probe
             return -1;
         }
 
-        // ── 10. one NAND per DSiWare title ───────────────────────────────────
+        // ── 10. one working NAND, rebuilt per launch ─────────────────────────
 
         private static bool PerTitleNand(string exe, string romDir)
         {
             Console.WriteLine();
-            Console.WriteLine("  -- a DSiWare title gets a NAND of its own under dsi\\");
+            Console.WriteLine("  -- DSiWare runs on one working NAND under dsi\\, rebuilt every launch");
 
             var choose = TypeIn("MelonDsPlugin").GetMethod("ChooseConsoleMode",
                              BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Public);
@@ -419,7 +419,8 @@ namespace LbIntegrations.Probe
 
             // The title id the forged DSiWare header carries: high 0x00030004, low 0x87654321.
             const string titleId = "0003000487654321";
-            string expected = Path.Combine(dsi, titleId, "nand.bin");
+            string expected = Path.Combine(dsi, "work.bin");
+            string legacy = Path.Combine(dsi, titleId, "nand.bin");
 
             Directory.CreateDirectory(bios);
             foreach (var name in new[] { "dsi_bios7.bin", "dsi_bios9.bin" }) Write(bios, name, 1024);
@@ -432,8 +433,7 @@ namespace LbIntegrations.Probe
             File.WriteAllText(toml, "[Emu]\r\nConsoleType = 0\r\n");
             choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }), ware });
             ok &= Check("no NAND is invented out of nothing",
-                        !File.Exists(Path.Combine(dsi, titleId, "nand.bin"))
-                        && !File.Exists(Path.Combine(dsi, "base.bin")));
+                        !File.Exists(expected) && !File.Exists(Path.Combine(dsi, "base.bin")));
             ok &= Check("but the folder the message names does exist, with its note",
                         Directory.Exists(dsi) && File.Exists(Path.Combine(dsi, "PUT-YOUR-NAND-HERE.txt")));
             ok &= Check("and the console mode is untouched", ConsoleTypeIn(toml) == 0);
@@ -453,12 +453,13 @@ namespace LbIntegrations.Probe
 
             ok &= Check("the user's dump is kept as dsi\\base.bin",
                         File.Exists(Path.Combine(dsi, "base.bin")));
-            ok &= Check("a NAND is created for the title, named by its id", File.Exists(expected));
+            ok &= Check("a working NAND is built from it", File.Exists(expected));
             ok &= Check("it is a copy of the dump, byte for byte",
                         File.Exists(expected) && File.ReadAllBytes(expected).SequenceEqual(fingerprint));
+            ok &= Check("nothing 240 MB is kept per title any more", !File.Exists(legacy));
             ok &= Check("the user's own dump is left untouched",
                         File.ReadAllBytes(mine).SequenceEqual(fingerprint));
-            ok &= Check("melonDS is pointed at the per-title NAND", NandPathIn(toml) == expected);
+            ok &= Check("melonDS is pointed at the working NAND", NandPathIn(toml) == expected);
             ok &= Check("and DSi mode is asked for", ConsoleTypeIn(toml) == 1);
             // The dsi-direct-boot marker turns this one around, so ask the plugin whether it is
             // set rather than asserting the default blind. Read-only, and the marker's own folder
@@ -474,25 +475,30 @@ namespace LbIntegrations.Probe
             ok &= Check("no half-written copy is left behind",
                         !Directory.EnumerateFiles(dsi, "*.part", SearchOption.AllDirectories).Any());
 
-            // 3. A second launch reuses it rather than copying 240 MB again.
-            var stamp = File.GetLastWriteTimeUtc(expected);
+            // 3. A second launch REBUILDS it, which is the point of the whole design: the image is
+            //    scratch, and what a title keeps is the difference from a fresh install.
+            var scribble = Encoding.ASCII.GetBytes("this should not survive a rebuild");
+            using (var stream = new FileStream(expected, FileMode.Open, FileAccess.Write))
+                stream.Write(scribble, 0, scribble.Length);
+
             File.WriteAllText(toml,
                 "[Emu]\r\nConsoleType = 1\r\n\r\n[DSi]\r\n"
                 + "BIOS7Path = '" + Path.Combine(bios, "dsi_bios7.bin") + "'\r\n"
                 + "BIOS9Path = '" + Path.Combine(bios, "dsi_bios9.bin") + "'\r\n"
                 + "NANDPath = '" + expected + "'\r\n");
             choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }), ware });
-            ok &= Check("a second launch reuses the NAND instead of copying again",
-                        File.GetLastWriteTimeUtc(expected) == stamp);
+            ok &= Check("a second launch rebuilds it from the base rather than reusing it",
+                        File.ReadAllBytes(expected).SequenceEqual(fingerprint));
 
-            // 4. THE TRAP THIS EXISTS TO CATCH: once DSi.NANDPath points at a per-title NAND, that
-            //    file must never become the base for the NEXT title - one game's state would seed
-            //    every other. base.bin already exists here, so the guard is exercised by deleting it.
+            // 4. THE TRAP THIS EXISTS TO CATCH: once DSi.NANDPath points at the working NAND, that
+            //    file must never become the base - a game's state would be folded into what every
+            //    later rebuild starts from, and there would be no way back. base.bin already exists
+            //    here, so the guard is exercised by deleting it and launching again.
             File.Delete(Path.Combine(dsi, "base.bin"));
-            string other = Path.Combine(dsi, "0003000411112222", "nand.bin");
+            File.Delete(expected);
             choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }), ware });
-            ok &= Check("a per-title NAND is refused as a base for another title",
-                        !File.Exists(Path.Combine(dsi, "base.bin")) && !File.Exists(other));
+            ok &= Check("the working NAND is refused as a base",
+                        !File.Exists(Path.Combine(dsi, "base.bin")) && !File.Exists(expected));
 
             // 5. THE NATIVE LIBRARY, when this checkout has built it. A forged NAND is not a NAND,
             //    so opening it must FAIL - and the point of the assertion is that the failure is
@@ -504,6 +510,10 @@ namespace LbIntegrations.Probe
             }
             else
             {
+                // Step 4 deleted the base on purpose, and without one there is nothing to rebuild
+                // from - the plugin would rightly say so instead of trying to open anything.
+                File.Copy(mine, Path.Combine(dsi, "base.bin"), true);
+
                 File.WriteAllText(toml,
                     "[Emu]\r\nConsoleType = 0\r\n\r\n[DSi]\r\n"
                     + "BIOS7Path = '" + Path.Combine(bios, "dsi_bios7.bin") + "'\r\n"
@@ -526,7 +536,7 @@ namespace LbIntegrations.Probe
             // 6. A CARTRIDGE IS NOT DSiWARE. Once DSi.NANDPath points at a per-title NAND, a DSi
             //    cartridge launched next must go back to the base dump - otherwise its system
             //    settings would be written into whichever DSiWare ran last.
-            File.Copy(Path.Combine(dsi, titleId, "nand.bin"), Path.Combine(dsi, "base.bin"), true);
+            File.Copy(mine, Path.Combine(dsi, "base.bin"), true);
             File.WriteAllText(toml,
                 "[Emu]\r\nConsoleType = 1\r\n\r\n[DSi]\r\n"
                 + "BIOS7Path = '" + Path.Combine(bios, "dsi_bios7.bin") + "'\r\n"
@@ -550,6 +560,7 @@ namespace LbIntegrations.Probe
             ok &= Check("a NAND the user chose himself is left where it is", NandPathIn(toml) == his);
             try { File.Delete(his); } catch { }
 
+
             // 7. Without the DSi BIOS the mode is not switched, even though the NAND is ready.
             File.WriteAllText(toml, "[Emu]\r\nConsoleType = 0\r\n");
             choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }), ware });
@@ -558,6 +569,229 @@ namespace LbIntegrations.Probe
             try { Directory.Delete(dsi, true); Directory.Delete(bios, true); File.Delete(mine); File.Delete(toml); }
             catch { }
             return ok;
+        }
+
+        // ── the same path, against a REAL NAND ───────────────────────────────
+
+        /// <summary>The DSiWare launch path run for real: a genuine dump, a genuine DSiWare ROM, and
+        /// the plugin's own code driving it. Everything above runs on a forged install, which proves
+        /// the plugin agrees with our READING of melonDS; this proves the reading.
+        ///
+        /// NOTHING GIVEN IS WRITTEN TO. The NANDs are copied into the temp folder first and the
+        /// copies are what the plugin sees. That is not politeness: the images passed in are
+        /// somebody's console and somebody's save.
+        ///
+        /// With --melonds-played, a second image is put where the previous layout kept its per-title
+        /// NAND, so the migration runs too - and the assertion that matters is that what comes out of
+        /// the rebuilt image is what was in that one, file for file.</summary>
+        public static bool AgainstReal(EmulatorPlugin plugin, string basePath, string romPath,
+                                       string bios7, string bios9, string playedPath)
+        {
+            Console.WriteLine();
+            Console.WriteLine("-- melonds, against a REAL NAND  [WRITES: copies, in the temp folder] --");
+
+            foreach (var (what, path) in new[] { ("--melonds-base", basePath), ("--rom", romPath),
+                                                 ("--melonds-bios7", bios7), ("--melonds-bios9", bios9) })
+                if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+                { Console.WriteLine("  " + what + " is missing or does not exist"); return false; }
+
+            if (MelonDsRunning())
+            {
+                Console.WriteLine("  skipped - melonDS is running, and the plugin refuses to write");
+                return true;
+            }
+
+            string root = Path.Combine(Path.GetTempPath(), "lbip-melonds-real-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                string install = Path.Combine(root, "melonDS");
+                string dsi = Path.Combine(install, "dsi");
+                Directory.CreateDirectory(dsi);
+                string exe = Path.Combine(install, "melonDS.exe");
+                File.WriteAllBytes(exe, Array.Empty<byte>());
+
+                Console.WriteLine("  copying the NANDs and the ROM, so nothing given is touched...");
+                File.Copy(basePath, Path.Combine(dsi, "base.bin"));
+
+                // The ROM is copied too, because one assertion below ages its timestamp to prove the
+                // image is NOT reused for a ROM that is not the one installed. Doing that to the file
+                // somebody passed in would be helping myself to their library.
+                var romCopy = Path.Combine(root, Path.GetFileName(romPath));
+                File.Copy(romPath, romCopy);
+                romPath = romCopy;
+
+                var rom = TypeIn("NdsHeader").GetMethod("Describe", BindingFlags.Public | BindingFlags.Static)
+                              .Invoke(null, new object[] { romPath });
+                string titleId = (string)rom.GetType().GetProperty("TitleId").GetValue(rom);
+                bool isWare = (bool)rom.GetType().GetField("IsDSiWare").GetValue(rom);
+                if (!isWare) { Console.WriteLine("  " + romPath + " is not DSiWare"); return false; }
+                Console.WriteLine("  title   : " + titleId);
+
+                string played = null;
+                if (!string.IsNullOrWhiteSpace(playedPath) && File.Exists(playedPath))
+                {
+                    Directory.CreateDirectory(Path.Combine(dsi, titleId));
+                    played = Path.Combine(dsi, titleId, "nand.bin");
+                    File.Copy(playedPath, played);
+                    Console.WriteLine("  and a played NAND in the old per-title place, to migrate");
+                }
+
+                File.WriteAllText(ConfigPath(exe),
+                    "[Emu]\r\nConsoleType = 0\r\n\r\n[DSi]\r\n"
+                    + "BIOS7Path = '" + bios7 + "'\r\n"
+                    + "BIOS9Path = '" + bios9 + "'\r\n"
+                    + "NANDPath = '" + Path.Combine(dsi, "base.bin") + "'\r\n");
+
+                var choose = TypeIn("MelonDsPlugin").GetMethod("ChooseConsoleMode",
+                                 BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Public);
+                var resolve = TypeIn("MelonDsPaths").GetMethod("Resolve",
+                                 BindingFlags.Public | BindingFlags.Static);
+                var layout = resolve.Invoke(null, new object[] { exe });
+
+                bool ok = true;
+                string work = Path.Combine(dsi, "work.bin");
+                string state = Path.Combine(dsi, titleId, "state");
+
+                // ── the launch ──────────────────────────────────────────────
+                choose.Invoke(null, new object[] { layout, romPath });
+
+                ok &= Check("a working NAND is built", File.Exists(work));
+                ok &= Check("melonDS is pointed at it", NandPathIn(ConfigPath(exe)) == work);
+                ok &= Check("DSi mode, through the menu",
+                            ConsoleTypeIn(ConfigPath(exe)) == 1 && (DirectBootIn(ConfigPath(exe)) ?? true) == false);
+                ok &= Check("the walk of the fresh install is written down",
+                            File.Exists(Path.Combine(dsi, titleId, "reference.txt")));
+                ok &= Check("and the working NAND is remembered as holding this title",
+                            File.Exists(Path.Combine(dsi, "work.title")));
+
+                if (played != null)
+                {
+                    ok &= Check("the old per-title NAND is gone, its 240 MB reclaimed", !File.Exists(played));
+                    ok &= Check("its state was written down first",
+                                File.Exists(Path.Combine(state, "files.txt")));
+
+                    var index = File.Exists(Path.Combine(state, "files.txt"))
+                        ? File.ReadAllLines(Path.Combine(state, "files.txt")) : Array.Empty<string>();
+                    long bytes = Directory.Exists(state)
+                        ? Directory.EnumerateFiles(state).Sum(f => new FileInfo(f).Length) : 0;
+                    Console.WriteLine("    a whole session is " + index.Length + " file(s), "
+                                      + bytes.ToString("N0") + " bytes");
+                    foreach (var line in index)
+                    {
+                        var parts = line.Split(new[] { '\t' }, 3);
+                        if (parts.Length == 3) Console.WriteLine("      " + parts[0] + "  " + parts[2]);
+                    }
+
+                    // THE ASSERTION THIS WHOLE THING EXISTS FOR. Walk the rebuilt image and walk the
+                    // one that was actually played, and require them to hold the same files with the
+                    // same contents. Anything less is an opinion about whether the save survived.
+                    ok &= Check("the rebuilt NAND holds what the played one held, file for file",
+                                SameFiles(work, playedPath, bios7, out var difference));
+                    if (difference != null) Console.WriteLine("    " + difference);
+                }
+
+                // ── the same game again: the image is reused, not rebuilt ───
+                var before = Fingerprint(state);
+                var built = File.GetLastWriteTimeUtc(work);
+                choose.Invoke(null, new object[] { layout, romPath });
+                ok &= Check("relaunching the same game reuses the image instead of rebuilding it",
+                            File.GetLastWriteTimeUtc(work) == built);
+                ok &= Check("and its state is left alone", Fingerprint(state) == before);
+                ok &= Check("it still holds what the played NAND held",
+                            playedPath == null || SameFiles(work, playedPath, bios7, out _));
+
+                // ── a ROM that is not the one installed must NOT be reused ──
+                File.SetLastWriteTimeUtc(romPath, File.GetLastWriteTimeUtc(romPath).AddMinutes(-7));
+                choose.Invoke(null, new object[] { layout, romPath });
+                ok &= Check("a ROM that is not the one installed makes it rebuild",
+                            File.GetLastWriteTimeUtc(work) != built);
+
+                ok &= Check("and the rebuild still holds what the played NAND held",
+                            playedPath == null || SameFiles(work, playedPath, bios7, out _));
+
+
+
+                Console.WriteLine();
+                Console.WriteLine("  " + (ok ? "OK - the DSiWare path works on a real NAND" : "NOT OK - see above"));
+                return ok;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("  " + ex.GetType().Name + ": " + ex.Message);
+                return false;
+            }
+            finally
+            {
+                try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { }
+            }
+        }
+
+        /// <summary>Do two NANDs hold the same files with the same contents? Asked through the
+        /// plugin's own walk, one image at a time - melonDS's mount keeps a global filesystem
+        /// pointer, so two cannot be open at once.</summary>
+        private static bool SameFiles(string a, string b, string bios7, out string difference)
+        {
+            difference = null;
+            string wa = Path.GetTempFileName(), wb = Path.GetTempFileName();
+            try
+            {
+                if (!WalkInto(a, bios7, wa, out difference)) return false;
+                if (!WalkInto(b, bios7, wb, out difference)) return false;
+
+                var delta = TypeIn("MelonDsDelta");
+                var read = delta.GetMethod("Read", BindingFlags.Public | BindingFlags.Static);
+                var compare = delta.GetMethod("Compare", BindingFlags.Public | BindingFlags.Static);
+
+                var args = new object[] { read.Invoke(null, new object[] { wa }),
+                                          read.Invoke(null, new object[] { wb }), null, null };
+                compare.Invoke(null, args);
+                var differing = (System.Collections.IList)args[2];
+                var removed = (System.Collections.IList)args[3];
+                if (differing.Count == 0 && removed.Count == 0) return true;
+
+                var names = new List<string>();
+                foreach (var d in differing) names.Add("~ " + d);
+                foreach (var r in removed) names.Add("- " + r);
+                difference = string.Join("; ", names);
+                return false;
+            }
+            finally { try { File.Delete(wa); File.Delete(wb); } catch { } }
+        }
+
+        private static bool WalkInto(string nand, string bios7, string into, out string error)
+        {
+            error = null;
+            var open = TypeIn("MelonDsNand").GetMethod("Open", BindingFlags.Public | BindingFlags.Static);
+            var args = new object[] { nand, bios7, null };
+            var session = open.Invoke(null, args);
+            if (session == null) { error = "could not open " + nand + " - " + args[2]; return false; }
+            try
+            {
+                var walk = session.GetType().GetMethod("Walk");
+                var walkArgs = new object[] { into, null };
+                if ((int)walk.Invoke(session, walkArgs) >= 0) return true;
+                error = "could not walk " + nand + " - " + walkArgs[1];
+                return false;
+            }
+            finally { ((IDisposable)session).Dispose(); }
+        }
+
+        /// <summary>Everything in a state folder, as one string. Enough to notice a change.</summary>
+        private static string Fingerprint(string dir)
+        {
+            try
+            {
+                if (!Directory.Exists(dir)) return "";
+                var parts = new List<string>();
+                foreach (var file in Directory.EnumerateFiles(dir).OrderBy(f => f, StringComparer.Ordinal))
+                {
+                    using var sha = System.Security.Cryptography.SHA1.Create();
+                    using var stream = File.OpenRead(file);
+                    parts.Add(Path.GetFileName(file) + ":" + Convert.ToBase64String(sha.ComputeHash(stream)));
+                }
+                return string.Join("|", parts);
+            }
+            catch { return "?"; }
         }
 
         /// <summary>Does the plugin consider its native library usable? Asked of the plugin rather

@@ -50,7 +50,30 @@ That builds two things, from one set of objects:
 - **`melonds-nand.dll`** - the C door the plugin calls through P/Invoke. It travels with the plugin's
   build output and `deploy-dev.ps1` copies it beside the DLL.
 - **`melonds-nandtool.exe`** - the same operations from a command line, for doing them by hand:
-  `list`, `exists`, `import`, `delete`, `export-save`, `import-save`.
+  `list`, `exists`, `import`, `delete`, `export-save`, `import-save`, `export-file`, `import-file`,
+  `remove-file`, and `walk`.
+
+`walk` writes every file in the image with its size and SHA-1, sorted by path. Comparing two of those
+compares two NANDs **by file**, which is the only comparison that means anything: a FAT directory
+entry carries the wall clock (`get_fattime`, `ffsystem.c:107`) and the allocator places clusters in
+the order operations happened, so two images built from identical inputs differ in raw bytes while
+holding exactly the same files - measured, four differing 64 KB blocks and not one byte of content.
+Nothing upstream offers this; melonDS walks directories in three places and exposes none of them.
+
+What that buys, measured on one real session of one title:
+
+```
+base NAND                    -> + install        7 entries added, nothing else
+                                                 (ticket, the title tree, the 6.2 MB .app, its tmd,
+                                                  and an empty public.sav)
+rebuilt reference            -> played NAND      4 files differ, 16 KB each:
+                                                   shared1/TWLCFG0.dat, TWLCFG1.dat   system settings
+                                                   shared2/launcher/wrap.bin          the DSi menu
+                                                   title/00030017/484e4145/.../private.sav
+```
+
+and putting those four files back into the rebuilt reference makes it **identical to the played NAND,
+file for file**. A whole session is 80 KB of difference inside a 240 MB image.
 
 Both are one file each, linked against the static runtime, importing nothing but `KERNEL32`.
 
@@ -135,6 +158,14 @@ It writes nothing unless you ask it to. These modes do — the last two only ins
 --hotkeys
     writes Flycast's keyboard mapping on a forged install and checks that none of Flycast's
     own default keys were lost in the process.
+
+--melonds-real --melonds-base <nand.bin> --rom <dsiware.nds>
+               --melonds-bios7 <f> --melonds-bios9 <f> [--melonds-played <nand.bin>]
+    the DSiWare path against a GENUINE dump, on copies - nothing given is written to.
+    Builds the working image, installs the title, migrates a played per-title NAND if
+    one is given, and then requires the rebuilt image to hold what the played one held,
+    file for file. That last line is the whole point: everything else proves the plugin
+    agrees with our reading of melonDS, this proves the reading.
 
 --melonds
     the whole melonDS contract against a forged install: both save dispositions, the .ml<n>
@@ -348,23 +379,71 @@ ROM says which mode it wants, through melonDS's own predicates (`NDS_Header.h:20
 the mode only when the three DSi files are configured **and present**; otherwise it starts in DS mode
 and the log says why.
 
-**DSiWare gets one NAND per title, under `dsi\`.** A DSiWare title is not a cartridge: melonDS boots
-it out of the NAND, and its save lives there too, at `title/<category>/<id>/data/public.sav`
-(`DSi_NAND.cpp:1077-1092`). The NAND is therefore the game's container rather than a side file, and
-one per title makes that container self-standing - copied, backed up or deleted without touching any
-other game.
+**DSiWare runs on one working NAND, rebuilt at every launch.** A DSiWare title is not a cartridge:
+melonDS boots it out of the NAND, and its save lives there too, at
+`title/<category>/<id>/data/public.sav` (`DSi_NAND.cpp:1077-1092`). So an image has to exist and hold
+the title. The first design gave each title a copy of the dump - 240 MB per game. Walking both images
+showed what actually differs after a session:
+
+```
+your base NAND        -> + the title installed    7 entries added, nothing else
+that rebuilt image    -> the NAND actually played  5 files, 80 KB:
+                                                     shared1/TWLCFG0.dat  } console settings
+                                                     shared1/TWLCFG1.dat  } (the DSi keeps two)
+                                                     shared2/launcher/wrap.bin
+                                                     the title's own public.sav
+                                                     the launcher's private.sav
+```
+
+So the difference is the save, and the image is scratch:
 
 ```
 <install>\dsi\base.bin                  your own dump, copied here once
-<install>\dsi\0003000412345678\nand.bin  one per title id
+<install>\dsi\work.bin                  the working image, rebuilt every launch
+<install>\dsi\0003000412345678\state\   the files that differ - tens of kilobytes
 ```
 
-On the first launch of a DSiWare game the plugin captures whatever `DSi.NANDPath` points at as
-`base.bin` - **before** overwriting it, or the original would be lost as a source - copies it for that
-title, points `DSi.NANDPath` at the copy and switches to DSi mode. Later launches reuse it. A
-per-title NAND is never taken as the base for another title; that would seed one game's state into
-every other. Free space is checked first: a dump is around 240 MB. The `no-dsi-nand` marker beside
-the log turns the whole thing off.
+**480 MB for the whole library instead of 240 MB per game**, and an old per-title NAND found on disk
+is turned into its state and deleted on the next launch of that game - nothing is removed until the
+state has been written down.
+
+**The working image is kept, as a cache of one.** Relaunching the same game is the common case, and
+rebuilding for it would copy 240 MB and reinstall a title to arrive at what is already on disk -
+about a quarter of a second, measured, and 240 MB written for nothing. So a launch of the same title
+from the same ROM uses the image as it stands. Launching anything else rebuilds over it, which is the
+eviction: there is only ever one.
+
+Reuse is allowed only when nothing could have made the image stale - it exists, a marker says it
+holds this title built from this ROM (path, length and write time, not a hash: this runs on every
+launch and a DSiWare `.nds` is several megabytes), the walk of that install is still there, and
+melonDS is not in the middle of using it. Getting it wrong would cost nothing that cannot be rebuilt,
+since the state on disk is the save and the image is scratch, but it would cost a session.
+
+A launch captures whatever the working image still holds **before** rebuilding it, so a session is
+never thrown away unread; that happens on every launch, including of a plain cartridge. On the first
+DSiWare launch the plugin captures whatever `DSi.NANDPath` points at as `base.bin` - **before**
+overwriting it, or the original would be lost as a source. The working image is never taken as a base;
+that would fold one game's state into what every later rebuild starts from. Free space is checked
+first: a dump is around 240 MB. The `no-dsi-nand` marker beside the log turns the whole thing off.
+
+**Nothing decides which files matter.** The five above are what one measurement found; they are not a
+list the code carries. It walks the image, compares, and keeps what differs - a title writing
+somewhere nobody expected is captured because it differed, not because it was foreseen.
+
+**The comparison is by file, never by byte.** A FAT directory entry carries the wall clock
+(`get_fattime`, `ffsystem.c:107`) and the allocator places clusters in the order operations happened,
+so two installs of one title into one base, a second apart, produce images whose **bytes differ and
+whose manifests are identical** - both halves measured. A byte delta would be mostly noise and would
+not apply to a reference regenerated later; a file delta has neither problem.
+
+**Only what is inside the filesystem is captured**, and measured, that is everything that moves: the
+region below `0x10EE00` - the MBR, the stage2 loader and the "DSi eMMC CID/CPU" footer holding the
+console identity the decryption key comes from - did not change in one byte across a real session. It
+comes from `base.bin`, and every rebuild starts from `base.bin`.
+
+**Without the native library none of this is possible** - nothing can be installed, walked or
+captured - so that case keeps a NAND of its own per title, which is where a manual import through
+Manage DSi titles survives.
 
 **A NAND cannot be fabricated, only copied.** `NANDImage` opens an existing file and reads the
 `ConsoleID` out of it (`DSi_NAND.h:52-64`), and the decryption depends on console-unique data plus the
@@ -415,15 +494,16 @@ remembered, so it can be flipped with the host running, and the log names which 
 
 **A DSiWare save is extracted, not the image that holds it.** It lives inside the NAND, at
 `title/<category>/<id>/data/public.sav` - a few kilobytes inside 240 MB. Handing the image to the host
-would mean hashing all of it to draw a freshness dot, and a 240 MB vault copy per backup. So the save
-is exported beside its NAND and THAT is what is listed, as a plain file like every other save here.
+would mean hashing all of it to draw a freshness dot, and a 240 MB vault copy per backup. So a copy is
+written beside the title's folder and THAT is what is listed, as a plain file like every other save
+here.
 
-The NAND stays the truth. The extraction happens only when melonDS has written to the image since the
-last one - the trigger is the NAND's own timestamp, so the steady state costs two calls to
-`GetLastWriteTimeUtc` and nothing else. A restore goes back **through** the NAND and the extract is
-then re-read, so what the page shows is what the emulator will load. A deletion is refused rather than
-faked: removing the extracted copy would change nothing in the game, and melonDS has no way to blank a
-title's save short of removing the title.
+The extraction happens only when this title is the one the working image holds AND melonDS has written
+to it since the last one - the trigger is that image's own timestamp, so the steady state costs two
+calls to `GetLastWriteTimeUtc` and nothing else. A restore writes into the saved **state**, which is
+what a rebuild puts back, and into the working image too when it happens to be holding that title. A
+deletion is refused rather than faked: removing the extracted copy would change nothing in the game,
+and melonDS has no way to blank a title's save short of removing the title.
 
 **No RetroAchievements.** There is no `rcheevos` submodule, no vendored `rc_*` source, no menu entry
 and no configuration key anywhere in the tree. RA support for melonDS exists only in the libretro

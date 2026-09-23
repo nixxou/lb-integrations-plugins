@@ -28,7 +28,7 @@ namespace LbIntegrations.Probe
         {
             if (args.Length == 0 || args[0].StartsWith("-"))
             {
-                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--melonds] [--rows] [--hotkeys] [--saves --emu <exe> --rom <rom>] [--ahk --emu <exe>]");
+                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--melonds] [--melonds-real ...] [--rows] [--hotkeys] [--saves --emu <exe> --rom <rom>] [--ahk --emu <exe>]");
                 return 2;
             }
 
@@ -448,6 +448,18 @@ namespace LbIntegrations.Probe
                 if (!FlycastCheck.AgainstReal(plugin, emuPath, Arg(args, "--rom"))) return 1;
             }
 
+            // The DSiWare path against a REAL NAND, on copies:
+            //   --melonds-real --melonds-base <nand.bin> --melonds-bios7 <f> --melonds-bios9 <f>
+            //                  --rom <dsiware.nds> [--melonds-played <nand.bin>]
+            if (Has(args, "--melonds-real"))
+            {
+                MelonDsCheck.Anchor(plugin);
+                if (!MelonDsCheck.AgainstReal(plugin,
+                        Arg(args, "--melonds-base"), Arg(args, "--rom"),
+                        Arg(args, "--melonds-bios7"), Arg(args, "--melonds-bios9"),
+                        Arg(args, "--melonds-played"))) return 1;
+            }
+
             Console.WriteLine();
             var wroteTo = new List<string>();
             if (Has(args, "--inject-ra-test")) wroteTo.Add("the emulator's RetroAchievements configuration");
@@ -456,6 +468,7 @@ namespace LbIntegrations.Probe
             if (states) wroteTo.Add("a throwaway PPSSPP in the temp folder (states)");
             if (flycast) wroteTo.Add("a forged Flycast in the temp folder");
             if (melonds) wroteTo.Add("a forged melonDS in the temp folder");
+            if (Has(args, "--melonds-real")) wroteTo.Add("COPIES of the NANDs given, in the temp folder");
             if (hotkeys) wroteTo.Add("a forged Flycast in the temp folder (keyboard mapping)");
             Console.WriteLine(wroteTo.Count == 0
                 ? "done. Nothing was written."

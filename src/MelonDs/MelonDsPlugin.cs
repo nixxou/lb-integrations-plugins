@@ -606,6 +606,17 @@ namespace LbIntegrations.MelonDs
                 return;
             }
 
+            // BEFORE ANYTHING ELSE, and for every launch rather than only for DSiWare: whatever
+            // the working NAND is still holding belongs to the title that ran last, and a rebuild is
+            // about to overwrite it. There is no "the emulator quit" event to do this on, so this is
+            // the moment - launching a plain cartridge must not silently discard the DSiWare session
+            // that came before it. With nothing in flight it costs one File.Exists.
+            // ... except for the title about to be reused: its image is not going anywhere, so
+            // there is nothing to rescue, and walking it would cost a launch a quarter of a second
+            // to write down what is already in the file we are about to hand back.
+            if (!(rom.IsDSiWare && MelonDsDsi.CanReuseWork(layout, rom, romPath)))
+                MelonDsDsi.CaptureWork(layout, AbsoluteTo(layout.ConfigDir, ValueOf(layout, "BIOS7Path")));
+
             if (rom.IsDSiWare) { PrepareDsiWare(layout, rom, romPath); return; }
 
             int wanted = 0;
@@ -623,21 +634,33 @@ namespace LbIntegrations.MelonDs
             SetBootMode(layout, wanted, directBoot: true, rom);
         }
 
-        /// <summary>Give a DSiWare title its own NAND and point melonDS at it.
+        /// <summary>Rebuild the working NAND for this title and point melonDS at it.
         ///
-        /// A DSiWare title is not a cartridge: melonDS boots it out of the NAND and keeps its saves
-        /// there too, so the NAND is the game's container rather than a side file. One per title makes
-        /// that container self-standing - see MelonDsDsi.
+        /// A DSiWare title is not a cartridge: melonDS boots it out of the NAND and keeps its save
+        /// there too. So the image is rebuilt from the user's base dump, the title is installed into
+        /// it, and the few kilobytes that title had accumulated go back in - see MelonDsDsi and
+        /// MelonDsDelta. One image for the whole library instead of one per game.
         ///
-        /// What this does NOT do is install the title into it. That lives in melonDS's Manage DSi
-        /// titles dialog and has no entry point outside it, so the first launch of a title prepares
-        /// its NAND and says, once, that the import is owed. Every launch after that is automatic.</summary>
+        /// WITHOUT THE NATIVE LIBRARY none of that is possible - nothing can be installed, walked or
+        /// captured - and a scratch image rebuilt every launch would then be worse than useless,
+        /// because it would wipe the manual import that is the only thing left to do. So that case
+        /// keeps a NAND of its own per title, which is where a manual import survives.</summary>
         private static void PrepareDsiWare(MelonDsLayout layout, NdsRom rom, string romPath)
         {
             var configured = MelonDsToml.Read(layout.ConfigFile, MelonDsPaths.DSiTable, "NANDPath");
             var current = configured.TryGetValue("NANDPath", out var p)
                 ? AbsoluteTo(layout.ConfigDir, p) : null;
-            var nand = MelonDsDsi.Ensure(layout, rom, current);
+
+            bool automatic = MelonDsNand.IsUsable(out var missingLibrary);
+
+            // THE SAME GAME AGAIN. The image on disk already holds this title, built from this ROM,
+            // with its state in it - rebuilding would copy 240 MB to arrive back where we are. Every
+            // condition is checked in CanReuseWork rather than assumed.
+            bool reused = automatic && MelonDsDsi.CanReuseWork(layout, rom, romPath);
+
+            var nand = !automatic ? MelonDsDsi.EnsureLegacy(layout, rom, current)
+                     : reused     ? MelonDsDsi.ExistingWork(layout)
+                                  : MelonDsDsi.Rebuild(layout, rom, current);
 
             if (nand.Path == null)
             {
@@ -679,10 +702,47 @@ namespace LbIntegrations.MelonDs
                          + "Delete the marker to go back to the menu, which works.");
             SetBootMode(layout, consoleType: 1, directBoot: direct, rom);
 
-            // The title has to be INSIDE that NAND for melonDS to boot it, and that is melonDS's own
-            // code doing it - see MelonDsNand. Without the library the step is a click in Manage DSi
-            // titles, and either way the launch goes ahead.
-            InstallTitle(layout, rom, romPath, nand.Path);
+            if (!automatic)
+            {
+                Log.Info("ONE MANUAL STEP for " + rom.AssetName + ": in melonDS, open Manage DSi titles "
+                         + "and import this .nds into the NAND that is now selected. melonDS boots "
+                         + "DSiWare from the NAND, and its saves live there. (" + missingLibrary + ")");
+                return;
+            }
+
+            if (reused)
+            {
+                Log.Verbose(rom.AssetName + ": the working NAND already holds it, reusing it as it is");
+                return;
+            }
+
+            var bios7 = AbsoluteTo(layout.ConfigDir, ValueOf(layout, "BIOS7Path"));
+
+            // Install, then walk what that produced. The walk is the reference every later comparison
+            // is made against, so it has to describe the install AND NOTHING ELSE - taken after the
+            // saved state went back in, it would describe the state as part of the install and the
+            // next capture would find no difference at all.
+            if (!InstallTitle(layout, rom, romPath, nand.Path)) return;
+
+            // A NAND from the previous layout, if there is one: read its state out and drop the
+            // 240 MB image. It needs the reference, so it cannot happen any earlier than this.
+            MigrateLegacyNand(layout, rom, bios7);
+
+            MelonDsDsi.RestoreState(layout, rom.TitleId, bios7);
+
+            // Last, once everything above has worked: a marker naming a title whose state never went
+            // back in would make the next capture overwrite a good state with a blank one.
+            MelonDsDsi.RememberWork(layout, rom.TitleId, romPath);
+        }
+
+        /// <summary>A NAND left over from the first design, turned into a saved state and removed.
+        /// Nothing is deleted until its state has been written down.</summary>
+        private static void MigrateLegacyNand(MelonDsLayout layout, NdsRom rom, string bios7)
+        {
+            if (MelonDsDsi.LegacyNandFor(layout, rom.TitleId) == null) return;
+            Log.Info(rom.AssetName + " still has a NAND of its own from the previous layout; its state "
+                     + "is being read out so the image can go.");
+            MelonDsDsi.Migrate(layout, rom.TitleId, bios7);
         }
 
         /// <summary>Beside the log, like the other switches here. Present, a DSiWare title is
@@ -693,23 +753,17 @@ namespace LbIntegrations.MelonDs
         /// and a future melonDS may well change it. Nothing here depends on it being absent.</summary>
         private const string DirectBootMarker = "dsi-direct-boot";
 
-        /// <summary>Put the title inside its NAND, if it is not there already.</summary>
-        private static void InstallTitle(MelonDsLayout layout, NdsRom rom, string romPath, string nandPath)
+        /// <summary>Put the title into the working NAND and write down the walk of the result.
+        /// False when the title is not in there afterwards, which means the launch goes ahead but
+        /// nothing downstream - migration, state, marker - has any footing.</summary>
+        private static bool InstallTitle(MelonDsLayout layout, NdsRom rom, string romPath, string nandPath)
         {
-            if (!MelonDsNand.IsUsable(out var why))
-            {
-                Log.Info("ONE MANUAL STEP for " + rom.AssetName + ": in melonDS, open Manage DSi titles "
-                         + "and import this .nds into the NAND that is now selected. melonDS boots "
-                         + "DSiWare from the NAND, and its saves live there. (" + why + ")");
-                return;
-            }
-
             // An archive cannot be imported: melonDS's importer reads a .nds, and so does ours.
             if (NdsHeader.IsArchive(romPath))
             {
                 Log.Info(rom.AssetName + " is inside an archive; extract the .nds to have it installed "
                          + "into its NAND automatically.");
-                return;
+                return false;
             }
 
             var bios7 = AbsoluteTo(layout.ConfigDir, ValueOf(layout, "BIOS7Path"));
@@ -717,10 +771,8 @@ namespace LbIntegrations.MelonDs
             if (session == null)
             {
                 Log.Warn("could not open the NAND of " + rom.AssetName + " - " + error);
-                return;
+                return false;
             }
-
-            if (session.TitleExists(rom.TitleId)) return;       // nothing to do, and nothing to say
 
             // THE REAL METADATA FIRST. A TMD built from the ROM carries everything melonDS reads,
             // but it is unsigned - and the DSi menu that launches an installed title checks. Measured
@@ -730,13 +782,17 @@ namespace LbIntegrations.MelonDs
             var tmd = MelonDsTmd.Resolve(layout, rom, romPath, out var source);
             if (tmd != null) Log.Verbose("metadata for " + rom.TitleId + " from " + source);
 
-            if (session.ImportTitle(romPath, tmd, out var failure, out var generated))
-                Log.Info(rom.AssetName + ": title " + rom.TitleId + " installed into its NAND"
-                         + (generated ? " (its metadata was BUILT from the ROM, not signed - if the DSi "
-                                      + "menu refuses it, that is why)" : ""));
-            else
-                Log.Warn("could not install " + rom.AssetName + " into its NAND - " + failure
+            if (!session.ImportTitle(romPath, tmd, out var failure, out var generated))
+            {
+                Log.Warn("could not install " + rom.AssetName + " into the working NAND - " + failure
                          + ". Import it through Manage DSi titles instead.");
+                return false;
+            }
+            Log.Verbose(rom.AssetName + ": title " + rom.TitleId + " installed into the working NAND"
+                        + (generated ? " (its metadata was BUILT from the ROM, not signed - if the DSi "
+                                     + "menu refuses it, that is why)" : ""));
+
+            return MelonDsDsi.TakeReference(layout, session, rom.TitleId);
         }
 
         /// <summary>Point a DSi CARTRIDGE back at the base NAND.

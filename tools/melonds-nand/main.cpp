@@ -59,6 +59,11 @@ void Usage()
         "  delete --title <16 hex>         remove a title and its data\n"
         "  export-save --title <16 hex> --type <public|private|banner> --out <file>\n"
         "  export-file --path <path in NAND> --out <file>\n"
+        "  import-file --path <path in NAND> --in <file>\n"
+        "  remove-file --path <path in NAND>\n"
+        "  walk [--root <path>] --out <manifest>\n"
+        "                                  list every file with its size and SHA-1, sorted;\n"
+        "                                  diff two of these to see what a session changed\n"
         "                                  for example 0:/title/00030004/4b393945/content/title.tmd\n"
         "  import-save --title <16 hex> --type <public|private|banner> --in <file>\n"
         "\n"
@@ -170,6 +175,35 @@ int Run(int argc, char** argv, mdsnand_handle* nand, const char* command)
         if (!path || !out)
         { std::fprintf(stderr, "export-file wants --path and --out\n"); return ExitUsage; }
         return Report(nand, mdsnand_export_file(nand, path, out));
+    }
+
+    if (std::strcmp(command, "import-file") == 0)
+    {
+        const char* path = Arg(argc, argv, "--path");
+        const char* in = Arg(argc, argv, "--in");
+        if (!path || !in)
+        { std::fprintf(stderr, "import-file wants --path and --in\n"); return ExitUsage; }
+        return Report(nand, mdsnand_import_file(nand, path, in));
+    }
+
+    if (std::strcmp(command, "remove-file") == 0)
+    {
+        const char* path = Arg(argc, argv, "--path");
+        if (!path)
+        { std::fprintf(stderr, "remove-file wants --path\n"); return ExitUsage; }
+        return Report(nand, mdsnand_remove_file(nand, path));
+    }
+
+    if (std::strcmp(command, "walk") == 0)
+    {
+        const char* out = Arg(argc, argv, "--out");
+        if (!out)
+        { std::fprintf(stderr, "walk wants --out\n"); return ExitUsage; }
+
+        int count = mdsnand_walk(nand, Arg(argc, argv, "--root"), out);
+        if (count < 0) return Report(nand, count);
+        std::printf("%d\n", count);
+        return ExitOk;
     }
 
     bool exporting = std::strcmp(command, "export-save") == 0;
