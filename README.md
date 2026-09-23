@@ -848,12 +848,22 @@ which a restore then honours. Measured on a real evening: two walks 27 milliseco
 missing 56 of about 60 entries and the next 45, taken four seconds after melonDS's last write. What
 came out was a save asking for the title's own `public.sav` to be deleted.
 
-So a capture asks whether the file is free - `FileShare.None`, which succeeds only when nobody holds
-it at all - and treats the two situations differently. While melonDS is still **running** there is
-nothing to capture and it gives up at once rather than block the host through somebody's game; that
-session is written down at the next launch, which is the ordinary path anyway. When the process has
-**gone** but the handle has not, it waits, capped at three seconds - measured, the gap is
-milliseconds, and it is the difference between writing a session down and writing a lie down.
+So the file itself is asked - `FileShare.None`, which succeeds only when nobody holds it at all -
+and the answer means different things in two places.
+
+**A capture cannot wait long**, because it is asked for while a window is being drawn: melonDS still
+running means there is nothing to capture anyway, so it gives up at once rather than block the host
+through somebody's game, and that session is written down at the next launch. When the process has
+gone but the handle has not, it waits three seconds - measured, the gap is milliseconds.
+
+**A LAUNCH waits properly, and that is the one that matters.** The image holds a session nobody has
+written down; a launch captures it and then builds over it, so going ahead while melonDS still has
+it is precisely how a session is lost - and the rebuild would fail anyway, since a file somebody has
+open cannot be replaced. So a launch waits **three minutes**, silent for the first ten seconds and
+then showing a window that says what is happening and offers to stop. Stopping does not start the
+game on a state nobody can describe: it abandons the launch, leaves the session exactly where it is,
+and the next launch finds it. Three seconds would have been the wrong number here - the question is
+not "has a handle been released" but "has somebody finished playing".
 
 **And removals are confirmed by reading twice.** A removal is the one thing in a delta that destroys
 rather than restores, so when there are any, the image is walked again and the two walks have to

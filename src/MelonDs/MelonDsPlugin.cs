@@ -720,6 +720,10 @@ namespace LbIntegrations.MelonDs
             // belongs to the title that ran last, and there is no "the emulator quit" event to hang
             // this on - so launching a plain cartridge must not silently discard the DSiWare session
             // that came before it. With nothing in flight it costs one File.Exists.
+            //
+            // AND IT WAITS FIRST, because a cartridge takes the working image over: going ahead while
+            // melonDS still has it would discard exactly the session this paragraph exists to keep.
+            if (!MelonDsDsi.WaitForTheImage(layout, rom.AssetName)) return false;
             MelonDsDsi.CaptureWork(layout, AbsoluteTo(layout.ConfigDir, ValueOf(layout, "BIOS7Path")));
 
             // A CONFIGURATION NOBODY CAN PLAY is the one case where this touches an installation it
@@ -860,6 +864,16 @@ namespace LbIntegrations.MelonDs
             var configured = MelonDsToml.Read(layout.ConfigFile, MelonDsPaths.DSiTable, "NANDPath");
             var current = configured.TryGetValue("NANDPath", out var p)
                 ? AbsoluteTo(layout.ConfigDir, p) : null;
+
+            // NOTHING TOUCHES THE IMAGE UNTIL MELONDS HAS LET IT GO. Everything below reads it,
+            // captures it or builds over it, and all three are wrong while a session is still in
+            // flight. See MelonDsDsi.WaitForTheImage for why a launch waits where a capture does not.
+            if (!MelonDsDsi.WaitForTheImage(layout, rom.AssetName))
+            {
+                Log.Info(rom.AssetName + " is not started this time; melonDS still had the working "
+                         + "image. Launch it again once melonDS has closed.");
+                return false;
+            }
 
             // THE RECEIPT, BEFORE ANY DECISION IS TAKEN. If this title's save has been written by
             // something other than melonDS since the image was last agreed with it - a RomM sync, a

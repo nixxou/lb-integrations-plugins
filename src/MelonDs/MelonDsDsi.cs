@@ -447,9 +447,124 @@ namespace LbIntegrations.MelonDs
             catch (Exception ex) { Log.Warn("could not set a save aside", ex); return false; }
         }
 
-        /// <summary>How long to wait for melonDS to let go of the working image once its process
-        /// has gone. Measured, the gap is milliseconds; this is the cap, not the cost.</summary>
+        /// <summary>How long a CAPTURE waits for melonDS to let go of the working image once its
+        /// process has gone. Measured, the gap is milliseconds; this is the cap, not the cost. A
+        /// capture is asked for while a window is being drawn, so it cannot wait long - and it does
+        /// not need to, because the session it missed is captured at the next launch.</summary>
         private static readonly TimeSpan Handover = TimeSpan.FromSeconds(3);
+
+        /// <summary>How long a LAUNCH waits, which is a different question with a different answer.
+        /// Here the session in the image has NOT been written down yet, and building over it would
+        /// lose it - so waiting for a game somebody is still finishing is the right thing to do, and
+        /// three minutes is a length nobody reaches by accident.</summary>
+        internal static TimeSpan LaunchPatience = TimeSpan.FromMinutes(3);
+
+        /// <summary>How long the wait stays silent. Ten seconds of nothing is a pause; three minutes
+        /// of nothing is indistinguishable from a hang.</summary>
+        internal static TimeSpan AnnounceAfter = TimeSpan.FromSeconds(10);
+
+        /// <summary>Hold a launch back until nothing else has the working image. Answers false when
+        /// the launch should be abandoned instead.
+        ///
+        /// THE IMAGE HOLDS A SESSION NOBODY HAS WRITTEN DOWN. That is the whole of it: a launch
+        /// captures what the image still holds and then rebuilds over it, and if melonDS is still
+        /// using it neither can happen - the capture reads a moving filesystem, and the rebuild
+        /// cannot replace a file somebody has open. Going ahead anyway is how a session gets lost.
+        ///
+        /// So a launch waits, where a capture cannot: three minutes, with a window after ten seconds
+        /// saying what is happening and offering to stop. Stopping abandons the launch rather than
+        /// starting the game on a state nobody can describe - the session in the image is left
+        /// exactly as it is, and the next launch finds it.</summary>
+        public static bool WaitForTheImage(MelonDsLayout layout, string gameName)
+        {
+            var work = WorkPath(layout);
+            if (work == null || !File.Exists(work)) return true;     // nothing to wait for
+
+            MelonDsDialog.Waiting window = null;
+            try
+            {
+                var started = DateTime.UtcNow;
+                bool said = false;
+                while (true)
+                {
+                    // BOTH QUESTIONS, because either can be the one that matters: the process may be
+                    // gone while the handle lingers, and - if melonDS ever stops holding the file
+                    // open for a whole session - the handle may be free while the game is running.
+                    if (!MelonDsNand.EmulatorRunning() && NobodyHolds(work))
+                    {
+                        if (said)
+                            Log.Info("melonDS has let the working image go after "
+                                     + Seconds(DateTime.UtcNow - started) + "s; carrying on with "
+                                     + (gameName ?? "this game"));
+                        return true;
+                    }
+
+                    var waited = DateTime.UtcNow - started;
+                    if (!said && waited >= AnnounceAfter)
+                    {
+                        said = true;
+                        Log.Info("melonDS still has the working image, so " + (gameName ?? "this game")
+                                 + " waits rather than build over a session that has not been written "
+                                 + "down");
+                        window = MelonDsDialog.Wait("melonDS - finishing the last session",
+                                                    StillBusy(gameName));
+                    }
+
+                    if (window != null && window.Cancelled)
+                    {
+                        Log.Info((gameName ?? "this game") + " was not started: the wait was stopped, "
+                                 + "and the session in the working image is left exactly as it is");
+                        return false;
+                    }
+
+                    if (waited >= LaunchPatience)
+                    {
+                        Log.Warn("melonDS has had the working image for "
+                                 + Seconds(LaunchPatience) + "s, so " + (gameName ?? "this game")
+                                 + " is not started; quit melonDS and launch it again");
+                        return false;
+                    }
+
+                    Thread.Sleep(150);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Never refuse a launch over not being able to ask the question.
+                Log.Verbose("could not wait for the working image - " + ex.Message);
+                return true;
+            }
+            finally { window?.Dispose(); }
+        }
+
+        private static string Seconds(TimeSpan span)
+            => ((int)span.TotalSeconds).ToString(CultureInfo.InvariantCulture);
+
+        private static string StillBusy(string gameName)
+            => string.Join(Environment.NewLine, new[]
+            {
+                "melonDS still has the NAND it was playing on.",
+                "",
+                "Starting " + (gameName ?? "this game") + " now would build over a session that has",
+                "not been written down yet, so this waits for melonDS to finish closing. It is",
+                "usually a moment; if melonDS is still open, quit it.",
+                "",
+                "Stop waiting starts nothing. The game is not launched, and the session in the",
+                "image is left exactly as it is - the next launch finds it.",
+            });
+
+        /// <summary>Does nobody hold this file? FileShare.None succeeds only when nobody else has it
+        /// open at all, which is the question rather than a proxy for it.</summary>
+        private static bool NobodyHolds(string path)
+        {
+            try
+            {
+                using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None)) { }
+                return true;
+            }
+            catch (IOException) { return false; }
+            catch { return true; }          // anything else is not "somebody has it"
+        }
 
         /// <summary>Is the working image nobody else's yet? Answers false when a capture must not
         /// happen now.
@@ -487,23 +602,15 @@ namespace LbIntegrations.MelonDs
                 var deadline = DateTime.UtcNow + Handover;
                 while (true)
                 {
-                    try
+                    if (NobodyHolds(work)) return true;
+                    if (DateTime.UtcNow >= deadline)
                     {
-                        using (new FileStream(work, FileMode.Open, FileAccess.Read, FileShare.None)) { }
-                        return true;
+                        Log.Info("something still holds the working image after " + Seconds(Handover)
+                                 + "s, so the session of " + titleId + " is not captured rather than "
+                                 + "captured badly");
+                        return false;
                     }
-                    catch (IOException)
-                    {
-                        if (DateTime.UtcNow >= deadline)
-                        {
-                            Log.Info("something still holds the working image after "
-                                     + Handover.TotalSeconds.ToString(CultureInfo.InvariantCulture)
-                                     + "s, so the session of " + titleId + " is not captured rather "
-                                     + "than captured badly");
-                            return false;
-                        }
-                        Thread.Sleep(25);
-                    }
+                    Thread.Sleep(25);
                 }
             }
             catch (Exception ex)

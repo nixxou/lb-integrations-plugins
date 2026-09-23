@@ -1228,6 +1228,58 @@ namespace LbIntegrations.Probe
                 // And it is free again the moment the handle goes.
                 ok &= Check("and it is free again as soon as the handle goes",
                             (bool)free.Invoke(null, new object[] { layout, "000300044b393945" }));
+
+                // ── and a LAUNCH waits where a capture cannot ────────────────
+                //
+                // Different question, different answer. The image holds a session nobody has written
+                // down; a launch captures it and then builds over it, so going ahead while melonDS
+                // still has it is how a session is lost. Three minutes, with a window after ten
+                // seconds - shortened here, since a probe that took three minutes would be a worse
+                // test than none.
+                var wait = TypeIn("MelonDsDsi")?.GetMethod("WaitForTheImage",
+                               BindingFlags.Public | BindingFlags.Static);
+                if (wait == null) { Console.WriteLine("    no WaitForTheImage to call"); return false; }
+
+                var patience = TypeIn("MelonDsDsi").GetField("LaunchPatience",
+                                   BindingFlags.NonPublic | BindingFlags.Static)
+                            ?? TypeIn("MelonDsDsi").GetField("LaunchPatience",
+                                   BindingFlags.Public | BindingFlags.Static);
+                var was = patience?.GetValue(null);
+                try
+                {
+                    patience?.SetValue(null, TimeSpan.FromSeconds(1));
+
+                    clock.Restart();
+                    bool went = (bool)wait.Invoke(null, new object[] { layout, "A Game" });
+                    clock.Stop();
+                    ok &= Check("a launch goes ahead at once when the image is nobody's",
+                                went && clock.ElapsedMilliseconds < 500);
+
+                    using (new FileStream(work, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                    {
+                        long mark = LogLength();
+                        clock.Restart();
+                        bool ahead = (bool)wait.Invoke(null, new object[] { layout, "A Game" });
+                        clock.Stop();
+                        var said = LogSince(mark);
+
+                        ok &= Check("AND IT REFUSES TO START rather than build over a held image",
+                                    !ahead);
+                        ok &= Check("after waiting, not instead of waiting",
+                                    clock.ElapsedMilliseconds >= 900);
+                        ok &= Check("and the log says to close melonDS and try again",
+                                    said.Contains("quit melonDS and launch it again"));
+                        if (!said.Contains("quit melonDS")) Console.WriteLine("    log said: " + said.Trim());
+                    }
+                }
+                finally { if (was != null) patience?.SetValue(null, was); }
+
+                // Nothing to wait for is not a wait.
+                File.Delete(work);
+                clock.Restart();
+                ok &= Check("and with no working image at all there is nothing to wait for",
+                            (bool)wait.Invoke(null, new object[] { layout, "A Game" })
+                            && clock.ElapsedMilliseconds < 200);
                 return ok;
             }
             finally { try { File.Delete(work); } catch { } }

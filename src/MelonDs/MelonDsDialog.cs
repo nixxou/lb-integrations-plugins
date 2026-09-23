@@ -134,6 +134,103 @@ namespace LbIntegrations.MelonDs
             return chosen;
         }
 
+        // ── a window that says "hold on", and can be told not to ────────────
+
+        /// <summary>A window shown WHILE something is happening, rather than to ask a question.
+        ///
+        /// EVERY OTHER WINDOW HERE BLOCKS UNTIL SOMEBODY ANSWERS, which is right for a question and
+        /// useless for a wait: the thing being waited for has to keep being checked. So this one is
+        /// opened, watched through <see cref="Cancelled"/>, and closed from the outside when the wait
+        /// ends - or by the user, which is what Cancel means.
+        ///
+        /// It exists because a three-minute wait with nothing on screen is indistinguishable from a
+        /// hang. Ten seconds of silence is fine; three minutes of it is a bug report.</summary>
+        internal sealed class Waiting : IDisposable
+        {
+            private Form _form;
+            private volatile bool _cancelled;
+
+            /// <summary>Has the user asked to stop waiting?</summary>
+            public bool Cancelled => _cancelled;
+
+            internal Waiting(string title, string body)
+            {
+                var ready = new ManualResetEventSlim(false);
+                var thread = new Thread(() =>
+                {
+                    try { Run(title, body, ready); }
+                    catch (Exception ex) { Log.Verbose("no waiting window (" + ex.GetType().Name + ")"); }
+                    finally { ready.Set(); }
+                });
+                thread.SetApartmentState(ApartmentState.STA);
+                thread.IsBackground = true;
+                thread.Start();
+                ready.Wait(TimeSpan.FromSeconds(5));
+            }
+
+            private void Run(string title, string body, ManualResetEventSlim ready)
+            {
+                using var form = new Form
+                {
+                    Text = title,
+                    FormBorderStyle = FormBorderStyle.FixedDialog,
+                    StartPosition = FormStartPosition.CenterScreen,
+                    MinimizeBox = false,
+                    MaximizeBox = false,
+                    ControlBox = false,          // closing it means cancelling, and that has a button
+                    ShowInTaskbar = true,
+                    ClientSize = new Size(620, 200),
+                    TopMost = true,
+                };
+
+                form.Controls.Add(new TextBox
+                {
+                    Multiline = true,
+                    ReadOnly = true,
+                    Text = body,
+                    BorderStyle = BorderStyle.None,
+                    BackColor = SystemColors.Control,
+                    Bounds = new Rectangle(16, 16, 588, 126),
+                    TabStop = false,
+                });
+
+                var cancel = new Button
+                {
+                    Text = "Stop waiting",
+                    Bounds = new Rectangle(474, 154, 130, 30),
+                };
+                cancel.Click += (s, e) => { _cancelled = true; form.Close(); };
+                form.Controls.Add(cancel);
+                form.CancelButton = cancel;
+
+                form.Shown += (s, e) => ready.Set();
+                _form = form;
+                Application.Run(form);
+                _form = null;
+            }
+
+            /// <summary>Close it from the thread that was waiting. Safe to call when it never opened
+            /// and safe to call twice.</summary>
+            public void Dispose()
+            {
+                try
+                {
+                    var form = _form;
+                    if (form == null || form.IsDisposed) return;
+                    if (form.IsHandleCreated) form.BeginInvoke((Action)(() => { try { form.Close(); } catch { } }));
+                }
+                catch (Exception ex) { Log.Verbose("could not close a waiting window - " + ex.Message); }
+            }
+        }
+
+        /// <summary>Open a "hold on" window, or answer null when windows are off - in which case the
+        /// caller waits in silence, which is the same thing it did before there were windows.</summary>
+        public static Waiting Wait(string title, string body)
+        {
+            try { return Available ? new Waiting(title, body) : null; }
+            catch (Exception ex) { Log.Verbose("could not show a waiting window - " + ex.Message); return null; }
+        }
+
         // ── the three things that cannot be left unsaid ──────────────────────
 
         /// <summary>A game cannot start: what is missing and where it goes.</summary>
