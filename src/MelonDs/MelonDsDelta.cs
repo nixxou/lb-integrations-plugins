@@ -149,6 +149,43 @@ namespace LbIntegrations.MelonDs
                     }
                     Compare(reference, Read(walk), out var differing, out var removed);
 
+                    // REMOVALS ARE CHECKED BY READING TWICE, because a removal is the one thing in
+                    // a delta that destroys rather than restores: a restore obeys X rows, so a walk
+                    // that wrongly reports a file missing ends up as a save that says "delete this
+                    // title's public.sav" and means it.
+                    //
+                    // MEASURED, on a real evening: a capture that raced melonDS's shutdown walked an
+                    // image whose FAT was half-written and came back missing 56 of about 60 entries;
+                    // the next walk, 27 milliseconds later, was missing 45. Tickets, system files and
+                    // the title's own content were all "deleted". MelonDsDsi waits for the image to
+                    // be free now, which removes that race - and this catches whatever is left of it.
+                    //
+                    // IT TESTS THE READ, NOT THE SESSION, and that distinction is the whole design.
+                    // The obvious guard - refuse a capture that deletes too much - punishes somebody
+                    // who deleted several titles from the DSi menu, which removes their tickets,
+                    // their contents and their data in one go and is a perfectly ordinary thing to
+                    // do. A second walk asks a different question: is this image still? A quiet image
+                    // walks identically twice whether ten titles were deleted or none, and a moving
+                    // one does not. The cost is paid only when there are removals to justify it.
+                    if (removed.Count > 0)
+                    {
+                        var again = Path.Combine(scratchDir, "walk-" + Guid.NewGuid().ToString("N") + ".txt");
+                        try
+                        {
+                            if (session.Walk(again, out error) < 0) return -1;
+                            Compare(Read(walk), Read(again), out var appeared, out var vanished);
+                            if (appeared.Count > 0 || vanished.Count > 0)
+                            {
+                                error = "two walks of the image disagree (" + appeared.Count + " and "
+                                      + vanished.Count + " entries apart), so it is being written to; "
+                                      + removed.Count + " removal(s) are not recorded on a reading "
+                                      + "that cannot be repeated";
+                                return -1;
+                            }
+                        }
+                        finally { try { if (File.Exists(again)) File.Delete(again); } catch { } }
+                    }
+
                     // Into a new folder, then swapped in: a capture interrupted halfway would
                     // otherwise leave a state that is neither the old one nor the new one.
                     var building = stateDir + "." + Guid.NewGuid().ToString("N") + ".part";

@@ -79,6 +79,7 @@ namespace LbIntegrations.Probe
                 ok &= NandFirstUse(exe);
                 ok &= TwoOfTheSameRegion();
                 ok &= SaveFileIsDeterministic();
+                ok &= CaptureWaitsForTheImage(exe);
                 ok &= DsiWareDelete(exe);
                 ok &= DsiWareRestore(exe);
                 ok &= DsiWareBackup(plugin, exe);
@@ -1168,6 +1169,68 @@ namespace LbIntegrations.Probe
                 return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
             }
             catch { return null; }
+        }
+
+        /// <summary>A capture waits for the working image to be let go, and refuses rather than
+        /// read one somebody is writing.
+        ///
+        /// WALKING A MOVING IMAGE PRODUCES A LIE, NOT AN ERROR. The filesystem is read half-updated,
+        /// files that are really there come back missing, and every one of them is recorded as a
+        /// DELETION - which a restore then honours. Measured on a real evening: two walks 27
+        /// milliseconds apart, one missing 56 of about 60 entries and the next 45, taken four seconds
+        /// after melonDS's last write. What came out was a save asking for the title's own public.sav
+        /// to be deleted.
+        ///
+        /// The emulator's own handle is what is tested, not its process: FileShare.None succeeds only
+        /// when nobody else holds the file at all, which is the actual question.</summary>
+        private static bool CaptureWaitsForTheImage(string exe)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- a capture will not read an image somebody is writing");
+
+            var free = TypeIn("MelonDsDsi")?.GetMethod("TheImageIsFree",
+                           BindingFlags.NonPublic | BindingFlags.Static);
+            if (free == null) { Console.WriteLine("    no TheImageIsFree to call"); return false; }
+
+            var resolve = TypeIn("MelonDsPaths").GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static);
+            var layout = resolve.Invoke(null, new object[] { exe });
+            string work = Path.Combine(Path.GetDirectoryName(exe), "dsi", "work.bin");
+            Directory.CreateDirectory(Path.GetDirectoryName(work));
+            File.WriteAllText(work, "not really an image");
+
+            bool ok = true;
+            try
+            {
+                // Nobody has it: the answer is immediate, because there is nothing to wait for.
+                var clock = System.Diagnostics.Stopwatch.StartNew();
+                bool now = (bool)free.Invoke(null, new object[] { layout, "000300044b393945" });
+                clock.Stop();
+                ok &= Check("an image nobody holds is free, and says so at once",
+                            now && clock.ElapsedMilliseconds < 500);
+
+                // Held the way an emulator holds it. The wait is capped, so this must come back -
+                // a capture that blocked the host until somebody closed a game would be its own bug.
+                using (new FileStream(work, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                {
+                    clock.Restart();
+                    bool held = (bool)free.Invoke(null, new object[] { layout, "000300044b393945" });
+                    clock.Stop();
+
+                    ok &= Check("an image something else holds is NOT read", !held);
+                    ok &= Check("and it was waited for, not glanced at",
+                                clock.ElapsedMilliseconds >= 2000);
+                    ok &= Check("but the wait is capped - a capture never blocks on a game",
+                                clock.ElapsedMilliseconds < 10000);
+                    if (clock.ElapsedMilliseconds < 2000 || clock.ElapsedMilliseconds >= 10000)
+                        Console.WriteLine("    it waited " + clock.ElapsedMilliseconds + " ms");
+                }
+
+                // And it is free again the moment the handle goes.
+                ok &= Check("and it is free again as soon as the handle goes",
+                            (bool)free.Invoke(null, new object[] { layout, "000300044b393945" }));
+                return ok;
+            }
+            finally { try { File.Delete(work); } catch { } }
         }
 
         private static bool DsiWareDelete(string exe)

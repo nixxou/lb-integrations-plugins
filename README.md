@@ -841,6 +841,28 @@ goes ahead; different, and somebody else got there first, so the image is droppe
 and the next launch rebuilds around the save that arrived. An image is always rebuildable in a
 quarter of a second; a save that came from elsewhere is not.
 
+**A capture never reads an image somebody else is writing**, and that is a separate guard from the
+receipt. Walking a live image does not fail - it produces a LIE: the filesystem is read half-updated,
+files that are really there come back missing, and every one of them is recorded as a *deletion*,
+which a restore then honours. Measured on a real evening: two walks 27 milliseconds apart, one
+missing 56 of about 60 entries and the next 45, taken four seconds after melonDS's last write. What
+came out was a save asking for the title's own `public.sav` to be deleted.
+
+So a capture asks whether the file is free - `FileShare.None`, which succeeds only when nobody holds
+it at all - and treats the two situations differently. While melonDS is still **running** there is
+nothing to capture and it gives up at once rather than block the host through somebody's game; that
+session is written down at the next launch, which is the ordinary path anyway. When the process has
+**gone** but the handle has not, it waits, capped at three seconds - measured, the gap is
+milliseconds, and it is the difference between writing a session down and writing a lie down.
+
+**And removals are confirmed by reading twice.** A removal is the one thing in a delta that destroys
+rather than restores, so when there are any, the image is walked again and the two walks have to
+agree. The obvious guard instead - refuse a capture that deletes too much - was written and thrown
+away: deleting several titles from the DSi menu removes their tickets, their contents and their data
+in one go, which is an ordinary thing to do and would have lost the whole session silently. A second
+walk asks a different question - *is this image still?* - and a quiet image answers the same twice
+whether ten titles were deleted or none.
+
 **The receipt reads the members, never the file's own bytes**, and that is deliberate even though
 the bytes are now deterministic. Hashing the container would tie the decision "is this session worth
 keeping" to whatever a zip writer does with its headers. The determinism is a convenience for the

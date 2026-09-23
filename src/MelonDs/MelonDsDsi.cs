@@ -52,6 +52,7 @@
 using System;
 using System.Globalization;
 using System.IO;
+using System.Threading;
 
 namespace LbIntegrations.MelonDs
 {
@@ -319,6 +320,9 @@ namespace LbIntegrations.MelonDs
                 var work = WorkPath(layout);
                 if (work == null || !File.Exists(work)) { Forget(layout); return; }
 
+                // NOT WHILE SOMETHING ELSE HAS THE IMAGE. See TheImageIsFree.
+                if (!TheImageIsFree(layout, titleId)) return;
+
                 // AND THE SAME CHECK HERE, for the title that is NOT being launched. A launch of
                 // game B captures whatever game A left in the image, and A's save may have been
                 // synced in the meantime - a case the check before the reuse decision cannot see,
@@ -441,6 +445,73 @@ namespace LbIntegrations.MelonDs
                 return true;
             }
             catch (Exception ex) { Log.Warn("could not set a save aside", ex); return false; }
+        }
+
+        /// <summary>How long to wait for melonDS to let go of the working image once its process
+        /// has gone. Measured, the gap is milliseconds; this is the cap, not the cost.</summary>
+        private static readonly TimeSpan Handover = TimeSpan.FromSeconds(3);
+
+        /// <summary>Is the working image nobody else's yet? Answers false when a capture must not
+        /// happen now.
+        ///
+        /// WALKING AN IMAGE SOMEBODY IS WRITING PRODUCES A LIE, not an error. The FAT is read
+        /// half-updated, files that are really there come back missing, and every one of them is
+        /// recorded as a DELETION - which a restore then honours. Measured on a real evening: two
+        /// walks 27 milliseconds apart, one missing 56 of about 60 entries and the next 45, taken
+        /// four seconds after melonDS's last write. The save that came out asked for the title's own
+        /// public.sav to be deleted.
+        ///
+        /// TWO SITUATIONS, AND ONLY ONE IS WORTH WAITING FOR. While melonDS is still RUNNING there is
+        /// nothing to capture - the session is not over - so this gives up at once rather than
+        /// blocking the host through somebody's game; that session is captured at the next launch,
+        /// which is the ordinary path anyway. But the capture that matters most runs the instant the
+        /// game closes, and there the process is already gone while the handle is not: that gap is
+        /// worth waiting through, and it is the difference between writing a session down and
+        /// writing a lie down.
+        ///
+        /// The test is the file, not the process, because the file is the actual question. Opened
+        /// with FileShare.None it succeeds only when nobody else holds it at all.</summary>
+        private static bool TheImageIsFree(MelonDsLayout layout, string titleId)
+        {
+            var work = WorkPath(layout);
+            if (work == null) return false;
+            try
+            {
+                if (MelonDsNand.EmulatorRunning())
+                {
+                    Log.Verbose("melonDS still has the working image, so the session of " + titleId
+                                + " is left where it is; the next launch captures it");
+                    return false;
+                }
+
+                var deadline = DateTime.UtcNow + Handover;
+                while (true)
+                {
+                    try
+                    {
+                        using (new FileStream(work, FileMode.Open, FileAccess.Read, FileShare.None)) { }
+                        return true;
+                    }
+                    catch (IOException)
+                    {
+                        if (DateTime.UtcNow >= deadline)
+                        {
+                            Log.Info("something still holds the working image after "
+                                     + Handover.TotalSeconds.ToString(CultureInfo.InvariantCulture)
+                                     + "s, so the session of " + titleId + " is not captured rather "
+                                     + "than captured badly");
+                            return false;
+                        }
+                        Thread.Sleep(25);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Never fail a capture over not being able to ask the question.
+                Log.Verbose("could not tell whether the working image is free - " + ex.Message);
+                return true;
+            }
         }
 
         private static void Cleanup(string path)
