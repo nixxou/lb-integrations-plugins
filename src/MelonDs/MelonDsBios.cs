@@ -116,11 +116,14 @@ namespace LbIntegrations.MelonDs
         private const long NandLeast = 220L * 1024 * 1024;
         private const long NandMost = 260L * 1024 * 1024;
 
-        /// <summary>What the first-use flow leaves beside a NAND. Both are copies of a 240 MB file,
-        /// so both land squarely inside the size range above and would be scanned as NANDs if they
-        /// were not named here. Today they also end in neither .bin nor anything else we look for -
-        /// but that is an accident of naming, and an accident is not a guarantee.</summary>
-        private static readonly string[] NotNands = { ".lock", ".bak" };
+        /// <summary>What this plugin leaves beside a NAND, and which must never be taken for one.
+        ///
+        /// The first two are copies of a 240 MB file, so they land squarely inside the size range
+        /// above and would be scanned as NANDs if they were not named here. The last two are tiny
+        /// and the size gate would skip them anyway - which is exactly the kind of accident this
+        /// list exists to stop relying on.</summary>
+        private static readonly string[] NotNands =
+            { ".lock", ".bak", MelonDsBase.RecipeSuffix, MelonDsBase.RecordSuffix };
 
         /// <summary>The folder to put things in and to name in a message. Absolute, and normalised
         /// so a message says G:\...\RetroArch\system rather than G:\...\melonDS\..\RetroArch\system.</summary>
