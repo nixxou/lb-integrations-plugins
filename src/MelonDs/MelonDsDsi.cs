@@ -121,17 +121,22 @@ namespace LbIntegrations.MelonDs
             return dir == null ? null : Path.Combine(dir, MelonDsDelta.StateDirName);
         }
 
-        /// <summary>The copy of a title's own save that the host lists and restores.
+        /// <summary>What the host lists, backs up and hands back: the STATE FOLDER.
         ///
-        /// THE IMAGE IS NOT THE SAVE UNIT. A DSiWare save is a few kilobytes of public.sav inside a
-        /// 240 MB image; handing the image to the host would mean hashing 240 MB to draw a freshness
-        /// dot and a 240 MB vault copy per backup. So the save is written out beside the title's own
-        /// folder, and THAT is what the host sees - a plain file, like every other save here.</summary>
+        /// NOT THE IMAGE, and not one file out of it either. The image is 240 MB, so handing that
+        /// over would mean hashing 240 MB to draw a freshness dot and a 240 MB vault copy per
+        /// backup. But handing over only the game's own public.sav - which is what this used to do,
+        /// and it looked tidy - was worse than clumsy, it was WRONG: measured on one real session,
+        /// the game's own save was 16 KB out of 4.2 MB across eleven files. The console settings,
+        /// the menu's data and the built-in apps' saves had all moved too. A backup would have
+        /// captured a fifth of a save.
+        ///
+        /// So the unit is the whole difference, and it is a DIRECTORY. The host contract has a shape
+        /// for that - Xenia in this same repository uses it, because an Xbox 360 save is a folder
+        /// too - and it beats packing the folder into an archive: nothing to pack, nothing to unpack,
+        /// and no archive quietly changing its own bytes from one write to the next.</summary>
         public static string SavePathFor(MelonDsLayout layout, string titleId)
-        {
-            var dir = TitleDir(layout, titleId);
-            return dir == null ? null : Path.Combine(dir, SaveName);
-        }
+            => StateDirFor(layout, titleId);
 
         /// <summary>Where a title's save sits inside the NAND's own filesystem.</summary>
         public static string SaveInNand(string titleId)
@@ -313,28 +318,9 @@ namespace LbIntegrations.MelonDs
                                                 TitleDir(layout, titleId), out var why);
                 if (kept < 0) { Log.Verbose("could not capture " + titleId + " - " + why); return; }
 
-                // The host-facing copy comes out of the same session, so what the saves page shows
-                // and what the state holds can never disagree.
-                MirrorSave(session, layout, titleId);
                 Log.Verbose("captured " + kept + " file(s) of state for " + titleId);
             }
             catch (Exception ex) { Log.Warn("could not capture the working NAND", ex); }
-        }
-
-        private static void MirrorSave(NandSession session, MelonDsLayout layout, string titleId)
-        {
-            var inNand = SaveInNand(titleId);
-            var mirror = SavePathFor(layout, titleId);
-            if (inNand == null || mirror == null) return;
-
-            var tmp = mirror + "." + Guid.NewGuid().ToString("N") + ".part";
-            try
-            {
-                if (!session.ExportFile(inNand, tmp, out _)) { Cleanup(tmp); return; }
-                if (File.Exists(mirror)) File.Delete(mirror);
-                File.Move(tmp, mirror);
-            }
-            catch { Cleanup(tmp); }
         }
 
         private static void Cleanup(string path)
@@ -571,7 +557,6 @@ namespace LbIntegrations.MelonDs
                                  + "; it is left where it is");
                         return false;
                     }
-                    MirrorSave(session, layout, titleId);
                 }
 
                 var size = new FileInfo(legacy).Length;
@@ -595,17 +580,18 @@ namespace LbIntegrations.MelonDs
         {
             try
             {
-                var mirror = SavePathFor(layout, titleId);
-                if (mirror == null) return null;
+                var stateDir = StateDirFor(layout, titleId);
+                if (stateDir == null) return null;
+                var index = Path.Combine(stateDir, MelonDsDelta.IndexName);
 
                 var work = WorkPath(layout);
                 if (string.Equals(WorkTitle(layout), titleId, StringComparison.OrdinalIgnoreCase)
                     && work != null && File.Exists(work)
-                    && (!File.Exists(mirror)
-                        || File.GetLastWriteTimeUtc(mirror) < File.GetLastWriteTimeUtc(work)))
+                    && (!File.Exists(index)
+                        || File.GetLastWriteTimeUtc(index) < File.GetLastWriteTimeUtc(work)))
                     CaptureWork(layout, bios7Path, onlyTitle: titleId);
 
-                return File.Exists(mirror) ? mirror : null;
+                return File.Exists(index) ? stateDir : null;
             }
             catch (Exception ex) { Log.Warn("could not extract a DSiWare save", ex); return null; }
         }
@@ -614,29 +600,37 @@ namespace LbIntegrations.MelonDs
         /// is written; work.bin is written too when it happens to be holding this title, so a launch
         /// that follows immediately sees the same thing.</summary>
         public static bool RestoreSave(MelonDsLayout layout, string titleId, string bios7Path,
-                                       string sourceFile, out string error)
+                                       string sourceDir, out string error)
         {
             error = null;
             try
             {
-                var inNand = SaveInNand(titleId);
                 var stateDir = StateDirFor(layout, titleId);
-                if (inNand == null || stateDir == null) { error = "this title has no state folder"; return false; }
+                if (stateDir == null) { error = "this title has no state folder"; return false; }
+                if (string.IsNullOrWhiteSpace(sourceDir) || !Directory.Exists(sourceDir))
+                { error = "a DSiWare save is a folder, and this is not one"; return false; }
+                if (!File.Exists(Path.Combine(sourceDir, MelonDsDelta.IndexName)))
+                { error = "this folder is not a melonDS state - it has no " + MelonDsDelta.IndexName; return false; }
 
-                if (!MelonDsDelta.Put(stateDir, inNand, sourceFile, out error)) return false;
-
-                var work = WorkPath(layout);
-                if (string.Equals(WorkTitle(layout), titleId, StringComparison.OrdinalIgnoreCase)
-                    && work != null && File.Exists(work)
-                    && !string.IsNullOrWhiteSpace(bios7Path) && File.Exists(bios7Path))
+                // REPLACED, NOT MERGED. A state describes one moment: a file that stopped differing
+                // has to stop being restored, and merging would keep it forever.
+                var building = stateDir + "." + Guid.NewGuid().ToString("N") + ".part";
+                Directory.CreateDirectory(building);
+                try
                 {
-                    using var session = MelonDsNand.Open(work, bios7Path, out var why);
-                    if (session != null) session.ImportFile(inNand, sourceFile, out _);
-                    else Log.Verbose("the working NAND was not updated - " + why);
-                }
+                    foreach (var file in Directory.GetFiles(sourceDir))
+                        File.Copy(file, Path.Combine(building, Path.GetFileName(file)), overwrite: true);
 
-                var mirror = SavePathFor(layout, titleId);
-                if (mirror != null) File.Copy(sourceFile, mirror, overwrite: true);
+                    var old = stateDir + "." + Guid.NewGuid().ToString("N") + ".old";
+                    if (Directory.Exists(stateDir)) Directory.Move(stateDir, old);
+                    Directory.Move(building, stateDir);
+                    try { if (Directory.Exists(old)) Directory.Delete(old, recursive: true); } catch { }
+                }
+                finally { try { if (Directory.Exists(building)) Directory.Delete(building, true); } catch { } }
+
+                // And into the working image too, when it is the one holding this title, so a launch
+                // that follows immediately sees what was just restored rather than what it replaced.
+                RestoreState(layout, titleId, bios7Path);
                 return true;
             }
             catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; return false; }

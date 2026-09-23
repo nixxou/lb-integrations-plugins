@@ -1,8 +1,7 @@
 // Save management for melonDS.
 //
-// TWO KINDS, both plain FILES, and both named after the ROM rather than after anything read out of
-// it. There is no container here - IsSaveContainer says false throughout and the host copies the
-// files itself.
+// THREE KINDS. Two are plain FILES named after the ROM rather than after anything read out of it.
+// The third is a DIRECTORY, and that difference is the whole DSiWare story.
 //
 //   Battery save   <asset name>.sav
 //   Save states    <asset name>.ml1 .. .ml8
@@ -126,15 +125,17 @@ namespace LbIntegrations.MelonDs
             string appId = app != null ? Safe(() => app.Id) : null;
             string context = appId ?? gameId;
 
-            // A DSiWare title keeps its save INSIDE its NAND, not beside the ROM. What is listed is
-            // the extracted copy - see MelonDsDsi.RefreshSave for why the image itself is not.
+            // A DSiWare title keeps its save INSIDE its NAND, not beside the ROM, and what comes
+            // out is not one file. Measured on one real session: the game's own public.sav was
+            // 16 KB out of 4.2 MB across eleven files - the console settings, the menu's data and
+            // the built-in apps' saves had all moved too. So the unit is the whole state folder.
             if (rom.IsDSiWare)
             {
-                var extracted = MelonDsDsi.RefreshSave(layout, rom.TitleId, Bios7Of(layout));
-                if (extracted != null && File.Exists(extracted)
-                    && seen.Add("dsiware|" + extracted + "|" + context))
-                    into.Add(Row(extracted, gameId, appId, DsiWarePrefix + rom.TitleId,
-                                 DsiWareGroupName, DsiWareChipText));
+                var state = MelonDsDsi.RefreshSave(layout, rom.TitleId, Bios7Of(layout));
+                if (state != null && Directory.Exists(state)
+                    && seen.Add("dsiware|" + state + "|" + context))
+                    into.Add(Row(state, gameId, appId, DsiWarePrefix + rom.TitleId,
+                                 DsiWareGroupName, DsiWareChipText, directory: true));
                 return 0;                                 // no .sav and no .ml<n> for DSiWare
             }
 
@@ -179,20 +180,34 @@ namespace LbIntegrations.MelonDs
         internal static string StateExtension(int slot) => ".ml" + (char)('0' + slot);
 
         private static GameSaveGame Row(string path, string gameId, string appId,
-                                        string groupId, string groupName, string chip)
+                                        string groupId, string groupName, string chip,
+                                        bool directory = false)
         {
             long size = 0; DateTime when = default;
-            try { var i = new FileInfo(path); size = i.Length; when = i.LastWriteTimeUtc; } catch { }
+            try
+            {
+                if (directory)
+                {
+                    var d = new DirectoryInfo(path);
+                    when = d.LastWriteTimeUtc;
+                    foreach (var f in d.EnumerateFiles()) size += f.Length;
+                }
+                else { var i = new FileInfo(path); size = i.Length; when = i.LastWriteTimeUtc; }
+            }
+            catch { }
 
             return new GameSaveGame
             {
                 GameId = gameId,
                 AdditionalApplicationId = appId,
                 FileLocation = path,
-                // Every save melonDS writes is a FILE. Said explicitly because the flag matters: a
-                // host that believes a directory is a file finds nothing there and treats the save as
-                // gone - the shape that cost an evening on Xenia, where the unit really is a folder.
-                IsDirectory = false,
+                // SAID EXPLICITLY, because the flag matters and its absence is invisible. A host that
+                // believes a directory is a file finds nothing there and treats the save as gone -
+                // measured on LaunchBox 14 with Xenia, where the card was drawn from vault copies
+                // alone under a violet "In Vault" pill while the real save sat right there. LiteBox
+                // covered for it - it computes the same thing from Directory.Exists - so the fault
+                // only ever showed in one of the two hosts.
+                IsDirectory = directory,
                 OriginalFileName = Path.GetFileName(path),
                 SaveGroupId = groupId,
                 SaveGroupName = groupName,
@@ -204,10 +219,11 @@ namespace LbIntegrations.MelonDs
 
         // ── the contract ─────────────────────────────────────────────────────
 
-        /// <summary>Nothing here is a container: a battery save is one file and a state is one file.
-        /// Saying otherwise would make the host ask TryBackupSave to extract something that does not
-        /// exist.</summary>
-        public override bool IsSaveContainer(GameSaveBase save) => false;
+        /// <summary>A DSiWare state is a container - a folder of files that only mean anything
+        /// together - and the other two are not: a battery save is one file and a savestate is one
+        /// file. Saying otherwise for those would make the host ask TryBackupSave to extract
+        /// something that does not exist.</summary>
+        public override bool IsSaveContainer(GameSaveBase save) => IsDsiWare(save);
 
         public override bool UseSaveGroupIdForPersistedMatch(GameSaveBase save) => IsOurs(save);
 
@@ -302,6 +318,8 @@ namespace LbIntegrations.MelonDs
                 // A DSiWare save has to go back INSIDE the NAND, which is the only copy melonDS
                 // reads. Writing the extracted file alone would look like it worked and change
                 // nothing in the game.
+                // A DSiWare save is a FOLDER, so the source the host hands back is one too - the
+                // file-shaped path below would copy a directory as if it were a file.
                 if (IsDsiWare(save)) return RestoreDsiWare(save, source);
 
                 string name = FirstNonBlank(save.OriginalFileName, Path.GetFileName(source));
@@ -363,9 +381,11 @@ namespace LbIntegrations.MelonDs
                 var mirror = MelonDsDsi.RefreshSave(layout, titleId, Bios7Of(layout));
                 Log.Info("restored the DSiWare save of " + titleId + " into its NAND");
 
+                // directory: true here too - the row that comes back describes the same folder the
+                // listing does, and a host told it is a file would not find it.
                 return new AddSaveResponse(Row(mirror ?? source, save.GameId, save.AdditionalApplicationId,
                                                save.SaveGroupId, save.SaveGroupName ?? DsiWareGroupName,
-                                               DsiWareChipText));
+                                               DsiWareChipText, directory: true));
             }
             catch (Exception ex)
             {

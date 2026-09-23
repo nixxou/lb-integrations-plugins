@@ -1018,6 +1018,52 @@ namespace LbIntegrations.Probe
 
 
 
+                // ── the save, as the host sees it and hands it back ────────
+                //
+                // THIS IS WHERE THE UNIT IS PROVED. The host lists something, copies it to a vault,
+                // and one day hands it back. If what it listed was one file out of a state, the
+                // round trip loses the rest - and that is exactly what the earlier design did:
+                // measured, a game's own public.sav was 16 KB of a 4.2 MB state across eleven files.
+                var stateDir = MelonDsDsi_SavePathFor(layout, titleId);
+                ok &= Check("what the host is offered is the whole state folder",
+                            stateDir != null && Directory.Exists(stateDir)
+                            && File.Exists(Path.Combine(stateDir, "files.txt")));
+
+                if (stateDir != null && Directory.Exists(stateDir))
+                {
+                    int files = Directory.GetFiles(stateDir).Length;
+                    long bytes = Directory.EnumerateFiles(stateDir).Sum(f => new FileInfo(f).Length);
+                    Console.WriteLine("    it is " + files + " file(s), " + bytes.ToString("N0") + " bytes");
+
+                    // Copy it away the way a vault would, scribble on the live one, hand the copy
+                    // back, and require the live one to come back to exactly what was taken.
+                    var vault = Path.Combine(root, "vault");
+                    Directory.CreateDirectory(vault);
+                    foreach (var f in Directory.GetFiles(stateDir))
+                        File.Copy(f, Path.Combine(vault, Path.GetFileName(f)));
+                    var taken = Fingerprint(stateDir);
+
+                    File.WriteAllText(Path.Combine(stateDir, "files.txt"), "wrecked");
+                    File.Delete(Directory.GetFiles(stateDir)[0]);
+                    ok &= Check("a wrecked state really is different", Fingerprint(stateDir) != taken);
+
+                    var restore = TypeIn("MelonDsDsi").GetMethod("RestoreSave",
+                                      BindingFlags.Public | BindingFlags.Static);
+                    var args = new object[] { layout, titleId, bios7, vault, null };
+                    bool done = (bool)restore.Invoke(null, args);
+                    ok &= Check("the host can hand the folder back", done);
+                    if (!done) Console.WriteLine("    " + (args[4] as string ?? "no reason given"));
+                    ok &= Check("and the state is exactly what was taken", Fingerprint(stateDir) == taken);
+
+                    // And a folder that is not one of ours is refused rather than half-applied.
+                    var junk = Path.Combine(root, "junk");
+                    Directory.CreateDirectory(junk);
+                    File.WriteAllText(Path.Combine(junk, "hello.txt"), "not a state");
+                    var bad = new object[] { layout, titleId, bios7, junk, null };
+                    ok &= Check("a folder that is not a melonDS state is refused",
+                                !(bool)restore.Invoke(null, bad));
+                }
+
                 Console.WriteLine();
                 Console.WriteLine("  " + (ok ? "OK - the DSiWare path works on a real NAND" : "NOT OK - see above"));
                 return ok;
@@ -1081,6 +1127,17 @@ namespace LbIntegrations.Probe
                 return false;
             }
             finally { ((IDisposable)session).Dispose(); }
+        }
+
+        private static string MelonDsDsi_SavePathFor(object layout, string titleId)
+        {
+            try
+            {
+                return (string)TypeIn("MelonDsDsi")
+                    .GetMethod("SavePathFor", BindingFlags.Public | BindingFlags.Static)
+                    .Invoke(null, new object[] { layout, titleId });
+            }
+            catch { return null; }
         }
 
         /// <summary>Everything in a state folder, as one string. Enough to notice a change.</summary>

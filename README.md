@@ -589,18 +589,25 @@ DSi menu refused, and this. An empty file named `dsi-direct-boot` beside the log
 over for anyone who wants to re-run the measurement; it is read on every launch rather than
 remembered, so it can be flipped with the host running, and the log names which way each launch went.
 
-**A DSiWare save is extracted, not the image that holds it.** It lives inside the NAND, at
-`title/<category>/<id>/data/public.sav` - a few kilobytes inside 240 MB. Handing the image to the host
-would mean hashing all of it to draw a freshness dot, and a 240 MB vault copy per backup. So a copy is
-written beside the title's folder and THAT is what is listed, as a plain file like every other save
-here.
+**A DSiWare save is the whole state folder, and it is a DIRECTORY.** Not the image - 240 MB is far
+too much to hash for a freshness dot or to copy into a vault. But not one file out of it either,
+which is what this used to hand over and it was wrong: measured on one real session, the game's own
+`public.sav` was **16 KB out of 4.2 MB across eleven files**. The console settings, the menu's data
+and the built-in applications' saves had all moved too, so a backup would have captured a fifth of a
+save and a restore would have put a game's progress back into a console that had forgotten it.
 
-The extraction happens only when this title is the one the working image holds AND melonDS has written
-to it since the last one - the trigger is that image's own timestamp, so the steady state costs two
-calls to `GetLastWriteTimeUtc` and nothing else. A restore writes into the saved **state**, which is
-what a rebuild puts back, and into the working image too when it happens to be holding that title. A
-deletion is refused rather than faked: removing the extracted copy would change nothing in the game,
-and melonDS has no way to blank a title's save short of removing the title.
+So `dsi\<title id>\state\` is what the host lists, backs up and hands back, with `IsDirectory` set -
+the contract has a shape for that, and Xenia in this same repository uses it because an Xbox 360 save
+is a folder too. A folder beats packing it into an archive: nothing to pack, nothing to unpack, and
+no archive quietly changing its own bytes between two identical writes and making the host think the
+save moved.
+
+A capture happens only when this title is the one the working image holds AND melonDS has written to
+it since the last one, so the steady state costs two calls to `GetLastWriteTimeUtc`. A restore
+replaces the folder rather than merging into it - a state describes one moment, and a file that
+stopped differing has to stop being restored - then goes back into the working image when that is
+holding the title. A folder with no `files.txt` in it is refused rather than half-applied. A deletion
+is refused rather than faked: melonDS has no way to blank a title's save short of removing the title.
 
 **No RetroAchievements.** There is no `rcheevos` submodule, no vendored `rc_*` source, no menu entry
 and no configuration key anywhere in the tree. RA support for melonDS exists only in the libretro
