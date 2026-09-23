@@ -819,6 +819,14 @@ namespace LbIntegrations.MelonDs
             var current = configured.TryGetValue("NANDPath", out var p)
                 ? AbsoluteTo(layout.ConfigDir, p) : null;
 
+            // THE RECEIPT, BEFORE ANY DECISION IS TAKEN. If this title's save has been written by
+            // something other than melonDS since the image was last agreed with it - a RomM sync, a
+            // restore from another machine, a file dropped in by hand - the image describes a save
+            // that no longer exists. It is thrown away here rather than merely refused below,
+            // because a launch that does not reuse goes on to CAPTURE the image first, and that
+            // capture would put the old session back over the new save. See MelonDsWorkSum.
+            MelonDsDsi.DropWorkIfSaveMoved(layout, rom.TitleId);
+
             bool automatic = MelonDsNand.IsUsable(out var missingLibrary);
 
             // THE SAME GAME AGAIN, ON THE SAME NAND. The image on disk already holds this title,

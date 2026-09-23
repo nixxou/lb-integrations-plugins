@@ -707,6 +707,14 @@ goes ahead; different, and somebody else got there first, so the image is droppe
 and the next launch rebuilds around the save that arrived. An image is always rebuildable in a
 quarter of a second; a save that came from elsewhere is not.
 
+**The check runs before anything decides whether to reuse, and it DROPS the image rather than merely
+refusing it.** That ordering is the whole point and it is easy to get subtly wrong: a launch that
+does not reuse goes on to *capture* the image first, so an image that was only refused would still
+be written over the save that has just arrived - the guard undone by its own fallback. The same
+question is asked again inside the capture, for the title that is not being launched: a launch of
+game B captures whatever game A left in the image, and A's save may have been synced in the
+meantime.
+
 CRC32 rather than a cryptographic hash, on purpose: the question is "did this change", not "is this
 what somebody claims it is". There is no adversary, only two writers who do not know about each
 other. No receipt at all - an installation from before this existed - means no opinion, never

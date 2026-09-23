@@ -271,14 +271,11 @@ namespace LbIntegrations.MelonDs
                 var reference = ReferencePathFor(layout, rom.TitleId);
                 if (reference == null || !File.Exists(reference)) return false;
 
-                // And nothing may have written the save since. Reusing an image whose save has been
-                // replaced would hand the player the session the sync just superseded.
-                if (MelonDsWorkSum.Moved(layout, rom.TitleId, out var how))
-                {
-                    Log.Info("the save of " + rom.TitleId + " changed outside melonDS (" + how
-                             + "), so the working image is rebuilt rather than reused");
-                    return false;
-                }
+                // And nothing may have written the save since. DropWorkIfSaveMoved has normally
+                // taken the image away before this is even asked; this is the same question put
+                // again at the moment of deciding, so that a reordering upstream can only ever cost
+                // a rebuild, never hand the player the session a sync just superseded.
+                if (MelonDsWorkSum.Moved(layout, rom.TitleId, out _)) return false;
 
                 return !MelonDsNand.EmulatorRunning();
             }
@@ -308,15 +305,16 @@ namespace LbIntegrations.MelonDs
                 var work = WorkPath(layout);
                 if (work == null || !File.Exists(work)) { Forget(layout); return; }
 
-                // SOMEBODY ELSE GOT THERE FIRST. The state folder is not what this image was last
-                // agreed with, so it holds a save that did not come from this image - a sync, a
-                // restore, a file dropped in by hand. Capturing now would write the old session over
-                // it and undo that silently. The image is always rebuildable; the save is not.
+                // AND THE SAME CHECK HERE, for the title that is NOT being launched. A launch of
+                // game B captures whatever game A left in the image, and A's save may have been
+                // synced in the meantime - a case the check before the reuse decision cannot see,
+                // because it asks about the title being launched. Capturing then would write A's old
+                // session over A's new save, silently. The image is always rebuildable; the save is
+                // not.
                 if (MelonDsWorkSum.Moved(layout, titleId, out var how))
                 {
                     Log.Info("the save of " + titleId + " changed outside melonDS (" + how
-                             + "), so the working image is out of date and is dropped rather than "
-                             + "captured. The next launch rebuilds around the save that is there.");
+                             + "), so its session is not captured over it; the image is dropped");
                     DropWorkIfItHolds(layout, titleId, "because its save changed elsewhere");
                     return;
                 }
@@ -625,6 +623,32 @@ namespace LbIntegrations.MelonDs
                 return File.Exists(index) ? stateDir : null;
             }
             catch (Exception ex) { Log.Warn("could not extract a DSiWare save", ex); return null; }
+        }
+
+        /// <summary>Throw the working image away when this title's save has been written by
+        /// something other than melonDS since the image was last agreed with it.
+        ///
+        /// CALLED BEFORE THE REUSE DECISION, and that ordering is the whole point. Merely declining
+        /// to reuse a stale image is not enough: a launch that does not reuse goes on to CAPTURE the
+        /// image first, which would write the session it holds over the save that has just arrived -
+        /// the exact thing being guarded against, performed by the guard's own fallback. So the
+        /// image is DROPPED, not just refused, and the capture that follows finds nothing to do.
+        ///
+        /// Answers whether anything was thrown away.</summary>
+        public static bool DropWorkIfSaveMoved(MelonDsLayout layout, string titleId)
+        {
+            try
+            {
+                if (!string.Equals(WorkTitle(layout), titleId, StringComparison.OrdinalIgnoreCase))
+                    return false;
+                if (!MelonDsWorkSum.Moved(layout, titleId, out var how)) return false;
+
+                Log.Info("the save of " + titleId + " changed outside melonDS (" + how
+                         + "), so the working image no longer describes it");
+                DropWorkIfItHolds(layout, titleId, "because its save changed elsewhere");
+                return true;
+            }
+            catch (Exception ex) { Log.Warn("could not check the working image's receipt", ex); return false; }
         }
 
         /// <summary>Drop the working image when it is holding this title, and forget its marker.

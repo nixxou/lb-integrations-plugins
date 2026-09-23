@@ -1325,12 +1325,33 @@ namespace LbIntegrations.Probe
             capture.Invoke(null, new object[] { layout, null, null });
             ok &= Check("an untouched save leaves the image alone", File.Exists(work));
 
+            var moved = dsiType.GetMethod("DropWorkIfSaveMoved", BindingFlags.Public | BindingFlags.Static);
+            ok &= Check("and the check before a launch agrees, throwing nothing away",
+                        moved != null && !(bool)moved.Invoke(null, new object[] { layout, titleId })
+                        && File.Exists(work));
+
             // Now something else writes the save: a sync, a restore, a file dropped in by hand.
             File.WriteAllText(Path.Combine(state, "0"), "the save as the sync left it");
 
+            // THE CHECK COMES FIRST, before anything decides whether to reuse. Merely declining to
+            // reuse would not do: a launch that does not reuse goes on to capture the image, and
+            // that capture would put the old session back over the save that has just arrived.
             long mark = LogLength();
-            capture.Invoke(null, new object[] { layout, null, null });
+            ok &= Check("a save that moved throws the image away, before any capture can run",
+                        (bool)moved.Invoke(null, new object[] { layout, titleId }));
             var said = LogSince(mark);
+            ok &= Check("so the capture that follows has nothing left to write with",
+                        !File.Exists(work));
+
+            // And the belt-and-braces inside the capture itself, for the OTHER title: a launch of
+            // game B captures what game A left behind, and A's save may have been synced meanwhile.
+            File.WriteAllText(work, "not really an image");
+            File.WriteAllText(marker, titleId + "	x	1	2	nand.bin");
+            remember.Invoke(null, new object[] { layout, titleId, rom, "some-nand.bin" });
+            File.WriteAllText(Path.Combine(state, "0"), "moved again, while another game launches");
+            mark = LogLength();
+            capture.Invoke(null, new object[] { layout, null, null });
+            said = LogSince(mark);
 
             ok &= Check("a save that moved is NOT overwritten by the old session", !File.Exists(work));
             ok &= Check("the marker goes too, so nothing reuses the image", !File.Exists(marker));
@@ -1339,8 +1360,9 @@ namespace LbIntegrations.Probe
                         said.Contains("changed outside melonDS"));
             if (!said.Contains("changed outside melonDS")) Console.WriteLine("    log said: " + said.Trim());
 
-            ok &= Check("the save itself is untouched - it is the thing being protected",
-                        File.ReadAllText(Path.Combine(state, "0")) == "the save as the sync left it");
+            ok &= Check("the save itself is untouched throughout - it is the thing being protected",
+                        File.ReadAllText(Path.Combine(state, "0"))
+                        == "moved again, while another game launches");
 
             // No receipt at all - an installation from before this existed - is not an opinion.
             File.WriteAllText(work, "not really an image");
