@@ -315,6 +315,28 @@ every start and exit so writing there is pointless: `--license_mask=1` (the defa
 XBLA titles in trial mode and hides owned DLC - the most common Xenia support question) and
 `--discord=false`. Anything you set yourself is left alone.
 
+**melonDS ships with no keyboard mapping at all, so the plugin writes one.** Its default table gives
+`Instance*.Keyboard` the value `-1` (`Config.cpp:51-52`) and there is no table of defaults anywhere
+else - no "restore defaults" button, no first-run step. A fresh installation therefore cannot be
+played until somebody opens Config > Input and clicks twelve times, which is not a state to hand
+anybody. Arrows for the D-pad, X and Z for A and B, S and A above them, Q and W for the shoulders,
+Return and Backspace for Start and Select, plus `HK_Lid` on L - that last one is not a convenience,
+several games cannot be FINISHED without closing the lid.
+
+Only what is unbound is written, so a mapping somebody made is theirs, including a button they left
+unbound on purpose. It happens at install, and at launch only when **every** DS button is unbound -
+which means melonDS was never set up at all. The `no-melonds-input` marker beside the log turns it off.
+
+**The pad is deliberately left alone.** melonDS opens `SDL_GameController` only for rumble and
+sensors (`EmuInstanceInput.cpp:244-261`) and reads every button through `SDL_JoystickGetButton`,
+`GetHat` and `GetAxis` - raw indices, which mean different things on different hardware. A default
+there would be a guess about somebody's controller rather than a fact about melonDS.
+
+**The savestate and exit keys are not configurable and are not written anywhere.** melonDS's `HK_*`
+enumeration has no entry for saving, loading or quitting; those are Qt menu shortcuts fixed in the
+source - `Shift+F1..F8` to save, `F1..F8` to load, `F12` to undo a load, `Ctrl+Q` to quit
+(`Window.cpp:359-401`). The AutoHotkey scripts cite exactly those, which is the only lever there is.
+
 **No RetroAchievements.** Neither fork supports it. Canary has native Xbox 360 achievements written
 into the profile's `.gpd` files, which is unrelated machinery.
 

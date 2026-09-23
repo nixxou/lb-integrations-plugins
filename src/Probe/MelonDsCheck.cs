@@ -648,6 +648,31 @@ namespace LbIntegrations.Probe
 
             try { Directory.Delete(bios, true); } catch { }
 
+            // 3c. A KEYBOARD, because melonDS ships without one. Every key is -1 in its default
+            //     table and there is no table of defaults anywhere else, so an install nobody has
+            //     touched answers to nothing.
+            File.WriteAllText(toml, "[Emu]\r\nConsoleType = 0\r\n");
+            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }),
+                                        Path.Combine(romDir, PlainRom) });
+            var keyboard = TomlValues(toml, "Instance0.Keyboard");
+            ok &= Check("an unmapped melonDS gets a playable keyboard",
+                        keyboard.TryGetValue("A", out var keyA) && keyA != "-1"
+                        && keyboard.TryGetValue("Up", out var keyUp) && keyUp == "16777235");
+            ok &= Check("including the lid, which some games need to be finished at all",
+                        keyboard.TryGetValue("HK_Lid", out var lid) && lid != "-1");
+
+            //     AND A MAPPING SOMEBODY MADE IS THEIRS. One key bound is enough to say the
+            //     configuration has an owner - including buttons they left unbound on purpose.
+            File.WriteAllText(toml,
+                "[Emu]\r\nConsoleType = 0\r\n\r\n[Instance0.Keyboard]\r\n"
+                + "A = 12345\r\nB = -1\r\n");
+            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }),
+                                        Path.Combine(romDir, PlainRom) });
+            keyboard = TomlValues(toml, "Instance0.Keyboard");
+            ok &= Check("a mapping that has an owner is not touched",
+                        keyboard.TryGetValue("A", out var mine2) && mine2 == "12345"
+                        && keyboard.TryGetValue("B", out var theirs) && theirs == "-1");
+
             // 4. A CARTRIDGE IS NOT DSiWARE: it runs off whatever NAND is selected, and a NAND the
             //    user chose himself is his answer.
             string his = Path.Combine(install, "his_nand.bin");

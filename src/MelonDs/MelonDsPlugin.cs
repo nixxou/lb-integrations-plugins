@@ -429,6 +429,12 @@ namespace LbIntegrations.MelonDs
                 MelonDsDsi.PrepareFolder(layout);
                 MelonDsBios.Prepare(layout);
 
+                // AND A KEYBOARD, because melonDS ships without one. Its default table gives every
+                // key -1 and there is no table of defaults anywhere else, so an installation this
+                // plugin just made cannot be played at all until somebody opens Config > Input and
+                // clicks twelve times. See MelonDsInput - it writes only what is unbound.
+                MelonDsInput.EnsureDefaults(layout, out _);
+
                 if (wanted.Count == 0)
                 {
                     Log.Info("save paths already configured; leaving them alone");
@@ -690,6 +696,11 @@ namespace LbIntegrations.MelonDs
             // this on - so launching a plain cartridge must not silently discard the DSiWare session
             // that came before it. With nothing in flight it costs one File.Exists.
             MelonDsDsi.CaptureWork(layout, AbsoluteTo(layout.ConfigDir, ValueOf(layout, "BIOS7Path")));
+
+            // A CONFIGURATION NOBODY CAN PLAY is the one case where this touches an installation it
+            // did not make: every DS button unbound means melonDS was never set up, and a launch is
+            // about to show a game that answers to nothing. One bound key and this does not fire.
+            if (MelonDsInput.NothingIsBound(layout)) MelonDsInput.EnsureDefaults(layout, out _);
 
             // THE FILES ARE THE PLUGIN'S JOB. Drop a BIOS in the folder and it gets configured;
             // drop nothing and melonDS boots on its built-in one. What nobody should have to do is
