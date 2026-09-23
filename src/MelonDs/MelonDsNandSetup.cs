@@ -1,226 +1,154 @@
-// The first time a NAND dump is used, and why that moment needs a window.
+// Making a console out of a dump, once, and never touching the dump to do it.
 //
-// A DSiWARE SAVE IS A DIFFERENCE, not a file. The working image is rebuilt from the user's base dump
-// on every launch, the title is installed into it, and what is kept between sessions is the set of
-// files that differ from that fresh install - see MelonDsDelta. Every one of those differences was
-// computed against a particular base image, and is replayed onto a rebuild of that same image.
+// A DSiWARE SAVE IS A DIFFERENCE against a base image - see MelonDsDelta - so that base has to exist
+// and has to be configured: a NAND out of a real console carries that console's name, language,
+// birthday and colour, and one from anywhere else carries a stranger's or an unfinished welcome
+// sequence the DSi menu insists on completing. Completing it WRITES INTO THE IMAGE.
 //
-// SO THE BASE IMAGE MUST NOT MOVE. Change it and every difference already on disk describes a console
-// that no longer exists: the paths still resolve, the bytes still apply, and the result is a console
-// whose saves came from somewhere else. Nothing crashes. It just quietly stops meaning anything.
+// SO THE IMAGE THAT GETS WRITTEN INTO IS OURS, NOT HIS. The dump is copied into dsi\ under its own
+// name, and melonDS is pointed at the copy. This file used to do the opposite - configure the user's
+// dump in place and keep a pristine copy as <dump>.lock to repair it afterwards - which meant the
+// folder where somebody keeps pristine dumps held one that was not, under the name that said it was.
+// The .lock, the .bak, the "never touch this file again" warning and the whole three-state machine
+// existed to manage that damage. None of them survive the damage not being done.
 //
-// AND A FRESH DUMP HAS TO BE CONFIGURED ONCE. A NAND out of a real console carries that console's
-// setup - name, language, birthday, colour - and one pulled off the internet carries a stranger's, or
-// an unfinished welcome sequence that the DSi menu will insist on completing. Completing it WRITES
-// INTO THE NAND. There is no way to have both a configured console and an untouched base image unless
-// the configuring happens first, deliberately, before a single save exists.
+// AND THE NAME IS THE LINK. dsi\<the dump's file name> is that dump's console. One File.Exists
+// answers "has this been set up", and because a dump has exactly one console, "which console" is
+// never asked. See MelonDsBase.ConsoleFor.
 //
-// Hence: say so, offer to do it now, keep a copy while it happens, ask afterwards whether it worked,
-// and leave a marker so it is asked exactly once per dump.
+// DECLINING COSTS NOTHING. The working image is a COPY of the base - melonDS never opens the base
+// itself - so a dump can serve as its own base without ever being written to. Somebody who says
+// "not now" gets exactly what they got before: the game runs on an unconfigured console, and their
+// saves carry no recipe, which the rest of the plugin already treats as "no opinion".
 //
-// THE MARKER IS THE COPY. X.bak is made before melonDS opens; on success it is RENAMED to X.lock
-// rather than deleted. One file move instead of a delete plus a create, and what is left behind is
-// not an empty flag but the image as it was before anybody touched it - so the one irreversible thing
-// in this flow becomes reversible. It costs 240 MB per dump. Making it empty is a one-line change if
-// that trade stops being worth it.
-//
-// WITHOUT A WINDOW, NOTHING HAPPENS. Every path here is gated on MelonDsDialog.Available. Configuring
-// somebody's console silently, or copying 240 MB and starting an emulator they did not ask for, would
-// be far worse than leaving a dump unconfigured.
+// WITHOUT A WINDOW, NOTHING IS BUILT. Configuring somebody's console silently, or copying 240 MB and
+// starting an emulator they did not ask for, would be worse than leaving a dump unconfigured.
 
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 
 namespace LbIntegrations.MelonDs
 {
-    /// <summary>Where a NAND dump stands with respect to its one-time setup.</summary>
-    internal enum NandSetup
-    {
-        /// <summary>No marker beside it: it has never been through this.</summary>
-        NeverUsed,
-
-        /// <summary>A .lock beside it: set up, and to be left alone from now on.</summary>
-        Locked,
-
-        /// <summary>A .bak beside it and no .lock: a previous attempt started and never got its
-        /// answer. The copy is still there, so nothing is lost - but nothing is settled either.</summary>
-        Interrupted,
-    }
-
     internal static class MelonDsNandSetup
     {
-        /// <summary>Appended to the NAND's own name, so `dsinand.bin` gets `dsinand.bin.lock`. Beside
-        /// the file rather than in a folder of ours: whoever moves or renames a dump takes its
-        /// markers with it, and a dump that arrives without them is - correctly - new.</summary>
-        public const string LockSuffix = ".lock";
-        public const string BakSuffix = ".bak";
+        /// <summary>Beside the log, like every other switch here.</summary>
+        private const string KillSwitch = "no-dsi-setup";
 
-        public static string LockFor(string nandPath) => nandPath + LockSuffix;
-        public static string BakFor(string nandPath) => nandPath + BakSuffix;
-
-        /// <summary>Which of the three states a dump is in. An error answers Locked: being unable to
-        /// look at the folder is not a reason to start copying 240 MB and opening windows.</summary>
-        public static NandSetup Of(string nandPath)
-        {
-            try
-            {
-                if (string.IsNullOrWhiteSpace(nandPath)) return NandSetup.Locked;
-
-                // A BASE WE REBUILT IS CONFIGURED BY CONSTRUCTION. It has no .lock beside it, so the
-                // test below would call it NeverUsed and open the first-use window - asking somebody
-                // to configure a console that is already configured. Worse, doing so would change
-                // its identity and break the very save that was being recovered.
-                if (MelonDsBase.IsArchive(nandPath)) return NandSetup.Locked;
-
-                if (File.Exists(BakFor(nandPath))) return NandSetup.Interrupted;
-                return File.Exists(LockFor(nandPath)) ? NandSetup.Locked : NandSetup.NeverUsed;
-            }
-            catch { return NandSetup.Locked; }
-        }
-
-        /// <summary>Put a dump through its first use, if it needs it.
+        /// <summary>Offer to build a console for this dump.
         ///
-        /// Answers TRUE when the launch that asked should be abandoned - melonDS was just opened on
-        /// the DSi menu, and starting the game on top of that would be two emulators on one NAND.
-        /// The user relaunches once the console is set up.</summary>
-        public static bool Run(MelonDsLayout layout, NandDump nand)
+        /// Called only when the dump has none - MelonDsBase.ConsoleFor answered null. Answers TRUE
+        /// when the launch that asked should be abandoned: melonDS was just opened on the DSi menu,
+        /// and starting the game on top of that would be two emulators on one image.</summary>
+        public static bool Run(MelonDsLayout layout, NandDump dump, string bios7Path)
         {
             try
             {
-                if (layout?.ConfigFile == null || nand?.Path == null) return false;
-
-                var state = Of(nand.Path);          // re-read: the cached one may be a launch old
-                if (state == NandSetup.Locked) return false;
-
-                if (!MelonDsDialog.Available)
+                if (layout?.ConfigFile == null || dump?.Path == null) return false;
+                if (Log.Disabled(KillSwitch))
                 {
-                    // Said once, in the log, and then dropped. Configuring a console behind somebody's
-                    // back is not a lesser evil than leaving it unconfigured.
-                    Log.Info(Path.GetFileName(nand.Path) + " has never been set up, and windows are "
-                             + "turned off; using it as it is");
+                    Log.Verbose("the " + KillSwitch + " marker is there; no console will be built");
                     return false;
                 }
 
-                return state == NandSetup.Interrupted
-                    ? Resume(layout, nand)
-                    : Begin(layout, nand);
-            }
-            catch (Exception ex) { Log.Warn("could not run the NAND setup", ex); return false; }
-        }
-
-        // ── never used ───────────────────────────────────────────────────────
-
-        private static bool Begin(MelonDsLayout layout, NandDump nand)
-        {
-            var name = Path.GetFileName(nand.Path);
-            var answer = MelonDsDialog.Ask("melonDS - first time using this NAND",
-                                           Announcement(name, nand.Region),
-                                           new[] { "Set it up now", "Not now" });
-            if (answer != 0)
-            {
-                Log.Info(name + " was not set up; using it as it is. This will be asked again next "
-                         + "time, until it is set up or a " + name + LockSuffix + " is put beside it.");
-                return false;
-            }
-
-            if (!KeepACopy(nand.Path)) return false;
-
-            Configure(layout, nand.Path);
-
-            var verdict = MelonDsDialog.Ask("melonDS - is this NAND set up?",
-                                            Confirmation(name),
-                                            new[] { "Yes, lock it", "No, put it back" });
-            Settle(layout, nand.Path, verdict);
-            return true;
-        }
-
-        // ── a previous attempt that never got its answer ─────────────────────
-
-        private static bool Resume(MelonDsLayout layout, NandDump nand)
-        {
-            var name = Path.GetFileName(nand.Path);
-            var answer = MelonDsDialog.Ask("melonDS - this NAND was being set up",
-                                           Interrupted(name),
-                                           new[] { "It is set up, lock it",
-                                                   "Open melonDS again",
-                                                   "Put the copy back" });
-
-            if (answer == 0) { Settle(layout, nand.Path, 0); return false; }
-
-            if (answer == 1)
-            {
-                Configure(layout, nand.Path);
-                var verdict = MelonDsDialog.Ask("melonDS - is this NAND set up?",
-                                                Confirmation(name),
-                                                new[] { "Yes, lock it", "No, put it back" });
-                Settle(layout, nand.Path, verdict);
-                return true;
-            }
-
-            if (answer == 2) { Settle(layout, nand.Path, 1); return true; }
-
-            Log.Info(name + " is still half set up; leaving " + name + BakSuffix + " where it is");
-            return false;
-        }
-
-        // ── the three things this actually does to files ─────────────────────
-
-        /// <summary>X -> X.bak, with the room for it checked first. A half-written copy would be
-        /// worse than no copy: it looks exactly like a good one.</summary>
-        private static bool KeepACopy(string nandPath)
-        {
-            var bak = BakFor(nandPath);
-            try
-            {
-                long size = new FileInfo(nandPath).Length;
-                long free = FreeSpaceOn(bak);
-                if (free >= 0 && free < size + (16L * 1024 * 1024))
+                if (!MelonDsDialog.Available)
                 {
-                    Log.Warn("not enough room beside " + Path.GetFileName(nandPath) + " for a copy: "
-                             + Megabytes(free) + " free, " + Megabytes(size) + " needed");
-                    MelonDsDialog.Ask("melonDS - not enough room",
-                                      "A copy of " + Path.GetFileName(nandPath) + " is kept while the "
-                                      + "console is set up, so nothing can be lost." + Environment.NewLine
-                                      + Environment.NewLine
-                                      + "There is not enough free space for it: " + Megabytes(size)
-                                      + " is needed and " + Megabytes(free) + " is free." + Environment.NewLine
-                                      + Environment.NewLine
-                                      + "Free some space and launch the game again.",
+                    // Said once, then dropped. Configuring a console behind somebody's back is not a
+                    // lesser evil than leaving a dump unconfigured.
+                    Log.Info(Path.GetFileName(dump.Path) + " has no configured console, and windows "
+                             + "are turned off; using the dump as it is");
+                    return false;
+                }
+
+                var name = Path.GetFileName(dump.Path);
+                var answer = MelonDsDialog.Ask("melonDS - no console for this NAND yet",
+                                               Announcement(name, dump.Region),
+                                               new[] { "Set one up now", "Not now" });
+                if (answer != 0)
+                {
+                    Log.Info("no console was built for " + name + "; the game will run on the dump as "
+                             + "it is, and its saves will carry no recipe. This will be asked again "
+                             + "next time.");
+                    return false;
+                }
+
+                var console = MelonDsBase.BuildConsole(layout, dump.Path, out var error);
+                if (console == null)
+                {
+                    Log.Warn("could not build a console from " + name + " - " + error);
+                    MelonDsDialog.Ask("melonDS - the console could not be built",
+                                      "A copy of " + name + " has to be made before it can be set up, "
+                                      + "and it could not be:" + Environment.NewLine + Environment.NewLine
+                                      + "    " + error + Environment.NewLine + Environment.NewLine
+                                      + "Your own dump was not touched.",
                                       new[] { "Close" });
                     return false;
                 }
 
-                // Copied to a scratch name and moved into place, so an interrupted copy never ends up
-                // wearing the name that means "a good copy is here".
-                var partial = bak + ".part";
-                try { if (File.Exists(partial)) File.Delete(partial); } catch { }
-                File.Copy(nandPath, partial, overwrite: true);
-                if (File.Exists(bak)) File.Delete(bak);
-                File.Move(partial, bak);
+                Configure(layout, console);
 
-                Log.Info("kept a copy of " + Path.GetFileName(nandPath) + " as "
-                         + Path.GetFileName(bak) + " before setting it up");
+                var verdict = MelonDsDialog.Ask("melonDS - is this console set up?",
+                                                Confirmation(name),
+                                                new[] { "Yes, keep it", "No, throw it away" });
+                if (verdict == 0)
+                {
+                    Describe(layout, console, dump.Path, bios7Path, dump.Region);
+                    Log.Info("the console for " + name + " is set up and described. It will not be "
+                             + "asked about again.");
+                }
+                else
+                {
+                    try { File.Delete(console); } catch { }
+                    try { File.Delete(MelonDsBase.RecipeFor(console)); } catch { }
+                    try { File.Delete(MelonDsBase.RecordFor(console)); } catch { }
+                    Log.Info("the console built from " + name + " was thrown away; your dump was never "
+                             + "touched, so there is nothing to put back");
+                }
                 return true;
             }
-            catch (Exception ex)
-            {
-                Log.Warn("could not copy " + Path.GetFileName(nandPath), ex);
-                try { if (File.Exists(bak)) File.Delete(bak); } catch { }
-                return false;
-            }
+            catch (Exception ex) { Log.Warn("could not build a console", ex); return false; }
         }
 
-        /// <summary>Open melonDS on the DSi menu, on this NAND, and wait for it to be closed.
+        /// <summary>Write the recipe and the record beside a console. Safe to call on one that
+        /// already has them - it says so and does nothing.
+        ///
+        /// REFUSES ANYTHING OUTSIDE OUR FOLDER, and that guard is the point of the whole file: the
+        /// recipe is written BESIDE the image it describes, so calling this on a user's dump would
+        /// drop two files in their folder. The catch-up path in PrepareDsiWare can reach here with
+        /// whatever base a launch settled on, and that base is the dump itself when somebody
+        /// declined to build a console.</summary>
+        public static bool Describe(MelonDsLayout layout, string consolePath, string dumpPath,
+                                    string bios7Path, DsiRegion region)
+        {
+            try
+            {
+                if (layout == null || consolePath == null || dumpPath == null) return false;
+                if (!MelonDsDsi.IsOurs(layout, consolePath))
+                {
+                    Log.Verbose(Path.GetFileName(consolePath) + " is not ours, so no recipe is written "
+                                + "beside it");
+                    return false;
+                }
+                if (MelonDsBase.Described(consolePath)) return true;
+                if (bios7Path == null) return false;
+
+                if (MelonDsBase.MakeRecipe(dumpPath, consolePath, bios7Path, region, out var error))
+                    return true;
+
+                Log.Verbose("could not describe " + Path.GetFileName(consolePath) + " - " + error);
+                return false;
+            }
+            catch (Exception ex) { Log.Warn("could not describe a console", ex); return false; }
+        }
+
+        /// <summary>Open melonDS on the DSi menu, on this image, and wait for it to be closed.
         ///
         /// NO ROM ARGUMENT, ConsoleType = 1 and DirectBoot = false: that combination boots the
-        /// firmware, and in DSi mode the firmware IS the menu held in the NAND. NANDPath is pointed
-        /// at the raw dump rather than the working image, because the whole point is to write into
-        /// the dump. None of it needs undoing - the next launch rewrites all three keys before
-        /// melonDS sees them, and melonDS rewrites the file itself on the way out.</summary>
-        private static void Configure(MelonDsLayout layout, string nandPath)
+        /// firmware, and in DSi mode the firmware IS the menu held in the NAND. None of it needs
+        /// undoing - the next launch rewrites all three keys before melonDS sees them, and melonDS
+        /// rewrites the file itself on the way out.</summary>
+        private static void Configure(MelonDsLayout layout, string imagePath)
         {
             var exe = MelonDsPaths.FindExecutable(layout.InstallDir);
             if (exe == null) { Log.Warn("no melonDS executable in " + layout.InstallDir); return; }
@@ -228,9 +156,9 @@ namespace LbIntegrations.MelonDs
             var error = MelonDsToml.Write(layout.ConfigFile, MelonDsPaths.DSiTable,
                 new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    ["NANDPath"] = MelonDsToml.Text(nandPath),
+                    ["NANDPath"] = MelonDsToml.Text(imagePath),
                 }, force: true);
-            if (error != null) { Log.Warn("NAND not selected for setup: " + error); return; }
+            if (error != null) { Log.Warn("image not selected for setup: " + error); return; }
 
             error = MelonDsToml.Write(layout.ConfigFile, MelonDsPaths.EmuTable,
                 new Dictionary<string, string>(StringComparer.Ordinal)
@@ -242,7 +170,7 @@ namespace LbIntegrations.MelonDs
 
             try
             {
-                Log.Info("opening melonDS on the DSi menu to set up " + Path.GetFileName(nandPath));
+                Log.Info("opening melonDS on the DSi menu to set up " + Path.GetFileName(imagePath));
                 using var process = Process.Start(new ProcessStartInfo
                 {
                     FileName = exe,
@@ -255,100 +183,25 @@ namespace LbIntegrations.MelonDs
             catch (Exception ex) { Log.Warn("could not start melonDS for the setup", ex); }
         }
 
-        /// <summary>The copy becomes the lock, or the copy goes back. <paramref name="verdict"/> is
-        /// the button index: 0 yes, 1 no, anything else no answer at all.</summary>
-        private static void Settle(MelonDsLayout layout, string nandPath, int verdict)
-        {
-            var bak = BakFor(nandPath);
-            var lockFile = LockFor(nandPath);
-            var name = Path.GetFileName(nandPath);
-
-            try
-            {
-                if (verdict == 0)
-                {
-                    if (File.Exists(lockFile)) File.Delete(lockFile);
-                    if (File.Exists(bak)) File.Move(bak, lockFile);
-                    else File.WriteAllText(lockFile, "");   // no copy to keep; the marker still matters
-                    Log.Info(name + " is set up and locked. It will not be asked about again.");
-
-                    // THE ONE MOMENT BOTH IMAGES EXIST. The pristine dump is now the .lock and the
-                    // configured one is the NAND itself, so the difference between them - everything
-                    // that makes this console THIS console - can be written down. From here on a save
-                    // made on it can rebuild it from the dump alone. See MelonDsBase.
-                    Describe(layout, nandPath);
-                    return;
-                }
-
-                if (verdict == 1)
-                {
-                    if (File.Exists(bak))
-                    {
-                        File.Copy(bak, nandPath, overwrite: true);
-                        File.Delete(bak);
-                        Log.Info(name + " was put back as it was; nothing was kept");
-                    }
-                    return;
-                }
-
-                Log.Info("no answer about " + name + "; leaving " + Path.GetFileName(bak)
-                         + " in place, and this will be picked up again next launch");
-            }
-            catch (Exception ex)
-            {
-                Log.Warn("could not finish the setup of " + name + "; " + Path.GetFileName(bak)
-                         + " is still there and holds the image as it was", ex);
-            }
-        }
-
-        /// <summary>Write the recipe and the record beside a locked NAND. Safe to call on one that
-        /// already has them - it says so and does nothing.</summary>
-        public static bool Describe(MelonDsLayout layout, string nandPath)
-        {
-            try
-            {
-                if (layout == null || nandPath == null) return false;
-                if (MelonDsBase.Described(nandPath)) return true;
-
-                var original = LockFor(nandPath);
-                if (!File.Exists(original))
-                {
-                    Log.Verbose(Path.GetFileName(nandPath) + " has no .lock beside it, so there is no "
-                                + "pristine dump to measure its console setup against");
-                    return false;
-                }
-
-                var bios7 = MelonDsBios.Find(layout, MelonDsBios.DsiBios7);
-                if (bios7 == null) return false;
-
-                if (MelonDsBase.MakeRecipe(original, nandPath, bios7, out var error)) return true;
-                Log.Verbose("could not describe " + Path.GetFileName(nandPath) + " - " + error);
-                return false;
-            }
-            catch (Exception ex) { Log.Warn("could not describe a NAND", ex); return false; }
-        }
-
         // ── what the windows say ─────────────────────────────────────────────
 
         private static string Announcement(string name, DsiRegion region)
         {
             var lines = new List<string>
             {
-                "This is the first time " + name + " is used.",
+                "You have no console set up for " + name + " yet.",
                 "",
                 "A DSi NAND is a copy of a whole console, and a console has to be set up once:",
-                "your name, language, date and favourite colour. Doing that writes into the NAND,",
-                "so it has to happen now, before any game saves anything.",
+                "your name, language, date and favourite colour. Doing that writes into the",
+                "image - so it is done on a COPY, kept in melonDS's own folder.",
                 "",
-                "AFTER THAT, LEAVE THIS FILE ALONE. Every DSiWare save is kept as the difference",
-                "between this NAND and the one your game ran on. Change this file later and those",
-                "differences describe a console that no longer exists - nothing will crash, your",
-                "saves will simply stop making sense.",
+                "YOUR OWN DUMP IS NOT TOUCHED. It stays exactly as it is, and it is what every",
+                "console is rebuilt from if one is ever lost.",
                 "",
-                "If you choose to set it up now:",
+                "If you set one up now:",
                 "",
-                "    1. a copy of " + name + " is kept, so nothing can be lost",
-                "    2. melonDS opens on the DSi menu, on this NAND",
+                "    1. " + name + " is copied into melonDS's dsi folder",
+                "    2. melonDS opens on the DSi menu, on that copy",
                 "    3. set the console up, then quit melonDS",
                 "    4. this window comes back and asks whether it worked",
                 "",
@@ -356,6 +209,7 @@ namespace LbIntegrations.MelonDs
                 "console is ready.",
                 "",
                 "This is a " + MelonDsRegion.Name(region) + " NAND, and you are asked once per NAND.",
+                "Saying no is fine: the game runs on the dump as it is, unconfigured.",
             };
             return string.Join(Environment.NewLine, lines);
         }
@@ -364,52 +218,21 @@ namespace LbIntegrations.MelonDs
         {
             var lines = new List<string>
             {
-                "melonDS has closed. Is " + name + " set up the way you want it?",
+                "melonDS has closed. Is the console you made from " + name + " set up the way",
+                "you want it?",
                 "",
-                "Yes, lock it",
-                "    " + name + " is taken as final. The copy that was kept becomes",
-                "    " + name + LockSuffix + ", so you can always go back to how it was,",
-                "    and this is never asked about again.",
+                "Yes, keep it",
+                "    it is kept in melonDS's dsi folder, and every DSiWare save you make from",
+                "    now on records which console it belongs to - so it can be rebuilt from",
+                "    your dump if it is ever lost.",
                 "",
-                "No, put it back",
-                "    " + name + " goes back exactly as it was, and you will be asked again",
-                "    next time you launch a DSiWare game.",
+                "No, throw it away",
+                "    the copy is deleted. Your own dump was never touched, so there is nothing",
+                "    to put back, and you will be asked again next time.",
                 "",
-                "If you are not sure, put it back - going through this again costs nothing.",
+                "If you are not sure, throw it away - going through this again costs nothing.",
             };
             return string.Join(Environment.NewLine, lines);
         }
-
-        private static string Interrupted(string name)
-        {
-            var lines = new List<string>
-            {
-                name + " was being set up and the question never got answered.",
-                "",
-                "A copy from before that setup is still here, as " + name + BakSuffix + ",",
-                "so nothing has been lost either way.",
-                "",
-                "It is set up, lock it",
-                "    keep " + name + " as it is now; the copy becomes " + name + LockSuffix + ".",
-                "",
-                "Open melonDS again",
-                "    go back to the DSi menu and carry on setting the console up.",
-                "",
-                "Put the copy back",
-                "    undo everything: " + name + " goes back to how it was before.",
-            };
-            return string.Join(Environment.NewLine, lines);
-        }
-
-        // ── small things ─────────────────────────────────────────────────────
-
-        private static long FreeSpaceOn(string path)
-        {
-            try { return new DriveInfo(Path.GetPathRoot(Path.GetFullPath(path))).AvailableFreeSpace; }
-            catch { return -1; }
-        }
-
-        private static string Megabytes(long bytes)
-            => (bytes / (1024 * 1024)).ToString(CultureInfo.InvariantCulture) + " MB";
     }
 }

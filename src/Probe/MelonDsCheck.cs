@@ -85,6 +85,7 @@ namespace LbIntegrations.Probe
                 ok &= SaveChangedElsewhere(exe);
                 ok &= WhatASessionRemoved();
                 ok &= ASaveKnowsItsConsole(exe);
+                ok &= WhenTheConsoleIsGone(exe);
                 ok &= RegionCascade(romDir);
                 ok &= ArchiveFormats(exe, romDir);
                 ok &= CarriedIndex(exe, romDir);
@@ -873,35 +874,44 @@ namespace LbIntegrations.Probe
             Console.WriteLine("  -- a NAND's first use");
 
             var setup = TypeIn("MelonDsNandSetup");
-            var of = setup?.GetMethod("Of", BindingFlags.Public | BindingFlags.Static);
             var run = setup?.GetMethod("Run", BindingFlags.Public | BindingFlags.Static);
-            if (of == null || run == null)
-            { Console.WriteLine("    no MelonDsNandSetup to call"); return false; }
+            var consoleFor = TypeIn("MelonDsBase")
+                ?.GetMethod("ConsoleFor", BindingFlags.Public | BindingFlags.Static);
+            if (run == null || consoleFor == null)
+            { Console.WriteLine("    no MelonDsNandSetup / MelonDsBase to call"); return false; }
 
             var resolve = TypeIn("MelonDsPaths").GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static);
             var layout = resolve.Invoke(null, new object[] { exe });
             string bios = BiosDir(layout);
+            string dsi = Path.Combine(Path.GetDirectoryName(exe), "dsi");
             Directory.CreateDirectory(bios);
+            Directory.CreateDirectory(dsi);
 
             bool ok = true;
 
-            // 1. THE STATE IS READ OFF THE FOLDER, and off nothing else. No index, no registry, no
-            //    remembered list: move a dump somewhere else and it is new again, which is right,
-            //    because the differences kept against it were keyed to where it was.
+            // 1. THE NAME IS THE LINK, and it is the whole mechanism. dsi\<the dump's name> is that
+            //    dump's console - one File.Exists, no hash, no index - and because a dump has exactly
+            //    one console, "which console" is never asked. This replaced a three-state machine
+            //    read off .lock and .bak files, which existed only because the dump used to be
+            //    configured in place.
             string probe = Path.Combine(bios, "state-probe.bin");
             Sized(probe, 4096);
-            ok &= Check("a dump with nothing beside it has never been used",
-                        StateOf(of, probe) == "NeverUsed");
+            ok &= Check("a dump with no console in our folder has none",
+                        consoleFor.Invoke(null, new object[] { layout, probe }) == null);
 
-            File.WriteAllText(probe + ".lock", "");
-            ok &= Check("a .lock beside it means set up, and never ask again",
-                        StateOf(of, probe) == "Locked");
+            string built = Path.Combine(dsi, "state-probe.bin");
+            Sized(built, 4096);
+            ok &= Check("and one named after it IS its console",
+                        (string)consoleFor.Invoke(null, new object[] { layout, probe }) == built);
 
-            File.WriteAllText(probe + ".bak", "");
-            ok &= Check("a .bak left behind means a setup that never got its answer",
-                        StateOf(of, probe) == "Interrupted");
+            //    Two dumps of the same name in two search folders must not be confused: the record
+            //    says which one the console came from, and the size settles it.
+            File.WriteAllText(built + ".recipe.txt",
+                              "identity\tabc\r\noriginal.size\t999999\r\n");
+            ok &= Check("a console built from a dump of another size is not claimed by this one",
+                        consoleFor.Invoke(null, new object[] { layout, probe }) == null);
 
-            foreach (var leftover in new[] { probe, probe + ".lock", probe + ".bak" })
+            foreach (var leftover in new[] { probe, built, built + ".recipe.txt" })
                 try { File.Delete(leftover); } catch { }
 
             // 2. THE SIZE WINDOW. A NAND is 240 MB; the scan looks between 220 and 260 and opens
@@ -955,20 +965,28 @@ namespace LbIntegrations.Probe
                             !said.Contains("nand-inrange.bin.lock"));
                 if (!said.Contains("nand-inrange.bin")) Console.WriteLine("    log said: " + said.Trim());
 
-                // 3. NO WINDOW, NO ACTION. The dump below has never been set up, so the flow is
-                //    live - and with the windows off it must decline, not proceed quietly.
+                // 3. NO WINDOW, NO ACTION - and above all, NOTHING WRITTEN TO THE USER'S FILE.
+                //    That last one is what this whole arrangement exists for: the dump is read and
+                //    copied, never opened for writing, so its size and write time must come through
+                //    a setup attempt untouched.
                 try { File.Delete(locked); } catch { }
                 var dump = Activator.CreateInstance(TypeIn("NandDump"));
                 TypeIn("NandDump").GetField("Path").SetValue(dump, inRange);
 
+                var before = new FileInfo(inRange);
+                long wasLength = before.Length;
+                var wasWritten = before.LastWriteTimeUtc;
+
                 mark = LogLength();
-                var cancel = run.Invoke(null, new[] { layout, dump });
+                var cancel = run.Invoke(null, new object[] { layout, dump, (string)null });
                 said = LogSince(mark);
 
                 ok &= Check("with the windows off, the launch is not cancelled", !(bool)cancel);
-                ok &= Check("nothing was copied - no .bak appeared", !File.Exists(inRange + ".bak"));
-                ok &= Check("and nothing was locked behind the user's back",
-                            !File.Exists(inRange + ".lock"));
+                ok &= Check("no console was built behind the user's back",
+                            !File.Exists(Path.Combine(dsi, Path.GetFileName(inRange))));
+                var after = new FileInfo(inRange);
+                ok &= Check("AND THE USER'S DUMP WAS NOT WRITTEN TO - the point of the whole design",
+                            after.Length == wasLength && after.LastWriteTimeUtc == wasWritten);
                 ok &= Check("the log says why it stood aside",
                             said.Contains("windows are turned off"));
                 if (!said.Contains("windows are turned off")) Console.WriteLine("    log said: " + said.Trim());
@@ -1552,6 +1570,32 @@ namespace LbIntegrations.Probe
                             && (string)Get(recordType, back, "OriginalName") == "DSi_Nand_USA_1.4.5.bin"
                             && (long)Get(recordType, back, "OriginalSize") == 251658304L);
 
+                // A RECORD WRITTEN BEFORE THIS LOT still has to work, and this is the assertion
+                // that separates "we repair" from "we break while repairing". The saves on the test
+                // machine carry records with neither original.path nor region in them; if reading one
+                // failed, or came back without the identity, the very saves this mechanism exists to
+                // rescue would be the ones it could not read.
+                var old = Path.Combine(dir, "before.txt");
+                File.WriteAllText(old, string.Join("\r\n", new[]
+                {
+                    "identity\tee4aca9911223344",
+                    "initial.name\tdsinand.bin",
+                    "initial.size\t251658304",
+                    "initial.ticks\t638000000000000000",
+                    "original.name\tDSi_Nand_USA_1.4.5.bin",
+                    "original.size\t251658304",
+                    "original.sha256\t" + new string('a', 64),
+                }) + "\r\n");
+                var before = read.Invoke(null, new object[] { old });
+                ok &= Check("a record written before region and path existed still reads",
+                            before != null
+                            && (string)Get(recordType, before, "Identity") == "ee4aca9911223344"
+                            && (string)Get(recordType, before, "OriginalName") == "DSi_Nand_USA_1.4.5.bin");
+                ok &= Check("and the fields it never had come back empty, not broken",
+                            before != null
+                            && string.IsNullOrEmpty((string)Get(recordType, before, "Region"))
+                            && string.IsNullOrEmpty((string)Get(recordType, before, "OriginalPath")));
+
                 // NO RECORD IS NOT AN ERROR. A save made before any of this existed carries nothing,
                 // and the only honest answer to "is this the right console" is then "no opinion".
                 ok &= Check("a save with no record at all gets no opinion, not a failure",
@@ -1587,11 +1631,9 @@ namespace LbIntegrations.Probe
                 ok &= Check("and when nothing matches, nothing is returned",
                             find.Invoke(null, new object[] { Directory.GetFiles(dumps), want }) == null);
 
-                // ── a rebuilt base is never offered for setup ────────────────
-                // It is configured BY CONSTRUCTION. Asking somebody to set it up would change its
-                // identity and break the very save being recovered - the worst outcome available.
-                var setup = TypeIn("MelonDsNandSetup")
-                    ?.GetMethod("Of", BindingFlags.Public | BindingFlags.Static);
+                // ── a rebuilt base is not a dump ─────────────────────────────
+                // It is configured BY CONSTRUCTION, and it lives in a folder of ours - the setup
+                // flow is only ever offered a dump chosen from the user's own folder.
                 var bases = Path.Combine(Path.GetDirectoryName(exe), "dsi", "bases");
                 Directory.CreateDirectory(bases);
                 var archive = Path.Combine(bases, "abcdef0123456789.bin");
@@ -1601,14 +1643,129 @@ namespace LbIntegrations.Probe
                             (bool)isArchive.Invoke(null, new object[] { archive }));
                 ok &= Check("a dump in the bios folder is NOT",
                             !(bool)isArchive.Invoke(null, new object[] { real }));
-                ok &= Check("and a rebuilt base is Locked, never NeverUsed",
-                            setup != null
-                            && setup.Invoke(null, new object[] { archive }).ToString() == "Locked");
 
                 try { Directory.Delete(Path.Combine(Path.GetDirectoryName(exe), "dsi", "bases"), true); } catch { }
                 return ok;
             }
             finally { try { Directory.Delete(dir, recursive: true); } catch { } }
+        }
+
+        /// <summary>The console a save was made on is gone - what happens then.
+        ///
+        /// This is the one path where the design can quietly destroy something. A save is the
+        /// difference against ONE console; with that console missing, a launch that simply went
+        /// ahead on another one would have its next capture write the new session over the old save,
+        /// and "start a new game" would silently mean "delete the one you had".
+        ///
+        /// So three things: a console already rebuilt is reused rather than rebuilt again, the one
+        /// offered instead is of the SAME REGION - a DSi menu refuses a title from another, so any
+        /// other offer is no offer at all - and the old state is SET ASIDE, not overwritten.</summary>
+        private static bool WhenTheConsoleIsGone(string exe)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- the console a save was made on is gone");
+
+            var plugin = TypeIn("MelonDsPlugin");
+            var fresh = plugin.GetMethod("FreshStartOn", BindingFlags.NonPublic | BindingFlags.Static);
+            var withIdentity = plugin.GetMethod("ConsoleWithIdentity",
+                                                BindingFlags.NonPublic | BindingFlags.Static);
+            var park = TypeIn("MelonDsDsi").GetMethod("ParkState", BindingFlags.Public | BindingFlags.Static);
+            var recordType = TypeIn("BaseRecord");
+            var write = TypeIn("MelonDsBase").GetMethod("WriteRecord", BindingFlags.Public | BindingFlags.Static);
+            if (fresh == null || withIdentity == null || park == null || write == null)
+            { Console.WriteLine("    the recovery path does not have the shape expected"); return false; }
+
+            var resolve = TypeIn("MelonDsPaths").GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static);
+            var layout = resolve.Invoke(null, new object[] { exe });
+            string dsi = Path.Combine(Path.GetDirectoryName(exe), "dsi");
+            string title = "00030004deadbeef";
+            string titleDir = Path.Combine(dsi, title);
+            string bases = Path.Combine(dsi, "bases");
+            Directory.CreateDirectory(bases);
+
+            bool ok = true;
+            try
+            {
+                // ── a rebuild already on disk answers straight away ──────────
+                // Nothing is opened and nothing is hashed: 240 MB rebuilt at every launch would make
+                // the recovery path cost more than the accident it recovers from.
+                var rebuilt = Path.Combine(bases, "feedfacedeadbeef.bin");
+                File.WriteAllBytes(rebuilt, new byte[64]);
+
+                ok &= Check("a console already rebuilt is taken as it is",
+                            (string)withIdentity.Invoke(null,
+                                new object[] { layout, "feedfacedeadbeef", null, "absent.zip" }) == rebuilt);
+                ok &= Check("and an identity nothing on disk carries gets no console",
+                            withIdentity.Invoke(null,
+                                new object[] { layout, "0123456789abcdef", null, "absent.zip" }) == null);
+
+                // ── what is offered instead must be bootable ─────────────────
+                void Console_(string name, string region)
+                {
+                    var image = Path.Combine(dsi, name);
+                    File.WriteAllBytes(image, new byte[64]);
+                    var r = Activator.CreateInstance(recordType);
+                    Set(recordType, r, "Identity", name);
+                    Set(recordType, r, "Region", region);
+                    write.Invoke(null, new[] { (object)(image + ".recipe.txt"), r });
+                }
+                Console_("probe-euro.bin", "Europe");
+                Console_("probe-usa.bin", "Usa");
+
+                var lost = Activator.CreateInstance(recordType);
+                Set(recordType, lost, "Identity", "feedfacedeadbeef");
+                Set(recordType, lost, "Region", "Usa");
+                ok &= Check("the console offered instead is one of the SAME REGION",
+                            Path.GetFileName((string)fresh.Invoke(null, new object[] { layout, lost }))
+                                == "probe-usa.bin");
+
+                Set(recordType, lost, "Region", "Japan");
+                ok &= Check("with none of that region there is nothing to offer - not a wrong one",
+                            fresh.Invoke(null, new object[] { layout, lost }) == null);
+
+                Set(recordType, lost, "Region", null);
+                ok &= Check("and a record from before regions were written down offers nothing either",
+                            fresh.Invoke(null, new object[] { layout, lost }) == null);
+
+                // ── starting again does not delete what was there ────────────
+                var state = Path.Combine(titleDir, "state");
+                Directory.CreateDirectory(state);
+                File.WriteAllText(Path.Combine(state, "0__shared1_TWLCFG0.dat"), "the old save");
+
+                ok &= Check("the old state is set aside",
+                            (bool)park.Invoke(null, new object[] { layout, title, "feedfacedeadbeef" }));
+
+                var parked = Path.Combine(titleDir, "state.orphan-feedface");
+                ok &= Check("under a name that says which console it is waiting for",
+                            Directory.Exists(parked));
+                ok &= Check("MOVED, not copied and not emptied",
+                            !Directory.Exists(state)
+                            && File.ReadAllText(Path.Combine(parked, "0__shared1_TWLCFG0.dat"))
+                               == "the old save");
+
+                Directory.CreateDirectory(state);
+                File.WriteAllText(Path.Combine(state, "0__shared1_TWLCFG0.dat"), "a newer one");
+                park.Invoke(null, new object[] { layout, title, "feedfacedeadbeef" });
+                ok &= Check("and a second one lands beside the first, never on it",
+                            File.ReadAllText(Path.Combine(parked, "0__shared1_TWLCFG0.dat"))
+                                == "the old save"
+                            && Directory.GetDirectories(titleDir, "state.orphan-*").Length == 2);
+
+                ok &= Check("a title with no state at all is simply nothing to set aside",
+                            !(bool)park.Invoke(null,
+                                new object[] { layout, "0003000400000000", "feedfacedeadbeef" }));
+                return ok;
+            }
+            finally
+            {
+                try { Directory.Delete(titleDir, recursive: true); } catch { }
+                try { Directory.Delete(bases, recursive: true); } catch { }
+                foreach (var leftover in new[] { "probe-euro.bin", "probe-usa.bin" })
+                {
+                    try { File.Delete(Path.Combine(dsi, leftover)); } catch { }
+                    try { File.Delete(Path.Combine(dsi, leftover + ".recipe.txt")); } catch { }
+                }
+            }
         }
 
         private static void Set(Type type, object target, string field, object value)
@@ -1646,12 +1803,11 @@ namespace LbIntegrations.Probe
             var list = (IList)Activator.CreateInstance(
                            typeof(List<>).MakeGenericType(type));
 
-            object Dump(string path, string setup)
+            object Dump(string path, bool hasConsole)
             {
                 var dump = Activator.CreateInstance(type);
                 type.GetField("Path").SetValue(dump, path);
-                type.GetField("Setup").SetValue(dump,
-                    Enum.Parse(TypeIn("NandSetup"), setup));
+                type.GetField("HasConsole").SetValue(dump, hasConsole);
                 return dump;
             }
 
@@ -1664,18 +1820,18 @@ namespace LbIntegrations.Probe
             bool ok = true;
 
             // Names alone: the same answer every time, whatever order they arrive in.
-            list.Add(Dump("z-dump.bin", "NeverUsed"));
-            list.Add(Dump("a-dump.bin", "NeverUsed"));
+            list.Add(Dump("z-dump.bin", false));
+            list.Add(Dump("a-dump.bin", false));
             ok &= Check("with neither set up, the name decides", Chosen() == "a-dump.bin");
 
-            // And a dump that has been through its setup beats a name that sorts before it - that
-            // is the one whose saves exist.
-            list.Add(Dump("z-other.bin", "Locked"));
-            ok &= Check("a dump that has been set up wins over one that has not",
+            // And a dump that already has a console beats a name that sorts before it - that is the
+            // one whose saves exist.
+            list.Add(Dump("z-other.bin", true));
+            ok &= Check("a dump that already has a console wins over one that has not",
                         Chosen() == "z-other.bin");
 
-            list.Add(Dump("b-other.bin", "Locked"));
-            ok &= Check("and between two set up, the name decides again",
+            list.Add(Dump("b-other.bin", true));
+            ok &= Check("and between two that have one, the name decides again",
                         Chosen() == "b-other.bin");
 
             return ok;

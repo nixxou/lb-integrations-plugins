@@ -9,9 +9,15 @@
 //
 // THREE THINGS MAKE UP A CONSOLE, and only one of them is irreplaceable:
 //
-//     the ORIGINAL   a pristine dump, kept as <nand>.lock        the user has it; it never changes
+//     the ORIGINAL   a pristine dump in the user's folder        the user has it; WE NEVER TOUCH IT
 //     the RECIPE     original -> initial, a few dozen kilobytes  we can compute it
 //     the INITIAL    the original plus its console setup         DERIVED: rebuildable from the two
+//
+// THE INITIAL LIVES IN OUR FOLDER, UNDER ITS ORIGINAL'S NAME. dsi\DSi_Nand_USA_1.4.5.bin is the
+// console configured from system\DSi_Nand_USA_1.4.5.bin, and the matching name IS the link - one
+// File.Exists, no hash, no index. There is exactly one console per dump, so "which one" never has to
+// be asked. dsi\bases\<identity>.bin is something else entirely: a console REBUILT because a save
+// asked for one nobody has any more.
 //
 // So a save carries the recipe and the original's identity, and can rebuild its own base from a dump
 // anybody can re-obtain. What it cannot do is cross consoles: a NAND is encrypted with its console's
@@ -60,6 +66,15 @@ namespace LbIntegrations.MelonDs
         public string OriginalName;
         public long OriginalSize;
         public string OriginalSha256;
+
+        /// <summary>Where it was when this console was built. A hint, not an authority: it makes the
+        /// common re-attachment free, and the hash settles it when it is wrong.</summary>
+        public string OriginalPath;
+
+        /// <summary>The console's region, as a DsiRegion name. Written down so the degraded case -
+        /// neither the console nor its dump is here - can offer a same-region substitute without
+        /// mounting anything.</summary>
+        public string Region;
     }
 
     internal static class MelonDsBase
@@ -114,8 +129,125 @@ namespace LbIntegrations.MelonDs
                 ? null : Path.Combine(dir, identity + ".bin");
         }
 
+        /// <summary>The console configured from this dump, or null when there is none.
+        ///
+        /// THE NAME IS THE LINK. dsi\<the dump's file name> is that dump's console, and nothing
+        /// else is. One File.Exists answers "has this dump been set up", which used to need a .lock
+        /// file beside the user's own; and because a dump has exactly one console, the question
+        /// "which of its consoles" - which cost a page of design - never arises.
+        ///
+        /// The size is compared against the record when there is one, so two dumps of the same name
+        /// in two different search folders cannot be mistaken for each other.</summary>
+        public static string ConsoleFor(MelonDsLayout layout, string dumpPath)
+        {
+            try
+            {
+                var dir = MelonDsDsi.DsiDir(layout);
+                if (dir == null || string.IsNullOrWhiteSpace(dumpPath)) return null;
+
+                var console = Path.Combine(dir, Path.GetFileName(dumpPath));
+                if (!File.Exists(console)) return null;
+
+                var record = ReadRecord(RecordFor(console));
+                if (record != null && record.OriginalSize > 0)
+                {
+                    try
+                    {
+                        if (new FileInfo(dumpPath).Length != record.OriginalSize)
+                        {
+                            Log.Verbose(Path.GetFileName(console) + " was built from a dump of a "
+                                        + "different size; not treating it as this one's console");
+                            return null;
+                        }
+                    }
+                    catch { }
+                }
+                return console;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>Every console in dsi\ whose dump is no longer beside it under the same name -
+        /// the ones somebody renamed out from under.
+        ///
+        /// ONLY CALLED WHERE THE ALTERNATIVE IS A WINDOW. Re-attaching one costs a hash of 240 MB, so
+        /// it is never done on the ordinary path; it is done just before asking somebody to configure
+        /// a console they have already configured.</summary>
+        public static List<string> Orphans(MelonDsLayout layout, IEnumerable<string> dumps)
+        {
+            var orphans = new List<string>();
+            try
+            {
+                var dir = MelonDsDsi.DsiDir(layout);
+                if (dir == null || !Directory.Exists(dir)) return orphans;
+
+                var named = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var dump in dumps ?? Array.Empty<string>())
+                    named.Add(Path.GetFileName(dump));
+
+                foreach (var path in Directory.GetFiles(dir))
+                {
+                    if (!File.Exists(RecordFor(path))) continue;      // not a console of ours
+                    if (named.Contains(Path.GetFileName(path))) continue;
+                    orphans.Add(path);
+                }
+            }
+            catch (Exception ex) { Log.Verbose("could not look for orphaned consoles - " + ex.Message); }
+            return orphans;
+        }
+
+        /// <summary>Copy a dump into our folder so it can be configured there. THE USER'S FILE IS
+        /// NEVER OPENED FOR WRITING - that is the whole point of this arrangement.</summary>
+        public static string BuildConsole(MelonDsLayout layout, string dumpPath, out string error)
+        {
+            error = null;
+            try
+            {
+                var dir = MelonDsDsi.DsiDir(layout);
+                if (dir == null) { error = "no dsi folder to build in"; return null; }
+                if (!File.Exists(dumpPath)) { error = "the dump is not there"; return null; }
+
+                Directory.CreateDirectory(dir);
+                var target = Path.Combine(dir, Path.GetFileName(dumpPath));
+
+                long size = new FileInfo(dumpPath).Length;
+                long free = FreeSpaceOn(target);
+                if (free >= 0 && free < size + Margin)
+                {
+                    error = "not enough room in " + dir + ": " + Megabytes(size) + " needed, "
+                          + Megabytes(free) + " free";
+                    return null;
+                }
+
+                var partial = target + ".part";
+                try { if (File.Exists(partial)) File.Delete(partial); } catch { }
+                File.Copy(dumpPath, partial, overwrite: true);
+                if (File.Exists(target)) File.Delete(target);
+                File.Move(partial, target);
+
+                Log.Info("copied " + Path.GetFileName(dumpPath) + " into " + dir
+                         + " to be configured there; the dump itself is not touched");
+                return target;
+            }
+            catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; return null; }
+        }
+
+        /// <summary>A NAND dump is about 240 MB; refuse to start a copy without room for it and a
+        /// margin, rather than filling the disk and failing halfway.</summary>
+        private const long Margin = 256L * 1024 * 1024;
+
+        private static long FreeSpaceOn(string path)
+        {
+            try { return new DriveInfo(Path.GetPathRoot(Path.GetFullPath(path))).AvailableFreeSpace; }
+            catch { return -1; }
+        }
+
+        private static string Megabytes(long bytes)
+            => (bytes / (1024 * 1024)).ToString(CultureInfo.InvariantCulture) + " MB";
+
         /// <summary>Is this one of our rebuilt bases? Such an image is configured BY CONSTRUCTION,
-        /// so it must never be offered for first-use setup - see MelonDsNandSetup.Of.</summary>
+        /// so it is never a candidate for setup - unlike a console named after its dump, which is
+        /// what the ordinary path builds.</summary>
         public static bool IsArchive(string imagePath)
         {
             try
@@ -136,7 +268,7 @@ namespace LbIntegrations.MelonDs
         /// .lock, so that is where this is called from. An installation locked before this existed
         /// still has both, so it can be caught up later - once.</summary>
         public static bool MakeRecipe(string originalPath, string initialPath, string bios7Path,
-                                      out string error)
+                                      DsiRegion region, out string error)
         {
             error = null;
             string scratch = null;
@@ -179,7 +311,8 @@ namespace LbIntegrations.MelonDs
                 // And the record beside it, computed once here rather than at every capture.
                 var identity = IdentityOf(initialPath, bios7Path, PathsIn(target));
                 if (identity == null) { error = "the configured image could not be identified"; return false; }
-                WriteRecord(RecordFor(initialPath), Describe(initialPath, originalPath, identity));
+                WriteRecord(RecordFor(initialPath),
+                            Describe(initialPath, originalPath, identity, region));
 
                 Log.Info("wrote the recipe for " + Path.GetFileName(initialPath) + ": " + kept
                          + " file(s) of console setup, " + new FileInfo(target).Length
@@ -299,7 +432,8 @@ namespace LbIntegrations.MelonDs
         /// for. The check costs the files the recipe names and turns "we think we rebuilt the right
         /// base" into "we rebuilt the right base".</summary>
         public static bool RebuildFrom(string originalPath, string recipeZip, string targetPath,
-                                       string bios7Path, string expected, out string error)
+                                       string bios7Path, string expected, string wantedRegion,
+                                       out string error)
         {
             error = null;
             string unpacked = null;
@@ -344,8 +478,13 @@ namespace LbIntegrations.MelonDs
                 try { File.Copy(recipeZip, RecipeFor(targetPath), overwrite: true); } catch { }
                 try
                 {
-                    var record = Describe(targetPath, originalPath, expected);
-                    WriteRecord(RecordFor(targetPath), record);
+                    // The region comes from the record that asked for this rebuild, not from the
+                    // image: it is the same console, and reading it again would cost a mount.
+                    var region = DsiRegion.Usa;
+                    if (wantedRegion != null && Enum.TryParse<DsiRegion>(wantedRegion, out var parsed))
+                        region = parsed;
+                    WriteRecord(RecordFor(targetPath),
+                                Describe(targetPath, originalPath, expected, region));
                 }
                 catch { }
 
@@ -411,7 +550,8 @@ namespace LbIntegrations.MelonDs
 
         // ── the record a save carries ────────────────────────────────────────
 
-        public static BaseRecord Describe(string initialPath, string originalPath, string identity)
+        public static BaseRecord Describe(string initialPath, string originalPath, string identity,
+                                          DsiRegion region)
         {
             try
             {
@@ -426,6 +566,8 @@ namespace LbIntegrations.MelonDs
                     OriginalName = original?.Name,
                     OriginalSize = original?.Length ?? 0,
                     OriginalSha256 = original == null ? null : Sha256OfFile(original.FullName),
+                    OriginalPath = original?.FullName,
+                    Region = region.ToString(),
                 };
             }
             catch (Exception ex) { Log.Verbose("could not describe a base - " + ex.Message); return null; }
@@ -445,6 +587,8 @@ namespace LbIntegrations.MelonDs
                     "original.name\t" + (record.OriginalName ?? ""),
                     "original.size\t" + record.OriginalSize.ToString(CultureInfo.InvariantCulture),
                     "original.sha256\t" + (record.OriginalSha256 ?? ""),
+                    "original.path\t" + (record.OriginalPath ?? ""),
+                    "region\t" + (record.Region ?? ""),
                 };
                 MelonDsToml.WriteAtomicBytes(path, Encoding.UTF8.GetBytes(string.Join("\r\n", lines) + "\r\n"));
             }
@@ -476,6 +620,8 @@ namespace LbIntegrations.MelonDs
                     OriginalName = Get(map, "original.name"),
                     OriginalSize = Number(map, "original.size"),
                     OriginalSha256 = Get(map, "original.sha256"),
+                    OriginalPath = Get(map, "original.path"),
+                    Region = Get(map, "region"),
                 };
             }
             catch (Exception ex) { Log.Verbose("could not read " + path + " - " + ex.Message); return null; }

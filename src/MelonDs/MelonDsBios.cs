@@ -34,14 +34,18 @@ using System.IO;
 
 namespace LbIntegrations.MelonDs
 {
-    /// <summary>One NAND dump the user has, the region it came from, and whether it has been
-    /// through its first-use setup. The setup state is carried here rather than asked for again
-    /// later: whoever picked the dump is who has to act on it.</summary>
+    /// <summary>One NAND dump the user has, the region it came from, and whether a console has
+    /// been configured from it. Carried here rather than asked for again later: whoever picked the
+    /// dump is who has to act on it.</summary>
     internal sealed class NandDump
     {
         public string Path;
         public DsiRegion Region;
-        public NandSetup Setup;
+
+        /// <summary>dsi\<this dump's name> exists. One File.Exists, taken during the sweep -
+        /// it replaces a three-state machine read off .lock and .bak files beside the user's own
+        /// dumps, which existed only because the dump used to be configured in place.</summary>
+        public bool HasConsole;
     }
 
     internal static class MelonDsBios
@@ -116,12 +120,13 @@ namespace LbIntegrations.MelonDs
         private const long NandLeast = 220L * 1024 * 1024;
         private const long NandMost = 260L * 1024 * 1024;
 
-        /// <summary>What this plugin leaves beside a NAND, and which must never be taken for one.
+        /// <summary>Suffixes that are never a NAND, whatever their size.
         ///
-        /// The first two are copies of a 240 MB file, so they land squarely inside the size range
-        /// above and would be scanned as NANDs if they were not named here. The last two are tiny
-        /// and the size gate would skip them anyway - which is exactly the kind of accident this
-        /// list exists to stop relying on.</summary>
+        /// The first two are leftovers from an arrangement that no longer exists: this plugin used
+        /// to configure the user's dump in place and keep a pristine copy as .lock, with a .bak
+        /// while it happened. Both were 240 MB and both sat squarely inside the size range above, so
+        /// both had to be named here. Nothing writes them any more - and they are kept in the list
+        /// precisely because somebody upgrading still has them on disk.</summary>
         private static readonly string[] NotNands =
             { ".lock", ".bak", MelonDsBase.RecipeSuffix, MelonDsBase.RecordSuffix };
 
@@ -380,7 +385,7 @@ namespace LbIntegrations.MelonDs
                         if (text == NotOne) { fresh[path] = remembered; continue; }
                         if (Enum.TryParse<DsiRegion>(text, out var cached))
                         {
-                            found.Add(Dump(path, cached));
+                            found.Add(Dump(layout, path, cached));
                             fresh[path] = remembered;
                             continue;
                         }
@@ -400,7 +405,7 @@ namespace LbIntegrations.MelonDs
                         if (opened) fresh[path] = stamp + "\t" + NotOne;
                         continue;
                     }
-                    found.Add(Dump(path, region.Value));
+                    found.Add(Dump(layout, path, region.Value));
                     fresh[path] = stamp + "\t" + region.Value;
                     Log.Info(Path.GetFileName(path) + " is a " + MelonDsRegion.Name(region.Value) + " NAND");
                 }
@@ -424,8 +429,13 @@ namespace LbIntegrations.MelonDs
         /// NAND. Not a region name, so it can never be parsed back as one.</summary>
         private const string NotOne = "-";
 
-        private static NandDump Dump(string path, DsiRegion region)
-            => new NandDump { Path = path, Region = region, Setup = MelonDsNandSetup.Of(path) };
+        private static NandDump Dump(MelonDsLayout layout, string path, DsiRegion region)
+            => new NandDump
+            {
+                Path = path,
+                Region = region,
+                HasConsole = MelonDsBase.ConsoleFor(layout, path) != null,
+            };
 
         /// <summary>The NAND to run this title on: the first of the regions it accepts that the user
         /// actually has. Null with a reason when there is none.</summary>
@@ -445,9 +455,9 @@ namespace LbIntegrations.MelonDs
                 if (matching.Count > 1)
                     Log.Info(matching.Count + " " + MelonDsRegion.Name(region) + " NAND dumps; using "
                              + Path.GetFileName(chosen.Path)
-                             + ". Every save is tied to the dump it was made on, so this choice must "
-                             + "not drift between launches - a dump that has been set up wins, and "
-                             + "the name breaks a tie.");
+                             + ". Every save is tied to the console it was made on, so this choice "
+                             + "must not drift between launches - a dump that already has a console "
+                             + "wins, and the name breaks a tie.");
 
                 return chosen;
             }
@@ -461,13 +471,13 @@ namespace LbIntegrations.MelonDs
         /// <summary>Which of several dumps of the same region to run on.
         ///
         /// THE CHOICE MUST NOT DRIFT. Every DSiWare save is the difference against one particular
-        /// dump; pick a different one next launch and the saves are replayed onto a console that was
-        /// never theirs. Directory order is not an ordering - it is whatever the filesystem happens
-        /// to hand back, and it changes when files are added, renamed or defragmented.
+        /// console; pick a different one next launch and the saves are replayed onto a console that
+        /// was never theirs. Directory order is not an ordering - it is whatever the filesystem
+        /// happens to hand back, and it changes when files are added, renamed or defragmented.
         ///
-        /// So: a dump that has BEEN SET UP wins. That is the one whose first-use flow somebody
-        /// actually completed, which makes it the one the saves came from. Failing that, the name,
-        /// ordinally - arbitrary, but the same arbitrary answer every time.</summary>
+        /// So: a dump that ALREADY HAS A CONSOLE wins. That is the one somebody actually set up,
+        /// which makes it the one the saves came from. Failing that, the name, ordinally -
+        /// arbitrary, but the same arbitrary answer every time.</summary>
         public static NandDump Steadiest(List<NandDump> matching)
         {
             NandDump best = null;
@@ -475,7 +485,7 @@ namespace LbIntegrations.MelonDs
             {
                 if (best == null) { best = dump; continue; }
 
-                bool mine = dump.Setup == NandSetup.Locked, theirs = best.Setup == NandSetup.Locked;
+                bool mine = dump.HasConsole, theirs = best.HasConsole;
                 if (mine != theirs) { if (mine) best = dump; continue; }
 
                 if (string.Compare(dump.Path, best.Path, StringComparison.OrdinalIgnoreCase) < 0)

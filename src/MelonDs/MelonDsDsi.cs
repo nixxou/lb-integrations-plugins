@@ -385,6 +385,33 @@ namespace LbIntegrations.MelonDs
             catch (Exception ex) { Log.Verbose("could not carry the base into the save - " + ex.Message); }
         }
 
+        /// <summary>Set a title's state aside instead of letting it be overwritten.
+        ///
+        /// Used when somebody chooses to start a fresh game because the console their save belongs to
+        /// cannot be found. Without this, the next capture would replace that state with the new
+        /// session and the old save would be gone - so "start a new game" would silently mean "delete
+        /// the old one". Named after the console it belongs to, so it is obvious what it is waiting
+        /// for.</summary>
+        public static bool ParkState(MelonDsLayout layout, string titleId, string identity)
+        {
+            try
+            {
+                var stateDir = StateDirFor(layout, titleId);
+                if (stateDir == null || !Directory.Exists(stateDir)) return false;
+
+                var parked = stateDir + ".orphan-" + MelonDsBase.Short(identity);
+                if (Directory.Exists(parked))
+                    parked += "-" + DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture);
+
+                Directory.Move(stateDir, parked);
+                Log.Info("set the old save of " + titleId + " aside as " + Path.GetFileName(parked)
+                         + "; it is not deleted, and it applies again the day console "
+                         + MelonDsBase.Short(identity) + " can be rebuilt");
+                return true;
+            }
+            catch (Exception ex) { Log.Warn("could not set a save aside", ex); return false; }
+        }
+
         private static void Cleanup(string path)
         {
             try { if (File.Exists(path)) File.Delete(path); } catch { }
@@ -846,6 +873,47 @@ namespace LbIntegrations.MelonDs
         }
 
         // ── the base ─────────────────────────────────────────────────────────
+
+        /// <summary>Give a DSi CARTRIDGE a scratch image of its own, and answer where it is.
+        ///
+        /// A cartridge writes the console's settings - name, language, date - into whatever NAND it
+        /// is pointed at. The one image that must never be written to is a CONSOLE: every DSiWare
+        /// save is the difference against one, identified by the very files a settings change
+        /// touches, so a cartridge session on a console would orphan every save made on it. Before
+        /// this folder held consoles the question did not arise; now it does.
+        ///
+        /// So the cartridge gets work.bin, which is scratch by definition, and the marker is cleared
+        /// either way - once a cartridge has been in that image it no longer holds only what the
+        /// marker says, and the next DSiWare launch must rebuild rather than capture.</summary>
+        public static string HandToCartridge(MelonDsLayout layout, string current, out string error)
+        {
+            error = null;
+            try
+            {
+                var work = WorkPath(layout);
+                if (work == null) { error = "there is no install directory to work in"; return null; }
+
+                if (string.Equals(current, work, StringComparison.OrdinalIgnoreCase))
+                { Forget(layout); return work; }        // already scratch; nothing to copy
+
+                if (current == null || !File.Exists(current))
+                { error = "there is nothing to copy from"; return null; }
+
+                var length = new FileInfo(current).Length;
+                var room = FreeSpaceOn(work);
+                if (room >= 0 && !File.Exists(work) && room < length + FreeSpaceMargin)
+                {
+                    error = "not enough free space for a " + Megabytes(length) + " working NAND ("
+                          + Megabytes(room) + " free)";
+                    return null;
+                }
+
+                Forget(layout);                         // its old contents are gone as of the next line
+                CopyIntoPlace(current, work);
+                return work;
+            }
+            catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; return null; }
+        }
 
         /// <summary>The dump the FIRST design copied once and used for every title. Nothing
         /// captures one any more - the NAND to build on is now chosen per game, by region, out of

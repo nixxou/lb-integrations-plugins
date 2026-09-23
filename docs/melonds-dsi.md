@@ -228,48 +228,72 @@ taille de cluster, secteurs réservés). C'est le seul chantier du lot qui dégr
 qui ne démarre pas ne se répare pas. Il se teste sans risque en reconstruisant dans un fichier neuf
 et en comparant par fichier avec l'original.
 
-### 5.7 La NAND de base ne doit plus bouger — et il faut donc la configurer d'abord
+### 5.7 La console se fabrique à côté du dump, jamais dedans
 
-C'est une conséquence directe du § 5.3. Une sauvegarde est la **différence** entre le dump de
-l'utilisateur et l'image sur laquelle le jeu a tourné. Chaque différence a donc été mesurée contre un
-dump précis, et est rejouée sur une reconstruction de ce même dump. Si le dump change ensuite, les
+C'est une conséquence directe du § 5.3. Une sauvegarde est la **différence** entre une image de
+référence et celle sur laquelle le jeu a tourné. Chaque différence a donc été mesurée contre une image
+précise, et est rejouée sur une reconstruction de celle-là. Si cette image change ensuite, les
 différences s'appliquent toujours proprement — à une console qui n'existe plus. Rien ne plante ; les
 sauvegardes cessent simplement d'avoir un sens.
 
 Or un dump frais **doit** être configuré une fois : nom, langue, date, couleur. Et cette configuration
-écrit dans `shared1/TWLCFG0.dat` et `TWLCFG1.dat`, c'est-à-dire dans la NAND. Impossible d'avoir à la
-fois une console configurée et une image de base intacte, sauf à configurer d'abord, délibérément,
-avant qu'une seule sauvegarde existe.
+écrit dans `shared1/TWLCFG0.dat` et `TWLCFG1.dat`, c'est-à-dire dans la NAND.
 
-Le greffon traite ça avec trois fichiers et deux fenêtres :
+Les deux faits sont vrais en même temps, et la seule façon de les tenir ensemble est que l'image
+écrite soit **la nôtre**. Le dump est donc copié vers `dsi\<son propre nom>` et melonDS est pointé sur
+la copie. Le dump de l'utilisateur n'est jamais ouvert en écriture — ni ici, ni en aval, puisque
+l'image de travail est elle-même une copie.
 
 ```
-dsinand.bin            le dump ; à partir de là il ne doit plus changer
-dsinand.bin.bak        une copie, faite avant d'ouvrir melonDS
-dsinand.bin.lock       cette même copie, renommée quand l'utilisateur dit que c'est bon
+..\RetroArch\system\DSi_Nand_USA_1.4.5.bin       À LUI. Lu, copié, jamais écrit.
+<install>\dsi\DSi_Nand_USA_1.4.5.bin             LA CONSOLE. Même nom de fichier — c'est le lien.
+<install>\dsi\DSi_Nand_USA_1.4.5.bin.recipe.zip  de quoi la refaire depuis le dump seul
+<install>\dsi\DSi_Nand_USA_1.4.5.bin.recipe.txt  quel dump, quelle identité, quelle région
+<install>\dsi\bases\<identité>.bin               une console RECONSTRUITE pour une save
 ```
 
-melonDS est lancé **sans ROM**, sur cette NAND, avec `ConsoleType = 1` et `DirectBoot = false` : le
+**Le nom fait le lien, et c'est tout le mécanisme.** `dsi\<nom du dump>` existe ⇒ ce dump est
+configuré et cette image est sa console. Un `File.Exists` : pas de hash, pas d'index. Et comme un dump
+a exactement une console, « laquelle » ne se pose jamais. `bases\` ne sert qu'aux reconstructions,
+quand l'identité inscrite dans une sauvegarde ne correspond à rien de présent.
+
+melonDS est lancé **sans ROM**, sur la copie, avec `ConsoleType = 1` et `DirectBoot = false` : le
 firmware démarre, et en mode DSi le firmware *est* le menu contenu dans la NAND (§ 3.1). `WaitForExit`,
-puis une seconde fenêtre demande si la configuration a marché. Oui renomme `.bak` en `.lock` ; non
-remet la copie en place. Le lancement du jeu qui a déclenché tout ça est **annulé**
-(`PrepareForLaunchResponse(success: false)`) : l'utilisateur relance.
+puis une seconde fenêtre demande si la configuration a marché. Oui écrit la recette à côté ; non
+supprime la copie — et il n'y a rien à remettre en place. Le lancement du jeu qui a déclenché tout ça
+est **annulé** (`PrepareForLaunchResponse(success: false)`) : l'utilisateur relance.
 
-Le verrou **est** la copie, pas un drapeau vide : un seul `File.Move` au lieu d'un delete plus un
-create, et ce qui reste est l'image telle qu'elle était. 240 Mo par dump — le rendre vide est un
-changement d'une ligne.
+**Refuser ne coûte rien.** « Pas maintenant » et le jeu tourne sur le dump tel quel, comme avant que
+tout ceci existe : l'image de travail étant une copie, le dump n'est toujours pas écrit. Ces
+sauvegardes-là ne portent pas de recette, ce que le reste du greffon traite déjà comme « pas d'avis ».
 
-Deux choses que ce verrou ne fait pas. Il **ne détecte pas** qu'une NAND a changé après coup : il dit
-« celle-ci est passée par sa configuration » et rien d'autre. Et **sans fenêtre, rien ne se
-déclenche** : configurer la console de quelqu'un en silence serait pire que ne pas la configurer.
+C'était la deuxième disposition. La première configurait le dump **sur place** et gardait une copie
+vierge en `<dump>.lock` pour réparer après coup : le dossier où quelqu'un range ses dumps vierges
+contenait donc un dump qui ne l'était plus, sous le nom qui disait qu'il l'était. Le `.lock`, le
+`.bak`, la machine à trois états lue dessus et l'avertissement « ne retouche plus jamais à ce
+fichier » n'existaient que pour gérer ce dégât. Aucun n'a survécu au dégât qu'on ne fait plus.
+
+**Ce que ça rend possible :** quand no$gba aura sa gestion DSi, chaque greffon aura ses propres
+consoles sans se marcher dessus **tout en partageant les dumps** — et comme une sauvegarde porte sa
+recette (§ README), elle passe de l'un à l'autre en reconstruisant sa console.
+
+**Sans fenêtre, rien ne se déclenche** : configurer la console de quelqu'un en silence, ou copier
+240 Mo et démarrer un émulateur que personne n'a demandé, serait pire que laisser un dump non
+configuré.
+
+**Une cartouche DSi ne tourne pas sur une console.** Elle écrit les réglages système dans la NAND
+qu'on lui donne ; sur une console, ça en changerait l'identité et orphelinerait toutes les
+sauvegardes faites dessus. Elle reçoit donc `work.bin`, qui est jetable par définition, et le marqueur
+est effacé — une cartouche y étant passée, l'image ne contient plus ce que le marqueur prétend.
 
 **Pour un fork, tout ce paragraphe disparaît**, et c'est un de ses meilleurs arguments. Si la NAND est
 montée en mémoire et que l'écriture est contrôlée, la configuration console peut vivre à part des
-sauvegardes de titres — il n'y a plus d'image de base fragile à protéger, donc plus de verrou, plus de
-copie de 240 Mo, plus de fenêtre.
+sauvegardes de titres — il n'y a plus d'image de base à fabriquer, donc plus de copie de 240 Mo et
+plus de fenêtre.
 
 **Le scan des dumps**, accessoirement : tout fichier du dossier entre **220 et 260 Mo**, les suffixes
-`.lock` et `.bak` exclus par leur nom. Une extension ne veut rien dire ici (`.bin`, `.img`, `.nand`,
+`.lock` et `.bak` exclus par leur nom — plus personne ne les écrit, mais un reste de 240 Mo sur le
+disque de quelqu'un passerait la fourchette de taille. Une extension ne veut rien dire ici (`.bin`, `.img`, `.nand`,
 rien du tout circulent tous), et ouvrir un candidat coûte un déchiffrement plus un montage FAT — d'où
 la fourchette de taille comme filtre, et un cache dans `dsi\nands.txt` qui retient aussi bien
 « c'est une NAND telle région » que « ce n'en est pas une », mais ce dernier **seulement** quand
@@ -481,19 +505,25 @@ Pour comparaison, et pour savoir ce qu'un fork rend inutile.
 
 ```
 ..\RetroArch\system\                 BIOS, firmware, NAND par région (fournis par l'utilisateur)
-    <nand>.lock                      une NAND passée par sa configuration initiale (§ 5.7)
+                                     À LUI : rien n'y est écrit (§ 5.7)
+<install>\dsi\<nom du dump>          LA CONSOLE configurée, + .recipe.zip et .recipe.txt
+<install>\dsi\bases\<identité>.bin   une console reconstruite pour une sauvegarde qui la réclame
 <install>\dsi\work.bin               l'image de travail, reconstruite à chaque lancement
-<install>\dsi\work.title             quel titre elle porte, + empreinte de la ROM + NAND source
+<install>\dsi\work.title             quel titre elle porte, + empreinte de la ROM + image source
 <install>\dsi\nands.txt              région de chaque dump, en cache
+<install>\dsi\identities.txt         identité de chaque console, en cache
 <install>\dsi\<titleid>\title.tmd    les métadonnées retenues
 <install>\dsi\<titleid>\reference.txt  le parcours d'une install fraîche
 <install>\dsi\<titleid>\state\       les fichiers qui en diffèrent — LA sauvegarde
 ```
 
-Au lancement d'un DSiWare : résoudre la région → choisir la NAND → **la configurer si c'est sa
-première utilisation, et annuler le lancement** → capturer la session précédente →
-reconstruire `work.bin` → installer le titre → parcourir (c'est la référence) → réappliquer l'état →
-pointer `DSi.NANDPath` et `Emu.ConsoleType = 1`, `DirectBoot = false`.
+Au lancement d'un DSiWare, **deux questions au lieu d'une**. D'abord : *la sauvegarde de ce titre
+nomme-t-elle une console ?* Si oui c'est elle, et rien d'autre n'a voix au chapitre — reconstruite
+depuis le dump si elle n'est pas là. Sinon seulement : résoudre la région → choisir le dump → prendre
+sa console si elle existe, **sinon proposer d'en construire une et annuler le lancement**. Puis :
+capturer la session précédente → reconstruire `work.bin` → installer le titre → parcourir (c'est la
+référence) → réappliquer l'état → pointer `DSi.NANDPath` et `Emu.ConsoleType = 1`,
+`DirectBoot = false`.
 
 Relancer le même jeu depuis la même ROM sur la même NAND **réutilise l'image telle quelle** — cache
 de un, l'éviction étant la reconstruction suivante.

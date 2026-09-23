@@ -522,14 +522,16 @@ is never allowed to overrule the header.
 keep the dump of their own console next to a clean stock image. Directory order is not an ordering -
 it is whatever the filesystem hands back, and it moves when files are added or renamed - and every
 save is the difference against one particular dump, so a choice that wanders replays saves onto a
-console they never came from. The rule: a dump that has been **set up** (below) wins, because that is
-the one the saves came from; failing that, the name, ordinally. The log says which one was taken
-whenever there is more than one to take.
+console they never came from. The rule: a dump that **already has a configured console** (below)
+wins, because that is the one the saves came from; failing that, the name, ordinally. It is one
+`File.Exists` - nothing is opened to decide. The log says which one was taken whenever there is more
+than one to take.
 
 If the NAND for a game's region is not there, a window says so and offers to open the folder. This
 plugin brings its own windows because the LaunchBox SDK has no message API of any kind - no
 `ShowMessage`, nothing - so the alternative was a line in a log file nobody reads when a game fails to
-start. There are three of them, and the other two are below.
+start. There are four subjects: this one, the two that build a console, and one for a save whose
+console has gone missing. All four are below.
 
 **DSiWare runs on one working NAND, rebuilt at every launch.** A DSiWare title is not a cartridge:
 melonDS boots it out of the NAND, and its save lives there too, at
@@ -550,11 +552,23 @@ that rebuilt image    -> the NAND actually played  5 files, 80 KB:
 So the difference is the save, and the image is scratch:
 
 ```
-..\RetroArch\system\                     yours - BIOS, firmware, and a NAND per region you own
-<install>\dsi\work.bin                   ours - the working image, rebuilt every launch
-<install>\dsi\tmd\0003000412345678.tmd   the title's metadata, once per machine
-<install>\dsi\0003000412345678\state\    the files that differ - tens of kilobytes
+..\RetroArch\system\                     YOURS - BIOS, firmware, and a NAND per region you own
+    DSi_Nand_USA_1.4.5.bin                 and it is never written to, by anything here
+
+<install>\dsi\                           OURS - everything this plugin fabricates
+    DSi_Nand_USA_1.4.5.bin                 the CONSOLE built from that dump - same file name
+    DSi_Nand_USA_1.4.5.bin.recipe.zip      how to rebuild it from the dump alone
+    DSi_Nand_USA_1.4.5.bin.recipe.txt      which dump, which identity, which region
+    bases\<identity>.bin                   a console REBUILT for a save that asked for it
+    work.bin                               the working image, rebuilt every launch
+    tmd\0003000412345678.tmd               the title's metadata, once per machine
+    0003000412345678\state\                the files that differ - tens of kilobytes
 ```
+
+**The name is the link, and that is the whole mechanism.** `dsi\<the dump's file name>` exists means
+that dump has been set up and this is its console - one `File.Exists`, no hash, no index - and since a
+dump has exactly one console, "which console" is never asked. `bases\` holds only **rebuilds**, for
+the case where the identity written in a save matches nothing on disk.
 
 **480 MB for the whole library instead of 240 MB per game**, and an old per-title NAND found on disk
 is turned into its state and deleted on the next launch of that game - nothing is removed until the
@@ -566,50 +580,45 @@ about a quarter of a second, measured, and 240 MB written for nothing. So a laun
 from the same ROM uses the image as it stands. Launching anything else rebuilds over it, which is the
 eviction: there is only ever one.
 
-**A NAND is set up once, and then never touched again.** This falls straight out of the paragraphs
-above: a save is the *difference* between your dump and the image the game ran on, so every saved
-difference was measured against one particular dump and is replayed onto a rebuild of it. Change that
-dump afterwards and the differences still apply cleanly - to a console that no longer exists. Nothing
-crashes; the saves just stop meaning anything.
+**A console has to be set up, and your dump is not where that happens.** A NAND out of a real
+console carries that console's name, language, birthday and colour; one from anywhere else carries a
+stranger's, or an unfinished welcome sequence the DSi menu insists on completing. Completing it
+**writes into the image** - and every DSiWare save afterwards is a difference measured against that
+image, so it then has to stay exactly as it is forever.
 
-And a fresh dump does need setting up once. A NAND out of a real console carries that console's name,
-language, birthday and colour, and one from anywhere else carries a stranger's or an unfinished
-welcome sequence the DSi menu insists on completing. Completing it **writes into the NAND**. You
-cannot have both a configured console and an untouched base image unless the configuring happens
-first, deliberately, before any save exists.
+Both facts are true at once, and the only way to hold them together is for the image that gets
+written into to be **ours**. So the dump is copied to `dsi\<its own name>` and melonDS is pointed at
+the copy. The dump is read and never opened for writing - by this or by anything downstream, since
+the working image is itself a copy.
 
-So the first time a dump is used, a window says so, and offers to do it now:
+This is the second arrangement. The first configured the dump in place and kept a pristine copy as
+`<dump>.lock` to repair it afterwards, which meant the folder where somebody keeps pristine dumps held
+one that was not, under the name saying it was. The `.lock`, the `.bak`, the three-state machine read
+off them and the "never touch this file again" warning all existed to manage that damage; none of them
+survived the damage not being done. Both suffixes are still refused by the NAND scan, because a 240 MB
+leftover would otherwise pass the size gate on somebody's disk today.
 
-```
-dsinand.bin            the dump, and from then on it must not change
-dsinand.bin.bak        a copy, made before melonDS opens
-dsinand.bin.lock       that same copy, renamed once you say the setup worked
-```
-
-melonDS opens on the DSi menu, on that NAND and no ROM - `ConsoleType = 1` with `DirectBoot = false`
-boots the firmware, and in DSi mode the firmware *is* the menu held in the NAND. Set the console up,
-quit melonDS, and a second window asks whether it worked. Yes renames the copy to `.lock`; no puts the
-copy back exactly as it was. The game you launched does not start that time - launch it again once the
+So the first time a dump is used, a window says so, and offers to build one now. melonDS opens on the
+DSi menu, on the copy and no ROM - `ConsoleType = 1` with `DirectBoot = false` boots the firmware, and
+in DSi mode the firmware *is* the menu held in the NAND. Set the console up, quit melonDS, and a
+second window asks whether it worked. Yes writes the recipe beside it; no deletes the copy, and there
+is nothing to put back. The game you launched does not start that time - launch it again once the
 console is ready.
 
-**The lock is the copy**, not an empty flag. One file move instead of a delete and a create, and what
-is left behind is the image as it was before anybody touched it, so the one irreversible step in this
-flow is reversible after all. It costs 240 MB per dump; making it empty is a one-line change if that
-trade stops being worth it. Either file is ignored by the scan, by name, so a `.lock` of exactly the
-right size is never mistaken for a second NAND.
-
-If melonDS is closed without answering, the `.bak` is left where it is and the next launch offers all
-three ways out: lock it as it stands, open melonDS again, or put the copy back.
+**Declining costs nothing.** Say *Not now* and the game runs on the dump exactly as it is, which is
+what happened before any of this existed: the working image is a copy, so the dump is still never
+written to. Those saves carry no recipe, which the rest of the plugin already treats as "no opinion",
+and the question is asked again next time.
 
 **None of this happens without a window.** Every step is gated on the dialog being available - with
 windows suppressed the flow declines, says so in the log, and uses the dump as it is. Copying 240 MB
 and starting an emulator nobody asked for would be a far worse failure than an unconfigured console.
 
-**What the lock does NOT do is notice that a dump changed anyway.** It says "this one has been through
-its setup" and nothing more; it does not hash the image or compare it later. A dump that was in use
-before this existed has no `.lock`, so it is asked about once - answering *Not now* keeps using it and
-asks again next time, and setting it up properly settles it. There is no way to tell, from a file
-alone, what somebody has already done to it.
+**And the space this takes is bounded by your configurations, not by your library:** one console per
+dump you set up - in practice one, at most one per region - plus one rebuild per *previous*
+configuration still claimed by a save, which is zero until you reconfigure something. Reconfiguring
+once does not make an image per game: every save from before names the same old console, so they all
+share one rebuild. `bases\` is a cache and can be deleted at any time; the recipes make it again.
 
 **A save carries the recipe for its own console, so losing that console is survivable.** This is what
 the lock could not do. A DSiWare save is a delta against ONE base image, so if that image goes - a
@@ -619,13 +628,13 @@ Silently: nothing errors, they simply no longer apply.
 But a console is only three things, and just one of them is irreplaceable:
 
 ```
-the original   a pristine dump, kept as <nand>.lock      the user has it, and it never changes
-the recipe     original -> initial, a few dozen KB       we can compute it
-the initial    the original plus its console setup       DERIVED: rebuildable from the two
+the dump       a pristine NAND, in the user's folder     the user has it, and it never changes
+the recipe     dump -> console, a few dozen KB           we can compute it
+the console    the dump plus its console setup           DERIVED: rebuildable from the two
 ```
 
-So at the moment the lock is made - the one moment both images exist side by side - the difference
-between them is written down as `<nand>.recipe.zip`, and every save captured afterwards takes a copy.
+So at the moment the console is built - the one moment both images exist side by side - the difference
+between them is written down as `<console>.recipe.zip`, and every save captured afterwards takes a copy.
 A save then carries everything needed to rebuild the console it belongs to from a dump anybody can
 re-obtain.
 
@@ -649,15 +658,23 @@ recognised as the same, where a random id would have forced a pointless rebuild.
 
 At launch it is one string comparison. When it does not match, the original is looked for among the
 dumps - by name, then by size, then by hash - the console is rebuilt into `dsi\bases\<identity>.bin`,
-**and the rebuild is checked** against the identity it was supposed to produce. A rebuilt base counts
-as locked by construction; offering it for setup would change its identity and break the very save
-being recovered.
+**and the rebuild is checked** against the identity it was supposed to produce. A rebuild is
+configured by construction and lives in a folder of ours, so it is never offered for setup: doing so
+would change its identity and break the very save being recovered.
 
-**When the original cannot be found, the launch is refused**, with a window naming the file, its size
-and its sha256. Starting would begin a new game on top of an existing save, and the next capture would
-write that over it. What no recipe can do is cross consoles: a NAND is encrypted with its own
-console's id, so "the same original" means literally the same file - which the window says rather than
-leaving somebody to discover it.
+**When the dump cannot be found either, the choice is put to you.** A window names the file, its size
+and its sha256 - put it back anywhere in your BIOS folder and the save returns by itself, since it is
+found by contents and not by name. Or start a new game on a console of the **same region**, because a
+DSi menu refuses a title from another one and offering anything else would be no offer at all.
+
+**Starting again does not delete what was there.** That is the trap in this option: the next capture
+would write the new session straight over the old state. So before a fresh game begins, the old state
+is moved aside to `state.orphan-<console>`, and a log line says so. It applies again the day that dump
+comes back. Without it, "start a new game" would quietly mean "delete the one you had".
+
+What no recipe can do is cross consoles: a NAND is encrypted with its own console's id, so "the same
+dump" means literally the same file - which the window says, rather than leaving somebody to discover
+it.
 
 A save made before any of this existed carries no record, and gets no opinion: the current base is
 used, exactly as before, and the recipe is attached at the next capture. The same rule `work.sum`
@@ -705,7 +722,7 @@ not apply to a reference regenerated later; a file delta has neither problem.
 **Only what is inside the filesystem is captured**, and measured, that is everything that moves: the
 region below `0x10EE00` - the MBR, the stage2 loader and the "DSi eMMC CID/CPU" footer holding the
 console identity the decryption key comes from - did not change in one byte across a real session. It
-comes from `base.bin`, and every rebuild starts from `base.bin`.
+comes from the console the title was built on, and every rebuild starts from that same image.
 
 **Without the native library none of this is possible** - nothing can be installed, walked or
 captured - so that case keeps a NAND of its own per title, which is where a manual import through

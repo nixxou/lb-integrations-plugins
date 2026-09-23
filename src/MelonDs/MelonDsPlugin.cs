@@ -735,7 +735,7 @@ namespace LbIntegrations.MelonDs
             int wanted = 0;
             if (rom.IsDSi)
             {
-                RestoreBaseNand(layout, rom);
+                PointCartridgeAtScratch(layout, rom);
                 var missing = MissingDsiFiles(layout);
                 if (missing.Count == 0) wanted = 1;
                 else
@@ -800,30 +800,59 @@ namespace LbIntegrations.MelonDs
                 return true;
             }
 
-            // FIRST USE OF THIS DUMP, before anything is built on it. Setting a console up writes
-            // into the image, and from here on every saved difference is measured against it - so
-            // it has to happen first, once, deliberately. See MelonDsNandSetup.
+            // ── WHICH CONSOLE DOES THIS GAME RUN ON ────────────────────────────────
             //
-            // Only a dump chosen by region goes through this. A base.bin left over from the previous
-            // layout has a history nobody wrote down, and asking about it would mean asking somebody
-            // to vouch for a file they may not remember putting there.
-            if (dump != null && MelonDsNandSetup.Run(layout, dump))
+            // Two questions, and the first one settles most launches on its own.
+            //
+            // Q0  Does this title's save name a console?  It is a delta against ONE console, so
+            //     neither the region nor any file name gets a say - the save is the authority.
+            //     Rebuilt from the user's dump when it is not on disk.
+            // Q1..Q3  Otherwise: which regions, which dumps, and has one of them a console already?
+            //     dsi\<the dump's name> exists, and that is the whole test.
+            // Q4  None anywhere: offer to build one.
+
+            var wanted = BaseForSave(layout, rom, bios7, out var noBase);
+            if (noBase != null)
             {
-                Log.Info("melonDS was opened to set up " + System.IO.Path.GetFileName(dump.Path)
-                         + ", so this launch of " + rom.AssetName + " is dropped. Launch it again "
-                         + "once the console is ready.");
-                return false;
+                // The console is gone AND its dump with it. Refusing outright would be correct and
+                // closed: somebody who lost a dump and just wants to play again has no way out. So
+                // the choice is put to them - with the file named, so they can go and find it.
+                var instead = FreshStartOn(layout, noBase);
+                if (!OfferFreshStart(layout, rom, noBase, instead)) return false;
+
+                MelonDsDsi.ParkState(layout, rom.TitleId, noBase.Identity);
+                source = instead;
             }
 
-            // THE BASE THIS SAVE WAS MADE ON. A save is a delta against one particular console, so
-            // if that console is gone - a new machine, a reconfigured NAND, a deleted file - the save
-            // means nothing. It carries a recipe to rebuild its own base from the user's pristine
-            // dump; this is where that is used. See MelonDsBase.
-            source = BaseForSave(layout, rom, source, bios7, out var noBase);
-            if (source == null)
+            if (wanted != null)
             {
-                ReportLostBase(layout, rom, noBase);
-                return false;
+                source = wanted;                      // Q0 answered; nothing else has a say
+            }
+            else if (dump != null)
+            {
+                var console = MelonDsBase.ConsoleFor(layout, dump.Path);
+                if (console == null)
+                {
+                    // Q4. Building one opens melonDS on the DSi menu, so this launch is dropped and
+                    // the user relaunches. Declining leaves source on the dump itself, which is read
+                    // and copied but never written to - the working image is always a copy.
+                    if (MelonDsNandSetup.Run(layout, dump, bios7))
+                    {
+                        Log.Info("melonDS was opened to set a console up for "
+                                 + System.IO.Path.GetFileName(dump.Path) + ", so this launch of "
+                                 + rom.AssetName + " is dropped. Launch it again once it is ready.");
+                        return false;
+                    }
+                    console = MelonDsBase.ConsoleFor(layout, dump.Path);
+                }
+                else if (!MelonDsBase.Described(console))
+                {
+                    // A console whose setup was interrupted between the copy and the recipe. The dump
+                    // it came from is right here, so describe it now rather than leave every save it
+                    // ever carries without a way home.
+                    MelonDsNandSetup.Describe(layout, console, dump.Path, bios7, dump.Region);
+                }
+                if (console != null) source = console;
             }
 
             var configured = MelonDsToml.Read(layout.ConfigFile, MelonDsPaths.DSiTable, "NANDPath");
@@ -861,9 +890,14 @@ namespace LbIntegrations.MelonDs
                 return true;
             }
 
-            if (!reused && dump != null)
-                Log.Info(rom.AssetName + ": built on the " + MelonDsRegion.Name(dump.Region)
-                         + " NAND, " + System.IO.Path.GetFileName(dump.Path));
+            // NAME THE IMAGE ACTUALLY USED. This used to name dump.Path, which is right only
+            // when the console came from the dump chosen by region - on a recovery it named the file
+            // that was NOT used, which is the one launch where somebody reads the log.
+            if (!reused)
+                Log.Info(rom.AssetName + ": built on " + System.IO.Path.GetFileName(source)
+                         + (wanted != null ? ", the console its save was made on"
+                          : dump != null ? ", the " + MelonDsRegion.Name(dump.Region) + " console"
+                          : ""));
 
             // Only when it differs, like SetConsoleType. A relaunch of the same title should write
             // nothing at all - and a write attempted while melonDS is still closing would be refused
@@ -1089,59 +1123,77 @@ namespace LbIntegrations.MelonDs
         /// NO RECORD MEANS NO OPINION. A save made before any of this existed carries nothing, and
         /// guessing that the current base is wrong would break something that works. The same rule
         /// work.sum follows.</summary>
-        private static string BaseForSave(MelonDsLayout layout, NdsRom rom, string chosen,
-                                          string bios7, out BaseRecord wanted)
+        private static string BaseForSave(MelonDsLayout layout, NdsRom rom, string bios7,
+                                          out BaseRecord lost)
         {
-            wanted = null;
+            lost = null;
             try
             {
-                // Catch-up, once: a NAND locked before this existed still has both images beside each
-                // other, so its recipe can be written now rather than never.
-                if (!MelonDsBase.Described(chosen)) MelonDsNandSetup.Describe(layout, chosen);
-
                 var stateDir = MelonDsDsi.StateDirFor(layout, rom.TitleId);
-                if (stateDir == null) return chosen;
+                if (stateDir == null) return null;
 
                 var record = MelonDsBase.ReadRecord(
                     System.IO.Path.Combine(stateDir, MelonDsBase.RecordInState));
-                if (record == null) return chosen;          // no record, no opinion
+                if (record == null) return null;            // no record, no opinion
 
                 var recipe = System.IO.Path.Combine(stateDir, MelonDsBase.RecipeInState);
-                var paths = MelonDsBase.PathsIn(recipe);
-                if (paths.Count == 0) return chosen;
 
-                var have = MelonDsBase.CachedIdentity(layout, chosen, bios7, paths);
-                if (have == null) return chosen;            // could not look; do not claim a mismatch
-                if (string.Equals(have, record.Identity, StringComparison.Ordinal)) return chosen;
+                // Already on disk, under the name it was built from or as a rebuild: use it.
+                var here = ConsoleWithIdentity(layout, record.Identity, bios7, recipe);
+                if (here != null) return here;
 
-                Log.Info(rom.AssetName + "'s save was made on console " + MelonDsBase.Short(record.Identity)
-                         + ", and " + System.IO.Path.GetFileName(chosen) + " is console "
-                         + MelonDsBase.Short(have) + ". Looking for the console the save belongs to.");
-
-                // Already rebuilt once: use it and say nothing more.
-                var archive = MelonDsBase.ArchiveFor(layout, record.Identity);
-                if (archive != null && File.Exists(archive))
-                {
-                    Log.Verbose("reusing the rebuilt console " + MelonDsBase.Short(record.Identity));
-                    return archive;
-                }
+                Log.Info(rom.AssetName + "'s save was made on console "
+                         + MelonDsBase.Short(record.Identity) + ", which is not here. Looking for the "
+                         + "dump it was built from.");
 
                 var original = MelonDsBase.FindOriginal(Dumps(layout), record);
-                if (original == null) { wanted = record; return null; }
+                if (original == null) { lost = record; return null; }
 
+                var archive = MelonDsBase.ArchiveFor(layout, record.Identity);
                 if (MelonDsBase.RebuildFrom(original, recipe, archive, bios7, record.Identity,
-                                            out var error))
+                                            record.Region, out var error))
                     return archive;
 
                 Log.Warn("could not rebuild the console this save belongs to - " + error);
-                wanted = record;
+                lost = record;
                 return null;
             }
             catch (Exception ex)
             {
-                Log.Warn("could not work out which base this save belongs to", ex);
-                return chosen;                              // never fail a launch over this
+                Log.Warn("could not work out which console this save belongs to", ex);
+                return null;                                // never fail a launch over this
             }
+        }
+
+        /// <summary>An image on disk whose identity is the one asked for: a rebuild kept in bases\,
+        /// or a console named after its dump. Null when none of them is.</summary>
+        private static string ConsoleWithIdentity(MelonDsLayout layout, string identity, string bios7,
+                                                  string recipe)
+        {
+            try
+            {
+                var archive = MelonDsBase.ArchiveFor(layout, identity);
+                if (archive != null && File.Exists(archive))
+                {
+                    Log.Verbose("reusing the rebuilt console " + MelonDsBase.Short(identity));
+                    return archive;
+                }
+
+                var paths = MelonDsBase.PathsIn(recipe);
+                if (paths.Count == 0) return null;
+
+                var dir = MelonDsDsi.DsiDir(layout);
+                if (dir == null || !Directory.Exists(dir)) return null;
+
+                foreach (var image in Directory.GetFiles(dir))
+                {
+                    if (!File.Exists(MelonDsBase.RecordFor(image))) continue;
+                    var have = MelonDsBase.CachedIdentity(layout, image, bios7, paths);
+                    if (string.Equals(have, identity, StringComparison.Ordinal)) return image;
+                }
+                return null;
+            }
+            catch (Exception ex) { Log.Verbose("could not look for a console - " + ex.Message); return null; }
         }
 
         /// <summary>Every file that could be the pristine dump: whatever the NAND sweep already
@@ -1160,6 +1212,64 @@ namespace LbIntegrations.MelonDs
             }
             catch (Exception ex) { Log.Verbose("could not list the dumps - " + ex.Message); }
             return seen;
+        }
+
+        /// <summary>A console of the same region to start a fresh game on, or null when there is
+        /// not even that. Same region because a DSi menu refuses a title from another one - offering
+        /// a console that cannot launch the game would be no offer at all.</summary>
+        private static string FreshStartOn(MelonDsLayout layout, BaseRecord lost)
+        {
+            try
+            {
+                var dir = MelonDsDsi.DsiDir(layout);
+                if (dir == null || !Directory.Exists(dir) || lost?.Region == null) return null;
+
+                foreach (var image in Directory.GetFiles(dir))
+                {
+                    var record = MelonDsBase.ReadRecord(MelonDsBase.RecordFor(image));
+                    if (record == null) continue;
+                    if (string.Equals(record.Region, lost.Region, StringComparison.OrdinalIgnoreCase))
+                        return image;
+                }
+                return null;
+            }
+            catch (Exception ex) { Log.Verbose("could not look for a substitute console - " + ex.Message); return null; }
+        }
+
+        /// <summary>Put the choice to the user. Answers true when they chose to start again on
+        /// <paramref name="instead"/>, false when the launch should be abandoned.</summary>
+        private static bool OfferFreshStart(MelonDsLayout layout, NdsRom rom, BaseRecord lost,
+                                            string instead)
+        {
+            ReportLostBase(layout, rom, lost);
+            if (instead == null) return false;
+
+            var lines = new List<string>
+            {
+                (rom.AssetName ?? "This game") + " has a save, but the console it was made on is",
+                "gone, and so is the dump it was built from.",
+                "",
+                "    wanted: " + (lost?.OriginalName ?? "(unknown)"),
+                "    " + (lost?.OriginalSize ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + " bytes, sha256 " + MelonDsBase.Short(lost?.OriginalSha256),
+                "",
+                "Put that file back in your BIOS folder and the save returns by itself - it is",
+                "found by its contents, so its name does not matter.",
+                "",
+                "Or start a new game on " + System.IO.Path.GetFileName(instead) + ", which is a",
+                "console of the same region. YOUR OLD SAVE IS NOT DELETED: it is set aside, and",
+                "it comes back the day that dump does.",
+            };
+
+            var answer = MelonDsDialog.Ask("melonDS - this save's console is missing",
+                                           string.Join(Environment.NewLine, lines),
+                                           new[] { "Don't start - I'll find the file",
+                                                   "Start a new game" });
+            if (answer != 1) return false;
+
+            Log.Info(rom.AssetName + ": starting fresh on " + System.IO.Path.GetFileName(instead)
+                     + " at the user's request; the old save is set aside, not deleted");
+            return true;
         }
 
         /// <summary>Say, in the log AND on screen, that a save cannot be applied because the console
@@ -1295,34 +1405,40 @@ namespace LbIntegrations.MelonDs
             return MelonDsDsi.TakeReference(layout, session, rom.TitleId);
         }
 
-        /// <summary>Point a DSi CARTRIDGE back at the base NAND.
+        /// <summary>Put a DSi CARTRIDGE on the scratch image, never on a console.
         ///
-        /// The per-title NANDs exist for DSiWare, which lives inside them. A cartridge does not: it
-        /// only needs a NAND for the system settings and firmware, and running it against the copy
-        /// belonging to whichever DSiWare was launched last would write those settings into that
-        /// copy instead of into the user's own dump.
+        /// A cartridge does not live in a NAND the way DSiWare does - it carries its own save and
+        /// only needs a console for the settings and the firmware. But it WRITES those settings,
+        /// and since this folder started holding configured consoles, "whatever NAND is currently
+        /// selected" can be one: a cartridge session on it would change its identity and orphan
+        /// every DSiWare save made on it. So the cartridge is handed a copy instead.
         ///
-        /// Only a path of OURS is moved - anything the user chose is his answer.</summary>
-        private static void RestoreBaseNand(MelonDsLayout layout, NdsRom rom)
+        /// Only a path of OURS is moved - anything the user chose himself is his answer.</summary>
+        private static void PointCartridgeAtScratch(MelonDsLayout layout, NdsRom rom)
         {
             try
             {
                 var current = AbsoluteTo(layout.ConfigDir, ValueOf(layout, "NANDPath"));
                 if (!MelonDsDsi.IsOurs(layout, current)) return;
 
-                var basePath = MelonDsDsi.BasePath(layout);
-                if (basePath == null || !File.Exists(basePath)) return;
-                if (string.Equals(current, basePath, StringComparison.OrdinalIgnoreCase)) return;
+                var work = MelonDsDsi.HandToCartridge(layout, current, out var why);
+                if (work == null)
+                {
+                    Log.Verbose("left " + rom.AssetName + " on the NAND it had - " + why);
+                    return;
+                }
+                if (string.Equals(current, work, StringComparison.OrdinalIgnoreCase)) return;
 
                 var error = MelonDsToml.Write(layout.ConfigFile, MelonDsPaths.DSiTable,
                     new Dictionary<string, string>(StringComparer.Ordinal)
                     {
-                        ["NANDPath"] = MelonDsToml.Text(basePath),
+                        ["NANDPath"] = MelonDsToml.Text(work),
                     }, force: true);
-                if (error != null) { Log.Warn("base NAND not restored: " + error); return; }
-                Log.Info(rom.AssetName + " is a cartridge, not DSiWare - back to the base NAND");
+                if (error != null) { Log.Warn("the cartridge's NAND was not set: " + error); return; }
+                Log.Info(rom.AssetName + " is a cartridge, not DSiWare - it runs on the working "
+                         + "image, so the console it was copied from is left exactly as it is");
             }
-            catch (Exception ex) { Log.Warn("could not restore the base NAND", ex); }
+            catch (Exception ex) { Log.Warn("could not give the cartridge a NAND of its own", ex); }
         }
 
         /// <summary>One key of the [DSi] table, as the configuration spells it.</summary>
