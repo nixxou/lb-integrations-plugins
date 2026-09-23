@@ -1380,6 +1380,24 @@ namespace LbIntegrations.Probe
                         File.ReadAllText(Path.Combine(state, "0"))
                         == "moved again, while another game launches");
 
+            // THE CARRIED RECIPE IS PART OF WHAT THE RECEIPT COVERS, and that is what makes the
+            // order of the two writes matter inside CaptureWork. Capture replaces the state folder
+            // wholesale, so base.zip and base.txt are written fresh after every capture; a receipt
+            // taken before them describes a folder that no longer exists, and the next launch reads
+            // that as "the save changed outside melonDS" and throws the working image away.
+            // Measured on a real session before this assertion existed.
+            File.WriteAllText(Path.Combine(state, "0"), "the save as melonDS left it");
+            File.WriteAllText(Path.Combine(state, "base.zip"), "the recipe");
+            File.WriteAllText(Path.Combine(state, "base.txt"), "identity	abc");
+            File.WriteAllText(work, "not really an image");
+            remember.Invoke(null, new object[] { layout, titleId, rom, "some-nand.bin" });
+            ok &= Check("a receipt taken after the recipe was carried in agrees with the folder",
+                        !(bool)moved.Invoke(null, new object[] { layout, titleId }));
+
+            File.Delete(Path.Combine(state, "base.zip"));
+            ok &= Check("and losing the recipe counts as the save having changed",
+                        (bool)moved.Invoke(null, new object[] { layout, titleId }));
+
             // No receipt at all - an installation from before this existed - is not an opinion.
             File.WriteAllText(work, "not really an image");
             File.WriteAllText(marker, titleId + "\tx\t1\t2\tnand.bin");

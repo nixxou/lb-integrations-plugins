@@ -338,13 +338,20 @@ namespace LbIntegrations.MelonDs
                                                 TitleDir(layout, titleId), out var why);
                 if (kept < 0) { Log.Verbose("could not capture " + titleId + " - " + why); return; }
 
+                // The save takes a copy of the recipe for the base it was made on, so it can rebuild
+                // that base later from the user's pristine dump. Two small files; the base they
+                // describe is named in the marker, fifth field.
+                //
+                // BEFORE THE RECEIPT, AND THAT ORDER IS LOAD-BEARING. The receipt is a fingerprint of
+                // the whole state folder, and Capture replaces that folder wholesale - so these two
+                // files are written fresh after every capture. Writing the receipt first described a
+                // folder that no longer existed a millisecond later, and the next launch read that as
+                // "the save changed outside melonDS (2 added)" and threw the working image away.
+                // Measured on a real session, on the first launch after this was added.
+                CarryBase(layout, titleId);
+
                 // The two are in step again, so the receipt is rewritten to say so.
                 MelonDsWorkSum.Write(layout, titleId);
-
-                // And the save takes a copy of the recipe for the base it was made on, so it can
-                // rebuild that base later from the user's pristine dump. Two small files; the base
-                // they describe is named in the marker, fifth field.
-                CarryBase(layout, titleId);
 
                 Log.Verbose("captured " + kept + " file(s) of state for " + titleId);
             }
