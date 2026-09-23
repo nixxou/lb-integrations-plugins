@@ -732,14 +732,13 @@ namespace LbIntegrations.MelonDs
                     removed++;
                 }
 
-                // Or the save comes straight back: the image still holds the title, and the next
-                // question about this game's saves would capture it out again. And once the marker
-                // is gone nothing will ever read those 240 MB - the next launch rebuilds over them -
-                // so leaving them would leave the deleted save lying there in full.
-                bool held = string.Equals(WorkTitle(layout), titleId, StringComparison.OrdinalIgnoreCase);
-                DropWorkIfItHolds(layout, titleId, "with the save");
-                if (held) removed++;
-
+                // THE IMAGE IS LEFT WHERE IT IS, and this used to throw it away. Two independent
+                // things now stop it putting the save back, and neither of them is this method's to
+                // remember: the reference walk went with the folder, and nothing can be captured
+                // without one; and the receipt no longer matches a state folder that is not there,
+                // so the launch that follows drops the image before deciding anything. See
+                // MelonDsWorkSum. An image nothing can read is scratch, and the next launch of any
+                // DSiWare rebuilds over it.
                 Log.Info("deleted the DSiWare save for " + titleId
                          + (removed == 0 ? " - there was nothing left to delete" : ""));
                 return true;
@@ -787,10 +786,19 @@ namespace LbIntegrations.MelonDs
                 }
                 finally { try { if (Directory.Exists(building)) Directory.Delete(building, true); } catch { } }
 
-                // AND THE WORKING IMAGE GOES, when it is this title's. It used to have the restored
-                // state applied onto it instead, which looked like the same thing and was not - see
-                // DropWorkIfItHolds. The next launch rebuilds and applies this state onto a fresh
-                // install, which is the only surface it describes.
+                // AND THE WORKING IMAGE GOES, when it is this title's.
+                //
+                // KEPT DELIBERATELY, although the receipt would normally catch this too. The receipt
+                // exists to notice writers who do not know about us; a restore is OUR OWN doing, and
+                // laundering something we know first-hand through a heuristic is a worse answer than
+                // acting on it. It also covers the one case the receipt cannot: an installation
+                // upgraded from before receipts existed has none yet, so "has the save moved" has no
+                // answer until the next capture writes one - and a restore performed inside that
+                // window would otherwise be captured over and lost.
+                //
+                // Unlike a delete, nothing else would stop it: the reference walk survives a
+                // restore, so the capture that precedes a rebuild would run and put the played
+                // session back over what was just restored.
                 DropWorkIfItHolds(layout, titleId, "rather than restore onto a played image");
                 return true;
             }

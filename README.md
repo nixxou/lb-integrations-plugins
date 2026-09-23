@@ -707,6 +707,14 @@ goes ahead; different, and somebody else got there first, so the image is droppe
 and the next launch rebuilds around the save that arrived. An image is always rebuildable in a
 quarter of a second; a save that came from elsewhere is not.
 
+A restore still throws the image away itself rather than leaning on this, which is the one place
+that duplication is deliberate. The receipt exists to notice writers who do not know about us; a
+restore is *our own* doing, and laundering something known first-hand through a heuristic is a worse
+answer than acting on it. It also covers what the receipt cannot: an installation upgraded from
+before receipts existed has none yet, so "has the save moved" has no answer until the next capture
+writes one - and unlike a delete, nothing else would stop the capture, since the reference walk
+survives a restore.
+
 **The check runs before anything decides whether to reuse, and it DROPS the image rather than merely
 refusing it.** That ordering is the whole point and it is easy to get subtly wrong: a launch that
 does not reuse goes on to *capture* the image first, so an image that was only refused would still
@@ -762,10 +770,13 @@ So the whole title folder goes, not just the state inside it - the reference wal
 `.tmd` are not saves and keeping them would cost nothing, but a folder named after the game still
 sitting there after somebody deleted that game's save reads as a delete that did not work. Both are
 recovered on the next launch, the metadata from the carried index, which is in the assembly and needs
-no network. The working image goes too when it was this title's: once its marker is forgotten nothing
-will ever read those 240 MB again, so what would be left is a quarter of a gigabyte still physically
-holding the save just deleted. An image holding some *other* title is left alone - it is that game's
-unread session, and the save being deleted is not its business.
+no network.
+
+The working image is **left where it is**, and used to be thrown away here. Two independent things
+now stop it putting the save back, and neither of them is the delete's to remember: the reference
+walk went with the folder, and nothing can be captured without one; and the receipt below no longer
+matches a state folder that is not there, so the next launch drops the image before deciding
+anything. An image nothing can read is scratch, and the next DSiWare launch rebuilds over it.
 
 Deleting the per-title image also loses a title imported by hand through Manage DSi titles, which the
 log says out loud because it has to be done again. Refused while melonDS is running, since it will

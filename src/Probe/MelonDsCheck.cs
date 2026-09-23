@@ -1025,14 +1025,21 @@ namespace LbIntegrations.Probe
             ok &= Check("the delete is reported done", done);
             if (!done) Console.WriteLine("    it said: " + args[2]);
             ok &= Check("the state folder is gone", !Directory.Exists(state));
-            ok &= Check("the working image is forgotten, so nothing captures it back",
-                        !File.Exists(marker));
             ok &= Check("the per-title image goes too - there, it IS the save",
                         !File.Exists(legacy));
-            ok &= Check("and so do the 240 MB it held, which nothing would ever read again",
-                        !File.Exists(work));
+            ok &= Check("the working image is LEFT - it is scratch, and rebuilt over next launch",
+                        File.Exists(work));
             ok &= Check("nothing of this title is left behind at all",
                         !Directory.Exists(Path.Combine(dsi, titleId)));
+
+            // THE IMAGE IS LEFT, and that is safe for a reason worth asserting rather than assuming:
+            // the reference walk went with the folder, and nothing can be captured without one. So a
+            // capture that runs afterwards must not resurrect the save that was just deleted.
+            var capture = TypeIn("MelonDsDsi").GetMethod("CaptureWork",
+                              BindingFlags.Public | BindingFlags.Static);
+            capture.Invoke(null, new object[] { layout, null, null });
+            ok &= Check("and a capture afterwards cannot bring the save back",
+                        !Directory.Exists(state));
 
             // Again, with nothing left. A second delete is not an error - the row may be stale, and
             // answering "no" to a save that is already gone would be a failure about nothing.
