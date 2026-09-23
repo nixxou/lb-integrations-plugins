@@ -83,6 +83,7 @@ namespace LbIntegrations.Probe
                 ok &= DsiWareBackup(plugin, exe);
                 ok &= DsiWareRoundTrip(plugin, exe);
                 ok &= SaveChangedElsewhere(exe);
+                ok &= WhatASessionRemoved();
                 ok &= RegionCascade(romDir);
                 ok &= ArchiveFormats(exe, romDir);
                 ok &= CarriedIndex(exe, romDir);
@@ -1388,6 +1389,93 @@ namespace LbIntegrations.Probe
             foreach (var leftover in new[] { work, marker, sum, rom })
                 try { File.Delete(leftover); } catch { }
             return ok;
+        }
+
+        /// <summary>A session that DELETED something, which is the half of a delta that is easy to
+        /// leave out.
+        ///
+        /// A saved state describes how a console differs from a fresh install of the title, and
+        /// "differs" runs both ways: a file the install has and the console does not is as much a
+        /// difference as one whose contents changed. Record only the changes and a file the player
+        /// deleted comes back at the next rebuild, looking exactly like a save that did not take.
+        ///
+        /// The index carries both, and this is what its two line shapes mean:
+        ///
+        ///     F  &lt;flat name&gt;  0:/path      this file differs; here it is
+        ///     X  -            0:/path      this file was deleted
+        ///
+        /// Compare is exercised directly, on two walk files, because it is the whole of the decision
+        /// and it needs no NAND to make it.</summary>
+        private static bool WhatASessionRemoved()
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- what a session removed, not just what it changed");
+
+            var delta = TypeIn("MelonDsDelta");
+            var read = delta?.GetMethod("Read", BindingFlags.Public | BindingFlags.Static);
+            var compare = delta?.GetMethod("Compare", BindingFlags.Public | BindingFlags.Static);
+            if (read == null || compare == null)
+            { Console.WriteLine("    no MelonDsDelta.Read / Compare to call"); return false; }
+
+            string dir = Path.Combine(Path.GetTempPath(), "lbip-delta-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            try
+            {
+                // A fresh install: four files and a directory.
+                var fresh = Path.Combine(dir, "reference.txt");
+                File.WriteAllLines(fresh, new[]
+                {
+                    "D -	-	0:/shared1",
+                    "F 16384	aaaa	0:/shared1/TWLCFG0.dat",
+                    "F 16384	bbbb	0:/shared1/TWLCFG1.dat",
+                    "F 1024	cccc	0:/title/00030004/4b393945/data/public.sav",
+                    "F 512	dddd	0:/title/00030004/4b393945/data/banner.sav",
+                });
+
+                // What the console looks like after somebody played: one file changed, one added,
+                // and TWO gone - one the game deleted, one whose whole directory went with it.
+                var played = Path.Combine(dir, "walk.txt");
+                File.WriteAllLines(played, new[]
+                {
+                    "D -	-	0:/shared1",
+                    "F 16384	aaaa	0:/shared1/TWLCFG0.dat",
+                    "F 16384	ZZZZ	0:/shared1/TWLCFG1.dat",
+                    "F 2048	eeee	0:/title/00030004/4b393945/data/private.sav",
+                });
+
+                var reference = read.Invoke(null, new object[] { fresh });
+                var actual = read.Invoke(null, new object[] { played });
+
+                var args = new object[] { reference, actual, null, null };
+                compare.Invoke(null, args);
+                var differing = ((IEnumerable<string>)args[2]).ToList();
+                var removed = ((IEnumerable<string>)args[3]).ToList();
+
+                bool ok = true;
+                ok &= Check("a changed file is a difference",
+                            differing.Contains("0:/shared1/TWLCFG1.dat"));
+                ok &= Check("so is a file the session created",
+                            differing.Contains("0:/title/00030004/4b393945/data/private.sav"));
+                ok &= Check("an untouched file is not",
+                            !differing.Contains("0:/shared1/TWLCFG0.dat"));
+
+                ok &= Check("A DELETED FILE IS RECORDED, which is the half easy to leave out",
+                            removed.Contains("0:/title/00030004/4b393945/data/public.sav"));
+                ok &= Check("and so is a second one",
+                            removed.Contains("0:/title/00030004/4b393945/data/banner.sav"));
+                ok &= Check("exactly two removals, no more", removed.Count == 2);
+
+                ok &= Check("a directory is never carried - importing a file makes its path",
+                            !differing.Contains("0:/shared1") && !removed.Contains("0:/shared1"));
+
+                // The order matters for one reason only: two captures of the same console must
+                // produce the same index, or the host sees a save that moved when nothing did.
+                ok &= Check("both lists come back sorted",
+                            differing.SequenceEqual(differing.OrderBy(x => x, StringComparer.Ordinal))
+                            && removed.SequenceEqual(removed.OrderBy(x => x, StringComparer.Ordinal)));
+                return ok;
+            }
+            finally { try { Directory.Delete(dir, recursive: true); } catch { } }
         }
 
         /// <summary>Two dumps of one region, which is the case that silently breaks saves.

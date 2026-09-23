@@ -626,6 +626,20 @@ An earlier layout kept the user's dump as `dsi\base.bin` and built every title o
 one any more, but one found there is still accepted as a last resort, with a log line saying where
 region dumps go - an install that worked yesterday does not stop working today.
 
+**A deletion is a difference too, and it is recorded as one.** A state describes how a console
+differs from a fresh install of the title, and "differs" runs both ways: a file the install has and
+the console no longer does is as much a difference as one whose contents changed. So the index has
+two line shapes, and a restore replays both - putting files back, and taking files away:
+
+```
+F  <flat name>  0:/path      this file differs from the fresh install; here it is
+X  -            0:/path      this file was deleted, so delete it again on the rebuild
+```
+
+Without the second, a file the player deleted would come back at the next rebuild, looking exactly
+like a save that did not take. Directories are never carried: importing a file makes the path it
+needs.
+
 **Nothing decides which files matter.** The five above are what one measurement found; they are not a
 list the code carries. It walks the image, compares, and keeps what differs - a title writing
 somewhere nobody expected is captured because it differed, not because it was foreseen.

@@ -169,6 +169,14 @@ namespace LbIntegrations.MelonDs
 
                     File.WriteAllLines(Path.Combine(building, IndexName), index);
 
+                    // Said here rather than left to the caller's count, which is the number of files
+                    // WRITTEN. A session that only deleted things writes none, and would otherwise be
+                    // logged as having captured nothing at all - the one shape where "captured 0"
+                    // and "captured nothing" mean opposite things.
+                    if (removed.Count > 0)
+                        Log.Info(removed.Count + " file(s) the fresh install has were deleted in this "
+                                 + "session and are recorded as removals");
+
                     var old = stateDir + "." + Guid.NewGuid().ToString("N") + ".old";
                     if (Directory.Exists(stateDir)) Directory.Move(stateDir, old);
                     Directory.Move(building, stateDir);
@@ -201,7 +209,15 @@ namespace LbIntegrations.MelonDs
                     {
                         // Gone in the saved state, so it has to go here too - otherwise the fresh
                         // install's copy would come back as if the game had never deleted it.
-                        session.RemoveFile(parts[2], out _);
+                        //
+                        // AND A FAILURE HERE IS SAID OUT LOUD. It used to be swallowed, which made
+                        // the two halves of this loop disagree: a file that could not be put back
+                        // was reported, a file that could not be taken away was not - and the second
+                        // is the one the player notices, because something they deleted reappears.
+                        if (!session.RemoveFile(parts[2], out var whyNot))
+                            Log.Verbose("could not take " + parts[2] + " back out of the NAND - "
+                                        + whyNot + "; it was deleted in the saved state and will "
+                                        + "come back");
                         continue;
                     }
 
