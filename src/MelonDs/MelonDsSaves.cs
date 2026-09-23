@@ -29,9 +29,10 @@
 // title/<category>/<id>/data/public.sav (DSi_NAND.cpp:1077-1092), and the image is 240 MB of which a
 // few kilobytes are the save. Handing the image to the host would mean hashing all of it to draw a
 // freshness dot, and a vault copy of 240 MB per backup. So the save is extracted beside the NAND and
-// THAT is what is listed - a plain file, like the other two - while the NAND stays the truth: a
-// restore goes back through it, and a deletion is refused because there is nothing honest to delete.
-// See MelonDsDsi.RefreshSave.
+// THAT is what is listed - the state FOLDER beside the image, not the image - while the NAND stays
+// the truth: a restore goes back through it, and a deletion throws the folder away and forgets the
+// working image, so the next launch rebuilds a console that has never played this title.
+// See MelonDsDsi.RefreshSave and MelonDsDsi.DropState.
 
 using System;
 using System.Collections.Generic;
@@ -229,11 +230,83 @@ namespace LbIntegrations.MelonDs
 
         /// <summary>Guarded, not decorative: the host should never reach this, and if it does the
         /// honest answer is that there is nothing to extract.</summary>
+        /// <summary>Lay a DSiWare save out in the folder the host just made for it.
+        ///
+        /// THIS IS THE OTHER HALF OF IsSaveContainer. Saying a save is a container is a promise that
+        /// this method can extract it, and the host takes it: it creates a destination, asks, and
+        /// records a backup from what turns up. Refusing here - which this did, with a message that
+        /// said the save was a plain file after it had stopped being one - leaves the host an empty
+        /// folder and no backup, on every session, silently. Measured on Zelda: Four Swords, 0
+        /// backups after several evenings and a trail of empty directories.
+        ///
+        /// The state folder is flat by construction - an index and one file per captured entry - so
+        /// extracting it is a copy. It is refreshed first: a backup asked for outside the save window
+        /// has not been through GetSaves, and the working image may be holding a session that was
+        /// never written down.</summary>
         public override bool TryBackupSave(GameSaveBase save, string emulatorApplicationPath,
                                            string destinationFolder, out string error)
         {
-            error = "A melonDS save is a plain file, not a container.";
-            return false;
+            error = null;
+            try
+            {
+                if (!IsDsiWare(save))
+                {
+                    error = "A melonDS cartridge save or savestate is one file, not a container.";
+                    return false;
+                }
+
+                var layout = LayoutForSave(save, emulatorApplicationPath);
+                if (layout != null) MelonDsDsi.RefreshSave(layout, TitleIdOf(save), Bios7Of(layout));
+
+                var source = save?.FileLocation;
+                if (string.IsNullOrWhiteSpace(source) || !Directory.Exists(source))
+                {
+                    error = "This DSiWare save is no longer on disk.";
+                    return false;
+                }
+                if (!File.Exists(Path.Combine(source, MelonDsDelta.IndexName)))
+                {
+                    error = "This folder is not a melonDS state - it has no " + MelonDsDelta.IndexName + ".";
+                    return false;
+                }
+
+                Directory.CreateDirectory(destinationFolder);
+                int copied = 0;
+                foreach (var file in Directory.GetFiles(source))
+                {
+                    File.Copy(file, Path.Combine(destinationFolder, Path.GetFileName(file)), overwrite: true);
+                    copied++;
+                }
+
+                Log.Info("extracted the DSiWare save for " + TitleIdOf(save) + ": "
+                         + copied + " file(s) -> " + destinationFolder);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("TryBackupSave failed", ex);
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        /// <summary>The melonDS a save belongs to, from the emulator path when the host supplied one
+        /// and from the save's own location when it did not - a state folder is
+        /// &lt;install&gt;\dsi\&lt;title&gt;\state, so the install is three levels up.</summary>
+        private static MelonDsLayout LayoutForSave(GameSaveBase save, string emulatorApplicationPath)
+        {
+            try
+            {
+                if (MelonDsPaths.IsMelonDsExecutable(emulatorApplicationPath))
+                    return MelonDsPaths.Resolve(ResolveFullPath(emulatorApplicationPath));
+
+                var titleDir = Path.GetDirectoryName(save?.FileLocation);
+                var dsiDir = Path.GetDirectoryName(titleDir);
+                var install = Path.GetDirectoryName(dsiDir);
+                var exe = string.IsNullOrEmpty(install) ? null : MelonDsPaths.FindExecutable(install);
+                return exe == null ? null : MelonDsPaths.Resolve(exe);
+            }
+            catch { return null; }
         }
 
         /// <summary>Nothing melonDS writes beside a save belongs to it.
@@ -312,15 +385,23 @@ namespace LbIntegrations.MelonDs
                 if (save == null) return new AddSaveResponse("No save was supplied.");
 
                 var source = save.FileLocation;
-                if (string.IsNullOrWhiteSpace(source) || !File.Exists(source))
-                    return new AddSaveResponse("This melonDS backup is not a file: " + (source ?? "(none)"));
+                if (string.IsNullOrWhiteSpace(source))
+                    return new AddSaveResponse("This melonDS backup has no location.");
 
-                // A DSiWare save has to go back INSIDE the NAND, which is the only copy melonDS
-                // reads. Writing the extracted file alone would look like it worked and change
-                // nothing in the game.
-                // A DSiWare save is a FOLDER, so the source the host hands back is one too - the
-                // file-shaped path below would copy a directory as if it were a file.
-                if (IsDsiWare(save)) return RestoreDsiWare(save, source);
+                // THE FOLDER CASE GOES FIRST, and that is not tidiness. A DSiWare save is a folder,
+                // so what the host hands back out of the vault is a folder - and the File.Exists
+                // that used to guard this method rejected every one of them before the branch below
+                // could see it, with "this backup is not a file". A restore that can never happen,
+                // for a save whose whole point is that it is not a file.
+                if (IsDsiWare(save))
+                {
+                    if (!Directory.Exists(source))
+                        return new AddSaveResponse("This DSiWare backup is not a folder: " + source);
+                    return RestoreDsiWare(save, source);
+                }
+
+                if (!File.Exists(source))
+                    return new AddSaveResponse("This melonDS backup is not a file: " + source);
 
                 string name = FirstNonBlank(save.OriginalFileName, Path.GetFileName(source));
                 var targetDir = RestoreDirFor(save, name);
@@ -376,10 +457,16 @@ namespace LbIntegrations.MelonDs
 
                 var titleId = TitleIdOf(save);
                 if (!MelonDsDsi.RestoreSave(layout, titleId, Bios7Of(layout), source, out var error))
-                    return new AddSaveResponse("Could not write this save into the NAND: " + error);
+                    return new AddSaveResponse("Could not restore this DSiWare save: " + error);
 
+                // WORKS ON NOTHING AT ALL, which is the case deleting a save leaves behind: the
+                // title folder is gone, reference.txt and the cached metadata with it. The state is
+                // written into a folder created on the spot, and the next launch rebuilds the image,
+                // reinstalls the title, takes a fresh reference walk and applies this state onto it -
+                // in that order, in PrepareDsiWare. Nothing here depends on what the delete removed.
                 var mirror = MelonDsDsi.RefreshSave(layout, titleId, Bios7Of(layout));
-                Log.Info("restored the DSiWare save of " + titleId + " into its NAND");
+                Log.Info("restored the DSiWare save of " + titleId
+                         + "; the next launch rebuilds its console around it");
 
                 // directory: true here too - the row that comes back describes the same folder the
                 // listing does, and a host told it is a file would not find it.
@@ -430,16 +517,32 @@ namespace LbIntegrations.MelonDs
                 if (!IsOurs(save)) return base.RemoveSave(save);
 
                 var loc = save?.FileLocation;
-                if (string.IsNullOrWhiteSpace(loc)) return new PluginResponse(false, "This save has no location.");
+                if (string.IsNullOrWhiteSpace(loc))
+                {
+                    Log.Warn("asked to delete a melonDS save with no location");
+                    return new PluginResponse(false, "This save has no location.");
+                }
 
-                // A DSiWare save lives inside the NAND. Deleting the extracted copy would look like a
-                // deletion and change nothing in the game, and melonDS offers no way to blank a
-                // title's save short of removing the title itself - so this says no rather than
-                // pretending.
+                // A DSiWare save is a FOLDER of ours, and deleting it means something precise:
+                // the next launch rebuilds the image from the user's dump, installs the title, and
+                // restores nothing. That is a title that has never been played.
+                //
+                // This used to refuse. It was written when the row pointed at a copy of public.sav
+                // extracted from the NAND, where deleting the copy really would have changed nothing
+                // in the game. The row has pointed at dsi\<title>\state\ since the save became the
+                // whole folder, and the refusal outlived its reason - a Delete Save that quietly
+                // does nothing is worse than either answer.
                 if (IsDsiWare(save))
-                    return new PluginResponse(false,
-                        "A DSiWare save lives inside the title's NAND. Remove the title from the NAND "
-                        + "to clear it, or restore an earlier backup over it.");
+                {
+                    var layout = LayoutFor(PluginHelper.DataManager?.GetGameById(save.GameId),
+                                           PluginHelper.DataManager);
+                    if (layout == null)
+                        return new PluginResponse(false, "Could not find the melonDS this save belongs to.");
+
+                    if (!MelonDsDsi.DropState(layout, TitleIdOf(save), out var why))
+                        return new PluginResponse(false, "Could not delete this DSiWare save: " + why);
+                    return new PluginResponse(true);
+                }
 
                 try { if (File.Exists(loc)) File.Delete(loc); }
                 catch (Exception ex)

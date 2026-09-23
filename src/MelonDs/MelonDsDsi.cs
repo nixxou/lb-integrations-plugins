@@ -596,9 +596,113 @@ namespace LbIntegrations.MelonDs
             catch (Exception ex) { Log.Warn("could not extract a DSiWare save", ex); return null; }
         }
 
-        /// <summary>Put an edited save back. THE STATE IS THE TRUTH between sessions, so that is what
-        /// is written; work.bin is written too when it happens to be holding this title, so a launch
-        /// that follows immediately sees the same thing.</summary>
+        /// <summary>Drop the working image when it is holding this title, and forget its marker.
+        ///
+        /// APPLYING A STATE ONTO A PLAYED IMAGE IS NOT A RESTORE. MelonDsDelta.Apply only touches the
+        /// files the state names - it puts them back, it does not take away what the current session
+        /// added. Restore a backup that has A and B onto an image that has A, B and C and C stays,
+        /// the image is reused on the next launch as if it were sound, and the capture after that
+        /// writes C back into the state folder: the restored save silently grows back the file it
+        /// was restored to be rid of.
+        ///
+        /// A state is defined against a FRESH INSTALL and nothing else, so that is the only surface
+        /// it may be applied to. Dropping the image costs a rebuild on the next launch - a quarter of
+        /// a second - and makes the restore mean what it says.</summary>
+        private static void DropWorkIfItHolds(MelonDsLayout layout, string titleId, string why)
+        {
+            try
+            {
+                if (!string.Equals(WorkTitle(layout), titleId, StringComparison.OrdinalIgnoreCase))
+                    return;
+
+                Forget(layout);
+                var work = WorkPath(layout);
+                if (work != null && File.Exists(work)) File.Delete(work);
+                Log.Info("the working image held " + titleId + "; dropped it " + why
+                         + ", so the next launch builds a fresh one");
+            }
+            catch (Exception ex) { Log.Warn("could not drop the working image", ex); }
+        }
+
+        /// <summary>Throw a title's save away, so it starts again as if it had never been played.
+        ///
+        /// THREE THINGS HOLD IT, and deleting one of them is not a deletion. The state folder is the
+        /// truth between sessions. The working image may still be holding the same title, with the
+        /// save inside it - and RefreshSave would then extract it straight back the next time the
+        /// host asks what saves exist, which would look exactly like a delete button that does
+        /// nothing. And the legacy per-title image, on an installation without the native library,
+        /// IS the save and nothing else holds it.
+        ///
+        /// SO THE WHOLE TITLE FOLDER GOES, not just the state inside it. The reference walk and the
+        /// cached .tmd are not saves and keeping them would cost nothing - but a folder named after
+        /// the game, still sitting there after somebody deleted that game's save, reads as a delete
+        /// that did not work. Both are recovered on the next launch: the walk from the install
+        /// itself, the metadata from beside the ROM or the carried index, which is in this assembly
+        /// and needs no network.
+        ///
+        /// AND THE WORKING IMAGE GOES WITH IT when it was this title's. Once its marker is forgotten
+        /// nothing will ever read those 240 MB again - the next launch rebuilds over them - so what
+        /// is left is a quarter of a gigabyte that still physically holds the save just deleted.
+        ///
+        /// REFUSED WHILE melonDS IS RUNNING. The emulator has the image open and will write it back
+        /// on the way out, so anything deleted now would return within the minute.</summary>
+        public static bool DropState(MelonDsLayout layout, string titleId, out string error)
+        {
+            error = null;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(titleId)) { error = "no title id"; return false; }
+                if (MelonDsNand.EmulatorRunning())
+                {
+                    error = "melonDS is running, and it will write its session back when it closes. "
+                          + "Close it and delete this again.";
+                    return false;
+                }
+
+                var titleDir = TitleDir(layout, titleId);
+                if (titleDir == null) { error = "this title has no folder"; return false; }
+
+                // Said before it is gone: on an installation without the native library this image
+                // is the only place the title exists, so a hand import through Manage DSi titles
+                // goes with it and has to be done again.
+                if (LegacyNandFor(layout, titleId) != null)
+                    Log.Info("the per-title NAND for " + titleId + " goes too. If this title was "
+                             + "imported by hand through Manage DSi titles, that import is gone with "
+                             + "it and has to be done again.");
+
+                int removed = 0;
+                if (Directory.Exists(titleDir))
+                {
+                    Directory.Delete(titleDir, recursive: true);
+                    removed++;
+                }
+
+                // Or the save comes straight back: the image still holds the title, and the next
+                // question about this game's saves would capture it out again. And once the marker
+                // is gone nothing will ever read those 240 MB - the next launch rebuilds over them -
+                // so leaving them would leave the deleted save lying there in full.
+                bool held = string.Equals(WorkTitle(layout), titleId, StringComparison.OrdinalIgnoreCase);
+                DropWorkIfItHolds(layout, titleId, "with the save");
+                if (held) removed++;
+
+                Log.Info("deleted the DSiWare save for " + titleId
+                         + (removed == 0 ? " - there was nothing left to delete" : ""));
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.GetType().Name + ": " + ex.Message;
+                Log.Warn("could not delete the DSiWare save for " + titleId, ex);
+                return false;
+            }
+        }
+
+        /// <summary>Put an edited save back. THE STATE IS THE TRUTH between sessions, so that is
+        /// what is written - and the working image is DROPPED rather than written, because applying a
+        /// state onto an image that has been played is not a restore. See DropWorkIfItHolds.
+        ///
+        /// <paramref name="bios7Path"/> is no longer needed and is kept: nothing here opens a NAND
+        /// any more, and changing the signature would only move the question to every caller.</summary>
         public static bool RestoreSave(MelonDsLayout layout, string titleId, string bios7Path,
                                        string sourceDir, out string error)
         {
@@ -628,9 +732,11 @@ namespace LbIntegrations.MelonDs
                 }
                 finally { try { if (Directory.Exists(building)) Directory.Delete(building, true); } catch { } }
 
-                // And into the working image too, when it is the one holding this title, so a launch
-                // that follows immediately sees what was just restored rather than what it replaced.
-                RestoreState(layout, titleId, bios7Path);
+                // AND THE WORKING IMAGE GOES, when it is this title's. It used to have the restored
+                // state applied onto it instead, which looked like the same thing and was not - see
+                // DropWorkIfItHolds. The next launch rebuilds and applies this state onto a fresh
+                // install, which is the only surface it describes.
+                DropWorkIfItHolds(layout, titleId, "rather than restore onto a played image");
                 return true;
             }
             catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; return false; }

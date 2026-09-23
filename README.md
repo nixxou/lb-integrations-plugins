@@ -693,12 +693,56 @@ is a folder too. A folder beats packing it into an archive: nothing to pack, not
 no archive quietly changing its own bytes between two identical writes and making the host think the
 save moved.
 
+**Calling a save a container is a promise, and the host takes it literally.** `IsSaveContainer` says
+yes for a DSiWare save, so the host makes a destination folder, asks `TryBackupSave` to lay the save
+out in it, and records a backup from whatever turns up. Refusing there does not produce "no backup" -
+it produces an EMPTY FOLDER and no backup, once per session, with nothing on screen to say why. That
+is exactly what happened: 0 backups after several evenings and a trail of empty directories in
+`Saves\Nintendo DSiware\`, because the refusal was written when a DSiWare save was still one
+extracted file and was never revisited when it became a folder. The state folder is flat by
+construction, so extracting it is a copy.
+
 A capture happens only when this title is the one the working image holds AND melonDS has written to
 it since the last one, so the steady state costs two calls to `GetLastWriteTimeUtc`. A restore
 replaces the folder rather than merging into it - a state describes one moment, and a file that
-stopped differing has to stop being restored - then goes back into the working image when that is
-holding the title. A folder with no `files.txt` in it is refused rather than half-applied. A deletion
-is refused rather than faked: melonDS has no way to blank a title's save short of removing the title.
+stopped differing has to stop being restored - and a folder with no `files.txt` in it is refused
+rather than half-applied.
+
+**And a restore has to work on nothing at all**, because that is what a delete leaves behind: the
+title folder is gone, the reference walk and the cached metadata with it. It does. The state is
+written into a folder created on the spot, and the next launch rebuilds the image, reinstalls the
+title, takes a fresh reference walk and applies the restored state onto it, in that order. Nothing in
+the restore depends on what the delete removed. The guard at the top of the restore path used to
+demand a *file*, though, so every DSiWare backup - a folder - was rejected with "this backup is not a
+file" before the folder branch three lines below could ever see it. Back up, delete, restore is now
+one sequence the probe performs end to end, through the host's own entry points.
+
+**A restore drops the working image; it does not write into it.** Applying a state onto an image that
+has been played looks like the same thing and is not: the apply puts back the files the state names
+and takes away nothing the current session added. Restore a save that has A and B onto an image that
+has A, B and C, and C survives into play - and the next capture writes C back into the state folder,
+growing the restored save back into what it was restored to be rid of. A state describes a fresh
+install and nothing else, so that is the only surface it is allowed to land on. The image is scratch;
+the next launch rebuilds it in a quarter of a second.
+
+**A deletion has to reach three places, or it is not one.** *Delete Save* on a DSiWare row means "this
+title has never been played", and three things hold that: the state folder, the working image when it
+still happens to hold the same title - the next question about this game's saves would capture it
+straight back out - and, on an installation without the native library, the per-title image, which
+*is* the save and where nothing else holds it.
+
+So the whole title folder goes, not just the state inside it - the reference walk and the cached
+`.tmd` are not saves and keeping them would cost nothing, but a folder named after the game still
+sitting there after somebody deleted that game's save reads as a delete that did not work. Both are
+recovered on the next launch, the metadata from the carried index, which is in the assembly and needs
+no network. The working image goes too when it was this title's: once its marker is forgotten nothing
+will ever read those 240 MB again, so what would be left is a quarter of a gigabyte still physically
+holding the save just deleted. An image holding some *other* title is left alone - it is that game's
+unread session, and the save being deleted is not its business.
+
+Deleting the per-title image also loses a title imported by hand through Manage DSi titles, which the
+log says out loud because it has to be done again. Refused while melonDS is running, since it will
+write its session back on the way out.
 
 **No RetroAchievements.** There is no `rcheevos` submodule, no vendored `rc_*` source, no menu entry
 and no configuration key anywhere in the tree. RA support for melonDS exists only in the libretro

@@ -78,6 +78,10 @@ namespace LbIntegrations.Probe
                 ok &= DsiWareWithoutANand(exe, romDir);
                 ok &= NandFirstUse(exe);
                 ok &= TwoOfTheSameRegion();
+                ok &= DsiWareDelete(exe);
+                ok &= DsiWareRestore(exe);
+                ok &= DsiWareBackup(plugin, exe);
+                ok &= DsiWareRoundTrip(plugin, exe);
                 ok &= RegionCascade(romDir);
                 ok &= ArchiveFormats(exe, romDir);
                 ok &= CarriedIndex(exe, romDir);
@@ -975,6 +979,296 @@ namespace LbIntegrations.Probe
             return ok;
         }
 
+        /// <summary>Deleting a DSiWare save, which is the one kind that is a folder of ours.
+        ///
+        /// THREE THINGS HOLD THAT SAVE and deleting one of them is not a deletion. The state folder
+        /// is the truth between sessions; the working image may still be holding the same title,
+        /// and the next question about this game's saves would capture it straight back out; and a
+        /// legacy per-title image IS the save where there is no native library. A delete that leaves
+        /// any of the three behind looks, from the outside, exactly like a button that does nothing -
+        /// which is what it did until this was written.
+        ///
+        /// And nothing of this title survives afterwards. A folder named after the game, still there
+        /// once its save is deleted, reads the same way.</summary>
+        private static bool DsiWareDelete(string exe)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- deleting a DSiWare save");
+
+            var drop = TypeIn("MelonDsDsi")?.GetMethod("DropState",
+                           BindingFlags.Public | BindingFlags.Static);
+            if (drop == null) { Console.WriteLine("    no DropState to call"); return false; }
+
+            var resolve = TypeIn("MelonDsPaths").GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static);
+            var layout = resolve.Invoke(null, new object[] { exe });
+
+            const string titleId = "000300044b393945";
+            string dsi = Path.Combine(Path.GetDirectoryName(exe), "dsi");
+            string state = Path.Combine(dsi, titleId, "state");
+            string marker = Path.Combine(dsi, "work.title");
+            string work = Path.Combine(dsi, "work.bin");
+            string legacy = Path.Combine(dsi, titleId, "nand.bin");
+
+            Directory.CreateDirectory(state);
+            File.WriteAllText(Path.Combine(state, "files.txt"), "F\t0\t0:/sys/HWINFO_S.dat\r\n");
+            File.WriteAllText(Path.Combine(state, "0"), "a captured file");
+            File.WriteAllText(Path.Combine(dsi, titleId, "reference.txt"), "the fresh install");
+            File.WriteAllText(marker, titleId + "\tsomewhere\t1\t2\tnand.bin");
+            File.WriteAllText(work, "not really an image");
+            File.WriteAllText(legacy, "not really an image either");
+
+            var args = new object[] { layout, titleId, null };
+            bool done = (bool)drop.Invoke(null, args);
+
+            bool ok = true;
+            ok &= Check("the delete is reported done", done);
+            if (!done) Console.WriteLine("    it said: " + args[2]);
+            ok &= Check("the state folder is gone", !Directory.Exists(state));
+            ok &= Check("the working image is forgotten, so nothing captures it back",
+                        !File.Exists(marker));
+            ok &= Check("the per-title image goes too - there, it IS the save",
+                        !File.Exists(legacy));
+            ok &= Check("and so do the 240 MB it held, which nothing would ever read again",
+                        !File.Exists(work));
+            ok &= Check("nothing of this title is left behind at all",
+                        !Directory.Exists(Path.Combine(dsi, titleId)));
+
+            // Again, with nothing left. A second delete is not an error - the row may be stale, and
+            // answering "no" to a save that is already gone would be a failure about nothing.
+            ok &= Check("deleting what is already gone is not a failure",
+                        (bool)drop.Invoke(null, new object[] { layout, titleId, null }));
+
+            try { Directory.Delete(Path.Combine(dsi, titleId), recursive: true); } catch { }
+            try { File.Delete(work); } catch { }
+            return ok;
+        }
+
+        /// <summary>Restoring a DSiWare save out of the vault.
+        ///
+        /// THE STATE IS REPLACED, NOT MERGED, and the working image is DROPPED rather than written.
+        /// Applying a state onto an image that has been played looks like the same thing and is not:
+        /// MelonDsDelta.Apply puts back the files the state names and takes away nothing the current
+        /// session added, so a file the restored save never had would survive into play - and the
+        /// next capture would write it back into the state folder, growing the restored save back
+        /// into what it was restored to be rid of. A state describes a fresh install and nothing
+        /// else, so that is the only surface it may land on.</summary>
+        private static bool DsiWareRestore(string exe)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- restoring a DSiWare save");
+
+            var restore = TypeIn("MelonDsDsi")?.GetMethod("RestoreSave",
+                              BindingFlags.Public | BindingFlags.Static);
+            if (restore == null) { Console.WriteLine("    no RestoreSave to call"); return false; }
+
+            var resolve = TypeIn("MelonDsPaths").GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static);
+            var layout = resolve.Invoke(null, new object[] { exe });
+
+            const string titleId = "000300044b393945";
+            string install = Path.GetDirectoryName(exe);
+            string dsi = Path.Combine(install, "dsi");
+            string state = Path.Combine(dsi, titleId, "state");
+            string marker = Path.Combine(dsi, "work.title");
+            string work = Path.Combine(dsi, "work.bin");
+            string vault = Path.Combine(install, "vault-copy");
+
+            // What is on disk now: a session with three files in it, and the image that played it.
+            Directory.CreateDirectory(state);
+            File.WriteAllText(Path.Combine(state, "files.txt"),
+                              "F\t0\t0:/a\r\nF\t1\t0:/b\r\nF\t2\t0:/c\r\n");
+            foreach (var n in new[] { "0", "1", "2" }) File.WriteAllText(Path.Combine(state, n), "today " + n);
+            File.WriteAllText(marker, titleId + "\tsomewhere\t1\t2\tnand.bin");
+            File.WriteAllText(work, "not really an image");
+
+            // What comes back out of the vault: an older save, which never had the third file.
+            if (Directory.Exists(vault)) Directory.Delete(vault, recursive: true);
+            Directory.CreateDirectory(vault);
+            File.WriteAllText(Path.Combine(vault, "files.txt"), "F\t0\t0:/a\r\nF\t1\t0:/b\r\n");
+            foreach (var n in new[] { "0", "1" }) File.WriteAllText(Path.Combine(vault, n), "backup " + n);
+
+            var args = new object[] { layout, titleId, null, vault, null };
+            bool done = (bool)restore.Invoke(null, args);
+
+            bool ok = true;
+            ok &= Check("the restore is reported done", done);
+            if (!done) Console.WriteLine("    it said: " + args[4]);
+            ok &= Check("the backup's files are back",
+                        File.Exists(Path.Combine(state, "0"))
+                        && File.ReadAllText(Path.Combine(state, "0")) == "backup 0");
+            ok &= Check("the file the backup never had is gone, not merged in",
+                        !File.Exists(Path.Combine(state, "2")));
+            ok &= Check("the played image is dropped, not written onto", !File.Exists(work));
+            ok &= Check("and its marker with it, so nothing reuses it", !File.Exists(marker));
+
+            // A folder that is not a state is refused rather than half-applied.
+            string junk = Path.Combine(install, "not-a-state");
+            Directory.CreateDirectory(junk);
+            File.WriteAllText(Path.Combine(junk, "something.bin"), "nope");
+            ok &= Check("a folder with no files.txt is refused",
+                        !(bool)restore.Invoke(null, new object[] { layout, titleId, null, junk, null }));
+
+            foreach (var leftover in new[] { vault, junk, Path.Combine(dsi, titleId) })
+                try { Directory.Delete(leftover, recursive: true); } catch { }
+            try { File.Delete(work); } catch { }
+            try { File.Delete(marker); } catch { }
+            return ok;
+        }
+
+        /// <summary>Backing a DSiWare save up, which is the other half of calling it a container.
+        ///
+        /// Saying IsSaveContainer is a promise that TryBackupSave can extract the thing. The host
+        /// takes it literally: it makes a destination folder, asks, and records a backup from what
+        /// turns up. A refusal therefore does not mean "no backup" - it means an EMPTY FOLDER and no
+        /// backup, once per session, with nothing on screen to say why. That is what it did.</summary>
+        private static bool DsiWareBackup(EmulatorPlugin plugin, string exe)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- backing a DSiWare save up");
+
+            const string titleId = "000300044b513945";
+            string install = Path.GetDirectoryName(exe);
+            string state = Path.Combine(install, "dsi", titleId, "state");
+            string vault = Path.Combine(install, "vault-here");
+
+            Directory.CreateDirectory(state);
+            File.WriteAllText(Path.Combine(state, "files.txt"), "F\t0\t0:/a\r\nX\t-\t0:/b\r\n");
+            File.WriteAllText(Path.Combine(state, "0"), "the save");
+
+            var row = new GameSaveGame
+            {
+                GameId = "probe",
+                FileLocation = state,
+                IsDirectory = true,
+                OriginalFileName = "state",
+                SaveGroupId = "melonds:dsiware:" + titleId,
+                SaveGroupName = "DSiWare save",
+            };
+
+            bool ok = true;
+            ok &= Check("a DSiWare save says it is a container", plugin.IsSaveContainer(row));
+
+            if (Directory.Exists(vault)) Directory.Delete(vault, recursive: true);
+            bool done = plugin.TryBackupSave(row, exe, vault, out var error);
+            ok &= Check("and can therefore be extracted, as it promised", done);
+            if (!done) Console.WriteLine("    it said: " + (error ?? "no reason given"));
+
+            ok &= Check("the index is in the backup", File.Exists(Path.Combine(vault, "files.txt")));
+            ok &= Check("and so is the file it names", File.Exists(Path.Combine(vault, "0")));
+            ok &= Check("the backup is not an empty folder",
+                        Directory.Exists(vault) && Directory.GetFiles(vault).Length == 2);
+
+            // Without an emulator path: the host does not always supply one, and the install is
+            // reachable from the save's own location.
+            string second = Path.Combine(install, "vault-again");
+            ok &= Check("it works with no emulator path, from the save's location alone",
+                        plugin.TryBackupSave(row, null, second, out _)
+                        && File.Exists(Path.Combine(second, "files.txt")));
+
+            // A cartridge save is one file: the host copies those itself and must never be told
+            // otherwise, or it would ask for a container that does not exist.
+            var plain = new GameSaveGame
+            {
+                GameId = "probe",
+                FileLocation = Path.Combine(install, "whatever.sav"),
+                SaveGroupId = "melonds:save:whatever",
+            };
+            ok &= Check("a cartridge save is NOT a container", !plugin.IsSaveContainer(plain));
+
+            foreach (var leftover in new[] { vault, second, Path.Combine(install, "dsi", titleId) })
+                try { Directory.Delete(leftover, recursive: true); } catch { }
+            return ok;
+        }
+
+        /// <summary>Back up, delete everything, restore from the backup - through the host's own
+        /// doors, in that order, which is the sequence somebody actually performs.
+        ///
+        /// THE DELETE IN THE MIDDLE IS THE POINT. It takes the whole title folder, reference walk and
+        /// cached metadata included, so the restore that follows lands on nothing at all. If it
+        /// depended on any of what the delete removed, this is where that would show - and it is the
+        /// one arrangement no single-method test reaches.</summary>
+        private static bool DsiWareRoundTrip(EmulatorPlugin plugin, string exe)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- back up, delete, restore from the vault");
+
+            const string titleId = "000300044b393945";
+            string install = Path.GetDirectoryName(exe);
+            string dsi = Path.Combine(install, "dsi");
+            string titleDir = Path.Combine(dsi, titleId);
+            string state = Path.Combine(titleDir, "state");
+            string vault = Path.Combine(install, "vault-roundtrip");
+
+            var was = PluginHelper.DataManager;
+            try
+            {
+                // AddSaveFile finds the installation through the library, as it does in the host.
+                PluginHelper.DataManager = new StubDataManager(
+                    new StubEmulator { Title = "melonDS", ApplicationPath = exe });
+
+                // A good evening, and the metadata that sits beside it.
+                Directory.CreateDirectory(state);
+                File.WriteAllText(Path.Combine(state, "files.txt"), "F\t0\t0:/a\r\nF\t1\t0:/b\r\n");
+                File.WriteAllText(Path.Combine(state, "0"), "the good save");
+                File.WriteAllText(Path.Combine(state, "1"), "and its neighbour");
+                File.WriteAllText(Path.Combine(titleDir, "reference.txt"), "the fresh install");
+                File.WriteAllText(Path.Combine(titleDir, "title.tmd"), "metadata");
+
+                var row = new GameSaveGame
+                {
+                    GameId = "probe",
+                    FileLocation = state,
+                    IsDirectory = true,
+                    OriginalFileName = "state",
+                    SaveGroupId = "melonds:dsiware:" + titleId,
+                    SaveGroupName = "DSiWare save",
+                };
+
+                bool ok = true;
+
+                if (Directory.Exists(vault)) Directory.Delete(vault, recursive: true);
+                ok &= Check("the evening goes into the vault",
+                            plugin.TryBackupSave(row, exe, vault, out var why) && File.Exists(Path.Combine(vault, "0")));
+                if (!File.Exists(Path.Combine(vault, "0"))) Console.WriteLine("    it said: " + why);
+
+                // Then it is all thrown away - the folder, the reference walk, the metadata.
+                var response = plugin.RemoveSave(row);
+                ok &= Check("the delete takes the whole title folder",
+                            response is { WasSuccess: true } && !Directory.Exists(titleDir));
+
+                // And back out of the vault, onto nothing.
+                var restored = plugin.AddSaveFile(new AddSaveArgs
+                {
+                    SaveToAdd = new GameSaveGame
+                    {
+                        GameId = "probe",
+                        FileLocation = vault,
+                        IsDirectory = true,
+                        SaveGroupId = "melonds:dsiware:" + titleId,
+                        SaveGroupName = "DSiWare save",
+                    },
+                    ShouldOverwriteFunc = () => true,
+                });
+
+                ok &= Check("a folder out of the vault is restored, not rejected for being a folder",
+                            restored is { WasSuccess: true });
+                if (restored is not { WasSuccess: true }) Console.WriteLine("    " + Why(restored));
+
+                ok &= Check("the evening is back, byte for byte",
+                            File.Exists(Path.Combine(state, "0"))
+                            && File.ReadAllText(Path.Combine(state, "0")) == "the good save");
+                ok &= Check("and its index with it, so a launch knows what to put where",
+                            File.Exists(Path.Combine(state, "files.txt")));
+
+                return ok;
+            }
+            finally
+            {
+                PluginHelper.DataManager = was;
+                foreach (var leftover in new[] { vault, titleDir })
+                    try { if (Directory.Exists(leftover)) Directory.Delete(leftover, recursive: true); } catch { }
+            }
+        }
+
         /// <summary>Two dumps of one region, which is the case that silently breaks saves.
         ///
         /// Directory order is not an ordering - it is whatever the filesystem hands back, and it
@@ -1045,6 +1339,23 @@ namespace LbIntegrations.Probe
                 return before ?? false;
             }
             catch { return false; }
+        }
+
+        /// <summary>Whatever a response carries as its reason, without this harness having to know
+        /// which of the SDK's several names for it that type uses.</summary>
+        private static string Why(object response)
+        {
+            try
+            {
+                if (response == null) return "no response at all";
+                foreach (var name in new[] { "ErrorMessage", "Error", "Message", "Reason" })
+                {
+                    var value = response.GetType().GetProperty(name)?.GetValue(response) as string;
+                    if (!string.IsNullOrWhiteSpace(value)) return value;
+                }
+                return "no reason given";
+            }
+            catch { return "no reason given"; }
         }
 
         private static string StateOf(MethodInfo of, string path)
