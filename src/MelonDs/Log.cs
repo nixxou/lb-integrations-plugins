@@ -60,6 +60,13 @@ namespace LbIntegrations.MelonDs
             }
         }
 
+        /// <summary>A marker read EVERY time instead of being remembered, for switches meant to be
+        /// flipped while the host is up. Disabled() caches, which is right for a kill switch decided
+        /// once, and wrong here: LaunchBox stays open across game launches, so a cached answer would
+        /// freeze the setting until the host was restarted - and somebody toggling a file to compare
+        /// two behaviours would be comparing one behaviour twice.</summary>
+        public static bool Marker(string name) => Exists(name);
+
         private static readonly System.Collections.Generic.Dictionary<string, bool> _switches =
             new System.Collections.Generic.Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         private static bool? _tracing;

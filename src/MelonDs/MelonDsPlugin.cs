@@ -669,14 +669,29 @@ namespace LbIntegrations.MelonDs
                 if (error != null) { Log.Warn("DSi NAND not selected: " + error); return; }
             }
 
-            // Through the menu, not straight into the cartridge - see SetBootMode.
-            SetBootMode(layout, consoleType: 1, directBoot: false, rom);
+            // Through the menu, not straight into the cartridge - see SetBootMode. The marker
+            // turns that around, and says so in the log so a session can be told from the other.
+            bool direct = Log.Marker(DirectBootMarker);
+            if (direct)
+                Log.Info("the " + DirectBootMarker + " marker is there: booting " + rom.AssetName
+                         + " straight from its .nds instead of through the DSi menu. MEASURED TO LOSE "
+                         + "SAVES - the game reports its data corrupt and nothing reaches the NAND. "
+                         + "Delete the marker to go back to the menu, which works.");
+            SetBootMode(layout, consoleType: 1, directBoot: direct, rom);
 
             // The title has to be INSIDE that NAND for melonDS to boot it, and that is melonDS's own
             // code doing it - see MelonDsNand. Without the library the step is a click in Manage DSi
             // titles, and either way the launch goes ahead.
             InstallTitle(layout, rom, romPath, nand.Path);
         }
+
+        /// <summary>Beside the log, like the other switches here. Present, a DSiWare title is
+        /// direct-booted from its .nds rather than started from the DSi menu.
+        ///
+        /// IT HAS BEEN RUN, AND DIRECT BOOTING LOST THE SAVE - see SetBootMode for the numbers.
+        /// It is kept anyway: the question was worth reopening once, the answer came from one launch,
+        /// and a future melonDS may well change it. Nothing here depends on it being absent.</summary>
+        private const string DirectBootMarker = "dsi-direct-boot";
 
         /// <summary>Put the title inside its NAND, if it is not there already.</summary>
         private static void InstallTitle(MelonDsLayout layout, NdsRom rom, string romPath, string nandPath)
@@ -769,10 +784,21 @@ namespace LbIntegrations.MelonDs
         /// in DSi mode that firmware is the DSi menu held in the NAND (EmuInstance.cpp:1469-1473,
         /// :1951-1954).
         ///
-        /// A DSiWARE TITLE NEEDS THE MENU, and that was measured the hard way: direct-booted from its
-        /// .nds it runs as a cartridge, and its save never reaches the NAND - public.sav came back
-        /// byte for byte unchanged after a session. DSiWare lives in the NAND and has to be started
-        /// from there, which costs one click on the menu and nothing else.</summary>
+        /// A DSiWARE TITLE IS STARTED FROM THE MENU, and that is settled. Direct-booted from its
+        /// .nds it runs as a cartridge and its save never reaches the title's data folder. Measured
+        /// twice: once on a title installed with a fabricated TMD, which left the result open because
+        /// that TMD turned out to be broken in its own right, and then again on a title installed
+        /// from real signed metadata. The second run is the one that decides it:
+        ///
+        ///   nand.bin     changed         - melonDS did write to the image
+        ///   public.sav   byte-identical  - nothing of the game's reached its save
+        ///
+        /// and the game said so itself, on screen: "data was corrupted and has been deleted". Even
+        /// that deletion did not land. The extraction ran afterwards and returned the same bytes, so
+        /// the failure is upstream of it - there was nothing new to extract.
+        ///
+        /// Two separate bugs produced the same message on screen, which is what made this take two
+        /// passes. The dsi-direct-boot marker is kept for anyone who wants to re-run it.</summary>
         private static void SetBootMode(MelonDsLayout layout, int consoleType, bool directBoot, NdsRom rom)
         {
             var current = MelonDsToml.Read(layout.ConfigFile, MelonDsPaths.EmuTable,

@@ -392,6 +392,27 @@ hash IS that dump's - an exact answer rather than a guess at "probably the newes
 only when none matches, and the log says it had to, because that is also the case where the DSi menu
 is most likely to refuse the title.
 
+**A DSiWare title is started from the DSi menu, because direct booting loses the save.** Passed as a
+ROM argument, melonDS does not refuse a DSiWare `.nds`: `UnitCode & 0x02` sends it down the DSi branch
+of `SetupDirectBoot`, the NAND is mounted and the game opens with no menu and no click. It is
+tempting, and it does not work. Measured on a title installed from real signed metadata, one launch,
+play, save, quit:
+
+```
+nand.bin     changed          melonDS did write to the image
+public.sav   byte-identical   nothing of the game's reached its save
+```
+
+and the game said so on screen - *"99Bullets data was corrupted and has been deleted"*. Even that
+deletion did not land. The extraction ran after the NAND changed and returned the same bytes, so the
+failure is upstream of it: there was nothing new to extract. Booting through the menu costs one click
+and saves correctly.
+
+This took two passes, because two unrelated bugs put the same sentence on screen - an unsigned TMD the
+DSi menu refused, and this. An empty file named `dsi-direct-boot` beside the log still switches it
+over for anyone who wants to re-run the measurement; it is read on every launch rather than
+remembered, so it can be flipped with the host running, and the log names which way each launch went.
+
 **A DSiWare save is extracted, not the image that holds it.** It lives inside the NAND, at
 `title/<category>/<id>/data/public.sav` - a few kilobytes inside 240 MB. Handing the image to the host
 would mean hashing all of it to draw a freshness dot, and a 240 MB vault copy per backup. So the save

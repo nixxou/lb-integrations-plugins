@@ -360,6 +360,33 @@ namespace LbIntegrations.Probe
             return ok;
         }
 
+        /// <summary>Whether one of the plugin's markers is set, asked of the plugin itself so the
+        /// probe never has to know where they live.</summary>
+        private static bool Marked(string name)
+        {
+            try
+            {
+                var method = TypeIn("Log").GetMethod("Marker", BindingFlags.Public | BindingFlags.Static);
+                return method != null && (bool)method.Invoke(null, new object[] { name });
+            }
+            catch { return false; }
+        }
+
+        /// <summary>Emu.DirectBoot as the file has it, or null when the key is not written. melonDS
+        /// defaults it to true, so an absent key is not the same as false.</summary>
+        private static bool? DirectBootIn(string tomlPath)
+        {
+            foreach (var raw in File.ReadAllLines(tomlPath))
+            {
+                var line = raw.Trim();
+                if (!line.StartsWith("DirectBoot", StringComparison.Ordinal)) continue;
+                int eq = line.IndexOf('=');
+                if (eq > 0) return line.Substring(eq + 1).Trim()
+                                       .Equals("true", StringComparison.OrdinalIgnoreCase);
+            }
+            return null;
+        }
+
         private static int ConsoleTypeIn(string tomlPath)
         {
             foreach (var raw in File.ReadAllLines(tomlPath))
@@ -433,6 +460,17 @@ namespace LbIntegrations.Probe
                         File.ReadAllBytes(mine).SequenceEqual(fingerprint));
             ok &= Check("melonDS is pointed at the per-title NAND", NandPathIn(toml) == expected);
             ok &= Check("and DSi mode is asked for", ConsoleTypeIn(toml) == 1);
+            // The dsi-direct-boot marker turns this one around, so ask the plugin whether it is
+            // set rather than asserting the default blind. Read-only, and the marker's own folder
+            // stays the plugin's business: nothing here writes outside the temp install.
+            bool wantsDirect = Marked("dsi-direct-boot");
+            ok &= Check(wantsDirect
+                            ? "the dsi-direct-boot marker is set, so the .nds is booted directly"
+                            : "the DSi menu is booted, not the cartridge",
+                        // An ABSENT key is not a false one: melonDS defaults DirectBoot to true, so
+                        // the plugin rightly writes nothing when direct booting is what is wanted and
+                        // the file says nothing. Reading that as "not true" failed a correct plugin.
+                        (DirectBootIn(toml) ?? true) == wantsDirect);
             ok &= Check("no half-written copy is left behind",
                         !Directory.EnumerateFiles(dsi, "*.part", SearchOption.AllDirectories).Any());
 
