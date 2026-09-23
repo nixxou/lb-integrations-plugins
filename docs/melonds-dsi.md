@@ -228,6 +228,54 @@ taille de cluster, secteurs réservés). C'est le seul chantier du lot qui dégr
 qui ne démarre pas ne se répare pas. Il se teste sans risque en reconstruisant dans un fichier neuf
 et en comparant par fichier avec l'original.
 
+### 5.7 La NAND de base ne doit plus bouger — et il faut donc la configurer d'abord
+
+C'est une conséquence directe du § 5.3. Une sauvegarde est la **différence** entre le dump de
+l'utilisateur et l'image sur laquelle le jeu a tourné. Chaque différence a donc été mesurée contre un
+dump précis, et est rejouée sur une reconstruction de ce même dump. Si le dump change ensuite, les
+différences s'appliquent toujours proprement — à une console qui n'existe plus. Rien ne plante ; les
+sauvegardes cessent simplement d'avoir un sens.
+
+Or un dump frais **doit** être configuré une fois : nom, langue, date, couleur. Et cette configuration
+écrit dans `shared1/TWLCFG0.dat` et `TWLCFG1.dat`, c'est-à-dire dans la NAND. Impossible d'avoir à la
+fois une console configurée et une image de base intacte, sauf à configurer d'abord, délibérément,
+avant qu'une seule sauvegarde existe.
+
+Le greffon traite ça avec trois fichiers et deux fenêtres :
+
+```
+dsinand.bin            le dump ; à partir de là il ne doit plus changer
+dsinand.bin.bak        une copie, faite avant d'ouvrir melonDS
+dsinand.bin.lock       cette même copie, renommée quand l'utilisateur dit que c'est bon
+```
+
+melonDS est lancé **sans ROM**, sur cette NAND, avec `ConsoleType = 1` et `DirectBoot = false` : le
+firmware démarre, et en mode DSi le firmware *est* le menu contenu dans la NAND (§ 3.1). `WaitForExit`,
+puis une seconde fenêtre demande si la configuration a marché. Oui renomme `.bak` en `.lock` ; non
+remet la copie en place. Le lancement du jeu qui a déclenché tout ça est **annulé**
+(`PrepareForLaunchResponse(success: false)`) : l'utilisateur relance.
+
+Le verrou **est** la copie, pas un drapeau vide : un seul `File.Move` au lieu d'un delete plus un
+create, et ce qui reste est l'image telle qu'elle était. 240 Mo par dump — le rendre vide est un
+changement d'une ligne.
+
+Deux choses que ce verrou ne fait pas. Il **ne détecte pas** qu'une NAND a changé après coup : il dit
+« celle-ci est passée par sa configuration » et rien d'autre. Et **sans fenêtre, rien ne se
+déclenche** : configurer la console de quelqu'un en silence serait pire que ne pas la configurer.
+
+**Pour un fork, tout ce paragraphe disparaît**, et c'est un de ses meilleurs arguments. Si la NAND est
+montée en mémoire et que l'écriture est contrôlée, la configuration console peut vivre à part des
+sauvegardes de titres — il n'y a plus d'image de base fragile à protéger, donc plus de verrou, plus de
+copie de 240 Mo, plus de fenêtre.
+
+**Le scan des dumps**, accessoirement : tout fichier du dossier entre **220 et 260 Mo**, les suffixes
+`.lock` et `.bak` exclus par leur nom. Une extension ne veut rien dire ici (`.bin`, `.img`, `.nand`,
+rien du tout circulent tous), et ouvrir un candidat coûte un déchiffrement plus un montage FAT — d'où
+la fourchette de taille comme filtre, et un cache dans `dsi\nands.txt` qui retient aussi bien
+« c'est une NAND telle région » que « ce n'en est pas une », mais ce dernier **seulement** quand
+l'image a vraiment pu être ouverte et lue. Un échec d'ouverture ne dit rien sur le fichier et tout sur
+la machine.
+
 ---
 
 ## 6. La région d'un jeu
@@ -432,7 +480,8 @@ trompeur.
 Pour comparaison, et pour savoir ce qu'un fork rend inutile.
 
 ```
-<install>\bios\                      BIOS, firmware, NAND par région (fournis par l'utilisateur)
+..\RetroArch\system\                 BIOS, firmware, NAND par région (fournis par l'utilisateur)
+    <nand>.lock                      une NAND passée par sa configuration initiale (§ 5.7)
 <install>\dsi\work.bin               l'image de travail, reconstruite à chaque lancement
 <install>\dsi\work.title             quel titre elle porte, + empreinte de la ROM + NAND source
 <install>\dsi\nands.txt              région de chaque dump, en cache
@@ -441,7 +490,8 @@ Pour comparaison, et pour savoir ce qu'un fork rend inutile.
 <install>\dsi\<titleid>\state\       les fichiers qui en diffèrent — LA sauvegarde
 ```
 
-Au lancement d'un DSiWare : résoudre la région → choisir la NAND → capturer la session précédente →
+Au lancement d'un DSiWare : résoudre la région → choisir la NAND → **la configurer si c'est sa
+première utilisation, et annuler le lancement** → capturer la session précédente →
 reconstruire `work.bin` → installer le titre → parcourir (c'est la référence) → réappliquer l'état →
 pointer `DSi.NANDPath` et `Emu.ConsoleType = 1`, `DirectBoot = false`.
 

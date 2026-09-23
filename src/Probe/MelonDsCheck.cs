@@ -23,6 +23,7 @@
 //  13. the carried metadata index answering for titles it holds  - and only those
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -75,6 +76,8 @@ namespace LbIntegrations.Probe
                 ok &= TomlSurvivesAnApostrophe(root);
                 ok &= ConsoleMode(plugin, exe, romDir);
                 ok &= DsiWareWithoutANand(exe, romDir);
+                ok &= NandFirstUse(exe);
+                ok &= TwoOfTheSameRegion();
                 ok &= RegionCascade(romDir);
                 ok &= ArchiveFormats(exe, romDir);
                 ok &= CarriedIndex(exe, romDir);
@@ -476,7 +479,7 @@ namespace LbIntegrations.Probe
         {
             try
             {
-                var field = TypeIn("MelonDsMissingFiles")
+                var field = TypeIn("MelonDsDialog")
                     .GetField("Suppressed", BindingFlags.Public | BindingFlags.Static);
                 if (field == null)
                 {
@@ -850,6 +853,221 @@ namespace LbIntegrations.Probe
         /// The ORDER is what this checks. A mask naming two regions may be narrowed by a file name,
         /// but a file name must never overrule a mask that already answered - a rename is the least
         /// trustworthy link in the chain, and the mask is what the console itself is handed.</summary>
+        /// <summary>A NAND dump's first use: the three states it can be in, the size window the scan
+        /// looks through, and the one thing this flow must never do.
+        ///
+        /// THE LAST PART IS THE POINT. With the windows silenced - which is how a harness runs, and
+        /// how a headless host would run - the flow must copy nothing, start nothing and write
+        /// nothing. Configuring somebody's console without asking would be worse than leaving it
+        /// unconfigured, and nothing else here can catch that going wrong.</summary>
+        private static bool NandFirstUse(string exe)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- a NAND's first use");
+
+            var setup = TypeIn("MelonDsNandSetup");
+            var of = setup?.GetMethod("Of", BindingFlags.Public | BindingFlags.Static);
+            var run = setup?.GetMethod("Run", BindingFlags.Public | BindingFlags.Static);
+            if (of == null || run == null)
+            { Console.WriteLine("    no MelonDsNandSetup to call"); return false; }
+
+            var resolve = TypeIn("MelonDsPaths").GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static);
+            var layout = resolve.Invoke(null, new object[] { exe });
+            string bios = BiosDir(layout);
+            Directory.CreateDirectory(bios);
+
+            bool ok = true;
+
+            // 1. THE STATE IS READ OFF THE FOLDER, and off nothing else. No index, no registry, no
+            //    remembered list: move a dump somewhere else and it is new again, which is right,
+            //    because the differences kept against it were keyed to where it was.
+            string probe = Path.Combine(bios, "state-probe.bin");
+            Sized(probe, 4096);
+            ok &= Check("a dump with nothing beside it has never been used",
+                        StateOf(of, probe) == "NeverUsed");
+
+            File.WriteAllText(probe + ".lock", "");
+            ok &= Check("a .lock beside it means set up, and never ask again",
+                        StateOf(of, probe) == "Locked");
+
+            File.WriteAllText(probe + ".bak", "");
+            ok &= Check("a .bak left behind means a setup that never got its answer",
+                        StateOf(of, probe) == "Interrupted");
+
+            foreach (var leftover in new[] { probe, probe + ".lock", probe + ".bak" })
+                try { File.Delete(leftover); } catch { }
+
+            // 2. THE SIZE WINDOW. A NAND is 240 MB; the scan looks between 220 and 260 and opens
+            //    nothing outside it. Opening one costs a decrypt and a FAT mount, so a folder full
+            //    of disk images must not turn a launch into a minute.
+            //
+            //    Four files of a quarter of a gigabyte apiece, so this stands aside on a full disk
+            //    rather than failing for a reason that is not the plugin's.
+            long free = FreeSpaceOn(bios);
+            if (free >= 0 && free < 3L * 1024 * 1024 * 1024)
+            {
+                Console.WriteLine("    skipped the size window - less than 3 GB free here");
+                return ok;
+            }
+
+            string inRange = Path.Combine(bios, "nand-inrange.bin");
+            string tooSmall = Path.Combine(bios, "nand-small.bin");
+            string tooBig = Path.Combine(bios, "nand-big.bin");
+            string locked = inRange + ".lock";
+            const long MB = 1024L * 1024;
+
+            try
+            {
+                Sized(inRange, 230 * MB);
+                Sized(tooSmall, 219 * MB);
+                Sized(tooBig, 261 * MB);
+                Sized(locked, 230 * MB);
+
+                // A DSi ARM7 BIOS has to be nameable or the scan declines to look at anything at
+                // all - it cannot decrypt a dump without one, and guessing is not on offer.
+                string bios7 = Path.Combine(bios, BiosName("DsiBios7"));
+                if (!File.Exists(bios7)) Sized(bios7, 0x10000);
+
+                // The line that says a file was looked at is a Verbose one - it is per-candidate
+                // chatter and belongs behind the trace marker. So the marker is turned on for the
+                // length of this one call rather than the line being promoted to the real log.
+                var nands = TypeIn("MelonDsBios").GetMethod("Nands", BindingFlags.Public | BindingFlags.Static);
+                bool wasTracing = Tracing(true);
+                long mark = LogLength();
+                nands.Invoke(null, new object[] { layout, bios7 });
+                var said = LogSince(mark);
+                Tracing(wasTracing);
+
+                ok &= Check("a 230 MB file is a candidate and gets looked at",
+                            said.Contains("nand-inrange.bin"));
+                ok &= Check("219 MB is not a NAND and is never opened",
+                            !said.Contains("nand-small.bin"));
+                ok &= Check("261 MB is not a NAND either",
+                            !said.Contains("nand-big.bin"));
+                ok &= Check("a .lock of exactly the right size is still not a NAND",
+                            !said.Contains("nand-inrange.bin.lock"));
+                if (!said.Contains("nand-inrange.bin")) Console.WriteLine("    log said: " + said.Trim());
+
+                // 3. NO WINDOW, NO ACTION. The dump below has never been set up, so the flow is
+                //    live - and with the windows off it must decline, not proceed quietly.
+                try { File.Delete(locked); } catch { }
+                var dump = Activator.CreateInstance(TypeIn("NandDump"));
+                TypeIn("NandDump").GetField("Path").SetValue(dump, inRange);
+
+                mark = LogLength();
+                var cancel = run.Invoke(null, new[] { layout, dump });
+                said = LogSince(mark);
+
+                ok &= Check("with the windows off, the launch is not cancelled", !(bool)cancel);
+                ok &= Check("nothing was copied - no .bak appeared", !File.Exists(inRange + ".bak"));
+                ok &= Check("and nothing was locked behind the user's back",
+                            !File.Exists(inRange + ".lock"));
+                ok &= Check("the log says why it stood aside",
+                            said.Contains("windows are turned off"));
+                if (!said.Contains("windows are turned off")) Console.WriteLine("    log said: " + said.Trim());
+            }
+            finally
+            {
+                foreach (var big in new[] { inRange, tooSmall, tooBig, locked })
+                    try { if (File.Exists(big)) File.Delete(big); } catch { }
+            }
+
+            return ok;
+        }
+
+        /// <summary>Two dumps of one region, which is the case that silently breaks saves.
+        ///
+        /// Directory order is not an ordering - it is whatever the filesystem hands back, and it
+        /// moves when files are added or renamed. Every DSiWare save is the difference against ONE
+        /// dump, so a choice that drifts replays saves onto a console they never came from. The rule
+        /// is checked here rather than through a launch because two readable 240 MB dumps are not
+        /// something a forged install can produce.</summary>
+        private static bool TwoOfTheSameRegion()
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- two NAND dumps of the same region");
+
+            var steadiest = TypeIn("MelonDsBios")?.GetMethod("Steadiest",
+                                BindingFlags.Public | BindingFlags.Static);
+            if (steadiest == null)
+            { Console.WriteLine("    no Steadiest to call"); return false; }
+
+            var type = TypeIn("NandDump");
+            var list = (IList)Activator.CreateInstance(
+                           typeof(List<>).MakeGenericType(type));
+
+            object Dump(string path, string setup)
+            {
+                var dump = Activator.CreateInstance(type);
+                type.GetField("Path").SetValue(dump, path);
+                type.GetField("Setup").SetValue(dump,
+                    Enum.Parse(TypeIn("NandSetup"), setup));
+                return dump;
+            }
+
+            string Chosen()
+            {
+                var picked = steadiest.Invoke(null, new object[] { list });
+                return (string)type.GetField("Path").GetValue(picked);
+            }
+
+            bool ok = true;
+
+            // Names alone: the same answer every time, whatever order they arrive in.
+            list.Add(Dump("z-dump.bin", "NeverUsed"));
+            list.Add(Dump("a-dump.bin", "NeverUsed"));
+            ok &= Check("with neither set up, the name decides", Chosen() == "a-dump.bin");
+
+            // And a dump that has been through its setup beats a name that sorts before it - that
+            // is the one whose saves exist.
+            list.Add(Dump("z-other.bin", "Locked"));
+            ok &= Check("a dump that has been set up wins over one that has not",
+                        Chosen() == "z-other.bin");
+
+            list.Add(Dump("b-other.bin", "Locked"));
+            ok &= Check("and between two set up, the name decides again",
+                        Chosen() == "b-other.bin");
+
+            return ok;
+        }
+
+        /// <summary>Turn the plugin's trace marker on or off for a moment, through its own field
+        /// rather than by creating a file in the user's log folder. Answers what it was.</summary>
+        private static bool Tracing(bool on)
+        {
+            try
+            {
+                var field = TypeIn("Log").GetField("_tracing",
+                                BindingFlags.NonPublic | BindingFlags.Static);
+                if (field == null) return false;
+                var before = (bool?)field.GetValue(null);
+                field.SetValue(null, (bool?)on);
+                return before ?? false;
+            }
+            catch { return false; }
+        }
+
+        private static string StateOf(MethodInfo of, string path)
+        {
+            try { return of.Invoke(null, new object[] { path }).ToString(); }
+            catch { return "(threw)"; }
+        }
+
+        /// <summary>A file of a given length without writing a given length. SetLength extends it in
+        /// the file table; nothing is read back, and a quarter of a gigabyte of zeroes never has to
+        /// travel through a buffer to prove that the scan skipped it.</summary>
+        private static void Sized(string path, long bytes)
+        {
+            using var stream = new FileStream(path, FileMode.Create, FileAccess.Write);
+            stream.SetLength(bytes);
+        }
+
+        private static long FreeSpaceOn(string path)
+        {
+            try { return new DriveInfo(Path.GetPathRoot(Path.GetFullPath(path))).AvailableFreeSpace; }
+            catch { return -1; }
+        }
+
         private static bool RegionCascade(string romDir)
         {
             Console.WriteLine();

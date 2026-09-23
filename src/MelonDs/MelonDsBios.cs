@@ -34,11 +34,14 @@ using System.IO;
 
 namespace LbIntegrations.MelonDs
 {
-    /// <summary>One NAND dump the user has, and the region it came from.</summary>
+    /// <summary>One NAND dump the user has, the region it came from, and whether it has been
+    /// through its first-use setup. The setup state is carried here rather than asked for again
+    /// later: whoever picked the dump is who has to act on it.</summary>
     internal sealed class NandDump
     {
         public string Path;
         public DsiRegion Region;
+        public NandSetup Setup;
     }
 
     internal static class MelonDsBios
@@ -106,10 +109,18 @@ namespace LbIntegrations.MelonDs
         private const string NoteName = "WHICH-FILES-GO-HERE.txt";
         private const string IndexName = "nands.txt";
 
-        /// <summary>A NAND dump is 240 MB. Anything far from that is not one, and opening it to find
-        /// out would cost a second for nothing.</summary>
-        private const long NandBytes = 251658304L;
-        private const long NandSlack = 4L * 1024 * 1024;
+        /// <summary>A NAND dump is 240 MB - 251,658,304 bytes for the stock 1.4.5 images, a little
+        /// more for one dumped with its 64-byte-per-sector spare area or with a footer stuck on the
+        /// end. So: a range, not a size. Anything outside it is not a NAND and is never opened -
+        /// opening one costs a decrypt and a FAT mount, which is a second spent to learn nothing.</summary>
+        private const long NandLeast = 220L * 1024 * 1024;
+        private const long NandMost = 260L * 1024 * 1024;
+
+        /// <summary>What the first-use flow leaves beside a NAND. Both are copies of a 240 MB file,
+        /// so both land squarely inside the size range above and would be scanned as NANDs if they
+        /// were not named here. Today they also end in neither .bin nor anything else we look for -
+        /// but that is an accident of naming, and an accident is not a guarantee.</summary>
+        private static readonly string[] NotNands = { ".lock", ".bak" };
 
         /// <summary>The folder to put things in and to name in a message. Absolute, and normalised
         /// so a message says G:\...\RetroArch\system rather than G:\...\melonDS\..\RetroArch\system.</summary>
@@ -319,13 +330,28 @@ namespace LbIntegrations.MelonDs
             var found = new List<NandDump>();
             try
             {
+                // Nothing can be read without it, and the index must not learn anything from a run
+                // that could not look inside a single file. Said once, not once per candidate.
+                if (string.IsNullOrWhiteSpace(bios7Path) || !File.Exists(bios7Path))
+                {
+                    Log.Verbose("no DSi ARM7 BIOS, so no NAND dump can be identified");
+                    return found;
+                }
+
                 var known = ReadIndex(layout);
                 var fresh = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 bool changed = false;
 
+                // EVERY file, not just *.bin. A NAND dump has no agreed extension - .bin, .img,
+                // .nand and no extension at all are all in circulation - and the size range below
+                // rejects the rest of the folder in one stat() apiece.
                 var candidates = new List<string>();
                 foreach (var dir in SearchFolders(layout))
-                    if (Directory.Exists(dir)) candidates.AddRange(Directory.EnumerateFiles(dir, "*.bin"));
+                {
+                    if (!Directory.Exists(dir)) continue;
+                    foreach (var path in Directory.EnumerateFiles(dir))
+                        if (!IsNotANand(path)) candidates.Add(path);
+                }
 
                 foreach (var path in candidates)
                 {
@@ -339,7 +365,7 @@ namespace LbIntegrations.MelonDs
                     }
                     catch { continue; }
 
-                    if (Math.Abs(length - NandBytes) > NandSlack) continue;   // not a NAND, not opened
+                    if (length < NandLeast || length > NandMost) continue;   // not a NAND, not opened
 
                     var stamp = length.ToString(CultureInfo.InvariantCulture) + "\t"
                               + written.Ticks.ToString(CultureInfo.InvariantCulture);
@@ -348,22 +374,30 @@ namespace LbIntegrations.MelonDs
                         && remembered.StartsWith(stamp + "\t", StringComparison.Ordinal))
                     {
                         var text = remembered.Substring(stamp.Length + 1);
+                        if (text == NotOne) { fresh[path] = remembered; continue; }
                         if (Enum.TryParse<DsiRegion>(text, out var cached))
                         {
-                            found.Add(new NandDump { Path = path, Region = cached });
+                            found.Add(Dump(path, cached));
                             fresh[path] = remembered;
                             continue;
                         }
                     }
 
-                    var region = ReadRegion(path, bios7Path);
+                    var region = ReadRegion(path, bios7Path, out var opened);
                     changed = true;
                     if (region == null)
                     {
                         Log.Verbose("could not read a region out of " + Path.GetFileName(path));
+
+                        // Remembered as NOT a NAND - but ONLY when the image itself was opened and
+                        // read, and it was its contents that said no. A failure to open it says
+                        // nothing about the file and everything about this machine: no native
+                        // library, a bad BIOS, a lock held by something else. Writing that down
+                        // would mark a real NAND as junk for as long as nobody touches it.
+                        if (opened) fresh[path] = stamp + "\t" + NotOne;
                         continue;
                     }
-                    found.Add(new NandDump { Path = path, Region = region.Value });
+                    found.Add(Dump(path, region.Value));
                     fresh[path] = stamp + "\t" + region.Value;
                     Log.Info(Path.GetFileName(path) + " is a " + MelonDsRegion.Name(region.Value) + " NAND");
                 }
@@ -374,6 +408,22 @@ namespace LbIntegrations.MelonDs
             return found;
         }
 
+        /// <summary>A file the first-use flow put beside a NAND, and which must never be taken for
+        /// a NAND itself.</summary>
+        private static bool IsNotANand(string path)
+        {
+            foreach (var suffix in NotNands)
+                if (path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        /// <summary>What the index writes for a file in the size range that turned out not to be a
+        /// NAND. Not a region name, so it can never be parsed back as one.</summary>
+        private const string NotOne = "-";
+
+        private static NandDump Dump(string path, DsiRegion region)
+            => new NandDump { Path = path, Region = region, Setup = MelonDsNandSetup.Of(path) };
+
         /// <summary>The NAND to run this title on: the first of the regions it accepts that the user
         /// actually has. Null with a reason when there is none.</summary>
         public static NandDump NandFor(MelonDsLayout layout, IEnumerable<DsiRegion> regions,
@@ -382,13 +432,53 @@ namespace LbIntegrations.MelonDs
             why = null;
             var dumps = Nands(layout, bios7Path);
             foreach (var region in regions ?? new List<DsiRegion>())
+            {
+                var matching = new List<NandDump>();
                 foreach (var dump in dumps)
-                    if (dump.Region == region) return dump;
+                    if (dump.Region == region) matching.Add(dump);
+                if (matching.Count == 0) continue;
+
+                var chosen = Steadiest(matching);
+                if (matching.Count > 1)
+                    Log.Info(matching.Count + " " + MelonDsRegion.Name(region) + " NAND dumps; using "
+                             + Path.GetFileName(chosen.Path)
+                             + ". Every save is tied to the dump it was made on, so this choice must "
+                             + "not drift between launches - a dump that has been set up wins, and "
+                             + "the name breaks a tie.");
+
+                return chosen;
+            }
 
             why = dumps.Count == 0
                 ? "there is no DSi NAND dump in " + Dir(layout)
                 : "the only NAND dump(s) there are " + Describe(dumps);
             return null;
+        }
+
+        /// <summary>Which of several dumps of the same region to run on.
+        ///
+        /// THE CHOICE MUST NOT DRIFT. Every DSiWare save is the difference against one particular
+        /// dump; pick a different one next launch and the saves are replayed onto a console that was
+        /// never theirs. Directory order is not an ordering - it is whatever the filesystem happens
+        /// to hand back, and it changes when files are added, renamed or defragmented.
+        ///
+        /// So: a dump that has BEEN SET UP wins. That is the one whose first-use flow somebody
+        /// actually completed, which makes it the one the saves came from. Failing that, the name,
+        /// ordinally - arbitrary, but the same arbitrary answer every time.</summary>
+        public static NandDump Steadiest(List<NandDump> matching)
+        {
+            NandDump best = null;
+            foreach (var dump in matching)
+            {
+                if (best == null) { best = dump; continue; }
+
+                bool mine = dump.Setup == NandSetup.Locked, theirs = best.Setup == NandSetup.Locked;
+                if (mine != theirs) { if (mine) best = dump; continue; }
+
+                if (string.Compare(dump.Path, best.Path, StringComparison.OrdinalIgnoreCase) < 0)
+                    best = dump;
+            }
+            return best;
         }
 
         private static string Describe(List<NandDump> dumps)
@@ -398,9 +488,13 @@ namespace LbIntegrations.MelonDs
             return string.Join(", ", names);
         }
 
-        /// <summary>Open a candidate and ask it what it is. One open, one file read out of it.</summary>
-        private static DsiRegion? ReadRegion(string nandPath, string bios7Path)
+        /// <summary>Open a candidate and ask it what it is. One open, one file read out of it.
+        ///
+        /// <paramref name="opened"/> separates "this is not a NAND" from "this could not be looked
+        /// at", which look identical from the outside and mean opposite things - see the caller.</summary>
+        private static DsiRegion? ReadRegion(string nandPath, string bios7Path, out bool opened)
         {
+            opened = false;
             if (string.IsNullOrWhiteSpace(bios7Path) || !File.Exists(bios7Path)) return null;
 
             string scratch = null;
@@ -412,6 +506,7 @@ namespace LbIntegrations.MelonDs
                     Log.Verbose("could not open " + Path.GetFileName(nandPath) + " - " + error);
                     return null;
                 }
+                opened = true;
 
                 scratch = Path.Combine(Path.GetTempPath(), "lbip-hwinfo-" + Guid.NewGuid().ToString("N"));
                 if (!session.ExportFile(MelonDsRegion.HardwareInfoInNand, scratch, out var whyNot))

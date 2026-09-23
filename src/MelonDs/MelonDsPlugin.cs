@@ -674,37 +674,47 @@ namespace LbIntegrations.MelonDs
         /// melonDS is running, because melonDS rewrites the whole file when it exits.</summary>
         public override PrepareForLaunchResponse PrepareEmulatorForLaunch(PrepareForLaunchArgs args)
         {
+            // THE ONE THING THAT STOPS A LAUNCH. A dump being set up for the first time has just
+            // had melonDS opened on it, and the game must not start on top of that. Everything else
+            // here answers true: a plugin that cannot prepare something is not a reason to refuse
+            // somebody their game.
+            bool go = true;
             try
             {
                 var exe = Safe(() => args?.EmulatorBeingLaunched?.ApplicationPath);
                 var rom = Safe(() => args?.GameBeingLaunched?.ApplicationPath);
                 if (!string.IsNullOrWhiteSpace(exe))
-                    ChooseConsoleMode(MelonDsPaths.Resolve(ResolveFullPath(exe)), ResolveFullPath(rom));
+                    go = ChooseConsoleMode(MelonDsPaths.Resolve(ResolveFullPath(exe)), ResolveFullPath(rom));
             }
             catch (Exception ex) { Log.Warn("PrepareEmulatorForLaunch", ex); }
 
             // The command line is left alone: the host already appends the ROM, and -f is on the
             // emulator entry.
-            return new PrepareForLaunchResponse(success: true);
+            return new PrepareForLaunchResponse(success: go);
         }
 
-        /// <summary>DS or DSi, decided and written. Never throws, and never fails a launch.</summary>
-        internal static void ChooseConsoleMode(MelonDsLayout layout, string romPath)
+        /// <summary>DS or DSi, decided and written. Never throws.
+        ///
+        /// Answers whether the launch should go ahead. FALSE happens in exactly one place - a NAND
+        /// dump being set up for the first time, which opens melonDS itself and must not be raced by
+        /// the game. Every other outcome, including every failure, answers true: not being able to
+        /// prepare something is not a reason to refuse somebody their game.</summary>
+        internal static bool ChooseConsoleMode(MelonDsLayout layout, string romPath)
         {
-            if (layout?.ConfigFile == null) return;
+            if (layout?.ConfigFile == null) return true;
 
             var rom = NdsHeader.Describe(romPath);
             if (!rom.Known)
             {
                 Log.Verbose("could not read a DS header from " + romPath + "; leaving the console mode alone");
-                return;
+                return true;
             }
 
             // A DSiWARE LAUNCH CAPTURES ITS OWN PREDECESSOR, inside PrepareDsiWare and only once
             // it knows whether it is about to rebuild: the image it would be walking is the very one
             // it is about to hand straight back, and doing that costs a quarter of a second per
             // launch to write down something already on disk.
-            if (rom.IsDSiWare) { PrepareDsiWare(layout, rom, romPath); return; }
+            if (rom.IsDSiWare) return PrepareDsiWare(layout, rom, romPath);
 
             // ANY OTHER LAUNCH CAPTURES UNCONDITIONALLY. Whatever the working NAND still holds
             // belongs to the title that ran last, and there is no "the emulator quit" event to hang
@@ -735,6 +745,7 @@ namespace LbIntegrations.MelonDs
 
             // A cartridge boots straight in: it carries its own save and has no business on a menu.
             SetBootMode(layout, wanted, directBoot: true, rom);
+            return true;
         }
 
         /// <summary>Rebuild the working NAND for this title and point melonDS at it.
@@ -748,7 +759,7 @@ namespace LbIntegrations.MelonDs
         /// captured - and a scratch image rebuilt every launch would then be worse than useless,
         /// because it would wipe the manual import that is the only thing left to do. So that case
         /// keeps a NAND of its own per title, which is where a manual import survives.</summary>
-        private static void PrepareDsiWare(MelonDsLayout layout, NdsRom rom, string romPath)
+        private static bool PrepareDsiWare(MelonDsLayout layout, NdsRom rom, string romPath)
         {
             // WHICH CONSOLE CAN RUN IT. A DSi NAND is region locked, so this decides which dump
             // the image is built on - see MelonDsRegion for the three sources and their order.
@@ -786,7 +797,22 @@ namespace LbIntegrations.MelonDs
             if (missing.Count > 0 || source == null)
             {
                 ReportMissing(layout, rom, regions, missing, source == null ? whyNoNand : null);
-                return;
+                return true;
+            }
+
+            // FIRST USE OF THIS DUMP, before anything is built on it. Setting a console up writes
+            // into the image, and from here on every saved difference is measured against it - so
+            // it has to happen first, once, deliberately. See MelonDsNandSetup.
+            //
+            // Only a dump chosen by region goes through this. A base.bin left over from the previous
+            // layout has a history nobody wrote down, and asking about it would mean asking somebody
+            // to vouch for a file they may not remember putting there.
+            if (dump != null && MelonDsNandSetup.Run(layout, dump))
+            {
+                Log.Info("melonDS was opened to set up " + System.IO.Path.GetFileName(dump.Path)
+                         + ", so this launch of " + rom.AssetName + " is dropped. Launch it again "
+                         + "once the console is ready.");
+                return false;
             }
 
             var configured = MelonDsToml.Read(layout.ConfigFile, MelonDsPaths.DSiTable, "NANDPath");
@@ -813,7 +839,7 @@ namespace LbIntegrations.MelonDs
                 Log.Info(rom.AssetName + " is DSiWare (title " + rom.TitleId
                          + ") but it has no NAND to run from - " + nand.Reason
                          + ". Leaving the console mode alone.");
-                return;
+                return true;
             }
 
             if (!reused && dump != null)
@@ -830,7 +856,7 @@ namespace LbIntegrations.MelonDs
                     {
                         ["NANDPath"] = MelonDsToml.Text(nand.Path),
                     }, force: true);
-                if (error != null) { Log.Warn("DSi NAND not selected: " + error); return; }
+                if (error != null) { Log.Warn("DSi NAND not selected: " + error); return true; }
             }
 
             // Through the menu, not straight into the cartridge - see SetBootMode. The marker
@@ -848,20 +874,20 @@ namespace LbIntegrations.MelonDs
                 Log.Info("ONE MANUAL STEP for " + rom.AssetName + ": in melonDS, open Manage DSi titles "
                          + "and import this .nds into the NAND that is now selected. melonDS boots "
                          + "DSiWare from the NAND, and its saves live there. (" + missingLibrary + ")");
-                return;
+                return true;
             }
 
             if (reused)
             {
                 Log.Verbose(rom.AssetName + ": the working NAND already holds it, reusing it as it is");
-                return;
+                return true;
             }
 
             // Install, then walk what that produced. The walk is the reference every later comparison
             // is made against, so it has to describe the install AND NOTHING ELSE - taken after the
             // saved state went back in, it would describe the state as part of the install and the
             // next capture would find no difference at all.
-            if (!InstallTitle(layout, rom, romPath, nand.Path)) return;
+            if (!InstallTitle(layout, rom, romPath, nand.Path)) return true;
 
             // A NAND from the previous layout, if there is one: read its state out and drop the
             // 240 MB image. It needs the reference, so it cannot happen any earlier than this.
@@ -872,6 +898,7 @@ namespace LbIntegrations.MelonDs
             // Last, once everything above has worked: a marker naming a title whose state never went
             // back in would make the next capture overwrite a good state with a blank one.
             MelonDsDsi.RememberWork(layout, rom.TitleId, romPath, source);
+            return true;
         }
 
         /// <summary>Point melonDS at the DS BIOS and firmware, and turn external BIOS on or off to
@@ -1009,8 +1036,7 @@ namespace LbIntegrations.MelonDs
         }
 
         /// <summary>Say, in the log AND on screen, that a DSiWare title cannot run and what is
-        /// missing. The window is the only one this plugin shows; see MelonDsMissingFiles for why it
-        /// exists at all and why it cannot stop the launch.</summary>
+        /// missing. See MelonDsDialog for why this plugin brings its own windows at all.</summary>
         private static void ReportMissing(MelonDsLayout layout, NdsRom rom, List<DsiRegion> regions,
                                           List<string> missing, string whyNoNand)
         {
@@ -1028,7 +1054,7 @@ namespace LbIntegrations.MelonDs
                      + (whyNoNand == null ? "" : " - " + whyNoNand)
                      + ". Leaving the console mode alone.");
 
-            MelonDsMissingFiles.Show(rom.AssetName, MelonDsBios.Dir(layout), missing, wanted,
+            MelonDsDialog.MissingFiles(rom.AssetName, MelonDsBios.Dir(layout), missing, wanted,
                 regions.Count == 0
                     ? "Nothing in this ROM or its file name says which region it is for, so any NAND "
                       + "you have will be tried."

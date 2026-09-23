@@ -484,7 +484,8 @@ absent or broken is looked up.
 
 **A DSi NAND is region locked, so the right one is chosen per game.** The system menu that launches an
 installed title is built for one region and refuses titles from another - which is a blank screen and
-no explanation. Put as many region dumps in `bios\` as you own, **under any names you like**:
+no explanation. Put as many region dumps in `RetroArch\system\` as you own, **under any names you
+like** - a dump is found by its size, between 220 and 260 MB, and identified by what is inside it:
 
 ```
 your dump                 -> 0:/sys/HWINFO_S.dat, byte 0x90   -> the region it came from
@@ -506,9 +507,18 @@ to read. Then the **parentheses in the file name**, `(Japan)`, `(Europe, Austral
 narrow an answer that named several regions. A rename is the least trustworthy link in the chain and
 is never allowed to overrule the header.
 
-If the NAND for a game's region is not there, a window says so and offers to open the folder. It is
-the only window this plugin shows, and the reason it exists is that the LaunchBox SDK has no message
-API of any kind - so the alternative was a line in a log file nobody reads when a game fails to start.
+**Two dumps of the same region is a real case, and the choice between them must not drift.** People
+keep the dump of their own console next to a clean stock image. Directory order is not an ordering -
+it is whatever the filesystem hands back, and it moves when files are added or renamed - and every
+save is the difference against one particular dump, so a choice that wanders replays saves onto a
+console they never came from. The rule: a dump that has been **set up** (below) wins, because that is
+the one the saves came from; failing that, the name, ordinally. The log says which one was taken
+whenever there is more than one to take.
+
+If the NAND for a game's region is not there, a window says so and offers to open the folder. This
+plugin brings its own windows because the LaunchBox SDK has no message API of any kind - no
+`ShowMessage`, nothing - so the alternative was a line in a log file nobody reads when a game fails to
+start. There are three of them, and the other two are below.
 
 **DSiWare runs on one working NAND, rebuilt at every launch.** A DSiWare title is not a cartridge:
 melonDS boots it out of the NAND, and its save lives there too, at
@@ -529,7 +539,7 @@ that rebuilt image    -> the NAND actually played  5 files, 80 KB:
 So the difference is the save, and the image is scratch:
 
 ```
-<install>\bios\                          yours - BIOS, firmware, and a NAND per region you own
+..\RetroArch\system\                     yours - BIOS, firmware, and a NAND per region you own
 <install>\dsi\work.bin                   ours - the working image, rebuilt every launch
 <install>\dsi\0003000412345678\state\    the files that differ - tens of kilobytes
 ```
@@ -543,6 +553,51 @@ rebuilding for it would copy 240 MB and reinstall a title to arrive at what is a
 about a quarter of a second, measured, and 240 MB written for nothing. So a launch of the same title
 from the same ROM uses the image as it stands. Launching anything else rebuilds over it, which is the
 eviction: there is only ever one.
+
+**A NAND is set up once, and then never touched again.** This falls straight out of the paragraphs
+above: a save is the *difference* between your dump and the image the game ran on, so every saved
+difference was measured against one particular dump and is replayed onto a rebuild of it. Change that
+dump afterwards and the differences still apply cleanly - to a console that no longer exists. Nothing
+crashes; the saves just stop meaning anything.
+
+And a fresh dump does need setting up once. A NAND out of a real console carries that console's name,
+language, birthday and colour, and one from anywhere else carries a stranger's or an unfinished
+welcome sequence the DSi menu insists on completing. Completing it **writes into the NAND**. You
+cannot have both a configured console and an untouched base image unless the configuring happens
+first, deliberately, before any save exists.
+
+So the first time a dump is used, a window says so, and offers to do it now:
+
+```
+dsinand.bin            the dump, and from then on it must not change
+dsinand.bin.bak        a copy, made before melonDS opens
+dsinand.bin.lock       that same copy, renamed once you say the setup worked
+```
+
+melonDS opens on the DSi menu, on that NAND and no ROM - `ConsoleType = 1` with `DirectBoot = false`
+boots the firmware, and in DSi mode the firmware *is* the menu held in the NAND. Set the console up,
+quit melonDS, and a second window asks whether it worked. Yes renames the copy to `.lock`; no puts the
+copy back exactly as it was. The game you launched does not start that time - launch it again once the
+console is ready.
+
+**The lock is the copy**, not an empty flag. One file move instead of a delete and a create, and what
+is left behind is the image as it was before anybody touched it, so the one irreversible step in this
+flow is reversible after all. It costs 240 MB per dump; making it empty is a one-line change if that
+trade stops being worth it. Either file is ignored by the scan, by name, so a `.lock` of exactly the
+right size is never mistaken for a second NAND.
+
+If melonDS is closed without answering, the `.bak` is left where it is and the next launch offers all
+three ways out: lock it as it stands, open melonDS again, or put the copy back.
+
+**None of this happens without a window.** Every step is gated on the dialog being available - with
+windows suppressed the flow declines, says so in the log, and uses the dump as it is. Copying 240 MB
+and starting an emulator nobody asked for would be a far worse failure than an unconfigured console.
+
+**What the lock does NOT do is notice that a dump changed anyway.** It says "this one has been through
+its setup" and nothing more; it does not hash the image or compare it later. A dump that was in use
+before this existed has no `.lock`, so it is asked about once - answering *Not now* keeps using it and
+asks again next time, and setting it up properly settles it. There is no way to tell, from a file
+alone, what somebody has already done to it.
 
 Reuse is allowed only when nothing could have made the image stale - it exists, a marker says it
 holds this title built from this ROM (path, length and write time, not a hash: this runs on every
