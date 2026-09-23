@@ -605,14 +605,21 @@ second window asks whether it worked. Yes writes the recipe beside it; no delete
 is nothing to put back. The game you launched does not start that time - launch it again once the
 console is ready.
 
-**Declining costs nothing.** Say *Not now* and the game runs on the dump exactly as it is, which is
-what happened before any of this existed: the working image is a copy, so the dump is still never
-written to. Those saves carry no recipe, which the rest of the plugin already treats as "no opinion",
-and the question is asked again next time.
+**There is no "play without a console", and that is a deliberate reversal.** The window used to
+offer *Not now*, which started the game on the raw dump - the behaviour from before any of this
+existed, kept out of a reflex not to gate somebody's game. Measured against the save model it was
+not the free option it looked like. An unconfigured NAND makes the DSi menu run its welcome sequence
+**inside the game**, and those settings land in `shared1/TWLCFG0.dat` and `TWLCFG1.dat`, which the
+capture files under *that one title's* state and the restore replays at every launch. The console
+setup then lives once per game, buried in each save, instead of once in a console - and those saves
+carry no recipe, so nothing can rebuild them anywhere else. Closing the window abandons the launch.
 
-**None of this happens without a window.** Every step is gated on the dialog being available - with
-windows suppressed the flow declines, says so in the log, and uses the dump as it is. Copying 240 MB
-and starting an emulator nobody asked for would be a far worse failure than an unconfigured console.
+**None of this happens without a window, and nothing is refused without one either.** Every step is
+gated on the dialog being available - with windows suppressed there is nobody to ask, so that one
+case runs on the dump and says so in the log. A silent refusal would make DSiWare unplayable with no
+way to find out why; turning the windows off is an explicit act, and being asked nothing is what it
+means. Copying 240 MB and starting an emulator nobody asked for would be the worse failure of the
+two.
 
 **And the space this takes is bounded by your configurations, not by your library:** one console per
 dump you set up - in practice one, at most one per region - plus one rebuild per *previous*

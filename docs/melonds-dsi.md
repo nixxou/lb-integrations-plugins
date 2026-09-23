@@ -263,9 +263,15 @@ puis une seconde fenêtre demande si la configuration a marché. Oui écrit la r
 supprime la copie — et il n'y a rien à remettre en place. Le lancement du jeu qui a déclenché tout ça
 est **annulé** (`PrepareForLaunchResponse(success: false)`) : l'utilisateur relance.
 
-**Refuser ne coûte rien.** « Pas maintenant » et le jeu tourne sur le dump tel quel, comme avant que
-tout ceci existe : l'image de travail étant une copie, le dump n'est toujours pas écrit. Ces
-sauvegardes-là ne portent pas de recette, ce que le reste du greffon traite déjà comme « pas d'avis ».
+**Il n'y a pas de « jouer sans console »**, et c'est un revirement assumé. La fenêtre offrait
+« Pas maintenant », qui lançait le jeu sur le dump brut — le comportement d'avant, gardé par réflexe
+de ne pas bloquer le jeu de quelqu'un. Mesuré contre le modèle de sauvegarde, ce n'était pas l'option
+gratuite qu'elle avait l'air d'être : une NAND non configurée fait dérouler la séquence de bienvenue
+du menu DSi **dans le jeu**, et ces réglages atterrissent dans `shared1/TWLCFG0.dat` et `TWLCFG1.dat`,
+que la capture range sous l'état de **ce titre-là** et que la restauration rejoue à chaque lancement.
+La configuration console vit alors une fois par jeu, enfouie dans chaque sauvegarde, au lieu d'une
+fois dans une console — et ces sauvegardes ne portent pas de recette, donc rien ne peut les
+reconstruire ailleurs. Fermer la fenêtre abandonne le lancement.
 
 C'était la deuxième disposition. La première configurait le dump **sur place** et gardait une copie
 vierge en `<dump>.lock` pour réparer après coup : le dossier où quelqu'un range ses dumps vierges
@@ -277,9 +283,11 @@ fichier » n'existaient que pour gérer ce dégât. Aucun n'a survécu au dégâ
 consoles sans se marcher dessus **tout en partageant les dumps** — et comme une sauvegarde porte sa
 recette (§ README), elle passe de l'un à l'autre en reconstruisant sa console.
 
-**Sans fenêtre, rien ne se déclenche** : configurer la console de quelqu'un en silence, ou copier
-240 Mo et démarrer un émulateur que personne n'a demandé, serait pire que laisser un dump non
-configuré.
+**Sans fenêtre, rien ne se construit et rien ne se refuse non plus.** Configurer la console de
+quelqu'un en silence, ou copier 240 Mo et démarrer un émulateur que personne n'a demandé, serait pire
+que laisser un dump non configuré. Et un refus silencieux rendrait le DSiWare injouable sans moyen de
+savoir pourquoi : fenêtres coupées, le jeu tourne sur le dump et le journal le dit. Couper les
+fenêtres est un acte explicite ; ne rien se voir demander est ce que ça veut dire.
 
 **Une cartouche DSi ne tourne pas sur une console.** Elle écrit les réglages système dans la NAND
 qu'on lui donne ; sur une console, ça en changerait l'identité et orphelinerait toutes les

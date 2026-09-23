@@ -16,13 +16,20 @@
 // answers "has this been set up", and because a dump has exactly one console, "which console" is
 // never asked. See MelonDsBase.ConsoleFor.
 //
-// DECLINING COSTS NOTHING. The working image is a COPY of the base - melonDS never opens the base
-// itself - so a dump can serve as its own base without ever being written to. Somebody who says
-// "not now" gets exactly what they got before: the game runs on an unconfigured console, and their
-// saves carry no recipe, which the rest of the plugin already treats as "no opinion".
+// THERE IS NO "PLAY WITHOUT A CONSOLE", and that was a deliberate reversal. This window used to
+// offer "Not now", which started the game on the raw dump - the behaviour from before any of this
+// existed, kept out of a reflex not to gate somebody's game. Measured against the save model, it
+// was not the free option it looked like: an unconfigured NAND makes the DSi menu run its welcome
+// sequence IN THE GAME, and those settings land in shared1/TWLCFG0.dat and TWLCFG1.dat, which the
+// capture files under THAT ONE TITLE's state and RestoreState replays at every launch. The console
+// setup then lives once per game, inside each save, instead of once in a console - and those saves
+// carry no recipe, so nothing can rebuild them anywhere else. Closing this window abandons the
+// launch instead.
 //
-// WITHOUT A WINDOW, NOTHING IS BUILT. Configuring somebody's console silently, or copying 240 MB and
-// starting an emulator they did not ask for, would be worse than leaving a dump unconfigured.
+// WITHOUT A WINDOW, NOTHING IS BUILT AND NOTHING IS REFUSED. With the dialog suppressed there is
+// nobody to ask, and a silent refusal would make DSiWare unplayable with no way to find out why -
+// so that one case still runs on the dump, and says so in the log. Turning the windows off is an
+// explicit act; being asked nothing is what it means.
 
 using System;
 using System.Collections.Generic;
@@ -64,13 +71,15 @@ namespace LbIntegrations.MelonDs
                 var name = Path.GetFileName(dump.Path);
                 var answer = MelonDsDialog.Ask("melonDS - no console for this NAND yet",
                                                Announcement(name, dump.Region),
-                                               new[] { "Set one up now", "Not now" });
+                                               new[] { "Set one up now", "Close" });
                 if (answer != 0)
                 {
-                    Log.Info("no console was built for " + name + "; the game will run on the dump as "
-                             + "it is, and its saves will carry no recipe. This will be asked again "
-                             + "next time.");
-                    return false;
+                    // ABANDONED, not "run it anyway". See the head of this file: playing without a
+                    // console is not a lesser option, it is the same setup done once per game and
+                    // buried in a save that cannot be rebuilt.
+                    Log.Info("no console was built for " + name + ", so this launch is dropped. "
+                             + "Nothing was written, and you will be asked again next time.");
+                    return true;
                 }
 
                 var console = MelonDsBase.BuildConsole(layout, dump.Path, out var error);
@@ -81,9 +90,10 @@ namespace LbIntegrations.MelonDs
                                       "A copy of " + name + " has to be made before it can be set up, "
                                       + "and it could not be:" + Environment.NewLine + Environment.NewLine
                                       + "    " + error + Environment.NewLine + Environment.NewLine
-                                      + "Your own dump was not touched.",
+                                      + "Your own dump was not touched, and the game was not "
+                                      + "started.",
                                       new[] { "Close" });
-                    return false;
+                    return true;
                 }
 
                 Configure(layout, console);
@@ -205,11 +215,16 @@ namespace LbIntegrations.MelonDs
                 "    3. set the console up, then quit melonDS",
                 "    4. this window comes back and asks whether it worked",
                 "",
-                "The game you launched will not start this time - launch it again once the",
-                "console is ready.",
+                "Either way, the game you launched does not start this time. Launch it again",
+                "once the console is ready.",
                 "",
-                "This is a " + MelonDsRegion.Name(region) + " NAND, and you are asked once per NAND.",
-                "Saying no is fine: the game runs on the dump as it is, unconfigured.",
+                "This is a " + MelonDsRegion.Name(region) + " NAND, and you are asked once per NAND -",
+                "every DSiWare of this region then runs on the same console.",
+                "",
+                "There is no \"play without a console\". An unconfigured NAND makes the DSi",
+                "menu run its welcome sequence INSIDE THE GAME, and those settings are then",
+                "saved as part of that one game - the same again for the next one, in a save",
+                "nothing can rebuild if you lose it.",
             };
             return string.Join(Environment.NewLine, lines);
         }

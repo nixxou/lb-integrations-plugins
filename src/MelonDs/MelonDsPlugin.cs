@@ -833,14 +833,16 @@ namespace LbIntegrations.MelonDs
                 var console = MelonDsBase.ConsoleFor(layout, dump.Path);
                 if (console == null)
                 {
-                    // Q4. Building one opens melonDS on the DSi menu, so this launch is dropped and
-                    // the user relaunches. Declining leaves source on the dump itself, which is read
-                    // and copied but never written to - the working image is always a copy.
+                    // Q4. THE WINDOW ANSWERS FOR THIS LAUNCH, whichever way it is answered:
+                    // setting a console up opens melonDS on the DSi menu, and closing the window
+                    // means there is still no console to run on. Only the suppressed-window and
+                    // kill-switch cases fall through, and those run on the dump - read and copied,
+                    // never written to, since the working image is always a copy.
                     if (MelonDsNandSetup.Run(layout, dump, bios7))
                     {
-                        Log.Info("melonDS was opened to set a console up for "
-                                 + System.IO.Path.GetFileName(dump.Path) + ", so this launch of "
-                                 + rom.AssetName + " is dropped. Launch it again once it is ready.");
+                        Log.Info(rom.AssetName + " is not started this time; " + MelonDsBios.Dir(layout)
+                                 + "\\" + System.IO.Path.GetFileName(dump.Path) + " needs a console "
+                                 + "first. Launch it again once there is one.");
                         return false;
                     }
                     console = MelonDsBase.ConsoleFor(layout, dump.Path);
