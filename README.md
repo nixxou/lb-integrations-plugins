@@ -168,6 +168,12 @@ It writes nothing unless you ask it to. These modes do — the last two only ins
     agrees with our reading of melonDS, this proves the reading.
 
 --melonds
+    ... and which DSi a title needs: that the region mask beats a letter that disagrees,
+    that a letter answers when there is no mask, that a file name may narrow an answer
+    but never overrule one, and that a title saying nothing anywhere gets no answer
+    rather than a guess. Plus what a DSiWare launch does when it has nothing to run on.
+
+--melonds
     the whole melonDS contract against a forged install: both save dispositions, the .ml<n>
     slots, the name taken from inside an archive, the TOML writer, the DS/DSi/DSiWare decision
     read out of a ROM header, and the per-title NAND - that it is copied and not invented,
@@ -379,6 +385,75 @@ ROM says which mode it wants, through melonDS's own predicates (`NDS_Header.h:20
 the mode only when the three DSi files are configured **and present**; otherwise it starts in DS mode
 and the log says why.
 
+**What may be handed in, and why the list is not melonDS's.** The ROM extensions are its own -
+`.nds`, `.srl`, `.dsi`, `.ids` (`Window.cpp:95`). The containers are not: melonDS opens archives
+itself through libarchive and accepts a long list, but this plugin has to read the INNER entry's name
+out of one, because that name is what the save is called. A container it cannot open is a save
+silently misfiled. So the declared set is what was measured by handing the plugin one of each -
+`.zip`, `.7z`, `.rar`, `.tar`, `.tgz` - and the probe holds that measurement.
+
+**A DS game in an archive is simply forwarded**; melonDS unpacks it and nothing here has to. **A
+DSiWare title in an archive is not**, and that difference used to be a dead end: a DSiWare has to be
+INSTALLED into a NAND first, both melonDS's importer and ours read a `.nds` from disk, and the plugin
+refused. It prepared a NAND, installed nothing into it, and left the DSi menu showing no game, with a
+log line for an explanation. Now the `.nds` is unpacked to a temporary file, installed from there,
+and deleted. A `.tmd` you put beside the ARCHIVE is still found - the unpacked copy has nothing
+beside it, so both paths are carried.
+
+Two entry points are needed for that. `ArchiveFactory` wants a container it can seek around in, which
+a gzipped tar is not - measured: `.tar` opens, `.tar.gz` does not. `ReaderFactory` reads a stream
+forwards instead, which is exactly what a compressed tar is, so it picks up what the other cannot.
+
+**What melonDS needs, and what it does not.** Read out of `EmuInstance::verifySetup` (`:633-665`)
+and `loadFirmware` (`:1012-1050`) rather than out of a wiki:
+
+| launching | needs |
+|---|---|
+| a DS game, `Emu.ExternalBIOSEnable` off | **nothing** - a built-in BIOS and a generated firmware |
+| a DS game, `Emu.ExternalBIOSEnable` on | `bios7.bin`, `bios9.bin`, `firmware.bin` |
+| **DSiWare** | `dsi_bios7.bin`, `dsi_bios9.bin`, `dsi_firmware.bin`, **and a NAND of the right region** |
+
+The plugin never touches `ExternalBIOSEnable`: whether you want your own console's BIOS or melonDS's
+replacement is your answer, not its.
+
+**The DSi firmware is required whatever that setting says**, and it is a trap worth naming.
+`verifySetup` only checks it when `ExternalBIOSEnable` is on, which makes it look optional. It is
+not: `loadFirmware`'s built-in branch for DSi mode is an empty `// TODO` that falls straight through
+to opening `DSi.FirmwarePath` anyway. Believing the verify step would have meant declaring a file
+unnecessary that melonDS then fails without.
+
+They go in `Emulators\melonDS\bios\`, which the install creates with a note in it saying what
+belongs there. Drop a file in and launch: the plugin finds it and points melonDS at it. A path you
+configured yourself, anywhere you like, is left alone - only what is absent or broken is looked up.
+
+**A DSi NAND is region locked, so the right one is chosen per game.** The system menu that launches an
+installed title is built for one region and refuses titles from another - which is a blank screen and
+no explanation. Put as many region dumps in `bios\` as you own, **under any names you like**:
+
+```
+your dump                 -> 0:/sys/HWINFO_S.dat, byte 0x90   -> the region it came from
+the game's header         -> DSiRegionMask at 0x1B0           -> the regions that accept it
+```
+
+Neither side is read from a file name. The offset in the NAND is measured, not derived: the file
+announces `EntrySize = 0x1C`, and 128 (its RSA-SHA1 HMAC) + 4 + 4 + 28 is 164, exactly the
+`static_assert` on `DSiSerialData`. Checked against six dumps - AUS, CHN, EUR, JPN, KOR, USA - and the
+region read out of each matched its name in all six, with language masks matching melonDS's
+`AmericaLanguages`, `EuropeLanguages` and the rest. Opening a dump costs about 150 ms, so the answers
+are remembered in `dsi\nands.txt` and forgotten again when a file's size or date changes.
+
+**Three things say what a game wants, and they are tried in order of authority.** The region **mask**
+first: it is the field melonDS itself is handed, and it is the only one of the three that can say
+"several regions" or "region free" without a table of special cases. Then the region **letter**, the
+fourth character of the game code - which is also the last byte of the title id, so it costs nothing
+to read. Then the **parentheses in the file name**, `(Japan)`, `(Europe, Australia)`, used only to
+narrow an answer that named several regions. A rename is the least trustworthy link in the chain and
+is never allowed to overrule the header.
+
+If the NAND for a game's region is not there, a window says so and offers to open the folder. It is
+the only window this plugin shows, and the reason it exists is that the LaunchBox SDK has no message
+API of any kind - so the alternative was a line in a log file nobody reads when a game fails to start.
+
 **DSiWare runs on one working NAND, rebuilt at every launch.** A DSiWare title is not a cartridge:
 melonDS boots it out of the NAND, and its save lives there too, at
 `title/<category>/<id>/data/public.sav` (`DSi_NAND.cpp:1077-1092`). So an image has to exist and hold
@@ -398,9 +473,9 @@ that rebuilt image    -> the NAND actually played  5 files, 80 KB:
 So the difference is the save, and the image is scratch:
 
 ```
-<install>\dsi\base.bin                  your own dump, copied here once
-<install>\dsi\work.bin                  the working image, rebuilt every launch
-<install>\dsi\0003000412345678\state\   the files that differ - tens of kilobytes
+<install>\bios\                          yours - BIOS, firmware, and a NAND per region you own
+<install>\dsi\work.bin                   ours - the working image, rebuilt every launch
+<install>\dsi\0003000412345678\state\    the files that differ - tens of kilobytes
 ```
 
 **480 MB for the whole library instead of 240 MB per game**, and an old per-title NAND found on disk
@@ -420,11 +495,13 @@ melonDS is not in the middle of using it. Getting it wrong would cost nothing th
 since the state on disk is the save and the image is scratch, but it would cost a session.
 
 A launch captures whatever the working image still holds **before** rebuilding it, so a session is
-never thrown away unread; that happens on every launch, including of a plain cartridge. On the first
-DSiWare launch the plugin captures whatever `DSi.NANDPath` points at as `base.bin` - **before**
-overwriting it, or the original would be lost as a source. The working image is never taken as a base;
-that would fold one game's state into what every later rebuild starts from. Free space is checked
-first: a dump is around 240 MB. The `no-dsi-nand` marker beside the log turns the whole thing off.
+never thrown away unread; that happens on every launch, including of a plain cartridge. Free space is
+checked first: a dump is around 240 MB. The `no-dsi-nand` marker beside the log turns the whole thing
+off, and `no-dsi-dialog` silences the window without silencing the log.
+
+An earlier layout kept the user's dump as `dsi\base.bin` and built every title on it. Nothing writes
+one any more, but one found there is still accepted as a last resort, with a log line saying where
+region dumps go - an install that worked yesterday does not stop working today.
 
 **Nothing decides which files matter.** The five above are what one measurement found; they are not a
 list the code carries. It walks the image, compares, and keeps what differs - a title writing

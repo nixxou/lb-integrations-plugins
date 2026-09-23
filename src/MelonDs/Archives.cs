@@ -18,6 +18,7 @@
 using System;
 using System.IO;
 using SharpCompress.Archives;
+using SharpCompress.Readers;
 using SharpCompress.Common;
 
 namespace LbIntegrations.MelonDs
@@ -94,6 +95,120 @@ namespace LbIntegrations.MelonDs
                 }
             }
             catch (Exception ex) { Log.Verbose("could not look inside " + archivePath + " - " + ex.Message); }
+
+            // ArchiveFactory wants a container with a directory it can seek around in, which a
+            // gzipped tar is not - measured: .tar opens, .tar.gz does not. ReaderFactory reads a
+            // stream forwards instead, which is exactly what a compressed tar is, so it picks up
+            // what the other one cannot.
+            return TryReadStreaming(archivePath, extensions, maxBytes, out entryName, out head);
+        }
+
+        private static bool TryReadStreaming(string archivePath, string[] extensions, int maxBytes,
+                                             out string entryName, out byte[] head)
+        {
+            entryName = null;
+            head = null;
+            try
+            {
+                using var file = File.OpenRead(archivePath);
+                using var reader = ReaderFactory.Open(file);
+                while (reader.MoveToNextEntry())
+                {
+                    if (reader.Entry.IsDirectory) continue;
+                    var key = reader.Entry.Key;
+                    if (!Wanted(key, extensions)) continue;
+
+                    using var source = reader.OpenEntryStream();
+                    using var buffer = new MemoryStream();
+                    var chunk = new byte[8192];
+                    int read;
+                    while (buffer.Length < maxBytes && (read = source.Read(chunk, 0, chunk.Length)) > 0)
+                        buffer.Write(chunk, 0, read);
+
+                    entryName = Path.GetFileName(key.Replace('/', Path.DirectorySeparatorChar));
+                    head = buffer.ToArray();
+                    return true;
+                }
+            }
+            catch (Exception ex) { Log.Verbose("could not stream " + archivePath + " - " + ex.Message); }
+            return false;
+        }
+
+        /// <summary>Does this entry's name end in one of the extensions we are after?</summary>
+        private static bool Wanted(string key, string[] extensions)
+        {
+            if (string.IsNullOrEmpty(key)) return false;
+            var ext = Path.GetExtension(key);
+            foreach (var candidate in extensions)
+                if (string.Equals(ext, candidate, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        /// <summary>Write the first matching entry out to a file, and answer with the name it had
+        /// inside the archive.
+        ///
+        /// FOR THE ONE THING THAT CANNOT TAKE AN ARCHIVE. melonDS opens archives itself, so a DS game
+        /// is simply handed over and nothing here has to unpack it. A DSiWare title is different: it
+        /// has to be INSTALLED into a NAND first, and both melonDS's importer and ours read a .nds
+        /// from disk. Without this, a DSiWare in a zip prepared a NAND, installed nothing into it,
+        /// and left the DSi menu showing no game - a dead end with a log line for an explanation.</summary>
+        public static bool ExtractFirstEntry(string archivePath, string[] extensions, string destPath,
+                                             out string entryName)
+        {
+            entryName = null;
+            try
+            {
+                using var archive = ArchiveFactory.Open(archivePath);
+                foreach (var entry in archive.Entries)
+                {
+                    if (entry.IsDirectory) continue;
+                    var key = entry.Key;
+                    if (string.IsNullOrEmpty(key)) continue;
+
+                    var ext = Path.GetExtension(key);
+                    bool wanted = false;
+                    foreach (var candidate in extensions)
+                        if (string.Equals(ext, candidate, StringComparison.OrdinalIgnoreCase)) { wanted = true; break; }
+                    if (!wanted) continue;
+
+                    Directory.CreateDirectory(Path.GetDirectoryName(destPath));
+                    using (var source = entry.OpenEntryStream())
+                    using (var target = File.Create(destPath))
+                        source.CopyTo(target);
+
+                    entryName = Path.GetFileName(key.Replace('/', Path.DirectorySeparatorChar));
+                    return true;
+                }
+            }
+            catch (Exception ex) { Log.Verbose("could not unpack " + archivePath + " - " + ex.Message); }
+
+            return ExtractStreaming(archivePath, extensions, destPath, out entryName);
+        }
+
+        private static bool ExtractStreaming(string archivePath, string[] extensions, string destPath,
+                                             out string entryName)
+        {
+            entryName = null;
+            try
+            {
+                using var file = File.OpenRead(archivePath);
+                using var reader = ReaderFactory.Open(file);
+                while (reader.MoveToNextEntry())
+                {
+                    if (reader.Entry.IsDirectory) continue;
+                    var key = reader.Entry.Key;
+                    if (!Wanted(key, extensions)) continue;
+
+                    Directory.CreateDirectory(Path.GetDirectoryName(destPath));
+                    using (var source = reader.OpenEntryStream())
+                    using (var target = File.Create(destPath))
+                        source.CopyTo(target);
+
+                    entryName = Path.GetFileName(key.Replace('/', Path.DirectorySeparatorChar));
+                    return true;
+                }
+            }
+            catch (Exception ex) { Log.Verbose("could not stream " + archivePath + " - " + ex.Message); }
             return false;
         }
 

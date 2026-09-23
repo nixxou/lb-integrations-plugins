@@ -11,6 +11,14 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>MelonDs</AssemblyName>
     <RootNamespace>LbIntegrations.MelonDs</RootNamespace>
+
+    <!-- WinForms, for ONE window: the one that says a NAND is missing and offers to open the folder
+         it belongs in. The LaunchBox SDK has no message API of any kind - the whole vendored
+         assembly holds no ShowMessage, no dialog, nothing - so a plugin that wants to say something
+         at launch time has to bring its own. The assemblies come from the shared framework and are
+         not copy-local, so the ILRepack step below does not see them; that was verified, not
+         assumed. See MelonDsMissingFiles. -->
+    <UseWindowsForms>true</UseWindowsForms>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <!-- true so SharpCompress and Harmony land in bin\ for the merge step below. -->
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>

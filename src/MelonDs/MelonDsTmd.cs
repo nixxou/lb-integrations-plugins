@@ -52,11 +52,17 @@ namespace LbIntegrations.MelonDs
 
         /// <summary>Where this title's metadata is, or null when it has to be built. Never throws.
         /// <paramref name="source"/> says which of the four it was, for the log.</summary>
-        public static string Resolve(MelonDsLayout layout, NdsRom rom, string romPath, out string source)
+        /// <param name="romPath">The .nds itself - hashed, to pick the revision that matches it. For
+        /// a title that came out of an archive this is the unpacked copy.</param>
+        /// <param name="besidePath">Where to look for a .tmd the user put there. Normally the same
+        /// file; for an archive it is the ARCHIVE, because that is where somebody would have put one
+        /// and a temporary copy has nothing beside it.</param>
+        public static string Resolve(MelonDsLayout layout, NdsRom rom, string romPath,
+                                     string besidePath, out string source)
         {
             source = null;
 
-            var beside = Usable(romPath + ".tmd");
+            var beside = Usable((besidePath ?? romPath) + ".tmd");
             if (beside != null) { source = "the .tmd beside the ROM"; return beside; }
 
             var carried = FromIndex(layout, rom, romPath, out var which);

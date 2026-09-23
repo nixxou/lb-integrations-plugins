@@ -42,6 +42,11 @@ namespace LbIntegrations.MelonDs
         public uint DSiTitleIdLow;
         public uint DSiTitleIdHigh;
 
+        /// <summary>DSiRegionMask: which console regions accept this title, as a bitmask
+        /// (NDS_Header.h:29-39). Zero when the field was never filled in, which is not the same as
+        /// "no region" - see MelonDsRegion, which treats it as "no answer" and asks elsewhere.</summary>
+        public uint DSiRegionMask;
+
         public string TitleId => DSiTitleIdHigh.ToString("x8") + DSiTitleIdLow.ToString("x8");
     }
 
@@ -55,8 +60,24 @@ namespace LbIntegrations.MelonDs
         /// and survives a struct that grows.</summary>
         private const int HeadBytes = 1024;
 
-        private static readonly string[] RomExtensions = { ".nds", ".srl", ".dsi", ".ids" };
-        private static readonly string[] ArchiveExtensions = { ".zip", ".7z", ".rar" };
+        /// <summary>What melonDS calls a DS ROM (Window.cpp:95). Public because the DSiWare path
+        /// has to pull one of these out of an archive before it can install it.</summary>
+        public static readonly string[] RomExtensions = { ".nds", ".srl", ".dsi", ".ids" };
+        /// <summary>Containers a ROM may arrive in. LONGEST FIRST, because these are matched against
+        /// the end of a file name rather than against Path.GetExtension - which answers ".gz" for
+        /// "Game.tar.gz" and would have made every tarball look like something else.
+        ///
+        /// This is NOT melonDS's list. melonDS opens archives itself through libarchive and accepts
+        /// a longer one, but a container this plugin cannot open is a container whose inner entry
+        /// name it cannot read - and that name is what the save is called. Declaring one would mean
+        /// silently misfiling saves. What is here is what SharpCompress was measured to open; see
+        /// the ArchiveFormats part of the probe, which hands it one of each.</summary>
+        private static readonly string[] ArchiveExtensions =
+        {
+            ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.lz", ".tar.zst",
+            ".tgz", ".tbz2", ".txz", ".tzst",
+            ".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz",
+        };
 
         /// <summary>Everything the plugin needs to know about the file the host is about to launch, or
         /// about a game it is listing saves for. Never throws.</summary>
@@ -89,6 +110,8 @@ namespace LbIntegrations.MelonDs
                 rom.IsDSi = (head[UnitCodeOffset] & 0x02) != 0;
                 rom.DSiTitleIdLow = ReadU32(head, DSiTitleIdOffset);
                 rom.DSiTitleIdHigh = ReadU32(head, DSiTitleIdOffset + 4);
+                if (head.Length >= MelonDsRegion.MaskOffset + 4)
+                    rom.DSiRegionMask = ReadU32(head, MelonDsRegion.MaskOffset);
                 rom.IsDSiWare = rom.IsDSi && rom.DSiTitleIdHigh == DSiWareTitleIdHigh;
             }
             catch (Exception ex) { Log.Verbose("could not read the header of " + romPath + " - " + ex.Message); }
@@ -99,9 +122,9 @@ namespace LbIntegrations.MelonDs
         {
             try
             {
-                var ext = Path.GetExtension(path);
+                var name = Path.GetFileName(path) ?? "";
                 foreach (var candidate in ArchiveExtensions)
-                    if (string.Equals(ext, candidate, StringComparison.OrdinalIgnoreCase)) return true;
+                    if (name.EndsWith(candidate, StringComparison.OrdinalIgnoreCase)) return true;
             }
             catch { }
             return false;

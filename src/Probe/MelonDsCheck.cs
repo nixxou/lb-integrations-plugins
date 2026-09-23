@@ -17,7 +17,10 @@
 //   7. two passes leaving the file byte for byte identical        - no drift on every launch
 //   8. the console mode chosen from the ROM header                - DS, DSi, and DSiWare refused
 //   9. AutoHotkey scripts naming the keys melonDS really binds
-//  10. the carried metadata index answering for titles it holds  - and only those
+//  10. what a DSiWare launch decides when it has nothing to run on
+//  11. which containers a ROM may be handed in - measured, not copied from melonDS
+//  12. which DSi a title needs - its mask, then its letter, then its name
+//  13. the carried metadata index answering for titles it holds  - and only those
 
 using System;
 using System.Collections.Generic;
@@ -54,6 +57,10 @@ namespace LbIntegrations.Probe
                 return true;
             }
 
+            // NO WINDOW, EVER, from a harness. The plugin opens one when a DSiWare title has no
+            // NAND to run on, which is exactly the case most of this check builds on purpose.
+            Silence();
+
             string root = Path.Combine(Path.GetTempPath(), "lbip-melonds-" + Guid.NewGuid().ToString("N"));
             try
             {
@@ -67,7 +74,9 @@ namespace LbIntegrations.Probe
                 ok &= TomlLeavesForeignContentAlone(exe);
                 ok &= TomlSurvivesAnApostrophe(root);
                 ok &= ConsoleMode(plugin, exe, romDir);
-                ok &= PerTitleNand(exe, romDir);
+                ok &= DsiWareWithoutANand(exe, romDir);
+                ok &= RegionCascade(romDir);
+                ok &= ArchiveFormats(exe, romDir);
                 ok &= CarriedIndex(exe, romDir);
                 ok &= Scripts(plugin, exe);
                 ok &= Slots(plugin);
@@ -122,7 +131,8 @@ namespace LbIntegrations.Probe
 
         /// <summary>A DS cart header as far as the fields we read. The title id defaults to the one
         /// the rest of this check expects; the carried-index part passes real ones.</summary>
-        private static byte[] Header(byte unitCode, uint titleIdHigh, uint titleIdLow = 0x87654321)
+        private static byte[] Header(byte unitCode, uint titleIdHigh, uint titleIdLow = 0x87654321,
+                                     uint regionMask = 0)
         {
             var bytes = new byte[0x1000];
             var title = Encoding.ASCII.GetBytes("FORGEDTITLE");
@@ -136,6 +146,12 @@ namespace LbIntegrations.Probe
             bytes[0x235] = (byte)((titleIdHigh >> 8) & 0xFF);
             bytes[0x236] = (byte)((titleIdHigh >> 16) & 0xFF);
             bytes[0x237] = (byte)((titleIdHigh >> 24) & 0xFF);
+
+            // DSiRegionMask, at the offset MelonDsRegion reads it from.
+            bytes[0x1B0] = (byte)(regionMask & 0xFF);
+            bytes[0x1B1] = (byte)((regionMask >> 8) & 0xFF);
+            bytes[0x1B2] = (byte)((regionMask >> 16) & 0xFF);
+            bytes[0x1B3] = (byte)((regionMask >> 24) & 0xFF);
             return bytes;
         }
 
@@ -360,6 +376,92 @@ namespace LbIntegrations.Probe
             return ok;
         }
 
+        /// <summary>What the plugin makes of one file handed to it: is it a ROM, is it a container,
+        /// what does it think the game is called, and which DSi would it want.
+        ///
+        /// A DIAGNOSTIC, not an assertion. It answers the question a user actually asks - "why is my
+        /// save named that?" - and it is how a container nobody could build a sample of gets
+        /// measured: point it at a real one.</summary>
+        public static bool Describe(EmulatorPlugin plugin, string romPath)
+        {
+            Anchor(plugin);
+            Console.WriteLine();
+            Console.WriteLine("-- what melonDS's plugin makes of one file ----------------------");
+
+            if (string.IsNullOrWhiteSpace(romPath) || !File.Exists(romPath))
+            { Console.WriteLine("  --rom is missing or does not exist"); return false; }
+
+            try
+            {
+                var header = TypeIn("NdsHeader");
+                var isArchive = (bool)header.GetMethod("IsArchive", BindingFlags.Public | BindingFlags.Static)
+                                            .Invoke(null, new object[] { romPath });
+                var rom = header.GetMethod("Describe", BindingFlags.Public | BindingFlags.Static)
+                                .Invoke(null, new object[] { romPath });
+
+                string Field(string name)
+                {
+                    var f = rom.GetType().GetField(name);
+                    return f == null ? "?" : Convert.ToString(f.GetValue(rom));
+                }
+
+                Console.WriteLine("  file       : " + Path.GetFileName(romPath));
+                // "Is it a container" and "could we open it" are DIFFERENT QUESTIONS, and conflating
+                // them is how a container we cannot read looks like a container holding nothing.
+                // KindOf actually opens it, so it separates the two.
+                string kind = isArchive
+                    ? (string)TypeIn("Archives").GetMethod("KindOf", BindingFlags.Public | BindingFlags.Static)
+                                                .Invoke(null, new object[] { romPath })
+                    : null;
+                Console.WriteLine("  container  : " + (!isArchive ? "no, a plain ROM"
+                    : kind == null ? "yes by its name, but IT COULD NOT BE OPENED"
+                                   : "yes, opened as " + kind));
+                Console.WriteLine("  read       : " + Field("Known"));
+                Console.WriteLine("  asset name : " + Field("AssetName") + "   <- what the save is called");
+                Console.WriteLine("  DSi        : " + Field("IsDSi") + ", DSiWare: " + Field("IsDSiWare"));
+
+                var titleId = rom.GetType().GetProperty("TitleId")?.GetValue(rom) as string;
+                if (!string.IsNullOrEmpty(titleId)) Console.WriteLine("  title id   : " + titleId);
+
+                var region = TypeIn("MelonDsRegion");
+                var args = new object[] { rom, romPath, null };
+                var regions = region.GetMethod("RegionsFor", BindingFlags.Public | BindingFlags.Static)
+                                    .Invoke(null, args);
+                Console.WriteLine("  needs a    : "
+                    + region.GetMethod("Names", BindingFlags.Public | BindingFlags.Static)
+                            .Invoke(null, new[] { regions })
+                    + " NAND, from " + (args[2] as string ?? "nothing it could find"));
+
+                bool ok = (bool)rom.GetType().GetField("Known").GetValue(rom);
+                Console.WriteLine();
+                Console.WriteLine("  " + (ok ? "OK - the plugin can read this file"
+                                             : "NOT OK - nothing could be read out of it"));
+                return ok;
+            }
+            catch (Exception ex) { Console.WriteLine("  " + ex.GetType().Name + ": " + ex.Message); return false; }
+        }
+
+        /// <summary>Stop the plugin opening its missing-files window. Through the plugin's own
+        /// flag rather than by dropping its kill-switch marker in the user's log folder, which is
+        /// theirs and not somewhere a test should leave things.</summary>
+        private static void Silence()
+        {
+            try
+            {
+                var field = TypeIn("MelonDsMissingFiles")
+                    .GetField("Suppressed", BindingFlags.Public | BindingFlags.Static);
+                if (field == null)
+                {
+                    // Said out loud rather than shrugged off: a null here means this build predates
+                    // the flag, and the run is about to open windows.
+                    Console.WriteLine("    WARNING: this build has no Suppressed flag; it may open windows");
+                    return;
+                }
+                field.SetValue(null, true);
+            }
+            catch (Exception ex) { Console.WriteLine("    (could not silence the window: " + ex.GetType().Name + ")"); }
+        }
+
         /// <summary>Whether one of the plugin's markers is set, asked of the plugin itself so the
         /// probe never has to know where they live.</summary>
         private static bool Marked(string name)
@@ -399,12 +501,21 @@ namespace LbIntegrations.Probe
             return -1;
         }
 
-        // ── 10. one working NAND, rebuilt per launch ─────────────────────────
+        // -- 10. what a DSiWare launch decides, with nothing to run on --------
 
-        private static bool PerTitleNand(string exe, string romDir)
+        /// <summary>A forged install cannot hold a real NAND - a dump is 240 MB and is encrypted
+        /// against a console this machine does not have. So this asserts the DECISIONS a DSiWare
+        /// launch makes, and the machinery that acts on them is proved separately, against genuine
+        /// dumps, by AgainstReal.
+        ///
+        /// The split is deliberate rather than a concession. Everything here is about what happens
+        /// when a title CANNOT run: what is refused rather than invented, what is created so a
+        /// message can name a real path, what the user is told, and what is left alone. Those are
+        /// the paths a working install never exercises, and the ones most likely to rot.</summary>
+        private static bool DsiWareWithoutANand(string exe, string romDir)
         {
             Console.WriteLine();
-            Console.WriteLine("  -- DSiWare runs on one working NAND under dsi\\, rebuilt every launch");
+            Console.WriteLine("  -- a DSiWare title with nothing to run on");
 
             var choose = TypeIn("MelonDsPlugin").GetMethod("ChooseConsoleMode",
                              BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Public);
@@ -417,137 +528,53 @@ namespace LbIntegrations.Probe
             string toml = ConfigPath(exe);
             string ware = Path.Combine(romDir, WareRom);
 
-            // The title id the forged DSiWare header carries: high 0x00030004, low 0x87654321.
-            const string titleId = "0003000487654321";
-            string expected = Path.Combine(dsi, "work.bin");
-            string legacy = Path.Combine(dsi, titleId, "nand.bin");
-
-            Directory.CreateDirectory(bios);
-            foreach (var name in new[] { "dsi_bios7.bin", "dsi_bios9.bin" }) Write(bios, name, 1024);
-
             bool ok = true;
 
-            // 1. No NAND anywhere. Nothing is INVENTED - a NAND cannot be - but the folder and its
-            //    note are made, because the message that follows names a path and a path nobody can
-            //    see is a spelling to guess at. That was a real complaint, not a hypothesis.
+            // 1. Nothing anywhere. A NAND is NOT invented - it cannot be, it is a dump of somebody's
+            //    own console - but the folders are made, because the message that follows names
+            //    paths and a path nobody can see is a spelling to guess at.
+            File.WriteAllText(toml, "[Emu]\r\nConsoleType = 0\r\n");
+            long mark = LogLength();
+            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }), ware });
+            var said = LogSince(mark);
+
+            ok &= Check("no NAND is invented out of nothing", !File.Exists(Path.Combine(dsi, "work.bin")));
+            ok &= Check("the bios folder the message names exists, with its note",
+                        Directory.Exists(bios) && File.Exists(Path.Combine(bios, "WHICH-FILES-GO-HERE.txt")));
+            ok &= Check("the console mode is left alone", ConsoleTypeIn(toml) == 0);
+            ok &= Check("and the log says which region of NAND is wanted",
+                        said.Contains("NAND dump for") && said.Contains("USA"));
+            if (!said.Contains("NAND dump for")) Console.WriteLine("    log said: " + said.Trim());
+
+            // 2. The DSi BIOS and firmware, dropped in the folder, are FOUND AND CONFIGURED. This is
+            //    what lets somebody put files in and launch, rather than put files in and then go
+            //    and point melonDS at each one by hand.
+            Directory.CreateDirectory(bios);
+            foreach (var name in new[] { "dsi_bios7.bin", "dsi_bios9.bin", "dsi_firmware.bin" })
+                Write(bios, name, 1024);
+
             File.WriteAllText(toml, "[Emu]\r\nConsoleType = 0\r\n");
             choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }), ware });
-            ok &= Check("no NAND is invented out of nothing",
-                        !File.Exists(expected) && !File.Exists(Path.Combine(dsi, "base.bin")));
-            ok &= Check("but the folder the message names does exist, with its note",
-                        Directory.Exists(dsi) && File.Exists(Path.Combine(dsi, "PUT-YOUR-NAND-HERE.txt")));
-            ok &= Check("and the console mode is untouched", ConsoleTypeIn(toml) == 0);
 
-            // 2. The user's own dump, configured in melonDS: captured as the base, copied per title,
-            //    and selected - without the original ever being written to.
-            string mine = Path.Combine(install, "my_nand.bin");
-            Write(install, "my_nand.bin", 512 * 1024);
-            var fingerprint = File.ReadAllBytes(mine);
+            var keys = TomlValues(toml, "DSi");
+            ok &= Check("a dsi_bios7.bin dropped in the folder is pointed at",
+                        (keys.TryGetValue("BIOS7Path", out var b7) ? b7 : "").Contains("dsi_bios7.bin"));
+            ok &= Check("so is the ARM9 BIOS",
+                        (keys.TryGetValue("BIOS9Path", out var b9) ? b9 : "").Contains("dsi_bios9.bin"));
+            ok &= Check("and the firmware, which melonDS needs whatever its verify step suggests",
+                        (keys.TryGetValue("FirmwarePath", out var fw) ? fw : "").Contains("dsi_firmware.bin"));
+            ok &= Check("but with no NAND the console mode is still left alone", ConsoleTypeIn(toml) == 0);
 
-            File.WriteAllText(toml,
-                "[Emu]\r\nConsoleType = 0\r\n\r\n[DSi]\r\n"
-                + "BIOS7Path = '" + Path.Combine(bios, "dsi_bios7.bin") + "'\r\n"
-                + "BIOS9Path = '" + Path.Combine(bios, "dsi_bios9.bin") + "'\r\n"
-                + "NANDPath = '" + mine + "'\r\n");
+            // 3. A file that is not a NAND is never opened. 240 MB is the size of the thing, and
+            //    decrypting every stray .bin in the folder to find out would cost a second a launch.
+            Write(bios, "not-a-nand.bin", 4096);
+            mark = LogLength();
             choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }), ware });
+            ok &= Check("a file that is not NAND-sized is never opened",
+                        !LogSince(mark).Contains("not-a-nand.bin"));
 
-            ok &= Check("the user's dump is kept as dsi\\base.bin",
-                        File.Exists(Path.Combine(dsi, "base.bin")));
-            ok &= Check("a working NAND is built from it", File.Exists(expected));
-            ok &= Check("it is a copy of the dump, byte for byte",
-                        File.Exists(expected) && File.ReadAllBytes(expected).SequenceEqual(fingerprint));
-            ok &= Check("nothing 240 MB is kept per title any more", !File.Exists(legacy));
-            ok &= Check("the user's own dump is left untouched",
-                        File.ReadAllBytes(mine).SequenceEqual(fingerprint));
-            ok &= Check("melonDS is pointed at the working NAND", NandPathIn(toml) == expected);
-            ok &= Check("and DSi mode is asked for", ConsoleTypeIn(toml) == 1);
-            // The dsi-direct-boot marker turns this one around, so ask the plugin whether it is
-            // set rather than asserting the default blind. Read-only, and the marker's own folder
-            // stays the plugin's business: nothing here writes outside the temp install.
-            bool wantsDirect = Marked("dsi-direct-boot");
-            ok &= Check(wantsDirect
-                            ? "the dsi-direct-boot marker is set, so the .nds is booted directly"
-                            : "the DSi menu is booted, not the cartridge",
-                        // An ABSENT key is not a false one: melonDS defaults DirectBoot to true, so
-                        // the plugin rightly writes nothing when direct booting is what is wanted and
-                        // the file says nothing. Reading that as "not true" failed a correct plugin.
-                        (DirectBootIn(toml) ?? true) == wantsDirect);
-            ok &= Check("no half-written copy is left behind",
-                        !Directory.EnumerateFiles(dsi, "*.part", SearchOption.AllDirectories).Any());
-
-            // 3. A second launch REBUILDS it, which is the point of the whole design: the image is
-            //    scratch, and what a title keeps is the difference from a fresh install.
-            var scribble = Encoding.ASCII.GetBytes("this should not survive a rebuild");
-            using (var stream = new FileStream(expected, FileMode.Open, FileAccess.Write))
-                stream.Write(scribble, 0, scribble.Length);
-
-            File.WriteAllText(toml,
-                "[Emu]\r\nConsoleType = 1\r\n\r\n[DSi]\r\n"
-                + "BIOS7Path = '" + Path.Combine(bios, "dsi_bios7.bin") + "'\r\n"
-                + "BIOS9Path = '" + Path.Combine(bios, "dsi_bios9.bin") + "'\r\n"
-                + "NANDPath = '" + expected + "'\r\n");
-            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }), ware });
-            ok &= Check("a second launch rebuilds it from the base rather than reusing it",
-                        File.ReadAllBytes(expected).SequenceEqual(fingerprint));
-
-            // 4. THE TRAP THIS EXISTS TO CATCH: once DSi.NANDPath points at the working NAND, that
-            //    file must never become the base - a game's state would be folded into what every
-            //    later rebuild starts from, and there would be no way back. base.bin already exists
-            //    here, so the guard is exercised by deleting it and launching again.
-            File.Delete(Path.Combine(dsi, "base.bin"));
-            File.Delete(expected);
-            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }), ware });
-            ok &= Check("the working NAND is refused as a base",
-                        !File.Exists(Path.Combine(dsi, "base.bin")) && !File.Exists(expected));
-
-            // 5. THE NATIVE LIBRARY, when this checkout has built it. A forged NAND is not a NAND,
-            //    so opening it must FAIL - and the point of the assertion is that the failure is
-            //    melonDS's, reported through the library, rather than swallowed into the "do it by
-            //    hand" message. That is what proves the P/Invoke resolved and the answer was read.
-            if (!NativeLibraryUsable())
-            {
-                Console.WriteLine("    --   melonds-nand.dll not built; its wiring is not exercised");
-            }
-            else
-            {
-                // Step 4 deleted the base on purpose, and without one there is nothing to rebuild
-                // from - the plugin would rightly say so instead of trying to open anything.
-                File.Copy(mine, Path.Combine(dsi, "base.bin"), true);
-
-                File.WriteAllText(toml,
-                    "[Emu]\r\nConsoleType = 0\r\n\r\n[DSi]\r\n"
-                    + "BIOS7Path = '" + Path.Combine(bios, "dsi_bios7.bin") + "'\r\n"
-                    + "BIOS9Path = '" + Path.Combine(bios, "dsi_bios9.bin") + "'\r\n"
-                    + "NANDPath = '" + expected + "'\r\n");
-
-                long mark = LogLength();
-                choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }), ware });
-                var said = LogSince(mark);
-
-                ok &= Check("the library is used rather than a click being asked for",
-                            !said.Contains("ONE MANUAL STEP"));
-                ok &= Check("and melonDS's refusal of a forged NAND is reported, not swallowed",
-                            said.Contains("could not open the NAND") || said.Contains("cannot decrypt")
-                            || said.Contains("is not a NAND"));
-                if (said.Trim().Length > 0 && !said.Contains("could not open the NAND"))
-                    Console.WriteLine("    log said: " + said.Trim());
-            }
-
-            // 6. A CARTRIDGE IS NOT DSiWARE. Once DSi.NANDPath points at a per-title NAND, a DSi
-            //    cartridge launched next must go back to the base dump - otherwise its system
-            //    settings would be written into whichever DSiWare ran last.
-            File.Copy(mine, Path.Combine(dsi, "base.bin"), true);
-            File.WriteAllText(toml,
-                "[Emu]\r\nConsoleType = 1\r\n\r\n[DSi]\r\n"
-                + "BIOS7Path = '" + Path.Combine(bios, "dsi_bios7.bin") + "'\r\n"
-                + "BIOS9Path = '" + Path.Combine(bios, "dsi_bios9.bin") + "'\r\n"
-                + "NANDPath = '" + expected + "'\r\n");
-            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }),
-                                        Path.Combine(romDir, DsiRom) });
-            ok &= Check("a DSi cartridge is sent back to the base NAND",
-                        NandPathIn(toml) == Path.Combine(dsi, "base.bin"));
-
-            //    And a NAND the USER chose is never moved, whatever it is.
+            // 4. A CARTRIDGE IS NOT DSiWARE: it runs off whatever NAND is selected, and a NAND the
+            //    user chose himself is his answer.
             string his = Path.Combine(install, "his_nand.bin");
             Write(install, "his_nand.bin", 4096);
             File.WriteAllText(toml,
@@ -558,17 +585,206 @@ namespace LbIntegrations.Probe
             choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }),
                                         Path.Combine(romDir, DsiRom) });
             ok &= Check("a NAND the user chose himself is left where it is", NandPathIn(toml) == his);
-            try { File.Delete(his); } catch { }
 
-
-            // 7. Without the DSi BIOS the mode is not switched, even though the NAND is ready.
+            // 5. Without the DSi BIOS there is no DSi mode, whatever else is in place.
+            try { Directory.Delete(bios, true); } catch { }
             File.WriteAllText(toml, "[Emu]\r\nConsoleType = 0\r\n");
             choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }), ware });
-            ok &= Check("no DSi BIOS means no DSi mode, NAND or not", ConsoleTypeIn(toml) == 0);
+            ok &= Check("no DSi BIOS means no DSi mode", ConsoleTypeIn(toml) == 0);
 
-            try { Directory.Delete(dsi, true); Directory.Delete(bios, true); File.Delete(mine); File.Delete(toml); }
-            catch { }
+            try { Directory.Delete(dsi, true); File.Delete(his); File.Delete(toml); } catch { }
             return ok;
+        }
+
+        /// <summary>Every key of one TOML table, quotes stripped.</summary>
+        private static Dictionary<string, string> TomlValues(string tomlPath, string table)
+        {
+            var map = new Dictionary<string, string>(StringComparer.Ordinal);
+            bool inside = false;
+            foreach (var raw in File.ReadAllLines(tomlPath))
+            {
+                var line = raw.Trim();
+                if (line.StartsWith("[", StringComparison.Ordinal))
+                {
+                    inside = line.Equals("[" + table + "]", StringComparison.OrdinalIgnoreCase);
+                    continue;
+                }
+                if (!inside) continue;
+                int eq = line.IndexOf('=');
+                if (eq <= 0) continue;
+                map[line.Substring(0, eq).Trim()] = line.Substring(eq + 1).Trim().Trim('\'', '"');
+            }
+            return map;
+        }
+
+        // -- 11. what may be handed in ----------------------------------------
+
+        /// <summary>Which containers this plugin can actually read a ROM out of.
+        ///
+        /// TWO DIFFERENT QUESTIONS HIDE BEHIND ONE LIST. melonDS opens archives itself, so a DS game
+        /// in any container libarchive understands is simply handed over and nothing here has to
+        /// unpack it. A DSiWare title is not handed over: it has to be INSTALLED into a NAND first,
+        /// and that means reading a .nds out of the container ourselves.
+        ///
+        /// So declaring melonDS's list wholesale would be wrong in both directions. An archive we
+        /// cannot open is one whose inner name we cannot read - and that name is what a save is
+        /// called, so the save would be silently misfiled. What this asserts is the honest set: the
+        /// containers the plugin opens, measured by handing it one of each.</summary>
+        private static bool ArchiveFormats(string exe, string romDir)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- what a ROM may be handed in");
+
+            var describe = TypeIn("NdsHeader").GetMethod("Describe", BindingFlags.Public | BindingFlags.Static);
+            if (describe == null) { Console.WriteLine("    no Describe to call"); return false; }
+
+            const string inner = "Packed Game (Europe).nds";
+            var rom = Header(0x00, 0);
+
+            bool Reads(string fileName, Action<string, byte[], string> build)
+            {
+                var path = Path.Combine(romDir, fileName);
+                try
+                {
+                    build(path, rom, inner);
+                    var got = describe.Invoke(null, new object[] { path });
+                    var name = (string)got.GetType().GetField("AssetName").GetValue(got);
+                    return name == "Packed Game (Europe)";
+                }
+                catch (Exception ex) { Console.WriteLine("    (" + fileName + ": " + ex.GetType().Name + ")"); return false; }
+                finally { try { File.Delete(path); } catch { } }
+            }
+
+            bool ok = true;
+            ok &= Check(".zip - the inner name is read, so the save is named after the GAME",
+                        Reads("Packed.zip", WriteZip));
+            ok &= Check(".tar", Reads("Packed.tar", WriteTar));
+            ok &= Check(".tar.gz", Reads("Packed.tar.gz", WriteTarGz));
+            ok &= Check(".tgz", Reads("Packed.tgz", WriteTarGz));
+
+            // A plain ROM must not be mistaken for a container, whatever it is called.
+            var plain = Path.Combine(romDir, "Not An Archive.nds");
+            File.WriteAllBytes(plain, rom);
+            var described = describe.Invoke(null, new object[] { plain });
+            ok &= Check("a plain .nds is read as itself",
+                        (string)described.GetType().GetField("AssetName").GetValue(described) == "Not An Archive");
+            try { File.Delete(plain); } catch { }
+
+            return ok;
+        }
+
+        private static void WriteZip(string path, byte[] rom, string inner)
+        {
+            using var stream = new FileStream(path, FileMode.Create);
+            using var archive = new System.IO.Compression.ZipArchive(
+                stream, System.IO.Compression.ZipArchiveMode.Create);
+            using var entry = archive.CreateEntry(inner).Open();
+            entry.Write(rom, 0, rom.Length);
+        }
+
+        private static void WriteTar(string path, byte[] rom, string inner)
+        {
+            using var stream = new FileStream(path, FileMode.Create);
+            WriteTarInto(stream, rom, inner);
+        }
+
+        private static void WriteTarGz(string path, byte[] rom, string inner)
+        {
+            using var stream = new FileStream(path, FileMode.Create);
+            using var gzip = new System.IO.Compression.GZipStream(
+                stream, System.IO.Compression.CompressionLevel.Fastest);
+            WriteTarInto(gzip, rom, inner);
+        }
+
+        private static void WriteTarInto(Stream stream, byte[] rom, string inner)
+        {
+            using var writer = new System.Formats.Tar.TarWriter(stream, leaveOpen: true);
+            var entry = new System.Formats.Tar.PaxTarEntry(
+                System.Formats.Tar.TarEntryType.RegularFile, inner)
+            {
+                DataStream = new MemoryStream(rom),
+            };
+            writer.WriteEntry(entry);
+        }
+
+        // -- 12. which DSi a DSiWare title needs ------------------------------
+
+        /// <summary>Three sources say which console a title runs on, and they are tried in order of
+        /// authority: the header's region MASK, then the region LETTER of the game code, then the
+        /// parentheses in the FILE NAME.
+        ///
+        /// The ORDER is what this checks. A mask naming two regions may be narrowed by a file name,
+        /// but a file name must never overrule a mask that already answered - a rename is the least
+        /// trustworthy link in the chain, and the mask is what the console itself is handed.</summary>
+        private static bool RegionCascade(string romDir)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- which DSi a DSiWare title needs");
+
+            var region = TypeIn("MelonDsRegion");
+            var regionsFor = region.GetMethod("RegionsFor", BindingFlags.Public | BindingFlags.Static);
+            var names = region.GetMethod("Names", BindingFlags.Public | BindingFlags.Static);
+            var describe = TypeIn("NdsHeader").GetMethod("Describe", BindingFlags.Public | BindingFlags.Static);
+            if (regionsFor == null || names == null || describe == null)
+            { Console.WriteLine("    no RegionsFor / Names / Describe to call"); return false; }
+
+            string Ask(string fileName, uint mask, string gameCode)
+            {
+                var path = Path.Combine(romDir, fileName);
+                File.WriteAllBytes(path, Header(0x03, 0x00030004, GameCode(gameCode), mask));
+                var args = new object[] { describe.Invoke(null, new object[] { path }), path, null };
+                var got = regionsFor.Invoke(null, args);
+                try { File.Delete(path); } catch { }
+                return (string)names.Invoke(null, new[] { got }) + " | " + (args[2] as string ?? "nothing");
+            }
+
+            bool ok = true;
+
+            // The mask alone. 0x02 is USA - measured on a real dump, and the bit melonDS's own
+            // RegionMask enum gives that region.
+            ok &= Check("a USA mask asks for a USA NAND",
+                        Ask("Masked (USA).nds", 0x02, "K99E").StartsWith("USA | the ROM's region mask"));
+
+            // The ordering, in one line: the mask is what the console is handed, the letter is a
+            // note about which market sold it.
+            ok &= Check("a mask beats a letter that says otherwise",
+                        Ask("Disagreeing (Japan).nds", 0x02, "K99J").StartsWith("USA |"));
+
+            // A zero mask is a field nobody filled in, not a title with no region. Reading it as the
+            // latter would strand the game with no NAND at all.
+            ok &= Check("with no mask, the game code's letter answers",
+                        Ask("Lettered.nds", 0x00, "K99J").StartsWith("Japan | the region letter"));
+            ok &= Check("a single-country European letter still means a European console",
+                        Ask("Lettered.nds", 0x00, "K99F").StartsWith("Europe |"));
+
+            // A wide answer narrowed by the file name - what the brackets in a dump's name are for.
+            ok &= Check("a two-region mask is narrowed by the file name",
+                        Ask("Narrowed (Europe).nds", 0x04 | 0x08, "K99V")
+                            .StartsWith("Europe | the ROM's region mask, narrowed"));
+            ok &= Check("and a name agreeing with nothing leaves it alone",
+                        Ask("Ignored (Brazil).nds", 0x04 | 0x08, "K99V").StartsWith("Europe or Australia |"));
+
+            ok &= Check("a region-free title accepts any NAND",
+                        Ask("Free.nds", 0xFFFFFFFF, "K99A")
+                            .StartsWith("Japan or USA or Europe or Australia or China or Korea |"));
+
+            // Nothing anywhere. An empty answer lets the caller say so, instead of picking a NAND at
+            // random and leaving the DSi menu to refuse it without explanation.
+            ok &= Check("a title that says nothing anywhere gets no answer",
+                        Ask("Silent.nds", 0x00, "K99 ").StartsWith("(none) | nothing"));
+
+            return ok;
+        }
+
+        /// <summary>Four ASCII letters as the u32 the title id's low word holds. The bytes sit in the
+        /// ROM in reverse - "K99E" is stored 45 39 39 4b and reads back 0x4b393945 - so the region
+        /// letter lands in the LOW byte, which is where MelonDsRegion looks.</summary>
+        private static uint GameCode(string code)
+        {
+            uint value = 0;
+            for (int i = 0; i < 4 && i < code.Length; i++)
+                value |= (uint)code[3 - i] << (i * 8);      // reversed, so 'E' of "K99E" is the low byte
+            return value;
         }
 
         // ── the same path, against a REAL NAND ───────────────────────────────
@@ -601,6 +817,8 @@ namespace LbIntegrations.Probe
                 return true;
             }
 
+            Silence();
+
             string root = Path.Combine(Path.GetTempPath(), "lbip-melonds-real-" + Guid.NewGuid().ToString("N"));
             try
             {
@@ -611,7 +829,19 @@ namespace LbIntegrations.Probe
                 File.WriteAllBytes(exe, Array.Empty<byte>());
 
                 Console.WriteLine("  copying the NANDs and the ROM, so nothing given is touched...");
-                File.Copy(basePath, Path.Combine(dsi, "base.bin"));
+
+                // Into the bios folder, UNDER A NAME THAT SAYS NOTHING. The plugin reads a dump's
+                // region out of its contents, and a name it could have leaned on instead would hide
+                // whether it really does.
+                string bios = Path.Combine(install, "bios");
+                Directory.CreateDirectory(bios);
+                File.Copy(basePath, Path.Combine(bios, "a-dump-with-an-unhelpful-name.bin"));
+                File.Copy(bios7, Path.Combine(bios, "dsi_bios7.bin"));
+                File.Copy(bios9, Path.Combine(bios, "dsi_bios9.bin"));
+
+                // melonDS needs a DSi firmware and this check never launches melonDS, so a
+                // placeholder is enough to exercise the plugin's own requirement.
+                File.WriteAllBytes(Path.Combine(bios, "dsi_firmware.bin"), new byte[128 * 1024]);
 
                 // The ROM is copied too, because one assertion below ages its timestamp to prove the
                 // image is NOT reused for a ROM that is not the one installed. Doing that to the file
@@ -636,11 +866,8 @@ namespace LbIntegrations.Probe
                     Console.WriteLine("  and a played NAND in the old per-title place, to migrate");
                 }
 
-                File.WriteAllText(ConfigPath(exe),
-                    "[Emu]\r\nConsoleType = 0\r\n\r\n[DSi]\r\n"
-                    + "BIOS7Path = '" + bios7 + "'\r\n"
-                    + "BIOS9Path = '" + bios9 + "'\r\n"
-                    + "NANDPath = '" + Path.Combine(dsi, "base.bin") + "'\r\n");
+                // Nothing configured at all: the plugin has to find everything for itself.
+                File.WriteAllText(ConfigPath(exe), "[Emu]\r\nConsoleType = 0\r\n");
 
                 var choose = TypeIn("MelonDsPlugin").GetMethod("ChooseConsoleMode",
                                  BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Public);
@@ -657,6 +884,11 @@ namespace LbIntegrations.Probe
 
                 ok &= Check("a working NAND is built", File.Exists(work));
                 ok &= Check("melonDS is pointed at it", NandPathIn(ConfigPath(exe)) == work);
+                ok &= Check("the DSi BIOS and firmware were found in the bios folder and configured",
+                            TomlValues(ConfigPath(exe), "DSi").TryGetValue("FirmwarePath", out var fw)
+                            && fw.Contains("dsi_firmware.bin"));
+                ok &= Check("the dump's region was read out of it, not out of its name",
+                            LogSince(0).Contains("a-dump-with-an-unhelpful-name.bin is a"));
                 ok &= Check("DSi mode, through the menu",
                             ConsoleTypeIn(ConfigPath(exe)) == 1 && (DirectBootIn(ConfigPath(exe)) ?? true) == false);
                 ok &= Check("the walk of the fresh install is written down",

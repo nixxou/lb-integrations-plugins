@@ -200,9 +200,10 @@ namespace LbIntegrations.MelonDs
         /// <summary>Which title work.bin is currently holding, or null.</summary>
         public static string WorkTitle(MelonDsLayout layout) => MarkerParts(layout)?[0];
 
-        /// <summary>The marker, split. First the title id, then the fingerprint of the ROM that was
-        /// installed - path, length and write time. Older markers held only the id, and read back as
-        /// a title with no fingerprint, which simply means the image cannot be reused.</summary>
+        /// <summary>The marker, split. The title id, then the fingerprint of the ROM that was
+        /// installed - path, length and write time - then the NAND it was built on. Older markers
+        /// are shorter and read back as a title with no fingerprint, which simply means the image
+        /// cannot be reused: a rebuild costs a quarter of a second and is always correct.</summary>
         private static string[] MarkerParts(MelonDsLayout layout)
         {
             try
@@ -240,7 +241,7 @@ namespace LbIntegrations.MelonDs
         /// Being wrong here costs nothing that cannot be rebuilt - the state on disk is the save, and
         /// the image is scratch - but it would cost a session, so every condition is checked rather
         /// than assumed.</summary>
-        public static bool CanReuseWork(MelonDsLayout layout, NdsRom rom, string romPath)
+        public static bool CanReuseWork(MelonDsLayout layout, NdsRom rom, string romPath, string sourceNand)
         {
             try
             {
@@ -250,13 +251,17 @@ namespace LbIntegrations.MelonDs
                 if (work == null || !File.Exists(work)) return false;
 
                 var parts = MarkerParts(layout);
-                if (parts == null || parts.Length != 4) return false;
+                if (parts == null || parts.Length != 5) return false;
                 if (!string.Equals(parts[0], rom?.TitleId, StringComparison.OrdinalIgnoreCase)) return false;
 
                 var fingerprint = Fingerprint(romPath);
                 if (fingerprint == null
                     || !string.Equals(string.Join("\t", parts, 1, 3), fingerprint, StringComparison.OrdinalIgnoreCase))
                     return false;
+
+                // A different NAND means a different console and a different region, so the image on
+                // disk is not the one this launch wants however well it matches otherwise.
+                if (!string.Equals(parts[4], sourceNand, StringComparison.OrdinalIgnoreCase)) return false;
 
                 var reference = ReferencePathFor(layout, rom.TitleId);
                 if (reference == null || !File.Exists(reference)) return false;
@@ -349,7 +354,7 @@ namespace LbIntegrations.MelonDs
         /// replaced, because the one thing a user can still do by hand, importing the title through
         /// Manage DSi titles, would be wiped on the next launch. So in that case the title keeps an
         /// image of its own, which is where a manual import survives.</summary>
-        public static DsiNand EnsureLegacy(MelonDsLayout layout, NdsRom rom, string configuredNand)
+        public static DsiNand EnsureLegacy(MelonDsLayout layout, NdsRom rom, string sourceNand)
         {
             var result = new DsiNand();
             try
@@ -365,12 +370,10 @@ namespace LbIntegrations.MelonDs
                 var target = Path.Combine(titleDir, LegacyNandName);
                 if (File.Exists(target)) { result.Path = target; return result; }
 
-                var source = CaptureBase(layout, configuredNand);
-                if (source == null)
+                var source = sourceNand;
+                if (source == null || !File.Exists(source))
                 {
-                    PrepareFolder(layout);
-                    result.Reason = "no DSi NAND to copy from. Put your own dump at "
-                                  + BasePath(layout) + ", or set DSi.NANDPath in melonDS once";
+                    result.Reason = "no DSi NAND to copy from";
                     return result;
                 }
 
@@ -409,7 +412,7 @@ namespace LbIntegrations.MelonDs
 
         /// <summary>Rebuild work.bin from the base. The caller then installs the title into it and
         /// calls TakeReferenceAndRestore with the same session.</summary>
-        public static DsiNand Rebuild(MelonDsLayout layout, NdsRom rom, string configuredNand)
+        public static DsiNand Rebuild(MelonDsLayout layout, NdsRom rom, string sourceNand)
         {
             var result = new DsiNand();
             try
@@ -425,14 +428,10 @@ namespace LbIntegrations.MelonDs
                 if (work == null || titleDir == null)
                 { result.Reason = "no install directory to work in"; return result; }
 
-                var source = CaptureBase(layout, configuredNand);
-                if (source == null)
+                var source = sourceNand;
+                if (source == null || !File.Exists(source))
                 {
-                    // Make the folder NOW, not later. The message below names a path, and a path that
-                    // does not exist is a spelling to guess at - which is exactly what happened once.
-                    PrepareFolder(layout);
-                    result.Reason = "no DSi NAND to copy from. Put your own dump at "
-                                  + BasePath(layout) + ", or set DSi.NANDPath in melonDS once";
+                    result.Reason = "no DSi NAND to copy from";
                     return result;
                 }
 
@@ -519,14 +518,17 @@ namespace LbIntegrations.MelonDs
         /// <summary>Remember that work.bin now holds this title. Written last, once everything else
         /// has succeeded: a marker naming a title whose state was never put back would make the next
         /// capture overwrite a good state with a blank one.</summary>
-        public static void RememberWork(MelonDsLayout layout, string titleId, string romPath)
+        public static void RememberWork(MelonDsLayout layout, string titleId, string romPath,
+                                        string sourceNand)
         {
             try
             {
                 var marker = MarkerPath(layout);
                 if (marker == null) return;
                 var fingerprint = Fingerprint(romPath);
-                File.WriteAllText(marker, fingerprint == null ? titleId : titleId + "\t" + fingerprint);
+                File.WriteAllText(marker, fingerprint == null
+                    ? titleId
+                    : titleId + "\t" + fingerprint + "\t" + (sourceNand ?? ""));
             }
             catch (Exception ex) { Log.Verbose("could not write the work marker - " + ex.Message); }
         }
@@ -642,24 +644,14 @@ namespace LbIntegrations.MelonDs
 
         // ── the base ─────────────────────────────────────────────────────────
 
-        /// <summary>The dump every rebuild starts from, captured once.
-        ///
-        /// Order matters: dsi\base.bin wins if it is there, because after the first DSiWare launch
-        /// DSi.NANDPath points at work.bin and using THAT as a source would fold one game's state
-        /// into the base. A configured path inside dsi\ is therefore refused as a base.</summary>
-        private static string CaptureBase(MelonDsLayout layout, string configuredNand)
+        /// <summary>The dump the FIRST design copied once and used for every title. Nothing
+        /// captures one any more - the NAND to build on is now chosen per game, by region, out of
+        /// the user's bios folder - but one found on disk is still accepted as a last resort so an
+        /// install that worked yesterday does not stop working today. See MelonDsBios.</summary>
+        public static string LegacyBase(MelonDsLayout layout)
         {
-            var basePath = BasePath(layout);
-            if (basePath == null) return null;
-            if (File.Exists(basePath)) return basePath;
-
-            if (string.IsNullOrWhiteSpace(configuredNand) || !File.Exists(configuredNand)) return null;
-            if (IsOurs(layout, configuredNand)) return null;     // already one of ours, not a base
-
-            Directory.CreateDirectory(DsiDir(layout));
-            CopyIntoPlace(configuredNand, basePath);
-            Log.Info("kept your NAND as the base for every DSiWare title: " + basePath);
-            return basePath;
+            var path = BasePath(layout);
+            return path != null && File.Exists(path) ? path : null;
         }
 
         /// <summary>Copy through a temporary name in the destination folder, then move. A 240 MB copy

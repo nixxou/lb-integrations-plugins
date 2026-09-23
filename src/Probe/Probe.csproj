@@ -10,6 +10,13 @@
     <RootNamespace>LbIntegrations.Probe</RootNamespace>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <MSBuildWarningsAsMessages>MSB3277</MSBuildWarningsAsMessages>
+
+    <!-- The probe HOSTS the plugin, so it has to offer what the plugin needs. MelonDs shows one
+         window and therefore asks for WinForms; without this the probe's process cannot resolve
+         System.Windows.Forms and the plugin fails inside it in a way no real host would. That is
+         not a fidelity this harness can do without - it is also the canary for a host that really
+         does lack it. -->
+    <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
 
   <ItemGroup>

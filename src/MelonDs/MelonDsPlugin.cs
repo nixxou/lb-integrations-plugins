@@ -90,7 +90,12 @@ namespace LbIntegrations.MelonDs
         /// dependency. No BIOS is declared required, because DS mode needs none.</summary>
         private static IEnumerable<LbipEmulatorRow> MetadataRows()
         {
-            const string extensions = ".nds; .srl; .dsi; .ids; .zip; .7z; .rar";
+            // The ROM extensions are melonDS's own (Window.cpp:95). The containers are NOT its full
+            // list - libarchive accepts more than SharpCompress does, and a container this plugin
+            // cannot open is one whose inner entry name it cannot read, which is what the save is
+            // named after. These four were measured by handing the plugin one of each; see the
+            // ArchiveFormats part of the probe.
+            const string extensions = ".nds; .srl; .dsi; .ids; .zip; .7z; .rar; .tar; .tgz";
 
             yield return new LbipEmulatorRow
             {
@@ -419,7 +424,10 @@ namespace LbIntegrations.MelonDs
                     wanted[MelonDsPaths.KeySaveFilePath] = MelonDsToml.Text(layout.DefaultSaveDir);
                 if (!layout.HasRedirectedStates)
                     wanted[MelonDsPaths.KeySavestatePath] = MelonDsToml.Text(layout.DefaultStateDir);
+                // Both folders, and before the early return below: somebody whose save paths were
+                // already configured still needs somewhere to put a NAND.
                 MelonDsDsi.PrepareFolder(layout);
+                MelonDsBios.Prepare(layout);
 
                 if (wanted.Count == 0)
                 {
@@ -429,7 +437,6 @@ namespace LbIntegrations.MelonDs
 
                 try { Directory.CreateDirectory(layout.DefaultSaveDir); } catch { }
                 try { Directory.CreateDirectory(layout.DefaultStateDir); } catch { }
-                MelonDsDsi.PrepareFolder(layout);
 
                 var error = MelonDsToml.Write(layout.ConfigFile, MelonDsPaths.InstanceTable, wanted);
                 if (error != null) { Log.Warn("save paths not written: " + error); return; }
@@ -499,51 +506,127 @@ namespace LbIntegrations.MelonDs
         ///
         /// The MD5s come from Freegosy's BIOS registry (MIT); melonDS itself validates by size
         /// (EmuInstance.cpp:492-506), not by hash.</summary>
+        /// <summary>What LaunchBox should tell the user to go and find.
+        ///
+        /// THE LOCATION IS bios\, AND IT USED TO BE WRONG. This passed an empty location, which means
+        /// the emulator's own folder, while the files actually live in a subfolder - so the check
+        /// reported every file missing on an installation where everything worked. An empty location
+        /// is only right for somebody who drops BIOS files loose beside the executable, which is not
+        /// what this plugin sets up.
+        ///
+        /// REQUIRED MEANS REQUIRED. This also used to declare every file optional while describing
+        /// some of them as REQUIRED in the very next sentence. The four a DSiWare title needs are
+        /// declared required; the DS ones are genuinely optional, because melonDS has a built-in
+        /// BIOS and generates a firmware, and they matter only with external BIOS turned on.</summary>
         public override IEnumerable<EmulatorBiosFile> GetBiosFilesForPlatform(string platform)
+            => BiosFiles(platform, null);
+
+        /// <summary>The same question asked with the installation in hand - and THAT CHANGES THE
+        /// ANSWER, which is why this no longer forwards to the overload above.
+        ///
+        /// A DSi NAND dump has no canonical file name. The ones in circulation carry a firmware
+        /// version (DSi_Nand_USA_1.4.5.bin), this plugin reads their region out of their contents
+        /// rather than their name, and asking anyone to rename one would be inventing a requirement.
+        /// But a name is exactly what this contract is made of. With the installation path we can
+        /// look: a dump that is there is declared UNDER THE NAME IT HAS, and only the regions with
+        /// no dump at all fall back to a suggested name. So the check describes the folder instead
+        /// of describing a convention nobody follows.</summary>
+        public override IEnumerable<EmulatorBiosFile> GetBiosFilesForPlatform(
+            string emulatorApplicationPath, string platform, string commandLine)
+        {
+            MelonDsLayout layout = null;
+            try
+            {
+                var exe = ResolveFullPath(emulatorApplicationPath);
+                if (!string.IsNullOrWhiteSpace(exe)) layout = MelonDsPaths.Resolve(exe);
+            }
+            catch { }
+            return BiosFiles(platform, layout);
+        }
+
+        private static IEnumerable<EmulatorBiosFile> BiosFiles(string platform, MelonDsLayout layout)
         {
             // A DSi platform is the other regime entirely, and saying so here is what puts the answer
             // in front of the user: LaunchBox shows these in its own BIOS check, so "you need a NAND
             // dump" arrives before a game fails rather than afterwards in a log.
             if (IsDsiPlatform(platform))
-                return new[]
+            {
+                var files = new List<EmulatorBiosFile>
                 {
-                    File_("dsi_bios7.bin", "DSi ARM7 BIOS - REQUIRED for DSi mode. melonDS has no "
-                                         + "built-in replacement for it, unlike the DS ones.", md5: null),
-                    File_("dsi_bios9.bin", "DSi ARM9 BIOS - REQUIRED for DSi mode.", md5: null),
-                    File_("dsi_nand.bin", "A dump of YOUR OWN console's NAND - REQUIRED. DSiWare runs "
-                                        + "from inside it and keeps its save there, so it cannot be "
-                                        + "generated or downloaded. Put it at Emulators\\melonDS\\dsi\\"
-                                        + "base.bin and this plugin gives each title a copy.",
-                          md5: null),
-                    File_("dsi_firmware.bin", "DSi firmware - optional; only read when external BIOS "
-                                            + "is turned on.", md5: null),
+                    File_(MelonDsBios.DsiBios7,
+                          "DSi ARM7 BIOS - REQUIRED for DSiWare. melonDS has no built-in replacement "
+                          + "for it, unlike the DS one.", required: true),
+                    File_(MelonDsBios.DsiBios9, "DSi ARM9 BIOS - REQUIRED for DSiWare.", required: true),
+                    File_(MelonDsBios.DsiFirmware,
+                          "DSi firmware - REQUIRED for DSiWare, whatever the external-BIOS setting "
+                          + "says. melonDS only VERIFIES it when that is on, but it loads it either "
+                          + "way: the built-in path for DSi mode is unimplemented and falls through "
+                          + "to opening this file.", required: true),
                 };
+                files.AddRange(NandFiles(layout));
+                return files;
+            }
 
             if (!IsDsPlatform(platform)) return Array.Empty<EmulatorBiosFile>();
 
             return new[]
             {
-                File_("bios7.bin", "DS ARM7 BIOS - optional; melonDS has a built-in replacement. Point "
-                                 + "DS.BIOS7Path at it and turn on Config > Emu settings > external BIOS.",
-                      md5: "df692a80a5b1bc90728bc3dfc76cd948"),
-                File_("bios9.bin", "DS ARM9 BIOS - optional, same as bios7.bin.",
-                      md5: "a392174eb3e572fed6447e956bde4b25"),
-                File_("firmware.bin", "DS firmware - optional; without it melonDS generates one, which "
-                                    + "boots straight to the game and carries no user settings.",
-                      md5: null),
+                File_(MelonDsBios.DsBios7,
+                      "DS ARM7 BIOS - optional; melonDS has a built-in replacement. Only read with "
+                      + "Config > Emu settings > external BIOS turned on.",
+                      required: false, md5: "df692a80a5b1bc90728bc3dfc76cd948"),
+                File_(MelonDsBios.DsBios9, "DS ARM9 BIOS - optional, same as bios7.bin.",
+                      required: false, md5: "a392174eb3e572fed6447e956bde4b25"),
+                File_(MelonDsBios.DsFirmware,
+                      "DS firmware - optional; without it melonDS generates one, which boots straight "
+                      + "to the game and carries no user settings.", required: false),
             };
         }
 
-        public override IEnumerable<EmulatorBiosFile> GetBiosFilesForPlatform(
-            string emulatorApplicationPath, string platform, string commandLine)
-            => GetBiosFilesForPlatform(platform);
+        /// <summary>One entry per DSi region, named after the dump that is there when there is one.
+        ///
+        /// NONE OF THEM IS REQUIRED AND NONE CARRIES A HASH. Only the region of the game being
+        /// launched is needed, so demanding six would be a lie; and the dumps vary by firmware
+        /// revision and by console, so a hash would reject perfectly good files. What this plugin
+        /// checks instead is that a dump decrypts and says which region it came from - which is a
+        /// stronger statement than any checksum, because it is about THIS console's files.</summary>
+        private static IEnumerable<EmulatorBiosFile> NandFiles(MelonDsLayout layout)
+        {
+            var have = new Dictionary<DsiRegion, string>();
+            try
+            {
+                if (layout != null)
+                {
+                    var bios7 = MelonDsBios.Find(layout, MelonDsBios.DsiBios7)
+                                ?? AbsoluteTo(layout.ConfigDir, ValueOf(layout, "BIOS7Path"));
+                    foreach (var dump in MelonDsBios.Nands(layout, bios7))
+                        if (!have.ContainsKey(dump.Region))
+                            have[dump.Region] = System.IO.Path.GetFileName(dump.Path);
+                }
+            }
+            catch { }
 
-        /// <summary>Every property on EmulatorBiosFile is read-only, so the constructor is the only way
-        /// in. The location is the emulator's own folder: melonDS takes absolute paths, and resolves a
-        /// relative one against its directory (Platform.cpp:157-174), so that is where a dropped file
-        /// can be pointed at with the least ceremony.</summary>
-        private static EmulatorBiosFile File_(string fileName, string description, string md5)
-            => new EmulatorBiosFile("", fileName, false, description, md5, null);
+            var files = new List<EmulatorBiosFile>();
+            foreach (DsiRegion region in Enum.GetValues(typeof(DsiRegion)))
+            {
+                string name = have.TryGetValue(region, out var actual)
+                    ? actual : MelonDsRegion.SuggestedFileName(region);
+                files.Add(File_(name,
+                    "DSi NAND dump, " + MelonDsRegion.Name(region) + " - needed only for DSiWare from "
+                    + "that region, and only then. A dump of a real console; it cannot be generated. "
+                    + "Any file name works: the region is read from inside the dump.",
+                    required: false));
+            }
+            return files;
+        }
+
+        /// <summary>Every property on EmulatorBiosFile is read-only, so the constructor is the only
+        /// way in. The location is the bios folder this plugin creates beside the executable; melonDS
+        /// itself takes absolute paths and this plugin writes them, so the location is what the
+        /// user's own check looks at rather than what the emulator reads.</summary>
+        private static EmulatorBiosFile File_(string fileName, string description,
+                                              bool required, string md5 = null)
+            => new EmulatorBiosFile(MelonDsBios.DirName, fileName, required, description, md5, null);
 
         // ── RetroAchievements ────────────────────────────────────────────────
 
@@ -606,18 +689,17 @@ namespace LbIntegrations.MelonDs
                 return;
             }
 
-            // BEFORE ANYTHING ELSE, and for every launch rather than only for DSiWare: whatever
-            // the working NAND is still holding belongs to the title that ran last, and a rebuild is
-            // about to overwrite it. There is no "the emulator quit" event to do this on, so this is
-            // the moment - launching a plain cartridge must not silently discard the DSiWare session
-            // that came before it. With nothing in flight it costs one File.Exists.
-            // ... except for the title about to be reused: its image is not going anywhere, so
-            // there is nothing to rescue, and walking it would cost a launch a quarter of a second
-            // to write down what is already in the file we are about to hand back.
-            if (!(rom.IsDSiWare && MelonDsDsi.CanReuseWork(layout, rom, romPath)))
-                MelonDsDsi.CaptureWork(layout, AbsoluteTo(layout.ConfigDir, ValueOf(layout, "BIOS7Path")));
-
+            // A DSiWARE LAUNCH CAPTURES ITS OWN PREDECESSOR, inside PrepareDsiWare and only once
+            // it knows whether it is about to rebuild: the image it would be walking is the very one
+            // it is about to hand straight back, and doing that costs a quarter of a second per
+            // launch to write down something already on disk.
             if (rom.IsDSiWare) { PrepareDsiWare(layout, rom, romPath); return; }
+
+            // ANY OTHER LAUNCH CAPTURES UNCONDITIONALLY. Whatever the working NAND still holds
+            // belongs to the title that ran last, and there is no "the emulator quit" event to hang
+            // this on - so launching a plain cartridge must not silently discard the DSiWare session
+            // that came before it. With nothing in flight it costs one File.Exists.
+            MelonDsDsi.CaptureWork(layout, AbsoluteTo(layout.ConfigDir, ValueOf(layout, "BIOS7Path")));
 
             int wanted = 0;
             if (rom.IsDSi)
@@ -647,20 +729,57 @@ namespace LbIntegrations.MelonDs
         /// keeps a NAND of its own per title, which is where a manual import survives.</summary>
         private static void PrepareDsiWare(MelonDsLayout layout, NdsRom rom, string romPath)
         {
+            // WHICH CONSOLE CAN RUN IT. A DSi NAND is region locked, so this decides which dump
+            // the image is built on - see MelonDsRegion for the three sources and their order.
+            var regions = MelonDsRegion.RegionsFor(rom, romPath, out var how);
+            if (regions.Count > 0)
+                Log.Verbose(rom.AssetName + " runs on " + MelonDsRegion.Names(regions)
+                            + " hardware, according to " + how);
+
+            // The two BIOS and the firmware, from the user's folder when they are not already
+            // configured. Writing them is what lets somebody drop files in and launch.
+            var missing = EnsureDsiFiles(layout);
+
+            var bios7 = AbsoluteTo(layout.ConfigDir, ValueOf(layout, "BIOS7Path"));
+            var dump = MelonDsBios.NandFor(layout, regions, bios7, out var whyNoNand);
+
+
+            // A base.bin from the previous layout still counts, so an install that worked yesterday
+            // keeps working while its owner moves dumps into bios\.
+            string source = dump?.Path;
+            if (source == null)
+            {
+                source = MelonDsDsi.LegacyBase(layout);
+                if (source != null)
+                    Log.Info("no NAND for " + MelonDsRegion.Names(regions) + " in "
+                             + MelonDsBios.Dir(layout) + "; falling back to the old dsi\\base.bin. "
+                             + "Put your region dumps in the bios folder to have the right one chosen.");
+            }
+
+            if (missing.Count > 0 || source == null)
+            {
+                ReportMissing(layout, rom, regions, missing, source == null ? whyNoNand : null);
+                return;
+            }
+
             var configured = MelonDsToml.Read(layout.ConfigFile, MelonDsPaths.DSiTable, "NANDPath");
             var current = configured.TryGetValue("NANDPath", out var p)
                 ? AbsoluteTo(layout.ConfigDir, p) : null;
 
             bool automatic = MelonDsNand.IsUsable(out var missingLibrary);
 
-            // THE SAME GAME AGAIN. The image on disk already holds this title, built from this ROM,
-            // with its state in it - rebuilding would copy 240 MB to arrive back where we are. Every
-            // condition is checked in CanReuseWork rather than assumed.
-            bool reused = automatic && MelonDsDsi.CanReuseWork(layout, rom, romPath);
+            // THE SAME GAME AGAIN, ON THE SAME NAND. The image on disk already holds this title,
+            // built from this ROM on this dump, with its state in it - rebuilding would copy 240 MB
+            // to arrive back where we are. Every condition is checked rather than assumed.
+            bool reused = automatic && MelonDsDsi.CanReuseWork(layout, rom, romPath, source);
 
-            var nand = !automatic ? MelonDsDsi.EnsureLegacy(layout, rom, current)
+            // Now that the answer is known: a rebuild is about to overwrite whatever the image
+            // holds, so whoever ran last has to be written down first.
+            if (!reused) MelonDsDsi.CaptureWork(layout, bios7);
+
+            var nand = !automatic ? MelonDsDsi.EnsureLegacy(layout, rom, source)
                      : reused     ? MelonDsDsi.ExistingWork(layout)
-                                  : MelonDsDsi.Rebuild(layout, rom, current);
+                                  : MelonDsDsi.Rebuild(layout, rom, source);
 
             if (nand.Path == null)
             {
@@ -670,14 +789,9 @@ namespace LbIntegrations.MelonDs
                 return;
             }
 
-            // DSi mode still needs the two BIOS: verifySetup checks them whatever else is configured.
-            var missing = MissingDsiFiles(layout, nandPathIsOurs: true);
-            if (missing.Count > 0)
-            {
-                Log.Info(rom.AssetName + " has its NAND but DSi mode also needs "
-                         + string.Join(", ", missing) + "; leaving the console mode alone.");
-                return;
-            }
+            if (!reused && dump != null)
+                Log.Info(rom.AssetName + ": built on the " + MelonDsRegion.Name(dump.Region)
+                         + " NAND, " + System.IO.Path.GetFileName(dump.Path));
 
             // Only when it differs, like SetConsoleType. A relaunch of the same title should write
             // nothing at all - and a write attempted while melonDS is still closing would be refused
@@ -716,8 +830,6 @@ namespace LbIntegrations.MelonDs
                 return;
             }
 
-            var bios7 = AbsoluteTo(layout.ConfigDir, ValueOf(layout, "BIOS7Path"));
-
             // Install, then walk what that produced. The walk is the reference every later comparison
             // is made against, so it has to describe the install AND NOTHING ELSE - taken after the
             // saved state went back in, it would describe the state as part of the install and the
@@ -732,7 +844,83 @@ namespace LbIntegrations.MelonDs
 
             // Last, once everything above has worked: a marker naming a title whose state never went
             // back in would make the next capture overwrite a good state with a blank one.
-            MelonDsDsi.RememberWork(layout, rom.TitleId, romPath);
+            MelonDsDsi.RememberWork(layout, rom.TitleId, romPath, source);
+        }
+
+        /// <summary>Point melonDS at the DSi BIOS and firmware, and answer with what is missing.
+        ///
+        /// A path already configured and pointing at a file that exists is LEFT ALONE - somebody who
+        /// set these up by hand, in whatever folder they like, has answered the question already.
+        /// Only what is absent or broken is looked up in the bios folder and written.
+        ///
+        /// All three are demanded, firmware included. verifySetup only checks the firmware when
+        /// Emu.ExternalBIOSEnable is on, which makes it look optional; loadFirmware opens it either
+        /// way, because its built-in branch for DSi mode is an empty TODO that falls through
+        /// (EmuInstance.cpp:1016-1019). Believing the verify step would have meant declaring a file
+        /// unnecessary that melonDS then fails without.</summary>
+        private static List<string> EnsureDsiFiles(MelonDsLayout layout)
+        {
+            var missing = new List<string>();
+            var wanted = new Dictionary<string, string>(StringComparer.Ordinal);
+            var pairs = new[]
+            {
+                ("BIOS7Path", MelonDsBios.DsiBios7),
+                ("BIOS9Path", MelonDsBios.DsiBios9),
+                ("FirmwarePath", MelonDsBios.DsiFirmware),
+            };
+
+            try
+            {
+                var keys = MelonDsToml.Read(layout.ConfigFile, MelonDsPaths.DSiTable,
+                                            "BIOS7Path", "BIOS9Path", "FirmwarePath");
+                foreach (var (key, name) in pairs)
+                {
+                    var set = keys.TryGetValue(key, out var value) ? value : null;
+                    if (!string.IsNullOrWhiteSpace(set)
+                        && File.Exists(AbsoluteTo(layout.ConfigDir, set))) continue;
+
+                    var found = MelonDsBios.Find(layout, name);
+                    if (found == null) { missing.Add(name); continue; }
+                    wanted[key] = MelonDsToml.Text(found);
+                }
+
+                if (wanted.Count > 0)
+                {
+                    var error = MelonDsToml.Write(layout.ConfigFile, MelonDsPaths.DSiTable, wanted, force: true);
+                    if (error != null) Log.Warn("DSi files not selected: " + error);
+                    else Log.Info("pointed melonDS at " + string.Join(", ", wanted.Keys)
+                                  + " in " + MelonDsBios.Dir(layout));
+                }
+            }
+            catch (Exception ex) { Log.Warn("could not check the DSi files", ex); }
+            return missing;
+        }
+
+        /// <summary>Say, in the log AND on screen, that a DSiWare title cannot run and what is
+        /// missing. The window is the only one this plugin shows; see MelonDsMissingFiles for why it
+        /// exists at all and why it cannot stop the launch.</summary>
+        private static void ReportMissing(MelonDsLayout layout, NdsRom rom, List<DsiRegion> regions,
+                                          List<string> missing, string whyNoNand)
+        {
+            // Make the folder before naming it. The message below, and the window after it, both
+            // point at a path - and a path that does not exist is a spelling to guess at.
+            MelonDsBios.Prepare(layout);
+
+            var wanted = whyNoNand == null ? null : MelonDsRegion.Names(regions);
+            var parts = new List<string>();
+            if (missing.Count > 0) parts.Add(string.Join(", ", missing));
+            if (wanted != null) parts.Add("a NAND dump for " + wanted);
+
+            Log.Info(rom.AssetName + " is DSiWare and cannot start: it needs " + string.Join(" and ", parts)
+                     + " in " + MelonDsBios.Dir(layout)
+                     + (whyNoNand == null ? "" : " - " + whyNoNand)
+                     + ". Leaving the console mode alone.");
+
+            MelonDsMissingFiles.Show(rom.AssetName, MelonDsBios.Dir(layout), missing, wanted,
+                regions.Count == 0
+                    ? "Nothing in this ROM or its file name says which region it is for, so any NAND "
+                      + "you have will be tried."
+                    : null);
         }
 
         /// <summary>A NAND left over from the first design, turned into a saved state and removed.
@@ -758,13 +946,43 @@ namespace LbIntegrations.MelonDs
         /// nothing downstream - migration, state, marker - has any footing.</summary>
         private static bool InstallTitle(MelonDsLayout layout, NdsRom rom, string romPath, string nandPath)
         {
-            // An archive cannot be imported: melonDS's importer reads a .nds, and so does ours.
-            if (NdsHeader.IsArchive(romPath))
+            // AN ARCHIVE IS UNPACKED HERE, not refused. melonDS opens archives itself, so a DS game
+            // is handed straight over and none of this applies - but a DSiWare title has to be
+            // INSTALLED into a NAND first, and both melonDS's importer and ours read a .nds from
+            // disk. Refusing meant preparing a NAND, installing nothing into it, and leaving the DSi
+            // menu showing no game: a dead end whose only explanation was a line in a log.
+            string unpacked = null;
+            string appPath = romPath;
+            try
             {
-                Log.Info(rom.AssetName + " is inside an archive; extract the .nds to have it installed "
-                         + "into its NAND automatically.");
-                return false;
+                if (NdsHeader.IsArchive(romPath))
+                {
+                    unpacked = Path.Combine(Path.GetTempPath(),
+                                            "lbip-melonds-" + Guid.NewGuid().ToString("N") + ".nds");
+                    if (!Archives.ExtractFirstEntry(romPath, NdsHeader.RomExtensions, unpacked, out var inner))
+                    {
+                        Log.Warn("could not find a .nds inside " + rom.AssetName
+                                 + "; it cannot be installed into a NAND.");
+                        return false;
+                    }
+                    appPath = unpacked;
+                    Log.Verbose("unpacked " + inner + " out of the archive to install it");
+                }
+
+                return InstallFrom(layout, rom, appPath, romPath, nandPath);
             }
+            finally
+            {
+                try { if (unpacked != null && File.Exists(unpacked)) File.Delete(unpacked); } catch { }
+            }
+        }
+
+        /// <summary>The install itself, given a .nds ON DISK. <paramref name="besidePath"/> is what
+        /// the user actually launched - the archive, when there was one - so a .tmd they put next to
+        /// it is still found.</summary>
+        private static bool InstallFrom(MelonDsLayout layout, NdsRom rom, string appPath,
+                                        string besidePath, string nandPath)
+        {
 
             var bios7 = AbsoluteTo(layout.ConfigDir, ValueOf(layout, "BIOS7Path"));
             using var session = MelonDsNand.Open(nandPath, bios7, out var error);
@@ -779,10 +997,10 @@ namespace LbIntegrations.MelonDs
             // on a live install: a title imported with a built TMD ran when direct-booted as a
             // cartridge and failed from the menu. Nintendo's update server still answers, which is
             // where melonDS's own dialog gets it. See MelonDsNus.
-            var tmd = MelonDsTmd.Resolve(layout, rom, romPath, out var source);
+            var tmd = MelonDsTmd.Resolve(layout, rom, appPath, besidePath, out var source);
             if (tmd != null) Log.Verbose("metadata for " + rom.TitleId + " from " + source);
 
-            if (!session.ImportTitle(romPath, tmd, out var failure, out var generated))
+            if (!session.ImportTitle(appPath, tmd, out var failure, out var generated))
             {
                 Log.Warn("could not install " + rom.AssetName + " into the working NAND - " + failure
                          + ". Import it through Manage DSi titles instead.");
@@ -878,21 +1096,19 @@ namespace LbIntegrations.MelonDs
                      + ", for " + rom.AssetName);
         }
 
-        /// <summary>Which of the three files DSi mode needs are not there. verifySetup checks the two
-        /// BIOS and the NAND whatever ExternalBIOSEnable says; the firmware is only checked when it is
-        /// on, so it is not demanded here.</summary>
-        private static List<string> MissingDsiFiles(MelonDsLayout layout, bool nandPathIsOurs = false)
+        /// <summary>Which of the files DSi mode needs are not configured or not there.
+        ///
+        /// This is the CARTRIDGE path's question - a DSi cart or a DSi-enhanced game, which runs off
+        /// whatever NAND is selected and needs no title installed. DSiWare asks a different and
+        /// harder question, by region, in PrepareDsiWare.</summary>
+        private static List<string> MissingDsiFiles(MelonDsLayout layout)
         {
             var missing = new List<string>();
             try
             {
                 var keys = MelonDsToml.Read(layout.ConfigFile, MelonDsPaths.DSiTable,
                                             "BIOS7Path", "BIOS9Path", "NANDPath");
-                // The NAND is not asked for when we have just prepared one ourselves.
-                var wanted = nandPathIsOurs
-                    ? new[] { "BIOS7Path", "BIOS9Path" }
-                    : new[] { "BIOS7Path", "BIOS9Path", "NANDPath" };
-                foreach (var key in wanted)
+                foreach (var key in new[] { "BIOS7Path", "BIOS9Path", "NANDPath" })
                 {
                     var path = keys.TryGetValue(key, out var p) ? p : null;
                     if (string.IsNullOrWhiteSpace(path)) { missing.Add("DSi." + key); continue; }

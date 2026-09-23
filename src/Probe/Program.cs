@@ -28,7 +28,7 @@ namespace LbIntegrations.Probe
         {
             if (args.Length == 0 || args[0].StartsWith("-"))
             {
-                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--melonds] [--melonds-real ...] [--rows] [--hotkeys] [--saves --emu <exe> --rom <rom>] [--ahk --emu <exe>]");
+                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--melonds] [--melonds-real ...] [--melonds-describe --rom <f>] [--rows] [--hotkeys] [--saves --emu <exe> --rom <rom>] [--ahk --emu <exe>]");
                 return 2;
             }
 
@@ -446,6 +446,12 @@ namespace LbIntegrations.Probe
             if (Has(args, "--flycast-real"))
             {
                 if (!FlycastCheck.AgainstReal(plugin, emuPath, Arg(args, "--rom"))) return 1;
+            }
+
+            // What the plugin makes of one file: --melonds-describe --rom <file>
+            if (Has(args, "--melonds-describe"))
+            {
+                if (!MelonDsCheck.Describe(plugin, Arg(args, "--rom"))) return 1;
             }
 
             // The DSiWare path against a REAL NAND, on copies:
