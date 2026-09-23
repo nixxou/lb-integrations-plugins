@@ -541,6 +541,7 @@ So the difference is the save, and the image is scratch:
 ```
 ..\RetroArch\system\                     yours - BIOS, firmware, and a NAND per region you own
 <install>\dsi\work.bin                   ours - the working image, rebuilt every launch
+<install>\dsi\tmd\0003000412345678.tmd   the title's metadata, once per machine
 <install>\dsi\0003000412345678\state\    the files that differ - tens of kilobytes
 ```
 
@@ -777,6 +778,13 @@ now stop it putting the save back, and neither of them is the delete's to rememb
 walk went with the folder, and nothing can be captured without one; and the receipt below no longer
 matches a state folder that is not there, so the next launch drops the image before deciding
 anything. An image nothing can read is scratch, and the next DSiWare launch rebuilds over it.
+
+The title's `.tmd` is kept in `dsi\tmd\` rather than in the title's own folder, for the same reason
+read the other way: it describes the TITLE, not the save. It used to sit beside the state folder,
+which was tidy and wrong - a delete took it too. For the titles the carried index holds that costs
+nothing; for one that came from Nintendo's server it costs a second download, and on a machine that
+is offline at the next launch it costs the metadata altogether, leaving an unsigned TMD built from
+the ROM that the DSi menu may refuse. A copy kept under the old arrangement is moved, not re-fetched.
 
 Deleting the per-title image also loses a title imported by hand through Manage DSi titles, which the
 log says out loud because it has to be done again. Refused while melonDS is running, since it will

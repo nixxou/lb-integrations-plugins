@@ -1014,6 +1014,11 @@ namespace LbIntegrations.Probe
             File.WriteAllText(Path.Combine(state, "files.txt"), "F\t0\t0:/sys/HWINFO_S.dat\r\n");
             File.WriteAllText(Path.Combine(state, "0"), "a captured file");
             File.WriteAllText(Path.Combine(dsi, titleId, "reference.txt"), "the fresh install");
+
+            // Metadata about the TITLE, which has nothing to do with somebody's progress.
+            string tmd = Path.Combine(dsi, "tmd", titleId + ".tmd");
+            Directory.CreateDirectory(Path.GetDirectoryName(tmd));
+            File.WriteAllText(tmd, "signed metadata");
             File.WriteAllText(marker, titleId + "\tsomewhere\t1\t2\tnand.bin");
             File.WriteAllText(work, "not really an image");
             File.WriteAllText(legacy, "not really an image either");
@@ -1040,6 +1045,8 @@ namespace LbIntegrations.Probe
             capture.Invoke(null, new object[] { layout, null, null });
             ok &= Check("and a capture afterwards cannot bring the save back",
                         !Directory.Exists(state));
+            ok &= Check("the title's metadata survives - deleting progress is not losing a download",
+                        File.Exists(tmd));
 
             // Again, with nothing left. A second delete is not an error - the row may be stale, and
             // answering "no" to a save that is already gone would be a failure about nothing.

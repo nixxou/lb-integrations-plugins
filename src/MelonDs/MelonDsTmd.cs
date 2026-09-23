@@ -69,6 +69,7 @@ namespace LbIntegrations.MelonDs
             if (carried != null) { source = which; return carried; }
 
             var kept = KeptPath(layout, rom.TitleId);
+            MoveOldCopy(layout, rom.TitleId, kept);
             var already = Usable(kept);
             if (already != null) { source = "a copy fetched earlier"; return already; }
 
@@ -232,12 +233,41 @@ namespace LbIntegrations.MelonDs
             catch { return null; }
         }
 
-        /// <summary>Where a resolved TMD is written, beside the title's own NAND: it belongs to that
-        /// title, and it goes away with it.</summary>
+        /// <summary>Where a resolved TMD is kept: dsi\tmd\, and NOT in the title's own folder.
+        ///
+        /// IT DESCRIBES THE TITLE, NOT THE SAVE. It used to sit beside the state folder, which was
+        /// tidy and wrong: deleting a save takes the whole title folder, so it took the metadata
+        /// with it. For the 1889 titles the carried index holds that costs nothing. For one that
+        /// came from Nintendo's server it costs a second download - and, on a machine that is
+        /// offline when the game is next launched, it costs the metadata altogether: the fallback is
+        /// a TMD built from the ROM, unsigned, which the DSi menu may refuse.
+        ///
+        /// Nothing about a title's metadata is changed by somebody deleting their progress.</summary>
         private static string KeptPath(MelonDsLayout layout, string titleId)
         {
-            var dir = MelonDsDsi.TitleDir(layout, titleId);
-            return dir == null ? null : Path.Combine(dir, "title.tmd");
+            var dsi = MelonDsDsi.DsiDir(layout);
+            if (dsi == null || string.IsNullOrWhiteSpace(titleId)) return null;
+            return Path.Combine(dsi, KeptDirName, titleId + ".tmd");
+        }
+
+        private const string KeptDirName = "tmd";
+
+        /// <summary>A copy kept under the old arrangement, moved rather than re-fetched. One
+        /// File.Exists on a path we were about to look at anyway.</summary>
+        private static void MoveOldCopy(MelonDsLayout layout, string titleId, string target)
+        {
+            try
+            {
+                if (target == null || File.Exists(target)) return;
+                var dir = MelonDsDsi.TitleDir(layout, titleId);
+                var old = dir == null ? null : Path.Combine(dir, "title.tmd");
+                if (old == null || !File.Exists(old)) return;
+
+                Directory.CreateDirectory(Path.GetDirectoryName(target));
+                File.Move(old, target);
+                Log.Verbose("moved the kept metadata of " + titleId + " out of its save folder");
+            }
+            catch (Exception ex) { Log.Verbose("could not move a kept TMD - " + ex.Message); }
         }
 
         private static byte[] Sha1Of(string path)
