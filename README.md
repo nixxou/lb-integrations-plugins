@@ -14,6 +14,7 @@ is published by Unbroken Software), so these are installed by hand.
 | `src/Xenia` | Xenia (canary) | Microsoft Xbox 360 | download / update, launch fixes, save management |
 | `src/Flycast` | Flycast | Sega Dreamcast, Sega Naomi, Sega Naomi 2, Sammy Atomiswave | download / update, BIOS, RetroAchievements, launch, save management |
 | `src/MelonDs` | melonDS | Nintendo DS | download / update, BIOS, DS/DSi mode, per-title DSi NAND, save management (GPL-3.0) |
+| `src/NoGba` | no$gba | Nintendo Game Boy Advance, Nintendo DS | download / update, BIOS, **raw save format**, save management |
 
 ## Building
 
@@ -140,7 +141,7 @@ read-only half of the contract, printing what comes back — seconds instead of 
 dotnet run --project src\Probe -- src\Ppsspp\bin\Release\Ppsspp.dll --emu "D:\Emulators\PPSSPP\PPSSPPWindows64.exe"
 ```
 
-It writes nothing unless you ask it to. These modes do — the last two only inside the temp folder:
+It writes nothing unless you ask it to. These modes do — the last three only inside the temp folder:
 
 ```
 --inject-ra-test
@@ -181,6 +182,16 @@ It writes nothing unless you ask it to. These modes do — the last two only ins
     When this build carries the metadata index it also reads that index a second way, from
     the resource and by the packer's own documented layout, and requires the two readings to
     agree.
+
+--nogba
+    the no$gba contract against a forged install. First that the save format is set to Raw -
+    the one line the whole plugin exists for - including after somebody's Options > Save
+    Options reverted it. Then that writing that one key leaves the other fifty settings, the
+    "do not edit" banner and the hex key mapping character for character where they were,
+    and that a second pass changes not one byte. Then that a BIOS sitting in
+    RetroArch\system is copied under the name no$gba reads, that one nobody has is not
+    invented, and that a save is listed under the name of the ROM INSIDE the archive
+    rather than the archive's own.
 ```
 
 Point the first two at a throwaway install and a throwaway account.
@@ -797,6 +808,70 @@ core, which is a different project.
 **LaunchBox knows no standalone DS emulator at all.** Its metadata database has one `Nintendo DS`
 row, RetroArch with the desmume core, so the row injection matters more here than anywhere else: it
 is what puts melonDS in the Add Emulator window.
+
+## Notes on no$gba
+
+**The reason this plugin exists is one line of configuration.** no$gba writes its cartridge saves
+COMPRESSED, in a container of its own, and it does so by default. Measured on Mario Kart DS:
+
+```
+default   25,487 bytes   "NocashGbaBackupMediaSavDataFile"
+Raw      262,144 bytes   "MKDSSV10…"   - 256 KB exactly, the game's own signature
+```
+
+The first is readable by no$gba and by nothing else — not RetroArch, not melonDS, not DeSmuME, not a
+save editor, not RomM, not Argosy. The second is the plain battery image everything speaks. The
+setting has existed for years, it is three menus deep, and nothing anywhere suggests it matters.
+The plugin sets it at install and checks it at every launch, because *Options ▸ Save Options*
+rewrites the whole file from the running configuration and silently reverts it.
+
+**Everything lives beside the executable, under a fixed name, and none of it is configurable.** The
+full 2541-byte configuration no$gba writes for itself was read: it holds fifty-odd keys and **not one
+path**. No save folder, no BIOS folder, no snapshot directory.
+
+```
+NO$GBA.INI      written only by Options ▸ Save Options - never at first run, never on exit
+BATTERY\        cartridge saves, "<rom file name without its last extension>.SAV"
+SNAP\           snapshots (F8 writes, F7 loads)
+BIOSNDS7.ROM …  the BIOS and firmware files, by name, in this folder and nowhere else
+```
+
+So this plugin cannot point the emulator at anything; it can only put files where the emulator
+already looks. BIOS files are therefore **copied** out of `Emulators\RetroArch\system\` — the same
+folder the melonDS plugin declares — under the names no$gba wants. They are declared **optional**,
+and that is not laziness: no$gba's default is to start a cartridge directly without running any boot
+code, and it runs games perfectly well with none of them. They buy accuracy, not function.
+
+**The INI is edited even though it says not to.** Its first line reads `;no$gba 3.0 generated config
+file - do not edit`. Three things were measured before ignoring it: a partial file is valid (a
+hand-written three-line INI was read and every unmentioned setting kept its default); no$gba never
+rewrites it on exit (108 bytes in, 108 bytes out, byte for byte, across a full session); and a
+**wrong value is ignored in silence**. That last one is the trap — `Reset/Startup Entrypoint ==
+GBA/NDS BIOS` does nothing at all, because the value the emulator accepts is `GBA/NDS BIOS (Nintendo
+logo)`, the exact label of the drop-down entry. No error, no log, no fallback. Every value this
+plugin writes is a named constant carrying the menu label it was read from.
+
+**Archives are the host's job, and that is a forced setting.** no$gba cannot open one. Handed a
+`.zip` it puts up a modal box reading "Cartridge not found" and waits — which from a frontend is not
+a failed launch but a hung one, behind a dialog nobody was expecting. LaunchBox has a flag for
+exactly this, `Auto-Extract`, and the plugin turns it on and keeps it on. It is the only user setting
+anything here overrides, because there is no configuration in which leaving it off is what somebody
+wanted.
+
+**There is no version to read, so the server's answer is the version.** The executable's version
+resource says, literally, `FileVersion = "Windows version"`. The download is a single zip on the
+author's own site at a URL that has not changed in years, so a `HEAD` request settles it:
+`Last-Modified` becomes the label a person sees and the `ETag` is what an update check compares.
+Nothing parses the HTML page. An installation this plugin did not make reports no version at all,
+honestly, rather than one invented from a file size.
+
+**Snapshots are not listed as saves.** F8 creates the `SNAP\` folder and left nothing in it across
+several sessions, including clean exits. Declaring slots would mean describing a file format and a
+naming scheme nobody here has seen; the folder is scanned and whatever turns up is named in the log
+instead.
+
+**No RetroAchievements.** no$gba predates the idea and is a single packed executable with no network
+features beyond its own link emulation.
 
 ## License
 

@@ -1,0 +1,19 @@
+{
+  "SchemaVersion": 1,
+  "PluginId": "3101adc2-46eb-41c8-a7f8-91912dc2cc60",
+  "UserId": 0,
+  "Name": "no$gba Integration",
+  "Developer": "nixxou",
+  "Description": "Download, update and save management for the no$gba emulator (Game Boy Advance, Nintendo DS). Writes its saves in the raw format every other emulator reads.",
+  "Credits": "Many thanks to Martin Korth for no$gba and for GBATEK!",
+  "OperatingSystemFamily": "Windows",
+  "InstalledVersion": "1.0",
+  "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
+  "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
+  "HomePageUrl": "https://problemkaputt.de/gba.htm",
+  "TipJarUrl": "",
+  "SourceKind": "Local",
+  "Tags": [
+    "5aae585f-ffc5-42bc-9f95-e5e190ef99e2"
+  ]
+}

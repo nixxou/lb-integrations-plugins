@@ -22,6 +22,13 @@ one non-framework entry — `Unbroken.LaunchBox.Plugins` — so there is nothing
 its partition-base probing order are sigil's work; the C# is ours. MPL-2.0 is file-scoped copyleft:
 that one file stays MPL and its source is in this repository, which is what the licence asks.
 
+## Merged into `NoGba.dll`
+
+| Component | Licence | Used for |
+|---|---|---|
+| [SharpCompress](https://github.com/adamhathcock/sharpcompress) | MIT | reading the release archive, and reading a game archive's entry name - no$gba cannot open an archive itself |
+| [Harmony](https://github.com/pardeike/Harmony) | MIT | describing no$gba to LaunchBox, whose metadata database has no row for it |
+
 ## Merged into `Flycast.dll`
 
 | Component | Licence | Used for |
