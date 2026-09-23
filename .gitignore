@@ -9,3 +9,9 @@ obj/
 Thumbs.db
 desktop.ini
 build/
+
+# The DSiWare metadata index. Built by tools\pack-tmd-library.ps1 from preservation sets, and
+# carried into the assembly at build time. Ignored by default: it is Nintendo's signed metadata, and
+# whether a copy belongs in a published repository is a decision to take on purpose rather than by
+# forgetting to look. Remove this line if that decision is yes.
+src/MelonDs/tmd-library.bin

@@ -31,6 +31,17 @@
     </Reference>
   </ItemGroup>
 
+  <!-- The DSiWare metadata index, carried inside the assembly: about 1700 titles in 0.6 MB, one
+       file rather than seventeen hundred beside the plugin, which is the ordinary way any program
+       carries its data. Its layout is written out at the top of tools\pack-tmd-library.ps1, which
+       is also what builds it - a sorted table read in place, then deflated blocks of sixteen entries
+       of which a lookup inflates exactly one. LogicalName drops the namespace so the resource is
+       asked for by the name it has on disk. -->
+  <ItemGroup>
+    <EmbeddedResource Include="tmd-library.bin" LogicalName="tmd-library.bin"
+                      Condition="Exists('tmd-library.bin')" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- SharpCompress reads a game's .zip, .7z or .rar, which is where the save's name comes from
          when melonDS loads a ROM out of an archive - see Archives.cs. -->

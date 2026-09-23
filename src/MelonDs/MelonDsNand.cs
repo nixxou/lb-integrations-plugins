@@ -54,9 +54,9 @@ namespace LbIntegrations.MelonDs
         /// <paramref name="generatedTmd"/> says whether the metadata file had to be built from the
         /// ROM - worth repeating to the user, because a generated TMD is unsigned and a real DSi
         /// would notice even though melonDS does not.</summary>
-        public bool ImportTitle(string appPath, out string error, out bool generatedTmd)
+        public bool ImportTitle(string appPath, string tmdPath, out string error, out bool generatedTmd)
         {
-            var code = MelonDsNand.ImportTitle(_handle, appPath, null, 0);
+            var code = MelonDsNand.ImportTitle(_handle, appPath, tmdPath, 0);
             generatedTmd = false;
             try { generatedTmd = MelonDsNand.LastTmdWasGenerated() != 0; } catch { }
             error = code == MelonDsNand.Ok ? null : MelonDsNand.LastError(_handle);
@@ -109,7 +109,7 @@ namespace LbIntegrations.MelonDs
 
         /// <summary>The ABI this plugin was written against. A library that answers anything else is
         /// refused rather than called - a signature that moved underneath us would not fail politely.</summary>
-        private const int ExpectedAbi = 2;
+        private const int ExpectedAbi = 3;
 
         internal const int Ok = 0;
         internal const int No = 1;
@@ -188,6 +188,23 @@ namespace LbIntegrations.MelonDs
             error = null;
             if (!IsUsable(out var why)) { error = why; return null; }
 
+            // NEVER WHILE melonDS IS RUNNING. The library opens the image read/write, and so does the
+            // emulator: the C runtime allows both, so nothing stops two writers from working on the
+            // same 240 MB file at once. melonDS holds the NAND for the whole session, writes a save
+            // into it when the game does, and flushes on exit - an import or a save round-trip
+            // underneath that is a corrupted NAND, and the NAND is the game AND its progress.
+            //
+            // This is not hypothetical: GetSaves runs whenever the page is drawn, including while a
+            // game is being played and the user has alt-tabbed back. Found by doing it by hand during
+            // a session, which is exactly how it would have happened to somebody else.
+            var running = RunningEmulatorProcess();
+            if (running != null)
+            {
+                error = "melonDS is running (" + running + ") and holds this NAND open. Close it first; "
+                      + "writing to the image underneath the emulator would corrupt it.";
+                return null;
+            }
+
             // LOOK BEFORE CROSSING. Everything past this line runs native code in the host's own
             // process, where an access violation would take LaunchBox down with it - that is the one
             // real cost of calling a library rather than a separate program. melonDS checks the
@@ -204,6 +221,27 @@ namespace LbIntegrations.MelonDs
                 return null;
             }
             catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; return null; }
+        }
+
+        /// <summary>The name of a running melonDS process, or null. The same test MelonDsToml uses,
+        /// and for a related reason: melonDS owns its files for the length of a session.</summary>
+        private static string RunningEmulatorProcess()
+        {
+            try
+            {
+                foreach (var p in System.Diagnostics.Process.GetProcesses())
+                {
+                    using (p)
+                    {
+                        string n;
+                        try { n = p.ProcessName; } catch { continue; }
+                        if (n != null && n.StartsWith("melonDS", StringComparison.OrdinalIgnoreCase))
+                            return n;
+                    }
+                }
+            }
+            catch { }
+            return null;
         }
 
         /// <summary>The 16 bytes every DSi NAND dump carries, at 0x40 from the end - and again at

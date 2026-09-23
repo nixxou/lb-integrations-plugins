@@ -58,6 +58,8 @@ void Usage()
         "                                  <rom.nds>.tmd beside it\n"
         "  delete --title <16 hex>         remove a title and its data\n"
         "  export-save --title <16 hex> --type <public|private|banner> --out <file>\n"
+        "  export-file --path <path in NAND> --out <file>\n"
+        "                                  for example 0:/title/00030004/4b393945/content/title.tmd\n"
         "  import-save --title <16 hex> --type <public|private|banner> --in <file>\n"
         "\n"
         "exit codes: 0 ok, 1 no, 2 usage, 3 failed\n");
@@ -159,6 +161,15 @@ int Run(int argc, char** argv, mdsnand_handle* nand, const char* command)
         if (!ParseTitleId(Arg(argc, argv, "--title"), category, id))
         { std::fprintf(stderr, "--title wants 16 hex digits\n"); return ExitUsage; }
         return Report(nand, mdsnand_delete_title(nand, category, id));
+    }
+
+    if (std::strcmp(command, "export-file") == 0)
+    {
+        const char* path = Arg(argc, argv, "--path");
+        const char* out = Arg(argc, argv, "--out");
+        if (!path || !out)
+        { std::fprintf(stderr, "export-file wants --path and --out\n"); return ExitUsage; }
+        return Report(nand, mdsnand_export_file(nand, path, out));
     }
 
     bool exporting = std::strcmp(command, "export-save") == 0;

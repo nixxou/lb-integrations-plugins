@@ -17,6 +17,7 @@
 //   7. two passes leaving the file byte for byte identical        - no drift on every launch
 //   8. the console mode chosen from the ROM header                - DS, DSi, and DSiWare refused
 //   9. AutoHotkey scripts naming the keys melonDS really binds
+//  10. the carried metadata index answering for titles it holds  - and only those
 
 using System;
 using System.Collections.Generic;
@@ -42,6 +43,17 @@ namespace LbIntegrations.Probe
             Console.WriteLine();
             Console.WriteLine("-- melonds, on a FORGED install  [WRITES, in the temp folder] " + new string('-', 3));
 
+            // EVERY WRITE THIS CHECK MAKES IS REFUSED WHILE melonDS IS RUNNING, and rightly: the
+            // plugin will not touch a configuration or a NAND the emulator is holding. Reporting
+            // fifteen failures for that would be a harness telling a lie - the repository's own rule.
+            // So it says what is in the way and stops.
+            if (MelonDsRunning())
+            {
+                Console.WriteLine("  skipped - melonDS is running, and the plugin refuses to write");
+                Console.WriteLine("            under a live emulator. Close it and run this again.");
+                return true;
+            }
+
             string root = Path.Combine(Path.GetTempPath(), "lbip-melonds-" + Guid.NewGuid().ToString("N"));
             try
             {
@@ -56,6 +68,7 @@ namespace LbIntegrations.Probe
                 ok &= TomlSurvivesAnApostrophe(root);
                 ok &= ConsoleMode(plugin, exe, romDir);
                 ok &= PerTitleNand(exe, romDir);
+                ok &= CarriedIndex(exe, romDir);
                 ok &= Scripts(plugin, exe);
                 ok &= Slots(plugin);
 
@@ -107,15 +120,18 @@ namespace LbIntegrations.Probe
             return (exe, romDir);
         }
 
-        /// <summary>A DS cart header as far as the two fields we read: UnitCode at 0x12 and
-        /// DSiTitleIDHigh at 0x234 (NDS_Header.h:44-52 and the DSi block).</summary>
-        private static byte[] Header(byte unitCode, uint titleIdHigh)
+        /// <summary>A DS cart header as far as the fields we read. The title id defaults to the one
+        /// the rest of this check expects; the carried-index part passes real ones.</summary>
+        private static byte[] Header(byte unitCode, uint titleIdHigh, uint titleIdLow = 0x87654321)
         {
             var bytes = new byte[0x1000];
             var title = Encoding.ASCII.GetBytes("FORGEDTITLE");
             Buffer.BlockCopy(title, 0, bytes, 0, title.Length);
             bytes[0x12] = unitCode;
-            bytes[0x230] = 0x21; bytes[0x231] = 0x43; bytes[0x232] = 0x65; bytes[0x233] = 0x87;
+            bytes[0x230] = (byte)(titleIdLow & 0xFF);
+            bytes[0x231] = (byte)((titleIdLow >> 8) & 0xFF);
+            bytes[0x232] = (byte)((titleIdLow >> 16) & 0xFF);
+            bytes[0x233] = (byte)((titleIdLow >> 24) & 0xFF);
             bytes[0x234] = (byte)(titleIdHigh & 0xFF);
             bytes[0x235] = (byte)((titleIdHigh >> 8) & 0xFF);
             bytes[0x236] = (byte)((titleIdHigh >> 16) & 0xFF);
@@ -128,6 +144,23 @@ namespace LbIntegrations.Probe
             var bytes = new byte[size];
             for (int i = 0; i < size; i++) bytes[i] = (byte)(i * 31 + name.Length);
             File.WriteAllBytes(Path.Combine(dir, name), bytes);
+        }
+
+        private static bool MelonDsRunning()
+        {
+            try
+            {
+                foreach (var p in System.Diagnostics.Process.GetProcesses())
+                    using (p)
+                    {
+                        string n;
+                        try { n = p.ProcessName; } catch { continue; }
+                        if (n != null && n.StartsWith("melonDS", StringComparison.OrdinalIgnoreCase))
+                            return true;
+                    }
+            }
+            catch { }
+            return false;
         }
 
         private static string ConfigPath(string exe)
@@ -546,6 +579,105 @@ namespace LbIntegrations.Probe
 
         // ── 9. the scripts ───────────────────────────────────────────────────
 
+        // -- 11. the carried metadata index ----------------------------------
+
+        /// <summary>The embedded index, read TWICE: once here, straight from the resource and
+        /// following the layout the packer documents, and once by the plugin through its own lookup.
+        /// The two readings have to agree. A check that only called the plugin would confirm the
+        /// plugin agrees with itself - which is exactly what let a packer write one byte per block
+        /// and still print a reassuring summary.</summary>
+        private static bool CarriedIndex(string exe, string romDir)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- the carried metadata index");
+
+            var resource = _assemblyAnchor.Assembly.GetManifestResourceStream("tmd-library.bin");
+            if (resource == null)
+            {
+                Console.WriteLine("    skipped - this build carries no index. It is built by");
+                Console.WriteLine("              tools\\pack-tmd-library.ps1 and is not in the repository.");
+                return true;
+            }
+
+            byte[] all;
+            using (resource)
+            using (var buffer = new MemoryStream()) { resource.CopyTo(buffer); all = buffer.ToArray(); }
+
+            if (!Check("it is the format the packer writes",
+                       all.Length > 20 && all[0] == 'M' && all[1] == 'D' && all[2] == 'S'
+                       && all[3] == 'T' && all[4] == 'M' && all[5] == 'D' && all[7] == 2))
+                return false;
+
+            bool ok = true;
+            int count = BitConverter.ToInt32(all, 8);
+            int blocks = BitConverter.ToInt32(all, 12);
+            int perBlock = BitConverter.ToUInt16(all, 16);
+            int table = 20 + count * 36;
+            int payload = table + blocks * 8;
+            Console.WriteLine("    " + count.ToString("N0") + " entries in " + blocks + " blocks of "
+                              + perBlock + ", " + (all.Length / 1024).ToString("N0") + " KB carried");
+
+            // The block table has to account for the file exactly. A payload that stopped early is
+            // the failure that already happened once, and it is invisible from the counts alone.
+            long declared = payload;
+            for (int i = 0; i < blocks; i++) declared += BitConverter.ToUInt32(all, table + i * 8 + 4);
+            ok &= Check("its block table accounts for the whole file", declared == all.Length);
+
+            // Sorted, or the binary search is answering by luck.
+            bool sorted = true;
+            for (int i = 0; i + 1 < count && sorted; i++)
+                for (int k = 0; k < 8; k++)
+                {
+                    int a = all[20 + i * 36 + k], b = all[20 + (i + 1) * 36 + k];
+                    if (a != b) { sorted = a < b; break; }
+                }
+            ok &= Check("its records are sorted by title id", sorted);
+
+            // A spread of real entries, asked for the way a launch asks for one: forge a DSiWare
+            // header carrying that title id, and let the plugin go and find its metadata.
+            var index = TypeIn("MelonDsTmd").GetMethod("FromIndex",
+                            BindingFlags.NonPublic | BindingFlags.Static);
+            var describe = TypeIn("NdsHeader").GetMethod("Describe", BindingFlags.Public | BindingFlags.Static);
+            var resolve = TypeIn("MelonDsPaths").GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static);
+            if (index == null || describe == null || resolve == null)
+            { Console.WriteLine("    no FromIndex / Describe / Resolve to call"); return false; }
+
+            var layout = resolve.Invoke(null, new object[] { exe });
+            string rom = Path.Combine(romDir, "Carried Index Probe.nds");
+            int asked = 0, agreed = 0;
+
+            for (int i = 0; i < count; i += Math.Max(1, count / 12))
+            {
+                int at = 20 + i * 36;
+                uint high = (uint)((all[at] << 24) | (all[at + 1] << 16) | (all[at + 2] << 8) | all[at + 3]);
+                uint low = (uint)((all[at + 4] << 24) | (all[at + 5] << 16) | (all[at + 6] << 8) | all[at + 7]);
+
+                File.WriteAllBytes(rom, Header(0x03, high, low));
+                var args = new object[] { layout, describe.Invoke(null, new object[] { rom }), rom, null };
+                var found = (string)index.Invoke(null, args);
+                asked++;
+
+                if (found == null || !File.Exists(found)) continue;
+                var bytes = File.ReadAllBytes(found);
+                bool right = bytes.Length == 520;
+                for (int k = 0; k < 8 && right; k++) right = bytes[0x18C + k] == all[at + k];
+                if (right) agreed++;
+                try { Directory.Delete(Path.GetDirectoryName(found), recursive: true); } catch { }
+            }
+
+            ok &= Check("a sampled title comes back, 520 bytes, describing itself ("
+                        + agreed + " of " + asked + ")", asked > 0 && agreed == asked);
+
+            // And a title it does not hold gets no answer rather than a neighbour's. An id of all
+            // ones sorts past every record, so it exercises the end of the search.
+            File.WriteAllBytes(rom, Header(0x03, 0x00030004, 0xFFFFFFFF));
+            var none = new object[] { layout, describe.Invoke(null, new object[] { rom }), rom, null };
+            ok &= Check("a title it does not hold gets no answer", index.Invoke(null, none) == null);
+
+            try { File.Delete(rom); } catch { }
+            return ok;
+        }
+
         private static bool Scripts(EmulatorPlugin plugin, string exe)
         {
             Console.WriteLine();
@@ -614,7 +746,9 @@ namespace LbIntegrations.Probe
             var toml = TypeIn("MelonDsToml");
             var write = toml.GetMethod("Write", BindingFlags.Public | BindingFlags.Static);
             var values = new Dictionary<string, string>(StringComparer.Ordinal) { [key] = value };
-            return (string)write.Invoke(null, new object[] { ConfigPath(exe), table, values });
+            // The fourth argument is the launch-path override; reflection does not fill optional
+            // parameters, so it is named here rather than left out.
+            return (string)write.Invoke(null, new object[] { ConfigPath(exe), table, values, false });
         }
 
         private static Type _assemblyAnchor;

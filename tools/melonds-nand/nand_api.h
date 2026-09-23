@@ -120,6 +120,11 @@ MDSNAND_API int mdsnand_export_save(mdsnand_handle* handle, unsigned int categor
 MDSNAND_API int mdsnand_import_save(mdsnand_handle* handle, unsigned int category, unsigned int titleId,
                                     int kind, const char* inPath);
 
+/// Copy one file out of the NAND's filesystem, by its path inside the image - for example
+/// "0:/title/00030004/4b393945/content/title.tmd". For looking at what an install actually wrote,
+/// which is the only way to compare ours with the one melonDS's own dialog makes.
+MDSNAND_API int mdsnand_export_file(mdsnand_handle* handle, const char* nandPath, const char* outPath);
+
 /// The last failure on this handle, as UTF-8, or "" when there was none. Valid until the next call
 /// on the same handle. Pass null for failures that happened before a handle existed.
 MDSNAND_API const char* mdsnand_last_error(mdsnand_handle* handle);

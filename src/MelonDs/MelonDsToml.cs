@@ -69,15 +69,31 @@ namespace LbIntegrations.MelonDs
 
         /// <summary>Set keys inside a table, creating the table - and the file - if needed. Values must
         /// already be TOML-encoded: use <see cref="Text"/> for a string and plain digits for an
-        /// integer. Returns null on success, or a message explaining why nothing was written.</summary>
-        public static string Write(string tomlPath, string table, IDictionary<string, string> values)
+        /// integer. Returns null on success, or a message explaining why nothing was written.
+        ///
+        /// <paramref name="force"/> IS FOR THE LAUNCH PATH, and it exists because the plain refusal
+        /// was measured doing harm. A user who had melonDS open - to look at his DSi titles, say -
+        /// and then launched a game from the frontend got nothing written at all: no NAND selected,
+        /// no console mode, no boot mode, and a game that started against the wrong configuration
+        /// with only a line in a log to say why.
+        ///
+        /// The instance ABOUT TO START reads this file when it starts, so writing now is what it
+        /// needs. The risk stays real and is stated rather than hidden: an older instance still open
+        /// will rewrite the file from its own memory when IT exits, undoing this - but that lands on
+        /// the next launch, which writes again, rather than on the one the user just asked for.</summary>
+        public static string Write(string tomlPath, string table, IDictionary<string, string> values,
+                                   bool force = false)
         {
             if (values == null || values.Count == 0) return null;
 
             string running = RunningEmulatorProcess();
-            if (running != null)
+            if (running != null && !force)
                 return "melonDS is running (" + running + "). It rewrites its configuration when it exits, "
                      + "which would discard these changes. Close melonDS and try again.";
+            if (running != null)
+                Log.Warn("writing " + System.IO.Path.GetFileName(tomlPath) + " while melonDS (" + running
+                         + ") is open - the instance starting now will read it, but that older one will "
+                         + "rewrite this file when it closes");
 
             try
             {

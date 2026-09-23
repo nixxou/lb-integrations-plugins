@@ -96,6 +96,12 @@ void PutBE16(u8* out, unsigned int value)
     out[0] = (u8)(value >> 8); out[1] = (u8)value;
 }
 
+void PutLE32(u8* out, unsigned int value)
+{
+    out[0] = (u8)value;         out[1] = (u8)(value >> 8);
+    out[2] = (u8)(value >> 16); out[3] = (u8)(value >> 24);
+}
+
 void PutBE32(u8* out, unsigned int value)
 {
     out[0] = (u8)(value >> 24); out[1] = (u8)(value >> 16);
@@ -155,10 +161,15 @@ bool BuildTmd(const char* appPath, DSi_TMD::TitleMetadata& tmd)
 
     PutBE32(tmd.TitleId, titleHigh);
     PutBE32(tmd.TitleId + 4, titleLow);
-    PutBE32(tmd.PublicSaveSize, publicSave);
-    PutBE32(tmd.PrivateSaveSize, privateSave);
+    // LITTLE-endian, and that is measured rather than reasoned. A TMD downloaded from Nintendo for
+    // 99Bullets carries 00 40 00 00 where the ROM header says 0x4000 - so the field is stored the
+    // same way round as the header, not byte-swapped like the title id beside it. melonDS's own
+    // GetPublicSaveSize reads it big-endian, which disagrees with every real TMD; it gets away with
+    // it because InitTitleFileStructure sizes the save from the ROM header instead.
+    PutLE32(tmd.PublicSaveSize, publicSave);
+    PutLE32(tmd.PrivateSaveSize, privateSave);
 
-    tmd.SrlFlag = 1;                      // this content is an SRL, which a .nds is
+    tmd.SrlFlag = 0;                      // 0 in every real TMD, checked against a downloaded one
     PutBE16((u8*)&tmd.NumberOfContents, 1);
     PutBE16((u8*)&tmd.BootContentIndex, 0);
 
@@ -192,7 +203,7 @@ bool Valid(mdsnand_handle* handle)
 extern "C"
 {
 
-int mdsnand_abi_version(void) { return 2; }
+int mdsnand_abi_version(void) { return 3; }
 
 int mdsnand_last_tmd_was_generated(void) { return g_tmdGenerated ? 1 : 0; }
 
@@ -362,6 +373,17 @@ int mdsnand_import_save(mdsnand_handle* handle, unsigned int category, unsigned 
         return handle->Fail(MDSNAND_ERR_FAILED,
             std::string("could not read the save from ") + inPath
             + " - melonDS refuses one whose size does not match the title's");
+    return MDSNAND_OK;
+}
+
+int mdsnand_export_file(mdsnand_handle* handle, const char* nandPath, const char* outPath)
+{
+    if (!Valid(handle) || !nandPath || !outPath) return MDSNAND_ERR_ARGUMENT;
+    handle->Clear();
+
+    if (!handle->Mount->ExportFile(nandPath, outPath))
+        return handle->Fail(MDSNAND_ERR_FAILED,
+            std::string("could not read ") + nandPath + " out of the NAND");
     return MDSNAND_OK;
 }
 

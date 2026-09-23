@@ -58,6 +58,28 @@ Both are one file each, linked against the static runtime, importing nothing but
 library is built from melonDS's source, and the plugin loads it into its own process. See
 `THIRD-PARTY.md` and `src/MelonDs/LICENSE.md`. The other three plugins are unaffected.
 
+### The DSiWare metadata index
+
+Also optional, also only useful with DSiWare. Installing a title into a NAND needs its `.tmd`, and
+most DSiWare dumps are the `.nds` alone. The plugin can carry an index of them:
+
+```
+.\tools\pack-tmd-library.ps1 -From "D:\wherever\your\tmds\are"
+dotnet build src\MelonDs\MelonDs.csproj -c Release
+```
+
+The packer walks a folder recursively and files every TMD by what it says about ITSELF - title id at
+`0x18C`, revision at `0x1DC`, content SHA-1 at `0x1F4` - so no naming convention is assumed and the
+sets in circulation can be thrown at it as they are. It writes `src\MelonDs\tmd-library.bin`, which
+the build embeds when it is there and skips when it is not. **It is not in this repository**: it is
+Nintendo's signed metadata, and whether a copy belongs in a published build is a decision to take on
+purpose. Without it the plugin asks Nintendo's update server instead, which still answers.
+
+The file is 0.6 MB for about 1700 titles, and its layout is written out at the top of the packer. A
+sorted table of 36-byte records is stored uncompressed, so finding a title inflates nothing; the
+metadata itself sits in deflated blocks of sixteen, of which a lookup inflates exactly one - 8 KB,
+held for as long as it takes to copy 520 bytes out of it, then dropped.
+
 ## Installing
 
 ```
@@ -119,6 +141,9 @@ It writes nothing unless you ask it to. These modes do — the last two only ins
     slots, the name taken from inside an archive, the TOML writer, the DS/DSi/DSiWare decision
     read out of a ROM header, and the per-title NAND - that it is copied and not invented,
     that your own dump is never written to, and that one title's NAND never seeds another's.
+    When this build carries the metadata index it also reads that index a second way, from
+    the resource and by the packer's own documented layout, and requires the two readings to
+    agree.
 ```
 
 Point the first two at a throwaway install and a throwaway account.
@@ -352,6 +377,20 @@ command-line option on 1.1 or on master - and reimplementing AES-CTR over a NAND
 C# would mean a second implementation of a format where being subtly different is the same as being
 wrong. When the library is absent the plugin falls back to asking for one click in Manage DSi titles,
 and everything else still works.
+
+**The metadata comes from four places, in order.** A `.tmd` is Nintendo's signed description of a
+title - title id, save sizes, ratings, the content's SHA-1 - and `NANDMount::ImportTitle` will not
+install without one. The plugin looks for `<rom>.nds.tmd` beside the ROM first, because a complete
+dump ships it and because it is the user's own choice; then in the index it carries, if this build was
+given one; then at Nintendo's update server, at the address melonDS's own dialog uses
+(`TitleManagerDialog.cpp:485`), which still answers - 200 with 2312 bytes, of which melonDS reads the
+first 520. Only when all three fail is one built from the ROM header, and the log says it is unsigned.
+
+**The revision is chosen by hash, not by date.** About a hundred titles have several revisions, and a
+TMD carries the SHA-1 of the content it describes. So the right one for a given dump is the one whose
+hash IS that dump's - an exact answer rather than a guess at "probably the newest". The newest wins
+only when none matches, and the log says it had to, because that is also the case where the DSi menu
+is most likely to refuse the title.
 
 **A DSiWare save is extracted, not the image that holds it.** It lives inside the NAND, at
 `title/<category>/<id>/data/public.sav` - a few kilobytes inside 240 MB. Handing the image to the host

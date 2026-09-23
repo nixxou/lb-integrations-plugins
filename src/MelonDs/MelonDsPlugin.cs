@@ -619,7 +619,8 @@ namespace LbIntegrations.MelonDs
                              + string.Join(", ", missing) + "; starting in DS mode instead");
             }
 
-            SetConsoleType(layout, wanted, rom);
+            // A cartridge boots straight in: it carries its own save and has no business on a menu.
+            SetBootMode(layout, wanted, directBoot: true, rom);
         }
 
         /// <summary>Give a DSiWare title its own NAND and point melonDS at it.
@@ -664,11 +665,12 @@ namespace LbIntegrations.MelonDs
                     new Dictionary<string, string>(StringComparer.Ordinal)
                     {
                         ["NANDPath"] = MelonDsToml.Text(nand.Path),
-                    });
+                    }, force: true);
                 if (error != null) { Log.Warn("DSi NAND not selected: " + error); return; }
             }
 
-            SetConsoleType(layout, 1, rom);
+            // Through the menu, not straight into the cartridge - see SetBootMode.
+            SetBootMode(layout, consoleType: 1, directBoot: false, rom);
 
             // The title has to be INSIDE that NAND for melonDS to boot it, and that is melonDS's own
             // code doing it - see MelonDsNand. Without the library the step is a click in Manage DSi
@@ -705,9 +707,18 @@ namespace LbIntegrations.MelonDs
 
             if (session.TitleExists(rom.TitleId)) return;       // nothing to do, and nothing to say
 
-            if (session.ImportTitle(romPath, out var failure, out var generated))
+            // THE REAL METADATA FIRST. A TMD built from the ROM carries everything melonDS reads,
+            // but it is unsigned - and the DSi menu that launches an installed title checks. Measured
+            // on a live install: a title imported with a built TMD ran when direct-booted as a
+            // cartridge and failed from the menu. Nintendo's update server still answers, which is
+            // where melonDS's own dialog gets it. See MelonDsNus.
+            var tmd = MelonDsTmd.Resolve(layout, rom, romPath, out var source);
+            if (tmd != null) Log.Verbose("metadata for " + rom.TitleId + " from " + source);
+
+            if (session.ImportTitle(romPath, tmd, out var failure, out var generated))
                 Log.Info(rom.AssetName + ": title " + rom.TitleId + " installed into its NAND"
-                         + (generated ? " (its metadata was built from the ROM - no .tmd was there)" : ""));
+                         + (generated ? " (its metadata was BUILT from the ROM, not signed - if the DSi "
+                                      + "menu refuses it, that is why)" : ""));
             else
                 Log.Warn("could not install " + rom.AssetName + " into its NAND - " + failure
                          + ". Import it through Manage DSi titles instead.");
@@ -736,7 +747,7 @@ namespace LbIntegrations.MelonDs
                     new Dictionary<string, string>(StringComparer.Ordinal)
                     {
                         ["NANDPath"] = MelonDsToml.Text(basePath),
-                    });
+                    }, force: true);
                 if (error != null) { Log.Warn("base NAND not restored: " + error); return; }
                 Log.Info(rom.AssetName + " is a cartridge, not DSiWare - back to the base NAND");
             }
@@ -750,20 +761,39 @@ namespace LbIntegrations.MelonDs
             return map.TryGetValue(key, out var v) ? v : null;
         }
 
-        /// <summary>Write Emu.ConsoleType, but only when it differs from what is already there.</summary>
-        private static void SetConsoleType(MelonDsLayout layout, int wanted, NdsRom rom)
+        /// <summary>Write Emu.ConsoleType and Emu.DirectBoot together, and only what differs.
+        ///
+        /// DIRECTBOOT IS WHAT DECIDES BETWEEN A GAME AND A MENU. With it true - melonDS's default -
+        /// EmuInstance calls SetupDirectBoot and the ROM starts immediately, which is what anybody
+        /// wants from a frontend. With it false the console boots through its firmware instead, and
+        /// in DSi mode that firmware is the DSi menu held in the NAND (EmuInstance.cpp:1469-1473,
+        /// :1951-1954).
+        ///
+        /// A DSiWARE TITLE NEEDS THE MENU, and that was measured the hard way: direct-booted from its
+        /// .nds it runs as a cartridge, and its save never reaches the NAND - public.sav came back
+        /// byte for byte unchanged after a session. DSiWare lives in the NAND and has to be started
+        /// from there, which costs one click on the menu and nothing else.</summary>
+        private static void SetBootMode(MelonDsLayout layout, int consoleType, bool directBoot, NdsRom rom)
         {
-            var current = MelonDsToml.Read(layout.ConfigFile, MelonDsPaths.EmuTable, "ConsoleType");
-            int have = MelonDsToml.AsInt(current.TryGetValue("ConsoleType", out var v) ? v : null, 0);
-            if (have == wanted) return;
+            var current = MelonDsToml.Read(layout.ConfigFile, MelonDsPaths.EmuTable,
+                                           "ConsoleType", "DirectBoot");
+            int haveType = MelonDsToml.AsInt(current.TryGetValue("ConsoleType", out var v) ? v : null, 0);
+            bool haveBoot = !string.Equals(current.TryGetValue("DirectBoot", out var b) ? b : "true",
+                                           "false", StringComparison.OrdinalIgnoreCase);
 
-            var error = MelonDsToml.Write(layout.ConfigFile, MelonDsPaths.EmuTable,
-                new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["ConsoleType"] = wanted.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                });
-            if (error != null) { Log.Warn("console mode not changed: " + error); return; }
-            Log.Info("console mode set to " + (wanted == 1 ? "DSi" : "DS") + " for " + rom.AssetName);
+            var wanted = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (haveType != consoleType)
+                wanted["ConsoleType"] = consoleType.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (haveBoot != directBoot)
+                wanted["DirectBoot"] = directBoot ? "true" : "false";
+            if (wanted.Count == 0) return;
+
+            var error = MelonDsToml.Write(layout.ConfigFile, MelonDsPaths.EmuTable, wanted, force: true);
+            if (error != null) { Log.Warn("boot mode not changed: " + error); return; }
+
+            Log.Info((consoleType == 1 ? "DSi" : "DS") + " mode, "
+                     + (directBoot ? "booting the game directly" : "booting the DSi menu")
+                     + ", for " + rom.AssetName);
         }
 
         /// <summary>Which of the three files DSi mode needs are not there. verifySetup checks the two
