@@ -4,7 +4,7 @@ Emulator integration plugins for LaunchBox and LiteBox, for emulators LaunchBox 
 
 LaunchBox ships 11 official "\<Emulator\> LaunchBox Integration" plugins — RetroArch, Dolphin, MAME,
 PCSX2, ScummVM, BigPEmu, Xemu, Azahar, CEMU, RPCS3, DuckStation. Its metadata database knows 35
-emulators, so **24 have no integration at all**: no download and update, no BIOS checks, no
+emulators, so **24 had no integration at all**: no download and update, no BIOS checks, no
 RetroAchievements, no save management. The plugin catalogue is closed to third parties (every entry
 is published by Unbroken Software), so these are installed by hand.
 
@@ -13,6 +13,7 @@ is published by Unbroken Software), so these are installed by hand.
 | `src/Ppsspp` | PPSSPP | Sony PSP | download / update, BIOS, RetroAchievements, launch, save management |
 | `src/Xenia` | Xenia (canary) | Microsoft Xbox 360 | download / update, launch fixes, save management |
 | `src/Flycast` | Flycast | Sega Dreamcast, Sega Naomi, Sega Naomi 2, Sammy Atomiswave | download / update, BIOS, RetroAchievements, launch, save management |
+| `src/MelonDs` | melonDS | Nintendo DS | download / update, BIOS, DS/DSi mode, per-title DSi NAND, save management (GPL-3.0) |
 
 ## Building
 
@@ -29,6 +30,33 @@ dependency into the assembly and marks its types `internal`, producing
 **`bin\Release\merged\Ppsspp.dll`** — one file whose reference table holds exactly one
 non-framework entry, `Unbroken.LaunchBox.Plugins`. That is the file to install; `deploy-dev.ps1`
 prefers it automatically. See `THIRD-PARTY.md` for what is folded in and under which licences.
+
+### The melonDS NAND library
+
+Optional, and only useful with DSiWare. It needs a melonDS checkout of the tag you run, and the C++
+toolchain that ships with Visual Studio - `cl.exe`, `cmake.exe` and `ninja.exe` all live under the VS
+install rather than on `PATH`:
+
+```
+git clone --depth 1 --branch 1.1 https://github.com/melonDS-emu/melonDS.git ..\melonDS
+
+cmake -S tools\melonds-nand -B build\nand -G Ninja ^
+      -DMELONDS_SOURCE_DIR=..\melonDS -DCMAKE_BUILD_TYPE=Release
+cmake --build build\nand
+```
+
+That builds two things, from one set of objects:
+
+- **`melonds-nand.dll`** - the C door the plugin calls through P/Invoke. It travels with the plugin's
+  build output and `deploy-dev.ps1` copies it beside the DLL.
+- **`melonds-nandtool.exe`** - the same operations from a command line, for doing them by hand:
+  `list`, `exists`, `import`, `delete`, `export-save`, `import-save`.
+
+Both are one file each, linked against the static runtime, importing nothing but `KERNEL32`.
+
+**`tools/melonds-nand` and `src/MelonDs` are GPL-3.0**, unlike the rest of this repository: the
+library is built from melonDS's source, and the plugin loads it into its own process. See
+`THIRD-PARTY.md` and `src/MelonDs/LICENSE.md`. The other three plugins are unaffected.
 
 ## Installing
 
@@ -85,6 +113,12 @@ It writes nothing unless you ask it to. These modes do — the last two only ins
 --hotkeys
     writes Flycast's keyboard mapping on a forged install and checks that none of Flycast's
     own default keys were lost in the process.
+
+--melonds
+    the whole melonDS contract against a forged install: both save dispositions, the .ml<n>
+    slots, the name taken from inside an archive, the TOML writer, the DS/DSi/DSiWare decision
+    read out of a ROM header, and the per-title NAND - that it is copied and not invented,
+    that your own dump is never written to, and that one title's NAND never seeds another's.
 ```
 
 Point the first two at a throwaway install and a throwaway account.
@@ -225,6 +259,119 @@ into the profile's `.gpd` files, which is unrelated machinery.
 **Title ids** are read from the content: STFS containers (`CON`/`LIVE`/`PIRS` - Games on Demand,
 XBLA, DLC), `.xex` files, extracted folders, and disc images through XDVDFS. `.zar` is not supported
 - it carries its magic in a footer and holds no metadata.
+
+## Notes on melonDS
+
+**Portable by construction, and that is decided at build time.** `pathInit()`
+(`src/frontend/qt_sdl/main.cpp:180-214`) looks for a **directory** named `portable` beside the
+executable, then falls back to the executable's own folder because `WIN32_PORTABLE` is defined -
+`option(PORTABLE ... ON)` at `src/frontend/qt_sdl/CMakeLists.txt:196-201`, which the release preset
+does not override. The per-user branch is `#else`-d out of the Windows build entirely. So
+`melonDS.toml` sits next to `melonDS.exe`, and this plugin never has to guess.
+
+**The install is one file.** `melonDS-1.1-windows-x86_64.zip` holds a single entry, `melonDS.exe`,
+statically linked. No Qt DLLs, no platform plugin folder, nothing to keep in step.
+
+**Its configuration has sparse defaults, which makes writing one safe.** melonDS declares defaults as
+partial maps and resolves a missing key by walking it backwards until one matches (`Config.cpp:49-128`
+and `FindDefault`, `Config.cpp:663-679`). A key that is absent keeps its default instead of becoming
+unset - so a `melonDS.toml` containing nothing but two paths is a complete, valid configuration. That
+is the opposite of PPSSPP's `controls.ini`, where a partial file unbinds everything it omits.
+
+**It rewrites that file on exit, but keeps what it does not recognise.** `Config::Save`
+(`Config.cpp:809-819`) truncates and reserialises the whole document. Unknown keys survive; comments
+and formatting do not. This plugin therefore refuses to write while melonDS is running, exactly as
+the PPSSPP one does.
+
+**Saves are redirected on installs this plugin made, and only those.** Out of the box melonDS writes
+`<rom>.sav` next to the ROM - an empty `SaveFilePath` means "the ROM's directory"
+(`EmuInstance.cpp:445-484`). A download through this plugin points `SaveFilePath` and `SavestatePath`
+at `saves\` and `savestates\` inside the install, which keeps a ROM library clean and works when the
+ROM sits on read-only media. A melonDS you set up yourself is never touched, and both dispositions
+are read when saves are listed.
+
+**A save's name comes from the ROM, and from inside an archive when there is one.** The name is
+`romname.substr(0, romname.rfind('.'))` - so `Foo (USA).nds` saves to `Foo (USA).sav`. When melonDS
+loads a ROM out of a zip, 7z or rar, that name is the **entry's**, not the archive's, so this plugin
+opens the archive to find it.
+
+**Savestates are `.ml1` to `.ml8`, and `.mln` is a decoy.** `getSavestateName`
+(`EmuInstance.cpp:696-707`) builds `".ml" + slot`, and the menus run slot 1 to 8
+(`Window.cpp:356, :372`) - the same numbering on disk and on screen, unlike PPSSPP. `.mln` appears
+exactly once in the whole tree, as the default suffix of the "save to file" dialog
+(`Window.cpp:1583`). Globbing for it would find nothing.
+
+**It already has save-state keys, so this plugin adds none.** That is the difference with Flycast and
+PPSSPP. melonDS's configurable hotkeys are the `HK_*` list (`EmuInstance.h:36-59`), which contains no
+save-state, load-state, slot or quit entry at all, and every binding in it starts unbound
+(`Config.cpp:51-52`). The save-state keys are Qt menu shortcuts set in code (`Window.cpp:353-401`):
+**F1-F8** load slots 1-8, **Shift+F1-Shift+F8** save them, **F12** undoes a state load, and **Ctrl+Q**
+quits. They cannot be rebound, so the AutoHotkey scripts quote them as constants and say where they
+come from.
+
+**DS needs no BIOS; DSi needs real dumps.** `Emu.ExternalBIOSEnable` is absent from the default table
+so it is false, and with it false melonDS uses its built-in FreeBIOS (`EmuInstance.cpp:868-896`) and
+**generates** a firmware (`:1013-1025`). The three DS files are therefore declared optional. DSi mode
+is the other regime: `verifySetup` calls `verifyDSiBIOS` and `verifyDSiNAND` unconditionally
+(`:633-659`) and there is no generated DSi firmware.
+
+**The console mode is chosen per ROM, which means this plugin edits a global setting.** melonDS has no
+command-line option for DS versus DSi - `CLI.cpp` accepts a ROM, `--boot`, `--fullscreen` and
+`--archive-file`, on 1.1 and on master alike - so `Emu.ConsoleType` in the TOML is the only lever. The
+ROM says which mode it wants, through melonDS's own predicates (`NDS_Header.h:206, :219`): `UnitCode &
+0x02` means DSi-capable, and a `DSiTitleIDHigh` of `0x00030004` means DSiWare. A DSi title switches
+the mode only when the three DSi files are configured **and present**; otherwise it starts in DS mode
+and the log says why.
+
+**DSiWare gets one NAND per title, under `dsi\`.** A DSiWare title is not a cartridge: melonDS boots
+it out of the NAND, and its save lives there too, at `title/<category>/<id>/data/public.sav`
+(`DSi_NAND.cpp:1077-1092`). The NAND is therefore the game's container rather than a side file, and
+one per title makes that container self-standing - copied, backed up or deleted without touching any
+other game.
+
+```
+<install>\dsi\base.bin                  your own dump, copied here once
+<install>\dsi\0003000412345678\nand.bin  one per title id
+```
+
+On the first launch of a DSiWare game the plugin captures whatever `DSi.NANDPath` points at as
+`base.bin` - **before** overwriting it, or the original would be lost as a source - copies it for that
+title, points `DSi.NANDPath` at the copy and switches to DSi mode. Later launches reuse it. A
+per-title NAND is never taken as the base for another title; that would seed one game's state into
+every other. Free space is checked first: a dump is around 240 MB. The `no-dsi-nand` marker beside
+the log turns the whole thing off.
+
+**A NAND cannot be fabricated, only copied.** `NANDImage` opens an existing file and reads the
+`ConsoleID` out of it (`DSi_NAND.h:52-64`), and the decryption depends on console-unique data plus the
+ES key in `dsi_bios7.bin` at `0x8308`. So a dump of your own console is required; there is nothing to
+generate.
+
+**Installing the title into its NAND is done by melonDS's own code**, through `melonds-nand.dll`.
+`NANDMount::ImportTitle` is reachable only through the Manage DSi titles dialog upstream - there is no
+command-line option on 1.1 or on master - and reimplementing AES-CTR over a NAND plus FAT writing in
+C# would mean a second implementation of a format where being subtly different is the same as being
+wrong. When the library is absent the plugin falls back to asking for one click in Manage DSi titles,
+and everything else still works.
+
+**A DSiWare save is extracted, not the image that holds it.** It lives inside the NAND, at
+`title/<category>/<id>/data/public.sav` - a few kilobytes inside 240 MB. Handing the image to the host
+would mean hashing all of it to draw a freshness dot, and a 240 MB vault copy per backup. So the save
+is exported beside its NAND and THAT is what is listed, as a plain file like every other save here.
+
+The NAND stays the truth. The extraction happens only when melonDS has written to the image since the
+last one - the trigger is the NAND's own timestamp, so the steady state costs two calls to
+`GetLastWriteTimeUtc` and nothing else. A restore goes back **through** the NAND and the extract is
+then re-read, so what the page shows is what the emulator will load. A deletion is refused rather than
+faked: removing the extracted copy would change nothing in the game, and melonDS has no way to blank a
+title's save short of removing the title.
+
+**No RetroAchievements.** There is no `rcheevos` submodule, no vendored `rc_*` source, no menu entry
+and no configuration key anywhere in the tree. RA support for melonDS exists only in the libretro
+core, which is a different project.
+
+**LaunchBox knows no standalone DS emulator at all.** Its metadata database has one `Nintendo DS`
+row, RetroArch with the desmume core, so the row injection matters more here than anywhere else: it
+is what puts melonDS in the Add Emulator window.
 
 ## License
 

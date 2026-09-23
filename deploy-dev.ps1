@@ -103,6 +103,45 @@ if ((Get-FileHash $manifestSource -Algorithm SHA256).Hash -ne
     throw "The manifest was not written: $manifestTarget. The plugin would not load."
 }
 
+# A native companion, when the plugin has one and this checkout has built it. Only melonDS does
+# today: reading and writing a DSi NAND is melonDS's own code, so the plugin calls a small GPL
+# library rather than reimplementing the format. Its absence is not an error - DSiWare then falls
+# back to a click in Manage DSi titles, and everything else works - so this copies it when it is
+# there and says nothing when it is not.
+# NOT beside the plugin, and that is not tidiness. LaunchBox loads every .dll in a plugin folder as
+# a .NET assembly: a native one there produces "System.BadImageFormatException: Bad IL format ...
+# failed to load during PluginLoader.LoadAssembly" and an error dialog at every start. Measured, with
+# the dialog. So the library goes into native\ and loses the .dll extension; the plugin loads it by
+# path through a DllImport resolver.
+if ($Plugin -eq 'MelonDs') {
+    $nativeDir = Join-Path $targetDir "native"
+    $pairs = @(
+        @{ From = "melonds-nand.dll";     To = "melonds-nand.native" },
+        @{ From = "melonds-nandtool.exe"; To = "melonds-nandtool.exe" }
+    )
+    foreach ($pair in $pairs) {
+        $companion = Join-Path $repo "build\nand\$($pair.From)"
+        if (-not (Test-Path $companion)) { continue }
+        New-Item -ItemType Directory -Force -Path $nativeDir | Out-Null
+        $companionTarget = Join-Path $nativeDir $pair.To
+        Copy-Item $companion $companionTarget -Force
+        if ((Get-FileHash $companion -Algorithm SHA256).Hash -ne
+            (Get-FileHash $companionTarget -Algorithm SHA256).Hash) {
+            throw "The NAND library was not written: $companionTarget."
+        }
+        Write-Host "           $companionTarget"
+    }
+
+    # An older deploy put them in the folder LaunchBox scans. Left there, the error comes back.
+    foreach ($stale in @("melonds-nand.dll", "melonds-nandtool.exe")) {
+        $old = Join-Path $targetDir $stale
+        if (Test-Path $old) {
+            Remove-Item $old -Force
+            Write-Host "  removed $old - LaunchBox would try to load it as a plugin" -ForegroundColor Yellow
+        }
+    }
+}
+
 Write-Host "Deployed -> $target" -ForegroundColor Green
 Write-Host "           $manifestTarget"
 Write-Host "  sha256 $($targetHash.Substring(0,16))...  $((Get-Item $target).Length) bytes"

@@ -28,7 +28,7 @@ namespace LbIntegrations.Probe
         {
             if (args.Length == 0 || args[0].StartsWith("-"))
             {
-                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--rows] [--hotkeys] [--saves --emu <exe> --rom <rom>] [--ahk --emu <exe>]");
+                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--melonds] [--rows] [--hotkeys] [--saves --emu <exe> --rom <rom>] [--ahk --emu <exe>]");
                 return 2;
             }
 
@@ -435,6 +435,13 @@ namespace LbIntegrations.Probe
                 if (!FlycastCheck.Run(plugin)) return 1;
             }
 
+            bool melonds = Has(args, "--melonds");
+            if (melonds)
+            {
+                MelonDsCheck.Anchor(plugin);
+                if (!MelonDsCheck.Run(plugin)) return 1;
+            }
+
             // The same plugin against a real installation: --flycast-real --emu <exe> --rom <rom>.
             if (Has(args, "--flycast-real"))
             {
@@ -448,6 +455,7 @@ namespace LbIntegrations.Probe
             if (unit != null && Has(args, "--round-trip")) wroteTo.Add("the emulator's save folder (the restore round-trip)");
             if (states) wroteTo.Add("a throwaway PPSSPP in the temp folder (states)");
             if (flycast) wroteTo.Add("a forged Flycast in the temp folder");
+            if (melonds) wroteTo.Add("a forged melonDS in the temp folder");
             if (hotkeys) wroteTo.Add("a forged Flycast in the temp folder (keyboard mapping)");
             Console.WriteLine(wroteTo.Count == 0
                 ? "done. Nothing was written."

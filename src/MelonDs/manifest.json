@@ -1,0 +1,19 @@
+{
+  "SchemaVersion": 1,
+  "PluginId": "1475cdb5-40a4-4149-a18f-e2cc0fa9fd33",
+  "UserId": 0,
+  "Name": "melonDS Integration",
+  "Developer": "nixxou",
+  "Description": "Download, update and save management for the melonDS emulator (Nintendo DS).",
+  "Credits": "Many thanks to the developers of melonDS!",
+  "OperatingSystemFamily": "Windows",
+  "InstalledVersion": "1.0",
+  "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
+  "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
+  "HomePageUrl": "https://melonds.kuribo64.net/",
+  "TipJarUrl": "",
+  "SourceKind": "Local",
+  "Tags": [
+    "5aae585f-ffc5-42bc-9f95-e5e190ef99e2"
+  ]
+}

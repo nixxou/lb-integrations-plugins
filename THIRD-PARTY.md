@@ -1,6 +1,6 @@
 # Third-party components
 
-`Ppsspp.dll` is built by merging its dependencies into a single assembly with ILRepack
+Each plugin is built by merging its dependencies into a single assembly with ILRepack
 `/internalize`. The components below are therefore **statically linked** into the shipped file, and
 their licences apply to it.
 
@@ -35,10 +35,23 @@ that one file stays MPL and its source is in this repository, which is what the 
 | Microsoft.Extensions.DependencyInjection.Abstractions | MIT | idem |
 | System.Diagnostics.DiagnosticSource | MIT | idem |
 | System.IO.Hashing | MIT | idem |
+| [Lib.Harmony](https://github.com/pardeike/Harmony) | MIT | the two postfixes that let LaunchBox read our emulator rows |
 
 Dreamcast discs are distributed as `.chd` as often as `.gdi`, and the disc id lives inside the
 image, so reading CHD is not optional here. Flycast's release archive is a plain `.zip`, so unlike
 the Xenia plugin this one needs no SharpCompress - `System.IO.Compression` reads it.
+
+## Merged into `MelonDs.dll`
+
+| Component | Licence | Used for |
+|---|---|---|
+| [SharpCompress](https://github.com/adamhathcock/sharpcompress) | MIT | reading a game archive - melonDS loads a DS ROM out of a `.zip`, `.7z` or `.rar`, and the save is named after the entry inside it |
+| ZstdSharp | MIT | a SharpCompress dependency |
+| [Lib.Harmony](https://github.com/pardeike/Harmony) | MIT | the two postfixes that let LaunchBox read our emulator rows |
+
+The version of Harmony is pinned to 2.4.2 across every plugin that uses it, and to what ExtendDB
+ships: `HarmonySharedState` is found by module name across assemblies, so two different versions in
+one process would each keep their own state.
 
 ## Merged into `Ppsspp.dll`
 
@@ -77,6 +90,33 @@ dotnet build src\Flycast\Flycast.csproj -c Release
 The merge is the `MergePlugin` target at the end of `src\Ppsspp\Ppsspp.csproj`. Replace
 `VendoredFlac.dll` in `src\Ppsspp\bin\Release\` before that target runs — or change the
 `CHDSharp` package reference — and the merged output picks up your copy.
+
+## `tools/melonds-nand` and `src/MelonDs` - GPL-3.0
+
+Two directories in this repository are **not** MIT, and they are the two that touch melonDS.
+
+`tools/melonds-nand` is compiled together with source files from
+[melonDS](https://github.com/melonDS-emu/melonDS) - `DSi_NAND.cpp`, `FATIO.cpp`, FatFs, tiny-AES-c
+and SHA-1 - which are GPL-3.0-or-later. Its own sources carry that notice, and
+`tools/melonds-nand/LICENSE` holds the licence text. It builds two things: `melonds-nand.dll`, the C
+door the plugin calls, and `melonds-nandtool.exe`, the same operations from a command line.
+
+| Component | Licence | Used for |
+|---|---|---|
+| [melonDS](https://github.com/melonDS-emu/melonDS) | GPL-3.0-or-later | the whole DSi NAND implementation: decryption, FAT access, title import, save export |
+
+**`src/MelonDs` is GPL-3.0-or-later too**, because `MelonDs.dll` loads that library into its own
+process through P/Invoke - see `src/MelonDs/LICENSE.md`. An earlier version invoked an executable at
+arm's length and stayed MIT; direct calls were chosen knowingly, since reading a DSiWare save out of
+its NAND happens while a page is drawn rather than once per launch.
+
+The other three plugins are unaffected and remain MIT: this repository copies its shared pieces
+rather than linking them, so none of them shares an assembly with this one.
+
+Two files in the tool are melonDS's own work rather than ours, and say so at the top:
+`aes_key.cpp` carries `DSi_AES::ROL16` and `DSi_AES::DeriveNormalKey` copied verbatim from
+`src/DSi_AES.cpp`, because compiling that file would have pulled in most of the emulator for twenty
+lines of arithmetic.
 
 ## Not merged
 

@@ -203,4 +203,13 @@ LiteBox, qui fait qu'un `GetSaves` lent bloque les appels de tous les autres plu
   disque mais 1-basés à l'écran, et des `.undo.ppst` qui ne sont pas des slots.
 - Les émulateurs suivants. `Freegosy` (MIT) porte deux jeux de données qui font gagner du temps :
   un registre BIOS d'environ 37 émulateurs avec les MD5, et une table dépôt/filtres d'assets/nom
-  d'exécutable pour 18 émulateurs. À créditer si on les porte.
+  d'exécutable pour 18 émulateurs. Le greffon melonDS en a tiré son dépôt, ses filtres d'assets et
+  les MD5 des BIOS DS ; crédité dans `THIRD-PARTY.md`.
+- Éprouver le dispositif DSiWare sur du vrai : il demande un dump de NAND, un BIOS DSi et un
+  DSiWare avec son `.tmd`, dont aucun n'existe sur cette machine. La mécanique est couverte par la
+  sonde, le jugement non.
+- La mesure qui valide tout le dispositif, et qui demande un dump de NAND et un DSiWare qu'on n'a
+  pas : titre importé à la main, melonDS lancé avec le `.nds` en argument, et voir s'il démarre et
+  sauvegarde. Le raisonnement tient (`SetupDirectBoot` interroge `SDMMC.GetNAND()`, donc la NAND est
+  montée pendant un démarrage direct), mais l'accès au save se fait à l'exécution.
+

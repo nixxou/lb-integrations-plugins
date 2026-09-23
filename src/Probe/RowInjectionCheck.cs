@@ -22,6 +22,12 @@ namespace LbIntegrations.Probe
 {
     internal static class RowInjectionCheck
     {
+        /// <summary>A type by its SIMPLE name, because every plugin merges its own copy of the
+        /// injection classes under its own namespace - LbIntegrations.Flycast.LbipRowInjection and
+        /// LbIntegrations.MelonDs.LbipRowInjection are different types with the same job.</summary>
+        private static Type ByName(Assembly assembly, string simpleName)
+            => assembly.GetTypes().FirstOrDefault(t => t.Name == simpleName);
+
         private static int _fail;
 
         private static void Check(string what, bool good)
@@ -37,8 +43,10 @@ namespace LbIntegrations.Probe
             Console.WriteLine("[row injection] against a real Microsoft.Data.Sqlite");
 
             var assembly = plugin.GetType().Assembly;
-            var injection = assembly.GetType("LbIntegrations.Flycast.LbipRowInjection");
-            var pluginType = assembly.GetType("LbIntegrations.Flycast.FlycastPlugin");
+            var injection = ByName(assembly, "LbipRowInjection");
+            var pluginType = assembly.GetTypes()
+                                     .FirstOrDefault(t => !t.IsAbstract
+                                                          && typeof(EmulatorPlugin).IsAssignableFrom(t));
             if (injection == null || pluginType == null)
             {
                 Console.WriteLine("  FAIL - LbipRowInjection is not in this assembly");
@@ -68,6 +76,19 @@ namespace LbIntegrations.Probe
             var rows = pluginType.GetMethod("MetadataRows", BindingFlags.NonPublic | BindingFlags.Static)
                                  .Invoke(null, null);
             Check("the plugin declares metadata rows", ((IEnumerable)rows).Cast<object>().Any());
+
+            // WHAT THIS PLUGIN CLAIMS, read off the rows it just declared rather than written down
+            // here. Three plugins now inject, and an assertion naming one of them would fail on the
+            // other two while proving nothing about either.
+            var first = ((IEnumerable)rows).Cast<object>().First();
+            string ourName = (string)first.GetType().GetField("Name").GetValue(first);
+            string ourBinary = (string)first.GetType().GetField("BinaryFileName").GetValue(first);
+            var ourPlatforms = ((IEnumerable)first.GetType().GetField("Platforms").GetValue(first))
+                .Cast<object>()
+                .Select(pl => (string)pl.GetType().GetField("Platform").GetValue(pl))
+                .ToList();
+            Console.WriteLine("  under test          : " + ourName + " -> "
+                              + string.Join(", ", ourPlatforms));
 
             injection.GetMethod("Install", BindingFlags.Public | BindingFlags.Static)
                      .Invoke(null, new object[] { "com.nixxou.lbip.probe", rows });
@@ -104,7 +125,7 @@ namespace LbIntegrations.Probe
             try
             {
                 var copy = Assembly.Load(File.ReadAllBytes(assembly.Location));
-                stranger = copy.GetType("LbIntegrations.Flycast.LbipRowInjection");
+                stranger = ByName(copy, "LbipRowInjection");
                 stranger.GetMethod("Install", BindingFlags.Public | BindingFlags.Static)
                         .Invoke(null, new object[] { "com.nixxou.lbip.probe.stranger",
                                                      MakeRow(copy, "Xenia", "xenia_canary.exe",
@@ -136,7 +157,7 @@ namespace LbIntegrations.Probe
                 Console.WriteLine("  emulators read back : " + string.Join(", ", names));
                 Check("the host's own rows still come back",
                       names.Contains("RetroArch") && names.Contains("Demul"));
-                Check("ours comes back too", names.Contains("Flycast"));
+                Check("ours comes back too", names.Contains(ourName));
                 Check("a second plugin's row comes back as well", names.Contains("Redream"));
 
                 // The one that proves Harmony chains ACROSS assemblies: this row was registered by a
@@ -151,11 +172,11 @@ namespace LbIntegrations.Probe
                       names.Count(n => n == "Demul") == 1);
 
                 var platforms = Query(c, @"SELECT ""Platform"" FROM ""EmulatorPlatforms""
-                                           WHERE ""Emulator"" = 'Flycast'");
+                                           WHERE ""Emulator"" = '" + ourName + "'");
                 Console.WriteLine("  platforms read back : " + string.Join(", ", platforms));
-                Check("the four Flycast platforms come back", platforms.Count == 4
-                      && platforms.Contains("Sega Dreamcast") && platforms.Contains("Sega Naomi")
-                      && platforms.Contains("Sega Naomi 2") && platforms.Contains("Sammy Atomiswave"));
+                Check("every platform it declares comes back, and no other",
+                      platforms.Count == ourPlatforms.Count
+                      && ourPlatforms.All(platforms.Contains));
                 Check("another emulator's platform row survived",
                       Query(c, @"SELECT ""Platform"" FROM ""EmulatorPlatforms""
                                  WHERE ""Emulator"" = 'RetroArch'").Contains("Sega Dreamcast"));
@@ -164,10 +185,10 @@ namespace LbIntegrations.Probe
                 // WHERE clause has to apply to OUR rows too.
                 Check("a WHERE that excludes us excludes us",
                       !Query(c, @"SELECT ""Name"" FROM ""Emulators"" WHERE ""Name"" = 'RetroArch'")
-                          .Contains("Flycast"));
+                          .Contains(ourName));
                 Check("a WHERE that selects us finds us",
-                      Query(c, @"SELECT ""Name"" FROM ""Emulators"" WHERE ""Name"" = 'Flycast'")
-                          .SequenceEqual(new[] { "Flycast" }));
+                      Query(c, @"SELECT ""Name"" FROM ""Emulators"" WHERE ""Name"" = '" + ourName + "'")
+                          .SequenceEqual(new[] { ourName }));
 
                 // A parameter, which is how EF Core actually writes it.
                 using (DbCommand cmd = c.CreateCommand())
@@ -175,22 +196,22 @@ namespace LbIntegrations.Probe
                     cmd.CommandText = @"SELECT ""Name"" FROM ""Emulators"" WHERE ""Name"" = @p0";
                     var p0 = cmd.CreateParameter();
                     p0.ParameterName = "@p0";
-                    p0.Value = "Flycast";
+                    p0.Value = ourName;
                     cmd.Parameters.Add(p0);
                     using var r = cmd.ExecuteReader();
                     var got = new List<string>();
                     while (r.Read()) got.Add(r.GetString(0));
-                    Check("a parameterised query reaches our rows", got.SequenceEqual(new[] { "Flycast" }));
+                    Check("a parameterised query reaches our rows", got.SequenceEqual(new[] { ourName }));
                 }
 
                 // An arbitrary projection: the mirror answers with the same columns in the same order.
                 using (DbCommand cmd = c.CreateCommand())
                 {
                     cmd.CommandText = @"SELECT ""BinaryFileName"", ""AutoExtract"", ""Id"" FROM ""Emulators""
-                                        WHERE ""Name"" = 'Flycast'";
+                                        WHERE ""Name"" = '" + ourName + "'";
                     using var r = cmd.ExecuteReader();
                     var found = r.Read();
-                    Check("a three-column projection sees our row", found && r.GetString(0) == "flycast.exe");
+                    Check("a three-column projection sees our row", found && r.GetString(0) == ourBinary);
                     if (found)
                     {
                         // Both directions of the trap a DataTableReader would have set: it narrows
@@ -211,7 +232,7 @@ namespace LbIntegrations.Probe
                     var got = new List<string>();
                     while (r.ReadAsync().GetAwaiter().GetResult()) got.Add(r.GetString(0));
                     Console.WriteLine("  read asynchronously : " + string.Join(", ", got));
-                    Check("an ASYNC read is extended too", got.Contains("Flycast"));
+                    Check("an ASYNC read is extended too", got.Contains(ourName));
                 }
 
                 // Queries we must leave exactly as they were.
@@ -233,7 +254,7 @@ namespace LbIntegrations.Probe
                     var got = new List<string>();
                     while (r.Read()) got.Add(r.GetString(0));
                     Check("a raw SqliteCommand caller is NOT extended (known limit)",
-                          !got.Contains("Flycast"));
+                          !got.Contains(ourName));
                 }
 
                 Exec(c, @"INSERT INTO ""Emulators"" (""Name"") VALUES ('Written')");
@@ -246,7 +267,7 @@ namespace LbIntegrations.Probe
             {
                 c.Open();
                 Check("a pooled connection still sees our rows",
-                      Query(c, @"SELECT ""Name"" FROM ""Emulators""").Contains("Flycast"));
+                      Query(c, @"SELECT ""Name"" FROM ""Emulators""").Contains(ourName));
             }
 
             // A database with no Emulators table at all: nothing of ours may appear, nothing may throw.
@@ -271,8 +292,8 @@ namespace LbIntegrations.Probe
         /// integration plugin would register.</summary>
         private static object MakeRow(Assembly assembly, string name, string binary, string platform)
         {
-            var rowType = assembly.GetType("LbIntegrations.Flycast.LbipEmulatorRow");
-            var platformType = assembly.GetType("LbIntegrations.Flycast.LbipPlatformRow");
+            var rowType = ByName(assembly, "LbipEmulatorRow");
+            var platformType = ByName(assembly, "LbipPlatformRow");
             var row = Activator.CreateInstance(rowType);
             rowType.GetField("Name").SetValue(row, name);
             rowType.GetField("BinaryFileName").SetValue(row, binary);

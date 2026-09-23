@@ -8,3 +8,4 @@ obj/
 # OS
 Thumbs.db
 desktop.ini
+build/
