@@ -441,6 +441,19 @@ namespace LbIntegrations.Probe
             catch (Exception ex) { Console.WriteLine("  " + ex.GetType().Name + ": " + ex.Message); return false; }
         }
 
+        /// <summary>A BIOS file name, ASKED OF THE PLUGIN rather than written here. These names are
+        /// a contract with the user, so they will be argued about and changed; a harness that
+        /// hardcoded them would go on passing while testing the wrong thing.</summary>
+        private static string BiosName(string constant)
+        {
+            try
+            {
+                return (string)TypeIn("MelonDsBios")
+                    .GetField(constant, BindingFlags.Public | BindingFlags.Static)?.GetRawConstantValue();
+            }
+            catch { return null; }
+        }
+
         /// <summary>Stop the plugin opening its missing-files window. Through the plugin's own
         /// flag rather than by dropping its kill-switch marker in the user's log folder, which is
         /// theirs and not somewhere a test should leave things.</summary>
@@ -550,19 +563,19 @@ namespace LbIntegrations.Probe
             //    what lets somebody put files in and launch, rather than put files in and then go
             //    and point melonDS at each one by hand.
             Directory.CreateDirectory(bios);
-            foreach (var name in new[] { "dsi_bios7.bin", "dsi_bios9.bin", "dsi_firmware.bin" })
-                Write(bios, name, 1024);
+            string dsi7 = BiosName("DsiBios7"), dsi9 = BiosName("DsiBios9"), dsiFw = BiosName("DsiFirmware");
+            foreach (var name in new[] { dsi7, dsi9, dsiFw }) Write(bios, name, 0x10000);
 
             File.WriteAllText(toml, "[Emu]\r\nConsoleType = 0\r\n");
             choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }), ware });
 
             var keys = TomlValues(toml, "DSi");
-            ok &= Check("a dsi_bios7.bin dropped in the folder is pointed at",
-                        (keys.TryGetValue("BIOS7Path", out var b7) ? b7 : "").Contains("dsi_bios7.bin"));
+            ok &= Check("a " + dsi7 + " dropped in the folder is pointed at",
+                        (keys.TryGetValue("BIOS7Path", out var b7) ? b7 : "").Contains(dsi7));
             ok &= Check("so is the ARM9 BIOS",
-                        (keys.TryGetValue("BIOS9Path", out var b9) ? b9 : "").Contains("dsi_bios9.bin"));
+                        (keys.TryGetValue("BIOS9Path", out var b9) ? b9 : "").Contains(dsi9));
             ok &= Check("and the firmware, which melonDS needs whatever its verify step suggests",
-                        (keys.TryGetValue("FirmwarePath", out var fw) ? fw : "").Contains("dsi_firmware.bin"));
+                        (keys.TryGetValue("FirmwarePath", out var fw) ? fw : "").Contains(dsiFw));
             ok &= Check("but with no NAND the console mode is still left alone", ConsoleTypeIn(toml) == 0);
 
             // 3. A file that is not a NAND is never opened. 240 MB is the size of the thing, and
@@ -572,6 +585,68 @@ namespace LbIntegrations.Probe
             choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }), ware });
             ok &= Check("a file that is not NAND-sized is never opened",
                         !LogSince(mark).Contains("not-a-nand.bin"));
+
+            // 3b. THE DS FILES ARE THE PLUGIN'S JOB, and so is the switch that demands them.
+            //     Nothing in the folder: external BIOS goes OFF, and melonDS boots on its built-in
+            //     one rather than refusing to start.
+            File.WriteAllText(toml, "[Emu]\r\nConsoleType = 0\r\nExternalBIOSEnable = true\r\n");
+            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }),
+                                        Path.Combine(romDir, PlainRom) });
+            ok &= Check("with no DS BIOS, external BIOS is turned off so the game still runs",
+                        TomlValues(toml, "Emu").TryGetValue("ExternalBIOSEnable", out var off)
+                        && off.Equals("false", StringComparison.OrdinalIgnoreCase));
+
+            //     Drop the three in, and they are CONFIGURED - nobody should have to type a path
+            //     into Config > Emu settings to make a game start - and the switch goes back on.
+            Directory.CreateDirectory(bios);
+            string ds7 = BiosName("DsBios7"), ds9 = BiosName("DsBios9"), dsFw = BiosName("DsFirmware");
+            Write(bios, ds7, 0x4000);
+            Write(bios, ds9, 0x1000);
+            Write(bios, dsFw, 0x40000);
+
+            File.WriteAllText(toml, "[Emu]\r\nConsoleType = 0\r\n");
+            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }),
+                                        Path.Combine(romDir, PlainRom) });
+            var ds = TomlValues(toml, "DS");
+            ok &= Check("the DS ARM7 BIOS is found by name and configured",
+                        (ds.TryGetValue("BIOS7Path", out var d7) ? d7 : "").Contains(ds7));
+            ok &= Check("so is the ARM9 BIOS",
+                        (ds.TryGetValue("BIOS9Path", out var d9) ? d9 : "").Contains(ds9));
+            ok &= Check("and the firmware",
+                        (ds.TryGetValue("FirmwarePath", out var df) ? df : "").Contains(dsFw));
+            ok &= Check("with all three there, external BIOS is turned on",
+                        TomlValues(toml, "Emu").TryGetValue("ExternalBIOSEnable", out var on)
+                        && on.Equals("true", StringComparison.OrdinalIgnoreCase));
+
+            //     A PATH THE USER SET HIMSELF IS NOT OVERWRITTEN, wherever he put it.
+            string his7 = Path.Combine(install, "my_own_bios7.bin");
+            Write(install, "my_own_bios7.bin", 0x4000);
+            File.WriteAllText(toml,
+                "[Emu]\r\nConsoleType = 0\r\n\r\n[DS]\r\n"
+                + "BIOS7Path = '" + his7 + "'\r\n");
+            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }),
+                                        Path.Combine(romDir, PlainRom) });
+            ok &= Check("a DS path the user set himself is left alone",
+                        TomlValues(toml, "DS").TryGetValue("BIOS7Path", out var kept) && kept == his7);
+            try { File.Delete(his7); } catch { }
+
+            //     A FILE OF THE WRONG SIZE IS STILL HANDED OVER, with a word in the log. melonDS
+            //     makes the final call - it is better at it - and silently refusing a file somebody
+            //     deliberately put there would be second-guessing them with less information.
+            File.Delete(Path.Combine(bios, ds7));
+            Write(bios, ds7, 1234);
+            File.WriteAllText(toml, "[Emu]\r\nConsoleType = 0\r\n");
+            mark = LogLength();
+            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }),
+                                        Path.Combine(romDir, PlainRom) });
+            said = LogSince(mark);
+            ok &= Check("a BIOS of the wrong size is used anyway",
+                        (TomlValues(toml, "DS").TryGetValue("BIOS7Path", out var odd) ? odd : "")
+                            .Contains(ds7));
+            ok &= Check("but the log says its size is not one melonDS wants",
+                        said.Contains("1234 bytes") && said.Contains("melonDS wants"));
+
+            try { Directory.Delete(bios, true); } catch { }
 
             // 4. A CARTRIDGE IS NOT DSiWARE: it runs off whatever NAND is selected, and a NAND the
             //    user chose himself is his answer.
@@ -836,12 +911,12 @@ namespace LbIntegrations.Probe
                 string bios = Path.Combine(install, "bios");
                 Directory.CreateDirectory(bios);
                 File.Copy(basePath, Path.Combine(bios, "a-dump-with-an-unhelpful-name.bin"));
-                File.Copy(bios7, Path.Combine(bios, "dsi_bios7.bin"));
-                File.Copy(bios9, Path.Combine(bios, "dsi_bios9.bin"));
+                File.Copy(bios7, Path.Combine(bios, BiosName("DsiBios7")));
+                File.Copy(bios9, Path.Combine(bios, BiosName("DsiBios9")));
 
                 // melonDS needs a DSi firmware and this check never launches melonDS, so a
                 // placeholder is enough to exercise the plugin's own requirement.
-                File.WriteAllBytes(Path.Combine(bios, "dsi_firmware.bin"), new byte[128 * 1024]);
+                File.WriteAllBytes(Path.Combine(bios, BiosName("DsiFirmware")), new byte[128 * 1024]);
 
                 // The ROM is copied too, because one assertion below ages its timestamp to prove the
                 // image is NOT reused for a ROM that is not the one installed. Doing that to the file
@@ -886,7 +961,7 @@ namespace LbIntegrations.Probe
                 ok &= Check("melonDS is pointed at it", NandPathIn(ConfigPath(exe)) == work);
                 ok &= Check("the DSi BIOS and firmware were found in the bios folder and configured",
                             TomlValues(ConfigPath(exe), "DSi").TryGetValue("FirmwarePath", out var fw)
-                            && fw.Contains("dsi_firmware.bin"));
+                            && fw.Contains(BiosName("DsiFirmware")));
                 ok &= Check("the dump's region was read out of it, not out of its name",
                             LogSince(0).Contains("a-dump-with-an-unhelpful-name.bin is a"));
                 ok &= Check("DSi mode, through the menu",

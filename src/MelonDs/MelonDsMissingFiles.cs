@@ -35,9 +35,11 @@ namespace LbIntegrations.MelonDs
 {
     internal static class MelonDsMissingFiles
     {
-        /// <summary>Beside the log, like every other switch here. Present, nothing is ever shown and
-        /// the log carries the whole story on its own.</summary>
-        private const string KillSwitch = "no-dsi-dialog";
+        /// <summary>Beside the log, like every other switch here. Present, nothing is ever shown
+        /// and the log carries the whole story on its own. Named for the plugin rather than for
+        /// DSi, because a DS game with external BIOS turned on and no BIOS to find is the same
+        /// failure and deserves the same sentence.</summary>
+        private const string KillSwitch = "no-melonds-dialog";
 
         /// <summary>Set by the probe, which drives this plugin through the same code a launch does
         /// and must never open a window while doing it. A marker file would work but would mean a
@@ -92,7 +94,7 @@ namespace LbIntegrations.MelonDs
         {
             var lines = new List<string>
             {
-                (gameName ?? "This DSiWare title") + " needs files melonDS cannot generate.",
+                (gameName ?? "This game") + " needs files melonDS cannot generate.",
                 "",
             };
 
@@ -126,7 +128,7 @@ namespace LbIntegrations.MelonDs
             {
                 using var form = new Form
                 {
-                    Text = "melonDS - a DSiWare title cannot start",
+                    Text = "melonDS - a game cannot start",
                     FormBorderStyle = FormBorderStyle.FixedDialog,
                     StartPosition = FormStartPosition.CenterScreen,
                     MinimizeBox = false,

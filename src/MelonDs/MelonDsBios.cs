@@ -45,14 +45,19 @@ namespace LbIntegrations.MelonDs
     {
         public const string DirName = "bios";
 
-        /// <summary>The names this plugin suggests. melonDS itself takes whatever path it is given,
-        /// so these matter only for telling somebody what to look for.</summary>
-        public const string DsiBios7 = "dsi_bios7.bin";
-        public const string DsiBios9 = "dsi_bios9.bin";
-        public const string DsiFirmware = "dsi_firmware.bin";
-        public const string DsBios7 = "bios7.bin";
-        public const string DsBios9 = "bios9.bin";
-        public const string DsFirmware = "firmware.bin";
+        /// <summary>The names this plugin asks for. They are the ones melonDS's own community uses,
+        /// so somebody who already has these files already has them under these names.
+        ///
+        /// THEY ARE THE CONTRACT. These are what is declared to LaunchBox, so they are what its
+        /// dependency check looks for and what anybody reads before going to find a file. Accepting
+        /// a different name would make the declared name and the accepted name two different
+        /// things.</summary>
+        public const string DsiBios7 = "biosdsi7.bin";
+        public const string DsiBios9 = "biosdsi9.bin";
+        public const string DsiFirmware = "dsifirmware.bin";
+        public const string DsBios7 = "biosnds7.bin";
+        public const string DsBios9 = "biosnds9.bin";
+        public const string DsFirmware = "dsfirmware.bin";
 
         /// <summary>What a DSiWare launch needs, beside a NAND.</summary>
         public static readonly string[] DsiFiles = { DsiBios7, DsiBios9, DsiFirmware };
@@ -89,35 +94,28 @@ namespace LbIntegrations.MelonDs
 
                 File.WriteAllText(note, string.Join("\r\n", new[]
                 {
-                    "This folder is for the files melonDS needs and cannot generate.",
+                    "Files melonDS needs and cannot generate. Drop them here and the plugin points",
+                    "melonDS at them; you do not have to configure anything.",
                     "",
-                    "NOTHING HERE IS NEEDED FOR ORDINARY DS GAMES. melonDS has a built-in BIOS and",
-                    "generates a firmware, so a DS cartridge runs with this folder empty. You only",
-                    "need the DS files below if you turn on Config > Emu settings > external BIOS,",
-                    "which gives you your own console's boot animation and settings instead.",
+                    "FOR DSiWARE, all four are required:",
                     "",
-                    "    " + DsBios7 + "        DS ARM7 BIOS",
-                    "    " + DsBios9 + "        DS ARM9 BIOS",
-                    "    " + DsFirmware + "     DS firmware",
-                    "",
-                    "FOR DSiWARE, ALL FOUR OF THESE ARE REQUIRED:",
-                    "",
-                    "    " + DsiBios7 + "    DSi ARM7 BIOS",
-                    "    " + DsiBios9 + "    DSi ARM9 BIOS",
-                    "    " + DsiFirmware + " DSi firmware",
+                    "    " + DsiBios7 + "      DSi ARM7 BIOS",
+                    "    " + DsiBios9 + "      DSi ARM9 BIOS",
+                    "    " + DsiFirmware + "    DSi firmware",
                     "    a DSi NAND dump of the right REGION",
                     "",
-                    "A DSi NAND is region locked: the system menu that launches an installed title is",
-                    "built for one region and refuses titles from another. So you need the NAND that",
-                    "matches the game - a Japanese title wants a Japanese NAND.",
+                    "A DSi NAND is region locked: a Japanese game needs a Japanese NAND. Put in as",
+                    "many regions as you own, UNDER ANY NAME - the region is read from inside the",
+                    "dump, not from the file name. A NAND is a dump of a real console and cannot be",
+                    "generated.",
                     "",
-                    "PUT THE NAND DUMPS IN THIS FOLDER UNDER ANY NAME YOU LIKE. Their region is read",
-                    "from inside them, not from the file name, so DSi_Nand_USA_1.4.5.bin works exactly",
-                    "as well as anything else. Drop in as many regions as you own; the right one is",
-                    "picked per game.",
+                    "FOR DS GAMES, nothing is needed: melonDS has a built-in BIOS and generates a",
+                    "firmware. These three give you your own console's boot animation and settings",
+                    "instead, and the plugin turns that on by itself once all three are here:",
                     "",
-                    "A NAND cannot be generated or downloaded from us: it is encrypted with data",
-                    "unique to the console it came from.",
+                    "    " + DsBios7 + "      DS ARM7 BIOS",
+                    "    " + DsBios9 + "      DS ARM9 BIOS",
+                    "    " + DsFirmware + "     DS firmware",
                     "",
                     "This file is only a note. You can delete it.",
                 }) + "\r\n");
@@ -126,7 +124,58 @@ namespace LbIntegrations.MelonDs
             catch (Exception ex) { Log.Verbose("could not prepare the bios folder - " + ex.Message); }
         }
 
-        /// <summary>One file by name, case-insensitively - a dump named DSI_bios7.bin is the file
+        // ── the files melonDS is pointed at ──────────────────────────────────
+
+        /// <summary>THE NAME IS THE CONTRACT for a BIOS or a firmware, and deliberately so.
+        ///
+        /// A NAND has no canonical name - the dumps in circulation carry a firmware revision - so
+        /// there the region is read out of the file itself. A BIOS is the opposite: these six names
+        /// are what this plugin DECLARES to LaunchBox, so they are what its BIOS check looks for and
+        /// what anybody reads before going to find one. Sniffing content instead would mean the
+        /// declared name and the accepted name were different things, which is a worse contract than
+        /// a strict one.
+        ///
+        /// The size melonDS demands is checked, but only to SAY SOMETHING. A file with the right
+        /// name is handed over whatever its length: melonDS makes the final decision, it is better
+        /// at it, and a plugin that silently refuses a file the user deliberately put there would be
+        /// second-guessing them with less information.</summary>
+        private static readonly Dictionary<string, long[]> ExpectedSizes =
+            new Dictionary<string, long[]>(StringComparer.OrdinalIgnoreCase)
+            {
+                // EmuInstance.cpp:487-607, melonDS's own checks.
+                [DsBios7] = new[] { 0x4000L },
+                [DsBios9] = new[] { 0x1000L },
+                [DsFirmware] = new[] { 0x20000L, 0x40000L, 0x80000L },
+                [DsiBios7] = new[] { 0x10000L },
+                [DsiBios9] = new[] { 0x10000L },
+                [DsiFirmware] = new[] { 0x20000L },
+            };
+
+        /// <summary>The file with this name, and a note when its size is not one melonDS accepts.
+        /// The note is for the log; the file is returned either way.</summary>
+        public static string FindChecked(MelonDsLayout layout, string fileName, out string doubt)
+        {
+            doubt = null;
+            var path = Find(layout, fileName);
+            if (path == null) return null;
+
+            try
+            {
+                if (!ExpectedSizes.TryGetValue(fileName, out var sizes)) return path;
+                long length = new FileInfo(path).Length;
+                foreach (var size in sizes) if (length == size) return path;
+
+                var wanted = new List<string>();
+                foreach (var size in sizes) wanted.Add(size.ToString(CultureInfo.InvariantCulture));
+                doubt = Path.GetFileName(path) + " is " + length.ToString(CultureInfo.InvariantCulture)
+                        + " bytes, and melonDS wants " + string.Join(" or ", wanted)
+                        + " - it is being used anyway, and melonDS will say if it is wrong";
+            }
+            catch { }
+            return path;
+        }
+
+        /// <summary>One file by name, case-insensitively        /// <summary>One file by name, case-insensitively - a dump named DSI_bios7.bin is the file
         /// that was asked for, and refusing it over a capital letter would be theatre.</summary>
         public static string Find(MelonDsLayout layout, string fileName)
         {

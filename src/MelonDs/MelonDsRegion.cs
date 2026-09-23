@@ -286,6 +286,6 @@ namespace LbIntegrations.MelonDs
         /// <summary>The name this plugin would give a NAND file of this region, used when telling
         /// somebody what to go and find. Any name works - the region is read from inside.</summary>
         public static string SuggestedFileName(DsiRegion region)
-            => "dsi_nand_" + Name(region).ToLowerInvariant() + ".bin";
+            => "dsinand_" + Name(region).ToLowerInvariant() + ".bin";
     }
 }

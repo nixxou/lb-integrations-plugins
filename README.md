@@ -409,12 +409,32 @@ and `loadFirmware` (`:1012-1050`) rather than out of a wiki:
 
 | launching | needs |
 |---|---|
-| a DS game, `Emu.ExternalBIOSEnable` off | **nothing** - a built-in BIOS and a generated firmware |
-| a DS game, `Emu.ExternalBIOSEnable` on | `bios7.bin`, `bios9.bin`, `firmware.bin` |
-| **DSiWare** | `dsi_bios7.bin`, `dsi_bios9.bin`, `dsi_firmware.bin`, **and a NAND of the right region** |
+| a DS game | **nothing** - a built-in BIOS and a generated firmware |
+| a DS game, with your own console's | `biosnds7.bin`, `biosnds9.bin`, `dsfirmware.bin` |
+| **DSiWare** | `biosdsi7.bin`, `biosdsi9.bin`, `dsifirmware.bin`, **and a NAND of the right region** |
 
-The plugin never touches `ExternalBIOSEnable`: whether you want your own console's BIOS or melonDS's
-replacement is your answer, not its.
+Those names are melonDS's own community's, so a file you already have you already have under the
+right name.
+
+**Setting the paths is the plugin's job, not yours.** Drop a file in `bios\` and it gets configured.
+Nobody should have to go into Config > Emu settings and type three paths to make a game start.
+
+**And the switch follows the files.** `Emu.ExternalBIOSEnable` is what makes melonDS demand all three
+DS files (`verifySetup`, whatever the console type), so it goes **on** when all three are there - you
+get your own console's boot animation and settings - and **off** when they are not, which boots on
+the built-in BIOS and a generated firmware. Either way the game runs; left on without the files,
+melonDS refuses to start at all. A path you set yourself, anywhere you like, is never overwritten.
+
+**A BIOS is found by NAME, and that is deliberate.** These six names are what the plugin declares to
+LaunchBox, so they are what its BIOS check looks for and what you read before going to find one;
+accepting something else would make the declared name and the accepted name different things. The
+size melonDS demands is checked too, but only to **say** something - a file with the right name is
+handed over whatever its length, because melonDS makes the final call and is better at it, and
+silently refusing a file you deliberately put there would be second-guessing you with less
+information.
+
+A NAND is the opposite case and is treated the opposite way: it has no canonical name, so its region
+is read out of the file. Name where there is a convention, contents where there is none.
 
 **The DSi firmware is required whatever that setting says**, and it is a trap worth naming.
 `verifySetup` only checks it when `ExternalBIOSEnable` is on, which makes it look optional. It is
@@ -497,7 +517,7 @@ since the state on disk is the save and the image is scratch, but it would cost 
 A launch captures whatever the working image still holds **before** rebuilding it, so a session is
 never thrown away unread; that happens on every launch, including of a plain cartridge. Free space is
 checked first: a dump is around 240 MB. The `no-dsi-nand` marker beside the log turns the whole thing
-off, and `no-dsi-dialog` silences the window without silencing the log.
+off, and `no-melonds-dialog` silences the window without silencing the log.
 
 An earlier layout kept the user's dump as `dsi\base.bin` and built every title on it. Nothing writes
 one any more, but one found there is still accepted as a last resort, with a log line saying where

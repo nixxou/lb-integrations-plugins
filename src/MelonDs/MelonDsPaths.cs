@@ -57,6 +57,7 @@ namespace LbIntegrations.MelonDs
         public const string InstanceTable = "Instance0";
         public const string EmuTable = "Emu";
         public const string DSiTable = "DSi";
+        public const string DsTable = "DS";
 
         public const string KeySaveFilePath = "SaveFilePath";
         public const string KeySavestatePath = "SavestatePath";

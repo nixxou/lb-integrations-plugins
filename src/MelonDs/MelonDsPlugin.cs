@@ -551,17 +551,14 @@ namespace LbIntegrations.MelonDs
             // dump" arrives before a game fails rather than afterwards in a log.
             if (IsDsiPlatform(platform))
             {
+                // SHORT, because this is a list in a dialog and not a place to explain anything.
+                // The reasoning lives in the README and in MelonDsBios; here a name and a role are
+                // all anybody needs to go and find a file.
                 var files = new List<EmulatorBiosFile>
                 {
-                    File_(MelonDsBios.DsiBios7,
-                          "DSi ARM7 BIOS - REQUIRED for DSiWare. melonDS has no built-in replacement "
-                          + "for it, unlike the DS one.", required: true),
-                    File_(MelonDsBios.DsiBios9, "DSi ARM9 BIOS - REQUIRED for DSiWare.", required: true),
-                    File_(MelonDsBios.DsiFirmware,
-                          "DSi firmware - REQUIRED for DSiWare, whatever the external-BIOS setting "
-                          + "says. melonDS only VERIFIES it when that is on, but it loads it either "
-                          + "way: the built-in path for DSi mode is unimplemented and falls through "
-                          + "to opening this file.", required: true),
+                    File_(MelonDsBios.DsiBios7, "DSi ARM7 BIOS", required: true),
+                    File_(MelonDsBios.DsiBios9, "DSi ARM9 BIOS", required: true),
+                    File_(MelonDsBios.DsiFirmware, "DSi firmware", required: true),
                 };
                 files.AddRange(NandFiles(layout));
                 return files;
@@ -571,15 +568,11 @@ namespace LbIntegrations.MelonDs
 
             return new[]
             {
-                File_(MelonDsBios.DsBios7,
-                      "DS ARM7 BIOS - optional; melonDS has a built-in replacement. Only read with "
-                      + "Config > Emu settings > external BIOS turned on.",
+                File_(MelonDsBios.DsBios7, "DS ARM7 BIOS - optional",
                       required: false, md5: "df692a80a5b1bc90728bc3dfc76cd948"),
-                File_(MelonDsBios.DsBios9, "DS ARM9 BIOS - optional, same as bios7.bin.",
+                File_(MelonDsBios.DsBios9, "DS ARM9 BIOS - optional",
                       required: false, md5: "a392174eb3e572fed6447e956bde4b25"),
-                File_(MelonDsBios.DsFirmware,
-                      "DS firmware - optional; without it melonDS generates one, which boots straight "
-                      + "to the game and carries no user settings.", required: false),
+                File_(MelonDsBios.DsFirmware, "DS firmware - optional", required: false),
             };
         }
 
@@ -611,11 +604,8 @@ namespace LbIntegrations.MelonDs
             {
                 string name = have.TryGetValue(region, out var actual)
                     ? actual : MelonDsRegion.SuggestedFileName(region);
-                files.Add(File_(name,
-                    "DSi NAND dump, " + MelonDsRegion.Name(region) + " - needed only for DSiWare from "
-                    + "that region, and only then. A dump of a real console; it cannot be generated. "
-                    + "Any file name works: the region is read from inside the dump.",
-                    required: false));
+                files.Add(File_(name, "DSi NAND, " + MelonDsRegion.Name(region) + " - any file name",
+                                required: false));
             }
             return files;
         }
@@ -701,6 +691,11 @@ namespace LbIntegrations.MelonDs
             // that came before it. With nothing in flight it costs one File.Exists.
             MelonDsDsi.CaptureWork(layout, AbsoluteTo(layout.ConfigDir, ValueOf(layout, "BIOS7Path")));
 
+            // THE FILES ARE THE PLUGIN'S JOB. Drop a BIOS in the folder and it gets configured;
+            // drop nothing and melonDS boots on its built-in one. What nobody should have to do is
+            // type three paths into Config > Emu settings to make a game start.
+            ConfigureDsFiles(layout, rom);
+
             int wanted = 0;
             if (rom.IsDSi)
             {
@@ -736,8 +731,14 @@ namespace LbIntegrations.MelonDs
                 Log.Verbose(rom.AssetName + " runs on " + MelonDsRegion.Names(regions)
                             + " hardware, according to " + how);
 
-            // The two BIOS and the firmware, from the user's folder when they are not already
-            // configured. Writing them is what lets somebody drop files in and launch.
+            // The DS side first, and for a DSiWare too: verifySetup demands the DS BIOS whenever
+            // external BIOS is on, WHATEVER the console type (EmuInstance.cpp:640-643). A DSi launch
+            // with that on and no DS BIOS would be refused for a reason that has nothing to do with
+            // DSi, so that switch is settled from what is actually there before anything else.
+            ConfigureDsFiles(layout, rom);
+
+            // Then the DSi files, from the user's folder when they are not already configured.
+            // Writing them is what lets somebody drop files in and launch.
             var missing = EnsureDsiFiles(layout);
 
             var bios7 = AbsoluteTo(layout.ConfigDir, ValueOf(layout, "BIOS7Path"));
@@ -847,6 +848,90 @@ namespace LbIntegrations.MelonDs
             MelonDsDsi.RememberWork(layout, rom.TitleId, romPath, source);
         }
 
+        /// <summary>Point melonDS at the DS BIOS and firmware, and turn external BIOS on or off to
+        /// match what is actually there.
+        ///
+        /// SETTING THE PATHS IS THIS PLUGIN'S JOB, not the user's. Dropping a file in a folder is
+        /// something anybody can do; going into Config > Emu settings and typing three paths is
+        /// something nobody should have to do to make a game start.
+        ///
+        /// AND THE SWITCH FOLLOWS THE FILES. Emu.ExternalBIOSEnable is what makes melonDS demand all
+        /// three (verifySetup, EmuInstance.cpp:640-643), so it goes ON when all three are there -
+        /// which gets you your own console's boot animation and settings - and OFF when they are
+        /// not, which boots on the built-in BIOS and a generated firmware. Either way the game runs.
+        /// Left on without the files, melonDS refuses to start at all.
+        ///
+        /// A PATH ALREADY SET AND POINTING AT A FILE IS LEFT ALONE. Somebody who configured these by
+        /// hand, wherever they like, has answered the question; only what is absent or broken is
+        /// filled in from the folder.</summary>
+        private static void ConfigureDsFiles(MelonDsLayout layout, NdsRom rom)
+        {
+            try
+            {
+                var wanted = new Dictionary<string, string>(StringComparer.Ordinal);
+                var keys = MelonDsToml.Read(layout.ConfigFile, MelonDsPaths.DsTable,
+                                            "BIOS7Path", "BIOS9Path", "FirmwarePath");
+
+                bool complete = true;
+                foreach (var (key, name) in new[]
+                {
+                    ("BIOS7Path", MelonDsBios.DsBios7),
+                    ("BIOS9Path", MelonDsBios.DsBios9),
+                    ("FirmwarePath", MelonDsBios.DsFirmware),
+                })
+                {
+                    var set = keys.TryGetValue(key, out var value) ? value : null;
+                    if (!string.IsNullOrWhiteSpace(set) && File.Exists(AbsoluteTo(layout.ConfigDir, set)))
+                        continue;                                  // already answered, and it is there
+
+                    var path = MelonDsBios.FindChecked(layout, name, out var doubt);
+                    if (doubt != null) Log.Info(doubt);
+                    if (path != null) wanted[key] = MelonDsToml.Text(path);
+                    else complete = false;
+                }
+
+                if (wanted.Count > 0)
+                {
+                    var error = MelonDsToml.Write(layout.ConfigFile, MelonDsPaths.DsTable, wanted, force: true);
+                    if (error != null) { Log.Warn("DS files not selected: " + error); return; }
+                    Log.Info("pointed melonDS at DS." + string.Join(", DS.", wanted.Keys) + " in "
+                             + MelonDsBios.Dir(layout));
+                }
+
+                SetExternalBios(layout, complete, rom);
+            }
+            catch (Exception ex) { Log.Warn("could not set the DS files", ex); }
+        }
+
+        /// <summary>Turn Emu.ExternalBIOSEnable on or off, and only when it differs.</summary>
+        private static void SetExternalBios(MelonDsLayout layout, bool on, NdsRom rom)
+        {
+            try
+            {
+                var emu = MelonDsToml.Read(layout.ConfigFile, MelonDsPaths.EmuTable,
+                                           MelonDsPaths.KeyExternalBios);
+                var value = emu.TryGetValue(MelonDsPaths.KeyExternalBios, out var v) ? v : null;
+                bool already = string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+                if (already == on) return;
+
+                var error = MelonDsToml.Write(layout.ConfigFile, MelonDsPaths.EmuTable,
+                    new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        [MelonDsPaths.KeyExternalBios] = on ? "true" : "false",
+                    }, force: true);
+                if (error != null) { Log.Warn("external BIOS not changed: " + error); return; }
+
+                Log.Info(on
+                    ? "turned external BIOS on: your own DS BIOS and firmware are all there"
+                    : "turned external BIOS off for " + rom.AssetName + ": " + MelonDsBios.DsBios7
+                      + ", " + MelonDsBios.DsBios9 + " and " + MelonDsBios.DsFirmware
+                      + " are not all in " + MelonDsBios.Dir(layout) + ", so melonDS boots on its "
+                      + "built-in BIOS and a generated firmware instead. Put them there to use "
+                      + "your own console's.");
+            }
+            catch (Exception ex) { Log.Warn("could not set external BIOS", ex); }
+        }
+
         /// <summary>Point melonDS at the DSi BIOS and firmware, and answer with what is missing.
         ///
         /// A path already configured and pointing at a file that exists is LEFT ALONE - somebody who
@@ -879,7 +964,8 @@ namespace LbIntegrations.MelonDs
                     if (!string.IsNullOrWhiteSpace(set)
                         && File.Exists(AbsoluteTo(layout.ConfigDir, set))) continue;
 
-                    var found = MelonDsBios.Find(layout, name);
+                    var found = MelonDsBios.FindChecked(layout, name, out var doubt);
+                    if (doubt != null) Log.Info(doubt);
                     if (found == null) { missing.Add(name); continue; }
                     wanted[key] = MelonDsToml.Text(found);
                 }
