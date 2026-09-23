@@ -237,7 +237,7 @@ namespace LbIntegrations.MelonDs
         ///
         /// IT DESCRIBES THE TITLE, NOT THE SAVE. It used to sit beside the state folder, which was
         /// tidy and wrong: deleting a save takes the whole title folder, so it took the metadata
-        /// with it. For the 1889 titles the carried index holds that costs nothing. For one that
+        /// with it. For the 1686 titles the carried index holds that costs nothing. For one that
         /// came from Nintendo's server it costs a second download - and, on a machine that is
         /// offline when the game is next launched, it costs the metadata altogether: the fallback is
         /// a TMD built from the ROM, unsigned, which the DSi menu may refuse.
