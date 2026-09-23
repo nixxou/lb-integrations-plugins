@@ -598,12 +598,20 @@ off them and the "never touch this file again" warning all existed to manage tha
 survived the damage not being done. Both suffixes are still refused by the NAND scan, because a 240 MB
 leftover would otherwise pass the size gate on somebody's disk today.
 
-So the first time a dump is used, a window says so, and offers to build one now. melonDS opens on the
-DSi menu, on the copy and no ROM - `ConsoleType = 1` with `DirectBoot = false` boots the firmware, and
-in DSi mode the firmware *is* the menu held in the NAND. Set the console up, quit melonDS, and a
-second window asks whether it worked. Yes writes the recipe beside it; no deletes the copy, and there
-is nothing to put back. The game you launched does not start that time - launch it again once the
-console is ready.
+So the first time a dump is used, a window says so, and offers to build one now. melonDS is opened on
+the copy, with `ConsoleType = 1` and `DirectBoot = false`, and **one menu item has to be clicked**:
+*File > Boot firmware*, which starts the DSi menu held in the NAND. Set the console up, quit melonDS,
+and a second window asks whether it worked. Yes writes the recipe beside it; no deletes the copy, and
+there is nothing to put back. The game you launched does not start that time - launch it again once
+the console is ready.
+
+**That click cannot be done for you, so it is said on screen instead**, in a window that appears over
+melonDS once melonDS is up. Those two keys decide how a *ROM* starts, and the setup has no ROM: with
+nothing to run, melonDS sits on its splash screen saying "File->Open ROM... to get started". Measured
+on 1.1: the command line does carry `-b/--boot auto|always|never`, but it is handed to `preloadROMs`
+and does nothing without a ROM - launched with `-b always` and no ROM, melonDS stayed on the splash,
+no window opened and the NAND was not written. Saying it in the window *before* would be saying it to
+somebody about to look somewhere else, which is exactly what went wrong the first time.
 
 **There is no "play without a console", and that is a deliberate reversal.** The window used to
 offer *Not now*, which started the game on the raw dump - the behaviour from before any of this

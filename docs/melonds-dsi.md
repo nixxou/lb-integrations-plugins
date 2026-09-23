@@ -257,11 +257,20 @@ configuré et cette image est sa console. Un `File.Exists` : pas de hash, pas d'
 a exactement une console, « laquelle » ne se pose jamais. `bases\` ne sert qu'aux reconstructions,
 quand l'identité inscrite dans une sauvegarde ne correspond à rien de présent.
 
-melonDS est lancé **sans ROM**, sur la copie, avec `ConsoleType = 1` et `DirectBoot = false` : le
-firmware démarre, et en mode DSi le firmware *est* le menu contenu dans la NAND (§ 3.1). `WaitForExit`,
-puis une seconde fenêtre demande si la configuration a marché. Oui écrit la recette à côté ; non
-supprime la copie — et il n'y a rien à remettre en place. Le lancement du jeu qui a déclenché tout ça
-est **annulé** (`PrepareForLaunchResponse(success: false)`) : l'utilisateur relance.
+melonDS est lancé **sans ROM**, sur la copie, avec `ConsoleType = 1` et `DirectBoot = false`. Puis
+**un clic reste à faire** : `File > Boot firmware`, qui démarre le menu DSi contenu dans la NAND.
+`WaitForExit`, puis une seconde fenêtre demande si la configuration a marché. Oui écrit la recette à
+côté ; non supprime la copie — et il n'y a rien à remettre en place. Le lancement du jeu qui a
+déclenché tout ça est **annulé** (`PrepareForLaunchResponse(success: false)`) : l'utilisateur relance.
+
+**Ce clic ne s'automatise pas, donc il se dit** — dans une fenêtre affichée par-dessus melonDS une
+fois melonDS levé. Les deux clés ci-dessus décident comment démarre une **ROM** (§ 3.1), et ici il n'y
+a pas de ROM : sans rien à exécuter, melonDS reste sur son écran d'accueil
+« File->Open ROM... to get started ». Mesuré sur 1.1 : la ligne de commande porte bien
+`-b/--boot auto|always|never`, mais elle est passée à `preloadROMs` et ne fait rien sans ROM — lancé
+avec `-b always` et aucune ROM, melonDS est resté sur l'accueil, aucune fenêtre ne s'est ouverte et la
+NAND n'a pas été écrite. Le dire dans la fenêtre **d'avant** serait le dire à quelqu'un qui s'apprête
+à regarder ailleurs, et c'est exactement ce qui a raté la première fois.
 
 **Il n'y a pas de « jouer sans console »**, et c'est un revirement assumé. La fenêtre offrait
 « Pas maintenant », qui lançait le jeu sur le dump brut — le comportement d'avant, gardé par réflexe

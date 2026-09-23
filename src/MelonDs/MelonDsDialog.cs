@@ -6,8 +6,10 @@
 // there are three things that cannot be left unsaid:
 //
 //   a game cannot start        which file is missing, and where it goes
-//   a NAND is new              that it has to be set up once, and must not be touched afterwards
+//   a dump has no console      that one has to be built, on a copy, before any save exists
+//   melonDS is open            the one menu item to click, since it cannot be clicked for them
 //   melonDS has just closed    whether that setup worked
+//   a save's console is gone   which file to go and find, or start again and keep the old one
 //
 // ON ITS OWN STA THREAD, ALWAYS. WinForms needs a single-threaded apartment and the thread the host
 // calls PrepareEmulatorForLaunch on is not documented to be one. Finding out would mean depending on

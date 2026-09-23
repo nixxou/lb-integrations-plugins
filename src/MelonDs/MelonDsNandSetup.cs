@@ -152,12 +152,25 @@ namespace LbIntegrations.MelonDs
             catch (Exception ex) { Log.Warn("could not describe a console", ex); return false; }
         }
 
-        /// <summary>Open melonDS on the DSi menu, on this image, and wait for it to be closed.
+        /// <summary>Open melonDS on this image, tell the user the one click to make, and wait
+        /// for it to be closed.
         ///
-        /// NO ROM ARGUMENT, ConsoleType = 1 and DirectBoot = false: that combination boots the
-        /// firmware, and in DSi mode the firmware IS the menu held in the NAND. None of it needs
-        /// undoing - the next launch rewrites all three keys before melonDS sees them, and melonDS
-        /// rewrites the file itself on the way out.</summary>
+        /// ConsoleType = 1 and DirectBoot = false is what makes the firmware - in DSi mode, the menu
+        /// held in the NAND - the thing that boots. None of it needs undoing: the next launch
+        /// rewrites all three keys before melonDS sees them, and melonDS rewrites the file itself on
+        /// the way out.
+        ///
+        /// BUT THOSE TWO KEYS ONLY DECIDE HOW A ROM STARTS, and there is no ROM here. Started with
+        /// nothing to run, melonDS sits on its splash screen saying "File->Open ROM... to get
+        /// started"; the menu item File > Boot firmware is the only way in. Measured on 1.1: the
+        /// command line has -b/--boot auto|always|never, but it is handed to preloadROMs and does
+        /// nothing without a ROM - launched with "-b always" and no ROM, melonDS stayed on the
+        /// splash, no window opened and the NAND was not written.
+        ///
+        /// So the instruction is put on screen, ON TOP OF melonDS, once melonDS is up. Saying it in
+        /// the window before would be saying it to somebody who is about to look at something else -
+        /// which is exactly what happened: the old text promised "melonDS opens on the DSi menu",
+        /// and it does not.</summary>
         private static void Configure(MelonDsLayout layout, string imagePath)
         {
             var exe = MelonDsPaths.FindExecutable(layout.InstallDir);
@@ -187,6 +200,13 @@ namespace LbIntegrations.MelonDs
                     WorkingDirectory = layout.InstallDir,
                     UseShellExecute = false,
                 });
+                // Wait for its window before covering it: our own is TopMost, so showing it
+                // first would just mean melonDS appearing over an instruction nobody read.
+                try { process?.WaitForInputIdle(15000); } catch { }
+
+                MelonDsDialog.Ask("melonDS - one menu item to click", Instruction(),
+                                  new[] { "OK" });
+
                 process?.WaitForExit();
                 Log.Info("melonDS closed");
             }
@@ -211,7 +231,8 @@ namespace LbIntegrations.MelonDs
                 "If you set one up now:",
                 "",
                 "    1. " + name + " is copied into melonDS's dsi folder",
-                "    2. melonDS opens on the DSi menu, on that copy",
+                "    2. melonDS opens on that copy - you click File > Boot firmware,",
+                "       which starts the DSi menu. It will say so again on screen.",
                 "    3. set the console up, then quit melonDS",
                 "    4. this window comes back and asks whether it worked",
                 "",
@@ -225,6 +246,23 @@ namespace LbIntegrations.MelonDs
                 "menu run its welcome sequence INSIDE THE GAME, and those settings are then",
                 "saved as part of that one game - the same again for the next one, in a save",
                 "nothing can rebuild if you lose it.",
+            };
+            return string.Join(Environment.NewLine, lines);
+        }
+
+        private static string Instruction()
+        {
+            var lines = new List<string>
+            {
+                "melonDS is open, on the copy that will become your console.",
+                "",
+                "    In melonDS:  File  >  Boot firmware",
+                "",
+                "That starts the DSi menu. Set the console up - name, language, date, colour -",
+                "then quit melonDS, and you will be asked whether it worked.",
+                "",
+                "melonDS lands on its splash screen rather than the menu because it has no",
+                "command line for booting the firmware: that menu item is the only way in.",
             };
             return string.Join(Environment.NewLine, lines);
         }
