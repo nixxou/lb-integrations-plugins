@@ -84,6 +84,7 @@ namespace LbIntegrations.Probe
                 ok &= DsiWareRoundTrip(plugin, exe);
                 ok &= SaveChangedElsewhere(exe);
                 ok &= WhatASessionRemoved();
+                ok &= ASaveKnowsItsConsole(exe);
                 ok &= RegionCascade(romDir);
                 ok &= ArchiveFormats(exe, romDir);
                 ok &= CarriedIndex(exe, romDir);
@@ -1476,6 +1477,134 @@ namespace LbIntegrations.Probe
                 return ok;
             }
             finally { try { Directory.Delete(dir, recursive: true); } catch { } }
+        }
+
+        /// <summary>A save that knows which console it was made on, and can find its way back to it.
+        ///
+        /// A DSiWare save is a delta against ONE base image, so losing that image - a new machine, a
+        /// reconfigured NAND, a deleted file - makes every save meaningless. Silently: nothing errors,
+        /// they simply stop applying. So a save carries a recipe to rebuild its own base from the
+        /// user's pristine dump, and the identity of the console it belongs to.
+        ///
+        /// WHAT IS CHECKED HERE needs no NAND: the record's round trip, the search for the original
+        /// among a folder of look-alikes, and the two rules that decide whether any of this fires at
+        /// all. Building and applying a recipe needs the native library and a real dump, and lives in
+        /// --melonds-real.</summary>
+        private static bool ASaveKnowsItsConsole(string exe)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- a save that knows which console it was made on");
+
+            var baseType = TypeIn("MelonDsBase");
+            var recordType = TypeIn("BaseRecord");
+            if (baseType == null || recordType == null)
+            { Console.WriteLine("    no MelonDsBase to call"); return false; }
+
+            var write = baseType.GetMethod("WriteRecord", BindingFlags.Public | BindingFlags.Static);
+            var read = baseType.GetMethod("ReadRecord", BindingFlags.Public | BindingFlags.Static);
+            var find = baseType.GetMethod("FindOriginal", BindingFlags.Public | BindingFlags.Static);
+            var isArchive = baseType.GetMethod("IsArchive", BindingFlags.Public | BindingFlags.Static);
+            var sha = baseType.GetMethod("Sha256OfFile", BindingFlags.Public | BindingFlags.Static);
+            if (write == null || read == null || find == null || isArchive == null || sha == null)
+            { Console.WriteLine("    MelonDsBase does not have the shape expected"); return false; }
+
+            string dir = Path.Combine(Path.GetTempPath(), "lbip-base-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            try
+            {
+                bool ok = true;
+
+                // ── the record makes the round trip ──────────────────────────
+                var wanted = Activator.CreateInstance(recordType);
+                Set(recordType, wanted, "Identity", "abcdef0123456789");
+                Set(recordType, wanted, "InitialName", "dsinand.bin");
+                Set(recordType, wanted, "InitialSize", 251658304L);
+                Set(recordType, wanted, "InitialTicks", 638000000000000000L);
+                Set(recordType, wanted, "OriginalName", "DSi_Nand_USA_1.4.5.bin");
+                Set(recordType, wanted, "OriginalSize", 251658304L);
+
+                var record = Path.Combine(dir, "base.txt");
+                write.Invoke(null, new[] { record, wanted });
+                var back = read.Invoke(null, new object[] { record });
+
+                ok &= Check("a record written is a record read back",
+                            back != null && (string)Get(recordType, back, "Identity") == "abcdef0123456789");
+                ok &= Check("with the original's name and size intact",
+                            back != null
+                            && (string)Get(recordType, back, "OriginalName") == "DSi_Nand_USA_1.4.5.bin"
+                            && (long)Get(recordType, back, "OriginalSize") == 251658304L);
+
+                // NO RECORD IS NOT AN ERROR. A save made before any of this existed carries nothing,
+                // and the only honest answer to "is this the right console" is then "no opinion".
+                ok &= Check("a save with no record at all gets no opinion, not a failure",
+                            read.Invoke(null, new object[] { Path.Combine(dir, "absent.txt") }) == null);
+                File.WriteAllText(Path.Combine(dir, "empty.txt"), "initial.name	dsinand.bin\r\n");
+                ok &= Check("and neither does one with no identity in it",
+                            read.Invoke(null, new object[] { Path.Combine(dir, "empty.txt") }) == null);
+
+                // ── finding the original among look-alikes ───────────────────
+                var dumps = Path.Combine(dir, "dumps");
+                Directory.CreateDirectory(dumps);
+
+                var real = Path.Combine(dumps, "renamed by somebody.bin");
+                File.WriteAllBytes(real, Bytes(4096, 7));
+                // Same size, different contents. A search that stopped at the size would take it.
+                var decoy = Path.Combine(dumps, "DSi_Nand_USA_1.4.5.bin");
+                File.WriteAllBytes(decoy, Bytes(4096, 9));
+                // Right name, wrong size.
+                File.WriteAllBytes(Path.Combine(dumps, "too small.bin"), Bytes(512, 7));
+
+                var want = Activator.CreateInstance(recordType);
+                Set(recordType, want, "OriginalName", "DSi_Nand_USA_1.4.5.bin");
+                Set(recordType, want, "OriginalSize", 4096L);
+                Set(recordType, want, "OriginalSha256", (string)sha.Invoke(null, new object[] { real }));
+
+                var found = (string)find.Invoke(null, new object[] { Directory.GetFiles(dumps), want });
+                ok &= Check("the original is found by its CONTENTS, whatever it was renamed to",
+                            found == real);
+                ok &= Check("a file of the right size and the wrong hash is refused",
+                            found != decoy);
+
+                Set(recordType, want, "OriginalSha256", new string('0', 64));
+                ok &= Check("and when nothing matches, nothing is returned",
+                            find.Invoke(null, new object[] { Directory.GetFiles(dumps), want }) == null);
+
+                // ── a rebuilt base is never offered for setup ────────────────
+                // It is configured BY CONSTRUCTION. Asking somebody to set it up would change its
+                // identity and break the very save being recovered - the worst outcome available.
+                var setup = TypeIn("MelonDsNandSetup")
+                    ?.GetMethod("Of", BindingFlags.Public | BindingFlags.Static);
+                var bases = Path.Combine(Path.GetDirectoryName(exe), "dsi", "bases");
+                Directory.CreateDirectory(bases);
+                var archive = Path.Combine(bases, "abcdef0123456789.bin");
+                File.WriteAllBytes(archive, new byte[64]);
+
+                ok &= Check("a rebuilt base is recognised as one",
+                            (bool)isArchive.Invoke(null, new object[] { archive }));
+                ok &= Check("a dump in the bios folder is NOT",
+                            !(bool)isArchive.Invoke(null, new object[] { real }));
+                ok &= Check("and a rebuilt base is Locked, never NeverUsed",
+                            setup != null
+                            && setup.Invoke(null, new object[] { archive }).ToString() == "Locked");
+
+                try { Directory.Delete(Path.Combine(Path.GetDirectoryName(exe), "dsi", "bases"), true); } catch { }
+                return ok;
+            }
+            finally { try { Directory.Delete(dir, recursive: true); } catch { } }
+        }
+
+        private static void Set(Type type, object target, string field, object value)
+            => type.GetField(field).SetValue(target, value);
+
+        private static object Get(Type type, object target, string field)
+            => type.GetField(field).GetValue(target);
+
+        /// <summary>Filler with a chosen shape, so two files of the same length can still differ.</summary>
+        private static byte[] Bytes(int length, int seed)
+        {
+            var bytes = new byte[length];
+            for (int i = 0; i < length; i++) bytes[i] = (byte)(i * seed + seed);
+            return bytes;
         }
 
         /// <summary>Two dumps of one region, which is the case that silently breaks saves.

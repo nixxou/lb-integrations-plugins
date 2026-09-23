@@ -611,6 +611,58 @@ before this existed has no `.lock`, so it is asked about once - answering *Not n
 asks again next time, and setting it up properly settles it. There is no way to tell, from a file
 alone, what somebody has already done to it.
 
+**A save carries the recipe for its own console, so losing that console is survivable.** This is what
+the lock could not do. A DSiWare save is a delta against ONE base image, so if that image goes - a
+new machine, a reconfigured NAND, a deleted file - every save made on it stops meaning anything.
+Silently: nothing errors, they simply no longer apply.
+
+But a console is only three things, and just one of them is irreplaceable:
+
+```
+the original   a pristine dump, kept as <nand>.lock      the user has it, and it never changes
+the recipe     original -> initial, a few dozen KB       we can compute it
+the initial    the original plus its console setup       DERIVED: rebuildable from the two
+```
+
+So at the moment the lock is made - the one moment both images exist side by side - the difference
+between them is written down as `<nand>.recipe.zip`, and every save captured afterwards takes a copy.
+A save then carries everything needed to rebuild the console it belongs to from a dump anybody can
+re-obtain.
+
+**The recipe is itself a delta**, in exactly the format a save uses, so `MelonDsDelta.Capture` and
+`Apply` are reused unchanged with the original as the reference instead of a fresh install. Measured:
+the console setup touches `shared1/TWLCFG0.dat`, `TWLCFG1.dat` and the launcher's `private.sav`. Tens
+of kilobytes.
+
+**And it is a zip, which is not a preference.** `TryBackupSave` and `RestoreSave` both copy
+`Directory.GetFiles` - top level only, no recursion - because a state folder is flat by construction
+(`FlatName` turns `0:/shared1/TWLCFG0.dat` into `0__shared1_TWLCFG0.dat`). A recipe *folder* inside a
+state folder would be the first subdirectory in the tree, and it would be lost at the first backup.
+One file survives both without a line of code.
+
+**The identity is derived, never assigned.** It is a hash of the entries the recipe names, read out of
+the *image* rather than the recipe, and cached in `dsi\identities.txt` on size and write time. Three
+alternatives died against this: nothing is written inside the NAND, so there is no foreign directory
+whose failure mode would be an image that no longer boots; it cannot go stale, unlike a token beside
+the file, which survives the file being swapped; and two byte-identical consoles are correctly
+recognised as the same, where a random id would have forced a pointless rebuild.
+
+At launch it is one string comparison. When it does not match, the original is looked for among the
+dumps - by name, then by size, then by hash - the console is rebuilt into `dsi\bases\<identity>.bin`,
+**and the rebuild is checked** against the identity it was supposed to produce. A rebuilt base counts
+as locked by construction; offering it for setup would change its identity and break the very save
+being recovered.
+
+**When the original cannot be found, the launch is refused**, with a window naming the file, its size
+and its sha256. Starting would begin a new game on top of an existing save, and the next capture would
+write that over it. What no recipe can do is cross consoles: a NAND is encrypted with its own
+console's id, so "the same original" means literally the same file - which the window says rather than
+leaving somebody to discover it.
+
+A save made before any of this existed carries no record, and gets no opinion: the current base is
+used, exactly as before, and the recipe is attached at the next capture. The same rule `work.sum`
+follows.
+
 Reuse is allowed only when nothing could have made the image stale - it exists, a marker says it
 holds this title built from this ROM (path, length and write time, not a hash: this runs on every
 launch and a DSiWare `.nds` is several megabytes), the walk of that install is still there, and

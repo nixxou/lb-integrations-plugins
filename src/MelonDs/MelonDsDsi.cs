@@ -340,9 +340,42 @@ namespace LbIntegrations.MelonDs
 
                 // The two are in step again, so the receipt is rewritten to say so.
                 MelonDsWorkSum.Write(layout, titleId);
+
+                // And the save takes a copy of the recipe for the base it was made on, so it can
+                // rebuild that base later from the user's pristine dump. Two small files; the base
+                // they describe is named in the marker, fifth field.
+                CarryBase(layout, titleId);
+
                 Log.Verbose("captured " + kept + " file(s) of state for " + titleId);
             }
             catch (Exception ex) { Log.Warn("could not capture the working NAND", ex); }
+        }
+
+        /// <summary>Copy the recipe and record of whatever base this image was built on into the
+        /// title's state folder, so the save carries them wherever it goes.
+        ///
+        /// SILENT WHEN THERE IS NOTHING TO CARRY. A base locked before any of this existed has no
+        /// recipe yet; the save is then exactly what it used to be, and the catch-up at the next
+        /// launch fixes it.</summary>
+        private static void CarryBase(MelonDsLayout layout, string titleId)
+        {
+            try
+            {
+                var parts = MarkerParts(layout);
+                if (parts == null || parts.Length != 5) return;
+
+                var baseImage = parts[4];
+                if (string.IsNullOrWhiteSpace(baseImage) || !MelonDsBase.Described(baseImage)) return;
+
+                var stateDir = StateDirFor(layout, titleId);
+                if (stateDir == null || !Directory.Exists(stateDir)) return;
+
+                File.Copy(MelonDsBase.RecipeFor(baseImage),
+                          Path.Combine(stateDir, MelonDsBase.RecipeInState), overwrite: true);
+                File.Copy(MelonDsBase.RecordFor(baseImage),
+                          Path.Combine(stateDir, MelonDsBase.RecordInState), overwrite: true);
+            }
+            catch (Exception ex) { Log.Verbose("could not carry the base into the save - " + ex.Message); }
         }
 
         private static void Cleanup(string path)

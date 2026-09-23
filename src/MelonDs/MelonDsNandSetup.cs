@@ -68,6 +68,13 @@ namespace LbIntegrations.MelonDs
             try
             {
                 if (string.IsNullOrWhiteSpace(nandPath)) return NandSetup.Locked;
+
+                // A BASE WE REBUILT IS CONFIGURED BY CONSTRUCTION. It has no .lock beside it, so the
+                // test below would call it NeverUsed and open the first-use window - asking somebody
+                // to configure a console that is already configured. Worse, doing so would change
+                // its identity and break the very save that was being recovered.
+                if (MelonDsBase.IsArchive(nandPath)) return NandSetup.Locked;
+
                 if (File.Exists(BakFor(nandPath))) return NandSetup.Interrupted;
                 return File.Exists(LockFor(nandPath)) ? NandSetup.Locked : NandSetup.NeverUsed;
             }
@@ -126,7 +133,7 @@ namespace LbIntegrations.MelonDs
             var verdict = MelonDsDialog.Ask("melonDS - is this NAND set up?",
                                             Confirmation(name),
                                             new[] { "Yes, lock it", "No, put it back" });
-            Settle(nand.Path, verdict);
+            Settle(layout, nand.Path, verdict);
             return true;
         }
 
@@ -141,7 +148,7 @@ namespace LbIntegrations.MelonDs
                                                    "Open melonDS again",
                                                    "Put the copy back" });
 
-            if (answer == 0) { Settle(nand.Path, 0); return false; }
+            if (answer == 0) { Settle(layout, nand.Path, 0); return false; }
 
             if (answer == 1)
             {
@@ -149,11 +156,11 @@ namespace LbIntegrations.MelonDs
                 var verdict = MelonDsDialog.Ask("melonDS - is this NAND set up?",
                                                 Confirmation(name),
                                                 new[] { "Yes, lock it", "No, put it back" });
-                Settle(nand.Path, verdict);
+                Settle(layout, nand.Path, verdict);
                 return true;
             }
 
-            if (answer == 2) { Settle(nand.Path, 1); return true; }
+            if (answer == 2) { Settle(layout, nand.Path, 1); return true; }
 
             Log.Info(name + " is still half set up; leaving " + name + BakSuffix + " where it is");
             return false;
@@ -250,7 +257,7 @@ namespace LbIntegrations.MelonDs
 
         /// <summary>The copy becomes the lock, or the copy goes back. <paramref name="verdict"/> is
         /// the button index: 0 yes, 1 no, anything else no answer at all.</summary>
-        private static void Settle(string nandPath, int verdict)
+        private static void Settle(MelonDsLayout layout, string nandPath, int verdict)
         {
             var bak = BakFor(nandPath);
             var lockFile = LockFor(nandPath);
@@ -264,6 +271,12 @@ namespace LbIntegrations.MelonDs
                     if (File.Exists(bak)) File.Move(bak, lockFile);
                     else File.WriteAllText(lockFile, "");   // no copy to keep; the marker still matters
                     Log.Info(name + " is set up and locked. It will not be asked about again.");
+
+                    // THE ONE MOMENT BOTH IMAGES EXIST. The pristine dump is now the .lock and the
+                    // configured one is the NAND itself, so the difference between them - everything
+                    // that makes this console THIS console - can be written down. From here on a save
+                    // made on it can rebuild it from the dump alone. See MelonDsBase.
+                    Describe(layout, nandPath);
                     return;
                 }
 
@@ -286,6 +299,33 @@ namespace LbIntegrations.MelonDs
                 Log.Warn("could not finish the setup of " + name + "; " + Path.GetFileName(bak)
                          + " is still there and holds the image as it was", ex);
             }
+        }
+
+        /// <summary>Write the recipe and the record beside a locked NAND. Safe to call on one that
+        /// already has them - it says so and does nothing.</summary>
+        public static bool Describe(MelonDsLayout layout, string nandPath)
+        {
+            try
+            {
+                if (layout == null || nandPath == null) return false;
+                if (MelonDsBase.Described(nandPath)) return true;
+
+                var original = LockFor(nandPath);
+                if (!File.Exists(original))
+                {
+                    Log.Verbose(Path.GetFileName(nandPath) + " has no .lock beside it, so there is no "
+                                + "pristine dump to measure its console setup against");
+                    return false;
+                }
+
+                var bios7 = MelonDsBios.Find(layout, MelonDsBios.DsiBios7);
+                if (bios7 == null) return false;
+
+                if (MelonDsBase.MakeRecipe(original, nandPath, bios7, out var error)) return true;
+                Log.Verbose("could not describe " + Path.GetFileName(nandPath) + " - " + error);
+                return false;
+            }
+            catch (Exception ex) { Log.Warn("could not describe a NAND", ex); return false; }
         }
 
         // ── what the windows say ─────────────────────────────────────────────
