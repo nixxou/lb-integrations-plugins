@@ -17,6 +17,7 @@
 using System;
 using System.IO;
 using System.Text;
+using LbIntegrations.Dsi;
 
 namespace LbIntegrations.NoGba
 {

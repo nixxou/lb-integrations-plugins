@@ -9,6 +9,11 @@
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
+    <!-- THE PLUGIN BRINGS ITS OWN WINDOWS, because the LaunchBox SDK has no message API of any
+         kind. The DSi flow needs to say three things nobody should discover from a log file: that a
+         dump has no console yet, whether the setup worked, and that a save's console has gone
+         missing. See src\Shared.Dsi\DsiDialog.cs. -->
+    <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>NoGba</AssemblyName>
     <RootNamespace>LbIntegrations.NoGba</RootNamespace>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
@@ -19,6 +24,17 @@
          point of Private=false, so the warning is noise. -->
     <MSBuildWarningsAsMessages>MSB3277</MSBuildWarningsAsMessages>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- THE SHARED DSi ENGINE, compiled in rather than referenced. The machinery between a user's
+         NAND dump and a DSiWare save talks to the image, not to the emulator - measured, a console
+         built by the melonDS side boots under no$gba, and the walk after a session finds the same
+         set of files. So it lives once, in src\Shared.Dsi, and both plugins compile it in. ILRepack
+         still folds everything into one NoGba.dll, so nothing about deployment changes.
+         THIS IS WHY THIS PROJECT IS GPL-3.0: the engine P/Invokes melonds-nand.dll, which is built
+         from melonDS sources. See THIRD-PARTY.md. -->
+    <Compile Include="..\Shared.Dsi\**\*.cs" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- Reference the SDK but DON'T copy it: the host loads the plugin into ITS assembly load

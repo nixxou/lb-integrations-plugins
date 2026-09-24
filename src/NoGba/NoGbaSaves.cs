@@ -27,6 +27,7 @@ using System.Collections.Generic;
 using System.IO;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
+using LbIntegrations.Dsi;
 
 namespace LbIntegrations.NoGba
 {

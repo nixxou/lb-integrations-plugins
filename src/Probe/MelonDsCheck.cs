@@ -950,7 +950,7 @@ namespace LbIntegrations.Probe
                 // The line that says a file was looked at is a Verbose one - it is per-candidate
                 // chatter and belongs behind the trace marker. So the marker is turned on for the
                 // length of this one call rather than the line being promoted to the real log.
-                var nands = TypeIn("MelonDsBios").GetMethod("Nands", BindingFlags.Public | BindingFlags.Static);
+                var nands = TypeIn("DsiDumps").GetMethod("Nands", BindingFlags.Public | BindingFlags.Static);
                 bool wasTracing = Tracing(true);
                 long mark = LogLength();
                 Call(nands, new object[] { layout, bios7 });
@@ -2087,7 +2087,7 @@ namespace LbIntegrations.Probe
             Console.WriteLine();
             Console.WriteLine("  -- two NAND dumps of the same region");
 
-            var steadiest = TypeIn("MelonDsBios")?.GetMethod("Steadiest",
+            var steadiest = TypeIn("DsiDumps")?.GetMethod("Steadiest",
                                 BindingFlags.Public | BindingFlags.Static);
             if (steadiest == null)
             { Console.WriteLine("    no Steadiest to call"); return false; }

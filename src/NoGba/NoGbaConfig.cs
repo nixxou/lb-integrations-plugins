@@ -24,6 +24,7 @@
 
 using System;
 using System.Collections.Generic;
+using LbIntegrations.Dsi;
 
 namespace LbIntegrations.NoGba
 {

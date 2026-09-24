@@ -22,6 +22,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using LbIntegrations.Dsi;
 
 namespace LbIntegrations.NoGba
 {
@@ -80,7 +81,37 @@ namespace LbIntegrations.NoGba
                 What = "DS firmware",
                 AlsoKnownAs = new[] { "firmware.bin" },
             },
+
+            // THE TWO DSi HALVES, and they are not optional the way the four above are. Without
+            // them no$gba cannot enter DSi mode at all, so a DSiWare launch stops before it starts
+            // rather than quietly running as a DS. Measured: with these two in place and
+            // NDS Mode/Colors set, no$gba boots the DSi menu out of our own eMMC image.
+            //
+            // gbatek says a DSi BIOS dump is "only 66% dumpable" - the lower halves come from
+            // exploits and the rest is zero-filled - so 64 KB each is what a good dump looks like,
+            // not a full chip.
+            new BiosFile
+            {
+                OurName = "biosdsi7.bin", TheirName = "BIOSDSI7.ROM", Size = 64 * 1024,
+                What = "DSi ARM7 BIOS",
+                AlsoKnownAs = new[] { "dsi_bios7.bin", "bios7i.bin" },
+            },
+            new BiosFile
+            {
+                OurName = "biosdsi9.bin", TheirName = "BIOSDSI9.ROM", Size = 64 * 1024,
+                What = "DSi ARM9 BIOS",
+                AlsoKnownAs = new[] { "dsi_bios9.bin", "bios9i.bin" },
+            },
         };
+
+        /// <summary>Everywhere a NAND dump may be, best first. The same folder melonDS reads, which
+        /// is what lets the two emulators share one set of dumps while each keeps its own
+        /// consoles.</summary>
+        public static IEnumerable<string> SearchFolders(NoGbaLayout layout)
+        {
+            var dir = SourceDir(layout);
+            if (dir != null) yield return dir;
+        }
 
         /// <summary>The folder the user's copies are read from, absolute and normalised so a message
         /// names G:\...\RetroArch\system rather than G:\...\no$gba\..\RetroArch\system.</summary>

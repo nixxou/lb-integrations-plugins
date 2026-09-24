@@ -27,6 +27,7 @@
 using System;
 using System.IO;
 using System.Net.Http;
+using LbIntegrations.Dsi;
 
 namespace LbIntegrations.NoGba
 {

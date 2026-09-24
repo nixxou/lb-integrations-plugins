@@ -610,7 +610,7 @@ namespace LbIntegrations.MelonDs
                     var bios7 = MelonDsBios.Find(layout, MelonDsBios.DsiBios7)
                                 ?? AbsoluteTo(layout.ConfigDir, ValueOf(layout, "BIOS7Path"));
                     var declared = MelonDsBios.Dir(layout);
-                    foreach (var dump in MelonDsBios.Nands(layout, bios7))
+                    foreach (var dump in DsiDumps.Nands(layout, bios7))
                     {
                         // ONLY A DUMP IN THE DECLARED FOLDER IS NAMED HERE. One sitting elsewhere
                         // still works - every search folder is looked in at launch - but naming it
@@ -789,7 +789,7 @@ namespace LbIntegrations.MelonDs
             var missing = EnsureDsiFiles(layout);
 
             var bios7 = AbsoluteTo(layout.ConfigDir, ValueOf(layout, "BIOS7Path"));
-            var dump = MelonDsBios.NandFor(layout, regions, bios7, out var whyNoNand);
+            var dump = DsiDumps.NandFor(layout, regions, bios7, out var whyNoNand);
 
 
             // A base.bin from the previous layout still counts, so an install that worked yesterday

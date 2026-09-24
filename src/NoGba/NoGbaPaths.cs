@@ -20,6 +20,7 @@
 
 using System;
 using System.IO;
+using LbIntegrations.Dsi;
 
 namespace LbIntegrations.NoGba
 {
@@ -42,6 +43,14 @@ namespace LbIntegrations.NoGba
 
         /// <summary>For the log, so a surprising layout explains itself.</summary>
         public string Reason;
+
+        /// <summary>&lt;install&gt;\DSi-1.mmc - the eMMC image no$gba reads, under the fixed name it
+        /// insists on. This is the WORKING image, rebuilt at every DSiWare launch; the consoles it
+        /// is built from live in dsi\ like melonDS's do. See NoGbaHost.</summary>
+        public string MmcFile;
+
+        /// <summary>A layout IS a host, as far as the shared DSi engine is concerned.</summary>
+        public static implicit operator DsiHost(NoGbaLayout layout) => NoGbaHost.For(layout);
     }
 
     internal static class NoGbaPaths
@@ -118,6 +127,7 @@ namespace LbIntegrations.NoGba
 
                 layout.IniFile = Path.Combine(layout.InstallDir, IniName);
                 layout.BatteryDir = Path.Combine(layout.InstallDir, BatteryDirName);
+            layout.MmcFile    = Path.Combine(layout.InstallDir, NoGbaHost.MmcName);
                 layout.SnapDir = Path.Combine(layout.InstallDir, SnapDirName);
                 layout.Reason = "beside the executable, which is the only layout no$gba has";
                 return layout;

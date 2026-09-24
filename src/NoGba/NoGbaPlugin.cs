@@ -28,6 +28,7 @@ using System.Linq;
 using System.Reflection;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
+using LbIntegrations.Dsi;
 
 namespace LbIntegrations.NoGba
 {
