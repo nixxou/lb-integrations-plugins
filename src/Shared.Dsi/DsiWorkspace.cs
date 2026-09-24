@@ -73,6 +73,11 @@ namespace LbIntegrations.Dsi
         public const string BaseName = "base.bin";
         public const string WorkName = "work.bin";
         public const string WorkTitleName = "work.title";
+
+        /// <summary>Left beside the working image when a session could not be taken out of it in
+        /// time. It says which title is still in there and since when, so a save that has not
+        /// appeared yet is a stated fact rather than a silence.</summary>
+        public const string WorkPendingName = "work.pending";
         public const string SaveName = "public.sav";
 
         /// <summary>The per-title NAND the first design made. Nothing writes one any more; it is
@@ -463,6 +468,17 @@ namespace LbIntegrations.Dsi
         /// <summary>How long the wait stays silent. Ten seconds of nothing is a pause; three minutes
         /// of nothing is indistinguishable from a hang.</summary>
         internal static TimeSpan AnnounceAfter = TimeSpan.FromSeconds(10);
+
+        /// <summary>Paid every time, before the image is even looked at. The emulator has just been
+        /// told to close and "the process is gone" is not the same as "the last write reached the
+        /// disk"; a second of doing nothing costs the person who just quit their game almost
+        /// nothing and removes the whole class of half-written reads.</summary>
+        internal static TimeSpan SettleFloor = TimeSpan.FromSeconds(1);
+
+        /// <summary>How long we are willing to wait for the image to fall silent before giving up
+        /// and leaving it to the lazy path. Short on purpose: this runs while somebody is looking
+        /// at a frontend that has just come back, not while a game is starting.</summary>
+        internal static TimeSpan SettleBudget = TimeSpan.FromSeconds(5);
 
         /// <summary>Hold a launch back until nothing else has the working image. Answers false when
         /// the launch should be abandoned instead.
@@ -911,6 +927,105 @@ namespace LbIntegrations.Dsi
         /// filesystem, far too much to do on every page render; so a capture happens only when this
         /// title is the one work.bin holds AND melonDS has written to it since the last one. In the
         /// steady state this is two calls to File.GetLastWriteTimeUtc and nothing else.</summary>
+        /// <summary>Take the session out of the image NOW, as soon as the emulator has let go.
+        ///
+        /// WHY THIS EXISTS. Capturing was purely lazy: the difference came out when the image had to
+        /// serve another title, or when a host asked for the game's saves. That is safe - it never
+        /// reads an image somebody is still writing - but it means finishing a game and seeing
+        /// nothing, with no way to tell "not yet" from "lost". This does the same work at the moment
+        /// it is expected, and keeps the lazy path as the fallback it always was.
+        ///
+        /// WHAT IT WAITS FOR, in order. A floor of SettleFloor, always, with nothing measured
+        /// during it. Then the emulator's process being gone - for no$gba that is the only signal
+        /// there is, since it never holds the image open, measured. Then the image itself being
+        /// quiet: the same length and the same write time twice over, a quarter second apart.
+        ///
+        /// AND IF IT IS NOT QUIET IN TIME, nothing is read. A marker is left beside the image
+        /// naming the title, the lazy path finishes the job the next time anything asks, and the
+        /// log says so. Reading a NAND that is still being written is what produced destructive
+        /// saves before, and no amount of impatience is worth that.</summary>
+        public static bool CaptureOnExit(DsiHost layout, string titleId, string bios7Path)
+        {
+            try
+            {
+                var image = WorkPath(layout);
+                if (image == null || string.IsNullOrWhiteSpace(titleId)) return false;
+                if (!File.Exists(image)) return false;
+
+                var deadline = DateTime.UtcNow + SettleBudget;
+                Thread.Sleep(SettleFloor);
+
+                while (true)
+                {
+                    if (!layout.Running() && Quiet(image)) break;
+                    if (DateTime.UtcNow >= deadline)
+                    {
+                        MarkPending(layout, titleId);
+                        DsiLog.Info("the image was still busy " + (int)SettleBudget.TotalSeconds
+                                    + "s after " + titleId + " closed; its session stays in there "
+                                    + "and comes out the next time anything asks");
+                        return false;
+                    }
+                    Thread.Sleep(250);
+                }
+
+                CaptureWork(layout, bios7Path, onlyTitle: titleId);
+                ClearPending(layout);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DsiLog.Warn("could not take the session out of the image on exit", ex);
+                MarkPending(layout, titleId);
+                return false;
+            }
+        }
+
+        /// <summary>The same length and the same write time twice, a quarter second apart. Crude,
+        /// and enough: an emulator flushing a NAND changes one or the other.</summary>
+        private static bool Quiet(string image)
+        {
+            try
+            {
+                var a = new FileInfo(image);
+                var lenA = a.Length;
+                var whenA = a.LastWriteTimeUtc;
+                Thread.Sleep(250);
+                var b = new FileInfo(image);
+                return b.Exists && b.Length == lenA && b.LastWriteTimeUtc == whenA;
+            }
+            catch { return false; }
+        }
+
+        private static string PendingPath(DsiHost layout)
+        {
+            var dir = DsiDir(layout);
+            return dir == null ? null : Path.Combine(dir, WorkPendingName);
+        }
+
+        private static void MarkPending(DsiHost layout, string titleId)
+        {
+            try
+            {
+                var path = PendingPath(layout);
+                if (path == null) return;
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                Atomic.WriteBytes(path, System.Text.Encoding.UTF8.GetBytes(
+                    titleId + "\t" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")));
+            }
+            catch { }
+        }
+
+        private static void ClearPending(DsiHost layout)
+        {
+            try
+            {
+                var path = PendingPath(layout);
+                if (path != null && File.Exists(path)) File.Delete(path);
+            }
+            catch { }
+        }
+
         public static string RefreshSave(DsiHost layout, string titleId, string bios7Path)
         {
             try

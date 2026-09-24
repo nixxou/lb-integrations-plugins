@@ -34,7 +34,7 @@ using LbIntegrations.Lbip;
 
 namespace LbIntegrations.NoGba
 {
-    public partial class NoGbaPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
+    public partial class NoGbaPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource, IGameLaunchingPlugin
     {
         /// <summary>Spelled as Platforms.xml spells them - read out of the file rather than typed
         /// from memory. There is no DSi platform in LaunchBox's metadata, which is a problem for a
@@ -166,6 +166,13 @@ namespace LbIntegrations.NoGba
         {
             try
             {
+                // EVERY EVENT TYPE, ONCE. The three below are the ones acted on; the rest used to
+                // be dropped in silence, so if the host announces a game ending anywhere it is
+                // here that it would have gone unnoticed. Once per type, because some of these
+                // arrive on every selection change.
+                if (_saidEvent.Add(eventType ?? "(null)"))
+                    Log.Info("host event seen: " + eventType);
+
                 if (eventType != SystemEventTypes.PluginInitialized
                     && eventType != SystemEventTypes.LaunchBoxStartupCompleted
                     && eventType != SystemEventTypes.BigBoxStartupCompleted) return;
@@ -562,11 +569,18 @@ namespace LbIntegrations.NoGba
                     if (header.Known && header.IsDSiWare)
                     {
                         if (!NoGbaDsi.Prepare(layout, header, romPath))
+                        {
+                            NotPlaying();
                             return new PrepareForLaunchResponse(success: false);
+                        }
+                        // Arms the watcher, and remembers what ran for a host that bothers to say
+                // the game has ended. LaunchBox does not - measured.
+                        Playing(NoGbaHost.For(layout), header.TitleId, DsiBios7(layout));
                     }
                     else
                     {
                         NoGbaDsi.SetMode(layout, dsi: false);
+                        NotPlaying();
                     }
                 }
 
@@ -653,5 +667,118 @@ namespace LbIntegrations.NoGba
         {
             try { return f(); } catch { return default; }
         }
+
+        // -- the game has closed ---------------------------------------------
+
+        /// <summary>What was playing, remembered at launch because OnGameExited is told nothing.
+        /// Static: the host constructs a plugin more than once - measured - and only one game runs
+        /// at a time.
+        ///
+        /// KEPT FOR A HOST THAT SAYS SOMETHING. LaunchBox 14 is not one: measured over a full
+        /// session, it raised exactly one event - PluginInitialized - and called none of
+        /// IGameLaunchingPlugin's three methods. The session comes out of the image because
+        /// WatchTheEmulator sees the process go, not because anybody told us.</summary>
+        private static readonly HashSet<string> _saidEvent =
+            new HashSet<string>(StringComparer.Ordinal);
+
+        private static string _playingTitleId;
+        private static DsiHost _playingHost;
+        private static string _playingBios7;
+
+        internal static void Playing(DsiHost host, string titleId, string bios7)
+        {
+            _playingHost = host;
+            _playingTitleId = titleId;
+            _playingBios7 = bios7;
+            WatchTheEmulator(host, titleId, bios7);
+        }
+
+        internal static void NotPlaying() { _playingHost = null; _playingTitleId = null; _playingBios7 = null; }
+
+        // Traced, all three: the capture on exit never fired once and nothing said whether the
+        // host was calling this interface at all, calling it and stopping before the exit, or not
+        // reaching the plugin. Three lines answer that; guessing did not.
+        public void OnBeforeGameLaunching(IGame game, IAdditionalApplication app, IEmulator emulator)
+            => Log.Info("OnBeforeGameLaunching");
+
+        public void OnAfterGameLaunched(IGame game, IAdditionalApplication app, IEmulator emulator)
+            => Log.Info("OnAfterGameLaunched");
+
+        /// <summary>Take the session out of the working image now that the game has closed.
+        ///
+        /// NEVER CALLED BY LAUNCHBOX, measured. It is left in because it costs nothing and another
+        /// host may well raise it; what actually works is WatchTheEmulator below.
+        ///
+        /// It waits - a floor first, then for the emulator to be gone and the image to fall silent
+        /// - and gives up quickly, because this runs while somebody is watching a frontend come
+        /// back. Giving up costs nothing: the lazy path still has the session and a marker beside
+        /// the image says so. See DsiWorkspace.CaptureOnExit.
+        ///
+        /// ON A BACKGROUND THREAD, because the host is calling us and waiting: even five seconds of
+        /// a frozen window is five seconds too many for something nobody asked to watch.</summary>
+        public void OnGameExited()
+        {
+            Log.Info("OnGameExited");
+            var host = _playingHost;
+            var titleId = _playingTitleId;
+            var bios7 = _playingBios7;
+            NotPlaying();
+            if (host == null || titleId == null) return;
+
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                try
+                {
+                    if (DsiWorkspace.CaptureOnExit(host, titleId, bios7))
+                        Log.Info("the session of " + titleId + " came out of the image as the game closed");
+                }
+                catch (Exception ex) { Log.Warn("capture on exit", ex); }
+            });
+        }
+
+
+        /// <summary>Watch the emulator ourselves, and say in the log when it appears and when it
+        /// goes. THIS IS THE SIGNAL THAT DEPENDS ON NOBODY: the host's OnGameExited has never once
+        /// been seen firing, and until it is, the only thing that certainly knows the program has
+        /// ended is us looking at the process list.
+        ///
+        /// It is a trace first and a capture second. If it turns out the host never tells us
+        /// anything, this becomes the way the session comes out of the image.</summary>
+        private static void WatchTheEmulator(DsiHost host, string titleId, string bios7)
+        {
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                try
+                {
+                    var armed = DateTime.UtcNow;
+                    var appeared = false;
+
+                    // Up to two minutes for it to show up. A launch the host refuses, or a game
+                    // somebody cancels, must not leave a thread polling for ever.
+                    while ((DateTime.UtcNow - armed).TotalSeconds < 120)
+                    {
+                        if (host.Running()) { appeared = true; break; }
+                        System.Threading.Thread.Sleep(500);
+                    }
+                    if (!appeared)
+                    {
+                        Log.Info("watcher: the emulator never appeared within two minutes of the launch");
+                        return;
+                    }
+                    Log.Info("watcher: the emulator is running");
+
+                    var started = DateTime.UtcNow;
+                    while (host.Running()) System.Threading.Thread.Sleep(500);
+                    Log.Info("watcher: the emulator is gone after "
+                             + (int)(DateTime.UtcNow - started).TotalSeconds + "s - this is the end of"
+                             + " the program, whatever the host does or does not say");
+
+                    if (DsiWorkspace.CaptureOnExit(host, titleId, bios7))
+                        Log.Info("watcher: the session of " + titleId + " came out of the image");
+                }
+                catch (Exception ex) { Log.Warn("watcher", ex); }
+            });
+        }
+
     }
 }
