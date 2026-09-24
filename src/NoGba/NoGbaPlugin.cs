@@ -570,14 +570,20 @@ namespace LbIntegrations.NoGba
                     }
                 }
 
-                // If an archive reaches us here, the host did not unpack it - and no$gba is about to
-                // put up a modal box and wait. Said loudly, because the alternative is a launch that
-                // hangs with no explanation anywhere.
+                // An archive the host is NOT going to unpack, which is a launch that hangs with no
+                // explanation anywhere: no$gba cannot open one and answers with a modal box.
+                //
+                // AND ONLY THEN. The path seen here is the game's, in the library, so it is an
+                // archive whenever the library holds one - which says nothing about what the host
+                // will actually hand over. Warning on that alone sent somebody to turn on a setting
+                // that was already on, over a launch where the host had unpacked correctly. The
+                // emulator's own AutoExtract is the thing that decides, so it is what is asked.
                 var rom = Safe(() => args?.GameBeingLaunched?.ApplicationPath);
-                if (NoGbaRoms.IsArchive(rom))
+                if (NoGbaRoms.IsArchive(rom) && !Safe(() => args.EmulatorBeingLaunched.AutoExtract))
                     Log.Warn("about to hand no$gba an archive (" + Path.GetFileName(rom ?? "")
-                             + "). It cannot open one: expect a \"Cartridge not found\" box. "
-                             + "Turn Auto-Extract on for this emulator in Edit Emulator.");
+                             + ") and Auto-Extract is off for this emulator. It cannot open one: "
+                             + "expect a \"Cartridge not found\" box. Turn Auto-Extract on in Edit "
+                             + "Emulator.");
             }
             catch (Exception ex) { Log.Warn("PrepareEmulatorForLaunch", ex); }
 
