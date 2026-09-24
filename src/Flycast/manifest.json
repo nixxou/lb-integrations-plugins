@@ -2,7 +2,7 @@
   "SchemaVersion": 1,
   "PluginId": "9d2eed8a-4647-46b4-8495-ca776ce47036",
   "UserId": 0,
-  "Name": "Flycast Integration",
+  "Name": "Nixx-Flycast",
   "Developer": "nixxou",
   "Description": "Download, update, BIOS checks, RetroAchievements and save management for the Flycast emulator (Sega Dreamcast, Naomi, Naomi 2, Atomiswave).",
   "Credits": "Many thanks to the developers of Flycast!",

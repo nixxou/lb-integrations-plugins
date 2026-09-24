@@ -107,15 +107,41 @@ held for as long as it takes to copy 520 bytes out of it, then dropped.
 ## Installing
 
 ```
-.\deploy-dev.ps1                      # builds, copies into G:\LB1326, verifies by hash
+.\build-release.ps1                   # the five plugins -> release\NixxIntegrations.exe
+```
+
+One file, two buttons, and you point it at your `LaunchBox.exe`. It is self-contained, so the
+machine needs nothing installed - not even .NET. It picks `Local\Plugins\` on LaunchBox 14 and
+`Plugins\` below that, removes the folders an earlier version of this pack left under its old
+names, carries a plugin's tick in `LiteBox.ini` over to its new folder name, and verifies every
+file it writes by hash rather than by "the copy did not throw".
+
+It installs **plugins only**. It never writes to `Data\Emulators.xml`, never creates or changes an
+emulator entry, and never touches a NAND dump or a save. Uninstalling removes the five folders and
+leaves the plugins' settings under `Local\Plugins\.data\` alone.
+
+There is a command form too, which is how it is tested and how it can be scripted:
+
+```
+NixxIntegrations.exe --status    "G:\LB1326"
+NixxIntegrations.exe --install   "G:\LB1326"
+NixxIntegrations.exe --uninstall "G:\LB1326"
+```
+
+### While developing
+
+```
+.\deploy-dev.ps1                      # builds Ppsspp, copies into G:\LB1326, verifies by hash
 .\deploy-dev.ps1 -Plugin Xenia
+.\deploy-dev.ps1 -All                 # all five, same root
 .\deploy-dev.ps1 -LbRoot 'G:\LB'
 ```
 
 It deploys the DLL **and** `src\<Plugin>\manifest.json` into `Local\Plugins\`, and verifies both by
 hash. The manifest is not optional there: LaunchBox 14 loads nothing without one and says nothing
 about it - a plugin can sit in a plugin folder for a day, never run, write no log line, and simply
-have no install option in the Add Emulator window.
+have no install option in the Add Emulator window. It puts a plugin in the same folder the installer
+would, from the same table.
 
 Or by hand. LaunchBox 14 reads three plugin roots and the choice matters:
 
@@ -126,7 +152,25 @@ Or by hand. LaunchBox 14 reads three plugin roots and the choice matters:
 | `Plugins\` | the legacy root, no manifest needed | works, but is not the managed location |
 
 So: `<LaunchBox>\Local\Plugins\<Name>\<Plugin>.dll` plus its `manifest.json`. Before LaunchBox 14,
-`Plugins\` is the only option.
+`Plugins\` is the only option. `<Name>` is the folder from this table, and it is also what
+**Options ▸ Plugins** shows:
+
+| project | folder, and manifest `Name` | the row it publishes to LaunchBox's catalogue |
+|---|---|---|
+| `src/Flycast` | `Nixx-Flycast` | `Nixx-Flycast` |
+| `src/MelonDs` | `Nixx-melonDS` | `Nixx-melonDS` |
+| `src/NoGba` | `Nixx-no$gba` | `Nixx-no$gba` |
+| `src/Ppsspp` | `Nixx-PPSSPP` | `Nixx-PPSSPP` |
+| `src/Xenia` | `Nixx-Xenia` | `Nixx-Xenia` |
+
+The prefix is not decoration. `Emulators."Name"` is that table's primary key, so one name can only
+ever mean one row - and LaunchBox already ships a `PPSSPP` and a `Xenia`. Ours sit **beside**
+theirs rather than over them: two entries in Add Emulator, theirs plain and ours carrying the
+integration. For Flycast, melonDS and no$gba there is nothing of theirs to sit beside; LaunchBox's
+catalogue has no row for any of the three.
+
+The assemblies keep their own names (`MelonDs.dll`, not `NixxMelonDs.dll`) and so do the plugin
+GUIDs, which is what keeps an existing install's settings where they were.
 
 Plugins are loaded once at start-up, so restart the frontend. Under LiteBox, tick the plugin in
 **Options ▸ Plugins** the first time; it is not auto-enabled, deliberately, because the name that

@@ -7,7 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace LbIntegrations.Flycast
+namespace LbIntegrations.Lbip
 {
     /// <summary>One emulator a plugin wants LaunchBox to know about.</summary>
     internal sealed class LbipEmulatorRow

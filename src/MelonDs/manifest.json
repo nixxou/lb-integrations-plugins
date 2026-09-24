@@ -2,7 +2,7 @@
   "SchemaVersion": 1,
   "PluginId": "1475cdb5-40a4-4149-a18f-e2cc0fa9fd33",
   "UserId": 0,
-  "Name": "melonDS Integration",
+  "Name": "Nixx-melonDS",
   "Developer": "nixxou",
   "Description": "Download, update and save management for the melonDS emulator (Nintendo DS).",
   "Credits": "Many thanks to the developers of melonDS!",

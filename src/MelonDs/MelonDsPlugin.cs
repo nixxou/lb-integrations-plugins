@@ -21,6 +21,7 @@ using System.Reflection;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 using LbIntegrations.Dsi;
+using LbIntegrations.Lbip;
 
 namespace LbIntegrations.MelonDs
 {
@@ -75,12 +76,24 @@ namespace LbIntegrations.MelonDs
             // name means "the emulator is running". See MelonDsHost.
             MelonDsHost.Announce();
 
+            // THE SHARED ROW INJECTION LEARNS WHOSE PLUGIN IT IS IN. It is compiled into all
+            // five plugins and cannot tell on its own which log file to write to, nor which kill
+            // switches to read. See LbipLog.
+            LbipLog.Use(Log.Info, Log.Warn, Log.Disabled, () => Log.Tracing);
+
             // As early as possible: the patch only sees connections opened AFTER it is installed, and
             // LaunchBox reads its metadata the moment a window asks for it.
             LbipRowInjection.Install("com.nixxou.lbip.melonds", MetadataRows());
         }
 
-        public override string EmulatorName => "melonDS";
+        /// <summary>The name this pack publishes under, in one place so its three uses cannot
+        /// disagree: the row in LaunchBox's emulator catalogue, the entry Add Emulator offers, and
+        /// the title given to an emulator this plugin creates. The prefix says whose integration it
+        /// is - LaunchBox's catalogue knows no standalone DS
+        /// emulator at all, so ours is the only one there.</summary>
+        private const string PackName = "Nixx-melonDS";
+
+        public override string EmulatorName => PackName;
 
         /// <summary>What LaunchBox's emulator metadata should say about melonDS, published through the
         /// row injection rather than written into their database - see LbipRowInjection.
@@ -105,7 +118,7 @@ namespace LbIntegrations.MelonDs
 
             yield return new LbipEmulatorRow
             {
-                Name = "melonDS",
+                Name = PackName,
                 CommandLine = DefaultCommandLine,
                 ApplicableFileExtensions = extensions,
                 Url = "https://melonds.kuribo64.net/",
@@ -476,7 +489,7 @@ namespace LbIntegrations.MelonDs
             if (dm == null) return null;
 
             var emu = dm.AddNewEmulator();
-            emu.Title = "melonDS";
+            emu.Title = PackName;
             emu.ApplicationPath = MakeRelativeToLaunchBox(exePath);
             emu.CommandLine = DefaultCommandLine;
             EnsureHotkeyScripts(emu);

@@ -14,5 +14,6 @@ Direct calls won because reading a DSiWare save out of its NAND is something the
 drawing a page, not once per launch.
 
 **Nothing else in the repository is affected.** The Flycast, PPSSPP and Xenia plugins share no code
-with this one - the repository copies rather than links, as `docs/conception.md` explains - and they
-remain MIT.
+with this one. They do share `src/Shared.Lbip`, the code that publishes an emulator row to
+LaunchBox's catalogue, but that folder is this repository's own work and MIT like the rest of it -
+nothing in it goes near the NAND library. They remain MIT.

@@ -29,6 +29,7 @@ using System.Reflection;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 using LbIntegrations.Dsi;
+using LbIntegrations.Lbip;
 
 namespace LbIntegrations.NoGba
 {
@@ -61,12 +62,24 @@ namespace LbIntegrations.NoGba
             // name means "the emulator is running". See NoGbaHost.
             NoGbaHost.Announce();
 
+            // THE SHARED ROW INJECTION LEARNS WHOSE PLUGIN IT IS IN. It is compiled into all
+            // five plugins and cannot tell on its own which log file to write to, nor which kill
+            // switches to read. See LbipLog.
+            LbipLog.Use(Log.Info, Log.Warn, Log.Disabled, () => Log.Tracing);
+
             // As early as possible: the patch only sees connections opened AFTER it is installed,
             // and LaunchBox reads its metadata the moment a window asks for it.
             LbipRowInjection.Install(PluginId, MetadataRows());
         }
 
-        public override string EmulatorName => "no$gba";
+        /// <summary>The name this pack publishes under, in one place so its three uses cannot
+        /// disagree: the row in LaunchBox's emulator catalogue, the entry Add Emulator offers, and
+        /// the title given to an emulator this plugin creates. The prefix says whose integration it
+        /// is - LaunchBox has no no$gba row at all, so ours is the
+        /// only one there.</summary>
+        private const string PackName = "Nixx-no$gba";
+
+        public override string EmulatorName => PackName;
 
         /// <summary>What LaunchBox's emulator metadata should say about no$gba, published through the
         /// row injection rather than written into their database - see LbipRowInjection.
@@ -84,7 +97,7 @@ namespace LbIntegrations.NoGba
 
             yield return new LbipEmulatorRow
             {
-                Name = "no$gba",
+                Name = PackName,
                 CommandLine = DefaultCommandLine,
                 ApplicableFileExtensions = extensions,
                 Url = "https://problemkaputt.de/gba.htm",
@@ -384,7 +397,7 @@ namespace LbIntegrations.NoGba
                 var emu = dm.AddNewEmulator();
                 if (emu == null) return null;
 
-                emu.Title = label == null ? "no$gba" : "no$gba " + label;
+                emu.Title = label == null ? PackName : PackName + " " + label;
                 emu.ApplicationPath = MakeRelativeToLaunchBox(exePath);
                 emu.CommandLine = DefaultCommandLine;
                 emu.AutoExtract = true;          // see EnsureAutoExtract

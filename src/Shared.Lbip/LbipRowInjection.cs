@@ -1,9 +1,11 @@
 // Making LaunchBox read our emulator rows without writing a byte anywhere.
 //
 // LaunchBox's Add Emulator window builds its name list and its Associated Platforms grid from
-// LaunchBox.Metadata.db, where no standalone DS emulator exists at all: the one Nintendo DS row is
-// RetroArch with the desmume core. Without a row there the grid has nothing to narrow, and the
-// emulator looks like it covers every platform.
+// LaunchBox.Metadata.db. Several of the emulators this repository integrates are simply not in
+// it - there is no Flycast row while Demul, nullDC and Redream are all there, dead for years, and
+// no standalone DS emulator of any kind. And since this pack publishes under its own names, none of
+// its rows is ever in there. Without a row the grid has nothing to narrow, and the emulator looks
+// like it covers every platform.
 //
 // HOW IT WORKS. Two Harmony postfixes, on one method and its asynchronous twin:
 //
@@ -58,9 +60,12 @@
 // ExtendDB patches SqliteCommand.ExecuteReader in production and coexists with us regardless: it is
 // a different method, and its Harmony is its own file rather than merged.
 //
-// WE NEVER DOUBLE THE HOST. An emulator already present in LaunchBox's own metadata is left to them,
-// checked by name against their database. The day they ship a melonDS row, ours withdraws on its
-// own - see HostAlreadyKnows.
+// WE NEVER DOUBLE THE HOST. An emulator already present in LaunchBox's own metadata is left to
+// them, checked by name against their database. Since this pack publishes under its own "Nixx-"
+// names that check now answers no every time, and the duplicate is deliberate: the official PPSSPP
+// row and ours sit side by side, one of them carrying the integration. The check is kept because it
+// still holds against a database somebody has edited by hand, and because a row of ours must never
+// quietly shadow one of theirs - see HostAlreadyKnows.
 //
 // THE LIMIT, MEASURED. Only callers holding a DbCommand are covered, because only they go through
 // ExecuteDbDataReader; code calling SqliteCommand.ExecuteReader() on the concrete type reaches
@@ -83,9 +88,8 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using HarmonyLib;
-using LbIntegrations.Dsi;
 
-namespace LbIntegrations.MelonDs
+namespace LbIntegrations.Lbip
 {
     internal static class LbipRowInjection
     {
@@ -130,14 +134,15 @@ namespace LbIntegrations.MelonDs
                     //
                     //     %LOCALAPPDATA%\lb-integrations-plugins\no-metadata
                     //
-                    // and LaunchBox goes back to not knowing melonDS exists: no rows are added to any
-                    // query, the Add Emulator window has nothing to narrow, and every other part of
-                    // the plugin behaves exactly as it does now. Deleting the file restores it. This
+                    // and LaunchBox goes back to not knowing this pack's emulators exist: no rows are
+                    // added to any query, the Add Emulator window has nothing to narrow, and every
+                    // other part of the plugin behaves exactly as it does now. Deleting the file
+                    // restores it. This
                     // is here because "is it the metadata injection?" is a question worth being able
                     // to answer by measurement rather than by argument.
-                    if (Log.Disabled("no-metadata"))
+                    if (LbipLog.Disabled("no-metadata"))
                     {
-                        Log.Info("metadata injection DISABLED by the no-metadata marker");
+                        LbipLog.Info("metadata injection DISABLED by the no-metadata marker");
                         _installed = true;
                         return;
                     }
@@ -147,7 +152,7 @@ namespace LbIntegrations.MelonDs
                     {
                         // Another of our plugins patched first. Our rows are in the shared list it
                         // reads, so they will appear - it is only the patching we skip.
-                        Log.Info("already patched by " + owner + "; our rows go through the shared list");
+                        LbipLog.Info("already patched by " + owner + "; our rows go through the shared list");
                         _installed = true;
                         return;
                     }
@@ -158,10 +163,10 @@ namespace LbIntegrations.MelonDs
 
                     AppDomain.CurrentDomain.SetData(OwnerKey, pluginId);
                     _installed = true;
-                    Log.Info("row injection installed by " + pluginId);
+                    LbipLog.Info("row injection installed by " + pluginId);
                 }
             }
-            catch (Exception ex) { Log.Warn("could not install the row injection", ex); }
+            catch (Exception ex) { LbipLog.Warn("could not install the row injection", ex); }
         }
 
         /// <summary>Put our rows where every copy of this class can read them, skipping any emulator
@@ -191,7 +196,7 @@ namespace LbIntegrations.MelonDs
                 {
                     if (!known.Add(row.Name)) continue;
                     shared.AddRange(LbipRows.Encode(row));
-                    Log.Info("published \"" + row.Name + "\" to the shared row list");
+                    LbipLog.Info("published \"" + row.Name + "\" to the shared row list");
                 }
             }
         }
@@ -210,7 +215,7 @@ namespace LbIntegrations.MelonDs
             _commandType = AccessTools.TypeByName("Microsoft.Data.Sqlite.SqliteCommand");
             if (_connectionType == null || _commandType == null)
             {
-                Log.Info("Microsoft.Data.Sqlite is not loaded in this process - no metadata to extend");
+                LbipLog.Info("Microsoft.Data.Sqlite is not loaded in this process - no metadata to extend");
                 return false;
             }
 
@@ -221,7 +226,7 @@ namespace LbIntegrations.MelonDs
                 null, new[] { typeof(CommandBehavior) }, null);
             if (target == null)
             {
-                Log.Warn("SqliteCommand.ExecuteDbDataReader is not where we expect it - not patching");
+                LbipLog.Warn("SqliteCommand.ExecuteDbDataReader is not where we expect it - not patching");
                 return false;
             }
 
@@ -241,7 +246,7 @@ namespace LbIntegrations.MelonDs
             if (asyncTarget != null)
                 harmony.Patch(asyncTarget, postfix: new HarmonyMethod(
                     AccessTools.Method(typeof(LbipRowInjection), nameof(AfterExecuteReaderAsync))));
-            Log.Info("patched SqliteCommand.ExecuteDbDataReader"
+            LbipLog.Info("patched SqliteCommand.ExecuteDbDataReader"
                      + (asyncTarget != null ? " and ExecuteDbDataReaderAsync" : " (no async twin found)"));
 
             InstallTrace(harmony);
@@ -277,7 +282,7 @@ namespace LbIntegrations.MelonDs
         {
             try
             {
-                if (!Log.Tracing) return;
+                if (!LbipLog.Tracing) return;
 
                 var hook = new HarmonyMethod(AccessTools.Method(typeof(LbipRowInjection), nameof(TraceCommand)));
                 foreach (var name in new[] { "ExecuteReader", "ExecuteNonQuery" })
@@ -287,9 +292,9 @@ namespace LbIntegrations.MelonDs
                         harmony.Patch(m, prefix: hook);
 
                 _traceInstalled = true;
-                Log.Info("SQL trace ON (delete the \"trace\" marker to stop it)");
+                LbipLog.Info("SQL trace ON (delete the \"trace\" marker to stop it)");
             }
-            catch (Exception ex) { Log.Warn("could not install the SQL trace", ex); }
+            catch (Exception ex) { LbipLog.Warn("could not install the SQL trace", ex); }
         }
 
         /// <summary>Log a statement on its way through. Never touches the call.
@@ -308,7 +313,7 @@ namespace LbIntegrations.MelonDs
                 var ours = TouchesOurTables(sql);
 
                 var source = __instance.Connection?.DataSource;
-                Log.Info("sql" + (ours ? "*" : "") + " ["
+                LbipLog.Info("sql" + (ours ? "*" : "") + " ["
                          + (string.IsNullOrEmpty(source) ? "?" : System.IO.Path.GetFileName(source))
                          + "] " + (ours ? Flatten(sql) : Shorten(sql)));
             }
@@ -357,7 +362,7 @@ namespace LbIntegrations.MelonDs
             {
                 // Logged even with the trace off: it is a query about our tables that we chose not
                 // to answer, and that is worth knowing when a count looks wrong.
-                if (Log.Tracing) Log.Info("left an aggregate on our tables alone: " + Shorten(sql));
+                if (LbipLog.Tracing) LbipLog.Info("left an aggregate on our tables alone: " + Shorten(sql));
                 return null;
             }
 
@@ -365,7 +370,7 @@ namespace LbIntegrations.MelonDs
             // a method our postfixes do not cover, so a "sql*" line with no "postfix" line beside it
             // is the proof that LaunchBox reached our tables by a path we never see - which is
             // exactly how the missing async patch was found. Without this line, silence is ambiguous.
-            if (Log.Tracing) Log.Info("postfix reached, full sql: " + Flatten(sql));
+            if (LbipLog.Tracing) LbipLog.Info("postfix reached, full sql: " + Flatten(sql));
 
             _inOurOwnWork = true;
             try
@@ -373,27 +378,27 @@ namespace LbIntegrations.MelonDs
                 var mirror = EnsureMirror(command.Connection);
                 if (mirror == null)
                 {
-                    if (Log.Tracing) Log.Info("no mirror for this connection - nothing added");
+                    if (LbipLog.Tracing) LbipLog.Info("no mirror for this connection - nothing added");
                     return null;
                 }
 
                 var extra = RunOnMirror(mirror, sql, command.Parameters);
                 if (extra == null || extra.Count == 0)
                 {
-                    if (Log.Tracing) Log.Info("the mirror matched none of our rows for this query - nothing added");
+                    if (LbipLog.Tracing) LbipLog.Info("the mirror matched none of our rows for this query - nothing added");
                     return null;
                 }
 
-                if (Log.Tracing || !_saidItWorks)
+                if (LbipLog.Tracing || !_saidItWorks)
                 {
                     _saidItWorks = true;
-                    Log.Info("added " + extra.Count + " row(s) to a metadata query: " + Shorten(sql));
+                    LbipLog.Info("added " + extra.Count + " row(s) to a metadata query: " + Shorten(sql));
                 }
                 return extra;
             }
             catch (Exception ex)
             {
-                Log.Warn("could not extend a metadata query (" + Shorten(sql) + ")", ex);
+                LbipLog.Warn("could not extend a metadata query (" + Shorten(sql) + ")", ex);
                 return null;
             }
             finally { _inOurOwnWork = false; }
@@ -438,8 +443,8 @@ namespace LbIntegrations.MelonDs
                 {
                     // Once per file, and only while tracing: LaunchBox opens several SQLite
                     // databases and all but one of them land here, every time they are opened.
-                    if (Log.Tracing && _saidNotOurs.Add(host.DataSource ?? "?"))
-                        Log.Info("no \"" + table + "\" table on " + (host.DataSource ?? "?")
+                    if (LbipLog.Tracing && _saidNotOurs.Add(host.DataSource ?? "?"))
+                        LbipLog.Info("no \"" + table + "\" table on " + (host.DataSource ?? "?")
                                  + " - not the metadata database");
                     return null;
                 }
@@ -449,16 +454,18 @@ namespace LbIntegrations.MelonDs
             var rows = LbipRows.Decode(lines);
             if (rows.Count == 0) return null;
 
-            // NEVER ADD AN EMULATOR THE HOST ALREADY HAS. The day LaunchBox ships a melonDS row of
-            // its own, ours must step aside rather than double it - the user would otherwise get two
-            // melonDS entries in the Add Emulator window and no way to tell which is which. Asked of
-            // the host's own database, by name, so it is their answer and not our guess.
+            // NEVER ADD AN EMULATOR THE HOST ALREADY HAS. Asked of the host's own database, by
+            // name, so it is their answer and not our guess. Under the "Nixx-" names this pack
+            // publishes the answer is always no - our row and theirs are different emulators as far
+            // as that table is concerned, which is the point. What this still prevents is a row of
+            // ours landing on a name they own: the user would get two identical entries in the Add
+            // Emulator window and no way to tell which is which.
             var mine = new List<LbipEmulatorRow>();
             foreach (var row in rows)
             {
                 if (HostAlreadyKnows(host, row.Name))
                 {
-                    Log.Info("\"" + row.Name + "\" is already in LaunchBox's metadata - leaving it to them");
+                    LbipLog.Info("\"" + row.Name + "\" is already in LaunchBox's metadata - leaving it to them");
                     continue;
                 }
                 mine.Add(row);
@@ -472,7 +479,7 @@ namespace LbIntegrations.MelonDs
                 using (var c = mirror.CreateCommand()) { c.CommandText = statement; c.ExecuteNonQuery(); }
 
             _mirror = mirror;
-            Log.Info("mirror built in memory from the host's schema, " + rows.Count + " emulator(s)");
+            LbipLog.Info("mirror built in memory from the host's schema, " + rows.Count + " emulator(s)");
             return _mirror;
         }
 

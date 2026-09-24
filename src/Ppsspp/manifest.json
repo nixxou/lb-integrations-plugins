@@ -2,7 +2,7 @@
   "SchemaVersion": 1,
   "PluginId": "75b34659-92fc-4f10-9765-b9e05fac8f6f",
   "UserId": 0,
-  "Name": "PPSSPP Integration",
+  "Name": "Nixx-PPSSPP",
   "Developer": "nixxou",
   "Description": "Download, update and save management for the PPSSPP emulator.",
   "Credits": "Many thanks to the developers of PPSSPP!",

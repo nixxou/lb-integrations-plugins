@@ -1,0 +1,96 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- net9 here for the same reason the plugins use it, plus one of its own: this exe ships its
+         own runtime, so the only thing the target machine has to have is Windows. -->
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>NixxIntegrations</AssemblyName>
+    <RootNamespace>NixxIntegrations</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+
+    <!-- One file, no prerequisite. It is about 60 MB of which roughly 50 is the .NET runtime, and
+         that is the trade being made on purpose: a download that works on a machine with no .NET
+         installed, against a smaller one that fails with an obscure dialog when it is missing. -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>embedded</DebugType>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <!-- THE PAYLOAD, staged by build-release.ps1 and handed over as a property.
+       The project does NOT reach into the plugins' bin\ folders itself: the release script builds
+       them, copies the merged DLL, the manifest and the native library into one directory, and
+       passes that directory here. One place decides what a release contains.
+
+       LogicalName is the name Payload.cs asks for, and the folder spelt "Nixx-nogba" where the
+       real folder is "Nixx-no$gba" is deliberate: a LogicalName is MSBuild text, and a dollar in
+       it is a property expansion waiting to happen.
+
+       Declared STATICALLY rather than globbed or appended from a target. Resource names are
+       assigned early in the build, before a target has had a chance to add anything, and an item
+       added later is ignored IN SILENCE - which is the worst way to ship an installer with no
+       payload in it. A literal Include needs no file at evaluation time, only by the time the
+       compiler runs, which the check below enforces. -->
+  <ItemGroup Condition="'$(PayloadDir)' != ''">
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-Flycast\Flycast.dll">
+      <LogicalName>payload/Nixx-Flycast/Flycast.dll</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-Flycast\manifest.json">
+      <LogicalName>payload/Nixx-Flycast/manifest.json</LogicalName>
+    </EmbeddedResource>
+
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-melonDS\MelonDs.dll">
+      <LogicalName>payload/Nixx-melonDS/MelonDs.dll</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-melonDS\manifest.json">
+      <LogicalName>payload/Nixx-melonDS/manifest.json</LogicalName>
+    </EmbeddedResource>
+
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-nogba\NoGba.dll">
+      <LogicalName>payload/Nixx-nogba/NoGba.dll</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-nogba\manifest.json">
+      <LogicalName>payload/Nixx-nogba/manifest.json</LogicalName>
+    </EmbeddedResource>
+
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-PPSSPP\Ppsspp.dll">
+      <LogicalName>payload/Nixx-PPSSPP/Ppsspp.dll</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-PPSSPP\manifest.json">
+      <LogicalName>payload/Nixx-PPSSPP/manifest.json</LogicalName>
+    </EmbeddedResource>
+
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-Xenia\Xenia.dll">
+      <LogicalName>payload/Nixx-Xenia/Xenia.dll</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-Xenia\manifest.json">
+      <LogicalName>payload/Nixx-Xenia/manifest.json</LogicalName>
+    </EmbeddedResource>
+
+    <EmbeddedResource Include="$(PayloadDir)\native\melonds-nand.dll">
+      <LogicalName>payload/native/melonds-nand.dll</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\native\melonds-nandtool.exe">
+      <LogicalName>payload/native/melonds-nandtool.exe</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <!-- FAIL LOUDLY RATHER THAN SHIP AN EMPTY INSTALLER. An exe with no payload builds perfectly
+       well and then tells the user "Embedded payload missing" the first time they press a button,
+       which is a defect discovered by the wrong person. -->
+  <Target Name="CheckPayload" BeforeTargets="CoreCompile">
+    <Error Condition="'$(PayloadDir)' == ''"
+           Text="No PayloadDir. Build this through build-release.ps1, which builds the five plugins and stages their files first." />
+    <Error Condition="'%(EmbeddedResource.Identity)' != '' and !Exists('%(EmbeddedResource.Identity)')"
+           Text="Payload file missing: %(EmbeddedResource.Identity)" />
+  </Target>
+
+</Project>

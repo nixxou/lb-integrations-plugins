@@ -20,10 +20,11 @@ using System.Linq;
 using System.Reflection;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
+using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Xenia
 {
-    public partial class XeniaPlugin : EmulatorPlugin
+    public partial class XeniaPlugin : EmulatorPlugin, ISystemEventsPlugin
     {
         private const string CanaryRepo = "xenia-canary/xenia-canary";
         private const string Xbox360Platform = "Microsoft Xbox 360";
@@ -41,9 +42,89 @@ namespace LbIntegrations.Xenia
         public XeniaPlugin()
         {
             Log.Info("plugin constructed, assembly " + typeof(XeniaPlugin).Assembly.Location);
+
+            // THE SHARED ROW INJECTION LEARNS WHOSE PLUGIN IT IS IN. It is compiled into all
+            // five plugins and cannot tell on its own which log file to write to, nor which kill
+            // switches to read. See LbipLog.
+            LbipLog.Use(Log.Info, Log.Warn, Log.Disabled, () => Log.Tracing);
+
+            // As early as possible: the patch only sees connections opened AFTER it is installed,
+            // and LaunchBox reads its metadata the moment a window asks for it.
+            LbipRowInjection.Install("com.nixxou.lbip.xenia", MetadataRows());
         }
 
-        public override string EmulatorName => "Xenia";
+        /// <summary>The name this pack publishes under, in one place so its three uses cannot
+        /// disagree: the row in LaunchBox's emulator catalogue, the entry Add Emulator offers, and
+        /// the title given to an emulator this plugin creates.
+        ///
+        /// UNLIKE Flycast, melonDS and no$gba, LaunchBox HAS a Xenia row of its own. Ours does not
+        /// replace it and must not: the two sit side by side in the Add Emulator window, theirs
+        /// plain and ours carrying this integration. The prefix is what tells them apart, and it is
+        /// why the name is not simply "Xenia" - Emulators.Name is that table's primary key, so one
+        /// name can only ever mean one row.</summary>
+        private const string PackName = "Nixx-Xenia";
+
+        /// <summary>What LaunchBox's emulator metadata should say about this pack's Xenia, published
+        /// through the row injection rather than written into their database - see
+        /// LbipRowInjection.
+        ///
+        /// Every value here is one this plugin already answers elsewhere: the platform is
+        /// Xbox360Platform and the command line is DefaultCommandLine. That command line is the
+        /// difference worth having - LaunchBox's own row carries the literal string "None", which is
+        /// what a user then has to fix by hand. The extensions and AutoExtract are left exactly as
+        /// theirs: this plugin has measured nothing that says otherwise, and inventing capability a
+        /// user would discover was wrong is worse than repeating what is already there.</summary>
+        private static IEnumerable<LbipEmulatorRow> MetadataRows()
+        {
+            const string extensions = ".iso";
+
+            yield return new LbipEmulatorRow
+            {
+                Name = PackName,
+                CommandLine = DefaultCommandLine,
+                ApplicableFileExtensions = extensions,
+                Url = "https://xenia.jp/",
+                BinaryFileName = XeniaPaths.ExecutableNames[0],
+                AutoExtract = true,
+                Platforms =
+                {
+                    new LbipPlatformRow { Platform = Xbox360Platform,
+                                          ApplicableFileExtensions = extensions,
+                                          Recommended = true },
+                },
+            };
+        }
+
+        public override string EmulatorName => PackName;
+
+        // -- the host is up ------------------------------------------------
+
+        /// <summary>Try again to install the metadata patch. The constructor is the earliest
+        /// moment, which is what we want, but it may be TOO early: the patch needs
+        /// Microsoft.Data.Sqlite to be loaded already, and assemblies load on first use - measured,
+        /// the probe constructs a plugin before anything has touched SQLite and the patch declines.
+        /// Install is a no-op once it has succeeded, so retrying here costs nothing and removes the
+        /// dependency on load order.
+        ///
+        /// Three event names are accepted because the two hosts do not raise the same one:
+        /// LaunchBox raises LaunchBoxStartupCompleted (and BigBox its own), LiteBox raises
+        /// PluginInitialized when its window is shown. Anything else is ignored in silence - a
+        /// plugin that logs every SelectionChanged would drown its own log.</summary>
+        public void OnEventRaised(string eventType)
+        {
+            try
+            {
+                if (eventType != SystemEventTypes.PluginInitialized
+                    && eventType != SystemEventTypes.LaunchBoxStartupCompleted
+                    && eventType != SystemEventTypes.BigBoxStartupCompleted) return;
+
+                Log.Info("host event " + Q(eventType));
+                LbipRowInjection.Install("com.nixxou.lbip.xenia", MetadataRows());
+            }
+            catch (Exception ex) { Log.Warn("OnEventRaised", ex); }
+        }
+
+        private static string Q(string text) { return "\"" + text + "\""; }
 
         // ── claiming ─────────────────────────────────────────────────────────
 
@@ -306,7 +387,7 @@ namespace LbIntegrations.Xenia
             if (dm == null) return null;
 
             var emu = dm.AddNewEmulator();
-            emu.Title = "Xenia";
+            emu.Title = PackName;
             emu.ApplicationPath = MakeRelativeToLaunchBox(exePath);
             emu.CommandLine = DefaultCommandLine;
             EnsureHotkeyScripts(emu);

@@ -2,7 +2,7 @@
   "SchemaVersion": 1,
   "PluginId": "3101adc2-46eb-41c8-a7f8-91912dc2cc60",
   "UserId": 0,
-  "Name": "no$gba Integration",
+  "Name": "Nixx-no$gba",
   "Developer": "nixxou",
   "Description": "Download, update and save management for the no$gba emulator (Game Boy Advance, Nintendo DS, DSiWare). Writes its saves in the raw format every other emulator reads.",
   "Credits": "Many thanks to Martin Korth for no$gba and for GBATEK, and to the melonDS team, whose DSi NAND code this plugin uses to prepare a console - which is why it is GPL-3.0.",

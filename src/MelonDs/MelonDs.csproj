@@ -41,6 +41,19 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- THE SHARED ROW INJECTION, compiled in rather than referenced. All five plugins publish
+         rows into LaunchBox's emulator catalogue, and the machinery is identical for every one of
+         them: it talks to the host's SQLite reads, not to any one emulator. It was three verbatim
+         copies before this - Flycast's and no$gba's differed by a single `using` line over eight
+         hundred - and copies is exactly what this must not be: LbipRows.SharedKey and
+         LbipRowInjection.OwnerKey are the only things two plugins in one process can find each
+         other by, so a drift of one character silently costs an emulator its row. One source
+         folder is how they cannot drift. ILRepack still folds it into one DLL per plugin. See
+         src\Shared.Lbip\LbipLog.cs for how it reaches this plugin's logger without naming it. -->
+    <Compile Include="..\Shared.Lbip\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Reference the SDK but DON'T copy it: the host loads the plugin into ITS assembly load
          context and provides the SDK, so the types unify. Shipping our own copy beside the DLL
          would give us a second, incompatible set of EmulatorPlugin/IEmulator types and the host

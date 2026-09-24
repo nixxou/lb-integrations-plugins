@@ -46,6 +46,24 @@ namespace LbIntegrations.Ppsspp
         public static bool Tracing => _tracing ??= MarkerExists("trace");
         private static bool? _tracing;
 
+        /// <summary>Is a feature switched off by a marker file beside the log? Read once per name,
+        /// so creating the file takes effect at the next start - which is what a kill switch for
+        /// something installed during construction can promise anyway. The shared row injection
+        /// reads "no-metadata" through here; see LbipLog.</summary>
+        public static bool Disabled(string marker)
+        {
+            lock (_switches)
+            {
+                if (_switches.TryGetValue(marker, out var off)) return off;
+                off = MarkerExists(marker);
+                _switches[marker] = off;
+                return off;
+            }
+        }
+
+        private static readonly System.Collections.Generic.Dictionary<string, bool> _switches =
+            new System.Collections.Generic.Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+
         private static bool MarkerExists(string marker)
         {
             // Beside the log file itself, whatever folder that turned out to be.

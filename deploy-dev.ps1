@@ -7,6 +7,7 @@
 # It never stops a running process. If the target is locked, it says so and leaves it alone.
 #
 #   .\deploy-dev.ps1                       # Ppsspp -> G:\LB1326
+#   .\deploy-dev.ps1 -All                  # all five, same root
 #   .\deploy-dev.ps1 -LbRoot 'G:\LB'       # somewhere else
 #   .\deploy-dev.ps1 -Configuration Debug
 
@@ -15,12 +16,15 @@ param(
     # Which plugin to build; the folder name under src\.
     [string] $Plugin = 'Ppsspp',
 
+    # Every plugin, one after the other, into the same root.
+    [switch] $All,
+
     # The LaunchBox install to deploy into. G:\LB1326 is the LaunchBox 14 test install.
     [string] $LbRoot = 'G:\LB1326',
 
-    # Folder name under <LbRoot>\Local\Plugins. Deliberately NOT "<name> LaunchBox Integration": that
-    # wording makes LiteBox treat the plugin as LaunchBox-owned and enable it implicitly, and it
-    # impersonates Unbroken's naming next to their real plugins.
+    # Folder name under <LbRoot>\Local\Plugins. Left empty it comes from the table below, which is
+    # the same one NixxIntegrations.exe uses - the script and the installer must put a plugin in the
+    # SAME folder or a user ends up running two copies.
     [string] $FolderName,
 
     [ValidateSet('Debug', 'Release')]
@@ -30,7 +34,31 @@ param(
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-if (-not $FolderName) { $FolderName = "$Plugin Integration" }
+# THE NAMING TABLE. One row per plugin: the folder this pack installs into, and every folder name an
+# earlier version of this script or of the plugin ever used. The old ones are swept, because
+# PluginLoader dedupes by FILE NAME across plugin folders - a stale "melonDS Integration" beside
+# "Nixx-melonDS" means two copies of MelonDs.dll and no way to say which one wins.
+#
+# Keep this in step with src\Installer\Payload.cs. They are the two places a folder name is decided.
+$Pack = \{
+    'Flycast' = \{ Folder = 'Nixx-Flycast'; Old = \('Flycast Integration') }
+    'MelonDs' = \{ Folder = 'Nixx-melonDS'; Old = \('MelonDs Integration', 'melonDS Integration') }
+    'NoGba'   = \{ Folder = 'Nixx-no$gba';  Old = \('NoGba Integration', 'no$gba Integration') }
+    'Ppsspp'  = \{ Folder = 'Nixx-PPSSPP';  Old = \('Ppsspp Integration', 'PPSSPP Integration') }
+    'Xenia'   = \{ Folder = 'Nixx-Xenia';   Old = \('Xenia Integration') }
+}
+
+if ($All) {
+    foreach ($name in \('Flycast', 'MelonDs', 'NoGba', 'Ppsspp', 'Xenia')) {
+        Write-Host ""
+        Write-Host ("=== " + $name) -ForegroundColor Magenta
+        & $MyInvocation.MyCommand.Path -Plugin $name -LbRoot $LbRoot -Configuration $Configuration
+    }
+    return
+}
+
+if (-not $Pack.ContainsKey($Plugin)) { throw "Unknown plugin: $Plugin" }
+if (-not $FolderName) { $FolderName = $Pack[$Plugin].Folder }
 
 $projectDir = Join-Path $repo "src\$Plugin"
 if (-not (Test-Path $projectDir)) { throw "No such plugin: $projectDir" }
@@ -71,7 +99,20 @@ if (-not (Test-Path $manifestSource)) {
 }
 New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
 
-# A copy left behind in the legacy root would load a SECOND, older copy of the same plugin.
+# ANY OTHER COPY OF THIS PLUGIN IS A SECOND COPY. PluginLoader walks both roots and dedupes by file
+# name, so whichever it reaches first wins - and after a rename that is as likely to be the stale one
+# as the fresh one. The folders this pack used to use are removed outright when they hold our DLL
+# (never on the name alone: a folder somebody else made is not ours to delete), and anything left
+# that still holds one is reported rather than touched.
+foreach ($root in \("Local\Plugins", "Plugins")) {
+    foreach ($old in $Pack[$Plugin].Old) {
+        $dir = Join-Path $LbRoot "$root\$old"
+        if (-not (Test-Path (Join-Path $dir "$Plugin.dll"))) { continue }
+        Remove-Item $dir -Recurse -Force
+        Write-Host "  removed $dir - it held an older $Plugin.dll" -ForegroundColor Yellow
+    }
+}
+
 $legacy = Join-Path $LbRoot "Plugins\$FolderName"
 if (Test-Path (Join-Path $legacy "$Plugin.dll")) {
     Write-Host "  ! $legacy still holds a $Plugin.dll - remove it, or two copies will load." -ForegroundColor Yellow

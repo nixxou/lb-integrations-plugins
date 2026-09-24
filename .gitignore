@@ -9,6 +9,8 @@ obj/
 Thumbs.db
 desktop.ini
 build/
+# The single-file installer produced by build-release.ps1.
+release/
 
 # The DSiWare metadata index. Built by tools\pack-tmd-library.ps1 from preservation sets, and
 # carried into the assembly at build time. Ignored by default: it is Nintendo's signed metadata, and

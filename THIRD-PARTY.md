@@ -14,6 +14,7 @@ one non-framework entry — `Unbroken.LaunchBox.Plugins` — so there is nothing
 | Component | Licence | Used for |
 |---|---|---|
 | [SharpCompress](https://github.com/adamhathcock/sharpcompress) | MIT | reading the release archive - canary's Windows asset became a `.7z` in June 2026 |
+| [Lib.Harmony](https://github.com/pardeike/Harmony) | MIT | the two postfixes that let LaunchBox read our emulator rows |
 
 ## Under its own licence inside `Xenia.dll`
 
@@ -68,6 +69,7 @@ one process would each keep their own state.
 | VendoredLZMA (LZMA SDK) | public domain | a CHD codec |
 | VendoredZLib | zlib | a CHD codec |
 | VendoredZSTD | MIT | a CHD codec |
+| [Lib.Harmony](https://github.com/pardeike/Harmony) | MIT | the two postfixes that let LaunchBox read our emulator rows |
 | **VendoredFlac** | **LGPL-2.1** | a CHD codec — see below |
 | Microsoft.Extensions.Logging.Abstractions | MIT | a CHDSharp dependency |
 | Microsoft.Extensions.DependencyInjection.Abstractions | MIT | idem |
@@ -126,10 +128,12 @@ chosen knowingly, since reading a DSiWare save out of its NAND happens while a p
 than once per launch, and the same reasoning now covers both emulators.
 
 This paragraph used to say the other plugins stayed MIT *because* this repository copies its shared
-pieces rather than linking them. That is still true of `Log.cs`, `Archives.cs` and the metadata-row
-trio, where two copies differ by a namespace and a comment. It stopped being true of the DSi engine
-the day a second emulator needed it, and the licence follows the code rather than the other way
-round.
+pieces rather than linking them. That is still true of `Log.cs` and `Archives.cs`, where two copies
+differ by a namespace and a comment. It stopped being true of the DSi engine the day a second
+emulator needed it, and of the metadata-row trio the day a fourth and fifth plugin published rows -
+both now live in a folder of their own, `src/Shared.Dsi` and `src/Shared.Lbip`, compiled into the
+plugins that need them. The licence follows the code rather than the other way round, and
+`src/Shared.Lbip` changes nothing here: it is this repository's own work, MIT like the rest of it.
 
 **Flycast, Xenia and PPSSPP are unaffected and remain MIT**: none of them touches the NAND library,
 the shared DSi folder, or any assembly that does.
@@ -138,6 +142,24 @@ Two files in the tool are melonDS's own work rather than ours, and say so at the
 `aes_key.cpp` carries `DSi_AES::ROL16` and `DSi_AES::DeriveNormalKey` copied verbatim from
 `src/DSi_AES.cpp`, because compiling that file would have pulled in most of the emulator for twenty
 lines of arithmetic.
+
+## `src/Installer` - the single-file release
+
+`release/NixxIntegrations.exe` carries all five merged plugins as embedded resources, alongside the
+.NET runtime and `melonds-nand`. Two of those plugins - `MelonDs.dll` and `NoGba.dll` - are
+GPL-3.0-or-later, so **the installer is distributed under GPL-3.0-or-later as well**, and its
+`LICENSE.md` says so.
+
+That is the cautious reading rather than the only one. The installer does not link against anything
+it carries: the plugins are opaque bytes to it, written to disk and never loaded, which is close to
+what the GPL calls mere aggregation. The cautious reading was taken because it costs nothing here -
+every line of the installer is this repository's own work, and nobody is worse off for it being
+GPL - and because "it is probably aggregation" is a poor thing to discover you were wrong about
+after publishing.
+
+`tmd-library.bin` travels inside `MelonDs.dll` and therefore inside the release. That is the same
+decision `.gitignore` has left open since it was written, now more visible for being published
+rather than built locally.
 
 ## Not merged
 

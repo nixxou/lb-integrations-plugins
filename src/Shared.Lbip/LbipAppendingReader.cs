@@ -24,9 +24,8 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Data.Common;
-using LbIntegrations.Dsi;
 
-namespace LbIntegrations.MelonDs
+namespace LbIntegrations.Lbip
 {
     internal sealed class LbipAppendingReader : DbDataReader
     {

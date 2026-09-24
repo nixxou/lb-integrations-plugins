@@ -16,6 +16,7 @@ using System.Linq;
 using System.Reflection;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
+using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Flycast
 {
@@ -55,6 +56,11 @@ namespace LbIntegrations.Flycast
         {
             Log.Info("plugin constructed, assembly " + typeof(FlycastPlugin).Assembly.Location);
 
+            // THE SHARED ROW INJECTION LEARNS WHOSE PLUGIN IT IS IN. It is compiled into all
+            // five plugins and cannot tell on its own which log file to write to, nor which kill
+            // switches to read. See LbipLog.
+            LbipLog.Use(Log.Info, Log.Warn, Log.Disabled, () => Log.Tracing);
+
             // As early as possible: the patch only sees connections opened AFTER it is installed, and
             // LaunchBox reads its metadata the moment a window asks for it.
             LbipRowInjection.Install("com.nixxou.lbip.flycast", MetadataRows());
@@ -76,7 +82,7 @@ namespace LbIntegrations.Flycast
 
             yield return new LbipEmulatorRow
             {
-                Name = "Flycast",
+                Name = PackName,
                 CommandLine = FlycastDefaults.CommandLine,
                 ApplicableFileExtensions = discExtensions + "; " + arcadeExtensions + "; .elf",
                 Url = "https://flycast.org/",
@@ -102,7 +108,14 @@ namespace LbIntegrations.Flycast
             };
         }
 
-        public override string EmulatorName => "Flycast";
+        /// <summary>The name this pack publishes under, in one place so its three uses cannot
+        /// disagree: the row in LaunchBox's emulator catalogue, the entry Add Emulator offers, and
+        /// the title given to an emulator this plugin creates. The prefix says whose integration it
+        /// is - LaunchBox has no Flycast row at all, so ours is the
+        /// only one there.</summary>
+        private const string PackName = "Nixx-Flycast";
+
+        public override string EmulatorName => PackName;
 
         // ── the host is up ────────────────────────────────────────────
 
@@ -409,7 +422,7 @@ namespace LbIntegrations.Flycast
 
             if (existing == null)
             {
-                emu.Title = "Flycast";
+                emu.Title = PackName;
                 emu.ApplicationPath = MakeRelativeToLaunchBox(exePath);
                 emu.CommandLine = FlycastDefaults.CommandLine;
             }
