@@ -141,6 +141,35 @@ namespace LbIntegrations.Probe
                 foreach (var v in versions.ToList())
                     Console.WriteLine($"    {v.Label,-12} {v.Description}\n                 {v.Identifier}");
 
+            // THE METHOD THAT DRAWS THE DOWNLOAD BUTTON, and the reason it is checked here rather
+            // than left to a per-plugin harness: Add Emulator calls it with an EMPTY path - there is
+            // no emulator yet - and shows its button only when the answer is true. A plugin that
+            // treats "nothing installed" as "up to date" cannot be downloaded at all, and nothing
+            // about that is visible from the outside. It cost an evening on no$gba, silently, and it
+            // is one line to assert.
+            Section("IsUpdateAvailable  [hits the network]");
+            {
+                EmulatorControllerVersion offered = null;
+                bool? fresh = Safe(() => (bool?)plugin.IsUpdateAvailable("", out offered));
+                Console.WriteLine("  with an EMPTY path (the Add Emulator case)");
+                Console.WriteLine("    -> " + (fresh == null ? "threw" : fresh.ToString())
+                                  + (offered != null ? "   offering " + offered.Label : ""));
+                Console.WriteLine("    " + (fresh == true
+                    ? "OK - Add Emulator will show a Download button"
+                    : "NOT OK - Add Emulator will show NO Download button for this emulator"));
+
+                if (emuPath != null)
+                {
+                    EmulatorControllerVersion update = null;
+                    bool? has = Safe(() => (bool?)plugin.IsUpdateAvailable(emuPath, out update));
+                    Console.WriteLine("  against the installation given");
+                    Console.WriteLine("    -> " + (has == null ? "threw" : has.ToString())
+                                      + (update != null ? "   offering " + update.Label : ""));
+                    // Not an assertion either way: an install that is already current SHOULD answer
+                    // false, and one that is behind SHOULD answer true. Only the caller knows which.
+                }
+            }
+
             Section("PrepareEmulatorForLaunch");
             if (emuPath == null) Console.WriteLine("  skipped (pass --emu <emulator.exe>)");
             else
