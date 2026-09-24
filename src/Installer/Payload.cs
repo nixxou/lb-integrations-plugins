@@ -22,9 +22,11 @@ internal static class Payload
     public const string MelonDs = "Nixx-melonDS";
     public const string NoGba   = "Nixx-nogba";
     public const string Ppsspp  = "Nixx-PPSSPP";
+    public const string Vita3k  = "Nixx-Vita3K";
     public const string Xenia   = "Nixx-Xenia";
 
-    public static readonly string[] Folders = { Flycast, MelonDs, NoGba, Ppsspp, Xenia };
+    public static readonly string[] Folders =
+        { Flycast, MelonDs, NoGba, Ppsspp, Vita3k, Xenia };
 
     /// <summary>Every folder name this pack has been installed under before the rename. They are
     /// swept on install, because PluginLoader dedupes by FILE NAME across plugin roots: a stale
@@ -47,12 +49,12 @@ internal static class Payload
         "Nixx-no$gba",
     };
 
-    /// <summary>The five assembly names. A folder is only ever removed when it holds one of these:
+    /// <summary>The assembly names. A folder is only ever removed when it holds one of these:
     /// a folder that merely carries a name we recognise is still somebody else's folder, and
     /// deleting it on the strength of its name alone is how an installer destroys something it was
     /// never told about.</summary>
     public static readonly string[] Assemblies =
-        { "Flycast.dll", "MelonDs.dll", "NoGba.dll", "Ppsspp.dll", "Xenia.dll" };
+        { "Flycast.dll", "MelonDs.dll", "NoGba.dll", "Ppsspp.dll", "Vita3k.dll", "Xenia.dll" };
 
     // The DSi NAND library, and the command-line tool beside it. ONE copy is carried and TWO are
     // written: the DllImport resolver in Shared.Dsi only ever looks inside the plugin's own folder,
@@ -63,8 +65,9 @@ internal static class Payload
 
     // THE CATALOGUE CONTRACT, the one managed file that is not the plugin itself. It cannot be
     // merged in: a host and a plugin have to mean the SAME interface type, and type identity in
-    // .NET is per-assembly - internalized into five DLLs it would become five private types no host
-    // could name. So one copy goes into each plugin folder, all identical, and whichever the load
+    // .NET is per-assembly - internalized into each plugin it would become as many private types as
+    // there are plugins, none of which a host could name. So one copy goes into each plugin folder,
+    // all identical, and whichever the load
     // context reaches first serves the whole process. See src\Catalog\LbCatalog.cs.
     private const string Contract = "payload/LbIntegrations.Catalog.dll";
 
@@ -94,6 +97,10 @@ internal static class Payload
         new("payload/Nixx-PPSSPP/Ppsspp.dll",       Ppsspp,  "Ppsspp.dll"),
         new("payload/Nixx-PPSSPP/manifest.json",    Ppsspp,  "manifest.json"),
         new(Contract,                               Ppsspp,  "LbIntegrations.Catalog.dll"),
+
+        new("payload/Nixx-Vita3K/Vita3k.dll",       Vita3k,  "Vita3k.dll"),
+        new("payload/Nixx-Vita3K/manifest.json",    Vita3k,  "manifest.json"),
+        new(Contract,                               Vita3k,  "LbIntegrations.Catalog.dll"),
 
         new("payload/Nixx-Xenia/Xenia.dll",         Xenia,   "Xenia.dll"),
         new("payload/Nixx-Xenia/manifest.json",     Xenia,   "manifest.json"),

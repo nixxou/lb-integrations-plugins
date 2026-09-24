@@ -15,6 +15,7 @@ is published by Unbroken Software), so these are installed by hand.
 | `src/Flycast` | Flycast | Sega Dreamcast, Sega Naomi, Sega Naomi 2, Sammy Atomiswave | download / update, BIOS, RetroAchievements, launch, save management |
 | `src/MelonDs` | melonDS | Nintendo DS | download / update, BIOS, DS/DSi mode, per-title DSi NAND, save management (GPL-3.0) |
 | `src/NoGba` | no$gba | Nintendo Game Boy Advance, Nintendo DS | download / update, BIOS, **raw save format**, save management |
+| `src/Vita3k` | Vita3K | Sony Playstation Vita | download / update, firmware — **install only, for now** |
 
 ## Building
 
@@ -107,7 +108,7 @@ held for as long as it takes to copy 520 bytes out of it, then dropped.
 ## Installing
 
 ```
-.\build-release.ps1                   # the five plugins -> release\NixxIntegrations.exe
+.\build-release.ps1                   # every plugin -> release\NixxIntegrations.exe
 ```
 
 One file, two buttons, and you point it at your `LaunchBox.exe`. It is self-contained, so the
@@ -117,7 +118,7 @@ names, carries a plugin's tick in `LiteBox.ini` over to its new folder name, and
 file it writes by hash rather than by "the copy did not throw".
 
 It installs **plugins only**. It never writes to `Data\Emulators.xml`, never creates or changes an
-emulator entry, and never touches a NAND dump or a save. Uninstalling removes the five folders and
+emulator entry, and never touches a NAND dump or a save. Uninstalling removes the pack's folders and
 leaves the plugins' settings under `Local\Plugins\.data\` alone.
 
 There is a command form too, which is how it is tested and how it can be scripted:
@@ -133,7 +134,7 @@ NixxIntegrations.exe --uninstall "G:\LB1326"
 ```
 .\deploy-dev.ps1                      # builds Ppsspp, copies into G:\LB1326, verifies by hash
 .\deploy-dev.ps1 -Plugin Xenia
-.\deploy-dev.ps1 -All                 # all five, same root
+.\deploy-dev.ps1 -All                 # all of them, same root
 .\deploy-dev.ps1 -LbRoot 'G:\LB'
 ```
 
@@ -1203,6 +1204,104 @@ back. melonDS is simply pointed at the copy.
 **No RetroAchievements.** no$gba predates the idea and is a single packed executable with no network
 features beyond its own link emulation.
 
+## Notes on Vita3K
+
+**This one only installs.** It claims a Vita3K, publishes a row, reports versions, downloads the
+emulator and gets its firmware in. There is no save management and no launch handling: how a PS Vita
+title's data should be captured is not settled, and half of it shipped is saves in a shape that then
+has to be migrated.
+
+**The tag is a constant, so the version is read twice from two places.** Vita3K publishes to a
+rolling `continuous` tag that CI re-points at every build, so the tag identifies nothing. The build
+number is `git rev-list HEAD --count`, and it appears in two forms: their CI writes it into the
+release notes as `Vita3K Build: 4098`, and `resource.h` compiles it in as the FOURTH FIELD of the
+Win32 file version (`FILE_VERSION` is `APP_VER_HI, APP_VER_MID, APP_VER_LO, APP_NUMBER`). Measured on
+4098: the release body says 4098 and the executable reports `0.2.1.4098`. An update check compares
+those two numbers, numerically — they are commit counts, so 4098 and 998 sort correctly as numbers
+and exactly backwards as strings.
+
+**Storage is kept local by creating one directory.** Left alone, Vita3K puts its whole virtual Vita
+filesystem — games, firmware, saves — under `%AppData%\Vita3K\Vita3K`. `app_init.cpp` decides this
+by looking for a `portable\` directory beside the executable and nothing else: no flag, no setting.
+So the install creates one, and everything lands in `Emulators\Nixx-Vita3K\portable\`.
+
+It is created **only on a fresh install of ours**. Making one beside an emulator somebody has been
+using migrates nothing — it repoints the filesystem root, and their library, still perfectly present
+in `%AppData%`, simply stops being visible. A reinstall therefore touches nothing: if we put it
+there, it is already there.
+
+### The firmware
+
+Vita3K needs three packages and runs nothing without them. Each unpacks into its own directory under
+the virtual filesystem, which is also how presence is detected — `app.cpp` asks only whether the
+directory exists and is not empty:
+
+| | directory | without it |
+|---|---|---|
+| main firmware | `vs0` | nothing runs at all |
+| font package | `sa0` | text is missing |
+| preinstalled | `pd0` | no bundled applications |
+
+**No browser engine is needed, and that was not obvious.** Vita3K's own welcome window opens a
+BROWSER at three destinations: two `bit.ly` links, and for the main firmware Sony's support page,
+where the download is written in by JavaScript. But the console does not read a web page either — it
+asks an update list, in plain XML, which carries all three with their sizes:
+
+```
+http://dus01.psp2.update.playstation.net/update/psp2/list/us/psp2-updatelist.xml
+```
+
+Measured: its `preinst` entry is the byte-identical URL `bit.ly/4hlePsX` redirects to, hash and all.
+Same source, without the redirector.
+
+**The region is a CDN choice and nothing else.** `us`, `eu` and `jp` name the same image hash for the
+same firmware and differ only in the host name and the `dest=` parameter. There is no region for a
+user to get wrong, so none is offered.
+
+**Only the main firmware is looked up.** The other two are written out in the source, because their
+URLs carry a content hash — the file behind one cannot change, which is what makes a pinned size a
+real check. For the font package it is also the only honest option: the update list serves a **2022**
+build of `systemdata` while Vita3K documents the **2019** one, a difference of 10 240 bytes whose
+meaning nothing here has measured. Taking the list's silently would install something other than
+what Vita3K's own users run.
+
+**HTTPS is not available.** Port 443 answers but presents a certificate for another name
+(`SEC_E_WRONG_PRINCIPAL`, a shared CDN). Plain HTTP it is — validation is not disabled. The check is
+the declared size instead: the list publishes one for each package, the two fixed ones are pinned,
+and all four matched their `Content-Length` to the byte.
+
+**Installing is headless.** `--firmware <file.pup>` is handled on the quit path — `config.cpp`
+returns `QuitRequested` for it and `main.cpp` installs and returns before SDL or any window exists.
+Measured: the font package and the preinstalled package each install in two to three seconds and
+exit 0.
+
+**Two traps, both measured, both now guarded.**
+
+*The exit code lies in one direction only.* `main.cpp` calls `install_pup` and discards its return
+value, so a package that fails to install can still exit 0 — which is why the directory is checked.
+But a CRASH shows up in the exit code and nowhere else, so a non-zero exit is a failure outright.
+
+*MAX_PATH is a real ceiling, not a precaution.* Unpacking 3.74 into a path 174 characters long killed
+the emulator: `boost::filesystem::create_directories` threw `EINVAL`, nothing caught it, and the
+process died with `0xC0000409` leaving **932 of vs0's 1473 files** behind — which "exists and is not
+empty" calls installed. Four attempts, four identical crashes. The same firmware into a 39 character
+path installed in full and exited 0. The deepest file in the firmware is 124 characters relative to
+the filesystem root (a web inspector image under `vs0\data`), so the install folder has to stay under
+about 122. `Emulators\Nixx-Vita3K` under a normal LaunchBox is 33 and has a hundred to spare; the
+check exists for the person whose LaunchBox lives somewhere deep, who would otherwise get a firmware
+that looks installed and a console that does not work. It is asked BEFORE 300 MB is downloaded.
+
+**The extensions column is empty, and that is a statement.** LaunchBox's own `Vita3k` row leaves it
+empty too. A Vita "rom" is a title id of an app already installed under `ux0\app`, which is what
+their `-F -r` command line expects — `-r` is `--installed-path` and is even validated against the
+installed list. Declaring `.vpk` here would claim a launch model this plugin does not implement.
+
+**It does not collide with LaunchBox's own row.** Theirs is `Vita3k` with a small k; `Emulators.Name`
+is the primary key, and the `Nixx-` prefix means the question of case-insensitive collision never
+comes up. An official Vita3K integration is in soft-launch on their side, which makes the prefix
+load-bearing here rather than decorative: an official plugin would install into `Emulators\Vita3K`,
+and ours keeps to `Emulators\Nixx-Vita3K`.
+
 ## License
 
 MIT for most of it, see `LICENSE`.
@@ -1210,6 +1309,6 @@ MIT for most of it, see `LICENSE`.
 **Four directories are GPL-3.0-or-later**, and they are the ones that touch melonDS's NAND code:
 `tools/melonds-nand`, `src/Shared.Dsi`, `src/MelonDs` and `src/NoGba`. The shared DSi engine calls
 that library through P/Invoke, and both plugins compile the engine in, so the licence follows it.
-Flycast, Xenia and PPSSPP touch none of it and remain MIT. `THIRD-PARTY.md` sets out the whole of
+Flycast, Xenia, PPSSPP and Vita3K touch none of it and remain MIT. `THIRD-PARTY.md` sets out the whole of
 it, including the LGPL-2.1 component the shipped binary statically links and how the relinking
 requirement is met.

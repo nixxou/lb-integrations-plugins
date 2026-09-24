@@ -64,7 +64,7 @@ namespace LbIntegrations.NoGba
             NoGbaHost.Announce();
 
             // THE SHARED ROW INJECTION LEARNS WHOSE PLUGIN IT IS IN. It is compiled into all
-            // five plugins and cannot tell on its own which log file to write to, nor which kill
+            // every plugin of this pack and cannot tell on its own which log file to write to, nor which kill
             // switches to read. See LbipLog.
             LbipLog.Use(Log.Info, Log.Warn, Log.Disabled, () => Log.Tracing);
 

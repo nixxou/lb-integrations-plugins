@@ -1,0 +1,19 @@
+{
+  "SchemaVersion": 1,
+  "PluginId": "51f3dae1-cba9-417d-a926-59fa731b2028",
+  "UserId": 0,
+  "Name": "Nixx-Vita3K",
+  "Developer": "nixxou",
+  "Description": "Download, update and firmware installation for the Vita3K emulator (Sony PlayStation Vita).",
+  "Credits": "Many thanks to the developers of Vita3K!",
+  "OperatingSystemFamily": "Windows",
+  "InstalledVersion": "1.0",
+  "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
+  "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
+  "HomePageUrl": "https://vita3k.org/",
+  "TipJarUrl": "",
+  "SourceKind": "Local",
+  "Tags": [
+    "5aae585f-ffc5-42bc-9f95-e5e190ef99e2"
+  ]
+}

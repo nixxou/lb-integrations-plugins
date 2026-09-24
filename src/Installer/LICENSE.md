@@ -3,7 +3,7 @@
 Every line of this installer is this repository's own work and would otherwise be MIT, like the rest
 of `LICENSE`. It is GPL-3.0-or-later because of what it carries rather than what it is.
 
-`NixxIntegrations.exe` embeds all five merged plugins, and two of them - `MelonDs.dll` and
+`NixxIntegrations.exe` embeds every merged plugin of the pack, and two of them - `MelonDs.dll` and
 `NoGba.dll` - are GPL-3.0-or-later: they load `melonds-nand` into their own process, and that
 library is built from [melonDS](https://github.com/melonDS-emu/melonDS)'s NAND code. Shipping them
 inside a single file means distributing them, so the file goes out under their terms. The licence

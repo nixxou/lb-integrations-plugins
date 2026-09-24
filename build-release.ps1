@@ -1,6 +1,6 @@
 ﻿# Build the whole pack into ONE file: release\NixxIntegrations.exe.
 #
-# Three steps, in this order and for a reason. The five plugins are built first, because the release
+# Three steps, in this order and for a reason. The plugins are built first, because the release
 # is made of their merged DLLs and nothing else. Their files are then staged into one directory -
 # this is the only place that decides what a release contains, so the installer project never has to
 # reach into a sibling's bin\ folder. And last the installer is published self-contained, with that
@@ -9,7 +9,7 @@
 #   .\build-release.ps1              # the lot
 #   .\build-release.ps1 -SkipPlugins # restage and republish from what is already built
 #
-# The result needs nothing installed on the target machine: it carries the .NET runtime, the five
+# The result needs nothing installed on the target machine: it carries the .NET runtime, the six
 # plugins and the DSi NAND library. About 60 MB, of which roughly 50 is the runtime.
 
 [CmdletBinding()]
@@ -32,6 +32,7 @@ $Stage = [ordered]@{
     'MelonDs' = 'Nixx-melonDS'
     'NoGba'   = 'Nixx-nogba'
     'Ppsspp'  = 'Nixx-PPSSPP'
+    'Vita3k'  = 'Nixx-Vita3K'
     'Xenia'   = 'Nixx-Xenia'
 }
 
@@ -77,7 +78,8 @@ foreach ($name in $Stage.Keys) {
 
 # The catalogue contract, staged ONCE and installed into every plugin folder. It is the one managed
 # file beside a plugin that is not the plugin: a host and a plugin must mean the same interface
-# type, and merging it in would make five private types no host could name. Taken from a plugin's
+# type, and merging it in would make one private type per plugin, none of them nameable by a
+# host. Taken from a plugin's
 # own bin\ rather than built separately, so the copy that ships is the copy they were compiled
 # against.
 $contract = Join-Path $repo "src\Flycast\bin\$Configuration\LbIntegrations.Catalog.dll"

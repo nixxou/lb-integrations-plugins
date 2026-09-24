@@ -9,10 +9,10 @@
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
-    <AssemblyName>Ppsspp</AssemblyName>
-    <RootNamespace>LbIntegrations.Ppsspp</RootNamespace>
+    <AssemblyName>Vita3k</AssemblyName>
+    <RootNamespace>LbIntegrations.Vita3k</RootNamespace>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <!-- true so the CHD libraries land in bin\ for the merge step below. -->
+    <!-- true so SharpCompress lands in bin\ for the merge step below. -->
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <!-- MSB3277: the vendored 13.27 SDK and a host's newer one differ in version; that is the
@@ -67,10 +67,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="CHDSharp" Version="1.4.3" />
+    <PackageReference Include="SharpCompress" Version="0.41.0" />
   </ItemGroup>
 
-  <!-- Fold every dependency INTO Ppsspp.dll, internalized.
+  <!-- Fold every dependency INTO Vita3k.dll, internalized.
        Two reasons, both measured. A plugin folder is a shared namespace: the host resolves a
        dependency by simple name across every plugin's folder, so two plugins shipping different
        versions of the same library is a real hazard. After this step the assembly's reference table

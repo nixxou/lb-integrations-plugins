@@ -7,7 +7,7 @@
 # It never stops a running process. If the target is locked, it says so and leaves it alone.
 #
 #   .\deploy-dev.ps1                       # Ppsspp -> G:\LB1326
-#   .\deploy-dev.ps1 -All                  # all five, same root
+#   .\deploy-dev.ps1 -All                  # all six, same root
 #   .\deploy-dev.ps1 -LbRoot 'G:\LB'       # somewhere else
 #   .\deploy-dev.ps1 -Configuration Debug
 
@@ -46,10 +46,11 @@ $Pack = @{
     'NoGba'   = @{ Folder = 'Nixx-nogba';   Old = @('NoGba Integration', 'no$gba Integration', 'Nixx-no$gba') }
     'Ppsspp'  = @{ Folder = 'Nixx-PPSSPP';  Old = @('Ppsspp Integration', 'PPSSPP Integration') }
     'Xenia'   = @{ Folder = 'Nixx-Xenia';   Old = @('Xenia Integration') }
+    'Vita3k'  = @{ Folder = 'Nixx-Vita3K';  Old = @() }
 }
 
 if ($All) {
-    foreach ($name in @('Flycast', 'MelonDs', 'NoGba', 'Ppsspp', 'Xenia')) {
+    foreach ($name in @('Flycast', 'MelonDs', 'NoGba', 'Ppsspp', 'Vita3k', 'Xenia')) {
         Write-Host ""
         Write-Host ("=== " + $name) -ForegroundColor Magenta
         & $MyInvocation.MyCommand.Path -Plugin $name -LbRoot $LbRoot -Configuration $Configuration

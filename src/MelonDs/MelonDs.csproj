@@ -51,8 +51,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- THE SHARED ROW INJECTION, compiled in rather than referenced. All five plugins publish
-         rows into LaunchBox's emulator catalogue, and the machinery is identical for every one of
+    <!-- THE SHARED ROW INJECTION, compiled in rather than referenced. Every plugin of this pack
+         publishes rows into LaunchBox's emulator catalogue, and the machinery is identical for every one of
          them: it talks to the host's SQLite reads, not to any one emulator. It was three verbatim
          copies before this - Flycast's and no$gba's differed by a single `using` line over eight
          hundred - and copies is exactly what this must not be: LbipRows.SharedKey and
