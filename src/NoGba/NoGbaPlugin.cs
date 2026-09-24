@@ -73,11 +73,22 @@ namespace LbIntegrations.NoGba
             LbipRowInjection.Install(PluginId, MetadataRows());
         }
 
-        /// <summary>The name this pack publishes under, in one place so its three uses cannot
-        /// disagree: the row in LaunchBox's emulator catalogue, the entry Add Emulator offers, and
-        /// the title given to an emulator this plugin creates. The prefix says whose integration it
-        /// is - LaunchBox has no no$gba row at all, so ours is the
-        /// only one there.</summary>
+        /// <summary>The name this pack publishes under, in one place so its four uses cannot
+        /// disagree: the row in LaunchBox's emulator catalogue, the entry Add Emulator offers, the
+        /// title given to an emulator this plugin creates, and THE FOLDER THE EMULATOR IS INSTALLED
+        /// INTO.
+        ///
+        /// That last one is why it matters beyond presentation. Unbroken's own integrations install
+        /// to Emulators\&lt;name&gt; as well, so an official plugin for the same emulator - today's or
+        /// tomorrow's - would download into the very folder this one manages, over a build we put
+        /// there and around the dsi\ folder we keep inside it. Prefixing the folder is what keeps
+        /// the two installs apart.
+        ///
+        /// AND IT IS A PREFIX, NOT A PARENT FOLDER. Emulators\Nixx\&lt;name&gt; would have been tidier
+        /// and is wrong: the DSi BIOS and the user's NAND dumps are read at ..\RetroArch\system,
+        /// one level up from the emulator, which resolves to Emulators\RetroArch\system today and
+        /// would become Emulators\Nixx\RetroArch\system under a parent folder - a share with
+        /// RetroArch that would quietly stop being a share.</summary>
         private const string PackName = "Nixx-no$gba";
 
         public override string EmulatorName => PackName;
@@ -328,7 +339,7 @@ namespace LbIntegrations.NoGba
                 bool reinstall = args?.ExistingEmulator != null;
                 string targetDir = reinstall
                     ? Path.GetDirectoryName(ResolveFullPath(args.ExistingEmulator.ApplicationPath))
-                    : Path.Combine(LaunchBoxRoot(), "Emulators", "no$gba");
+                    : Path.Combine(LaunchBoxRoot(), "Emulators", PackName);
                 if (string.IsNullOrWhiteSpace(targetDir))
                     return new EmulatorInstallResponse("Couldn't work out where to install no$gba.");
 

@@ -67,15 +67,22 @@ namespace LbIntegrations.Ppsspp
             LbipRowInjection.Install("com.nixxou.lbip.ppsspp", MetadataRows());
         }
 
-        /// <summary>The name this pack publishes under, in one place so its three uses cannot
-        /// disagree: the row in LaunchBox's emulator catalogue, the entry Add Emulator offers, and
-        /// the title given to an emulator this plugin creates.
+        /// <summary>The name this pack publishes under, in one place so its four uses cannot
+        /// disagree: the row in LaunchBox's emulator catalogue, the entry Add Emulator offers, the
+        /// title given to an emulator this plugin creates, and THE FOLDER THE EMULATOR IS INSTALLED
+        /// INTO.
         ///
-        /// UNLIKE Flycast, melonDS and no$gba, LaunchBox HAS a PPSSPP row of its own. Ours does not
-        /// replace it and must not: the two sit side by side in the Add Emulator window, theirs
-        /// plain and ours carrying this integration. The prefix is what tells them apart, and it is
-        /// why the name is not simply "PPSSPP" - Emulators.Name is that table's primary key, so one
-        /// name can only ever mean one row.</summary>
+        /// That last one is why it matters beyond presentation. Unbroken's own integrations install
+        /// to Emulators\&lt;name&gt; as well, so an official plugin for the same emulator - today's or
+        /// tomorrow's - would download into the very folder this one manages, over a build we put
+        /// there and around the dsi\ folder we keep inside it. Prefixing the folder is what keeps
+        /// the two installs apart.
+        ///
+        /// AND IT IS A PREFIX, NOT A PARENT FOLDER. Emulators\Nixx\&lt;name&gt; would have been tidier
+        /// and is wrong: the DSi BIOS and the user's NAND dumps are read at ..\RetroArch\system,
+        /// one level up from the emulator, which resolves to Emulators\RetroArch\system today and
+        /// would become Emulators\Nixx\RetroArch\system under a parent folder - a share with
+        /// RetroArch that would quietly stop being a share.</summary>
         private const string PackName = "Nixx-PPSSPP";
 
         /// <summary>What LaunchBox's emulator metadata should say about this pack's PPSSPP,
@@ -390,7 +397,7 @@ namespace LbIntegrations.Ppsspp
                 bool reinstall = args?.ExistingEmulator != null;
                 string targetDir = reinstall
                     ? Path.GetDirectoryName(ResolveFullPath(args.ExistingEmulator.ApplicationPath))
-                    : Path.Combine(LaunchBoxRoot(), "Emulators", "PPSSPP");
+                    : Path.Combine(LaunchBoxRoot(), "Emulators", PackName);
 
                 if (string.IsNullOrWhiteSpace(targetDir))
                     return new EmulatorInstallResponse("Couldn't work out where to install PPSSPP.");

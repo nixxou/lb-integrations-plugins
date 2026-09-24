@@ -156,13 +156,29 @@ So: `<LaunchBox>\Local\Plugins\<Name>\<Plugin>.dll`, plus its `manifest.json` an
 file is there. Before LaunchBox 14, `Plugins\` is the only option. `<Name>` is the folder from this table, and it is also what
 **Options ▸ Plugins** shows:
 
-| project | folder, and manifest `Name` | the row it publishes to LaunchBox's catalogue |
-|---|---|---|
-| `src/Flycast` | `Nixx-Flycast` | `Nixx-Flycast` |
-| `src/MelonDs` | `Nixx-melonDS` | `Nixx-melonDS` |
-| `src/NoGba` | `Nixx-no$gba` | `Nixx-no$gba` |
-| `src/Ppsspp` | `Nixx-PPSSPP` | `Nixx-PPSSPP` |
-| `src/Xenia` | `Nixx-Xenia` | `Nixx-Xenia` |
+| project | plugin folder, and manifest `Name` | catalogue row | emulator installed into |
+|---|---|---|---|
+| `src/Flycast` | `Nixx-Flycast` | `Nixx-Flycast` | `Emulators\Nixx-Flycast` |
+| `src/MelonDs` | `Nixx-melonDS` | `Nixx-melonDS` | `Emulators\Nixx-melonDS` |
+| `src/NoGba` | `Nixx-no$gba` | `Nixx-no$gba` | `Emulators\Nixx-no$gba` |
+| `src/Ppsspp` | `Nixx-PPSSPP` | `Nixx-PPSSPP` | `Emulators\Nixx-PPSSPP` |
+| `src/Xenia` | `Nixx-Xenia` | `Nixx-Xenia` | `Emulators\Nixx-Xenia` |
+
+One constant per plugin drives that whole row, so the four cannot disagree.
+
+**The last column is not presentation.** Unbroken's own integrations download into
+`Emulators\<emulator name>` too, so an official plugin for the same emulator - today's or
+tomorrow's - would install over a build this pack put there, and around the `dsi\` folder it keeps
+inside it. The prefix is what keeps the two apart.
+
+It is a **prefix and not a parent folder**, which is measured rather than chosen: the DSi BIOS and
+the user's NAND dumps are read at `..\RetroArch\system`, one level above the emulator. From
+`Emulators\Nixx-melonDS` that is still `Emulators\RetroArch\system`; from `Emulators\Nixx\melonDS`
+it would become `Emulators\Nixx\RetroArch\system`, and a folder shared with RetroArch would quietly
+stop being shared.
+
+Only a *fresh* install goes there. Reinstalling or updating uses the folder the existing emulator
+entry already points at, so anyone who put their emulator somewhere by hand keeps it.
 
 The prefix is not decoration. `Emulators."Name"` is that table's primary key, so one name can only
 ever mean one row - and LaunchBox already ships a `PPSSPP` and a `Xenia`. Ours sit **beside**
