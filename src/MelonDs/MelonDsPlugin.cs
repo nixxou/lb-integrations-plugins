@@ -21,11 +21,12 @@ using System.Reflection;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 using LbIntegrations.Dsi;
+using LbIntegrations.Catalog;
 using LbIntegrations.Lbip;
 
 namespace LbIntegrations.MelonDs
 {
-    public partial class MelonDsPlugin : EmulatorPlugin, ISystemEventsPlugin
+    public partial class MelonDsPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         private const string Repo = "melonDS-emu/melonDS";
 
@@ -95,6 +96,11 @@ namespace LbIntegrations.MelonDs
 
         public override string EmulatorName => PackName;
 
+        /// <summary>What this plugin brings to a host's emulator catalogue, for a host that asks
+        /// rather than one whose database has to be patched. Same rows either way - see
+        /// MetadataRows.</summary>
+        public IEnumerable<LbCatalogEmulator> EmulatorRows() => MetadataRows();
+
         /// <summary>What LaunchBox's emulator metadata should say about melonDS, published through the
         /// row injection rather than written into their database - see LbipRowInjection.
         ///
@@ -107,7 +113,7 @@ namespace LbIntegrations.MelonDs
         /// archive extensions are there because ARCHIVE_SUPPORT_ENABLED is defined unconditionally in
         /// melonDS's build (src/frontend/qt_sdl/CMakeLists.txt:92) with libarchive as a required
         /// dependency. No BIOS is declared required, because DS mode needs none.</summary>
-        private static IEnumerable<LbipEmulatorRow> MetadataRows()
+        private static IEnumerable<LbCatalogEmulator> MetadataRows()
         {
             // The ROM extensions are melonDS's own (Window.cpp:95). The containers are NOT its full
             // list - libarchive accepts more than SharpCompress does, and a container this plugin
@@ -116,7 +122,7 @@ namespace LbIntegrations.MelonDs
             // ArchiveFormats part of the probe.
             const string extensions = ".nds; .srl; .dsi; .ids; .zip; .7z; .rar; .tar; .tgz";
 
-            yield return new LbipEmulatorRow
+            yield return new LbCatalogEmulator
             {
                 Name = PackName,
                 CommandLine = DefaultCommandLine,
@@ -126,7 +132,7 @@ namespace LbIntegrations.MelonDs
                 AutoExtract = false,
                 Platforms =
                 {
-                    new LbipPlatformRow
+                    new LbCatalogPlatform
                     {
                         Platform = DsPlatform,
                         ApplicableFileExtensions = extensions,

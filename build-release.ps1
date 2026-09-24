@@ -76,6 +76,16 @@ foreach ($name in $Stage.Keys) {
     Write-Host ("  staged {0,-14} {1,8:N0} KB" -f $Stage[$name], ((Get-Item $merged).Length / 1KB))
 }
 
+# The catalogue contract, staged ONCE and installed into every plugin folder. It is the one managed
+# file beside a plugin that is not the plugin: a host and a plugin must mean the same interface
+# type, and merging it in would make five private types no host could name. Taken from a plugin's
+# own bin\ rather than built separately, so the copy that ships is the copy they were compiled
+# against.
+$contract = Join-Path $repo "src\Flycast\bin\$Configuration\LbIntegrations.Catalog.dll"
+if (-not (Test-Path $contract)) { throw "The catalogue contract is missing: $contract" }
+Copy-Item $contract (Join-Path $payload 'LbIntegrations.Catalog.dll') -Force
+Write-Host ("  staged {0,-14} {1,8:N0} KB" -f 'the contract', ((Get-Item $contract).Length / 1KB))
+
 # The DSi NAND library. REQUIRED here where deploy-dev.ps1 treats it as optional, and the difference
 # is deliberate: a developer without it still gets four working plugins, but a release without it is
 # a melonDS and a no$gba that cannot touch a DSi NAND, shipped to somebody who cannot tell why.

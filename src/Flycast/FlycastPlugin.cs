@@ -16,6 +16,7 @@ using System.Linq;
 using System.Reflection;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
+using LbIntegrations.Catalog;
 using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Flycast
@@ -36,7 +37,7 @@ namespace LbIntegrations.Flycast
                && All.Any(p => string.Equals(p, platform, StringComparison.InvariantCultureIgnoreCase));
     }
 
-    public partial class FlycastPlugin : EmulatorPlugin, ISystemEventsPlugin
+    public partial class FlycastPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         private const string Repo = "flyinghead/flycast";
 
@@ -73,14 +74,14 @@ namespace LbIntegrations.Flycast
         /// FlycastPlatforms, the recommendation matches IsPlatformSupported, the required BIOS matches
         /// the one FlycastBios marks required, and the command line is FlycastDefaults. Deriving them
         /// from the same facts is what stops the two drifting apart.</summary>
-        private static IEnumerable<LbipEmulatorRow> MetadataRows()
+        private static IEnumerable<LbCatalogEmulator> MetadataRows()
         {
             // Dreamcast discs, plus .elf for homebrew (core/emulator.cpp treats it as a special case).
             const string discExtensions = ".chd; .gdi; .cdi; .cue";
             // Naomi, Naomi 2 and Atomiswave romsets. NOT extracted - see AutoExtract below.
             const string arcadeExtensions = ".zip; .7z; .lst; .bin; .dat";
 
-            yield return new LbipEmulatorRow
+            yield return new LbCatalogEmulator
             {
                 Name = PackName,
                 CommandLine = FlycastDefaults.CommandLine,
@@ -92,16 +93,16 @@ namespace LbIntegrations.Flycast
                 AutoExtract = false,
                 Platforms =
                 {
-                    new LbipPlatformRow { Platform = FlycastPlatforms.Dreamcast,
+                    new LbCatalogPlatform { Platform = FlycastPlatforms.Dreamcast,
                                           ApplicableFileExtensions = discExtensions,
                                           Recommended = true },
-                    new LbipPlatformRow { Platform = FlycastPlatforms.Naomi,
+                    new LbCatalogPlatform { Platform = FlycastPlatforms.Naomi,
                                           ApplicableFileExtensions = arcadeExtensions,
                                           RequiredBiosFile = "naomi.zip" },
-                    new LbipPlatformRow { Platform = FlycastPlatforms.Naomi2,
+                    new LbCatalogPlatform { Platform = FlycastPlatforms.Naomi2,
                                           ApplicableFileExtensions = arcadeExtensions,
                                           RequiredBiosFile = "naomi2.zip" },
-                    new LbipPlatformRow { Platform = FlycastPlatforms.Atomiswave,
+                    new LbCatalogPlatform { Platform = FlycastPlatforms.Atomiswave,
                                           ApplicableFileExtensions = arcadeExtensions,
                                           RequiredBiosFile = "awbios.zip" },
                 },
@@ -116,6 +117,11 @@ namespace LbIntegrations.Flycast
         private const string PackName = "Nixx-Flycast";
 
         public override string EmulatorName => PackName;
+
+        /// <summary>What this plugin brings to a host's emulator catalogue, for a host that asks
+        /// rather than one whose database has to be patched. Same rows either way - see
+        /// MetadataRows.</summary>
+        public IEnumerable<LbCatalogEmulator> EmulatorRows() => MetadataRows();
 
         // ── the host is up ────────────────────────────────────────────
 

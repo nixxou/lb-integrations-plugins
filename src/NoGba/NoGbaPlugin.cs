@@ -29,11 +29,12 @@ using System.Reflection;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 using LbIntegrations.Dsi;
+using LbIntegrations.Catalog;
 using LbIntegrations.Lbip;
 
 namespace LbIntegrations.NoGba
 {
-    public partial class NoGbaPlugin : EmulatorPlugin, ISystemEventsPlugin
+    public partial class NoGbaPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         /// <summary>Spelled as Platforms.xml spells them - read out of the file rather than typed
         /// from memory. There is no DSi platform in LaunchBox's metadata, which is a problem for a
@@ -81,6 +82,11 @@ namespace LbIntegrations.NoGba
 
         public override string EmulatorName => PackName;
 
+        /// <summary>What this plugin brings to a host's emulator catalogue, for a host that asks
+        /// rather than one whose database has to be patched. Same rows either way - see
+        /// MetadataRows.</summary>
+        public IEnumerable<LbCatalogEmulator> EmulatorRows() => MetadataRows();
+
         /// <summary>What LaunchBox's emulator metadata should say about no$gba, published through the
         /// row injection rather than written into their database - see LbipRowInjection.
         ///
@@ -91,11 +97,11 @@ namespace LbIntegrations.NoGba
         /// AUTOEXTRACT IS TRUE, and that is the load-bearing field. no$gba cannot open an archive -
         /// handed one it shows a modal "Cartridge not found" and waits - so the host has to unpack it
         /// first. See NoGbaRoms.</summary>
-        private static IEnumerable<LbipEmulatorRow> MetadataRows()
+        private static IEnumerable<LbCatalogEmulator> MetadataRows()
         {
             var extensions = NoGbaRoms.DeclaredExtensions();
 
-            yield return new LbipEmulatorRow
+            yield return new LbCatalogEmulator
             {
                 Name = PackName,
                 CommandLine = DefaultCommandLine,
@@ -105,7 +111,7 @@ namespace LbIntegrations.NoGba
                 AutoExtract = true,
                 Platforms =
                 {
-                    new LbipPlatformRow
+                    new LbCatalogPlatform
                     {
                         Platform = GbaPlatform,
                         ApplicableFileExtensions = extensions,
@@ -113,7 +119,7 @@ namespace LbIntegrations.NoGba
                         // no$gba is offered, not pushed.
                         Recommended = false,
                     },
-                    new LbipPlatformRow
+                    new LbCatalogPlatform
                     {
                         Platform = DsPlatform,
                         ApplicableFileExtensions = extensions,

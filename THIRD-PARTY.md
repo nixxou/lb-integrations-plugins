@@ -163,6 +163,13 @@ rather than built locally.
 
 ## Not merged
 
+`src\Catalog` builds `LbIntegrations.Catalog.dll`, this repository's own work and MIT like the rest
+of it. It is referenced by every plugin and deliberately **not** merged: it declares the interface a
+host and a plugin both have to name, and type identity in .NET is per-assembly - internalized into
+five DLLs it would become five private types no host could reach. It ships beside each plugin
+instead, which is the one exception to one managed file per plugin folder. It has no dependencies
+and its version is pinned, because one copy of it serves the whole process.
+
 `vendor\Unbroken.LaunchBox.Plugins.dll` is Unbroken Software's SDK. It is referenced with
 `<Private>false</Private>` and deliberately **not** merged: the host must provide it at runtime so
 the plugin's `EmulatorPlugin` and `IEmulator` types are the same types the host uses. It is

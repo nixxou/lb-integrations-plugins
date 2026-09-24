@@ -6,43 +6,31 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using LbIntegrations.Catalog;
 
 namespace LbIntegrations.Lbip
 {
-    /// <summary>One emulator a plugin wants LaunchBox to know about.</summary>
-    internal sealed class LbipEmulatorRow
-    {
-        public string Name;
-        public string CommandLine;
-        public string ApplicableFileExtensions;
-        public string Url;
-        public string BinaryFileName;
-        public bool AutoExtract;
-        public List<LbipPlatformRow> Platforms = new List<LbipPlatformRow>();
-    }
-
-    internal sealed class LbipPlatformRow
-    {
-        public string Platform;
-        public string ApplicableFileExtensions;
-        public bool Recommended;
-        public string RequiredBiosFile;
-    }
+    // THE ROW TYPES LIVE IN THE CONTRACT ASSEMBLY, not here. They were declared in this file until
+    // a host learned to ask for them: a type a host and a plugin both have to name cannot be
+    // compiled into each of them separately, because type identity in .NET is per-assembly and five
+    // copies of one class are five unrelated types. See src\Catalog\LbCatalog.cs.
 
     internal static class LbipRows
     {
         /// <summary>Where every one of our plugins puts its rows, as a List&lt;string[]&gt; hung off
         /// the AppDomain.
         ///
-        /// A LIST OF STRING ARRAYS AND NOTHING RICHER, on purpose. Each plugin merges its own copy of
-        /// these classes, so LbipEmulatorRow in one plugin is a different type from LbipEmulatorRow
-        /// in the next and neither can read the other's objects. Only types they both get from the
-        /// framework can cross, which is why the rows travel encoded.</summary>
+        /// A LIST OF STRING ARRAYS AND NOTHING RICHER, on purpose - and it stayed that way after the
+        /// row types moved into a shared assembly, where objects COULD now cross. This list is the
+        /// one place two INDEPENDENTLY BUILT copies of this pack meet: an old plugin folder left
+        /// beside a new one, a plugin somebody built from a fork. A flat string array is the only
+        /// shape that cannot break when they disagree, and Decode skips a line it does not
+        /// understand rather than taking the rest down with it.</summary>
         public const string SharedKey = "lb-integrations-plugins.rows";
 
         /// <summary>Rows, flattened for the shared list. One line per emulator, then one per
         /// platform - the platform lines name their emulator so order never has to be trusted.</summary>
-        public static IEnumerable<string[]> Encode(LbipEmulatorRow row)
+        public static IEnumerable<string[]> Encode(LbCatalogEmulator row)
         {
             yield return new[]
             {
@@ -50,7 +38,7 @@ namespace LbIntegrations.Lbip
                 row.BinaryFileName, row.AutoExtract ? "1" : "0",
             };
 
-            foreach (var p in row.Platforms ?? Enumerable.Empty<LbipPlatformRow>())
+            foreach (var p in row.Platforms ?? Enumerable.Empty<LbCatalogPlatform>())
             {
                 if (string.IsNullOrWhiteSpace(p?.Platform)) continue;
                 yield return new[]
@@ -64,10 +52,10 @@ namespace LbIntegrations.Lbip
         /// <summary>The other direction. A line of a shape we do not recognise is skipped rather than
         /// fatal: a future plugin may write more than we know how to read, and it must not take the
         /// rows we DO understand down with it.</summary>
-        public static List<LbipEmulatorRow> Decode(IEnumerable<string[]> lines)
+        public static List<LbCatalogEmulator> Decode(IEnumerable<string[]> lines)
         {
-            var byName = new Dictionary<string, LbipEmulatorRow>(StringComparer.OrdinalIgnoreCase);
-            var order = new List<LbipEmulatorRow>();
+            var byName = new Dictionary<string, LbCatalogEmulator>(StringComparer.OrdinalIgnoreCase);
+            var order = new List<LbCatalogEmulator>();
 
             foreach (var line in lines ?? Enumerable.Empty<string[]>())
             {
@@ -75,7 +63,7 @@ namespace LbIntegrations.Lbip
 
                 if (line[0] == "E" && line.Length >= 7 && !byName.ContainsKey(line[1]))
                 {
-                    var row = new LbipEmulatorRow
+                    var row = new LbCatalogEmulator
                     {
                         Name = line[1],
                         CommandLine = line[2],
@@ -89,7 +77,7 @@ namespace LbIntegrations.Lbip
                 }
                 else if (line[0] == "P" && line.Length >= 6 && byName.TryGetValue(line[1], out var owner))
                 {
-                    owner.Platforms.Add(new LbipPlatformRow
+                    owner.Platforms.Add(new LbCatalogPlatform
                     {
                         Platform = line[2],
                         ApplicableFileExtensions = line[3],
@@ -110,7 +98,7 @@ namespace LbIntegrations.Lbip
         /// Only the columns we have something to say about are named; every other column the host
         /// schema declares keeps its default, which is what a row LaunchBox itself never wrote
         /// should look like.</summary>
-        public static IEnumerable<string> BuildInserts(IEnumerable<LbipEmulatorRow> rows)
+        public static IEnumerable<string> BuildInserts(IEnumerable<LbCatalogEmulator> rows)
         {
             foreach (var row in rows)
             {
@@ -125,7 +113,7 @@ namespace LbIntegrations.Lbip
                                          + Q(row.BinaryFileName) + ", 0, 0, 0, 0, "
                                          + (row.AutoExtract ? "1" : "0") + ")";
 
-                foreach (var p in row.Platforms ?? Enumerable.Empty<LbipPlatformRow>())
+                foreach (var p in row.Platforms ?? Enumerable.Empty<LbCatalogPlatform>())
                 {
                     if (string.IsNullOrWhiteSpace(p?.Platform)) continue;
                     yield return @"INSERT INTO ""EmulatorPlatforms""

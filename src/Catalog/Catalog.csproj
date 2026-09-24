@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <!-- netstandard2.0 and not net9: this assembly is loaded by the plugins (net9) AND by a host
+         that may be running net9 or net10, and it is the ONE assembly of which a single copy serves
+         the whole process. The lowest common target is the one that cannot go wrong. It also has no
+         framework surface to speak of - an interface and four fields - so nothing is given up. -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>LbIntegrations.Catalog</AssemblyName>
+    <RootNamespace>LbIntegrations.Catalog</RootNamespace>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+
+    <!-- THE VERSION IS PINNED AND MUST STAY. One copy of this assembly wins for the whole process -
+         the plugin folder's or the host's, whichever the default load context reaches first - so
+         every copy has to be interchangeable with every other. A version bump would make two copies
+         two different identities, and `is ILbCatalogSource` would start answering no for reasons
+         nobody would enjoy finding. If this ever needs to change shape, ADD a member; never rename,
+         remove or renumber. -->
+    <Version>1.0.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+
+    <!-- Nothing to debug in here, and a .pdb beside it in five plugin folders is five files nobody
+         wants. -->
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+</Project>

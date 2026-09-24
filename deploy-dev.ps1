@@ -144,6 +144,21 @@ if ((Get-FileHash $manifestSource -Algorithm SHA256).Hash -ne
     throw "The manifest was not written: $manifestTarget. The plugin would not load."
 }
 
+# THE CATALOGUE CONTRACT goes beside the plugin, always. It is the one managed file in the folder
+# that is not the plugin itself, and it has to be: a host and a plugin must mean the SAME interface
+# type, and type identity in .NET is per-assembly - merged and internalized it would become a
+# private type of the plugin that no host could name. See src\Catalog\LbCatalog.cs.
+$contract = Join-Path $projectDir "bin\$Configuration\LbIntegrations.Catalog.dll"
+if (Test-Path $contract) {
+    $contractTarget = Join-Path $targetDir 'LbIntegrations.Catalog.dll'
+    Copy-Item $contract $contractTarget -Force
+    if ((Get-FileHash $contract -Algorithm SHA256).Hash -ne
+        (Get-FileHash $contractTarget -Algorithm SHA256).Hash) {
+        throw "The catalogue contract was not written: $contractTarget."
+    }
+    Write-Host "           $contractTarget"
+}
+
 # A native companion, when the plugin has one and this checkout has built it. Only melonDS does
 # today: reading and writing a DSi NAND is melonDS's own code, so the plugin calls a small GPL
 # library rather than reimplementing the format. Its absence is not an error - DSiWare then falls

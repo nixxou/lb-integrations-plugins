@@ -16,6 +16,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using Microsoft.Data.Sqlite;
+using LbIntegrations.Catalog;
 using Unbroken.LaunchBox.Plugins;
 
 namespace LbIntegrations.Probe
@@ -107,8 +108,8 @@ namespace LbIntegrations.Probe
             // integration plugin would use. Harmony chains postfixes, so both sets must come back -
             // and this is what an earlier design got wrong, electing one installer and silently
             // dropping everybody else's rows.
-            var second = MakeRow(assembly, "Redream", "redream.exe", "Sega Dreamcast");
-            var clash = MakeRow(assembly, "Demul", "demul.exe", "Sega Dreamcast");
+            var second = MakeRow("Redream", "redream.exe", "Sega Dreamcast");
+            var clash = MakeRow("Demul", "demul.exe", "Sega Dreamcast");
             injection.GetMethod("Install", BindingFlags.Public | BindingFlags.Static)
                      .Invoke(null, new object[] { "com.nixxou.lbip.probe.clash", clash });
             injection.GetMethod("Install", BindingFlags.Public | BindingFlags.Static)
@@ -128,7 +129,7 @@ namespace LbIntegrations.Probe
                 stranger = ByName(copy, "LbipRowInjection");
                 stranger.GetMethod("Install", BindingFlags.Public | BindingFlags.Static)
                         .Invoke(null, new object[] { "com.nixxou.lbip.probe.stranger",
-                                                     MakeRow(copy, "Xenia", "xenia_canary.exe",
+                                                     MakeRow("Xenia", "xenia_canary.exe",
                                                              "Microsoft Xbox 360") });
             }
             catch (Exception ex)
@@ -285,28 +286,71 @@ namespace LbIntegrations.Probe
             Console.WriteLine(_fail == 0
                 ? "  OK - the injection holds against a real provider"
                 : "  " + _fail + " FAILURE(S)");
+            TheHostCanJustAsk(plugin, ourName);
+
             return _fail == 0;
         }
 
-        /// <summary>One row, built through the plugin's own internal types - the same shape a second
-        /// integration plugin would register.</summary>
-        private static object MakeRow(Assembly assembly, string name, string binary, string platform)
+        /// <summary>The door, as opposed to the window this whole file otherwise tests.
+        ///
+        /// Everything above exists because LaunchBox offers no way to add an emulator to its
+        /// catalogue: the rows get in by patching SqliteCommand and chaining onto somebody else's
+        /// reader. A host that implements ILbCatalogSource does not need any of it - it asks, and
+        /// gets a typed answer.
+        ///
+        /// WHAT IS ACTUALLY BEING PROVED HERE is type identity, which is the one thing shared source
+        /// could not have given. Compile an interface into five plugins and you have five unrelated
+        /// types that merely agree on a name, and a host's `is` answers no to every one of them. The
+        /// contract lives in an assembly of its own, shipped beside each plugin and loaded once, so
+        /// the interface the plugin implements is THE interface this probe compiled against. The
+        /// check below says exactly that, rather than settling for a name that matches.</summary>
+        private static void TheHostCanJustAsk(EmulatorPlugin plugin, string publishedName)
         {
-            var rowType = ByName(assembly, "LbipEmulatorRow");
-            var platformType = ByName(assembly, "LbipPlatformRow");
-            var row = Activator.CreateInstance(rowType);
-            rowType.GetField("Name").SetValue(row, name);
-            rowType.GetField("BinaryFileName").SetValue(row, binary);
+            Console.WriteLine();
+            Console.WriteLine("  -- a host that asks instead of patching");
 
-            var one = Activator.CreateInstance(platformType);
-            platformType.GetField("Platform").SetValue(one, platform);
-            ((IList)rowType.GetField("Platforms").GetValue(row)).Add(one);
+            // Unset is what LaunchBox leaves it as, having never heard of the contract, and unset
+            // has to mean "patch" or the fallback would not run where it is the only way in.
+            Check("a host that says nothing still gets the patch", !LbCatalog.HostWillAsk);
 
-            var list = (IList)Activator.CreateInstance(
-                typeof(List<>).MakeGenericType(rowType));
-            list.Add(row);
-            return list;
+            var source = plugin as ILbCatalogSource;
+            Check("the plugin can be asked", source != null);
+            if (source == null) return;
+
+            var theirs = plugin.GetType().GetInterfaces()
+                               .FirstOrDefault(i => i.FullName == typeof(ILbCatalogSource).FullName);
+            Check("and what it implements is the very interface this host holds, not a namesake",
+                  theirs == typeof(ILbCatalogSource));
+            Check("because one copy of the contract assembly serves both sides",
+                  theirs != null && theirs.Assembly == typeof(ILbCatalogSource).Assembly);
+
+            var asked = source.EmulatorRows()?.Where(r => r != null).ToList()
+                        ?? new List<LbCatalogEmulator>();
+            Check("asking returns rows", asked.Count > 0);
+            Check("the same rows the injection publishes",
+                  asked.Any(r => string.Equals(r.Name, publishedName, StringComparison.Ordinal)));
+            Check("each with its platforms attached",
+                  asked.Count > 0 && asked.All(r => r.Platforms != null && r.Platforms.Count > 0));
+            Check("and an executable to look for",
+                  asked.All(r => !string.IsNullOrWhiteSpace(r.BinaryFileName)));
         }
+
+        /// <summary>One row, the same shape a second integration plugin would register.
+        ///
+        /// This used to take the plugin's assembly and build the row by reflection, because the row
+        /// type was compiled into each plugin and the probe had no way to name it. Now that the
+        /// contract is an assembly both sides hold, it is just a constructor - which is the whole
+        /// point of the change, visible here as the reflection that went away.</summary>
+        private static object MakeRow(string name, string binary, string platform)
+            => new List<LbCatalogEmulator>
+            {
+                new LbCatalogEmulator
+                {
+                    Name = name,
+                    BinaryFileName = binary,
+                    Platforms = { new LbCatalogPlatform { Platform = platform } },
+                },
+            };
 
         private static bool Survives(Action action)
         {

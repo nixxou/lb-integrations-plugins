@@ -75,6 +75,10 @@
       <LogicalName>payload/Nixx-Xenia/manifest.json</LogicalName>
     </EmbeddedResource>
 
+    <EmbeddedResource Include="$(PayloadDir)\LbIntegrations.Catalog.dll">
+      <LogicalName>payload/LbIntegrations.Catalog.dll</LogicalName>
+    </EmbeddedResource>
+
     <EmbeddedResource Include="$(PayloadDir)\native\melonds-nand.dll">
       <LogicalName>payload/native/melonds-nand.dll</LogicalName>
     </EmbeddedResource>

@@ -88,6 +88,7 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using HarmonyLib;
+using LbIntegrations.Catalog;
 
 namespace LbIntegrations.Lbip
 {
@@ -119,7 +120,7 @@ namespace LbIntegrations.Lbip
         /// <summary>Register these rows and install the patch if nobody has yet. Never throws: a
         /// plugin whose metadata could not be published still works for an emulator the user points
         /// at by hand.</summary>
-        public static void Install(string pluginId, IEnumerable<LbipEmulatorRow> rows)
+        public static void Install(string pluginId, IEnumerable<LbCatalogEmulator> rows)
         {
             try
             {
@@ -128,6 +129,23 @@ namespace LbIntegrations.Lbip
                     Publish(rows);
 
                     if (_installed) return;
+
+                    // A HOST THAT OFFERS A DOOR IS NOT PATCHED. Everything below exists because
+                    // LaunchBox has no way to add an emulator to its catalogue and no intention of
+                    // growing one; it is a hack on a closed source, and it is the price of that
+                    // host. A host that implements the ask instead - it sets this flag before it
+                    // constructs anything, then reads ILbCatalogSource off the plugins it loaded -
+                    // gets a method call with a typed answer, and none of this runs.
+                    //
+                    // LaunchBox has never heard of that assembly, so the flag is false there and
+                    // the fallback stands. Unset meaning "patch" is the safe default: a host that
+                    // says nothing gets the behaviour that works everywhere.
+                    if (LbCatalog.HostWillAsk)
+                    {
+                        LbipLog.Info("the host reads ILbCatalogSource itself - nothing is patched");
+                        _installed = true;
+                        return;
+                    }
 
                     // A KILL SWITCH, for telling this feature's effects apart from everything else's.
                     // Create an empty file
@@ -175,7 +193,7 @@ namespace LbIntegrations.Lbip
         /// By NAME, and it is not paranoia: a host may construct the same plugin class more than once
         /// - measured - and each row would then be served twice. An emulator listed twice in the Add
         /// Emulator window is worse than one listed not at all.</summary>
-        private static void Publish(IEnumerable<LbipEmulatorRow> rows)
+        private static void Publish(IEnumerable<LbCatalogEmulator> rows)
         {
             if (rows == null) return;
 
@@ -460,7 +478,7 @@ namespace LbIntegrations.Lbip
             // as that table is concerned, which is the point. What this still prevents is a row of
             // ours landing on a name they own: the user would get two identical entries in the Add
             // Emulator window and no way to tell which is which.
-            var mine = new List<LbipEmulatorRow>();
+            var mine = new List<LbCatalogEmulator>();
             foreach (var row in rows)
             {
                 if (HostAlreadyKnows(host, row.Name))

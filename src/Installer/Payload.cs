@@ -59,6 +59,13 @@ internal static class Payload
     private const string NandLib  = "payload/native/melonds-nand.dll";
     private const string NandTool = "payload/native/melonds-nandtool.exe";
 
+    // THE CATALOGUE CONTRACT, the one managed file that is not the plugin itself. It cannot be
+    // merged in: a host and a plugin have to mean the SAME interface type, and type identity in
+    // .NET is per-assembly - internalized into five DLLs it would become five private types no host
+    // could name. So one copy goes into each plugin folder, all identical, and whichever the load
+    // context reaches first serves the whole process. See src\Catalog\LbCatalog.cs.
+    private const string Contract = "payload/LbIntegrations.Catalog.dll";
+
     // The library lands under native\ and WITHOUT the .dll extension. That is not tidiness.
     // LaunchBox loads every .dll in a plugin folder as a .NET assembly, and a native one there
     // produces "System.BadImageFormatException: Bad IL format ... failed to load during
@@ -68,22 +75,27 @@ internal static class Payload
     {
         new("payload/Nixx-Flycast/Flycast.dll",     Flycast, "Flycast.dll"),
         new("payload/Nixx-Flycast/manifest.json",   Flycast, "manifest.json"),
+        new(Contract,                               Flycast, "LbIntegrations.Catalog.dll"),
 
         new("payload/Nixx-melonDS/MelonDs.dll",     MelonDs, "MelonDs.dll"),
         new("payload/Nixx-melonDS/manifest.json",   MelonDs, "manifest.json"),
+        new(Contract,                               MelonDs, "LbIntegrations.Catalog.dll"),
         new(NandLib,                                MelonDs, @"native\melonds-nand.native"),
         new(NandTool,                               MelonDs, @"native\melonds-nandtool.exe"),
 
         new("payload/Nixx-nogba/NoGba.dll",         NoGba,   "NoGba.dll"),
         new("payload/Nixx-nogba/manifest.json",     NoGba,   "manifest.json"),
+        new(Contract,                               NoGba,   "LbIntegrations.Catalog.dll"),
         new(NandLib,                                NoGba,   @"native\melonds-nand.native"),
         new(NandTool,                               NoGba,   @"native\melonds-nandtool.exe"),
 
         new("payload/Nixx-PPSSPP/Ppsspp.dll",       Ppsspp,  "Ppsspp.dll"),
         new("payload/Nixx-PPSSPP/manifest.json",    Ppsspp,  "manifest.json"),
+        new(Contract,                               Ppsspp,  "LbIntegrations.Catalog.dll"),
 
         new("payload/Nixx-Xenia/Xenia.dll",         Xenia,   "Xenia.dll"),
         new("payload/Nixx-Xenia/manifest.json",     Xenia,   "manifest.json"),
+        new(Contract,                               Xenia,   "LbIntegrations.Catalog.dll"),
     };
 
     /// <summary>What an older deploy put in the folder LaunchBox scans, rather than under native\.

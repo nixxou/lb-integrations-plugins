@@ -21,6 +21,16 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- THE CATALOGUE CONTRACT, referenced and SHIPPED rather than merged. It is the one assembly
+         of this pack that a host also holds, and type identity in .NET is per-assembly: merged and
+         internalized it would become a private type of this DLL, and the host's `is
+         ILbCatalogSource` would answer no. So it stays its own file beside the plugin - the one
+         exception to "a plugin folder holds exactly one managed file", and it buys the difference
+         between being asked and patching somebody's database reads. See src\Catalog\LbCatalog.cs. -->
+    <ProjectReference Include="..\Catalog\Catalog.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- THE SHARED ROW INJECTION, compiled in rather than referenced. All five plugins publish
          rows into LaunchBox's emulator catalogue, and the machinery is identical for every one of
          them: it talks to the host's SQLite reads, not to any one emulator. It was three verbatim
@@ -74,7 +84,7 @@
     </PropertyGroup>
     <ItemGroup>
       <MergeInput Include="$(OutDir)$(AssemblyName).dll" />
-      <MergeInput Include="$(OutDir)*.dll" Exclude="$(OutDir)$(AssemblyName).dll" />
+      <MergeInput Include="$(OutDir)*.dll" Exclude="$(OutDir)$(AssemblyName).dll;$(OutDir)LbIntegrations.Catalog.dll" />
       <!-- The trailing "." keeps a directory ending in \ from escaping the closing quote. -->
       <MergeLib Include="@(ReferencePath->'%(RootDir)%(Directory).')" />
     </ItemGroup>

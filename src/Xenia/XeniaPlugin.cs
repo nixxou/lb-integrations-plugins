@@ -20,11 +20,12 @@ using System.Linq;
 using System.Reflection;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
+using LbIntegrations.Catalog;
 using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Xenia
 {
-    public partial class XeniaPlugin : EmulatorPlugin, ISystemEventsPlugin
+    public partial class XeniaPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         private const string CanaryRepo = "xenia-canary/xenia-canary";
         private const string Xbox360Platform = "Microsoft Xbox 360";
@@ -74,11 +75,11 @@ namespace LbIntegrations.Xenia
         /// what a user then has to fix by hand. The extensions and AutoExtract are left exactly as
         /// theirs: this plugin has measured nothing that says otherwise, and inventing capability a
         /// user would discover was wrong is worse than repeating what is already there.</summary>
-        private static IEnumerable<LbipEmulatorRow> MetadataRows()
+        private static IEnumerable<LbCatalogEmulator> MetadataRows()
         {
             const string extensions = ".iso";
 
-            yield return new LbipEmulatorRow
+            yield return new LbCatalogEmulator
             {
                 Name = PackName,
                 CommandLine = DefaultCommandLine,
@@ -88,7 +89,7 @@ namespace LbIntegrations.Xenia
                 AutoExtract = true,
                 Platforms =
                 {
-                    new LbipPlatformRow { Platform = Xbox360Platform,
+                    new LbCatalogPlatform { Platform = Xbox360Platform,
                                           ApplicableFileExtensions = extensions,
                                           Recommended = true },
                 },
@@ -96,6 +97,11 @@ namespace LbIntegrations.Xenia
         }
 
         public override string EmulatorName => PackName;
+
+        /// <summary>What this plugin brings to a host's emulator catalogue, for a host that asks
+        /// rather than one whose database has to be patched. Same rows either way - see
+        /// MetadataRows.</summary>
+        public IEnumerable<LbCatalogEmulator> EmulatorRows() => MetadataRows();
 
         // -- the host is up ------------------------------------------------
 

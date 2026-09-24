@@ -151,8 +151,9 @@ Or by hand. LaunchBox 14 reads three plugin roots and the choice matters:
 | `Local\Plugins\` | third-party, managed, `SourceKind: "Local"` | **yes**, with a `manifest.json` beside the DLL |
 | `Plugins\` | the legacy root, no manifest needed | works, but is not the managed location |
 
-So: `<LaunchBox>\Local\Plugins\<Name>\<Plugin>.dll` plus its `manifest.json`. Before LaunchBox 14,
-`Plugins\` is the only option. `<Name>` is the folder from this table, and it is also what
+So: `<LaunchBox>\Local\Plugins\<Name>\<Plugin>.dll`, plus its `manifest.json` and
+`LbIntegrations.Catalog.dll` - see *How a host is told about an emulator* below for why that third
+file is there. Before LaunchBox 14, `Plugins\` is the only option. `<Name>` is the folder from this table, and it is also what
 **Options ▸ Plugins** shows:
 
 | project | folder, and manifest `Name` | the row it publishes to LaunchBox's catalogue |
@@ -175,6 +176,50 @@ GUIDs, which is what keeps an existing install's settings where they were.
 Plugins are loaded once at start-up, so restart the frontend. Under LiteBox, tick the plugin in
 **Options ▸ Plugins** the first time; it is not auto-enabled, deliberately, because the name that
 would auto-enable it (`... LaunchBox Integration`) impersonates Unbroken's own.
+
+## How a host is told about an emulator
+
+LaunchBox builds its Add Emulator list from `Metadata\LaunchBox.Metadata.db`, a file this pack does
+not own and must not write to. Three of the five emulators here have no row in it at all - there is
+none for Flycast while Demul, nullDC and Redream are all there, dead for years, and no standalone DS
+emulator of any kind - and the two that do have one have it without any mention of an integration.
+Without a row the platform grid has nothing to narrow, and the emulator looks like it covers
+everything.
+
+There is no API for adding one. So there are two paths, and which one runs depends on the host.
+
+**A host that asks.** A plugin implements `ILbCatalogSource`, from `LbIntegrations.Catalog.dll`, and
+a host that knows the interface calls it and merges the answer into its own list. That is all of it:
+a method call with a typed answer. LiteBox does this - `PluginLoader` announces it before it
+constructs anything, and `EmuPresets` does the asking.
+
+**A host that does not.** LaunchBox has never heard of that interface and offers no other door, so
+`LbipRowInjection` puts two Harmony postfixes on `SqliteCommand.ExecuteDbDataReader` and chains our
+rows onto the reader LaunchBox is about to get. It re-runs the host's own SQL against a private
+in-memory database holding only our rows, so the `WHERE`, the projection and the joins are honoured
+by SQLite itself rather than parsed by us. It is a hack on somebody else's closed source, it is
+measured, and it is the price of that host.
+
+The fallback is what runs when nothing says otherwise, which is the right default: a host that says
+nothing gets the behaviour that works everywhere.
+
+### Why `LbIntegrations.Catalog.dll` is a separate file
+
+It is the one managed file in a plugin folder that is not the plugin, and this repository otherwise
+insists on exactly one. The reason is type identity: in .NET it is per-assembly, so an interface
+compiled into five plugins is five unrelated types that merely agree on a name, and a host's
+`is ILbCatalogSource` answers no to every one of them. Merged and internalized by ILRepack it would
+be worse still - a private type of each DLL that no host could even name.
+
+So it ships beside each plugin, identical everywhere, and whichever copy the load context reaches
+first serves the whole process. It ships rather than being provided by the host because under
+LaunchBox nothing would provide it, and a plugin whose interface will not resolve does not load at
+all. Its version is pinned at 1.0.0.0 and has to stay: two copies with different identities are two
+different types.
+
+The probe asserts the whole of this - that the interface a plugin implements is the very one the
+host holds, and not a namesake - because a name that matches is exactly what a broken version of
+this would look like.
 
 ## Testing without a frontend
 

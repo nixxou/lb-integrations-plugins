@@ -25,11 +25,12 @@ using System.Linq;
 using System.Reflection;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
+using LbIntegrations.Catalog;
 using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Ppsspp
 {
-    public partial class PpssppPlugin : EmulatorPlugin, ISystemEventsPlugin
+    public partial class PpssppPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         private const string Repo = "hrydgard/ppsspp";
         private const string PspPlatform = "Sony PSP";       // exactly as LaunchBox's metadata db spells it
@@ -86,11 +87,11 @@ namespace LbIntegrations.Ppsspp
         /// PspDiscId can actually read. That last one is a real difference from LaunchBox's own row,
         /// which lists neither .chd nor .zso although PPSSPP has run both for years and this plugin
         /// reads a disc id out of them.</summary>
-        private static IEnumerable<LbipEmulatorRow> MetadataRows()
+        private static IEnumerable<LbCatalogEmulator> MetadataRows()
         {
             const string extensions = ".iso; .cso; .zso; .chd; .pbp; .elf; .prx; .zip; .ppdmp";
 
-            yield return new LbipEmulatorRow
+            yield return new LbCatalogEmulator
             {
                 Name = PackName,
                 CommandLine = DefaultCommandLine,
@@ -100,7 +101,7 @@ namespace LbIntegrations.Ppsspp
                 AutoExtract = false,
                 Platforms =
                 {
-                    new LbipPlatformRow { Platform = PspPlatform,
+                    new LbCatalogPlatform { Platform = PspPlatform,
                                           ApplicableFileExtensions = extensions,
                                           Recommended = true },
                 },
@@ -108,6 +109,11 @@ namespace LbIntegrations.Ppsspp
         }
 
         public override string EmulatorName => PackName;
+
+        /// <summary>What this plugin brings to a host's emulator catalogue, for a host that asks
+        /// rather than one whose database has to be patched. Same rows either way - see
+        /// MetadataRows.</summary>
+        public IEnumerable<LbCatalogEmulator> EmulatorRows() => MetadataRows();
 
         // -- the host is up ------------------------------------------------
 

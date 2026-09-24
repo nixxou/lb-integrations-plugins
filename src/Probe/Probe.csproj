@@ -32,6 +32,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- THE CONTRACT, held the way a host holds it. This is not a convenience: the whole claim
+         being tested is that the interface a plugin implements and the one a host names are the
+         SAME TYPE. Referencing it here puts one copy in the default load context before any plugin
+         is loaded, which is exactly what LiteBox does, and lets the check below assert identity
+         rather than a matching name. -->
+    <ProjectReference Include="..\Catalog\Catalog.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- The probe DOES need the SDK beside it: it is the host here, so it must provide the types
          the plugin resolves against. This is the one project where Private=true is correct. -->
     <Reference Include="Unbroken.LaunchBox.Plugins">
