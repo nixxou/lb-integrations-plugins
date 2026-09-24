@@ -31,9 +31,9 @@ using System.IO;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace LbIntegrations.MelonDs
+namespace LbIntegrations.Dsi
 {
-    internal static class MelonDsDialog
+    internal static class DsiDialog
     {
         /// <summary>Beside the log, like every other switch here.</summary>
         private const string KillSwitch = "no-melonds-dialog";
@@ -47,7 +47,7 @@ namespace LbIntegrations.MelonDs
         /// sense with somebody watching.</summary>
         public static bool Available
         {
-            get { try { return !Suppressed && !Log.Disabled(KillSwitch); } catch { return false; } }
+            get { try { return !Suppressed && !DsiLog.Disabled(KillSwitch); } catch { return false; } }
         }
 
         /// <summary>How long to wait for somebody to read it. A launch that hangs forever because a
@@ -69,16 +69,16 @@ namespace LbIntegrations.MelonDs
                     try { chosen = Run(title, body, buttons); }
                     catch (Exception ex)
                     {
-                        Log.Verbose("no window could be shown (" + ex.GetType().Name + ")");
+                        DsiLog.Verbose("no window could be shown (" + ex.GetType().Name + ")");
                     }
                 });
                 thread.SetApartmentState(ApartmentState.STA);
                 thread.IsBackground = true;
                 thread.Start();
                 if (!thread.Join(Patience))
-                    Log.Verbose("a window was left open; carrying on without an answer");
+                    DsiLog.Verbose("a window was left open; carrying on without an answer");
             }
-            catch (Exception ex) { Log.Verbose("could not show a window - " + ex.Message); }
+            catch (Exception ex) { DsiLog.Verbose("could not show a window - " + ex.Message); }
             return chosen;
         }
 
@@ -159,7 +159,7 @@ namespace LbIntegrations.MelonDs
                 var thread = new Thread(() =>
                 {
                     try { Run(title, body, ready); }
-                    catch (Exception ex) { Log.Verbose("no waiting window (" + ex.GetType().Name + ")"); }
+                    catch (Exception ex) { DsiLog.Verbose("no waiting window (" + ex.GetType().Name + ")"); }
                     finally { ready.Set(); }
                 });
                 thread.SetApartmentState(ApartmentState.STA);
@@ -219,7 +219,7 @@ namespace LbIntegrations.MelonDs
                     if (form == null || form.IsDisposed) return;
                     if (form.IsHandleCreated) form.BeginInvoke((Action)(() => { try { form.Close(); } catch { } }));
                 }
-                catch (Exception ex) { Log.Verbose("could not close a waiting window - " + ex.Message); }
+                catch (Exception ex) { DsiLog.Verbose("could not close a waiting window - " + ex.Message); }
             }
         }
 
@@ -228,7 +228,7 @@ namespace LbIntegrations.MelonDs
         public static Waiting Wait(string title, string body)
         {
             try { return Available ? new Waiting(title, body) : null; }
-            catch (Exception ex) { Log.Verbose("could not show a waiting window - " + ex.Message); return null; }
+            catch (Exception ex) { DsiLog.Verbose("could not show a waiting window - " + ex.Message); return null; }
         }
 
         // ── the three things that cannot be left unsaid ──────────────────────
@@ -273,7 +273,7 @@ namespace LbIntegrations.MelonDs
                                  new[] { "Open the folder", "Close" });
                 if (answer == 0) OpenFolder(folder);
             }
-            catch (Exception ex) { Log.Verbose("could not show the missing-files window - " + ex.Message); }
+            catch (Exception ex) { DsiLog.Verbose("could not show the missing-files window - " + ex.Message); }
         }
 
         /// <summary>Open a folder in Explorer. UseShellExecute is what makes a directory path open
@@ -286,7 +286,7 @@ namespace LbIntegrations.MelonDs
                 Directory.CreateDirectory(folder);
                 Process.Start(new ProcessStartInfo { FileName = folder, UseShellExecute = true });
             }
-            catch (Exception ex) { Log.Verbose("could not open " + folder + " - " + ex.Message); }
+            catch (Exception ex) { DsiLog.Verbose("could not open " + folder + " - " + ex.Message); }
         }
     }
 }

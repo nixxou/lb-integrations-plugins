@@ -20,8 +20,9 @@ using System.IO;
 using SharpCompress.Archives;
 using SharpCompress.Readers;
 using SharpCompress.Common;
+using LbIntegrations.Dsi;
 
-namespace LbIntegrations.MelonDs
+namespace LbIntegrations.Dsi
 {
     internal static class Archives
     {
@@ -50,7 +51,7 @@ namespace LbIntegrations.MelonDs
                     source.CopyTo(destination);
                 files++;
             }
-            Log.Info("extracted " + files + " file(s) from " + Path.GetFileName(archivePath));
+            DsiLog.Info("extracted " + files + " file(s) from " + Path.GetFileName(archivePath));
         }
 
         /// <summary>The name of the first entry whose extension is one of <paramref name="extensions"/>,
@@ -94,7 +95,7 @@ namespace LbIntegrations.MelonDs
                     return true;
                 }
             }
-            catch (Exception ex) { Log.Verbose("could not look inside " + archivePath + " - " + ex.Message); }
+            catch (Exception ex) { DsiLog.Verbose("could not look inside " + archivePath + " - " + ex.Message); }
 
             // ArchiveFactory wants a container with a directory it can seek around in, which a
             // gzipped tar is not - measured: .tar opens, .tar.gz does not. ReaderFactory reads a
@@ -130,7 +131,7 @@ namespace LbIntegrations.MelonDs
                     return true;
                 }
             }
-            catch (Exception ex) { Log.Verbose("could not stream " + archivePath + " - " + ex.Message); }
+            catch (Exception ex) { DsiLog.Verbose("could not stream " + archivePath + " - " + ex.Message); }
             return false;
         }
 
@@ -180,7 +181,7 @@ namespace LbIntegrations.MelonDs
                     return true;
                 }
             }
-            catch (Exception ex) { Log.Verbose("could not unpack " + archivePath + " - " + ex.Message); }
+            catch (Exception ex) { DsiLog.Verbose("could not unpack " + archivePath + " - " + ex.Message); }
 
             return ExtractStreaming(archivePath, extensions, destPath, out entryName);
         }
@@ -208,7 +209,7 @@ namespace LbIntegrations.MelonDs
                     return true;
                 }
             }
-            catch (Exception ex) { Log.Verbose("could not stream " + archivePath + " - " + ex.Message); }
+            catch (Exception ex) { DsiLog.Verbose("could not stream " + archivePath + " - " + ex.Message); }
             return false;
         }
 

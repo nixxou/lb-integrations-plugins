@@ -160,7 +160,7 @@ namespace LbIntegrations.Probe
             bytes[0x236] = (byte)((titleIdHigh >> 16) & 0xFF);
             bytes[0x237] = (byte)((titleIdHigh >> 24) & 0xFF);
 
-            // DSiRegionMask, at the offset MelonDsRegion reads it from.
+            // DSiRegionMask, at the offset DsiRegions reads it from.
             bytes[0x1B0] = (byte)(regionMask & 0xFF);
             bytes[0x1B1] = (byte)((regionMask >> 8) & 0xFF);
             bytes[0x1B2] = (byte)((regionMask >> 16) & 0xFF);
@@ -324,7 +324,7 @@ namespace LbIntegrations.Probe
             if (text == null || read == null) { Console.WriteLine("    no MelonDsToml.Text/Read"); return false; }
 
             string awkward = Path.Combine(root, "John's Saves");
-            var encoded = (string)text.Invoke(null, new object[] { awkward });
+            var encoded = (string)Call(text, new object[] { awkward });
 
             var path = Path.Combine(root, "apostrophe.toml");
             File.WriteAllText(path, "[Instance0]\r\nSaveFilePath = " + encoded + "\r\n");
@@ -358,12 +358,12 @@ namespace LbIntegrations.Probe
 
             // A plain DS ROM: mode 0, written because the file starts out claiming 1.
             File.WriteAllText(path, "[Emu]\r\nConsoleType = 1\r\n");
-            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }), Path.Combine(romDir, PlainRom) });
+            Call(choose, new[] { Call(resolve, new object[] { exe }), Path.Combine(romDir, PlainRom) });
             ok &= Check("a plain DS ROM asks for DS mode", ConsoleTypeIn(path) == 0);
 
             // A DSi ROM with no DSi files configured: refused, and left as it was.
             File.WriteAllText(path, "[Emu]\r\nConsoleType = 0\r\n");
-            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }), Path.Combine(romDir, DsiRom) });
+            Call(choose, new[] { Call(resolve, new object[] { exe }), Path.Combine(romDir, DsiRom) });
             ok &= Check("a DSi ROM without the DSi files stays in DS mode", ConsoleTypeIn(path) == 0);
 
             // The same ROM with the three files present: DSi mode.
@@ -376,12 +376,12 @@ namespace LbIntegrations.Probe
                 + "BIOS7Path = '" + Path.Combine(bios, "dsi_bios7.bin") + "'\r\n"
                 + "BIOS9Path = '" + Path.Combine(bios, "dsi_bios9.bin") + "'\r\n"
                 + "NANDPath = '" + Path.Combine(bios, "dsi_nand.bin") + "'\r\n");
-            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }), Path.Combine(romDir, DsiRom) });
+            Call(choose, new[] { Call(resolve, new object[] { exe }), Path.Combine(romDir, DsiRom) });
             ok &= Check("a DSi ROM WITH the DSi files asks for DSi mode", ConsoleTypeIn(path) == 1);
 
             // DSiWare: nothing is written, whatever the mode happens to be.
             File.WriteAllText(path, "[Emu]\r\nConsoleType = 0\r\n");
-            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }), Path.Combine(romDir, WareRom) });
+            Call(choose, new[] { Call(resolve, new object[] { exe }), Path.Combine(romDir, WareRom) });
             ok &= Check("a DSiWare ROM changes nothing - melonDS boots those from the NAND",
                         ConsoleTypeIn(path) == 0);
 
@@ -436,7 +436,7 @@ namespace LbIntegrations.Probe
                 var titleId = rom.GetType().GetProperty("TitleId")?.GetValue(rom) as string;
                 if (!string.IsNullOrEmpty(titleId)) Console.WriteLine("  title id   : " + titleId);
 
-                var region = TypeIn("MelonDsRegion");
+                var region = TypeIn("DsiRegions");
                 var args = new object[] { rom, romPath, null };
                 var regions = region.GetMethod("RegionsFor", BindingFlags.Public | BindingFlags.Static)
                                     .Invoke(null, args);
@@ -489,7 +489,7 @@ namespace LbIntegrations.Probe
         {
             try
             {
-                var field = TypeIn("MelonDsDialog")
+                var field = TypeIn("DsiDialog")
                     .GetField("Suppressed", BindingFlags.Public | BindingFlags.Static);
                 if (field == null)
                 {
@@ -510,7 +510,7 @@ namespace LbIntegrations.Probe
             try
             {
                 var method = TypeIn("Log").GetMethod("Marker", BindingFlags.Public | BindingFlags.Static);
-                return method != null && (bool)method.Invoke(null, new object[] { name });
+                return method != null && (bool)Call(method, new object[] { name });
             }
             catch { return false; }
         }
@@ -565,7 +565,7 @@ namespace LbIntegrations.Probe
 
             string install = Path.GetDirectoryName(exe);
             string dsi = Path.Combine(install, "dsi");
-            string bios = BiosDir(resolve.Invoke(null, new object[] { exe }));
+            string bios = BiosDir(Call(resolve, new object[] { exe }));
             string toml = ConfigPath(exe);
             string ware = Path.Combine(romDir, WareRom);
 
@@ -576,7 +576,7 @@ namespace LbIntegrations.Probe
             //    paths and a path nobody can see is a spelling to guess at.
             File.WriteAllText(toml, "[Emu]\r\nConsoleType = 0\r\n");
             long mark = LogLength();
-            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }), ware });
+            Call(choose, new[] { Call(resolve, new object[] { exe }), ware });
             var said = LogSince(mark);
 
             ok &= Check("no NAND is invented out of nothing", !File.Exists(Path.Combine(dsi, "work.bin")));
@@ -595,7 +595,7 @@ namespace LbIntegrations.Probe
             foreach (var name in new[] { dsi7, dsi9, dsiFw }) Write(bios, name, 0x10000);
 
             File.WriteAllText(toml, "[Emu]\r\nConsoleType = 0\r\n");
-            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }), ware });
+            Call(choose, new[] { Call(resolve, new object[] { exe }), ware });
 
             var keys = TomlValues(toml, "DSi");
             ok &= Check("a " + dsi7 + " dropped in the folder is pointed at",
@@ -610,7 +610,7 @@ namespace LbIntegrations.Probe
             //    decrypting every stray .bin in the folder to find out would cost a second a launch.
             Write(bios, "not-a-nand.bin", 4096);
             mark = LogLength();
-            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }), ware });
+            Call(choose, new[] { Call(resolve, new object[] { exe }), ware });
             ok &= Check("a file that is not NAND-sized is never opened",
                         !LogSince(mark).Contains("not-a-nand.bin"));
 
@@ -618,7 +618,7 @@ namespace LbIntegrations.Probe
             //     Nothing in the folder: external BIOS goes OFF, and melonDS boots on its built-in
             //     one rather than refusing to start.
             File.WriteAllText(toml, "[Emu]\r\nConsoleType = 0\r\nExternalBIOSEnable = true\r\n");
-            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }),
+            Call(choose, new[] { Call(resolve, new object[] { exe }),
                                         Path.Combine(romDir, PlainRom) });
             ok &= Check("with no DS BIOS, external BIOS is turned off so the game still runs",
                         TomlValues(toml, "Emu").TryGetValue("ExternalBIOSEnable", out var off)
@@ -633,7 +633,7 @@ namespace LbIntegrations.Probe
             Write(bios, dsFw, 0x40000);
 
             File.WriteAllText(toml, "[Emu]\r\nConsoleType = 0\r\n");
-            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }),
+            Call(choose, new[] { Call(resolve, new object[] { exe }),
                                         Path.Combine(romDir, PlainRom) });
             var ds = TomlValues(toml, "DS");
             ok &= Check("the DS ARM7 BIOS is found by name and configured",
@@ -652,7 +652,7 @@ namespace LbIntegrations.Probe
             File.WriteAllText(toml,
                 "[Emu]\r\nConsoleType = 0\r\n\r\n[DS]\r\n"
                 + "BIOS7Path = '" + his7 + "'\r\n");
-            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }),
+            Call(choose, new[] { Call(resolve, new object[] { exe }),
                                         Path.Combine(romDir, PlainRom) });
             ok &= Check("a DS path the user set himself is left alone",
                         TomlValues(toml, "DS").TryGetValue("BIOS7Path", out var kept) && kept == his7);
@@ -665,7 +665,7 @@ namespace LbIntegrations.Probe
             Write(bios, ds7, 1234);
             File.WriteAllText(toml, "[Emu]\r\nConsoleType = 0\r\n");
             mark = LogLength();
-            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }),
+            Call(choose, new[] { Call(resolve, new object[] { exe }),
                                         Path.Combine(romDir, PlainRom) });
             said = LogSince(mark);
             ok &= Check("a BIOS of the wrong size is used anyway",
@@ -688,7 +688,7 @@ namespace LbIntegrations.Probe
             Write(shared, "firmware.bin", 0x40000);
 
             File.WriteAllText(toml, "[Emu]\r\nConsoleType = 0\r\n");
-            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }),
+            Call(choose, new[] { Call(resolve, new object[] { exe }),
                                         Path.Combine(romDir, PlainRom) });
             ok &= Check("a BIOS in RetroArch's system folder, under RetroArch's name, is found",
                         (TomlValues(toml, "DS").TryGetValue("BIOS7Path", out var ra) ? ra : "")
@@ -699,7 +699,7 @@ namespace LbIntegrations.Probe
             //     table and there is no table of defaults anywhere else, so an install nobody has
             //     touched answers to nothing.
             File.WriteAllText(toml, "[Emu]\r\nConsoleType = 0\r\n");
-            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }),
+            Call(choose, new[] { Call(resolve, new object[] { exe }),
                                         Path.Combine(romDir, PlainRom) });
             var keyboard = TomlValues(toml, "Instance0.Keyboard");
             ok &= Check("an unmapped melonDS gets a playable keyboard",
@@ -713,7 +713,7 @@ namespace LbIntegrations.Probe
             File.WriteAllText(toml,
                 "[Emu]\r\nConsoleType = 0\r\n\r\n[Instance0.Keyboard]\r\n"
                 + "A = 12345\r\nB = -1\r\n");
-            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }),
+            Call(choose, new[] { Call(resolve, new object[] { exe }),
                                         Path.Combine(romDir, PlainRom) });
             keyboard = TomlValues(toml, "Instance0.Keyboard");
             ok &= Check("a mapping that has an owner is not touched",
@@ -729,14 +729,14 @@ namespace LbIntegrations.Probe
                 + "BIOS7Path = '" + Path.Combine(bios, "dsi_bios7.bin") + "'\r\n"
                 + "BIOS9Path = '" + Path.Combine(bios, "dsi_bios9.bin") + "'\r\n"
                 + "NANDPath = '" + his + "'\r\n");
-            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }),
+            Call(choose, new[] { Call(resolve, new object[] { exe }),
                                         Path.Combine(romDir, DsiRom) });
             ok &= Check("a NAND the user chose himself is left where it is", NandPathIn(toml) == his);
 
             // 5. Without the DSi BIOS there is no DSi mode, whatever else is in place.
             try { Directory.Delete(bios, true); } catch { }
             File.WriteAllText(toml, "[Emu]\r\nConsoleType = 0\r\n");
-            choose.Invoke(null, new[] { resolve.Invoke(null, new object[] { exe }), ware });
+            Call(choose, new[] { Call(resolve, new object[] { exe }), ware });
             ok &= Check("no DSi BIOS means no DSi mode", ConsoleTypeIn(toml) == 0);
 
             try { Directory.Delete(dsi, true); File.Delete(his); File.Delete(toml); } catch { }
@@ -794,7 +794,7 @@ namespace LbIntegrations.Probe
                 try
                 {
                     build(path, rom, inner);
-                    var got = describe.Invoke(null, new object[] { path });
+                    var got = Call(describe, new object[] { path });
                     var name = (string)got.GetType().GetField("AssetName").GetValue(got);
                     return name == "Packed Game (Europe)";
                 }
@@ -812,7 +812,7 @@ namespace LbIntegrations.Probe
             // A plain ROM must not be mistaken for a container, whatever it is called.
             var plain = Path.Combine(romDir, "Not An Archive.nds");
             File.WriteAllBytes(plain, rom);
-            var described = describe.Invoke(null, new object[] { plain });
+            var described = Call(describe, new object[] { plain });
             ok &= Check("a plain .nds is read as itself",
                         (string)described.GetType().GetField("AssetName").GetValue(described) == "Not An Archive");
             try { File.Delete(plain); } catch { }
@@ -877,13 +877,13 @@ namespace LbIntegrations.Probe
 
             var setup = TypeIn("MelonDsNandSetup");
             var run = setup?.GetMethod("Run", BindingFlags.Public | BindingFlags.Static);
-            var consoleFor = TypeIn("MelonDsBase")
+            var consoleFor = TypeIn("DsiBase")
                 ?.GetMethod("ConsoleFor", BindingFlags.Public | BindingFlags.Static);
             if (run == null || consoleFor == null)
-            { Console.WriteLine("    no MelonDsNandSetup / MelonDsBase to call"); return false; }
+            { Console.WriteLine("    no MelonDsNandSetup / DsiBase to call"); return false; }
 
             var resolve = TypeIn("MelonDsPaths").GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static);
-            var layout = resolve.Invoke(null, new object[] { exe });
+            var layout = Call(resolve, new object[] { exe });
             string bios = BiosDir(layout);
             string dsi = Path.Combine(Path.GetDirectoryName(exe), "dsi");
             Directory.CreateDirectory(bios);
@@ -899,19 +899,19 @@ namespace LbIntegrations.Probe
             string probe = Path.Combine(bios, "state-probe.bin");
             Sized(probe, 4096);
             ok &= Check("a dump with no console in our folder has none",
-                        consoleFor.Invoke(null, new object[] { layout, probe }) == null);
+                        Call(consoleFor, new object[] { layout, probe }) == null);
 
             string built = Path.Combine(dsi, "state-probe.bin");
             Sized(built, 4096);
             ok &= Check("and one named after it IS its console",
-                        (string)consoleFor.Invoke(null, new object[] { layout, probe }) == built);
+                        (string)Call(consoleFor, new object[] { layout, probe }) == built);
 
             //    Two dumps of the same name in two search folders must not be confused: the record
             //    says which one the console came from, and the size settles it.
             File.WriteAllText(built + ".recipe.txt",
                               "identity\tabc\r\noriginal.size\t999999\r\n");
             ok &= Check("a console built from a dump of another size is not claimed by this one",
-                        consoleFor.Invoke(null, new object[] { layout, probe }) == null);
+                        Call(consoleFor, new object[] { layout, probe }) == null);
 
             foreach (var leftover in new[] { probe, built, built + ".recipe.txt" })
                 try { File.Delete(leftover); } catch { }
@@ -953,7 +953,7 @@ namespace LbIntegrations.Probe
                 var nands = TypeIn("MelonDsBios").GetMethod("Nands", BindingFlags.Public | BindingFlags.Static);
                 bool wasTracing = Tracing(true);
                 long mark = LogLength();
-                nands.Invoke(null, new object[] { layout, bios7 });
+                Call(nands, new object[] { layout, bios7 });
                 var said = LogSince(mark);
                 Tracing(wasTracing);
 
@@ -980,7 +980,7 @@ namespace LbIntegrations.Probe
                 var wasWritten = before.LastWriteTimeUtc;
 
                 mark = LogLength();
-                var cancel = run.Invoke(null, new object[] { layout, dump, (string)null });
+                var cancel = Call(run, new object[] { layout, dump, (string)null });
                 said = LogSince(mark);
 
                 ok &= Check("with the windows off, the launch is not cancelled", !(bool)cancel);
@@ -1031,13 +1031,13 @@ namespace LbIntegrations.Probe
             Console.WriteLine();
             Console.WriteLine("  -- the same save packs to the same bytes");
 
-            var type = TypeIn("MelonDsSaveFile");
+            var type = TypeIn("DsiSaveFile");
             var pack = type?.GetMethod("Pack", BindingFlags.Public | BindingFlags.Static);
             var bytes = type?.GetMethod("Bytes", BindingFlags.Public | BindingFlags.Static);
             var holds = type?.GetMethod("Holds", BindingFlags.Public | BindingFlags.Static);
             var unpack = type?.GetMethod("Unpack", BindingFlags.Public | BindingFlags.Static);
             if (pack == null || bytes == null || holds == null || unpack == null)
-            { Console.WriteLine("    no MelonDsSaveFile to call"); return false; }
+            { Console.WriteLine("    no DsiSaveFile to call"); return false; }
 
             string dir = Path.Combine(Path.GetTempPath(), "lbip-dsisave-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(dir);
@@ -1078,9 +1078,9 @@ namespace LbIntegrations.Probe
                 var a = Path.Combine(dir, "one.dsisave");
                 var b = Path.Combine(dir, "two.dsisave");
                 ok &= Check("a folder packs into a save file",
-                            (bool)pack.Invoke(null, new object[] { first, a, null }) && File.Exists(a));
+                            (bool)Call(pack, new object[] { first, a, null }) && File.Exists(a));
                 ok &= Check("and so does the other one",
-                            (bool)pack.Invoke(null, new object[] { second, b, null }) && File.Exists(b));
+                            (bool)Call(pack, new object[] { second, b, null }) && File.Exists(b));
 
                 ok &= Check("THE SAME CONTENT IS THE SAME BYTES - whatever order it arrived in, "
                             + "whatever the files' own dates say",
@@ -1089,35 +1089,35 @@ namespace LbIntegrations.Probe
                 // Packing the same folder twice must also agree with itself - a writer that stamped
                 // "now" would pass the test above and fail this one.
                 var again = Path.Combine(dir, "one-again.dsisave");
-                pack.Invoke(null, new object[] { first, again, null });
+                Call(pack, new object[] { first, again, null });
                 ok &= Check("and packing the same folder an hour later gives the same file again",
                             Sha256(a) == Sha256(again));
 
                 // The other direction, or the assertion above would pass on an empty archive.
                 File.WriteAllBytes(Path.Combine(first, "0__shared1_TWLCFG0.dat"), Bytes(16384, 4));
                 var changed = Path.Combine(dir, "changed.dsisave");
-                pack.Invoke(null, new object[] { first, changed, null });
+                Call(pack, new object[] { first, changed, null });
                 ok &= Check("one byte of one entry changes the file", Sha256(a) != Sha256(changed));
 
                 // What the rest of the plugin asks of a save file.
                 ok &= Check("a save file says it holds a state, by its index",
-                            (bool)holds.Invoke(null, new object[] { a }));
+                            (bool)Call(holds, new object[] { a }));
                 ok &= Check("its record reads back in memory, without unpacking anything",
-                            Encoding.UTF8.GetString((byte[])bytes.Invoke(null, new object[] { a, "base.txt" }))
+                            Encoding.UTF8.GetString((byte[])Call(bytes, new object[] { a, "base.txt" }))
                                 .Contains("ee4aca9911223344"));
                 ok &= Check("an entry it does not carry is simply absent, not an error",
-                            bytes.Invoke(null, new object[] { a, "nothing.txt" }) == null);
+                            Call(bytes, new object[] { a, "nothing.txt" }) == null);
 
                 var back = Path.Combine(dir, "unpacked");
                 ok &= Check("and it lays back out as the folder it came from",
-                            (bool)unpack.Invoke(null, new object[] { a, back, null })
+                            (bool)Call(unpack, new object[] { a, back, null })
                             && Directory.GetFiles(back).Length == names.Length
                             && File.ReadAllBytes(Path.Combine(back, "0__shared1_TWLCFG1.dat")).Length == 16384);
 
                 var junk = Path.Combine(dir, "junk.dsisave");
                 File.WriteAllBytes(junk, Encoding.UTF8.GetBytes("this is not a zip at all"));
                 ok &= Check("something that is not an archive holds nothing, and does not throw",
-                            !(bool)holds.Invoke(null, new object[] { junk }));
+                            !(bool)Call(holds, new object[] { junk }));
 
                 return ok;
             }
@@ -1137,9 +1137,9 @@ namespace LbIntegrations.Probe
                 for (int i = 0; i + 1 < pairs.Length; i += 2)
                     File.WriteAllText(Path.Combine(folder, pairs[i]), pairs[i + 1]);
 
-                var pack = TypeIn("MelonDsSaveFile").GetMethod("Pack", BindingFlags.Public | BindingFlags.Static);
+                var pack = TypeIn("DsiSaveFile").GetMethod("Pack", BindingFlags.Public | BindingFlags.Static);
                 var args = new object[] { folder, target, null };
-                if (!(bool)pack.Invoke(null, args))
+                if (!(bool)Call(pack, args))
                     Console.WriteLine("    could not build a fixture save: " + args[2]);
             }
             catch (Exception ex) { Console.WriteLine("    could not build a fixture save: " + ex.Message); }
@@ -1151,7 +1151,7 @@ namespace LbIntegrations.Probe
         {
             try
             {
-                var bytes = (byte[])TypeIn("MelonDsSaveFile")
+                var bytes = (byte[])TypeIn("DsiSaveFile")
                     .GetMethod("Bytes", BindingFlags.Public | BindingFlags.Static)
                     .Invoke(null, new object[] { savePath, entry });
                 return bytes == null ? null : Encoding.UTF8.GetString(bytes);
@@ -1188,12 +1188,12 @@ namespace LbIntegrations.Probe
             Console.WriteLine();
             Console.WriteLine("  -- a capture will not read an image somebody is writing");
 
-            var free = TypeIn("MelonDsDsi")?.GetMethod("TheImageIsFree",
+            var free = TypeIn("DsiWorkspace")?.GetMethod("TheImageIsFree",
                            BindingFlags.NonPublic | BindingFlags.Static);
             if (free == null) { Console.WriteLine("    no TheImageIsFree to call"); return false; }
 
             var resolve = TypeIn("MelonDsPaths").GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static);
-            var layout = resolve.Invoke(null, new object[] { exe });
+            var layout = Call(resolve, new object[] { exe });
             string work = Path.Combine(Path.GetDirectoryName(exe), "dsi", "work.bin");
             Directory.CreateDirectory(Path.GetDirectoryName(work));
             File.WriteAllText(work, "not really an image");
@@ -1203,7 +1203,7 @@ namespace LbIntegrations.Probe
             {
                 // Nobody has it: the answer is immediate, because there is nothing to wait for.
                 var clock = System.Diagnostics.Stopwatch.StartNew();
-                bool now = (bool)free.Invoke(null, new object[] { layout, "000300044b393945" });
+                bool now = (bool)Call(free, new object[] { layout, "000300044b393945" });
                 clock.Stop();
                 ok &= Check("an image nobody holds is free, and says so at once",
                             now && clock.ElapsedMilliseconds < 500);
@@ -1213,7 +1213,7 @@ namespace LbIntegrations.Probe
                 using (new FileStream(work, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
                 {
                     clock.Restart();
-                    bool held = (bool)free.Invoke(null, new object[] { layout, "000300044b393945" });
+                    bool held = (bool)Call(free, new object[] { layout, "000300044b393945" });
                     clock.Stop();
 
                     ok &= Check("an image something else holds is NOT read", !held);
@@ -1227,7 +1227,7 @@ namespace LbIntegrations.Probe
 
                 // And it is free again the moment the handle goes.
                 ok &= Check("and it is free again as soon as the handle goes",
-                            (bool)free.Invoke(null, new object[] { layout, "000300044b393945" }));
+                            (bool)Call(free, new object[] { layout, "000300044b393945" }));
 
                 // ── and a LAUNCH waits where a capture cannot ────────────────
                 //
@@ -1236,13 +1236,13 @@ namespace LbIntegrations.Probe
                 // still has it is how a session is lost. Three minutes, with a window after ten
                 // seconds - shortened here, since a probe that took three minutes would be a worse
                 // test than none.
-                var wait = TypeIn("MelonDsDsi")?.GetMethod("WaitForTheImage",
+                var wait = TypeIn("DsiWorkspace")?.GetMethod("WaitForTheImage",
                                BindingFlags.Public | BindingFlags.Static);
                 if (wait == null) { Console.WriteLine("    no WaitForTheImage to call"); return false; }
 
-                var patience = TypeIn("MelonDsDsi").GetField("LaunchPatience",
+                var patience = TypeIn("DsiWorkspace").GetField("LaunchPatience",
                                    BindingFlags.NonPublic | BindingFlags.Static)
-                            ?? TypeIn("MelonDsDsi").GetField("LaunchPatience",
+                            ?? TypeIn("DsiWorkspace").GetField("LaunchPatience",
                                    BindingFlags.Public | BindingFlags.Static);
                 var was = patience?.GetValue(null);
                 try
@@ -1250,7 +1250,7 @@ namespace LbIntegrations.Probe
                     patience?.SetValue(null, TimeSpan.FromSeconds(1));
 
                     clock.Restart();
-                    bool went = (bool)wait.Invoke(null, new object[] { layout, "A Game" });
+                    bool went = (bool)Call(wait, new object[] { layout, "A Game" });
                     clock.Stop();
                     ok &= Check("a launch goes ahead at once when the image is nobody's",
                                 went && clock.ElapsedMilliseconds < 500);
@@ -1259,7 +1259,7 @@ namespace LbIntegrations.Probe
                     {
                         long mark = LogLength();
                         clock.Restart();
-                        bool ahead = (bool)wait.Invoke(null, new object[] { layout, "A Game" });
+                        bool ahead = (bool)Call(wait, new object[] { layout, "A Game" });
                         clock.Stop();
                         var said = LogSince(mark);
 
@@ -1278,7 +1278,7 @@ namespace LbIntegrations.Probe
                 File.Delete(work);
                 clock.Restart();
                 ok &= Check("and with no working image at all there is nothing to wait for",
-                            (bool)wait.Invoke(null, new object[] { layout, "A Game" })
+                            (bool)Call(wait, new object[] { layout, "A Game" })
                             && clock.ElapsedMilliseconds < 200);
                 return ok;
             }
@@ -1290,12 +1290,12 @@ namespace LbIntegrations.Probe
             Console.WriteLine();
             Console.WriteLine("  -- deleting a DSiWare save");
 
-            var drop = TypeIn("MelonDsDsi")?.GetMethod("DropState",
+            var drop = TypeIn("DsiWorkspace")?.GetMethod("DropState",
                            BindingFlags.Public | BindingFlags.Static);
             if (drop == null) { Console.WriteLine("    no DropState to call"); return false; }
 
             var resolve = TypeIn("MelonDsPaths").GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static);
-            var layout = resolve.Invoke(null, new object[] { exe });
+            var layout = Call(resolve, new object[] { exe });
 
             const string titleId = "000300044b393945";
             string dsi = Path.Combine(Path.GetDirectoryName(exe), "dsi");
@@ -1317,7 +1317,7 @@ namespace LbIntegrations.Probe
             File.WriteAllText(legacy, "not really an image either");
 
             var args = new object[] { layout, titleId, null };
-            bool done = (bool)drop.Invoke(null, args);
+            bool done = (bool)Call(drop, args);
 
             bool ok = true;
             ok &= Check("the delete is reported done", done);
@@ -1333,9 +1333,9 @@ namespace LbIntegrations.Probe
             // THE IMAGE IS LEFT, and that is safe for a reason worth asserting rather than assuming:
             // the reference walk went with the folder, and nothing can be captured without one. So a
             // capture that runs afterwards must not resurrect the save that was just deleted.
-            var capture = TypeIn("MelonDsDsi").GetMethod("CaptureWork",
+            var capture = TypeIn("DsiWorkspace").GetMethod("CaptureWork",
                               BindingFlags.Public | BindingFlags.Static);
-            capture.Invoke(null, new object[] { layout, null, null });
+            Call(capture, new object[] { layout, null, null });
             ok &= Check("and a capture afterwards cannot bring the save back",
                         !File.Exists(save));
             ok &= Check("the title's metadata survives - deleting progress is not losing a download",
@@ -1344,7 +1344,7 @@ namespace LbIntegrations.Probe
             // Again, with nothing left. A second delete is not an error - the row may be stale, and
             // answering "no" to a save that is already gone would be a failure about nothing.
             ok &= Check("deleting what is already gone is not a failure",
-                        (bool)drop.Invoke(null, new object[] { layout, titleId, null }));
+                        (bool)Call(drop, new object[] { layout, titleId, null }));
 
             try { Directory.Delete(Path.Combine(dsi, titleId), recursive: true); } catch { }
             try { File.Delete(work); } catch { }
@@ -1355,7 +1355,7 @@ namespace LbIntegrations.Probe
         ///
         /// THE STATE IS REPLACED, NOT MERGED, and the working image is DROPPED rather than written.
         /// Applying a state onto an image that has been played looks like the same thing and is not:
-        /// MelonDsDelta.Apply puts back the files the state names and takes away nothing the current
+        /// DsiDelta.Apply puts back the files the state names and takes away nothing the current
         /// session added, so a file the restored save never had would survive into play - and the
         /// next capture would write it back into the state folder, growing the restored save back
         /// into what it was restored to be rid of. A state describes a fresh install and nothing
@@ -1365,12 +1365,12 @@ namespace LbIntegrations.Probe
             Console.WriteLine();
             Console.WriteLine("  -- restoring a DSiWare save");
 
-            var restore = TypeIn("MelonDsDsi")?.GetMethod("RestoreSave",
+            var restore = TypeIn("DsiWorkspace")?.GetMethod("RestoreSave",
                               BindingFlags.Public | BindingFlags.Static);
             if (restore == null) { Console.WriteLine("    no RestoreSave to call"); return false; }
 
             var resolve = TypeIn("MelonDsPaths").GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static);
-            var layout = resolve.Invoke(null, new object[] { exe });
+            var layout = Call(resolve, new object[] { exe });
 
             const string titleId = "000300044b393945";
             string install = Path.GetDirectoryName(exe);
@@ -1392,7 +1392,7 @@ namespace LbIntegrations.Probe
                      "0", "backup 0", "1", "backup 1");
 
             var args = new object[] { layout, titleId, null, vault, null };
-            bool done = (bool)restore.Invoke(null, args);
+            bool done = (bool)Call(restore, args);
 
             bool ok = true;
             ok &= Check("the restore is reported done", done);
@@ -1411,12 +1411,12 @@ namespace LbIntegrations.Probe
             string junk = Path.Combine(install, "not-a-state.dsisave");
             File.WriteAllText(junk, "nope, this is just text");
             ok &= Check("a file that is not an archive is refused",
-                        !(bool)restore.Invoke(null, new object[] { layout, titleId, null, junk, null }));
+                        !(bool)Call(restore, new object[] { layout, titleId, null, junk, null }));
 
             string headless = Path.Combine(install, "no-index.dsisave");
             MakeSave(headless, "something.bin", "an archive, but not a save");
             ok &= Check("and so is an archive with no " + "files.txt" + " in it",
-                        !(bool)restore.Invoke(null, new object[] { layout, titleId, null, headless, null }));
+                        !(bool)Call(restore, new object[] { layout, titleId, null, headless, null }));
 
             ok &= Check("neither of them touched the save that was there",
                         InSave(save, "0") == "backup 0");
@@ -1609,14 +1609,14 @@ namespace LbIntegrations.Probe
             Console.WriteLine();
             Console.WriteLine("  -- a save that changed outside melonDS");
 
-            var dsiType = TypeIn("MelonDsDsi");
+            var dsiType = TypeIn("DsiWorkspace");
             var remember = dsiType?.GetMethod("RememberWork", BindingFlags.Public | BindingFlags.Static);
             var capture = dsiType?.GetMethod("CaptureWork", BindingFlags.Public | BindingFlags.Static);
             if (remember == null || capture == null)
             { Console.WriteLine("    no RememberWork / CaptureWork to call"); return false; }
 
             var resolve = TypeIn("MelonDsPaths").GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static);
-            var layout = resolve.Invoke(null, new object[] { exe });
+            var layout = Call(resolve, new object[] { exe });
 
             const string titleId = "000300044b393945";
             string install = Path.GetDirectoryName(exe);
@@ -1636,7 +1636,7 @@ namespace LbIntegrations.Probe
             bool ok = true;
 
             // A launch that built the image around this state writes down what it agreed with.
-            remember.Invoke(null, new object[] { layout, titleId, rom, "some-nand.bin" });
+            Call(remember, new object[] { layout, titleId, rom, "some-nand.bin" });
             ok &= Check("the image keeps a receipt of the save it was built around", File.Exists(sum));
             // THE MEMBERS, not the archive. A receipt that hashed the file's bytes would be shorter
             // and would tie this to a zip writer's headers; this one names every entry.
@@ -1645,12 +1645,12 @@ namespace LbIntegrations.Probe
 
             // Nothing has touched the save, so a capture is allowed to proceed - it will fail later
             // for want of a real NAND, but it must not have thrown the image away first.
-            capture.Invoke(null, new object[] { layout, null, null });
+            Call(capture, new object[] { layout, null, null });
             ok &= Check("an untouched save leaves the image alone", File.Exists(work));
 
             var moved = dsiType.GetMethod("DropWorkIfSaveMoved", BindingFlags.Public | BindingFlags.Static);
             ok &= Check("and the check before a launch agrees, throwing nothing away",
-                        moved != null && !(bool)moved.Invoke(null, new object[] { layout, titleId })
+                        moved != null && !(bool)Call(moved, new object[] { layout, titleId })
                         && File.Exists(work));
 
             // Now something else writes the save: a sync, a restore, a file dropped in by hand.
@@ -1661,7 +1661,7 @@ namespace LbIntegrations.Probe
             // that capture would put the old session back over the save that has just arrived.
             long mark = LogLength();
             ok &= Check("a save that moved throws the image away, before any capture can run",
-                        (bool)moved.Invoke(null, new object[] { layout, titleId }));
+                        (bool)Call(moved, new object[] { layout, titleId }));
             var said = LogSince(mark);
             ok &= Check("so the capture that follows has nothing left to write with",
                         !File.Exists(work));
@@ -1670,11 +1670,11 @@ namespace LbIntegrations.Probe
             // game B captures what game A left behind, and A's save may have been synced meanwhile.
             File.WriteAllText(work, "not really an image");
             File.WriteAllText(marker, titleId + "	x	1	2	nand.bin");
-            remember.Invoke(null, new object[] { layout, titleId, rom, "some-nand.bin" });
+            Call(remember, new object[] { layout, titleId, rom, "some-nand.bin" });
             MakeSave(save, "files.txt", "F\t0\t0:/a\r\n",
                      "0", "moved again, while another game launches");
             mark = LogLength();
-            capture.Invoke(null, new object[] { layout, null, null });
+            Call(capture, new object[] { layout, null, null });
             said = LogSince(mark);
 
             ok &= Check("a save that moved is NOT overwritten by the old session", !File.Exists(work));
@@ -1698,19 +1698,19 @@ namespace LbIntegrations.Probe
             MakeSave(save, "files.txt", "F\t0\t0:/a\r\n", "0", "the save as melonDS left it",
                      "base.zip", "the recipe", "base.txt", "identity	abc");
             File.WriteAllText(work, "not really an image");
-            remember.Invoke(null, new object[] { layout, titleId, rom, "some-nand.bin" });
+            Call(remember, new object[] { layout, titleId, rom, "some-nand.bin" });
             ok &= Check("a receipt taken after the recipe was carried in agrees with the save",
-                        !(bool)moved.Invoke(null, new object[] { layout, titleId }));
+                        !(bool)Call(moved, new object[] { layout, titleId }));
 
             MakeSave(save, "files.txt", "F\t0\t0:/a\r\n", "0", "the save as melonDS left it",
                      "base.txt", "identity	abc");
             ok &= Check("and losing the recipe counts as the save having changed",
-                        (bool)moved.Invoke(null, new object[] { layout, titleId }));
+                        (bool)Call(moved, new object[] { layout, titleId }));
 
             // No receipt at all - an installation from before this existed - is not an opinion.
             File.WriteAllText(work, "not really an image");
             File.WriteAllText(marker, titleId + "\tx\t1\t2\tnand.bin");
-            capture.Invoke(null, new object[] { layout, null, null });
+            Call(capture, new object[] { layout, null, null });
             ok &= Check("with no receipt, nothing is assumed and the image stays", File.Exists(work));
 
             try { Directory.Delete(Path.Combine(dsi, titleId), recursive: true); } catch { }
@@ -1739,11 +1739,11 @@ namespace LbIntegrations.Probe
             Console.WriteLine();
             Console.WriteLine("  -- what a session removed, not just what it changed");
 
-            var delta = TypeIn("MelonDsDelta");
+            var delta = TypeIn("DsiDelta");
             var read = delta?.GetMethod("Read", BindingFlags.Public | BindingFlags.Static);
             var compare = delta?.GetMethod("Compare", BindingFlags.Public | BindingFlags.Static);
             if (read == null || compare == null)
-            { Console.WriteLine("    no MelonDsDelta.Read / Compare to call"); return false; }
+            { Console.WriteLine("    no DsiDelta.Read / Compare to call"); return false; }
 
             string dir = Path.Combine(Path.GetTempPath(), "lbip-delta-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(dir);
@@ -1771,11 +1771,11 @@ namespace LbIntegrations.Probe
                     "F 2048	eeee	0:/title/00030004/4b393945/data/private.sav",
                 });
 
-                var reference = read.Invoke(null, new object[] { fresh });
-                var actual = read.Invoke(null, new object[] { played });
+                var reference = Call(read, new object[] { fresh });
+                var actual = Call(read, new object[] { played });
 
                 var args = new object[] { reference, actual, null, null };
-                compare.Invoke(null, args);
+                Call(compare, args);
                 var differing = ((IEnumerable<string>)args[2]).ToList();
                 var removed = ((IEnumerable<string>)args[3]).ToList();
 
@@ -1822,10 +1822,10 @@ namespace LbIntegrations.Probe
             Console.WriteLine();
             Console.WriteLine("  -- a save that knows which console it was made on");
 
-            var baseType = TypeIn("MelonDsBase");
+            var baseType = TypeIn("DsiBase");
             var recordType = TypeIn("BaseRecord");
             if (baseType == null || recordType == null)
-            { Console.WriteLine("    no MelonDsBase to call"); return false; }
+            { Console.WriteLine("    no DsiBase to call"); return false; }
 
             var write = baseType.GetMethod("WriteRecord", BindingFlags.Public | BindingFlags.Static);
             var read = baseType.GetMethod("ReadRecord", BindingFlags.Public | BindingFlags.Static,
@@ -1834,7 +1834,7 @@ namespace LbIntegrations.Probe
             var isArchive = baseType.GetMethod("IsArchive", BindingFlags.Public | BindingFlags.Static);
             var sha = baseType.GetMethod("Sha256OfFile", BindingFlags.Public | BindingFlags.Static);
             if (write == null || read == null || find == null || isArchive == null || sha == null)
-            { Console.WriteLine("    MelonDsBase does not have the shape expected"); return false; }
+            { Console.WriteLine("    DsiBase does not have the shape expected"); return false; }
 
             string dir = Path.Combine(Path.GetTempPath(), "lbip-base-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(dir);
@@ -1852,8 +1852,8 @@ namespace LbIntegrations.Probe
                 Set(recordType, wanted, "OriginalSize", 251658304L);
 
                 var record = Path.Combine(dir, "base.txt");
-                write.Invoke(null, new[] { record, wanted });
-                var back = read.Invoke(null, new object[] { record });
+                Call(write, new[] { record, wanted });
+                var back = Call(read, new object[] { record });
 
                 ok &= Check("a record written is a record read back",
                             back != null && (string)Get(recordType, back, "Identity") == "abcdef0123456789");
@@ -1878,7 +1878,7 @@ namespace LbIntegrations.Probe
                     "original.size\t251658304",
                     "original.sha256\t" + new string('a', 64),
                 }) + "\r\n");
-                var before = read.Invoke(null, new object[] { old });
+                var before = Call(read, new object[] { old });
                 ok &= Check("a record written before region and path existed still reads",
                             before != null
                             && (string)Get(recordType, before, "Identity") == "ee4aca9911223344"
@@ -1891,10 +1891,10 @@ namespace LbIntegrations.Probe
                 // NO RECORD IS NOT AN ERROR. A save made before any of this existed carries nothing,
                 // and the only honest answer to "is this the right console" is then "no opinion".
                 ok &= Check("a save with no record at all gets no opinion, not a failure",
-                            read.Invoke(null, new object[] { Path.Combine(dir, "absent.txt") }) == null);
+                            Call(read, new object[] { Path.Combine(dir, "absent.txt") }) == null);
                 File.WriteAllText(Path.Combine(dir, "empty.txt"), "initial.name	dsinand.bin\r\n");
                 ok &= Check("and neither does one with no identity in it",
-                            read.Invoke(null, new object[] { Path.Combine(dir, "empty.txt") }) == null);
+                            Call(read, new object[] { Path.Combine(dir, "empty.txt") }) == null);
 
                 // ── finding the original among look-alikes ───────────────────
                 var dumps = Path.Combine(dir, "dumps");
@@ -1911,9 +1911,9 @@ namespace LbIntegrations.Probe
                 var want = Activator.CreateInstance(recordType);
                 Set(recordType, want, "OriginalName", "DSi_Nand_USA_1.4.5.bin");
                 Set(recordType, want, "OriginalSize", 4096L);
-                Set(recordType, want, "OriginalSha256", (string)sha.Invoke(null, new object[] { real }));
+                Set(recordType, want, "OriginalSha256", (string)Call(sha, new object[] { real }));
 
-                var found = (string)find.Invoke(null, new object[] { Directory.GetFiles(dumps), want });
+                var found = (string)Call(find, new object[] { Directory.GetFiles(dumps), want });
                 ok &= Check("the original is found by its CONTENTS, whatever it was renamed to",
                             found == real);
                 ok &= Check("a file of the right size and the wrong hash is refused",
@@ -1921,7 +1921,7 @@ namespace LbIntegrations.Probe
 
                 Set(recordType, want, "OriginalSha256", new string('0', 64));
                 ok &= Check("and when nothing matches, nothing is returned",
-                            find.Invoke(null, new object[] { Directory.GetFiles(dumps), want }) == null);
+                            Call(find, new object[] { Directory.GetFiles(dumps), want }) == null);
 
                 // ── a rebuilt base is not a dump ─────────────────────────────
                 // It is configured BY CONSTRUCTION, and it lives in a folder of ours - the setup
@@ -1932,9 +1932,9 @@ namespace LbIntegrations.Probe
                 File.WriteAllBytes(archive, new byte[64]);
 
                 ok &= Check("a rebuilt base is recognised as one",
-                            (bool)isArchive.Invoke(null, new object[] { archive }));
+                            (bool)Call(isArchive, new object[] { archive }));
                 ok &= Check("a dump in the bios folder is NOT",
-                            !(bool)isArchive.Invoke(null, new object[] { real }));
+                            !(bool)Call(isArchive, new object[] { real }));
 
                 try { Directory.Delete(Path.Combine(Path.GetDirectoryName(exe), "dsi", "bases"), true); } catch { }
                 return ok;
@@ -1961,14 +1961,14 @@ namespace LbIntegrations.Probe
             var fresh = plugin.GetMethod("FreshStartOn", BindingFlags.NonPublic | BindingFlags.Static);
             var withIdentity = plugin.GetMethod("ConsoleWithIdentity",
                                                 BindingFlags.NonPublic | BindingFlags.Static);
-            var park = TypeIn("MelonDsDsi").GetMethod("ParkState", BindingFlags.Public | BindingFlags.Static);
+            var park = TypeIn("DsiWorkspace").GetMethod("ParkState", BindingFlags.Public | BindingFlags.Static);
             var recordType = TypeIn("BaseRecord");
-            var write = TypeIn("MelonDsBase").GetMethod("WriteRecord", BindingFlags.Public | BindingFlags.Static);
+            var write = TypeIn("DsiBase").GetMethod("WriteRecord", BindingFlags.Public | BindingFlags.Static);
             if (fresh == null || withIdentity == null || park == null || write == null)
             { Console.WriteLine("    the recovery path does not have the shape expected"); return false; }
 
             var resolve = TypeIn("MelonDsPaths").GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static);
-            var layout = resolve.Invoke(null, new object[] { exe });
+            var layout = Call(resolve, new object[] { exe });
             string dsi = Path.Combine(Path.GetDirectoryName(exe), "dsi");
             string title = "00030004deadbeef";
             string titleDir = Path.Combine(dsi, title);
@@ -1985,10 +1985,10 @@ namespace LbIntegrations.Probe
                 File.WriteAllBytes(rebuilt, new byte[64]);
 
                 ok &= Check("a console already rebuilt is taken as it is, with nothing opened",
-                            (string)withIdentity.Invoke(null,
+                            (string)Call(withIdentity,
                                 new object[] { layout, "feedfacedeadbeef", null, (byte[])null }) == rebuilt);
                 ok &= Check("and an identity nothing on disk carries gets no console",
-                            withIdentity.Invoke(null,
+                            Call(withIdentity,
                                 new object[] { layout, "0123456789abcdef", null, (byte[])null }) == null);
 
                 // ── what is offered instead must be bootable ─────────────────
@@ -1999,7 +1999,7 @@ namespace LbIntegrations.Probe
                     var r = Activator.CreateInstance(recordType);
                     Set(recordType, r, "Identity", name);
                     Set(recordType, r, "Region", region);
-                    write.Invoke(null, new[] { (object)(image + ".recipe.txt"), r });
+                    Call(write, new[] { (object)(image + ".recipe.txt"), r });
                 }
                 Console_("probe-euro.bin", "Europe");
                 Console_("probe-usa.bin", "Usa");
@@ -2008,16 +2008,16 @@ namespace LbIntegrations.Probe
                 Set(recordType, lost, "Identity", "feedfacedeadbeef");
                 Set(recordType, lost, "Region", "Usa");
                 ok &= Check("the console offered instead is one of the SAME REGION",
-                            Path.GetFileName((string)fresh.Invoke(null, new object[] { layout, lost }))
+                            Path.GetFileName((string)Call(fresh, new object[] { layout, lost }))
                                 == "probe-usa.bin");
 
                 Set(recordType, lost, "Region", "Japan");
                 ok &= Check("with none of that region there is nothing to offer - not a wrong one",
-                            fresh.Invoke(null, new object[] { layout, lost }) == null);
+                            Call(fresh, new object[] { layout, lost }) == null);
 
                 Set(recordType, lost, "Region", null);
                 ok &= Check("and a record from before regions were written down offers nothing either",
-                            fresh.Invoke(null, new object[] { layout, lost }) == null);
+                            Call(fresh, new object[] { layout, lost }) == null);
 
                 // ── starting again does not delete what was there ────────────
                 Directory.CreateDirectory(titleDir);
@@ -2026,7 +2026,7 @@ namespace LbIntegrations.Probe
                          "0__shared1_TWLCFG0.dat", "the old save");
 
                 ok &= Check("the old state is set aside",
-                            (bool)park.Invoke(null, new object[] { layout, title, "feedfacedeadbeef" }));
+                            (bool)Call(park, new object[] { layout, title, "feedfacedeadbeef" }));
 
                 // THE SUFFIX GOES BEFORE THE EXTENSION, so what was set aside is still a save file
                 // anything can open - a folder could be renamed freely, a file cannot.
@@ -2039,13 +2039,13 @@ namespace LbIntegrations.Probe
 
                 MakeSave(state, "files.txt", "F\t0__shared1_TWLCFG0.dat\t0:/shared1/TWLCFG0.dat\r\n",
                          "0__shared1_TWLCFG0.dat", "a newer one");
-                park.Invoke(null, new object[] { layout, title, "feedfacedeadbeef" });
+                Call(park, new object[] { layout, title, "feedfacedeadbeef" });
                 ok &= Check("and a second one lands beside the first, never on it",
                             InSave(parked, "0__shared1_TWLCFG0.dat") == "the old save"
                             && Directory.GetFiles(titleDir, "state.orphan-*.dsisave").Length == 2);
 
                 ok &= Check("a title with no state at all is simply nothing to set aside",
-                            !(bool)park.Invoke(null,
+                            !(bool)Call(park,
                                 new object[] { layout, "0003000400000000", "feedfacedeadbeef" }));
                 return ok;
             }
@@ -2106,7 +2106,7 @@ namespace LbIntegrations.Probe
 
             string Chosen()
             {
-                var picked = steadiest.Invoke(null, new object[] { list });
+                var picked = Call(steadiest, new object[] { list });
                 return (string)type.GetField("Path").GetValue(picked);
             }
 
@@ -2165,7 +2165,7 @@ namespace LbIntegrations.Probe
 
         private static string StateOf(MethodInfo of, string path)
         {
-            try { return of.Invoke(null, new object[] { path }).ToString(); }
+            try { return Call(of, new object[] { path }).ToString(); }
             catch { return "(threw)"; }
         }
 
@@ -2189,7 +2189,7 @@ namespace LbIntegrations.Probe
             Console.WriteLine();
             Console.WriteLine("  -- which DSi a DSiWare title needs");
 
-            var region = TypeIn("MelonDsRegion");
+            var region = TypeIn("DsiRegions");
             var regionsFor = region.GetMethod("RegionsFor", BindingFlags.Public | BindingFlags.Static);
             var names = region.GetMethod("Names", BindingFlags.Public | BindingFlags.Static);
             var describe = TypeIn("NdsHeader").GetMethod("Describe", BindingFlags.Public | BindingFlags.Static);
@@ -2200,10 +2200,10 @@ namespace LbIntegrations.Probe
             {
                 var path = Path.Combine(romDir, fileName);
                 File.WriteAllBytes(path, Header(0x03, 0x00030004, GameCode(gameCode), mask));
-                var args = new object[] { describe.Invoke(null, new object[] { path }), path, null };
-                var got = regionsFor.Invoke(null, args);
+                var args = new object[] { Call(describe, new object[] { path }), path, null };
+                var got = Call(regionsFor, args);
                 try { File.Delete(path); } catch { }
-                return (string)names.Invoke(null, new[] { got }) + " | " + (args[2] as string ?? "nothing");
+                return (string)Call(names, new[] { got }) + " | " + (args[2] as string ?? "nothing");
             }
 
             bool ok = true;
@@ -2246,7 +2246,7 @@ namespace LbIntegrations.Probe
 
         /// <summary>Four ASCII letters as the u32 the title id's low word holds. The bytes sit in the
         /// ROM in reverse - "K99E" is stored 45 39 39 4b and reads back 0x4b393945 - so the region
-        /// letter lands in the LOW byte, which is where MelonDsRegion looks.</summary>
+        /// letter lands in the LOW byte, which is where DsiRegions looks.</summary>
         private static uint GameCode(string code)
         {
             uint value = 0;
@@ -2344,14 +2344,14 @@ namespace LbIntegrations.Probe
                                  BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Public);
                 var resolve = TypeIn("MelonDsPaths").GetMethod("Resolve",
                                  BindingFlags.Public | BindingFlags.Static);
-                var layout = resolve.Invoke(null, new object[] { exe });
+                var layout = Call(resolve, new object[] { exe });
 
                 bool ok = true;
                 string work = Path.Combine(dsi, "work.bin");
                 string state = Path.Combine(dsi, titleId, "state.dsisave");
 
                 // ── the launch ──────────────────────────────────────────────
-                choose.Invoke(null, new object[] { layout, romPath });
+                Call(choose, new object[] { layout, romPath });
 
                 ok &= Check("a working NAND is built", File.Exists(work));
                 ok &= Check("melonDS is pointed at it", NandPathIn(ConfigPath(exe)) == work);
@@ -2394,7 +2394,7 @@ namespace LbIntegrations.Probe
                 // ── the same game again: the image is reused, not rebuilt ───
                 var before = Fingerprint(state);
                 var built = File.GetLastWriteTimeUtc(work);
-                choose.Invoke(null, new object[] { layout, romPath });
+                Call(choose, new object[] { layout, romPath });
                 ok &= Check("relaunching the same game reuses the image instead of rebuilding it",
                             File.GetLastWriteTimeUtc(work) == built);
                 ok &= Check("and its state is left alone", Fingerprint(state) == before);
@@ -2403,7 +2403,7 @@ namespace LbIntegrations.Probe
 
                 // ── a ROM that is not the one installed must NOT be reused ──
                 File.SetLastWriteTimeUtc(romPath, File.GetLastWriteTimeUtc(romPath).AddMinutes(-7));
-                choose.Invoke(null, new object[] { layout, romPath });
+                Call(choose, new object[] { layout, romPath });
                 ok &= Check("a ROM that is not the one installed makes it rebuild",
                             File.GetLastWriteTimeUtc(work) != built);
 
@@ -2443,10 +2443,10 @@ namespace LbIntegrations.Probe
                     File.WriteAllText(savePath, "wrecked");
                     ok &= Check("a wrecked state really is different", Fingerprint(savePath) != taken);
 
-                    var restore = TypeIn("MelonDsDsi").GetMethod("RestoreSave",
+                    var restore = TypeIn("DsiWorkspace").GetMethod("RestoreSave",
                                       BindingFlags.Public | BindingFlags.Static);
                     var args = new object[] { layout, titleId, bios7, vault, null };
-                    bool done = (bool)restore.Invoke(null, args);
+                    bool done = (bool)Call(restore, args);
                     ok &= Check("the host can hand the file back", done);
                     if (!done) Console.WriteLine("    " + (args[4] as string ?? "no reason given"));
                     ok &= Check("and the state is exactly what was taken", Fingerprint(savePath) == taken);
@@ -2456,7 +2456,7 @@ namespace LbIntegrations.Probe
                     File.WriteAllText(junk, "not a state");
                     var bad = new object[] { layout, titleId, bios7, junk, null };
                     ok &= Check("a file that is not a melonDS save is refused",
-                                !(bool)restore.Invoke(null, bad));
+                                !(bool)Call(restore, bad));
                 }
 
                 Console.WriteLine();
@@ -2486,13 +2486,13 @@ namespace LbIntegrations.Probe
                 if (!WalkInto(a, bios7, wa, out difference)) return false;
                 if (!WalkInto(b, bios7, wb, out difference)) return false;
 
-                var delta = TypeIn("MelonDsDelta");
+                var delta = TypeIn("DsiDelta");
                 var read = delta.GetMethod("Read", BindingFlags.Public | BindingFlags.Static);
                 var compare = delta.GetMethod("Compare", BindingFlags.Public | BindingFlags.Static);
 
-                var args = new object[] { read.Invoke(null, new object[] { wa }),
-                                          read.Invoke(null, new object[] { wb }), null, null };
-                compare.Invoke(null, args);
+                var args = new object[] { Call(read, new object[] { wa }),
+                                          Call(read, new object[] { wb }), null, null };
+                Call(compare, args);
                 var differing = (System.Collections.IList)args[2];
                 var removed = (System.Collections.IList)args[3];
                 if (differing.Count == 0 && removed.Count == 0) return true;
@@ -2509,9 +2509,9 @@ namespace LbIntegrations.Probe
         private static bool WalkInto(string nand, string bios7, string into, out string error)
         {
             error = null;
-            var open = TypeIn("MelonDsNand").GetMethod("Open", BindingFlags.Public | BindingFlags.Static);
+            var open = TypeIn("DsiNand").GetMethod("Open", BindingFlags.Public | BindingFlags.Static);
             var args = new object[] { nand, bios7, null };
-            var session = open.Invoke(null, args);
+            var session = Call(open, args);
             if (session == null) { error = "could not open " + nand + " - " + args[2]; return false; }
             try
             {
@@ -2528,9 +2528,9 @@ namespace LbIntegrations.Probe
         {
             try
             {
-                return (string)TypeIn("MelonDsDsi")
+                return (string)TypeIn("DsiWorkspace")
                     .GetMethod("SavePathFor", BindingFlags.Public | BindingFlags.Static)
-                    .Invoke(null, new object[] { layout, titleId });
+                    .Invoke(null, new object[] { HostFor(layout), titleId });
             }
             catch { return null; }
         }
@@ -2543,7 +2543,7 @@ namespace LbIntegrations.Probe
             try
             {
                 if (!File.Exists(savePath)) return "";
-                var entries = TypeIn("MelonDsSaveFile")
+                var entries = TypeIn("DsiSaveFile")
                     .GetMethod("Entries", BindingFlags.Public | BindingFlags.Static)
                     .Invoke(null, new object[] { savePath }) as System.Collections.IEnumerable;
                 if (entries == null) return "";
@@ -2570,10 +2570,10 @@ namespace LbIntegrations.Probe
         {
             try
             {
-                var type = TypeIn("MelonDsNand");
+                var type = TypeIn("DsiNand");
                 var method = type.GetMethod("IsUsable", BindingFlags.Public | BindingFlags.Static);
                 var args = new object[] { null };
-                var usable = (bool)method.Invoke(null, args);
+                var usable = (bool)Call(method, args);
                 if (!usable) Console.WriteLine("    (" + (args[0] as string ?? "no reason given") + ")");
                 return usable;
             }
@@ -2675,14 +2675,14 @@ namespace LbIntegrations.Probe
 
             // A spread of real entries, asked for the way a launch asks for one: forge a DSiWare
             // header carrying that title id, and let the plugin go and find its metadata.
-            var index = TypeIn("MelonDsTmd").GetMethod("FromIndex",
+            var index = TypeIn("DsiTmd").GetMethod("FromIndex",
                             BindingFlags.NonPublic | BindingFlags.Static);
             var describe = TypeIn("NdsHeader").GetMethod("Describe", BindingFlags.Public | BindingFlags.Static);
             var resolve = TypeIn("MelonDsPaths").GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static);
             if (index == null || describe == null || resolve == null)
             { Console.WriteLine("    no FromIndex / Describe / Resolve to call"); return false; }
 
-            var layout = resolve.Invoke(null, new object[] { exe });
+            var layout = Call(resolve, new object[] { exe });
             string rom = Path.Combine(romDir, "Carried Index Probe.nds");
             int asked = 0, agreed = 0;
 
@@ -2693,8 +2693,8 @@ namespace LbIntegrations.Probe
                 uint low = (uint)((all[at + 4] << 24) | (all[at + 5] << 16) | (all[at + 6] << 8) | all[at + 7]);
 
                 File.WriteAllBytes(rom, Header(0x03, high, low));
-                var args = new object[] { layout, describe.Invoke(null, new object[] { rom }), rom, null };
-                var found = (string)index.Invoke(null, args);
+                var args = new object[] { layout, Call(describe, new object[] { rom }), rom, null };
+                var found = (string)Call(index, args);
                 asked++;
 
                 if (found == null || !File.Exists(found)) continue;
@@ -2711,8 +2711,8 @@ namespace LbIntegrations.Probe
             // And a title it does not hold gets no answer rather than a neighbour's. An id of all
             // ones sorts past every record, so it exercises the end of the search.
             File.WriteAllBytes(rom, Header(0x03, 0x00030004, 0xFFFFFFFF));
-            var none = new object[] { layout, describe.Invoke(null, new object[] { rom }), rom, null };
-            ok &= Check("a title it does not hold gets no answer", index.Invoke(null, none) == null);
+            var none = new object[] { layout, Call(describe, new object[] { rom }), rom, null };
+            ok &= Check("a title it does not hold gets no answer", Call(index, none) == null);
 
             try { File.Delete(rom); } catch { }
             return ok;
@@ -2788,7 +2788,7 @@ namespace LbIntegrations.Probe
             var values = new Dictionary<string, string>(StringComparer.Ordinal) { [key] = value };
             // The fourth argument is the launch-path override; reflection does not fill optional
             // parameters, so it is named here rather than left out.
-            return (string)write.Invoke(null, new object[] { ConfigPath(exe), table, values, false });
+            return (string)Call(write, new object[] { ConfigPath(exe), table, values, false });
         }
 
         private static Type _assemblyAnchor;
@@ -2796,6 +2796,32 @@ namespace LbIntegrations.Probe
         /// <summary>A type from the plugin's own assembly, by simple name. The plugin is loaded
         /// reflectively, so the probe cannot reference these types directly.</summary>
         internal static void Anchor(EmulatorPlugin plugin) => _assemblyAnchor = plugin.GetType();
+
+        /// <summary>Invoke a static method reflectively, converting a melonDS layout into the
+        /// shared engine's host where the signature asks for one.
+        ///
+        /// REFLECTION DOES NOT APPLY IMPLICIT CONVERSIONS. Every call site in the plugin hands its
+        /// MelonDsLayout straight to the engine and the compiler converts it; a probe calling the
+        /// same method by name gets "cannot be converted" instead. Doing it here keeps the forty-odd
+        /// call sites below written the way the plugin writes them.</summary>
+        private static object Call(MethodInfo method, object[] args)
+        {
+            var parameters = method.GetParameters();
+            for (int i = 0; i < parameters.Length && i < args.Length; i++)
+            {
+                if (args[i] == null) continue;
+                if (parameters[i].ParameterType.Name != "DsiHost") continue;
+                if (args[i].GetType().Name != "MelonDsLayout") continue;
+                args[i] = HostFor(args[i]);
+            }
+            return method.Invoke(null, args);
+        }
+
+        /// <summary>The engine's view of a melonDS installation, built the way the plugin builds
+        /// it.</summary>
+        private static object HostFor(object layout)
+            => TypeIn("MelonDsHost").GetMethod("For", BindingFlags.Public | BindingFlags.Static)
+                   .Invoke(null, new[] { layout });
 
         private static Type TypeIn(string simpleName)
             => _assemblyAnchor.Assembly.GetTypes().First(t => t.Name == simpleName);

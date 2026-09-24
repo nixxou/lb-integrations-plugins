@@ -19,16 +19,17 @@
 // content. Same request the emulator makes from its own dialog.
 //
 // THIS IS THE THIRD CHOICE, not the first. The plugin carries an archive of about 1700 titles - see
-// MelonDsTmd - so the server is asked only for something that archive does not have. The answer is
+// DsiTmd - so the server is asked only for something that archive does not have. The answer is
 // kept, so it is asked at most once per title per machine.
 
 using System;
 using System.IO;
 using System.Net.Http;
+using LbIntegrations.Dsi;
 
-namespace LbIntegrations.MelonDs
+namespace LbIntegrations.Dsi
 {
-    internal static class MelonDsNus
+    internal static class DsiNus
     {
         /// <summary>melonDS's own URL, kept identical on purpose: if this ever has to be explained to
         /// somebody, "the same request the emulator makes" is the whole explanation.</summary>
@@ -68,8 +69,8 @@ namespace LbIntegrations.MelonDs
                 }
 
                 Directory.CreateDirectory(Path.GetDirectoryName(cached));
-                MelonDsToml.WriteAtomicBytes(cached, bytes);
-                Log.Info("fetched the metadata of title " + titleId
+                Atomic.WriteBytes(cached, bytes);
+                DsiLog.Info("fetched the metadata of title " + titleId
                          + " from Nintendo's update server, and kept it in the library");
                 return cached;
             }

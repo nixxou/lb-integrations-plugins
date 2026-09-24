@@ -33,12 +33,12 @@
 // out of the NAND and THAT is what is listed - as one file, <title id>\state.dsisave - while the
 // NAND stays the truth: a restore goes back through it, and a deletion throws the save away and
 // forgets the working image, so the next launch rebuilds a console that has never played this title.
-// See MelonDsDsi.RefreshSave and MelonDsDsi.DropState.
+// See DsiWorkspace.RefreshSave and DsiWorkspace.DropState.
 //
 // IT WAS A FOLDER UNTIL IT WAS PACKED, and the reason it stopped being one is the host's dispatch,
 // not tidiness: IsSaveContainer picks between a path that copies a directory into the vault and a
 // path that copies a file, and the container path is where every defect this file ever had came
-// from. See MelonDsSaveFile.
+// from. See DsiSaveFile.
 
 using System;
 using System.Collections.Generic;
@@ -46,6 +46,7 @@ using System.IO;
 using System.Linq;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
+using LbIntegrations.Dsi;
 
 namespace LbIntegrations.MelonDs
 {
@@ -136,10 +137,10 @@ namespace LbIntegrations.MelonDs
             // out is not one file. Measured on one real session: the game's own public.sav was
             // 16 KB out of 4.2 MB across eleven files - the console settings, the menu's data and
             // the built-in apps' saves had all moved too. So the unit is the whole difference -
-            // packed into one .dsisave, which is what makes it a file here. See MelonDsSaveFile.
+            // packed into one .dsisave, which is what makes it a file here. See DsiSaveFile.
             if (rom.IsDSiWare)
             {
-                var state = MelonDsDsi.RefreshSave(layout, rom.TitleId, Bios7Of(layout));
+                var state = DsiWorkspace.RefreshSave(layout, rom.TitleId, Bios7Of(layout));
                 if (state != null && File.Exists(state)
                     && seen.Add("dsiware|" + state + "|" + context))
                     into.Add(Row(state, gameId, appId, DsiWarePrefix + rom.TitleId,
@@ -309,7 +310,7 @@ namespace LbIntegrations.MelonDs
                 // NAND is the truth; the extracted file is a view of it.
                 if (IsDsiWare(save))
                 {
-                    var mine = MelonDsDsi.SavePathFor(layout, TitleIdOf(save));
+                    var mine = DsiWorkspace.SavePathFor(layout, TitleIdOf(save));
                     return mine != null && Exists(loc)
                            && string.Equals(Path.GetFullPath(loc), Path.GetFullPath(mine),
                                             StringComparison.OrdinalIgnoreCase);
@@ -422,7 +423,7 @@ namespace LbIntegrations.MelonDs
                 if (layout == null) return new AddSaveResponse("Could not locate the melonDS installation.");
 
                 var titleId = TitleIdOf(save);
-                if (!MelonDsDsi.RestoreSave(layout, titleId, Bios7Of(layout), source, out var error))
+                if (!DsiWorkspace.RestoreSave(layout, titleId, Bios7Of(layout), source, out var error))
                     return new AddSaveResponse("Could not restore this DSiWare save: " + error);
 
                 // WORKS ON NOTHING AT ALL, which is the case deleting a save leaves behind: the
@@ -430,7 +431,7 @@ namespace LbIntegrations.MelonDs
                 // written into a folder created on the spot, and the next launch rebuilds the image,
                 // reinstalls the title, takes a fresh reference walk and applies this state onto it -
                 // in that order, in PrepareDsiWare. Nothing here depends on what the delete removed.
-                var mirror = MelonDsDsi.RefreshSave(layout, titleId, Bios7Of(layout));
+                var mirror = DsiWorkspace.RefreshSave(layout, titleId, Bios7Of(layout));
                 Log.Info("restored the DSiWare save of " + titleId
                          + "; the next launch rebuilds its console around it");
 
@@ -505,7 +506,7 @@ namespace LbIntegrations.MelonDs
                     if (layout == null)
                         return new PluginResponse(false, "Could not find the melonDS this save belongs to.");
 
-                    if (!MelonDsDsi.DropState(layout, TitleIdOf(save), out var why))
+                    if (!DsiWorkspace.DropState(layout, TitleIdOf(save), out var why))
                         return new PluginResponse(false, "Could not delete this DSiWare save: " + why);
                     return new PluginResponse(true);
                 }

@@ -7,7 +7,7 @@
 //
 // WHAT THIS REPLACES. The first design gave each title its own copy of the user's dump. It worked,
 // and it cost 240 MB per game for a few kilobytes of state. Measuring what actually differs - see
-// MelonDsDelta, which is where the numbers are - showed a whole session to be 80 KB inside a 240 MB
+// DsiDelta, which is where the numbers are - showed a whole session to be 80 KB inside a 240 MB
 // image. So now there is ONE image, it is scratch, and what is kept per title is the difference.
 //
 //     <install>\dsi\base.bin                    the user's own dump, copied here once
@@ -53,11 +53,12 @@ using System;
 using System.Globalization;
 using System.IO;
 using System.Threading;
+using LbIntegrations.Dsi;
 
-namespace LbIntegrations.MelonDs
+namespace LbIntegrations.Dsi
 {
     /// <summary>What happened when a DSiWare title asked for a NAND to run on.</summary>
-    internal sealed class DsiNand
+    internal sealed class WorkImage
     {
         /// <summary>The image melonDS should be pointed at, or null when there is none.</summary>
         public string Path;
@@ -66,7 +67,7 @@ namespace LbIntegrations.MelonDs
         public string Reason;
     }
 
-    internal static class MelonDsDsi
+    internal static class DsiWorkspace
     {
         public const string DirName = "dsi";
         public const string BaseName = "base.bin";
@@ -86,10 +87,10 @@ namespace LbIntegrations.MelonDs
         /// margin, rather than filling the disk and failing halfway.</summary>
         private const long FreeSpaceMargin = 256L * 1024 * 1024;
 
-        public static string DsiDir(MelonDsLayout layout)
+        public static string DsiDir(DsiHost layout)
             => layout?.InstallDir == null ? null : Path.Combine(layout.InstallDir, DirName);
 
-        public static string BasePath(MelonDsLayout layout)
+        public static string BasePath(DsiHost layout)
         {
             var dir = DsiDir(layout);
             return dir == null ? null : Path.Combine(dir, BaseName);
@@ -97,34 +98,34 @@ namespace LbIntegrations.MelonDs
 
         /// <summary>The one working image. Scratch: rebuilt from base.bin at every launch, and
         /// nothing is expected to survive in it past a capture.</summary>
-        public static string WorkPath(MelonDsLayout layout)
-        {
-            var dir = DsiDir(layout);
-            return dir == null ? null : Path.Combine(dir, WorkName);
-        }
+        /// <summary>THE HOST DECIDES, and this is the one place the two emulators diverge. melonDS
+        /// can be pointed at any path, so its working image sits in our folder; no$gba reads a fixed
+        /// name beside its own executable and cannot be told otherwise. Everything downstream - the
+        /// rebuild, the capture, the receipt, the save file - is the same either way.</summary>
+        public static string WorkPath(DsiHost host) => host?.WorkImagePath;
 
         /// <summary>Everything kept for one title.</summary>
-        public static string TitleDir(MelonDsLayout layout, string titleId)
+        public static string TitleDir(DsiHost layout, string titleId)
         {
             var dir = DsiDir(layout);
             return dir == null || string.IsNullOrWhiteSpace(titleId) ? null : Path.Combine(dir, titleId);
         }
 
-        public static string ReferencePathFor(MelonDsLayout layout, string titleId)
+        public static string ReferencePathFor(DsiHost layout, string titleId)
         {
             var dir = TitleDir(layout, titleId);
-            return dir == null ? null : Path.Combine(dir, MelonDsDelta.ReferenceName);
+            return dir == null ? null : Path.Combine(dir, DsiDelta.ReferenceName);
         }
 
         /// <summary>A folder to lay a save out in, or to build one in, for the length of one
         /// operation. Beside the save rather than under TEMP, so packing it is a move on the same
         /// volume instead of a copy across two.</summary>
-        private static string Scratch(MelonDsLayout layout, string titleId)
+        private static string Scratch(DsiHost layout, string titleId)
         {
             var dir = TitleDir(layout, titleId);
             return dir == null
                 ? null
-                : Path.Combine(dir, "." + MelonDsDelta.StateDirName + "-" + Guid.NewGuid().ToString("N"));
+                : Path.Combine(dir, "." + DsiDelta.StateDirName + "-" + Guid.NewGuid().ToString("N"));
         }
 
         /// <summary>What the host lists, backs up and hands back: ONE FILE, state.dsisave.
@@ -140,17 +141,17 @@ namespace LbIntegrations.MelonDs
         /// So the unit is the whole difference - and it is now an ARCHIVE of that difference rather
         /// than a folder of it. This used to say the opposite, and gave a reason: an archive could
         /// quietly change its own bytes between two identical writes and make the host think the
-        /// save had moved. The objection was right and the answer is in MelonDsSaveFile - sorted
+        /// save had moved. The objection was right and the answer is in DsiSaveFile - sorted
         /// entries, one constant timestamp, no compression - with a probe assertion that packs the
         /// same content twice and compares the sha256. What the folder cost in exchange was the
         /// host's container path, which is where every defect this plugin had in save management
         /// came from.</summary>
-        public static string SavePathFor(MelonDsLayout layout, string titleId)
+        public static string SavePathFor(DsiHost layout, string titleId)
         {
             var dir = TitleDir(layout, titleId);
             return dir == null
                 ? null
-                : Path.Combine(dir, MelonDsDelta.StateDirName + MelonDsSaveFile.Extension);
+                : Path.Combine(dir, DsiDelta.StateDirName + DsiSaveFile.Extension);
         }
 
         /// <summary>Where a title's save sits inside the NAND's own filesystem.</summary>
@@ -165,7 +166,7 @@ namespace LbIntegrations.MelonDs
         /// It used to appear only when a NAND was first copied, which meant the message telling a
         /// user to "put your dump at dsi\base.bin" named a folder that was not there. Asking someone
         /// to create a directory from a log line is asking them to guess at a spelling.</summary>
-        public static void PrepareFolder(MelonDsLayout layout)
+        public static void PrepareFolder(DsiHost layout)
         {
             try
             {
@@ -196,14 +197,14 @@ namespace LbIntegrations.MelonDs
                     "",
                     "This file is only a note. You can delete it.",
                 }) + "\r\n");
-                Log.Info("made " + dir + " - drop a DSi NAND dump in it to enable DSiWare");
+                DsiLog.Info("made " + dir + " - drop a DSi NAND dump in it to enable DSiWare");
             }
-            catch (Exception ex) { Log.Verbose("could not prepare the dsi folder - " + ex.Message); }
+            catch (Exception ex) { DsiLog.Verbose("could not prepare the dsi folder - " + ex.Message); }
         }
 
         /// <summary>Is this path one of ours? True only for something under dsi\, which is the folder
         /// this plugin owns.</summary>
-        public static bool IsOurs(MelonDsLayout layout, string path)
+        public static bool IsOurs(DsiHost layout, string path)
         {
             try
             {
@@ -218,13 +219,13 @@ namespace LbIntegrations.MelonDs
         // ── the working image ────────────────────────────────────────────────
 
         /// <summary>Which title work.bin is currently holding, or null.</summary>
-        public static string WorkTitle(MelonDsLayout layout) => MarkerParts(layout)?[0];
+        public static string WorkTitle(DsiHost layout) => MarkerParts(layout)?[0];
 
         /// <summary>The marker, split. The title id, then the fingerprint of the ROM that was
         /// installed - path, length and write time - then the NAND it was built on. Older markers
         /// are shorter and read back as a title with no fingerprint, which simply means the image
         /// cannot be reused: a rebuild costs a quarter of a second and is always correct.</summary>
-        private static string[] MarkerParts(MelonDsLayout layout)
+        private static string[] MarkerParts(DsiHost layout)
         {
             try
             {
@@ -261,11 +262,11 @@ namespace LbIntegrations.MelonDs
         /// Being wrong here costs nothing that cannot be rebuilt - the state on disk is the save, and
         /// the image is scratch - but it would cost a session, so every condition is checked rather
         /// than assumed.</summary>
-        public static bool CanReuseWork(MelonDsLayout layout, NdsRom rom, string romPath, string sourceNand)
+        public static bool CanReuseWork(DsiHost layout, NdsRom rom, string romPath, string sourceNand)
         {
             try
             {
-                if (Log.Disabled(KillSwitch)) return false;
+                if (DsiLog.Disabled(KillSwitch)) return false;
 
                 var work = WorkPath(layout);
                 if (work == null || !File.Exists(work)) return false;
@@ -290,14 +291,14 @@ namespace LbIntegrations.MelonDs
                 // taken the image away before this is even asked; this is the same question put
                 // again at the moment of deciding, so that a reordering upstream can only ever cost
                 // a rebuild, never hand the player the session a sync just superseded.
-                if (MelonDsWorkSum.Moved(layout, rom.TitleId, out _)) return false;
+                if (DsiWorkSum.Moved(layout, rom.TitleId, out _)) return false;
 
-                return !MelonDsNand.EmulatorRunning();
+                return !DsiNand.EmulatorRunning();
             }
             catch { return false; }
         }
 
-        private static string MarkerPath(MelonDsLayout layout)
+        private static string MarkerPath(DsiHost layout)
         {
             var dir = DsiDir(layout);
             return dir == null ? null : Path.Combine(dir, WorkTitleName);
@@ -308,7 +309,7 @@ namespace LbIntegrations.MelonDs
         ///
         /// This is what stands in for an "emulator has quit" event, which does not exist. It runs
         /// BEFORE anything rebuilds work.bin, so a session can never be thrown away unread.</summary>
-        public static void CaptureWork(MelonDsLayout layout, string bios7Path, string onlyTitle = null)
+        public static void CaptureWork(DsiHost layout, string bios7Path, string onlyTitle = null)
         {
             try
             {
@@ -329,9 +330,9 @@ namespace LbIntegrations.MelonDs
                 // because it asks about the title being launched. Capturing then would write A's old
                 // session over A's new save, silently. The image is always rebuildable; the save is
                 // not.
-                if (MelonDsWorkSum.Moved(layout, titleId, out var how))
+                if (DsiWorkSum.Moved(layout, titleId, out var how))
                 {
-                    Log.Info("the save of " + titleId + " changed outside melonDS (" + how
+                    DsiLog.Info("the save of " + titleId + " changed outside melonDS (" + how
                              + "), so its session is not captured over it; the image is dropped");
                     DropWorkIfItHolds(layout, titleId, "because its save changed elsewhere");
                     return;
@@ -340,15 +341,15 @@ namespace LbIntegrations.MelonDs
                 var reference = ReferencePathFor(layout, titleId);
                 if (reference == null || !File.Exists(reference))
                 {
-                    Log.Verbose("no reference for " + titleId + ", so its session cannot be captured");
+                    DsiLog.Verbose("no reference for " + titleId + ", so its session cannot be captured");
                     return;
                 }
                 if (string.IsNullOrWhiteSpace(bios7Path) || !File.Exists(bios7Path)) return;
 
-                using var session = MelonDsNand.Open(work, bios7Path, out var error);
+                using var session = DsiNand.Open(work, bios7Path, out var error);
                 if (session == null)
                 {
-                    Log.Verbose("could not open the working NAND to capture " + titleId + " - " + error);
+                    DsiLog.Verbose("could not open the working NAND to capture " + titleId + " - " + error);
                     return;
                 }
 
@@ -358,9 +359,9 @@ namespace LbIntegrations.MelonDs
                 var building = Scratch(layout, titleId);
                 try
                 {
-                    int kept = MelonDsDelta.Capture(session, reference, building,
+                    int kept = DsiDelta.Capture(session, reference, building,
                                                     TitleDir(layout, titleId), out var why);
-                    if (kept < 0) { Log.Verbose("could not capture " + titleId + " - " + why); return; }
+                    if (kept < 0) { DsiLog.Verbose("could not capture " + titleId + " - " + why); return; }
 
                     // The save takes a copy of the recipe for the base it was made on, so it can
                     // rebuild that base later from the user's pristine dump. Two small files; the
@@ -375,17 +376,17 @@ namespace LbIntegrations.MelonDs
                     CarryBase(layout, titleId, building);
 
                     var save = SavePathFor(layout, titleId);
-                    if (!MelonDsSaveFile.Pack(building, save, out var packError))
-                    { Log.Warn("could not write the save of " + titleId + " - " + packError); return; }
+                    if (!DsiSaveFile.Pack(building, save, out var packError))
+                    { DsiLog.Warn("could not write the save of " + titleId + " - " + packError); return; }
 
                     // The two are in step again, so the receipt is rewritten to say so.
-                    MelonDsWorkSum.Write(layout, titleId);
+                    DsiWorkSum.Write(layout, titleId);
 
-                    Log.Verbose("captured " + kept + " file(s) of state for " + titleId);
+                    DsiLog.Verbose("captured " + kept + " file(s) of state for " + titleId);
                 }
                 finally { Scrub(building); }
             }
-            catch (Exception ex) { Log.Warn("could not capture the working NAND", ex); }
+            catch (Exception ex) { DsiLog.Warn("could not capture the working NAND", ex); }
         }
 
         /// <summary>Copy the recipe and record of whatever base this image was built on into the
@@ -394,7 +395,7 @@ namespace LbIntegrations.MelonDs
         /// SILENT WHEN THERE IS NOTHING TO CARRY. A base locked before any of this existed has no
         /// recipe yet; the save is then exactly what it used to be, and the catch-up at the next
         /// launch fixes it.</summary>
-        private static void CarryBase(MelonDsLayout layout, string titleId, string into)
+        private static void CarryBase(DsiHost layout, string titleId, string into)
         {
             try
             {
@@ -402,16 +403,16 @@ namespace LbIntegrations.MelonDs
                 if (parts == null || parts.Length != 5) return;
 
                 var baseImage = parts[4];
-                if (string.IsNullOrWhiteSpace(baseImage) || !MelonDsBase.Described(baseImage)) return;
+                if (string.IsNullOrWhiteSpace(baseImage) || !DsiBase.Described(baseImage)) return;
 
                 if (into == null || !Directory.Exists(into)) return;
 
-                File.Copy(MelonDsBase.RecipeFor(baseImage),
-                          Path.Combine(into, MelonDsBase.RecipeInState), overwrite: true);
-                File.Copy(MelonDsBase.RecordFor(baseImage),
-                          Path.Combine(into, MelonDsBase.RecordInState), overwrite: true);
+                File.Copy(DsiBase.RecipeFor(baseImage),
+                          Path.Combine(into, DsiBase.RecipeInState), overwrite: true);
+                File.Copy(DsiBase.RecordFor(baseImage),
+                          Path.Combine(into, DsiBase.RecordInState), overwrite: true);
             }
-            catch (Exception ex) { Log.Verbose("could not carry the base into the save - " + ex.Message); }
+            catch (Exception ex) { DsiLog.Verbose("could not carry the base into the save - " + ex.Message); }
         }
 
         /// <summary>Set a title's state aside instead of letting it be overwritten.
@@ -421,7 +422,7 @@ namespace LbIntegrations.MelonDs
         /// session and the old save would be gone - so "start a new game" would silently mean "delete
         /// the old one". Named after the console it belongs to, so it is obvious what it is waiting
         /// for.</summary>
-        public static bool ParkState(MelonDsLayout layout, string titleId, string identity)
+        public static bool ParkState(DsiHost layout, string titleId, string identity)
         {
             try
             {
@@ -432,19 +433,19 @@ namespace LbIntegrations.MelonDs
                 // anything can open - a folder could be renamed freely, a file cannot.
                 var stem = Path.Combine(Path.GetDirectoryName(save),
                                         Path.GetFileNameWithoutExtension(save)
-                                        + ".orphan-" + MelonDsBase.Short(identity));
-                var parked = stem + MelonDsSaveFile.Extension;
+                                        + ".orphan-" + DsiBase.Short(identity));
+                var parked = stem + DsiSaveFile.Extension;
                 if (File.Exists(parked))
                     parked = stem + "-" + DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture)
-                           + MelonDsSaveFile.Extension;
+                           + DsiSaveFile.Extension;
 
                 File.Move(save, parked);
-                Log.Info("set the old save of " + titleId + " aside as " + Path.GetFileName(parked)
+                DsiLog.Info("set the old save of " + titleId + " aside as " + Path.GetFileName(parked)
                          + "; it is not deleted, and it applies again the day console "
-                         + MelonDsBase.Short(identity) + " can be rebuilt");
+                         + DsiBase.Short(identity) + " can be rebuilt");
                 return true;
             }
-            catch (Exception ex) { Log.Warn("could not set a save aside", ex); return false; }
+            catch (Exception ex) { DsiLog.Warn("could not set a save aside", ex); return false; }
         }
 
         /// <summary>How long a CAPTURE waits for melonDS to let go of the working image once its
@@ -475,12 +476,12 @@ namespace LbIntegrations.MelonDs
         /// saying what is happening and offering to stop. Stopping abandons the launch rather than
         /// starting the game on a state nobody can describe - the session in the image is left
         /// exactly as it is, and the next launch finds it.</summary>
-        public static bool WaitForTheImage(MelonDsLayout layout, string gameName)
+        public static bool WaitForTheImage(DsiHost layout, string gameName)
         {
             var work = WorkPath(layout);
             if (work == null || !File.Exists(work)) return true;     // nothing to wait for
 
-            MelonDsDialog.Waiting window = null;
+            DsiDialog.Waiting window = null;
             try
             {
                 var started = DateTime.UtcNow;
@@ -490,10 +491,10 @@ namespace LbIntegrations.MelonDs
                     // BOTH QUESTIONS, because either can be the one that matters: the process may be
                     // gone while the handle lingers, and - if melonDS ever stops holding the file
                     // open for a whole session - the handle may be free while the game is running.
-                    if (!MelonDsNand.EmulatorRunning() && NobodyHolds(work))
+                    if (!DsiNand.EmulatorRunning() && NobodyHolds(work))
                     {
                         if (said)
-                            Log.Info("melonDS has let the working image go after "
+                            DsiLog.Info("melonDS has let the working image go after "
                                      + Seconds(DateTime.UtcNow - started) + "s; carrying on with "
                                      + (gameName ?? "this game"));
                         return true;
@@ -503,23 +504,23 @@ namespace LbIntegrations.MelonDs
                     if (!said && waited >= AnnounceAfter)
                     {
                         said = true;
-                        Log.Info("melonDS still has the working image, so " + (gameName ?? "this game")
+                        DsiLog.Info("melonDS still has the working image, so " + (gameName ?? "this game")
                                  + " waits rather than build over a session that has not been written "
                                  + "down");
-                        window = MelonDsDialog.Wait("melonDS - finishing the last session",
+                        window = DsiDialog.Wait("melonDS - finishing the last session",
                                                     StillBusy(gameName));
                     }
 
                     if (window != null && window.Cancelled)
                     {
-                        Log.Info((gameName ?? "this game") + " was not started: the wait was stopped, "
+                        DsiLog.Info((gameName ?? "this game") + " was not started: the wait was stopped, "
                                  + "and the session in the working image is left exactly as it is");
                         return false;
                     }
 
                     if (waited >= LaunchPatience)
                     {
-                        Log.Warn("melonDS has had the working image for "
+                        DsiLog.Warn("melonDS has had the working image for "
                                  + Seconds(LaunchPatience) + "s, so " + (gameName ?? "this game")
                                  + " is not started; quit melonDS and launch it again");
                         return false;
@@ -531,7 +532,7 @@ namespace LbIntegrations.MelonDs
             catch (Exception ex)
             {
                 // Never refuse a launch over not being able to ask the question.
-                Log.Verbose("could not wait for the working image - " + ex.Message);
+                DsiLog.Verbose("could not wait for the working image - " + ex.Message);
                 return true;
             }
             finally { window?.Dispose(); }
@@ -586,15 +587,15 @@ namespace LbIntegrations.MelonDs
         ///
         /// The test is the file, not the process, because the file is the actual question. Opened
         /// with FileShare.None it succeeds only when nobody else holds it at all.</summary>
-        private static bool TheImageIsFree(MelonDsLayout layout, string titleId)
+        private static bool TheImageIsFree(DsiHost layout, string titleId)
         {
             var work = WorkPath(layout);
             if (work == null) return false;
             try
             {
-                if (MelonDsNand.EmulatorRunning())
+                if (DsiNand.EmulatorRunning())
                 {
-                    Log.Verbose("melonDS still has the working image, so the session of " + titleId
+                    DsiLog.Verbose("melonDS still has the working image, so the session of " + titleId
                                 + " is left where it is; the next launch captures it");
                     return false;
                 }
@@ -605,7 +606,7 @@ namespace LbIntegrations.MelonDs
                     if (NobodyHolds(work)) return true;
                     if (DateTime.UtcNow >= deadline)
                     {
-                        Log.Info("something still holds the working image after " + Seconds(Handover)
+                        DsiLog.Info("something still holds the working image after " + Seconds(Handover)
                                  + "s, so the session of " + titleId + " is not captured rather than "
                                  + "captured badly");
                         return false;
@@ -616,7 +617,7 @@ namespace LbIntegrations.MelonDs
             catch (Exception ex)
             {
                 // Never fail a capture over not being able to ask the question.
-                Log.Verbose("could not tell whether the working image is free - " + ex.Message);
+                DsiLog.Verbose("could not tell whether the working image is free - " + ex.Message);
                 return true;
             }
         }
@@ -636,10 +637,10 @@ namespace LbIntegrations.MelonDs
 
         /// <summary>Forget which title the image holds - and the receipt with it, which describes
         /// an agreement that no longer has two parties.</summary>
-        private static void Forget(MelonDsLayout layout)
+        private static void Forget(DsiHost layout)
         {
             try { var m = MarkerPath(layout); if (m != null && File.Exists(m)) File.Delete(m); } catch { }
-            MelonDsWorkSum.Forget(layout);
+            DsiWorkSum.Forget(layout);
         }
 
         /// <summary>The first design's per-title NAND, kept for ONE case: no native library.
@@ -649,12 +650,12 @@ namespace LbIntegrations.MelonDs
         /// replaced, because the one thing a user can still do by hand, importing the title through
         /// Manage DSi titles, would be wiped on the next launch. So in that case the title keeps an
         /// image of its own, which is where a manual import survives.</summary>
-        public static DsiNand EnsureLegacy(MelonDsLayout layout, NdsRom rom, string sourceNand)
+        public static WorkImage EnsureLegacy(DsiHost layout, NdsRom rom, string sourceNand)
         {
-            var result = new DsiNand();
+            var result = new WorkImage();
             try
             {
-                if (Log.Disabled(KillSwitch))
+                if (DsiLog.Disabled(KillSwitch))
                 {
                     result.Reason = "switched off by the " + KillSwitch + " marker";
                     return result;
@@ -684,12 +685,12 @@ namespace LbIntegrations.MelonDs
                 Directory.CreateDirectory(titleDir);
                 CopyIntoPlace(source, target);
                 result.Path = target;
-                Log.Info("created a NAND for title " + rom.TitleId + " (" + Megabytes(length) + "): " + target);
+                DsiLog.Info("created a NAND for title " + rom.TitleId + " (" + Megabytes(length) + "): " + target);
                 return result;
             }
             catch (Exception ex)
             {
-                Log.Warn("could not prepare a DSi NAND", ex);
+                DsiLog.Warn("could not prepare a DSi NAND", ex);
                 result.Reason = ex.GetType().Name + ": " + ex.Message;
                 return result;
             }
@@ -697,22 +698,22 @@ namespace LbIntegrations.MelonDs
 
         /// <summary>The image as it stands, for a launch that reuses it. Answers in the same shape
         /// as Rebuild so the caller does not have to care which of the two it got.</summary>
-        public static DsiNand ExistingWork(MelonDsLayout layout)
+        public static WorkImage ExistingWork(DsiHost layout)
         {
             var work = WorkPath(layout);
             return work != null && File.Exists(work)
-                ? new DsiNand { Path = work }
-                : new DsiNand { Reason = "the working NAND is not there after all" };
+                ? new WorkImage { Path = work }
+                : new WorkImage { Reason = "the working NAND is not there after all" };
         }
 
         /// <summary>Rebuild work.bin from the base. The caller then installs the title into it and
         /// calls TakeReferenceAndRestore with the same session.</summary>
-        public static DsiNand Rebuild(MelonDsLayout layout, NdsRom rom, string sourceNand)
+        public static WorkImage Rebuild(DsiHost layout, NdsRom rom, string sourceNand)
         {
-            var result = new DsiNand();
+            var result = new WorkImage();
             try
             {
-                if (Log.Disabled(KillSwitch))
+                if (DsiLog.Disabled(KillSwitch))
                 {
                     result.Reason = "switched off by the " + KillSwitch + " marker";
                     return result;
@@ -748,7 +749,7 @@ namespace LbIntegrations.MelonDs
             }
             catch (Exception ex)
             {
-                Log.Warn("could not prepare the working NAND", ex);
+                DsiLog.Warn("could not prepare the working NAND", ex);
                 result.Reason = ex.GetType().Name + ": " + ex.Message;
                 return result;
             }
@@ -760,7 +761,7 @@ namespace LbIntegrations.MelonDs
         /// ORDER IS THE POINT. The reference has to be the walk of a fresh install and NOTHING else,
         /// so it is taken before the state goes back in. Taken afterwards it would describe the state
         /// as part of the install, and the next capture would find no difference at all.</summary>
-        public static bool TakeReference(MelonDsLayout layout, NandSession session, string titleId)
+        public static bool TakeReference(DsiHost layout, NandSession session, string titleId)
         {
             try
             {
@@ -771,24 +772,24 @@ namespace LbIntegrations.MelonDs
                 if (session.Walk(tmp, out var error) < 0)
                 {
                     Cleanup(tmp);
-                    Log.Verbose("could not walk the fresh image for " + titleId + " - " + error);
+                    DsiLog.Verbose("could not walk the fresh image for " + titleId + " - " + error);
                     return false;
                 }
                 if (File.Exists(reference)) File.Delete(reference);
                 File.Move(tmp, reference);
                 return true;
             }
-            catch (Exception ex) { Log.Warn("could not walk a fresh DSiWare image", ex); return false; }
+            catch (Exception ex) { DsiLog.Warn("could not walk a fresh DSiWare image", ex); return false; }
         }
 
         /// <summary>Put this title's saved state back into the working image. Called after the
         /// reference has been taken, and after a migration has had its chance to produce one.</summary>
-        public static void RestoreState(MelonDsLayout layout, string titleId, string bios7Path)
+        public static void RestoreState(DsiHost layout, string titleId, string bios7Path)
         {
             try
             {
                 var save = SavePathFor(layout, titleId);
-                if (save == null || !MelonDsSaveFile.Holds(save)) return;   // never played
+                if (save == null || !DsiSaveFile.Holds(save)) return;   // never played
 
                 var work = WorkPath(layout);
                 if (work == null || !File.Exists(work)) return;
@@ -799,30 +800,30 @@ namespace LbIntegrations.MelonDs
                 var opened = Scratch(layout, titleId);
                 try
                 {
-                    if (!MelonDsSaveFile.Unpack(save, opened, out var openError))
-                    { Log.Warn("could not open the save of " + titleId + " - " + openError); return; }
+                    if (!DsiSaveFile.Unpack(save, opened, out var openError))
+                    { DsiLog.Warn("could not open the save of " + titleId + " - " + openError); return; }
 
-                    using var session = MelonDsNand.Open(work, bios7Path, out var error);
+                    using var session = DsiNand.Open(work, bios7Path, out var error);
                     if (session == null)
                     {
-                        Log.Warn("could not open the working NAND to put back the state of " + titleId
+                        DsiLog.Warn("could not open the working NAND to put back the state of " + titleId
                                  + " - " + error);
                         return;
                     }
 
-                    int written = MelonDsDelta.Apply(session, opened, out var why);
-                    if (written < 0) { Log.Warn("could not put back the state of " + titleId + " - " + why); return; }
-                    if (written > 0) Log.Verbose("put back " + written + " file(s) of state for " + titleId);
+                    int written = DsiDelta.Apply(session, opened, out var why);
+                    if (written < 0) { DsiLog.Warn("could not put back the state of " + titleId + " - " + why); return; }
+                    if (written > 0) DsiLog.Verbose("put back " + written + " file(s) of state for " + titleId);
                 }
                 finally { Scrub(opened); }
             }
-            catch (Exception ex) { Log.Warn("could not restore a DSiWare state", ex); }
+            catch (Exception ex) { DsiLog.Warn("could not restore a DSiWare state", ex); }
         }
 
         /// <summary>Remember that work.bin now holds this title. Written last, once everything else
         /// has succeeded: a marker naming a title whose state was never put back would make the next
         /// capture overwrite a good state with a blank one.</summary>
-        public static void RememberWork(MelonDsLayout layout, string titleId, string romPath,
+        public static void RememberWork(DsiHost layout, string titleId, string romPath,
                                         string sourceNand)
         {
             try
@@ -836,13 +837,13 @@ namespace LbIntegrations.MelonDs
 
                 // The image has just been built around this state, so the two are in step: written
                 // down here, and checked before the next capture is allowed to overwrite anything.
-                MelonDsWorkSum.Write(layout, titleId);
+                DsiWorkSum.Write(layout, titleId);
             }
-            catch (Exception ex) { Log.Verbose("could not write the work marker - " + ex.Message); }
+            catch (Exception ex) { DsiLog.Verbose("could not write the work marker - " + ex.Message); }
         }
 
         /// <summary>A per-title NAND left by the first design, if there is one.</summary>
-        public static string LegacyNandFor(MelonDsLayout layout, string titleId)
+        public static string LegacyNandFor(DsiHost layout, string titleId)
         {
             var dir = TitleDir(layout, titleId);
             if (dir == null) return null;
@@ -853,7 +854,7 @@ namespace LbIntegrations.MelonDs
         /// <summary>Take a per-title NAND from the first design, write its difference down as state,
         /// and delete the 240 MB image. Nothing is removed until the state has been written - a
         /// migration that cannot read the old image leaves it exactly where it is.</summary>
-        public static bool Migrate(MelonDsLayout layout, string titleId, string bios7Path)
+        public static bool Migrate(DsiHost layout, string titleId, string bios7Path)
         {
             try
             {
@@ -866,27 +867,27 @@ namespace LbIntegrations.MelonDs
                 var building = Scratch(layout, titleId);
                 try
                 {
-                    using (var session = MelonDsNand.Open(legacy, bios7Path, out var error))
+                    using (var session = DsiNand.Open(legacy, bios7Path, out var error))
                     {
                         if (session == null)
                         {
-                            Log.Warn("could not open the old NAND of " + titleId + " to migrate it - " + error
+                            DsiLog.Warn("could not open the old NAND of " + titleId + " to migrate it - " + error
                                      + "; it is left where it is");
                             return false;
                         }
-                        kept = MelonDsDelta.Capture(session, reference, building,
+                        kept = DsiDelta.Capture(session, reference, building,
                                                     TitleDir(layout, titleId), out var why);
                         if (kept < 0)
                         {
-                            Log.Warn("could not read the state out of the old NAND of " + titleId + " - " + why
+                            DsiLog.Warn("could not read the state out of the old NAND of " + titleId + " - " + why
                                      + "; it is left where it is");
                             return false;
                         }
                     }
 
-                    if (!MelonDsSaveFile.Pack(building, SavePathFor(layout, titleId), out var packError))
+                    if (!DsiSaveFile.Pack(building, SavePathFor(layout, titleId), out var packError))
                     {
-                        Log.Warn("could not write the migrated save of " + titleId + " - " + packError
+                        DsiLog.Warn("could not write the migrated save of " + titleId + " - " + packError
                                  + "; the old image is left where it is");
                         return false;
                     }
@@ -895,11 +896,11 @@ namespace LbIntegrations.MelonDs
 
                 var size = new FileInfo(legacy).Length;
                 File.Delete(legacy);
-                Log.Info("migrated " + titleId + ": its state is now " + kept + " file(s) instead of a "
+                DsiLog.Info("migrated " + titleId + ": its state is now " + kept + " file(s) instead of a "
                          + Megabytes(size) + " image, which has been removed");
                 return true;
             }
-            catch (Exception ex) { Log.Warn("could not migrate an old per-title NAND", ex); return false; }
+            catch (Exception ex) { DsiLog.Warn("could not migrate an old per-title NAND", ex); return false; }
         }
 
         // ── the host's view of the save ──────────────────────────────────────
@@ -910,7 +911,7 @@ namespace LbIntegrations.MelonDs
         /// filesystem, far too much to do on every page render; so a capture happens only when this
         /// title is the one work.bin holds AND melonDS has written to it since the last one. In the
         /// steady state this is two calls to File.GetLastWriteTimeUtc and nothing else.</summary>
-        public static string RefreshSave(MelonDsLayout layout, string titleId, string bios7Path)
+        public static string RefreshSave(DsiHost layout, string titleId, string bios7Path)
         {
             try
             {
@@ -926,7 +927,7 @@ namespace LbIntegrations.MelonDs
 
                 return File.Exists(save) ? save : null;
             }
-            catch (Exception ex) { Log.Warn("could not extract a DSiWare save", ex); return null; }
+            catch (Exception ex) { DsiLog.Warn("could not extract a DSiWare save", ex); return null; }
         }
 
         /// <summary>Throw the working image away when this title's save has been written by
@@ -939,25 +940,25 @@ namespace LbIntegrations.MelonDs
         /// image is DROPPED, not just refused, and the capture that follows finds nothing to do.
         ///
         /// Answers whether anything was thrown away.</summary>
-        public static bool DropWorkIfSaveMoved(MelonDsLayout layout, string titleId)
+        public static bool DropWorkIfSaveMoved(DsiHost layout, string titleId)
         {
             try
             {
                 if (!string.Equals(WorkTitle(layout), titleId, StringComparison.OrdinalIgnoreCase))
                     return false;
-                if (!MelonDsWorkSum.Moved(layout, titleId, out var how)) return false;
+                if (!DsiWorkSum.Moved(layout, titleId, out var how)) return false;
 
-                Log.Info("the save of " + titleId + " changed outside melonDS (" + how
+                DsiLog.Info("the save of " + titleId + " changed outside melonDS (" + how
                          + "), so the working image no longer describes it");
                 DropWorkIfItHolds(layout, titleId, "because its save changed elsewhere");
                 return true;
             }
-            catch (Exception ex) { Log.Warn("could not check the working image's receipt", ex); return false; }
+            catch (Exception ex) { DsiLog.Warn("could not check the working image's receipt", ex); return false; }
         }
 
         /// <summary>Drop the working image when it is holding this title, and forget its marker.
         ///
-        /// APPLYING A STATE ONTO A PLAYED IMAGE IS NOT A RESTORE. MelonDsDelta.Apply only touches the
+        /// APPLYING A STATE ONTO A PLAYED IMAGE IS NOT A RESTORE. DsiDelta.Apply only touches the
         /// files the state names - it puts them back, it does not take away what the current session
         /// added. Restore a backup that has A and B onto an image that has A, B and C and C stays,
         /// the image is reused on the next launch as if it were sound, and the capture after that
@@ -967,7 +968,7 @@ namespace LbIntegrations.MelonDs
         /// A state is defined against a FRESH INSTALL and nothing else, so that is the only surface
         /// it may be applied to. Dropping the image costs a rebuild on the next launch - a quarter of
         /// a second - and makes the restore mean what it says.</summary>
-        private static void DropWorkIfItHolds(MelonDsLayout layout, string titleId, string why)
+        private static void DropWorkIfItHolds(DsiHost layout, string titleId, string why)
         {
             try
             {
@@ -977,10 +978,10 @@ namespace LbIntegrations.MelonDs
                 Forget(layout);
                 var work = WorkPath(layout);
                 if (work != null && File.Exists(work)) File.Delete(work);
-                Log.Info("the working image held " + titleId + "; dropped it " + why
+                DsiLog.Info("the working image held " + titleId + "; dropped it " + why
                          + ", so the next launch builds a fresh one");
             }
-            catch (Exception ex) { Log.Warn("could not drop the working image", ex); }
+            catch (Exception ex) { DsiLog.Warn("could not drop the working image", ex); }
         }
 
         /// <summary>Throw a title's save away, so it starts again as if it had never been played.
@@ -1005,13 +1006,13 @@ namespace LbIntegrations.MelonDs
         ///
         /// REFUSED WHILE melonDS IS RUNNING. The emulator has the image open and will write it back
         /// on the way out, so anything deleted now would return within the minute.</summary>
-        public static bool DropState(MelonDsLayout layout, string titleId, out string error)
+        public static bool DropState(DsiHost layout, string titleId, out string error)
         {
             error = null;
             try
             {
                 if (string.IsNullOrWhiteSpace(titleId)) { error = "no title id"; return false; }
-                if (MelonDsNand.EmulatorRunning())
+                if (DsiNand.EmulatorRunning())
                 {
                     error = "melonDS is running, and it will write its session back when it closes. "
                           + "Close it and delete this again.";
@@ -1025,7 +1026,7 @@ namespace LbIntegrations.MelonDs
                 // is the only place the title exists, so a hand import through Manage DSi titles
                 // goes with it and has to be done again.
                 if (LegacyNandFor(layout, titleId) != null)
-                    Log.Info("the per-title NAND for " + titleId + " goes too. If this title was "
+                    DsiLog.Info("the per-title NAND for " + titleId + " goes too. If this title was "
                              + "imported by hand through Manage DSi titles, that import is gone with "
                              + "it and has to be done again.");
 
@@ -1041,16 +1042,16 @@ namespace LbIntegrations.MelonDs
                 // remember: the reference walk went with the folder, and nothing can be captured
                 // without one; and the receipt no longer matches a state folder that is not there,
                 // so the launch that follows drops the image before deciding anything. See
-                // MelonDsWorkSum. An image nothing can read is scratch, and the next launch of any
+                // DsiWorkSum. An image nothing can read is scratch, and the next launch of any
                 // DSiWare rebuilds over it.
-                Log.Info("deleted the DSiWare save for " + titleId
+                DsiLog.Info("deleted the DSiWare save for " + titleId
                          + (removed == 0 ? " - there was nothing left to delete" : ""));
                 return true;
             }
             catch (Exception ex)
             {
                 error = ex.GetType().Name + ": " + ex.Message;
-                Log.Warn("could not delete the DSiWare save for " + titleId, ex);
+                DsiLog.Warn("could not delete the DSiWare save for " + titleId, ex);
                 return false;
             }
         }
@@ -1061,7 +1062,7 @@ namespace LbIntegrations.MelonDs
         ///
         /// <paramref name="bios7Path"/> is no longer needed and is kept: nothing here opens a NAND
         /// any more, and changing the signature would only move the question to every caller.</summary>
-        public static bool RestoreSave(MelonDsLayout layout, string titleId, string bios7Path,
+        public static bool RestoreSave(DsiHost layout, string titleId, string bios7Path,
                                        string source, out string error)
         {
             error = null;
@@ -1071,8 +1072,8 @@ namespace LbIntegrations.MelonDs
                 if (save == null) { error = "this title has no folder to restore into"; return false; }
                 if (string.IsNullOrWhiteSpace(source) || !File.Exists(source))
                 { error = "a DSiWare save is one file, and this is not one"; return false; }
-                if (!MelonDsSaveFile.Holds(source))
-                { error = "this file is not a melonDS save - it has no " + MelonDsDelta.IndexName; return false; }
+                if (!DsiSaveFile.Holds(source))
+                { error = "this file is not a melonDS save - it has no " + DsiDelta.IndexName; return false; }
 
                 // REPLACED, NOT MERGED - which a single file gets for free. A state describes one
                 // moment: a file that stopped differing has to stop being restored, and when this
@@ -1121,7 +1122,7 @@ namespace LbIntegrations.MelonDs
         /// So the cartridge gets work.bin, which is scratch by definition, and the marker is cleared
         /// either way - once a cartridge has been in that image it no longer holds only what the
         /// marker says, and the next DSiWare launch must rebuild rather than capture.</summary>
-        public static string HandToCartridge(MelonDsLayout layout, string current, out string error)
+        public static string HandToCartridge(DsiHost layout, string current, out string error)
         {
             error = null;
             try
@@ -1155,7 +1156,7 @@ namespace LbIntegrations.MelonDs
         /// captures one any more - the NAND to build on is now chosen per game, by region, out of
         /// the user's bios folder - but one found on disk is still accepted as a last resort so an
         /// install that worked yesterday does not stop working today. See MelonDsBios.</summary>
-        public static string LegacyBase(MelonDsLayout layout)
+        public static string LegacyBase(DsiHost layout)
         {
             var path = BasePath(layout);
             return path != null && File.Exists(path) ? path : null;

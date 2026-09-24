@@ -29,6 +29,18 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- THE SHARED DSi ENGINE, compiled in rather than referenced. Two plugins drive a DSi NAND -
+         melonDS and no$gba - and the machinery between a user's dump and a save is the same for
+         both: it talks to the image, not to the emulator. This repository copies its shared pieces
+         instead of linking them, which is right for Log.cs (three lines of difference between
+         copies) and wrong for four thousand lines that took three measured defects to get right.
+         Compiling the folder in keeps the deployment contract untouched: ILRepack still folds
+         everything into one MelonDs.dll. See src\Shared.Dsi\DsiLog.cs for how it reaches this
+         plugin's logger without naming it. -->
+    <Compile Include="..\Shared.Dsi\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Reference the SDK but DON'T copy it: the host loads the plugin into ITS assembly load
          context and provides the SDK, so the types unify. Shipping our own copy beside the DLL
          would give us a second, incompatible set of EmulatorPlugin/IEmulator types and the host

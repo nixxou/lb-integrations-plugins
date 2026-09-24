@@ -41,7 +41,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 
-namespace LbIntegrations.MelonDs
+namespace LbIntegrations.Dsi
 {
     /// <summary>One file inside a NAND, as a walk reports it.</summary>
     internal struct NandEntry
@@ -51,7 +51,7 @@ namespace LbIntegrations.MelonDs
         public string Sha1;
     }
 
-    internal static class MelonDsDelta
+    internal static class DsiDelta
     {
         /// <summary>The walk of a fresh install, kept beside the title. Recomputable at any time -
         /// that is the whole point - but rebuilding it costs an install, so it is written down.</summary>
@@ -84,7 +84,7 @@ namespace LbIntegrations.MelonDs
                     };
                 }
             }
-            catch (Exception ex) { Log.Verbose("could not read " + manifestPath + " - " + ex.Message); }
+            catch (Exception ex) { DsiLog.Verbose("could not read " + manifestPath + " - " + ex.Message); }
             return map;
         }
 
@@ -157,7 +157,7 @@ namespace LbIntegrations.MelonDs
                     // MEASURED, on a real evening: a capture that raced melonDS's shutdown walked an
                     // image whose FAT was half-written and came back missing 56 of about 60 entries;
                     // the next walk, 27 milliseconds later, was missing 45. Tickets, system files and
-                    // the title's own content were all "deleted". MelonDsDsi waits for the image to
+                    // the title's own content were all "deleted". DsiWorkspace waits for the image to
                     // be free now, which removes that race - and this catches whatever is left of it.
                     //
                     // IT TESTS THE READ, NOT THE SESSION, and that distinction is the whole design.
@@ -197,7 +197,7 @@ namespace LbIntegrations.MelonDs
                         var flat = FlatName(path);
                         if (!session.ExportFile(path, Path.Combine(building, flat), out var why))
                         {
-                            Log.Verbose("could not take " + path + " out of the NAND - " + why);
+                            DsiLog.Verbose("could not take " + path + " out of the NAND - " + why);
                             continue;
                         }
                         index.Add("F\t" + flat + "\t" + path);
@@ -211,7 +211,7 @@ namespace LbIntegrations.MelonDs
                     // logged as having captured nothing at all - the one shape where "captured 0"
                     // and "captured nothing" mean opposite things.
                     if (removed.Count > 0)
-                        Log.Info(removed.Count + " file(s) the fresh install has were deleted in this "
+                        DsiLog.Info(removed.Count + " file(s) the fresh install has were deleted in this "
                                  + "session and are recorded as removals");
 
                     var old = stateDir + "." + Guid.NewGuid().ToString("N") + ".old";
@@ -252,7 +252,7 @@ namespace LbIntegrations.MelonDs
                         // was reported, a file that could not be taken away was not - and the second
                         // is the one the player notices, because something they deleted reappears.
                         if (!session.RemoveFile(parts[2], out var whyNot))
-                            Log.Verbose("could not take " + parts[2] + " back out of the NAND - "
+                            DsiLog.Verbose("could not take " + parts[2] + " back out of the NAND - "
                                         + whyNot + "; it was deleted in the saved state and will "
                                         + "come back");
                         continue;
@@ -261,7 +261,7 @@ namespace LbIntegrations.MelonDs
                     var file = Path.Combine(stateDir, parts[1]);
                     if (!File.Exists(file)) continue;
                     if (session.ImportFile(parts[2], file, out var why)) written++;
-                    else Log.Verbose("could not put " + parts[2] + " back into the NAND - " + why);
+                    else DsiLog.Verbose("could not put " + parts[2] + " back into the NAND - " + why);
                 }
                 return written;
             }

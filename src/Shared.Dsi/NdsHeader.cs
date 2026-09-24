@@ -18,7 +18,7 @@
 using System;
 using System.IO;
 
-namespace LbIntegrations.MelonDs
+namespace LbIntegrations.Dsi
 {
     /// <summary>What a ROM turned out to be. Every field is best-effort: a ROM we could not read
     /// reports <see cref="Known"/> false and the caller carries on in DS mode, which is what melonDS
@@ -44,7 +44,7 @@ namespace LbIntegrations.MelonDs
 
         /// <summary>DSiRegionMask: which console regions accept this title, as a bitmask
         /// (NDS_Header.h:29-39). Zero when the field was never filled in, which is not the same as
-        /// "no region" - see MelonDsRegion, which treats it as "no answer" and asks elsewhere.</summary>
+        /// "no region" - see DsiRegions, which treats it as "no answer" and asks elsewhere.</summary>
         public uint DSiRegionMask;
 
         public string TitleId => DSiTitleIdHigh.ToString("x8") + DSiTitleIdLow.ToString("x8");
@@ -110,11 +110,11 @@ namespace LbIntegrations.MelonDs
                 rom.IsDSi = (head[UnitCodeOffset] & 0x02) != 0;
                 rom.DSiTitleIdLow = ReadU32(head, DSiTitleIdOffset);
                 rom.DSiTitleIdHigh = ReadU32(head, DSiTitleIdOffset + 4);
-                if (head.Length >= MelonDsRegion.MaskOffset + 4)
-                    rom.DSiRegionMask = ReadU32(head, MelonDsRegion.MaskOffset);
+                if (head.Length >= DsiRegions.MaskOffset + 4)
+                    rom.DSiRegionMask = ReadU32(head, DsiRegions.MaskOffset);
                 rom.IsDSiWare = rom.IsDSi && rom.DSiTitleIdHigh == DSiWareTitleIdHigh;
             }
-            catch (Exception ex) { Log.Verbose("could not read the header of " + romPath + " - " + ex.Message); }
+            catch (Exception ex) { DsiLog.Verbose("could not read the header of " + romPath + " - " + ex.Message); }
             return rom;
         }
 

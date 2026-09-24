@@ -40,9 +40,9 @@ using SharpCompress.Common;
 using SharpCompress.Writers;
 using SharpCompress.Writers.Zip;
 
-namespace LbIntegrations.MelonDs
+namespace LbIntegrations.Dsi
 {
-    internal static class MelonDsSaveFile
+    internal static class DsiSaveFile
     {
         /// <summary>What a DSiWare save is called, here and in the vault alike. The host derives the
         /// vault name from the game and this extension (SaveVault.Extension reads it off the active
@@ -60,7 +60,7 @@ namespace LbIntegrations.MelonDs
         /// place, so an interrupted pack never leaves something that looks like a save.
         ///
         /// Top level only, and that is not a shortcut: a state folder is flat by construction -
-        /// MelonDsDelta.FlatName turns 0:/shared1/TWLCFG0.dat into 0__shared1_TWLCFG0.dat precisely
+        /// DsiDelta.FlatName turns 0:/shared1/TWLCFG0.dat into 0__shared1_TWLCFG0.dat precisely
         /// so that no subdirectory can ever exist.</summary>
         public static bool Pack(string folder, string target, out string error)
         {
@@ -136,7 +136,7 @@ namespace LbIntegrations.MelonDs
 
         /// <summary>Is this a save file? It is, when it carries an index - the same question the
         /// folder form answered with File.Exists(dir\files.txt).</summary>
-        public static bool Holds(string savePath) => Bytes(savePath, MelonDsDelta.IndexName) != null;
+        public static bool Holds(string savePath) => Bytes(savePath, DsiDelta.IndexName) != null;
 
         /// <summary>One entry, in memory. A zip is random-access through its central directory, so
         /// this reads that entry and nothing else - which is what makes reading base.txt on every
@@ -151,7 +151,7 @@ namespace LbIntegrations.MelonDs
             }
             catch (Exception ex)
             {
-                Log.Verbose("could not read " + entry + " out of " + savePath + " - " + ex.Message);
+                DsiLog.Verbose("could not read " + entry + " out of " + savePath + " - " + ex.Message);
                 return null;
             }
         }
@@ -170,7 +170,7 @@ namespace LbIntegrations.MelonDs
             }
             catch (Exception ex)
             {
-                Log.Verbose("could not read " + entry + " out of an archive in memory - " + ex.Message);
+                DsiLog.Verbose("could not read " + entry + " out of an archive in memory - " + ex.Message);
                 return null;
             }
         }
@@ -231,7 +231,7 @@ namespace LbIntegrations.MelonDs
                     }
                 }
             }
-            catch (Exception ex) { Log.Verbose("could not list " + savePath + " - " + ex.Message); }
+            catch (Exception ex) { DsiLog.Verbose("could not list " + savePath + " - " + ex.Message); }
 
             found.Sort((a, b) => StringComparer.Ordinal.Compare(a.Key, b.Key));
             return found;

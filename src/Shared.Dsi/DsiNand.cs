@@ -24,8 +24,9 @@ using System;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using LbIntegrations.Dsi;
 
-namespace LbIntegrations.MelonDs
+namespace LbIntegrations.Dsi
 {
     /// <summary>The save files a DSiWare title keeps inside the NAND, as melonDS numbers them
     /// (DSi_NAND.h:37-42).</summary>
@@ -43,10 +44,10 @@ namespace LbIntegrations.MelonDs
 
         internal NandSession(IntPtr handle) { _handle = handle; }
 
-        public ulong ConsoleId => _handle == IntPtr.Zero ? 0 : MelonDsNand.ConsoleId(_handle);
+        public ulong ConsoleId => _handle == IntPtr.Zero ? 0 : DsiNand.ConsoleId(_handle);
 
         public bool TitleExists(string titleId)
-            => MelonDsNand.Call(_handle, titleId, (h, c, i) => MelonDsNand.TitleExists(h, c, i)) == MelonDsNand.Ok;
+            => DsiNand.Call(_handle, titleId, (h, c, i) => DsiNand.TitleExists(h, c, i)) == DsiNand.Ok;
 
         /// <summary>Install the title from its .nds. True when it is in there afterwards, which
         /// includes the case where it already was.
@@ -56,37 +57,37 @@ namespace LbIntegrations.MelonDs
         /// would notice even though melonDS does not.</summary>
         public bool ImportTitle(string appPath, string tmdPath, out string error, out bool generatedTmd)
         {
-            var code = MelonDsNand.ImportTitle(_handle, appPath, tmdPath, 0);
+            var code = DsiNand.ImportTitle(_handle, appPath, tmdPath, 0);
             generatedTmd = false;
-            try { generatedTmd = MelonDsNand.LastTmdWasGenerated() != 0; } catch { }
-            error = code == MelonDsNand.Ok ? null : MelonDsNand.LastError(_handle);
-            return code == MelonDsNand.Ok;
+            try { generatedTmd = DsiNand.LastTmdWasGenerated() != 0; } catch { }
+            error = code == DsiNand.Ok ? null : DsiNand.LastError(_handle);
+            return code == DsiNand.Ok;
         }
 
         /// <summary>Copy one of the title's save files out. False with a null error means the title
         /// is simply not installed, which is not a failure.</summary>
         public bool ExportSave(string titleId, NandSaveKind kind, string outPath, out string error)
         {
-            var code = MelonDsNand.Call(_handle, titleId,
-                (h, c, i) => MelonDsNand.ExportSave(h, c, i, (int)kind, outPath));
-            error = code < 0 ? MelonDsNand.LastError(_handle) : null;
-            return code == MelonDsNand.Ok;
+            var code = DsiNand.Call(_handle, titleId,
+                (h, c, i) => DsiNand.ExportSave(h, c, i, (int)kind, outPath));
+            error = code < 0 ? DsiNand.LastError(_handle) : null;
+            return code == DsiNand.Ok;
         }
 
         public bool ImportSave(string titleId, NandSaveKind kind, string inPath, out string error)
         {
-            var code = MelonDsNand.Call(_handle, titleId,
-                (h, c, i) => MelonDsNand.ImportSave(h, c, i, (int)kind, inPath));
-            error = code < 0 ? MelonDsNand.LastError(_handle) : null;
-            return code == MelonDsNand.Ok;
+            var code = DsiNand.Call(_handle, titleId,
+                (h, c, i) => DsiNand.ImportSave(h, c, i, (int)kind, inPath));
+            error = code < 0 ? DsiNand.LastError(_handle) : null;
+            return code == DsiNand.Ok;
         }
 
         /// <summary>Copy one file out of the NAND's filesystem, by its path inside the image.</summary>
         public bool ExportFile(string nandPath, string outPath, out string error)
         {
-            var code = MelonDsNand.ExportFile(_handle, nandPath, outPath);
-            error = code == MelonDsNand.Ok ? null : MelonDsNand.LastError(_handle);
-            return code == MelonDsNand.Ok;
+            var code = DsiNand.ExportFile(_handle, nandPath, outPath);
+            error = code == DsiNand.Ok ? null : DsiNand.LastError(_handle);
+            return code == DsiNand.Ok;
         }
 
         /// <summary>Write a file back INTO the NAND's filesystem. Only ever used to put back a copy
@@ -94,36 +95,36 @@ namespace LbIntegrations.MelonDs
         /// ES-encrypted, so a file assembled rather than restored would not be accepted.</summary>
         public bool ImportFile(string nandPath, string inPath, out string error)
         {
-            var code = MelonDsNand.ImportFile(_handle, nandPath, inPath);
-            error = code == MelonDsNand.Ok ? null : MelonDsNand.LastError(_handle);
-            return code == MelonDsNand.Ok;
+            var code = DsiNand.ImportFile(_handle, nandPath, inPath);
+            error = code == DsiNand.Ok ? null : DsiNand.LastError(_handle);
+            return code == DsiNand.Ok;
         }
 
         public bool RemoveFile(string nandPath, out string error)
         {
-            var code = MelonDsNand.RemoveFile(_handle, nandPath);
-            error = code == MelonDsNand.Ok ? null : MelonDsNand.LastError(_handle);
-            return code == MelonDsNand.Ok;
+            var code = DsiNand.RemoveFile(_handle, nandPath);
+            error = code == DsiNand.Ok ? null : DsiNand.LastError(_handle);
+            return code == DsiNand.Ok;
         }
 
         /// <summary>Write out every file in the image with its size and hash, sorted by path.
-        /// Returns how many entries, or -1. See MelonDsDelta for what two of these are for.</summary>
+        /// Returns how many entries, or -1. See DsiDelta for what two of these are for.</summary>
         public int Walk(string manifestPath, out string error)
         {
-            var count = MelonDsNand.Walk(_handle, "0:", manifestPath);
-            error = count < 0 ? MelonDsNand.LastError(_handle) : null;
+            var count = DsiNand.Walk(_handle, "0:", manifestPath);
+            error = count < 0 ? DsiNand.LastError(_handle) : null;
             return count;
         }
 
         public void Dispose()
         {
             if (_handle == IntPtr.Zero) return;
-            try { MelonDsNand.Close(_handle); } catch { }
+            try { DsiNand.Close(_handle); } catch { }
             _handle = IntPtr.Zero;
         }
     }
 
-    internal static class MelonDsNand
+    internal static class DsiNand
     {
         /// <summary>The name the DllImport attributes use. It is never a file on disk: a resolver
         /// maps it to the real one, which lives out of the way for a reason - see NativeDir.</summary>
@@ -155,11 +156,11 @@ namespace LbIntegrations.MelonDs
         /// <summary>Teach the runtime where our library is, once, before any DllImport fires. A
         /// resolver is the supported way to load a native library from a path of our choosing; the
         /// alternative would be putting it somewhere the host's loader would trip over.</summary>
-        static MelonDsNand()
+        static DsiNand()
         {
             try
             {
-                NativeLibrary.SetDllImportResolver(typeof(MelonDsNand).Assembly, (name, assembly, path) =>
+                NativeLibrary.SetDllImportResolver(typeof(DsiNand).Assembly, (name, assembly, path) =>
                 {
                     if (!string.Equals(name, LibraryName, StringComparison.OrdinalIgnoreCase))
                         return IntPtr.Zero;
@@ -234,8 +235,9 @@ namespace LbIntegrations.MelonDs
             var running = RunningEmulatorProcess();
             if (running != null)
             {
-                error = "melonDS is running (" + running + ") and holds this NAND open. Close it first; "
-                      + "writing to the image underneath the emulator would corrupt it.";
+                error = "the emulator is running (" + running + ") and holds this NAND open. Close it "
+                      + "first; "
+                      + "writing to the image underneath it would corrupt it.";
                 return null;
             }
 
@@ -261,8 +263,14 @@ namespace LbIntegrations.MelonDs
         /// touched - a NAND it holds is not ours to open, and certainly not ours to delete.</summary>
         public static bool EmulatorRunning() => RunningEmulatorProcess() != null;
 
-        /// <summary>The name of a running melonDS process, or null. The same test MelonDsToml uses,
-        /// and for a related reason: melonDS owns its files for the length of a session.</summary>
+        /// <summary>Which process name means "the emulator is running". Set by each plugin, because
+        /// this folder is compiled into two of them and they do not share an executable - melonDS
+        /// here, NO$GBA there. Unset, nothing is ever considered to be running, which is the answer
+        /// that keeps the probe working: it drives the engine without a plugin behind it.</summary>
+        public static string EmulatorProcessPrefix;
+
+        /// <summary>The name of a running emulator process, or null. The reason the test exists at
+        /// all is that an emulator owns its NAND for the length of a session.</summary>
         private static string RunningEmulatorProcess()
         {
             try
@@ -273,7 +281,9 @@ namespace LbIntegrations.MelonDs
                     {
                         string n;
                         try { n = p.ProcessName; } catch { continue; }
-                        if (n != null && n.StartsWith("melonDS", StringComparison.OrdinalIgnoreCase))
+                        var prefix = EmulatorProcessPrefix;
+                        if (prefix != null && n != null
+                            && n.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                             return n;
                     }
                 }

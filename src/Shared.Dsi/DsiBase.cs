@@ -1,6 +1,6 @@
 // How a DSiWare save survives the loss of the console it was made on.
 //
-// A SAVE IS A DELTA, so it is bound to a base image. That is the whole design - see MelonDsDelta -
+// A SAVE IS A DELTA, so it is bound to a base image. That is the whole design - see DsiDelta -
 // and it is what makes a library of DSiWare cost 480 MB instead of 240 MB a game. The price is that
 // a save means nothing without the image it was measured against, and until now that image was one
 // file on one machine. Lose it - a reinstall, a new PC, a console reconfigured, a file deleted - and
@@ -25,7 +25,7 @@
 // rather than worked around.
 //
 // THE RECIPE IS ITSELF A DELTA, in exactly the format a save uses - files.txt with its F and X rows,
-// plus the flat files. MelonDsDelta.Capture and Apply are reused verbatim, with the original as the
+// plus the flat files. DsiDelta.Capture and Apply are reused verbatim, with the original as the
 // reference instead of a fresh install. Measured on a real pair: the console setup touches
 // shared1/TWLCFG0.dat, TWLCFG1.dat and the launcher's private.sav. Tens of kilobytes.
 //
@@ -37,7 +37,7 @@
 // same, where a random GUID would have forced a pointless recovery.
 //
 // AND THE RECIPE IS A ZIP, WHICH IS NOT A PREFERENCE. MelonDsSaves.TryBackupSave and
-// MelonDsDsi.RestoreSave both copy Directory.GetFiles - top level only, no recursion. A recipe
+// DsiWorkspace.RestoreSave both copy Directory.GetFiles - top level only, no recursion. A recipe
 // FOLDER inside a state folder would be lost at the first backup and absent at the restore. One file
 // survives both without a line of code.
 
@@ -47,8 +47,9 @@ using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using LbIntegrations.Dsi;
 
-namespace LbIntegrations.MelonDs
+namespace LbIntegrations.Dsi
 {
     /// <summary>What a save records about the console it was made on.</summary>
     internal sealed class BaseRecord
@@ -76,7 +77,7 @@ namespace LbIntegrations.MelonDs
         public string Region;
     }
 
-    internal static class MelonDsBase
+    internal static class DsiBase
     {
         /// <summary>Beside the image it describes, so moving or renaming a base takes its recipe
         /// with it.</summary>
@@ -115,13 +116,13 @@ namespace LbIntegrations.MelonDs
             catch { return false; }
         }
 
-        public static string BasesDir(MelonDsLayout layout)
+        public static string BasesDir(DsiHost layout)
         {
-            var dir = MelonDsDsi.DsiDir(layout);
+            var dir = DsiWorkspace.DsiDir(layout);
             return dir == null ? null : Path.Combine(dir, BasesDirName);
         }
 
-        public static string ArchiveFor(MelonDsLayout layout, string identity)
+        public static string ArchiveFor(DsiHost layout, string identity)
         {
             var dir = BasesDir(layout);
             return dir == null || string.IsNullOrWhiteSpace(identity)
@@ -137,11 +138,11 @@ namespace LbIntegrations.MelonDs
         ///
         /// The size is compared against the record when there is one, so two dumps of the same name
         /// in two different search folders cannot be mistaken for each other.</summary>
-        public static string ConsoleFor(MelonDsLayout layout, string dumpPath)
+        public static string ConsoleFor(DsiHost layout, string dumpPath)
         {
             try
             {
-                var dir = MelonDsDsi.DsiDir(layout);
+                var dir = DsiWorkspace.DsiDir(layout);
                 if (dir == null || string.IsNullOrWhiteSpace(dumpPath)) return null;
 
                 var console = Path.Combine(dir, Path.GetFileName(dumpPath));
@@ -154,7 +155,7 @@ namespace LbIntegrations.MelonDs
                     {
                         if (new FileInfo(dumpPath).Length != record.OriginalSize)
                         {
-                            Log.Verbose(Path.GetFileName(console) + " was built from a dump of a "
+                            DsiLog.Verbose(Path.GetFileName(console) + " was built from a dump of a "
                                         + "different size; not treating it as this one's console");
                             return null;
                         }
@@ -172,12 +173,12 @@ namespace LbIntegrations.MelonDs
         /// ONLY CALLED WHERE THE ALTERNATIVE IS A WINDOW. Re-attaching one costs a hash of 240 MB, so
         /// it is never done on the ordinary path; it is done just before asking somebody to configure
         /// a console they have already configured.</summary>
-        public static List<string> Orphans(MelonDsLayout layout, IEnumerable<string> dumps)
+        public static List<string> Orphans(DsiHost layout, IEnumerable<string> dumps)
         {
             var orphans = new List<string>();
             try
             {
-                var dir = MelonDsDsi.DsiDir(layout);
+                var dir = DsiWorkspace.DsiDir(layout);
                 if (dir == null || !Directory.Exists(dir)) return orphans;
 
                 var named = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -191,18 +192,18 @@ namespace LbIntegrations.MelonDs
                     orphans.Add(path);
                 }
             }
-            catch (Exception ex) { Log.Verbose("could not look for orphaned consoles - " + ex.Message); }
+            catch (Exception ex) { DsiLog.Verbose("could not look for orphaned consoles - " + ex.Message); }
             return orphans;
         }
 
         /// <summary>Copy a dump into our folder so it can be configured there. THE USER'S FILE IS
         /// NEVER OPENED FOR WRITING - that is the whole point of this arrangement.</summary>
-        public static string BuildConsole(MelonDsLayout layout, string dumpPath, out string error)
+        public static string BuildConsole(DsiHost layout, string dumpPath, out string error)
         {
             error = null;
             try
             {
-                var dir = MelonDsDsi.DsiDir(layout);
+                var dir = DsiWorkspace.DsiDir(layout);
                 if (dir == null) { error = "no dsi folder to build in"; return null; }
                 if (!File.Exists(dumpPath)) { error = "the dump is not there"; return null; }
 
@@ -224,7 +225,7 @@ namespace LbIntegrations.MelonDs
                 if (File.Exists(target)) File.Delete(target);
                 File.Move(partial, target);
 
-                Log.Info("copied " + Path.GetFileName(dumpPath) + " into " + dir
+                DsiLog.Info("copied " + Path.GetFileName(dumpPath) + " into " + dir
                          + " to be configured there; the dump itself is not touched");
                 return target;
             }
@@ -273,17 +274,17 @@ namespace LbIntegrations.MelonDs
             string scratch = null;
             try
             {
-                if (Log.Disabled(KillSwitch)) { error = "switched off by the " + KillSwitch + " marker"; return false; }
+                if (DsiLog.Disabled(KillSwitch)) { error = "switched off by the " + KillSwitch + " marker"; return false; }
                 if (!File.Exists(originalPath)) { error = "no original to compare against"; return false; }
                 if (!File.Exists(initialPath)) { error = "no configured image to describe"; return false; }
-                if (!MelonDsNand.IsUsable(out var why)) { error = why; return false; }
+                if (!DsiNand.IsUsable(out var why)) { error = why; return false; }
 
                 scratch = Path.Combine(Path.GetTempPath(), "lbip-recipe-" + Guid.NewGuid().ToString("N"));
                 Directory.CreateDirectory(scratch);
 
                 // The original's walk, which is the reference the delta is measured against.
-                var reference = Path.Combine(scratch, MelonDsDelta.ReferenceName);
-                using (var pristine = MelonDsNand.Open(originalPath, bios7Path, out var openError))
+                var reference = Path.Combine(scratch, DsiDelta.ReferenceName);
+                using (var pristine = DsiNand.Open(originalPath, bios7Path, out var openError))
                 {
                     if (pristine == null) { error = openError; return false; }
                     if (pristine.Walk(reference, out var walkError) < 0) { error = walkError; return false; }
@@ -293,10 +294,10 @@ namespace LbIntegrations.MelonDs
                 // and deletes it recursively, so it is pointed at a folder of its own making.
                 var built = Path.Combine(scratch, "built");
                 int kept;
-                using (var configured = MelonDsNand.Open(initialPath, bios7Path, out var openError))
+                using (var configured = DsiNand.Open(initialPath, bios7Path, out var openError))
                 {
                     if (configured == null) { error = openError; return false; }
-                    kept = MelonDsDelta.Capture(configured, reference, built, scratch, out var captureError);
+                    kept = DsiDelta.Capture(configured, reference, built, scratch, out var captureError);
                     if (kept < 0) { error = captureError; return false; }
                 }
 
@@ -304,7 +305,7 @@ namespace LbIntegrations.MelonDs
                 // every save made on this console, so a recipe that came out different between two
                 // identical writes would make every one of those saves differ with it.
                 var target = RecipeFor(initialPath);
-                if (!MelonDsSaveFile.Pack(built, target, out var packError))
+                if (!DsiSaveFile.Pack(built, target, out var packError))
                 { error = packError; return false; }
 
                 // And the record beside it, computed once here rather than at every capture.
@@ -313,7 +314,7 @@ namespace LbIntegrations.MelonDs
                 WriteRecord(RecordFor(initialPath),
                             Describe(initialPath, originalPath, identity, region));
 
-                Log.Info("wrote the recipe for " + Path.GetFileName(initialPath) + ": " + kept
+                DsiLog.Info("wrote the recipe for " + Path.GetFileName(initialPath) + ": " + kept
                          + " file(s) of console setup, " + new FileInfo(target).Length
                          + " bytes, console " + Short(identity) + ". A save made on this console can "
                          + "now rebuild it from " + Path.GetFileName(originalPath) + " alone.");
@@ -326,13 +327,13 @@ namespace LbIntegrations.MelonDs
         /// <summary>The NAND paths a recipe names, F and X alike. This is the list the identity is
         /// computed over - the recipe says WHICH files matter, the image says what is in them.</summary>
         public static List<string> PathsIn(string recipeZip)
-            => PathsFrom(MelonDsSaveFile.Bytes(recipeZip, MelonDsDelta.IndexName));
+            => PathsFrom(DsiSaveFile.Bytes(recipeZip, DsiDelta.IndexName));
 
         /// <summary>The same, from a recipe already in memory - which is how it is read on the
         /// ordinary launch path, where the recipe is one entry inside a save file and nothing has to
         /// touch the disk to look at it.</summary>
         public static List<string> PathsIn(byte[] recipeZip)
-            => PathsFrom(MelonDsSaveFile.BytesIn(recipeZip, MelonDsDelta.IndexName));
+            => PathsFrom(DsiSaveFile.BytesIn(recipeZip, DsiDelta.IndexName));
 
         private static List<string> PathsFrom(byte[] index)
         {
@@ -348,7 +349,7 @@ namespace LbIntegrations.MelonDs
                     if (parts.Length == 3 && parts[2].Length > 0) paths.Add(parts[2]);
                 }
             }
-            catch (Exception ex) { Log.Verbose("could not read a recipe index - " + ex.Message); }
+            catch (Exception ex) { DsiLog.Verbose("could not read a recipe index - " + ex.Message); }
             paths.Sort(StringComparer.Ordinal);
             return paths;
         }
@@ -365,24 +366,24 @@ namespace LbIntegrations.MelonDs
             {
                 if (paths == null || paths.Count == 0) return null;
                 if (!File.Exists(imagePath)) return null;
-                if (!MelonDsNand.IsUsable(out _)) return null;
+                if (!DsiNand.IsUsable(out _)) return null;
 
                 scratch = Path.Combine(Path.GetTempPath(), "lbip-identity-" + Guid.NewGuid().ToString("N") + ".txt");
-                using (var session = MelonDsNand.Open(imagePath, bios7Path, out var openError))
+                using (var session = DsiNand.Open(imagePath, bios7Path, out var openError))
                 {
                     if (session == null)
                     {
-                        Log.Verbose("could not open " + Path.GetFileName(imagePath) + " - " + openError);
+                        DsiLog.Verbose("could not open " + Path.GetFileName(imagePath) + " - " + openError);
                         return null;
                     }
                     if (session.Walk(scratch, out var walkError) < 0)
                     {
-                        Log.Verbose("could not walk " + Path.GetFileName(imagePath) + " - " + walkError);
+                        DsiLog.Verbose("could not walk " + Path.GetFileName(imagePath) + " - " + walkError);
                         return null;
                     }
                 }
 
-                var walk = MelonDsDelta.Read(scratch);
+                var walk = DsiDelta.Read(scratch);
                 var lines = new List<string>();
                 foreach (var path in paths)
                 {
@@ -394,7 +395,7 @@ namespace LbIntegrations.MelonDs
                 }
                 return Sha256Of(Encoding.UTF8.GetBytes(string.Join("\n", lines)));
             }
-            catch (Exception ex) { Log.Verbose("could not identify a base - " + ex.Message); return null; }
+            catch (Exception ex) { DsiLog.Verbose("could not identify a base - " + ex.Message); return null; }
             finally { try { if (scratch != null && File.Exists(scratch)) File.Delete(scratch); } catch { } }
         }
 
@@ -403,7 +404,7 @@ namespace LbIntegrations.MelonDs
         /// A SEPARATE FILE FROM nands.txt, deliberately. That one's parser takes everything after the
         /// stamp and hands it to Enum.TryParse, so a fourth field would fail to parse and force a
         /// full re-scan on every launch - silently. Same shape, own file, no interaction.</summary>
-        public static string CachedIdentity(MelonDsLayout layout, string imagePath, string bios7Path,
+        public static string CachedIdentity(DsiHost layout, string imagePath, string bios7Path,
                                             List<string> paths)
         {
             try
@@ -426,7 +427,7 @@ namespace LbIntegrations.MelonDs
                 WriteIndex(layout, known);
                 return identity;
             }
-            catch (Exception ex) { Log.Verbose("could not cache an identity - " + ex.Message); return null; }
+            catch (Exception ex) { DsiLog.Verbose("could not cache an identity - " + ex.Message); return null; }
         }
 
         // ── rebuilding ───────────────────────────────────────────────────────
@@ -444,12 +445,12 @@ namespace LbIntegrations.MelonDs
             {
                 if (!File.Exists(originalPath)) { error = "no original to rebuild from"; return false; }
                 if (!File.Exists(recipeZip)) { error = "no recipe to apply"; return false; }
-                if (!MelonDsNand.IsUsable(out var why)) { error = why; return false; }
+                if (!DsiNand.IsUsable(out var why)) { error = why; return false; }
 
                 Directory.CreateDirectory(Path.GetDirectoryName(targetPath));
 
                 unpacked = Path.Combine(Path.GetTempPath(), "lbip-apply-" + Guid.NewGuid().ToString("N"));
-                if (!MelonDsSaveFile.Unpack(recipeZip, unpacked, out var openRecipe))
+                if (!DsiSaveFile.Unpack(recipeZip, unpacked, out var openRecipe))
                 { error = openRecipe; return false; }
 
                 // Through a temporary name: a 240 MB copy interrupted halfway must not leave
@@ -458,10 +459,10 @@ namespace LbIntegrations.MelonDs
                 try { if (File.Exists(partial)) File.Delete(partial); } catch { }
                 File.Copy(originalPath, partial, overwrite: true);
 
-                using (var session = MelonDsNand.Open(partial, bios7Path, out var openError))
+                using (var session = DsiNand.Open(partial, bios7Path, out var openError))
                 {
                     if (session == null) { error = openError; return false; }
-                    if (MelonDsDelta.Apply(session, unpacked, out var applyError) < 0)
+                    if (DsiDelta.Apply(session, unpacked, out var applyError) < 0)
                     { error = applyError; return false; }
                 }
 
@@ -492,7 +493,7 @@ namespace LbIntegrations.MelonDs
                 }
                 catch { }
 
-                Log.Info("rebuilt the console " + Short(expected) + " from "
+                DsiLog.Info("rebuilt the console " + Short(expected) + " from "
                          + Path.GetFileName(originalPath) + " and its recipe, and checked it");
                 return true;
             }
@@ -542,14 +543,14 @@ namespace LbIntegrations.MelonDs
                     if (hash == null) continue;
                     if (string.Equals(hash, want.OriginalSha256, StringComparison.OrdinalIgnoreCase))
                     {
-                        Log.Info("found the original dump this save was built on: " + Path.GetFileName(path));
+                        DsiLog.Info("found the original dump this save was built on: " + Path.GetFileName(path));
                         return path;
                     }
-                    Log.Verbose(Path.GetFileName(path) + " is the right size but not the right file");
+                    DsiLog.Verbose(Path.GetFileName(path) + " is the right size but not the right file");
                 }
                 return null;
             }
-            catch (Exception ex) { Log.Warn("could not look for the original dump", ex); return null; }
+            catch (Exception ex) { DsiLog.Warn("could not look for the original dump", ex); return null; }
         }
 
         // ── the record a save carries ────────────────────────────────────────
@@ -574,7 +575,7 @@ namespace LbIntegrations.MelonDs
                     Region = region.ToString(),
                 };
             }
-            catch (Exception ex) { Log.Verbose("could not describe a base - " + ex.Message); return null; }
+            catch (Exception ex) { DsiLog.Verbose("could not describe a base - " + ex.Message); return null; }
         }
 
         public static void WriteRecord(string path, BaseRecord record)
@@ -594,9 +595,9 @@ namespace LbIntegrations.MelonDs
                     "original.path\t" + (record.OriginalPath ?? ""),
                     "region\t" + (record.Region ?? ""),
                 };
-                MelonDsToml.WriteAtomicBytes(path, Encoding.UTF8.GetBytes(string.Join("\r\n", lines) + "\r\n"));
+                Atomic.WriteBytes(path, Encoding.UTF8.GetBytes(string.Join("\r\n", lines) + "\r\n"));
             }
-            catch (Exception ex) { Log.Verbose("could not write " + path + " - " + ex.Message); }
+            catch (Exception ex) { DsiLog.Verbose("could not write " + path + " - " + ex.Message); }
         }
 
         /// <summary>What a save says about its base, or null. NULL IS NOT AN ERROR: a save made
@@ -611,7 +612,7 @@ namespace LbIntegrations.MelonDs
         {
             if (text == null) return null;
             try { return ReadRecord(Encoding.UTF8.GetString(text).Split('\n')); }
-            catch (Exception ex) { Log.Verbose("could not read a record - " + ex.Message); return null; }
+            catch (Exception ex) { DsiLog.Verbose("could not read a record - " + ex.Message); return null; }
         }
 
         private static BaseRecord ReadRecord(string[] lines)
@@ -639,7 +640,7 @@ namespace LbIntegrations.MelonDs
                     Region = Get(map, "region"),
                 };
             }
-            catch (Exception ex) { Log.Verbose("could not read a record - " + ex.Message); return null; }
+            catch (Exception ex) { DsiLog.Verbose("could not read a record - " + ex.Message); return null; }
         }
 
         private static string Get(Dictionary<string, string> map, string key)
@@ -653,13 +654,13 @@ namespace LbIntegrations.MelonDs
 
         private const string IndexName = "identities.txt";
 
-        private static string IndexPath(MelonDsLayout layout)
+        private static string IndexPath(DsiHost layout)
         {
-            var dir = MelonDsDsi.DsiDir(layout);
+            var dir = DsiWorkspace.DsiDir(layout);
             return dir == null ? null : Path.Combine(dir, IndexName);
         }
 
-        private static Dictionary<string, string> ReadIndex(MelonDsLayout layout)
+        private static Dictionary<string, string> ReadIndex(DsiHost layout)
         {
             var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             try
@@ -672,11 +673,11 @@ namespace LbIntegrations.MelonDs
                     if (parts.Length == 2) map[parts[0]] = parts[1];
                 }
             }
-            catch (Exception ex) { Log.Verbose("could not read " + IndexName + " - " + ex.Message); }
+            catch (Exception ex) { DsiLog.Verbose("could not read " + IndexName + " - " + ex.Message); }
             return map;
         }
 
-        private static void WriteIndex(MelonDsLayout layout, Dictionary<string, string> entries)
+        private static void WriteIndex(DsiHost layout, Dictionary<string, string> entries)
         {
             try
             {
@@ -689,7 +690,7 @@ namespace LbIntegrations.MelonDs
                 lines.Sort(StringComparer.OrdinalIgnoreCase);
                 File.WriteAllLines(path, lines);
             }
-            catch (Exception ex) { Log.Verbose("could not write " + IndexName + " - " + ex.Message); }
+            catch (Exception ex) { DsiLog.Verbose("could not write " + IndexName + " - " + ex.Message); }
         }
 
         // ── hashing ──────────────────────────────────────────────────────────
@@ -702,7 +703,7 @@ namespace LbIntegrations.MelonDs
                 using var sha = SHA256.Create();
                 return Hex(sha.ComputeHash(stream));
             }
-            catch (Exception ex) { Log.Verbose("could not hash " + path + " - " + ex.Message); return null; }
+            catch (Exception ex) { DsiLog.Verbose("could not hash " + path + " - " + ex.Message); return null; }
         }
 
         private static string Sha256Of(byte[] bytes)

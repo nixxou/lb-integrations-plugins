@@ -30,33 +30,34 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using LbIntegrations.Dsi;
 
-namespace LbIntegrations.MelonDs
+namespace LbIntegrations.Dsi
 {
-    internal static class MelonDsWorkSum
+    internal static class DsiWorkSum
     {
         /// <summary>Beside work.bin, because it describes that file and travels with it. Deleting
         /// the image without this would leave a receipt for something that is gone.</summary>
         public const string FileName = "work.sum";
 
-        public static string PathFor(MelonDsLayout layout)
+        public static string PathFor(DsiHost layout)
         {
-            var dir = MelonDsDsi.DsiDir(layout);
+            var dir = DsiWorkspace.DsiDir(layout);
             return dir == null ? null : Path.Combine(dir, FileName);
         }
 
         /// <summary>Write down the state folder as it stands, as the thing the image now agrees
         /// with. Called at the two moments the two are in step: just after a capture has written the
         /// folder out of the image, and just after a rebuild has put the folder back into it.</summary>
-        public static void Write(MelonDsLayout layout, string titleId)
+        public static void Write(DsiHost layout, string titleId)
         {
             try
             {
                 var path = PathFor(layout);
                 if (path == null || string.IsNullOrWhiteSpace(titleId)) return;
-                MelonDsToml.WriteAtomicBytes(path, Encoding.UTF8.GetBytes(Of(layout, titleId)));
+                Atomic.WriteBytes(path, Encoding.UTF8.GetBytes(Of(layout, titleId)));
             }
-            catch (Exception ex) { Log.Verbose("could not write " + FileName + " - " + ex.Message); }
+            catch (Exception ex) { DsiLog.Verbose("could not write " + FileName + " - " + ex.Message); }
         }
 
         /// <summary>Has the save been written by something other than us since the image was last
@@ -65,7 +66,7 @@ namespace LbIntegrations.MelonDs
         /// FALSE WHENEVER WE CANNOT TELL. No receipt, no folder to read, an unreadable file: all of
         /// them mean "no opinion", never "assume the worst". Being wrong in this direction costs a
         /// rebuild nobody asked for, on every launch, forever.</summary>
-        public static bool Moved(MelonDsLayout layout, string titleId, out string what)
+        public static bool Moved(DsiHost layout, string titleId, out string what)
         {
             what = null;
             try
@@ -81,11 +82,11 @@ namespace LbIntegrations.MelonDs
                 what = Difference(written, now);
                 return true;
             }
-            catch (Exception ex) { Log.Verbose("could not read " + FileName + " - " + ex.Message); return false; }
+            catch (Exception ex) { DsiLog.Verbose("could not read " + FileName + " - " + ex.Message); return false; }
         }
 
         /// <summary>Drop the receipt. Always together with the image it describes.</summary>
-        public static void Forget(MelonDsLayout layout)
+        public static void Forget(DsiHost layout)
         {
             try
             {
@@ -108,18 +109,18 @@ namespace LbIntegrations.MelonDs
         ///
         /// A save that cannot be opened yields just the title, which reads as a change - the same
         /// answer the folder form gave for a file something else was holding open.</summary>
-        private static string Of(MelonDsLayout layout, string titleId)
+        private static string Of(DsiHost layout, string titleId)
         {
             var lines = new List<string> { titleId };
             try
             {
-                var save = MelonDsDsi.SavePathFor(layout, titleId);
-                foreach (var entry in MelonDsSaveFile.Entries(save))
+                var save = DsiWorkspace.SavePathFor(layout, titleId);
+                foreach (var entry in DsiSaveFile.Entries(save))
                     lines.Add(Crc32(entry.Value).ToString("x8", CultureInfo.InvariantCulture)
                               + "\t" + entry.Value.Length.ToString(CultureInfo.InvariantCulture)
                               + "\t" + entry.Key);
             }
-            catch (Exception ex) { Log.Verbose("could not sum a save - " + ex.Message); }
+            catch (Exception ex) { DsiLog.Verbose("could not sum a save - " + ex.Message); }
             return string.Join("\n", lines);
         }
 

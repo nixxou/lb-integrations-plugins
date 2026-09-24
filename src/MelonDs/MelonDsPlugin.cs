@@ -20,6 +20,7 @@ using System.Linq;
 using System.Reflection;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
+using LbIntegrations.Dsi;
 
 namespace LbIntegrations.MelonDs
 {
@@ -68,6 +69,11 @@ namespace LbIntegrations.MelonDs
         public MelonDsPlugin()
         {
             Log.Info("plugin constructed, assembly " + typeof(MelonDsPlugin).Assembly.Location);
+
+            // THE SHARED ENGINE LEARNS WHOSE PLUGIN IT IS IN, first of all: it is compiled into
+            // two of them and cannot tell on its own which logger to write to, nor which process
+            // name means "the emulator is running". See MelonDsHost.
+            MelonDsHost.Announce();
 
             // As early as possible: the patch only sees connections opened AFTER it is installed, and
             // LaunchBox reads its metadata the moment a window asks for it.
@@ -426,7 +432,7 @@ namespace LbIntegrations.MelonDs
                     wanted[MelonDsPaths.KeySavestatePath] = MelonDsToml.Text(layout.DefaultStateDir);
                 // Both folders, and before the early return below: somebody whose save paths were
                 // already configured still needs somewhere to put a NAND.
-                MelonDsDsi.PrepareFolder(layout);
+                DsiWorkspace.PrepareFolder(layout);
                 MelonDsBios.Prepare(layout);
 
                 // AND A KEYBOARD, because melonDS ships without one. Its default table gives every
@@ -624,8 +630,8 @@ namespace LbIntegrations.MelonDs
             foreach (DsiRegion region in Enum.GetValues(typeof(DsiRegion)))
             {
                 string name = have.TryGetValue(region, out var actual)
-                    ? actual : MelonDsRegion.SuggestedFileName(region);
-                files.Add(File_(name, "DSi NAND, " + MelonDsRegion.Name(region) + " - any file name",
+                    ? actual : DsiRegions.SuggestedFileName(region);
+                files.Add(File_(name, "DSi NAND, " + DsiRegions.Name(region) + " - any file name",
                                 required: false));
             }
             return files;
@@ -723,8 +729,8 @@ namespace LbIntegrations.MelonDs
             //
             // AND IT WAITS FIRST, because a cartridge takes the working image over: going ahead while
             // melonDS still has it would discard exactly the session this paragraph exists to keep.
-            if (!MelonDsDsi.WaitForTheImage(layout, rom.AssetName)) return false;
-            MelonDsDsi.CaptureWork(layout, AbsoluteTo(layout.ConfigDir, ValueOf(layout, "BIOS7Path")));
+            if (!DsiWorkspace.WaitForTheImage(layout, rom.AssetName)) return false;
+            DsiWorkspace.CaptureWork(layout, AbsoluteTo(layout.ConfigDir, ValueOf(layout, "BIOS7Path")));
 
             // A CONFIGURATION NOBODY CAN PLAY is the one case where this touches an installation it
             // did not make: every DS button unbound means melonDS was never set up, and a launch is
@@ -756,8 +762,8 @@ namespace LbIntegrations.MelonDs
         ///
         /// A DSiWare title is not a cartridge: melonDS boots it out of the NAND and keeps its save
         /// there too. So the image is rebuilt from the user's base dump, the title is installed into
-        /// it, and the few kilobytes that title had accumulated go back in - see MelonDsDsi and
-        /// MelonDsDelta. One image for the whole library instead of one per game.
+        /// it, and the few kilobytes that title had accumulated go back in - see DsiWorkspace and
+        /// DsiDelta. One image for the whole library instead of one per game.
         ///
         /// WITHOUT THE NATIVE LIBRARY none of that is possible - nothing can be installed, walked or
         /// captured - and a scratch image rebuilt every launch would then be worse than useless,
@@ -766,10 +772,10 @@ namespace LbIntegrations.MelonDs
         private static bool PrepareDsiWare(MelonDsLayout layout, NdsRom rom, string romPath)
         {
             // WHICH CONSOLE CAN RUN IT. A DSi NAND is region locked, so this decides which dump
-            // the image is built on - see MelonDsRegion for the three sources and their order.
-            var regions = MelonDsRegion.RegionsFor(rom, romPath, out var how);
+            // the image is built on - see DsiRegions for the three sources and their order.
+            var regions = DsiRegions.RegionsFor(rom, romPath, out var how);
             if (regions.Count > 0)
-                Log.Verbose(rom.AssetName + " runs on " + MelonDsRegion.Names(regions)
+                Log.Verbose(rom.AssetName + " runs on " + DsiRegions.Names(regions)
                             + " hardware, according to " + how);
 
             // The DS side first, and for a DSiWare too: verifySetup demands the DS BIOS whenever
@@ -791,9 +797,9 @@ namespace LbIntegrations.MelonDs
             string source = dump?.Path;
             if (source == null)
             {
-                source = MelonDsDsi.LegacyBase(layout);
+                source = DsiWorkspace.LegacyBase(layout);
                 if (source != null)
-                    Log.Info("no NAND for " + MelonDsRegion.Names(regions) + " in "
+                    Log.Info("no NAND for " + DsiRegions.Names(regions) + " in "
                              + MelonDsBios.Dir(layout) + "; falling back to the old dsi\\base.bin. "
                              + "Put your region dumps in the bios folder to have the right one chosen.");
             }
@@ -824,7 +830,7 @@ namespace LbIntegrations.MelonDs
                 var instead = FreshStartOn(layout, noBase);
                 if (!OfferFreshStart(layout, rom, noBase, instead)) return false;
 
-                MelonDsDsi.ParkState(layout, rom.TitleId, noBase.Identity);
+                DsiWorkspace.ParkState(layout, rom.TitleId, noBase.Identity);
                 source = instead;
             }
 
@@ -834,7 +840,7 @@ namespace LbIntegrations.MelonDs
             }
             else if (dump != null)
             {
-                var console = MelonDsBase.ConsoleFor(layout, dump.Path);
+                var console = DsiBase.ConsoleFor(layout, dump.Path);
                 if (console == null)
                 {
                     // Q4. THE WINDOW ANSWERS FOR THIS LAUNCH, whichever way it is answered:
@@ -849,9 +855,9 @@ namespace LbIntegrations.MelonDs
                                  + "first. Launch it again once there is one.");
                         return false;
                     }
-                    console = MelonDsBase.ConsoleFor(layout, dump.Path);
+                    console = DsiBase.ConsoleFor(layout, dump.Path);
                 }
-                else if (!MelonDsBase.Described(console))
+                else if (!DsiBase.Described(console))
                 {
                     // A console whose setup was interrupted between the copy and the recipe. The dump
                     // it came from is right here, so describe it now rather than leave every save it
@@ -867,8 +873,8 @@ namespace LbIntegrations.MelonDs
 
             // NOTHING TOUCHES THE IMAGE UNTIL MELONDS HAS LET IT GO. Everything below reads it,
             // captures it or builds over it, and all three are wrong while a session is still in
-            // flight. See MelonDsDsi.WaitForTheImage for why a launch waits where a capture does not.
-            if (!MelonDsDsi.WaitForTheImage(layout, rom.AssetName))
+            // flight. See DsiWorkspace.WaitForTheImage for why a launch waits where a capture does not.
+            if (!DsiWorkspace.WaitForTheImage(layout, rom.AssetName))
             {
                 Log.Info(rom.AssetName + " is not started this time; melonDS still had the working "
                          + "image. Launch it again once melonDS has closed.");
@@ -880,23 +886,23 @@ namespace LbIntegrations.MelonDs
             // restore from another machine, a file dropped in by hand - the image describes a save
             // that no longer exists. It is thrown away here rather than merely refused below,
             // because a launch that does not reuse goes on to CAPTURE the image first, and that
-            // capture would put the old session back over the new save. See MelonDsWorkSum.
-            MelonDsDsi.DropWorkIfSaveMoved(layout, rom.TitleId);
+            // capture would put the old session back over the new save. See DsiWorkSum.
+            DsiWorkspace.DropWorkIfSaveMoved(layout, rom.TitleId);
 
-            bool automatic = MelonDsNand.IsUsable(out var missingLibrary);
+            bool automatic = DsiNand.IsUsable(out var missingLibrary);
 
             // THE SAME GAME AGAIN, ON THE SAME NAND. The image on disk already holds this title,
             // built from this ROM on this dump, with its state in it - rebuilding would copy 240 MB
             // to arrive back where we are. Every condition is checked rather than assumed.
-            bool reused = automatic && MelonDsDsi.CanReuseWork(layout, rom, romPath, source);
+            bool reused = automatic && DsiWorkspace.CanReuseWork(layout, rom, romPath, source);
 
             // Now that the answer is known: a rebuild is about to overwrite whatever the image
             // holds, so whoever ran last has to be written down first.
-            if (!reused) MelonDsDsi.CaptureWork(layout, bios7);
+            if (!reused) DsiWorkspace.CaptureWork(layout, bios7);
 
-            var nand = !automatic ? MelonDsDsi.EnsureLegacy(layout, rom, source)
-                     : reused     ? MelonDsDsi.ExistingWork(layout)
-                                  : MelonDsDsi.Rebuild(layout, rom, source);
+            var nand = !automatic ? DsiWorkspace.EnsureLegacy(layout, rom, source)
+                     : reused     ? DsiWorkspace.ExistingWork(layout)
+                                  : DsiWorkspace.Rebuild(layout, rom, source);
 
             if (nand.Path == null)
             {
@@ -912,7 +918,7 @@ namespace LbIntegrations.MelonDs
             if (!reused)
                 Log.Info(rom.AssetName + ": built on " + System.IO.Path.GetFileName(source)
                          + (wanted != null ? ", the console its save was made on"
-                          : dump != null ? ", the " + MelonDsRegion.Name(dump.Region) + " console"
+                          : dump != null ? ", the " + DsiRegions.Name(dump.Region) + " console"
                           : ""));
 
             // Only when it differs, like SetConsoleType. A relaunch of the same title should write
@@ -962,11 +968,11 @@ namespace LbIntegrations.MelonDs
             // 240 MB image. It needs the reference, so it cannot happen any earlier than this.
             MigrateLegacyNand(layout, rom, bios7);
 
-            MelonDsDsi.RestoreState(layout, rom.TitleId, bios7);
+            DsiWorkspace.RestoreState(layout, rom.TitleId, bios7);
 
             // Last, once everything above has worked: a marker naming a title whose state never went
             // back in would make the next capture overwrite a good state with a blank one.
-            MelonDsDsi.RememberWork(layout, rom.TitleId, romPath, source);
+            DsiWorkspace.RememberWork(layout, rom.TitleId, romPath, source);
             return true;
         }
 
@@ -1105,7 +1111,7 @@ namespace LbIntegrations.MelonDs
         }
 
         /// <summary>Say, in the log AND on screen, that a DSiWare title cannot run and what is
-        /// missing. See MelonDsDialog for why this plugin brings its own windows at all.</summary>
+        /// missing. See DsiDialog for why this plugin brings its own windows at all.</summary>
         private static void ReportMissing(MelonDsLayout layout, NdsRom rom, List<DsiRegion> regions,
                                           List<string> missing, string whyNoNand)
         {
@@ -1113,7 +1119,7 @@ namespace LbIntegrations.MelonDs
             // point at a path - and a path that does not exist is a spelling to guess at.
             MelonDsBios.Prepare(layout);
 
-            var wanted = whyNoNand == null ? null : MelonDsRegion.Names(regions);
+            var wanted = whyNoNand == null ? null : DsiRegions.Names(regions);
             var parts = new List<string>();
             if (missing.Count > 0) parts.Add(string.Join(", ", missing));
             if (wanted != null) parts.Add("a NAND dump for " + wanted);
@@ -1123,7 +1129,7 @@ namespace LbIntegrations.MelonDs
                      + (whyNoNand == null ? "" : " - " + whyNoNand)
                      + ". Leaving the console mode alone.");
 
-            MelonDsDialog.MissingFiles(rom.AssetName, MelonDsBios.Dir(layout), missing, wanted,
+            DsiDialog.MissingFiles(rom.AssetName, MelonDsBios.Dir(layout), missing, wanted,
                 regions.Count == 0
                     ? "Nothing in this ROM or its file name says which region it is for, so any NAND "
                       + "you have will be tried."
@@ -1145,7 +1151,7 @@ namespace LbIntegrations.MelonDs
             lost = null;
             try
             {
-                var save = MelonDsDsi.SavePathFor(layout, rom.TitleId);
+                var save = DsiWorkspace.SavePathFor(layout, rom.TitleId);
                 if (save == null || !File.Exists(save)) return null;
 
                 // READ OUT OF THE SAVE FILE, IN MEMORY. This runs on every DSiWare launch, and what
@@ -1153,21 +1159,21 @@ namespace LbIntegrations.MelonDs
                 // is random-access through its central directory, so neither the rest of the save
                 // nor the disk is touched. Nothing is unpacked unless the console turns out to be
                 // missing, which is the rare path.
-                var record = MelonDsBase.ReadRecord(
-                    MelonDsSaveFile.Bytes(save, MelonDsBase.RecordInState));
+                var record = DsiBase.ReadRecord(
+                    DsiSaveFile.Bytes(save, DsiBase.RecordInState));
                 if (record == null) return null;            // no record, no opinion
 
-                var recipe = MelonDsSaveFile.Bytes(save, MelonDsBase.RecipeInState);
+                var recipe = DsiSaveFile.Bytes(save, DsiBase.RecipeInState);
 
                 // Already on disk, under the name it was built from or as a rebuild: use it.
                 var here = ConsoleWithIdentity(layout, record.Identity, bios7, recipe);
                 if (here != null) return here;
 
                 Log.Info(rom.AssetName + "'s save was made on console "
-                         + MelonDsBase.Short(record.Identity) + ", which is not here. Looking for the "
+                         + DsiBase.Short(record.Identity) + ", which is not here. Looking for the "
                          + "dump it was built from.");
 
-                var original = MelonDsBase.FindOriginal(Dumps(layout), record);
+                var original = DsiBase.FindOriginal(Dumps(layout), record);
                 if (original == null) { lost = record; return null; }
 
                 // THE ONE PLACE A SAVE IS WRITTEN OUT TO READ IT. Rebuilding lays the recipe down as
@@ -1177,15 +1183,15 @@ namespace LbIntegrations.MelonDs
                                                     "lbip-recipe-" + Guid.NewGuid().ToString("N") + ".zip");
                 try
                 {
-                    if (!MelonDsSaveFile.Extract(save, MelonDsBase.RecipeInState, onDisk, out var why))
+                    if (!DsiSaveFile.Extract(save, DsiBase.RecipeInState, onDisk, out var why))
                     {
                         Log.Warn("this save carries no recipe, so its console cannot be rebuilt - " + why);
                         lost = record;
                         return null;
                     }
 
-                    var archive = MelonDsBase.ArchiveFor(layout, record.Identity);
-                    if (MelonDsBase.RebuildFrom(original, onDisk, archive, bios7, record.Identity,
+                    var archive = DsiBase.ArchiveFor(layout, record.Identity);
+                    if (DsiBase.RebuildFrom(original, onDisk, archive, bios7, record.Identity,
                                                 record.Region, out var error))
                         return archive;
 
@@ -1209,23 +1215,23 @@ namespace LbIntegrations.MelonDs
         {
             try
             {
-                var archive = MelonDsBase.ArchiveFor(layout, identity);
+                var archive = DsiBase.ArchiveFor(layout, identity);
                 if (archive != null && File.Exists(archive))
                 {
-                    Log.Verbose("reusing the rebuilt console " + MelonDsBase.Short(identity));
+                    Log.Verbose("reusing the rebuilt console " + DsiBase.Short(identity));
                     return archive;
                 }
 
-                var paths = MelonDsBase.PathsIn(recipe);
+                var paths = DsiBase.PathsIn(recipe);
                 if (paths.Count == 0) return null;
 
-                var dir = MelonDsDsi.DsiDir(layout);
+                var dir = DsiWorkspace.DsiDir(layout);
                 if (dir == null || !Directory.Exists(dir)) return null;
 
                 foreach (var image in Directory.GetFiles(dir))
                 {
-                    if (!File.Exists(MelonDsBase.RecordFor(image))) continue;
-                    var have = MelonDsBase.CachedIdentity(layout, image, bios7, paths);
+                    if (!File.Exists(DsiBase.RecordFor(image))) continue;
+                    var have = DsiBase.CachedIdentity(layout, image, bios7, paths);
                     if (string.Equals(have, identity, StringComparison.Ordinal)) return image;
                 }
                 return null;
@@ -1258,12 +1264,12 @@ namespace LbIntegrations.MelonDs
         {
             try
             {
-                var dir = MelonDsDsi.DsiDir(layout);
+                var dir = DsiWorkspace.DsiDir(layout);
                 if (dir == null || !Directory.Exists(dir) || lost?.Region == null) return null;
 
                 foreach (var image in Directory.GetFiles(dir))
                 {
-                    var record = MelonDsBase.ReadRecord(MelonDsBase.RecordFor(image));
+                    var record = DsiBase.ReadRecord(DsiBase.RecordFor(image));
                     if (record == null) continue;
                     if (string.Equals(record.Region, lost.Region, StringComparison.OrdinalIgnoreCase))
                         return image;
@@ -1288,7 +1294,7 @@ namespace LbIntegrations.MelonDs
                 "",
                 "    wanted: " + (lost?.OriginalName ?? "(unknown)"),
                 "    " + (lost?.OriginalSize ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture)
-                    + " bytes, sha256 " + MelonDsBase.Short(lost?.OriginalSha256),
+                    + " bytes, sha256 " + DsiBase.Short(lost?.OriginalSha256),
                 "",
                 "Put that file back in your BIOS folder and the save returns by itself - it is",
                 "found by its contents, so its name does not matter.",
@@ -1298,7 +1304,7 @@ namespace LbIntegrations.MelonDs
                 "it comes back the day that dump does.",
             };
 
-            var answer = MelonDsDialog.Ask("melonDS - this save's console is missing",
+            var answer = DsiDialog.Ask("melonDS - this save's console is missing",
                                            string.Join(Environment.NewLine, lines),
                                            new[] { "Don't start - I'll find the file",
                                                    "Start a new game" });
@@ -1318,7 +1324,7 @@ namespace LbIntegrations.MelonDs
 
             Log.Warn(rom.AssetName + " cannot start: its save was made on a console built from "
                      + (wanted?.OriginalName ?? "a dump") + " (" + (wanted?.OriginalSize ?? 0)
-                     + " bytes, sha256 " + MelonDsBase.Short(wanted?.OriginalSha256)
+                     + " bytes, sha256 " + DsiBase.Short(wanted?.OriginalSha256)
                      + "), and that file is not in " + folder + ". Refusing rather than starting a "
                      + "fresh game over an existing save.");
 
@@ -1347,7 +1353,7 @@ namespace LbIntegrations.MelonDs
                 "the save you already have.",
             };
 
-            MelonDsDialog.Ask("melonDS - this save's console is missing",
+            DsiDialog.Ask("melonDS - this save's console is missing",
                               string.Join(Environment.NewLine, lines),
                               new[] { "Close" });
         }
@@ -1356,10 +1362,10 @@ namespace LbIntegrations.MelonDs
         /// Nothing is deleted until its state has been written down.</summary>
         private static void MigrateLegacyNand(MelonDsLayout layout, NdsRom rom, string bios7)
         {
-            if (MelonDsDsi.LegacyNandFor(layout, rom.TitleId) == null) return;
+            if (DsiWorkspace.LegacyNandFor(layout, rom.TitleId) == null) return;
             Log.Info(rom.AssetName + " still has a NAND of its own from the previous layout; its state "
                      + "is being read out so the image can go.");
-            MelonDsDsi.Migrate(layout, rom.TitleId, bios7);
+            DsiWorkspace.Migrate(layout, rom.TitleId, bios7);
         }
 
         /// <summary>Beside the log, like the other switches here. Present, a DSiWare title is
@@ -1414,7 +1420,7 @@ namespace LbIntegrations.MelonDs
         {
 
             var bios7 = AbsoluteTo(layout.ConfigDir, ValueOf(layout, "BIOS7Path"));
-            using var session = MelonDsNand.Open(nandPath, bios7, out var error);
+            using var session = DsiNand.Open(nandPath, bios7, out var error);
             if (session == null)
             {
                 Log.Warn("could not open the NAND of " + rom.AssetName + " - " + error);
@@ -1425,8 +1431,8 @@ namespace LbIntegrations.MelonDs
             // but it is unsigned - and the DSi menu that launches an installed title checks. Measured
             // on a live install: a title imported with a built TMD ran when direct-booted as a
             // cartridge and failed from the menu. Nintendo's update server still answers, which is
-            // where melonDS's own dialog gets it. See MelonDsNus.
-            var tmd = MelonDsTmd.Resolve(layout, rom, appPath, besidePath, out var source);
+            // where melonDS's own dialog gets it. See DsiNus.
+            var tmd = DsiTmd.Resolve(layout, rom, appPath, besidePath, out var source);
             if (tmd != null) Log.Verbose("metadata for " + rom.TitleId + " from " + source);
 
             if (!session.ImportTitle(appPath, tmd, out var failure, out var generated))
@@ -1439,7 +1445,7 @@ namespace LbIntegrations.MelonDs
                         + (generated ? " (its metadata was BUILT from the ROM, not signed - if the DSi "
                                      + "menu refuses it, that is why)" : ""));
 
-            return MelonDsDsi.TakeReference(layout, session, rom.TitleId);
+            return DsiWorkspace.TakeReference(layout, session, rom.TitleId);
         }
 
         /// <summary>Put a DSi CARTRIDGE on the scratch image, never on a console.
@@ -1456,9 +1462,9 @@ namespace LbIntegrations.MelonDs
             try
             {
                 var current = AbsoluteTo(layout.ConfigDir, ValueOf(layout, "NANDPath"));
-                if (!MelonDsDsi.IsOurs(layout, current)) return;
+                if (!DsiWorkspace.IsOurs(layout, current)) return;
 
-                var work = MelonDsDsi.HandToCartridge(layout, current, out var why);
+                var work = DsiWorkspace.HandToCartridge(layout, current, out var why);
                 if (work == null)
                 {
                     Log.Verbose("left " + rom.AssetName + " on the NAND it had - " + why);

@@ -1,6 +1,6 @@
 // Making a console out of a dump, once, and never touching the dump to do it.
 //
-// A DSiWARE SAVE IS A DIFFERENCE against a base image - see MelonDsDelta - so that base has to exist
+// A DSiWARE SAVE IS A DIFFERENCE against a base image - see DsiDelta - so that base has to exist
 // and has to be configured: a NAND out of a real console carries that console's name, language,
 // birthday and colour, and one from anywhere else carries a stranger's or an unfinished welcome
 // sequence the DSi menu insists on completing. Completing it WRITES INTO THE IMAGE.
@@ -14,7 +14,7 @@
 //
 // AND THE NAME IS THE LINK. dsi\<the dump's file name> is that dump's console. One File.Exists
 // answers "has this been set up", and because a dump has exactly one console, "which console" is
-// never asked. See MelonDsBase.ConsoleFor.
+// never asked. See DsiBase.ConsoleFor.
 //
 // THERE IS NO "PLAY WITHOUT A CONSOLE", and that was a deliberate reversal. This window used to
 // offer "Not now", which started the game on the raw dump - the behaviour from before any of this
@@ -35,6 +35,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using LbIntegrations.Dsi;
 
 namespace LbIntegrations.MelonDs
 {
@@ -45,7 +46,7 @@ namespace LbIntegrations.MelonDs
 
         /// <summary>Offer to build a console for this dump.
         ///
-        /// Called only when the dump has none - MelonDsBase.ConsoleFor answered null. Answers TRUE
+        /// Called only when the dump has none - DsiBase.ConsoleFor answered null. Answers TRUE
         /// when the launch that asked should be abandoned: melonDS was just opened on the DSi menu,
         /// and starting the game on top of that would be two emulators on one image.</summary>
         public static bool Run(MelonDsLayout layout, NandDump dump, string bios7Path)
@@ -59,7 +60,7 @@ namespace LbIntegrations.MelonDs
                     return false;
                 }
 
-                if (!MelonDsDialog.Available)
+                if (!DsiDialog.Available)
                 {
                     // Said once, then dropped. Configuring a console behind somebody's back is not a
                     // lesser evil than leaving a dump unconfigured.
@@ -69,7 +70,7 @@ namespace LbIntegrations.MelonDs
                 }
 
                 var name = Path.GetFileName(dump.Path);
-                var answer = MelonDsDialog.Ask("melonDS - no console for this NAND yet",
+                var answer = DsiDialog.Ask("melonDS - no console for this NAND yet",
                                                Announcement(name, dump.Region),
                                                new[] { "Set one up now", "Close" });
                 if (answer != 0)
@@ -82,11 +83,11 @@ namespace LbIntegrations.MelonDs
                     return true;
                 }
 
-                var console = MelonDsBase.BuildConsole(layout, dump.Path, out var error);
+                var console = DsiBase.BuildConsole(layout, dump.Path, out var error);
                 if (console == null)
                 {
                     Log.Warn("could not build a console from " + name + " - " + error);
-                    MelonDsDialog.Ask("melonDS - the console could not be built",
+                    DsiDialog.Ask("melonDS - the console could not be built",
                                       "A copy of " + name + " has to be made before it can be set up, "
                                       + "and it could not be:" + Environment.NewLine + Environment.NewLine
                                       + "    " + error + Environment.NewLine + Environment.NewLine
@@ -98,7 +99,7 @@ namespace LbIntegrations.MelonDs
 
                 Configure(layout, console);
 
-                var verdict = MelonDsDialog.Ask("melonDS - is this console set up?",
+                var verdict = DsiDialog.Ask("melonDS - is this console set up?",
                                                 Confirmation(name),
                                                 new[] { "Yes, keep it", "No, throw it away" });
                 if (verdict == 0)
@@ -110,8 +111,8 @@ namespace LbIntegrations.MelonDs
                 else
                 {
                     try { File.Delete(console); } catch { }
-                    try { File.Delete(MelonDsBase.RecipeFor(console)); } catch { }
-                    try { File.Delete(MelonDsBase.RecordFor(console)); } catch { }
+                    try { File.Delete(DsiBase.RecipeFor(console)); } catch { }
+                    try { File.Delete(DsiBase.RecordFor(console)); } catch { }
                     Log.Info("the console built from " + name + " was thrown away; your dump was never "
                              + "touched, so there is nothing to put back");
                 }
@@ -134,16 +135,16 @@ namespace LbIntegrations.MelonDs
             try
             {
                 if (layout == null || consolePath == null || dumpPath == null) return false;
-                if (!MelonDsDsi.IsOurs(layout, consolePath))
+                if (!DsiWorkspace.IsOurs(layout, consolePath))
                 {
                     Log.Verbose(Path.GetFileName(consolePath) + " is not ours, so no recipe is written "
                                 + "beside it");
                     return false;
                 }
-                if (MelonDsBase.Described(consolePath)) return true;
+                if (DsiBase.Described(consolePath)) return true;
                 if (bios7Path == null) return false;
 
-                if (MelonDsBase.MakeRecipe(dumpPath, consolePath, bios7Path, region, out var error))
+                if (DsiBase.MakeRecipe(dumpPath, consolePath, bios7Path, region, out var error))
                     return true;
 
                 Log.Verbose("could not describe " + Path.GetFileName(consolePath) + " - " + error);
@@ -204,7 +205,7 @@ namespace LbIntegrations.MelonDs
                 // first would just mean melonDS appearing over an instruction nobody read.
                 try { process?.WaitForInputIdle(15000); } catch { }
 
-                MelonDsDialog.Ask("melonDS - one menu item to click", Instruction(),
+                DsiDialog.Ask("melonDS - one menu item to click", Instruction(),
                                   new[] { "OK" });
 
                 process?.WaitForExit();
@@ -239,7 +240,7 @@ namespace LbIntegrations.MelonDs
                 "Either way, the game you launched does not start this time. Launch it again",
                 "once the console is ready.",
                 "",
-                "This is a " + MelonDsRegion.Name(region) + " NAND, and you are asked once per NAND -",
+                "This is a " + DsiRegions.Name(region) + " NAND, and you are asked once per NAND -",
                 "every DSiWare of this region then runs on the same console.",
                 "",
                 "There is no \"play without a console\". An unconfigured NAND makes the DSi",

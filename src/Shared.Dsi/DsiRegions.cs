@@ -31,7 +31,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 
-namespace LbIntegrations.MelonDs
+namespace LbIntegrations.Dsi
 {
     /// <summary>The six regions a DSi is built for. THE ORDER IS melonDS's ConsoleRegion
     /// (DSi_NAND.h:210-218), because that enum's value is the byte read straight out of a NAND -
@@ -46,7 +46,7 @@ namespace LbIntegrations.MelonDs
         Korea = 5,
     }
 
-    internal static class MelonDsRegion
+    internal static class DsiRegions
     {
         /// <summary>Where the console's own description sits inside its NAND.</summary>
         public const string HardwareInfoInNand = "0:/sys/HWINFO_S.dat";

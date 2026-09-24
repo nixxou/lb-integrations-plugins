@@ -30,9 +30,9 @@ using System.IO.Compression;
 using System.Reflection;
 using System.Security.Cryptography;
 
-namespace LbIntegrations.MelonDs
+namespace LbIntegrations.Dsi
 {
-    internal static class MelonDsTmd
+    internal static class DsiTmd
     {
         /// <summary>The embedded index's resource name, as the csproj declares it.</summary>
         private const string ResourceName = "tmd-library.bin";
@@ -57,7 +57,7 @@ namespace LbIntegrations.MelonDs
         /// <param name="besidePath">Where to look for a .tmd the user put there. Normally the same
         /// file; for an archive it is the ARCHIVE, because that is where somebody would have put one
         /// and a temporary copy has nothing beside it.</param>
-        public static string Resolve(MelonDsLayout layout, NdsRom rom, string romPath,
+        public static string Resolve(DsiHost layout, NdsRom rom, string romPath,
                                      string besidePath, out string source)
         {
             source = null;
@@ -73,10 +73,10 @@ namespace LbIntegrations.MelonDs
             var already = Usable(kept);
             if (already != null) { source = "a copy fetched earlier"; return already; }
 
-            var fetched = MelonDsNus.TmdFor(rom.TitleId, kept, out var why);
+            var fetched = DsiNus.TmdFor(rom.TitleId, kept, out var why);
             if (fetched != null) { source = "Nintendo's update server"; return fetched; }
 
-            Log.Info("no metadata for " + rom.AssetName + " - " + why
+            DsiLog.Info("no metadata for " + rom.AssetName + " - " + why
                      + "; one will be built from the ROM, unsigned");
             return null;
         }
@@ -84,7 +84,7 @@ namespace LbIntegrations.MelonDs
         /// <summary>The revision of this title, from the carried index, whose content hash is the
         /// ROM's. Written out beside the title's NAND, because the library that installs it takes a
         /// path rather than bytes.</summary>
-        private static string FromIndex(MelonDsLayout layout, NdsRom rom, string romPath, out string which)
+        private static string FromIndex(DsiHost layout, NdsRom rom, string romPath, out string which)
         {
             which = null;
             try
@@ -136,18 +136,18 @@ namespace LbIntegrations.MelonDs
                 var target = KeptPath(layout, rom.TitleId);
                 if (target == null) return null;
                 Directory.CreateDirectory(Path.GetDirectoryName(target));
-                MelonDsToml.WriteAtomicBytes(target, tmd);
+                Atomic.WriteBytes(target, tmd);
 
                 which = matched
                     ? "the carried index, revision " + chosenVersion + " - it matches this ROM"
                     : "the carried index, revision " + chosenVersion + " - no revision matches this ROM";
                 if (!matched)
-                    Log.Info(rom.AssetName + ": no metadata revision matches this dump's hash; using "
+                    DsiLog.Info(rom.AssetName + ": no metadata revision matches this dump's hash; using "
                              + "revision " + chosenVersion + ". If the DSi menu refuses it, the ROM is "
                              + "a revision the index does not have.");
                 return target;
             }
-            catch (Exception ex) { Log.Verbose("could not read the carried index - " + ex.Message); return null; }
+            catch (Exception ex) { DsiLog.Verbose("could not read the carried index - " + ex.Message); return null; }
         }
 
         /// <summary>One entry's 520 bytes, by inflating the one block that holds it. The inflated
@@ -243,9 +243,9 @@ namespace LbIntegrations.MelonDs
         /// a TMD built from the ROM, unsigned, which the DSi menu may refuse.
         ///
         /// Nothing about a title's metadata is changed by somebody deleting their progress.</summary>
-        private static string KeptPath(MelonDsLayout layout, string titleId)
+        private static string KeptPath(DsiHost layout, string titleId)
         {
-            var dsi = MelonDsDsi.DsiDir(layout);
+            var dsi = DsiWorkspace.DsiDir(layout);
             if (dsi == null || string.IsNullOrWhiteSpace(titleId)) return null;
             return Path.Combine(dsi, KeptDirName, titleId + ".tmd");
         }
@@ -254,20 +254,20 @@ namespace LbIntegrations.MelonDs
 
         /// <summary>A copy kept under the old arrangement, moved rather than re-fetched. One
         /// File.Exists on a path we were about to look at anyway.</summary>
-        private static void MoveOldCopy(MelonDsLayout layout, string titleId, string target)
+        private static void MoveOldCopy(DsiHost layout, string titleId, string target)
         {
             try
             {
                 if (target == null || File.Exists(target)) return;
-                var dir = MelonDsDsi.TitleDir(layout, titleId);
+                var dir = DsiWorkspace.TitleDir(layout, titleId);
                 var old = dir == null ? null : Path.Combine(dir, "title.tmd");
                 if (old == null || !File.Exists(old)) return;
 
                 Directory.CreateDirectory(Path.GetDirectoryName(target));
                 File.Move(old, target);
-                Log.Verbose("moved the kept metadata of " + titleId + " out of its save folder");
+                DsiLog.Verbose("moved the kept metadata of " + titleId + " out of its save folder");
             }
-            catch (Exception ex) { Log.Verbose("could not move a kept TMD - " + ex.Message); }
+            catch (Exception ex) { DsiLog.Verbose("could not move a kept TMD - " + ex.Message); }
         }
 
         private static byte[] Sha1Of(string path)

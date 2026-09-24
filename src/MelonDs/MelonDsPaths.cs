@@ -20,6 +20,7 @@
 
 using System;
 using System.IO;
+using LbIntegrations.Dsi;
 
 namespace LbIntegrations.MelonDs
 {
@@ -50,6 +51,10 @@ namespace LbIntegrations.MelonDs
 
         public bool HasRedirectedSaves => !string.IsNullOrWhiteSpace(SaveDir);
         public bool HasRedirectedStates => !string.IsNullOrWhiteSpace(StateDir);
+
+        /// <summary>A layout IS a host, as far as the shared DSi engine is concerned. See
+        /// MelonDsHost: the engine asks for four things, and a layout can answer all four.</summary>
+        public static implicit operator DsiHost(MelonDsLayout layout) => MelonDsHost.For(layout);
     }
 
     internal static class MelonDsPaths

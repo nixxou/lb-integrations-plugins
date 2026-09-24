@@ -21,7 +21,7 @@
 // A NAND IS FOUND BY WHAT IS INSIDE IT, NEVER BY ITS NAME. The dumps in circulation are named after
 // their firmware version - DSi_Nand_USA_1.4.5.bin - and there is no reason to make anyone rename
 // one, nor to believe a name somebody else typed. Each candidate is opened and asked; see
-// MelonDsRegion for how, and why that offset is known rather than guessed.
+// DsiRegions for how, and why that offset is known rather than guessed.
 //
 // Opening a NAND costs about 150 ms, and six of them a second, which is not a price a launch should
 // pay to learn something that does not change. So the answers are written down in dsi\nands.txt and
@@ -31,6 +31,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using LbIntegrations.Dsi;
 
 namespace LbIntegrations.MelonDs
 {
@@ -128,7 +129,7 @@ namespace LbIntegrations.MelonDs
         /// both had to be named here. Nothing writes them any more - and they are kept in the list
         /// precisely because somebody upgrading still has them on disk.</summary>
         private static readonly string[] NotNands =
-            { ".lock", ".bak", MelonDsBase.RecipeSuffix, MelonDsBase.RecordSuffix };
+            { ".lock", ".bak", DsiBase.RecipeSuffix, DsiBase.RecordSuffix };
 
         /// <summary>The folder to put things in and to name in a message. Absolute, and normalised
         /// so a message says G:\...\RetroArch\system rather than G:\...\melonDS\..\RetroArch\system.</summary>
@@ -407,7 +408,7 @@ namespace LbIntegrations.MelonDs
                     }
                     found.Add(Dump(layout, path, region.Value));
                     fresh[path] = stamp + "\t" + region.Value;
-                    Log.Info(Path.GetFileName(path) + " is a " + MelonDsRegion.Name(region.Value) + " NAND");
+                    Log.Info(Path.GetFileName(path) + " is a " + DsiRegions.Name(region.Value) + " NAND");
                 }
 
                 if (changed || fresh.Count != known.Count) WriteIndex(layout, fresh);
@@ -434,7 +435,7 @@ namespace LbIntegrations.MelonDs
             {
                 Path = path,
                 Region = region,
-                HasConsole = MelonDsBase.ConsoleFor(layout, path) != null,
+                HasConsole = DsiBase.ConsoleFor(layout, path) != null,
             };
 
         /// <summary>The NAND to run this title on: the first of the regions it accepts that the user
@@ -453,7 +454,7 @@ namespace LbIntegrations.MelonDs
 
                 var chosen = Steadiest(matching);
                 if (matching.Count > 1)
-                    Log.Info(matching.Count + " " + MelonDsRegion.Name(region) + " NAND dumps; using "
+                    Log.Info(matching.Count + " " + DsiRegions.Name(region) + " NAND dumps; using "
                              + Path.GetFileName(chosen.Path)
                              + ". Every save is tied to the console it was made on, so this choice "
                              + "must not drift between launches - a dump that already has a console "
@@ -497,7 +498,7 @@ namespace LbIntegrations.MelonDs
         private static string Describe(List<NandDump> dumps)
         {
             var names = new List<string>();
-            foreach (var dump in dumps) names.Add(MelonDsRegion.Name(dump.Region));
+            foreach (var dump in dumps) names.Add(DsiRegions.Name(dump.Region));
             return string.Join(", ", names);
         }
 
@@ -513,7 +514,7 @@ namespace LbIntegrations.MelonDs
             string scratch = null;
             try
             {
-                using var session = MelonDsNand.Open(nandPath, bios7Path, out var error);
+                using var session = DsiNand.Open(nandPath, bios7Path, out var error);
                 if (session == null)
                 {
                     Log.Verbose("could not open " + Path.GetFileName(nandPath) + " - " + error);
@@ -522,13 +523,13 @@ namespace LbIntegrations.MelonDs
                 opened = true;
 
                 scratch = Path.Combine(Path.GetTempPath(), "lbip-hwinfo-" + Guid.NewGuid().ToString("N"));
-                if (!session.ExportFile(MelonDsRegion.HardwareInfoInNand, scratch, out var whyNot))
+                if (!session.ExportFile(DsiRegions.HardwareInfoInNand, scratch, out var whyNot))
                 {
-                    Log.Verbose("no " + MelonDsRegion.HardwareInfoInNand + " in "
+                    Log.Verbose("no " + DsiRegions.HardwareInfoInNand + " in "
                                 + Path.GetFileName(nandPath) + " - " + whyNot);
                     return null;
                 }
-                return MelonDsRegion.RegionIn(File.ReadAllBytes(scratch));
+                return DsiRegions.RegionIn(File.ReadAllBytes(scratch));
             }
             catch (Exception ex) { Log.Verbose("could not read a NAND's region - " + ex.Message); return null; }
             finally { try { if (scratch != null && File.Exists(scratch)) File.Delete(scratch); } catch { } }
@@ -538,7 +539,7 @@ namespace LbIntegrations.MelonDs
 
         private static string IndexPath(MelonDsLayout layout)
         {
-            var dir = MelonDsDsi.DsiDir(layout);      // ours, not the user's folder
+            var dir = DsiWorkspace.DsiDir(layout);      // ours, not the user's folder
             return dir == null ? null : Path.Combine(dir, IndexName);
         }
 
