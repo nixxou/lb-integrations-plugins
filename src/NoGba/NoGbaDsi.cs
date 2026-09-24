@@ -140,7 +140,7 @@ namespace LbIntegrations.NoGba
                 var console = DsiBase.ConsoleFor(host, dump.Path);
                 if (console == null)
                 {
-                    if (NoGbaNandSetup.Run(layout, dump, bios7))
+                    if (NoGbaNandSetup.Run(layout, dump, bios7, romPath))
                     {
                         Log.Info("no$gba was opened to set a console up for "
                                  + Path.GetFileName(dump.Path) + ", so this launch of "

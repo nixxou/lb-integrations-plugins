@@ -30,10 +30,14 @@ namespace LbIntegrations.NoGba
     {
         private const string KillSwitch = "no-nogba-dsi-setup";
 
+        /// <summary>A cartridge of the user's own, looked for at &lt;install&gt;\dsi\boot.nds and used
+        /// to start the machine for the welcome sequence when it is there.</summary>
+        internal const string BootRomName = "boot.nds";
+
         /// <summary>Offer to build a console for this dump. Answers TRUE when the launch that asked
         /// should be abandoned - no$gba was just opened on the DSi menu, and starting the game on
         /// top of that would be two emulators on one image.</summary>
-        public static bool Run(NoGbaLayout layout, NandDump dump, string bios7Path)
+        public static bool Run(NoGbaLayout layout, NandDump dump, string bios7Path, string romPath)
         {
             try
             {
@@ -76,7 +80,7 @@ namespace LbIntegrations.NoGba
                     return true;
                 }
 
-                if (!Configure(layout, console))
+                if (!Configure(layout, console, romPath))
                 {
                     DsiDialog.Ask("no$gba - the console could not be set up",
                                   "The copy could not be put where no$gba reads it, so nothing was "
@@ -139,8 +143,16 @@ namespace LbIntegrations.NoGba
         ///
         /// THE TWO COPIES ARE THE PRICE OF A FIXED FILE NAME. no$gba has no setting that says where
         /// its eMMC is, so "run the emulator on THIS image" means "make this image be DSi-1.mmc".
-        /// Once per console, ever.</summary>
-        private static bool Configure(NoGbaLayout layout, string consolePath)
+        /// Once per console, ever.
+        ///
+        /// AND IT IS HANDED A CARTRIDGE, which is not a detail. no$gba STARTS NOTHING WITHOUT ONE -
+        /// measured: with no ROM it opens an empty window, sits idle and never even reads the eMMC,
+        /// so the welcome sequence this whole step exists for never appears. The cartridge is only
+        /// there to turn the machine on; the entrypoint setting sends the boot through the BIOS, so
+        /// what comes up is the DSi menu and not the game. It is the ROM whose launch asked for all
+        /// this, unpacked first when it is an archive - no$gba cannot open one and answers with a
+        /// modal that waits forever.</summary>
+        private static bool Configure(NoGbaLayout layout, string consolePath, string romPath)
         {
             var exe = NoGbaPaths.FindExecutable(layout.InstallDir);
             if (exe == null) { Log.Warn("no no$gba executable in " + layout.InstallDir); return false; }
@@ -148,19 +160,61 @@ namespace LbIntegrations.NoGba
             var mmc = layout.MmcFile;
             if (mmc == null) return false;
 
+            string unpacked = null;
             try
             {
+                // A CARTRIDGE THE USER CHOSE, if there is one. Dropping a plain .nds at
+                // <install>\dsi\boot.nds makes THAT the one this step starts the machine with.
+                //
+                // It exists because the fallback below is an inference and this is not. A small
+                // homebrew was measured bringing up the DSi menu here; a DSiWare title in the
+                // cartridge slot was not, and DSiWare run as a cartridge is precisely the case
+                // gbatek calls broken. The cartridge only has to turn the machine on - the boot
+                // goes through the BIOS either way - so the inference is a reasonable one, but
+                // somebody who has a homebrew to hand should not have to rely on it.
+                //
+                // Nothing is shipped for this. A boot ROM would be a third-party binary in a
+                // public repository, and the one to hand carries no author, no copyright and no
+                // licence anywhere in it.
+                var chosen = Path.Combine(layout.InstallDir, DsiWorkspace.DirName, BootRomName);
+                var cartridge = File.Exists(chosen) ? chosen : romPath;
+                if (cartridge == chosen)
+                    Log.Info("starting no$gba with " + BootRomName + " rather than the game");
+
+                if (cartridge != chosen && !string.IsNullOrWhiteSpace(romPath) && NoGbaRoms.IsArchive(romPath))
+                {
+                    unpacked = Path.Combine(Path.GetTempPath(),
+                                            "lbip-nogba-boot-" + Guid.NewGuid().ToString("N") + ".nds");
+                    if (Archives.ExtractFirstEntry(romPath, NdsHeader.RomExtensions, unpacked, out var why))
+                        cartridge = unpacked;
+                    else
+                    {
+                        Log.Warn("could not unpack a cartridge to start no$gba with - " + why);
+                        unpacked = null;
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(cartridge) || !File.Exists(cartridge))
+                {
+                    Log.Warn("no cartridge to start no$gba with; it would open an empty window and "
+                             + "never reach the DSi menu");
+                    return false;
+                }
+
                 File.Copy(consolePath, mmc, overwrite: true);
                 NoGbaDsi.SetMode(layout, dsi: true);
 
                 Log.Info("opening no$gba on the DSi menu to set up "
-                         + Path.GetFileName(consolePath));
-                using (var process = Process.Start(new ProcessStartInfo
+                         + Path.GetFileName(consolePath) + ", with "
+                         + Path.GetFileName(cartridge) + " in the slot to turn it on");
+                var start = new ProcessStartInfo
                 {
                     FileName = exe,
                     WorkingDirectory = layout.InstallDir,
                     UseShellExecute = false,
-                }))
+                };
+                start.ArgumentList.Add(cartridge);
+                using (var process = Process.Start(start))
                 {
                     // The instruction goes on screen ONCE no$gba is up, not before: said in the
                     // window that precedes it, it would be said to somebody about to look somewhere
@@ -176,6 +230,7 @@ namespace LbIntegrations.NoGba
                 return true;
             }
             catch (Exception ex) { Log.Warn("could not set the console up", ex); return false; }
+            finally { if (unpacked != null) try { File.Delete(unpacked); } catch { } }
         }
 
         // ── what the windows say ─────────────────────────────────────────────
@@ -197,8 +252,10 @@ namespace LbIntegrations.NoGba
                 "    1. " + name + " is copied into no$gba's dsi folder",
                 "    2. that copy becomes " + NoGbaHost.MmcName + ", which is the only name",
                 "       no$gba will read a DSi NAND under",
-                "    3. no$gba opens - set the console up, then quit it",
-                "    4. this window comes back and asks whether it worked",
+                "    3. no$gba opens, with a cartridge in the slot ONLY to turn the machine",
+                "       on - it boots through the BIOS, so what comes up is the DSi menu",
+                "    4. set the console up there, then quit no$gba",
+                "    5. this window comes back and asks whether it worked",
                 "",
                 "Either way, the game you launched does not start this time. Launch it again",
                 "once the console is ready.",
@@ -215,6 +272,18 @@ namespace LbIntegrations.NoGba
                 "It boots the DSi menu by itself: this plugin has already set",
                 "    " + NoGbaDsi.ModeKey + "  to  " + NoGbaDsi.ModeDsi,
                 "    " + NoGbaDsi.EntryKey + "  to  " + NoGbaDsi.EntryBios,
+                "",
+                "There is a cartridge in the slot, and that is deliberate: no$gba starts nothing",
+                "without one. Ignore it - the boot goes through the BIOS, so the DSi menu is what",
+                "you get.",
+                "",
+                "It is the game you launched. If it does not wake the machine, put any small",
+                "homebrew .nds at",
+                "",
+                "    " + BootRomName + "   (in no$gba's dsi folder)",
+                "",
+                "and that one is used instead. Nothing is shipped for this: a boot ROM would be a",
+                "third-party binary in a public repository.",
                 "",
                 "Go through the welcome sequence - name, language, date, colour - then quit",
                 "no$gba, and you will be asked whether it worked.",
