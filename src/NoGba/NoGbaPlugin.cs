@@ -457,7 +457,13 @@ namespace LbIntegrations.NoGba
                 var emu = dm.AddNewEmulator();
                 if (emu == null) return null;
 
-                emu.Title = label == null ? PackName : PackName + " " + label;
+                // THE TITLE IS THE NAME, NOT THE NAME AND A DATE. This used to append the release
+                // label - "Nixx-nogba 2025-04-14" - which made the emulator's name disagree with
+                // the catalogue row and with its own install folder, and went stale the first time
+                // it was updated, since nothing rewrites a title afterwards. The four sibling
+                // plugins all set the bare name. The version is not lost: GetCurrentVersion reports
+                // it and the Edit Emulator window shows it.
+                emu.Title = PackName;
                 emu.ApplicationPath = MakeRelativeToLaunchBox(exePath);
                 emu.CommandLine = DefaultCommandLine;
                 emu.AutoExtract = true;          // see EnsureAutoExtract
