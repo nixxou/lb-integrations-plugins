@@ -34,6 +34,14 @@ namespace LbIntegrations.NoGba
     public partial class NoGbaPlugin
     {
         internal const string SavePrefix = "nogba:save:";
+
+        /// <summary>A DSiWare save lives INSIDE the NAND, not in BATTERY\, and what comes out is a
+        /// set of files rather than one - so it is packed into a single .dsisave. The prefix is the
+        /// same shape melonDS uses, with the emulator's own name in front, because the two never
+        /// share a row even when they share a console.</summary>
+        internal const string DsiWarePrefix = "nogba:dsiware:";
+        private const string DsiWareGroupName = "DSiWare save";
+        private const string DsiWareChipText = "NAND";
         private const string SaveGroupName = "Cartridge save";
         private const string SaveChipText = "SAV";
 
@@ -89,6 +97,42 @@ namespace LbIntegrations.NoGba
         {
             if (game == null || string.IsNullOrWhiteSpace(romPath)) return;
 
+            string gameIdEarly = Safe(() => game.Id) ?? "";
+            string appIdEarly = app != null ? Safe(() => app.Id) : null;
+
+            // A DSiWARE TITLE KEEPS ITS SAVE INSIDE ITS NAND, at title/<cat>/<id>/data/public.sav,
+            // and the image is 240 MB of which a few kilobytes are the save. So what is listed is
+            // the difference a session made, packed into one file - see DsiSaveFile. Measured on a
+            // real no$gba session: the game's own public.sav, the console settings, the launcher and
+            // two built-in apps' saves all moved, which is why the unit is the whole difference.
+            var header = NdsHeader.Describe(ResolveFullPath(romPath));
+            if (header.Known && header.IsDSiWare)
+            {
+                var state = DsiWorkspace.RefreshSave(layout, header.TitleId, DsiBios7(layout));
+                if (state != null && File.Exists(state)
+                    && seen.Add("dsiware|" + state + "|" + (appIdEarly ?? gameIdEarly)))
+                {
+                    long bytes = 0; DateTime stamp = default;
+                    try { var i = new FileInfo(state); bytes = i.Length; stamp = i.LastWriteTimeUtc; }
+                    catch { }
+
+                    into.Add(new GameSaveGame
+                    {
+                        GameId = gameIdEarly,
+                        AdditionalApplicationId = appIdEarly,
+                        FileLocation = state,
+                        IsDirectory = false,
+                        OriginalFileName = Path.GetFileName(state),
+                        SaveGroupId = DsiWarePrefix + header.TitleId,
+                        SaveGroupName = DsiWareGroupName,
+                        DisplayChipText = DsiWareChipText,
+                        ReportedFileSizeBytes = bytes > 0 ? bytes : (long?)null,
+                        ReportedLastModifiedUtc = stamp == default ? (DateTime?)null : stamp,
+                    });
+                }
+                return;                                   // no .SAV in BATTERY\ for a DSiWare
+            }
+
             var asset = NoGbaRoms.AssetName(ResolveFullPath(romPath));
             if (string.IsNullOrWhiteSpace(asset)) return;
 
@@ -116,6 +160,23 @@ namespace LbIntegrations.NoGba
                 ReportedLastModifiedUtc = when == default ? (DateTime?)null : when,
             });
         }
+
+        /// <summary>The DSi ARM7 BIOS, needed by every call into the NAND library.</summary>
+        private static string DsiBios7(NoGbaLayout layout)
+        {
+            foreach (var file in NoGbaBios.Files)
+                if (string.Equals(file.OurName, "biosdsi7.bin", StringComparison.OrdinalIgnoreCase))
+                    return NoGbaBios.Find(layout, file);
+            return null;
+        }
+
+        /// <summary>Is this one of ours AND a DSiWare one?</summary>
+        private static bool IsDsiWare(GameSaveBase save)
+            => save?.SaveGroupId != null
+               && save.SaveGroupId.StartsWith(DsiWarePrefix, StringComparison.OrdinalIgnoreCase);
+
+        private static string TitleIdOf(GameSaveBase save)
+            => IsDsiWare(save) ? save.SaveGroupId.Substring(DsiWarePrefix.Length) : null;
 
         /// <summary>Say what is in SNAP\, once per listing, and nothing more. Snapshots are not
         /// declared as saves because none has ever been seen; if one shows up, this is the line that
@@ -199,6 +260,33 @@ namespace LbIntegrations.NoGba
                 if (layout?.BatteryDir == null)
                     return new AddSaveResponse("Could not find the no$gba this save belongs to.");
 
+                // A DSiWARE SAVE GOES BACK THROUGH THE NAND, not into BATTERY\. It lands under our
+                // own name - <title id>\state.dsisave - whatever the vault copy was called, because
+                // that is what every other part of the plugin looks for.
+                if (IsDsiWare(save))
+                {
+                    var titleId = TitleIdOf(save);
+                    if (!DsiWorkspace.RestoreSave(layout, titleId, DsiBios7(layout), source,
+                                                  out var why))
+                        return new AddSaveResponse("Could not restore this DSiWare save: " + why);
+
+                    var mirror = DsiWorkspace.RefreshSave(layout, titleId, DsiBios7(layout));
+                    Log.Info("restored the DSiWare save of " + titleId
+                             + "; the next launch rebuilds its console around it");
+
+                    return new AddSaveResponse(new GameSaveGame
+                    {
+                        GameId = save.GameId,
+                        AdditionalApplicationId = save.AdditionalApplicationId,
+                        FileLocation = mirror ?? source,
+                        IsDirectory = false,
+                        OriginalFileName = Path.GetFileName(mirror ?? source),
+                        SaveGroupId = save.SaveGroupId,
+                        SaveGroupName = save.SaveGroupName ?? DsiWareGroupName,
+                        DisplayChipText = DsiWareChipText,
+                    });
+                }
+
                 var name = FirstNonBlank(save.OriginalFileName, Path.GetFileName(source));
                 var target = Path.Combine(layout.BatteryDir, name);
 
@@ -241,6 +329,19 @@ namespace LbIntegrations.NoGba
             {
                 if (!IsOurs(save)) return base.RemoveSave(save);
 
+                // A DSiWARE SAVE IS OURS TO DELETE PROPERLY: the file, the title's folder and the
+                // working image when it still holds the same title. Deleting the file alone would
+                // leave the next launch to capture the session straight back out of the image.
+                if (IsDsiWare(save))
+                {
+                    var layout = LayoutForSave(save);
+                    if (layout == null)
+                        return new PluginResponse(false, "Could not find the no$gba this save belongs to.");
+                    if (!DsiWorkspace.DropState(layout, TitleIdOf(save), out var why))
+                        return new PluginResponse(false, "Could not delete this DSiWare save: " + why);
+                    return new PluginResponse(true);
+                }
+
                 var loc = save?.FileLocation;
                 if (string.IsNullOrWhiteSpace(loc))
                 {
@@ -266,6 +367,8 @@ namespace LbIntegrations.NoGba
         }
 
         // ── plumbing ─────────────────────────────────────────────────────────
+
+        private static bool IsOursDsiWare(GameSaveBase save) => IsDsiWare(save);
 
         private static bool IsOurs(GameSaveBase save)
             => save?.SaveGroupId != null

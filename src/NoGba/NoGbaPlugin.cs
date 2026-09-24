@@ -40,6 +40,10 @@ namespace LbIntegrations.NoGba
         private const string GbaPlatform = "Nintendo Game Boy Advance";
         private const string DsPlatform = "Nintendo DS";
 
+        /// <summary>The name LaunchBox gives the platform, and the one melonDS's plugin already
+        /// publishes - so a library set up for one emulator is set up for the other.</summary>
+        private const string DsiWarePlatform = "Nintendo DSiware";
+
         /// <summary>Nothing. no$gba takes a ROM as its one positional argument and has no documented
         /// switches - the executable is packed, so there is nothing to read out of it either, and
         /// the community's word is that command-line options were lost when it was compressed.
@@ -51,6 +55,11 @@ namespace LbIntegrations.NoGba
         public NoGbaPlugin()
         {
             Log.Info("plugin constructed, assembly " + typeof(NoGbaPlugin).Assembly.Location);
+
+            // THE SHARED DSi ENGINE LEARNS WHOSE PLUGIN IT IS IN, first of all: it is compiled into
+            // two of them and cannot tell on its own which logger to write to, nor which process
+            // name means "the emulator is running". See NoGbaHost.
+            NoGbaHost.Announce();
 
             // As early as possible: the patch only sees connections opened AFTER it is installed,
             // and LaunchBox reads its metadata the moment a window asks for it.
@@ -229,7 +238,8 @@ namespace LbIntegrations.NoGba
         {
             var name = (platform ?? "").Trim();
             bool ours = string.Equals(name, GbaPlatform, StringComparison.InvariantCultureIgnoreCase)
-                        || string.Equals(name, DsPlatform, StringComparison.InvariantCultureIgnoreCase);
+                        || string.Equals(name, DsPlatform, StringComparison.InvariantCultureIgnoreCase)
+                        || string.Equals(name, DsiWarePlatform, StringComparison.InvariantCultureIgnoreCase);
             // Supported but not recommended: on both platforms there are more accurate emulators,
             // and this one is here for what it can do that they cannot - be no$gba.
             return new EmulatorSupportResponse(ours, false);
@@ -379,7 +389,7 @@ namespace LbIntegrations.NoGba
                 emu.CommandLine = DefaultCommandLine;
                 emu.AutoExtract = true;          // see EnsureAutoExtract
 
-                foreach (var platform in new[] { GbaPlatform, DsPlatform })
+                foreach (var platform in new[] { GbaPlatform, DsPlatform, DsiWarePlatform })
                 {
                     var row = emu.AddNewEmulatorPlatform();
                     if (row == null) continue;
@@ -463,6 +473,22 @@ namespace LbIntegrations.NoGba
                     // for an unrelated reason silently reverts this.
                     NoGbaConfig.Apply(layout);
                     NoGbaBios.Sync(layout);
+
+                    // WHICH MACHINE THIS GAME NEEDS. The DSi mode and the boot entrypoint are
+                    // GLOBAL settings in no$gba - there is no command line to carry them - so they
+                    // are written per launch and written back. A GBA game must not be left booting
+                    // through a BIOS it does not need.
+                    var romPath = ResolveFullPath(Safe(() => args?.GameBeingLaunched?.ApplicationPath));
+                    var header = NdsHeader.Describe(romPath);
+                    if (header.Known && header.IsDSiWare)
+                    {
+                        if (!NoGbaDsi.Prepare(layout, header, romPath))
+                            return new PrepareForLaunchResponse(success: false);
+                    }
+                    else
+                    {
+                        NoGbaDsi.SetMode(layout, dsi: false);
+                    }
                 }
 
                 // If an archive reaches us here, the host did not unpack it - and no$gba is about to
