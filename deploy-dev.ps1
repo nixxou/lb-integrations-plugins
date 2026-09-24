@@ -40,16 +40,16 @@ $repo = Split-Path -Parent $MyInvocation.MyCommand.Path
 # "Nixx-melonDS" means two copies of MelonDs.dll and no way to say which one wins.
 #
 # Keep this in step with src\Installer\Payload.cs. They are the two places a folder name is decided.
-$Pack = \{
-    'Flycast' = \{ Folder = 'Nixx-Flycast'; Old = \('Flycast Integration') }
-    'MelonDs' = \{ Folder = 'Nixx-melonDS'; Old = \('MelonDs Integration', 'melonDS Integration') }
-    'NoGba'   = \{ Folder = 'Nixx-no$gba';  Old = \('NoGba Integration', 'no$gba Integration') }
-    'Ppsspp'  = \{ Folder = 'Nixx-PPSSPP';  Old = \('Ppsspp Integration', 'PPSSPP Integration') }
-    'Xenia'   = \{ Folder = 'Nixx-Xenia';   Old = \('Xenia Integration') }
+$Pack = @{
+    'Flycast' = @{ Folder = 'Nixx-Flycast'; Old = @('Flycast Integration') }
+    'MelonDs' = @{ Folder = 'Nixx-melonDS'; Old = @('MelonDs Integration', 'melonDS Integration') }
+    'NoGba'   = @{ Folder = 'Nixx-nogba';   Old = @('NoGba Integration', 'no$gba Integration', 'Nixx-no$gba') }
+    'Ppsspp'  = @{ Folder = 'Nixx-PPSSPP';  Old = @('Ppsspp Integration', 'PPSSPP Integration') }
+    'Xenia'   = @{ Folder = 'Nixx-Xenia';   Old = @('Xenia Integration') }
 }
 
 if ($All) {
-    foreach ($name in \('Flycast', 'MelonDs', 'NoGba', 'Ppsspp', 'Xenia')) {
+    foreach ($name in @('Flycast', 'MelonDs', 'NoGba', 'Ppsspp', 'Xenia')) {
         Write-Host ""
         Write-Host ("=== " + $name) -ForegroundColor Magenta
         & $MyInvocation.MyCommand.Path -Plugin $name -LbRoot $LbRoot -Configuration $Configuration
@@ -104,7 +104,7 @@ New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
 # as the fresh one. The folders this pack used to use are removed outright when they hold our DLL
 # (never on the name alone: a folder somebody else made is not ours to delete), and anything left
 # that still holds one is reported rather than touched.
-foreach ($root in \("Local\Plugins", "Plugins")) {
+foreach ($root in @("Local\Plugins", "Plugins")) {
     foreach ($old in $Pack[$Plugin].Old) {
         $dir = Join-Path $LbRoot "$root\$old"
         if (-not (Test-Path (Join-Path $dir "$Plugin.dll"))) { continue }

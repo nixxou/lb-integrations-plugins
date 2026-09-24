@@ -326,6 +326,21 @@ namespace LbIntegrations.Probe
 
             var asked = source.EmulatorRows()?.Where(r => r != null).ToList()
                         ?? new List<LbCatalogEmulator>();
+
+            // Printed in full, because comparing five plugins' rows by reading five source files is
+            // how three wrong diagnoses got made in a row.
+            foreach (var r in asked)
+            {
+                Console.WriteLine("    row           " + r.Name);
+                Console.WriteLine("      command     [" + r.CommandLine + "]");
+                Console.WriteLine("      extensions  [" + r.ApplicableFileExtensions + "]");
+                Console.WriteLine("      url         [" + r.Url + "]");
+                Console.WriteLine("      binary      [" + r.BinaryFileName + "]");
+                Console.WriteLine("      autoextract " + r.AutoExtract);
+                foreach (var pl in r.Platforms ?? new List<LbCatalogPlatform>())
+                    Console.WriteLine("      platform    [" + pl.Platform + "]  recommended="
+                                      + pl.Recommended + "  bios=[" + pl.RequiredBiosFile + "]");
+            }
             Check("asking returns rows", asked.Count > 0);
             Check("the same rows the injection publishes",
                   asked.Any(r => string.Equals(r.Name, publishedName, StringComparison.Ordinal)));

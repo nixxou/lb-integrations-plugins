@@ -89,7 +89,23 @@ namespace LbIntegrations.NoGba
         /// one level up from the emulator, which resolves to Emulators\RetroArch\system today and
         /// would become Emulators\Nixx\RetroArch\system under a parent folder - a share with
         /// RetroArch that would quietly stop being a share.</summary>
-        private const string PackName = "Nixx-no$gba";
+        /// <summary>WITHOUT THE DOLLAR, where the emulator's own name has one. no$gba spells
+        /// itself that way and this plugin says so everywhere it speaks to a person; the dollar is
+        /// kept out of the one name that becomes a PATH, an INI key and a row in somebody else's
+        /// database.
+        ///
+        /// THIS IS PRECAUTION, NOT A DIAGNOSIS, and the difference is worth stating because it was
+        /// got wrong once. The Add Emulator Download button was missing for this emulator and the
+        /// dollar was blamed on the strength of "LaunchBox never called GetInstallableVersions for
+        /// it" - read off a log that did not carry that line at all, because this was the only one
+        /// of the five plugins not tracing the call. The rename stands on its own merits: a dollar
+        /// cost two traps while this pack was being built, a PowerShell string where $GBA expanded
+        /// to nothing and an MSBuild LogicalName that would have done the same. It is NOT known to
+        /// be what kept the button dark.
+        ///
+        /// The emulator is still recognised by its executable, which NoGbaPaths matches after
+        /// stripping the dollar, so nothing here depends on the name a user sees.</summary>
+        private const string PackName = "Nixx-nogba";
 
         public override string EmulatorName => PackName;
 
@@ -293,8 +309,14 @@ namespace LbIntegrations.NoGba
             catch (Exception ex) { Log.Warn("could not read the installed version", ex); return null; }
         }
 
+        /// <summary>Traced like its four siblings, and the line is not decoration: its absence
+        /// cost a wrong diagnosis. "LaunchBox never asked no$gba for versions" was read off a log
+        /// that simply never carried the line, and a rename followed from it. A call every other
+        /// plugin records and this one did not is a hole shaped exactly like a false
+        /// conclusion.</summary>
         public override IEnumerable<EmulatorControllerVersion> GetInstallableVersions()
         {
+            Log.Info("GetInstallableVersions: asked");
             var versions = new List<EmulatorControllerVersion>();
             try
             {
@@ -306,24 +328,45 @@ namespace LbIntegrations.NoGba
             return versions;
         }
 
-        /// <summary>Overridden because the SDK's default compares two strings and announces an update
-        /// whenever GetCurrentVersion answers null - which, for an installation somebody made by
-        /// hand, is always.</summary>
+        /// <summary>Is there something to fetch? Overridden because the SDK's default compares two
+        /// strings and announces an update whenever GetCurrentVersion answers null - which, for an
+        /// installation somebody made by hand, is always.
+        ///
+        /// AND IT IS WHAT DRAWS THE DOWNLOAD BUTTON, which is not what the name suggests and cost a
+        /// long evening to find out. LaunchBox's Add Emulator window calls this with an EMPTY path -
+        /// there is no emulator yet, that is the point of the window - and shows its Download button
+        /// only when the answer is true. An earlier version of this method looked for an install of
+        /// ours, found none, and answered false, so no$gba was the one emulator of this pack that
+        /// could not be downloaded from that window. Measured, by moving this single method onto a
+        /// plugin whose button worked and watching it go dark.
+        ///
+        /// So there are three answers, not two:
+        ///   * nothing installed          -> yes, and here is what you would get
+        ///   * installed, but not by us   -> no; somebody's own build is not ours to replace
+        ///   * installed by us, and old   -> yes
+        /// The middle one is the restraint the original override existed for, and it is kept.</summary>
         public override bool IsUpdateAvailable(string emulatorAppPath, out EmulatorControllerVersion version)
         {
             version = null;
             try
             {
-                var dir = Path.GetDirectoryName(ResolveFullPath(emulatorAppPath));
-                var have = NoGbaDownload.Installed(dir);
-                if (have == null) return false;        // we did not install it; not ours to update
-
                 var latest = NoGbaDownload.Latest();
                 if (latest == null) return false;      // the server did not answer; claim nothing
 
-                if (string.Equals(have.Tag, latest.Tag, StringComparison.Ordinal)) return false;
-
                 version = new EmulatorControllerVersion(NoGbaDownload.Url, latest.Label, "no$gba-w.zip");
+
+                // NOTHING INSTALLED IS NOT "UP TO DATE". This is the Add Emulator case.
+                if (string.IsNullOrWhiteSpace(emulatorAppPath)) return true;
+
+                var dir = Path.GetDirectoryName(ResolveFullPath(emulatorAppPath));
+                var have = NoGbaDownload.Installed(dir);
+                if (have == null) { version = null; return false; }   // not ours to update
+
+                if (string.Equals(have.Tag, latest.Tag, StringComparison.Ordinal))
+                {
+                    version = null;
+                    return false;
+                }
                 return true;
             }
             catch (Exception ex) { Log.Warn("could not check for an update", ex); return false; }

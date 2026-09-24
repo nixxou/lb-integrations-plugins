@@ -20,7 +20,7 @@ internal static class Payload
 {
     public const string Flycast = "Nixx-Flycast";
     public const string MelonDs = "Nixx-melonDS";
-    public const string NoGba   = "Nixx-no$gba";
+    public const string NoGba   = "Nixx-nogba";
     public const string Ppsspp  = "Nixx-PPSSPP";
     public const string Xenia   = "Nixx-Xenia";
 
@@ -41,6 +41,10 @@ internal static class Payload
         "NoGba Integration",   "no$gba Integration",
         "Ppsspp Integration",  "PPSSPP Integration",
         "Xenia Integration",
+
+        // And the one this pack itself published for a day: no$gba's row carried the emulator's
+        // dollar until LaunchBox was measured never calling GetInstallableVersions for it.
+        "Nixx-no$gba",
     };
 
     /// <summary>The five assembly names. A folder is only ever removed when it holds one of these:
@@ -54,8 +58,6 @@ internal static class Payload
     // written: the DllImport resolver in Shared.Dsi only ever looks inside the plugin's own folder,
     // so melonDS and no$gba each need their own.
     //
-    // The resource path says "nogba" where the folder says "no$gba" on purpose: a resource name is
-    // an MSBuild LogicalName, and a dollar in one is a property expansion waiting to happen.
     private const string NandLib  = "payload/native/melonds-nand.dll";
     private const string NandTool = "payload/native/melonds-nandtool.exe";
 

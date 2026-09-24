@@ -26,8 +26,7 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 # Project -> the folder its files are staged under. These names ARE the plugin folder names the
-# installer creates, except no$gba: a dollar in an MSBuild LogicalName is a property expansion
-# waiting to happen, so the resource path says "nogba" and Payload.cs maps it back.
+# installer creates.
 $Stage = [ordered]@{
     'Flycast' = 'Nixx-Flycast'
     'MelonDs' = 'Nixx-melonDS'

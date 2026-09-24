@@ -30,9 +30,8 @@
        them, copies the merged DLL, the manifest and the native library into one directory, and
        passes that directory here. One place decides what a release contains.
 
-       LogicalName is the name Payload.cs asks for, and the folder spelt "Nixx-nogba" where the
-       real folder is "Nixx-no$gba" is deliberate: a LogicalName is MSBuild text, and a dollar in
-       it is a property expansion waiting to happen.
+       LogicalName is the name Payload.cs asks for, and it is the plugin folder's own name in
+       every case - no$gba's row lost its dollar, so there is nothing left to map.
 
        Declared STATICALLY rather than globbed or appended from a target. Resource names are
        assigned early in the build, before a target has had a chance to add anything, and an item

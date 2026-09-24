@@ -160,11 +160,23 @@ file is there. Before LaunchBox 14, `Plugins\` is the only option. `<Name>` is t
 |---|---|---|---|
 | `src/Flycast` | `Nixx-Flycast` | `Nixx-Flycast` | `Emulators\Nixx-Flycast` |
 | `src/MelonDs` | `Nixx-melonDS` | `Nixx-melonDS` | `Emulators\Nixx-melonDS` |
-| `src/NoGba` | `Nixx-no$gba` | `Nixx-no$gba` | `Emulators\Nixx-no$gba` |
+| `src/NoGba` | `Nixx-nogba` | `Nixx-nogba` | `Emulators\Nixx-nogba` |
 | `src/Ppsspp` | `Nixx-PPSSPP` | `Nixx-PPSSPP` | `Emulators\Nixx-PPSSPP` |
 | `src/Xenia` | `Nixx-Xenia` | `Nixx-Xenia` | `Emulators\Nixx-Xenia` |
 
 One constant per plugin drives that whole row, so the four cannot disagree.
+
+**no$gba loses its dollar**, alone among the five. The emulator spells itself `no$gba` and this
+plugin says so wherever it speaks to a person; the dollar is kept out of the one name that becomes
+a path, an INI key and a row in somebody else's database. It cost two traps while this pack was
+being built - a PowerShell string where `$GBA` expanded to nothing, and an MSBuild `LogicalName`
+that would have done the same.
+
+That is the whole justification, and it is precaution rather than a fix. The dollar was first
+blamed for the Add Emulator **Download** button being missing on this emulator, on the strength of
+"LaunchBox never called `GetInstallableVersions` for it" - read off a log that never carried that
+line, because this was the only one of the five plugins not tracing the call. It traces it now. The
+missing button is still unexplained.
 
 **The last column is not presentation.** Unbroken's own integrations download into
 `Emulators\<emulator name>` too, so an official plugin for the same emulator - today's or
