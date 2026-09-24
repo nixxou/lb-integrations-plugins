@@ -1036,10 +1036,63 @@ several sessions, including clean exits. Declaring slots would mean describing a
 naming scheme nobody here has seen; the folder is scanned and whatever turns up is named in the log
 instead.
 
+**DSiWare works, and it runs on the same engine melonDS does.** The machinery between a NAND dump
+and a save - choosing a dump by region, building a configured console from it, installing the title,
+taking the difference a session made, packing it as a `.dsisave`, rebuilding a console from its
+recipe - talks to the IMAGE, not to the emulator. So it lives once, in `src/Shared.Dsi`, and both
+plugins compile it in. That is also why this plugin is GPL-3.0: the engine calls melonDS's NAND
+code. See `THIRD-PARTY.md`.
+
+Measured on a real installation: a console built by the melonDS side booted under no$gba, our own
+tool installed a title into it, the DSi menu ran it, and the walk afterwards found **the same set of
+files a melonDS session produces** - the title's `public.sav`, `shared1/TWLCFG0.dat` and
+`TWLCFG1.dat`, `shared2/launcher/wrap.bin`, two built-in apps' `private.sav` - plus
+`sys/log/sysmenu.log`, the menu's own journal, which moves at every boot and so shows up in every
+no$gba save whether or not anything was played.
+
+**no$gba's documentation says it cannot install a DSiWare title into a NAND, and that is true.** It
+does not matter: the emulator never installs anything here. This plugin does, through
+`melonds-nand.dll`, and hands over a finished image. The same is true on the melonDS side, which
+is why the two arrangements are one.
+
+Three things are not like melonDS, and all three are measured:
+
+```
+no path setting      no$gba reads a FIXED name beside its exe, DSi-1.mmc, and its INI holds
+                     fifty-odd keys and not one path. So the working image IS that file.
+no boot without      started with no ROM it sits idle - no logo, and the eMMC is never even
+  a cartridge        opened. The title's own .nds goes in the slot to turn the machine on;
+                     the title itself is launched from the DSi menu, out of the NAND.
+two global settings  NDS Mode/Colors == DSi (retail/16MB)
+                     Reset/Startup Entrypoint == GBA/NDS BIOS (Nintendo logo)
+                     written per launch and written back, since there is no command line
+                     to carry them and a GBA game must not boot through a BIOS.
+```
+
+Those two values are the drop-down's own labels, character for character. **A value no$gba does not
+recognise is ignored in silence** - no error, no fallback, nothing in the file to see - so both are
+named constants carrying the label they were read from, and the probe asserts them.
+
+**A fixed file name can already be taken**, which melonDS never has to worry about: its working
+image lives in a folder this plugin owns, so the path answers "is this mine". Here it says nothing,
+and somebody who set a DSi up by hand has their own `DSi-1.mmc` sitting exactly there. The marker
+beside the working image answers instead - `work.title` is written whenever we build one - and an
+image with no marker is moved to `DSi-1.mmc.yours` rather than built over. Never deleted.
+
+**Setting a console up costs two copies of 240 MB here, once per console, ever.** Without a path
+setting, "run the emulator on this image" means "make this image be DSi-1.mmc", and then put it
+back. melonDS is simply pointed at the copy.
+
 **No RetroAchievements.** no$gba predates the idea and is a single packed executable with no network
 features beyond its own link emulation.
 
 ## License
 
-MIT, see `LICENSE`. The shipped binary statically links third-party components, one of them
-LGPL-2.1 — `THIRD-PARTY.md` lists them and explains how the relinking requirement is met.
+MIT for most of it, see `LICENSE`.
+
+**Four directories are GPL-3.0-or-later**, and they are the ones that touch melonDS's NAND code:
+`tools/melonds-nand`, `src/Shared.Dsi`, `src/MelonDs` and `src/NoGba`. The shared DSi engine calls
+that library through P/Invoke, and both plugins compile the engine in, so the licence follows it.
+Flycast, Xenia and PPSSPP touch none of it and remain MIT. `THIRD-PARTY.md` sets out the whole of
+it, including the LGPL-2.1 component the shipped binary statically links and how the relinking
+requirement is met.
