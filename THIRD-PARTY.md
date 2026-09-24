@@ -98,9 +98,10 @@ The merge is the `MergePlugin` target at the end of `src\Ppsspp\Ppsspp.csproj`. 
 `VendoredFlac.dll` in `src\Ppsspp\bin\Release\` before that target runs — or change the
 `CHDSharp` package reference — and the merged output picks up your copy.
 
-## `tools/melonds-nand` and `src/MelonDs` - GPL-3.0
+## `tools/melonds-nand`, `src/Shared.Dsi`, `src/MelonDs` and `src/NoGba` - GPL-3.0
 
-Two directories in this repository are **not** MIT, and they are the two that touch melonDS.
+Four directories in this repository are **not** MIT, and they are the ones that touch melonDS's
+NAND code.
 
 `tools/melonds-nand` is compiled together with source files from
 [melonDS](https://github.com/melonDS-emu/melonDS) - `DSi_NAND.cpp`, `FATIO.cpp`, FatFs, tiny-AES-c
@@ -112,13 +113,26 @@ door the plugin calls, and `melonds-nandtool.exe`, the same operations from a co
 |---|---|---|
 | [melonDS](https://github.com/melonDS-emu/melonDS) | GPL-3.0-or-later | the whole DSi NAND implementation: decryption, FAT access, title import, save export |
 
-**`src/MelonDs` is GPL-3.0-or-later too**, because `MelonDs.dll` loads that library into its own
-process through P/Invoke - see `src/MelonDs/LICENSE.md`. An earlier version invoked an executable at
-arm's length and stayed MIT; direct calls were chosen knowingly, since reading a DSiWare save out of
-its NAND happens while a page is drawn rather than once per launch.
+**`src/Shared.Dsi` is GPL-3.0-or-later**, because it is the code that calls that library: the DSi
+engine - choosing a dump, building a console, installing a title, taking the difference a session
+made, packing it as a `.dsisave`, rebuilding a console from a recipe. It lived inside `src/MelonDs`
+until no$gba needed the same machinery, and it is compiled into both plugins rather than copied,
+because four thousand lines that took three measured defects to get right should not exist twice.
 
-The other three plugins are unaffected and remain MIT: this repository copies its shared pieces
-rather than linking them, so none of them shares an assembly with this one.
+**`src/MelonDs` and `src/NoGba` are GPL-3.0-or-later with it**, because each one compiles that engine
+in and therefore loads the library into its own process through P/Invoke - see the LICENSE.md in
+each. An earlier version invoked an executable at arm's length and stayed MIT; direct calls were
+chosen knowingly, since reading a DSiWare save out of its NAND happens while a page is drawn rather
+than once per launch, and the same reasoning now covers both emulators.
+
+This paragraph used to say the other plugins stayed MIT *because* this repository copies its shared
+pieces rather than linking them. That is still true of `Log.cs`, `Archives.cs` and the metadata-row
+trio, where two copies differ by a namespace and a comment. It stopped being true of the DSi engine
+the day a second emulator needed it, and the licence follows the code rather than the other way
+round.
+
+**Flycast, Xenia and PPSSPP are unaffected and remain MIT**: none of them touches the NAND library,
+the shared DSi folder, or any assembly that does.
 
 Two files in the tool are melonDS's own work rather than ours, and say so at the top:
 `aes_key.cpp` carries `DSi_AES::ROL16` and `DSi_AES::DeriveNormalKey` copied verbatim from

@@ -113,7 +113,11 @@ if ((Get-FileHash $manifestSource -Algorithm SHA256).Hash -ne
 # failed to load during PluginLoader.LoadAssembly" and an error dialog at every start. Measured, with
 # the dialog. So the library goes into native\ and loses the .dll extension; the plugin loads it by
 # path through a DllImport resolver.
-if ($Plugin -eq 'MelonDs') {
+# TWO PLUGINS NEED IT NOW. The DSi engine lives in src\Shared.Dsi and is compiled into both
+# melonDS and no$gba; it P/Invokes this library, and the resolver only ever looks inside the
+# plugin's OWN folder - so each one gets its own copy. That is also why both projects are
+# GPL-3.0: see THIRD-PARTY.md.
+if ($Plugin -eq 'MelonDs' -or $Plugin -eq 'NoGba') {
     $nativeDir = Join-Path $targetDir "native"
     $pairs = @(
         @{ From = "melonds-nand.dll";     To = "melonds-nand.native" },

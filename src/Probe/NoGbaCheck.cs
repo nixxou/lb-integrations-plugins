@@ -55,6 +55,8 @@ namespace LbIntegrations.Probe
                 ok &= ForeignSettings(exe);
                 ok &= BiosCopying(exe);
                 ok &= Listing(plugin, exe, romDir);
+                ok &= TheDsiSwitches(exe);
+                ok &= TheirOwnImage(exe);
 
                 Console.WriteLine();
                 Console.WriteLine("  " + (ok ? "OK - the plugin matches what no$gba was measured to do"
@@ -110,6 +112,127 @@ namespace LbIntegrations.Probe
 
         // ── the checks ───────────────────────────────────────────────────────
 
+        /// <summary>The two settings that put no$gba into DSi mode, and the fact that they are
+        /// GLOBAL.
+        ///
+        /// MEASURED, 2026-09-24, against the real emulator: with these two written and nothing else,
+        /// no$gba booted the DSi menu out of an eMMC image this repository's tooling had prepared -
+        /// the console showed the name set on the melonDS side. The values are the drop-down's own
+        /// labels, read off Options > Emulation Setup, because a value no$gba does not recognise is
+        /// ignored IN SILENCE: there is no error, no fallback, and no way to tell from the file.
+        ///
+        /// THERE IS NO COMMAND LINE. no$gba takes no switches, so these cannot be set per launch the
+        /// way melonDS's console type is - they are written into the INI before the emulator starts
+        /// and written back afterwards. A Game Boy Advance game must not be left booting through a
+        /// BIOS it has no use for.</summary>
+        private static bool TheDsiSwitches(string exe)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- the two settings that make no$gba a DSi");
+
+            var dsi = TypeIn("NoGbaDsi");
+            var setMode = dsi?.GetMethod("SetMode", BindingFlags.Public | BindingFlags.Static);
+            var resolve = TypeIn("NoGbaPaths").GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static);
+            if (setMode == null) { Console.WriteLine("    no NoGbaDsi.SetMode to call"); return false; }
+
+            var layout = resolve.Invoke(null, new object[] { exe });
+            string ini = Path.Combine(Path.GetDirectoryName(exe), "NO$GBA.INI");
+
+            // Something of the user's, to prove it survives both ways round.
+            File.WriteAllText(ini, ";no$gba generated config file - do not edit\r\n"
+                                 + "KEYB_1 == 101E1819390F1D1C38912D2C\r\n");
+
+            bool ok = true;
+
+            setMode.Invoke(null, new object[] { layout, true });
+            var after = File.ReadAllText(ini);
+            ok &= Check("DSi mode is the drop-down's own label, character for character",
+                        after.Contains("NDS Mode/Colors == DSi (retail/16MB)"));
+            ok &= Check("and the boot entrypoint goes through the BIOS, which is what reads the eMMC",
+                        after.Contains("Reset/Startup Entrypoint == GBA/NDS BIOS (Nintendo logo)"));
+            ok &= Check("the user's key mapping is untouched",
+                        after.Contains("KEYB_1 == 101E1819390F1D1C38912D2C"));
+
+            // AND BACK, which is the half that is easy to forget: these are global.
+            setMode.Invoke(null, new object[] { layout, false });
+            var back = File.ReadAllText(ini);
+            ok &= Check("a non-DSi launch puts the machine back to a DS",
+                        back.Contains("NDS Mode/Colors == Nintendo DS (retail/4MB)"));
+            ok &= Check("and back to booting the cartridge directly",
+                        back.Contains("Reset/Startup Entrypoint == Start Cartridge directly"));
+            ok &= Check("the settings are rewritten in place, not appended twice",
+                        Occurrences(back, "NDS Mode/Colors ==") == 1
+                        && Occurrences(back, "Reset/Startup Entrypoint ==") == 1);
+
+            try { File.Delete(ini); } catch { }
+            return ok;
+        }
+
+        /// <summary>A DSi-1.mmc that is not ours is set aside, never built over.
+        ///
+        /// melonDS never faces this: its working image lives in a folder this plugin owns, so the
+        /// PATH answers "is this mine". no$gba reads a fixed name beside its own executable and will
+        /// not be told otherwise, so the path says nothing - and somebody who set a DSi up by hand
+        /// has their own file sitting exactly there. The marker beside the working image answers
+        /// instead: work.title is written whenever WE build one, so an image with no marker was not
+        /// built by us.</summary>
+        private static bool TheirOwnImage(string exe)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- a DSi-1.mmc somebody else put there");
+
+            var protect = TypeIn("NoGbaDsi")?.GetMethod("ProtectTheirImage",
+                              BindingFlags.NonPublic | BindingFlags.Static);
+            var resolve = TypeIn("NoGbaPaths").GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static);
+            if (protect == null) { Console.WriteLine("    no ProtectTheirImage to call"); return false; }
+
+            var layout = resolve.Invoke(null, new object[] { exe });
+            string install = Path.GetDirectoryName(exe);
+            string mmc = Path.Combine(install, "DSi-1.mmc");
+            string marker = Path.Combine(install, "dsi", "work.title");
+
+            bool ok = true;
+            try
+            {
+                // Theirs: an image with no marker beside it.
+                try { File.Delete(marker); } catch { }
+                File.WriteAllText(mmc, "the console somebody set up by hand");
+
+                ok &= Check("the launch is allowed to go on", (bool)protect.Invoke(null, new[] { layout }));
+                ok &= Check("but their image is NOT where it was", !File.Exists(mmc));
+
+                var parked = Path.Combine(install, "DSi-1.mmc.yours");
+                ok &= Check("it was set aside under a name that says whose it is", File.Exists(parked));
+                ok &= Check("with its contents intact - moved, not copied and not emptied",
+                            File.Exists(parked)
+                            && File.ReadAllText(parked) == "the console somebody set up by hand");
+
+                // Ours: a marker says we built it, so it is left alone to be built over.
+                Directory.CreateDirectory(Path.GetDirectoryName(marker));
+                File.WriteAllText(marker, "000300044b513945\tsomewhere\t1\t2\tconsole.bin");
+                File.WriteAllText(mmc, "our own working image");
+
+                ok &= Check("an image we made is left where it is", (bool)protect.Invoke(null, new[] { layout }));
+                ok &= Check("because the marker beside it says so, which is the only thing that can",
+                            File.Exists(mmc) && File.ReadAllText(mmc) == "our own working image");
+                return ok;
+            }
+            finally
+            {
+                foreach (var leftover in new[] { mmc, Path.Combine(install, "DSi-1.mmc.yours") })
+                    try { File.Delete(leftover); } catch { }
+                try { Directory.Delete(Path.Combine(install, "dsi"), recursive: true); } catch { }
+            }
+        }
+
+        /// <summary>How many times a needle appears.</summary>
+        private static int Occurrences(string haystack, string needle)
+        {
+            int n = 0, at = 0;
+            while ((at = haystack.IndexOf(needle, at, StringComparison.Ordinal)) >= 0) { n++; at += needle.Length; }
+            return n;
+        }
+
         private static bool Platforms(EmulatorPlugin plugin)
         {
             Console.WriteLine();
@@ -120,6 +243,8 @@ namespace LbIntegrations.Probe
                         plugin.IsPlatformSupported("Nintendo Game Boy Advance")?.Supported == true);
             ok &= Check("Nintendo DS is supported",
                         plugin.IsPlatformSupported("Nintendo DS")?.Supported == true);
+            ok &= Check("and DSiWare, which it runs out of a NAND rather than off a cartridge",
+                        plugin.IsPlatformSupported("Nintendo DSiware")?.Supported == true);
             ok &= Check("and nothing else is",
                         plugin.IsPlatformSupported("Nintendo 64")?.Supported != true);
             return ok;
