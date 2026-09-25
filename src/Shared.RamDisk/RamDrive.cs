@@ -18,8 +18,30 @@
 //   ramdisk.result   OK|FAIL <action> <drive> exit=<n>   the imdisk run, whatever it did
 //                    ERROR <message>                     it never got as far as imdisk
 //
-// The result is a log line and nothing more. Whether a mount worked is answered by asking the
-// file system whether the drive is there - which is also what LiteBox does.
+// THAT RESULT FILE IS THE COMPLETION SIGNAL, and it is not the same question as "is the drive
+// usable". Both are needed, and asking the wrong one at the wrong moment is a race with teeth.
+//
+// Phase timings, measured on this machine, twice each and within a fifth of a second:
+//
+//   mount     schtasks returns 0.0s | helper starts 0.1s | DRIVE USABLE 0.3s | helper done 88.3s
+//   unmount                                              | drive gone  29.5s | helper done 88.1s
+//
+// So the drive is ready almost at once, and then imdisk sits there for another minute and a half.
+// 88.1, 88.3, 88.5 across three runs is a fixed cost, not work: something inside imdisk waits on a
+// timeout. What it waits for has not been established here, and the number is quoted as measured
+// rather than explained.
+//
+// WAITING FOR THE HELPER AFTER A MOUNT WOULD THEREFORE COST 88 SECONDS PER LAUNCH, which is not a
+// price for anything. But NOT waiting at all is how the first version of this broke: the drive
+// appeared, the mount was called done, the unmount fired straight after, and the scheduled task -
+// whose policy is IgnoreNew - REFUSED it with 0x800710E0 because the previous run was still going.
+// The drive stayed mounted and nothing said so.
+//
+// So the wait moved to where it belongs: BEFORE STARTING A RUN, never after finishing one. A mount
+// returns as soon as its drive works; the next operation waits for the previous helper first, and
+// in real use - a mount, a game, an unmount - that wait has already elapsed and costs nothing.
+// LiteBox waits on the drive alone and has the same race; it never shows there for exactly that
+// reason.
 //
 // EVERYTHING DEGRADES. No driver, no helper, no task, no runtime, not enough RAM, no free letter:
 // each of those logs and returns null, and the caller carries on without a RAM disk. Nothing here
@@ -57,6 +79,23 @@ namespace LbIntegrations.RamDisk
         /// <summary>The prefix every one of these tasks carries. LiteBox's name, kept literally -
         /// this is the string that makes the two find each other.</summary>
         public const string TaskPrefix = "LiteBox_RomExtractor_RamDisk_";
+
+        /// <summary>How long to wait for a previous helper run to finish, in seconds. Measured at 88;
+        /// this leaves room and still has a ceiling, because a run that was refused would otherwise
+        /// be waited on for ever.</summary>
+        private const int HelperSeconds = 150;
+
+        /// <summary>How long to wait for a mounted drive to become usable. Measured at 0.3s - this is
+        /// a ceiling for a machine under load, not an expectation.</summary>
+        private const int MountSeconds = 30;
+
+        /// <summary>How long to wait for an unmounted drive to go. Measured at 29.5s, which is the
+        /// one phase here that really is work.</summary>
+        private const int UnmountSeconds = 90;
+
+        /// <summary>True when we have started a run and not yet seen it finish. The next run has to
+        /// wait for it: this task ignores a second instance rather than queueing it.</summary>
+        private static bool _runInFlight;
 
         // ── where things live ────────────────────────────────────────────────
 
@@ -371,23 +410,26 @@ namespace LbIntegrations.RamDisk
                 var task = InstalledTaskName();
                 if (task != null)
                 {
-                    WriteCfg("mount", letter, sizeMb);
-                    try { var r = ResultPath; if (r != null && File.Exists(r)) File.Delete(r); } catch { }
-                    RunTask(task, ct);
+                    if (!StartRun(task, "mount", letter, sizeMb, ct)) return null;
 
-                    // Five seconds, in tenths. The helper is a process start, an imdisk call and a
-                    // format; the task scheduler adds its own latency before any of that.
-                    for (int i = 0; i < 50 && !Directory.Exists(root); i++)
-                    {
-                        if (ct.IsCancellationRequested) break;
-                        Thread.Sleep(100);
-                    }
-                    if (Directory.Exists(root))
+                    // The drive, not the helper - measured at a third of a second, against a minute
+                    // and a half for the helper to finish afterwards. See the header for why the
+                    // waiting happens before the NEXT run instead.
+                    if (WaitFor(() => Directory.Exists(root), MountSeconds, ct))
                     {
                         RamDiskLog.Info("mounted " + root + " (" + sizeMb + " MB) through the elevated task");
                         return root;
                     }
-                    RamDiskLog.Warn("the task produced no drive - the helper said: " + ReadResult());
+
+                    // No drive: now the helper's own words are worth waiting for, because something
+                    // went wrong and that file is the only place it says what.
+                    RamDiskLog.Warn("no drive appeared within " + MountSeconds + "s - waiting for the"
+                                    + " helper to say why");
+                    var said = WaitForResult(ct);
+                    _runInFlight = said == null;
+                    RamDiskLog.Warn("the task produced no drive - the helper said: "
+                                    + (said ?? "nothing at all, which means it is still running or was"
+                                               + " refused because another run is in flight"));
                     return null;
                 }
 
@@ -420,11 +462,13 @@ namespace LbIntegrations.RamDisk
                 var task = InstalledTaskName();
                 if (task != null)
                 {
-                    WriteCfg("umount", letter, 0);
-                    RunTask(task, ct);
-                    for (int i = 0; i < 30 && Directory.Exists(driveRoot); i++) Thread.Sleep(100);
-                    bool gone = !Directory.Exists(driveRoot);
+                    if (!StartRun(task, "umount", letter, 0, ct)) return false;
+
+                    bool gone = WaitFor(() => !Directory.Exists(driveRoot), UnmountSeconds, ct);
                     RamDiskLog.Info("unmounted " + driveRoot + " through the task (gone=" + gone + ")");
+                    if (!gone)
+                        RamDiskLog.Warn(driveRoot + " is still there after " + UnmountSeconds
+                                        + "s - the helper will say why in ramdisk.result when it ends");
                     return gone;
                 }
 
@@ -523,7 +567,84 @@ namespace LbIntegrations.RamDisk
         private static void RunTask(string taskName, CancellationToken ct)
             => RunQuiet(SchTasks, new[] { "/run", "/tn", taskName });
 
-        /// <summary>The helper's last word, for a log line. Never the thing that decides.</summary>
+        /// <summary>Ask the task to do one thing, having first made sure it is free to be asked.
+        ///
+        /// THE WAIT IS HERE AND NOWHERE ELSE. This task ignores a second instance instead of queueing
+        /// it, so asking while the previous run is still going gets 0x800710E0 and silence. In real
+        /// use the previous run finished long ago and this returns at once; back to back, it pays the
+        /// minute and a half that the caller would otherwise have paid on every single mount.</summary>
+        private static bool StartRun(string task, string action, char drive, int sizeMb, CancellationToken ct)
+        {
+            if (_runInFlight)
+            {
+                RamDiskLog.Info("waiting for the previous helper run to finish before asking again");
+                var previous = WaitForResult(ct);
+                _runInFlight = false;
+                if (previous == null)
+                {
+                    RamDiskLog.Warn("the previous run never reported within " + HelperSeconds
+                                    + "s - not asking for another, it would be refused");
+                    return false;
+                }
+                RamDiskLog.Info("the previous run ended: " + previous);
+            }
+
+            WriteCfg(action, drive, sizeMb);
+            ClearResult();
+            RunTask(task, ct);
+            _runInFlight = true;
+            return true;
+        }
+
+        /// <summary>Poll a condition, in quarter seconds, up to a ceiling.</summary>
+        private static bool WaitFor(Func<bool> done, int seconds, CancellationToken ct)
+        {
+            for (int i = 0; i < seconds * 4; i++)
+            {
+                try { if (done()) return true; } catch { }
+                if (ct.IsCancellationRequested) return false;
+                Thread.Sleep(250);
+            }
+            try { return done(); } catch { return false; }
+        }
+
+        /// <summary>Remove the previous run's answer, so the next one cannot be mistaken for it.</summary>
+        private static void ClearResult()
+        {
+            try { var r = ResultPath; if (r != null && File.Exists(r)) File.Delete(r); }
+            catch (Exception ex) { RamDiskLog.Warn("could not clear ramdisk.result", ex); }
+        }
+
+        /// <summary>Wait for the helper to say it is done, and return what it said - or null when it
+        /// never did.
+        ///
+        /// THIS IS THE COMPLETION SIGNAL. The helper writes this file last, after imdisk has
+        /// returned, so it is the only thing that means the run is over. Waiting on the drive
+        /// instead returns while the volume is still being formatted and leaves the task busy,
+        /// which is how a perfectly good unmount gets refused.
+        ///
+        /// Polled rather than watched: a FileSystemWatcher on a folder an elevated task writes to is
+        /// more machinery than a quarter-second poll deserves.</summary>
+        private static string WaitForResult(CancellationToken ct)
+        {
+            var path = ResultPath;
+            if (path == null) return null;
+            for (int i = 0; i < HelperSeconds * 4; i++)
+            {
+                if (ct.IsCancellationRequested) return null;
+                if (File.Exists(path))
+                {
+                    // Written in one call, but read a beat later anyway: an empty read here would be
+                    // a torn write, and waiting one more tick costs nothing.
+                    var said = ReadResult();
+                    if (!string.IsNullOrWhiteSpace(said) && said != "<nothing>") return said;
+                }
+                Thread.Sleep(250);
+            }
+            return null;
+        }
+
+        /// <summary>The helper's last word, verbatim.</summary>
         public static string ReadResult()
         {
             try

@@ -98,7 +98,11 @@ namespace LbIntegrations.Probe
                 if (!Check("it is formatted NTFS", string.Equals(Safe(() => drive.DriveFormat), "NTFS",
                                                                  StringComparison.OrdinalIgnoreCase))) bad++;
 
-                Console.WriteLine("  helper    " + RamDrive.ReadResult());
+                // Usually "<nothing>" at this point, and that is RIGHT: the drive is usable in a
+                // third of a second while the helper runs on for another minute and a half. Its
+                // verdict lands later, and the unmount below is what waits for it.
+                Console.WriteLine("  helper    " + RamDrive.ReadResult()
+                                  + "   (empty here is expected - it finishes long after the drive works)");
             }
             catch (Exception ex)
             {
