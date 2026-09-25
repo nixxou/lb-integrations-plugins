@@ -30,6 +30,14 @@
     <ProjectReference Include="..\Catalog\Catalog.csproj" />
   </ItemGroup>
 
+
+  <ItemGroup>
+    <!-- PARAM.SFO, compiled in rather than referenced. One format, two emulators: PPSSPP reads it for
+         a DISC_ID, Vita3K reads the same container inside a .vpk for the TITLE_ID and CATEGORY that
+         decide where a piece of content is installed. See src\Shared.Psf\ParamSfo.cs. -->
+    <Compile Include="..\Shared.Psf\**\*.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- THE SHARED ROW INJECTION, compiled in rather than referenced. Every plugin of this pack
          publishes rows into LaunchBox's emulator catalogue, and the machinery is identical for every one of

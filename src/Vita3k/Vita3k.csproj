@@ -31,6 +31,22 @@
   </ItemGroup>
 
 
+
+  <ItemGroup>
+    <!-- PARAM.SFO, compiled in rather than referenced. One format, two emulators: PPSSPP reads it for
+         a DISC_ID, Vita3K reads the same container inside a .vpk for the TITLE_ID and CATEGORY that
+         decide where a piece of content is installed. See src\Shared.Psf\ParamSfo.cs. -->
+    <Compile Include="..\Shared.Psf\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- THE RAM DISK, compiled in rather than referenced - and pointed at LiteBox's machinery rather
+         than standing up its own. A session is played on a disposable Vita, and when the machine can
+         hold it that Vita lives in memory. Optional in every sense: without ImDisk, or without the
+         RAM to spare, the same session runs from a folder. See src\Shared.RamDisk\RamDrive.cs. -->
+    <Compile Include="..\Shared.RamDisk\**\*.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- THE SNAPSHOT ENGINE, compiled in rather than referenced. A walk of a directory tree, the
          difference against a reference walk, and a deterministic zip to carry it. It is the DSi

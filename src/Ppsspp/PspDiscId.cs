@@ -24,6 +24,7 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.IO.Compression;
 using System.Text;
+using LbIntegrations.Psf;
 
 namespace LbIntegrations.Ppsspp
 {

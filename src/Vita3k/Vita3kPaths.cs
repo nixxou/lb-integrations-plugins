@@ -124,6 +124,46 @@ namespace LbIntegrations.Vita3k
             }
         }
 
+        /// <summary>Is Vita3K running right now?
+        ///
+        /// Prefix and not equality, because a build can be published under a decorated name, and
+        /// because this is the only signal that a session is over - measured next door, LaunchBox 14
+        /// never calls OnGameExited.</summary>
+        public static bool EmulatorRunning()
+        {
+            try
+            {
+                foreach (var p in System.Diagnostics.Process.GetProcesses())
+                {
+                    string name;
+                    try { name = p.ProcessName; } catch { continue; }
+                    if (name != null && name.StartsWith("Vita3K", StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+                return false;
+            }
+            catch (Exception ex) { Log.Warn("could not look at the process list", ex); return false; }
+        }
+
+        /// <summary>The LaunchBox root an install sits under - the folder holding Core\ and Data\.
+        /// Walked up from the emulator rather than from our own assembly, because the shared RAM disk
+        /// code needs the root of the install this emulator belongs to.</summary>
+        public static string LaunchBoxRootOf(Vita3kLayout layout)
+        {
+            try
+            {
+                var dir = layout?.InstallDir;
+                for (int i = 0; i < 6 && !string.IsNullOrEmpty(dir); i++)
+                {
+                    if (Directory.Exists(Path.Combine(dir, "Core")) && Directory.Exists(Path.Combine(dir, "Data")))
+                        return dir;
+                    dir = Path.GetDirectoryName(dir);
+                }
+            }
+            catch (Exception ex) { Log.Warn("could not locate the LaunchBox root", ex); }
+            return null;
+        }
+
         /// <summary>The build number of an installed Vita3K, or null.
         ///
         /// It is the FOURTH FIELD of the Win32 file version, and that is not a coincidence to be

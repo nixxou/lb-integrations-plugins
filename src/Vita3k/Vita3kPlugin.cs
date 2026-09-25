@@ -57,6 +57,11 @@ namespace LbIntegrations.Vita3k
             // kill switches to read. See LbipLog.
             LbipLog.Use(Log.Info, Log.Warn, Log.Disabled, () => Log.Tracing);
 
+            // The other three shared folders, same idea: none of them can name this plugin's Log.
+            LbIntegrations.Snapshot.SnapLog.Use(Log.Info, Log.Warn);
+            LbIntegrations.RamDisk.RamDiskLog.Use(Log.Info, Log.Warn);
+            LbIntegrations.Psf.ParamSfo.Complain = Log.Warn;
+
             // As early as possible: the patch only sees connections opened AFTER it is installed,
             // and LaunchBox reads its metadata the moment a window asks for it.
             LbipRowInjection.Install("com.nixxou.lbip.vita3k", MetadataRows());
@@ -75,25 +80,31 @@ namespace LbIntegrations.Vita3k
         /// <summary>What a host's emulator catalogue should say about this pack's Vita3K, published
         /// through the row injection rather than written into their database - see LbipRowInjection.
         ///
-        /// The command line and the binary name are LaunchBox's own values, kept deliberately: this
-        /// plugin has measured nothing that says otherwise, and -F -r is what the emulator documents.
-        /// The extensions are left EMPTY, as theirs are, and that is a real statement rather than a
-        /// gap - a Vita "rom" is a title id of an app already installed under ux0\app, not a file
-        /// with an extension. Declaring .vpk here would claim a launch model this plugin does not
-        /// yet implement.</summary>
+        /// The command line stays LaunchBox's own -F -r: fullscreen, and the title id of an app under
+        /// ux0\app. What changed is who puts that app there - this plugin does, onto a Vita it builds
+        /// for the session, which is why the extensions are no longer empty.
+        ///
+        /// THE EXTENSIONS ARE .vpk AND .zip, and AutoExtract stays FALSE. LaunchBox must not unpack
+        /// the archive on our behalf: we read its param.sfo to learn where the content belongs and
+        /// unpack it onto the disposable Vita ourselves. An archive already unpacked somewhere else
+        /// is a folder nobody asked for.</summary>
         private static IEnumerable<LbCatalogEmulator> MetadataRows()
         {
+            const string extensions = ".vpk; .zip";
+
             yield return new LbCatalogEmulator
             {
                 Name = PackName,
                 CommandLine = DefaultCommandLine,
-                ApplicableFileExtensions = null,
+                ApplicableFileExtensions = extensions,
                 Url = "https://vita3k.org/",
                 BinaryFileName = Vita3kPaths.ExecutableNames[0],
                 AutoExtract = false,
                 Platforms =
                 {
-                    new LbCatalogPlatform { Platform = VitaPlatform, Recommended = true },
+                    new LbCatalogPlatform { Platform = VitaPlatform,
+                                            ApplicableFileExtensions = extensions,
+                                            Recommended = true },
                 },
             };
         }
@@ -395,7 +406,17 @@ namespace LbIntegrations.Vita3k
                         failed.Add(package.Directory);
                 }
 
-                if (failed.Count == 0) return " Firmware installed (" + string.Join(", ", done) + ").";
+                if (failed.Count == 0)
+                {
+                    // AND IT BECOMES THE BASE EVERY SESSION IS BUILT FROM. Done here rather than at
+                    // the first launch because this is the one moment the filesystem holds the
+                    // firmware and nothing else - a game installed first would be baked into it.
+                    if (!Vita3kWorkspace.AdoptFirmware(layout, out var why))
+                        return " Firmware installed, but it could not be put aside as the pristine"
+                               + " console: " + why;
+                    return " Firmware installed (" + string.Join(", ", done)
+                           + ") and put aside as the pristine console.";
+                }
                 if (done.Count == 0)
                     return " No firmware could be installed - Vita3K will not run a game until it has"
                            + " some. The log says which download failed.";
@@ -454,6 +475,14 @@ namespace LbIntegrations.Vita3k
             => Array.Empty<EmulatorBiosFile>();
 
         // -- paths ----------------------------------------------------------
+
+        /// <summary>Read a property of a host object without trusting it. The host can throw from a
+        /// getter - measured next door - and a plugin that lets that escape becomes a plugin that
+        /// silently does nothing.</summary>
+        internal static T Safe<T>(Func<T> f)
+        {
+            try { return f(); } catch { return default; }
+        }
 
         private static bool Cancelled(InstallEmulatorArgs args)
         {

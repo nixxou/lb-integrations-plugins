@@ -1,4 +1,9 @@
-// PARAM.SFO — the PSP's key/value metadata blob.
+// PARAM.SFO - the key/value metadata blob Sony used on the PSP and kept on the Vita.
+//
+// SHARED BECAUSE IT IS ONE FORMAT, not because two plugins happened to need something similar. PPSSPP
+// reads it for a DISC_ID and a save title; Vita3K reads the very same container inside a .vpk for
+// TITLE_ID and CATEGORY, which is what decides whether a piece of content is a game, a patch or a
+// DLC. A decoder copied twice is a decoder that gets fixed once.
 //
 // It sits in every save directory (where it carries the save's title) and in every game image
 // (where it carries the DISC_ID). Format read from PPSSPP's own Core/ELF/ParamSFO.cpp at tag
@@ -28,10 +33,22 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-namespace LbIntegrations.Ppsspp
+namespace LbIntegrations.Psf
 {
     internal sealed class ParamSfo
     {
+        /// <summary>Where this folder complains, without naming whose log it is.
+        ///
+        /// The same seam as LbipLog and DsiLog, shrunk to the one thing this file needs: it is
+        /// compiled into more than one plugin and each has its own static Log in its own namespace.
+        /// Not wired is a valid state - a malformed SFO is then simply a null, which is what every
+        /// caller already handles.</summary>
+        internal static Action<string, Exception> Complain;
+
+        private static void Warn(string message, Exception ex)
+        {
+            try { Complain?.Invoke("param.sfo: " + message, ex); } catch { }
+        }
         private readonly Dictionary<string, string> _strings =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, uint> _ints =
@@ -62,7 +79,7 @@ namespace LbIntegrations.Ppsspp
                 if (!File.Exists(path)) return null;
                 return Parse(File.ReadAllBytes(path));
             }
-            catch (Exception ex) { Log.Warn("could not read " + path, ex); return null; }
+            catch (Exception ex) { Warn("could not read " + path, ex); return null; }
         }
 
         /// <summary>Parses, or returns null when the bytes are not a usable SFO. Never throws.</summary>
@@ -122,7 +139,7 @@ namespace LbIntegrations.Ppsspp
                 }
                 return sfo;
             }
-            catch (Exception ex) { Log.Warn("malformed PARAM.SFO", ex); return null; }
+            catch (Exception ex) { Warn("malformed PARAM.SFO", ex); return null; }
         }
 
         private static string ReadCString(byte[] data, int start, int max = int.MaxValue)

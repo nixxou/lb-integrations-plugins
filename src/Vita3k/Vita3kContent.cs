@@ -1,0 +1,233 @@
+// Installing a .vpk into the virtual Vita filesystem, ourselves.
+//
+// WHY OURSELVES, WHEN VITA3K CAN DO IT. Because it cannot do it WITHOUT ALSO PLAYING THE GAME.
+// Measured in main.cpp:218-250: a .vpk, .zip or content folder handed to the emulator is installed,
+// the first piece of content whose category is "gd" is found, and cfg.run_app_path is set to its
+// title id - so it boots. There is no flag to stop after installing; even --console ends at
+// MainWindow and app.exec().
+//
+// And the whole point of the disposable NAND is that the baseline walk happens BETWEEN the install
+// and the session. A game that has already started has already written to its save directory, and
+// whatever it wrote would be indistinguishable from the install.
+//
+// SO WE DO THE INSTALL, AND IT IS SMALL. A .vpk is a zip. Its sce_sys/param.sfo carries TITLE_ID and
+// CATEGORY, and those two decide the destination - the table is interface.cpp:112-134:
+//
+//     gd (or anything else)   ux0/app/<TITLE_ID>            the game
+//     gp                      ux0/patch/<TITLE_ID>          an update, and the app must exist first
+//     ac                      ux0/addcont/<TITLE_ID>/<ID>   downloadable content
+//
+// That is also exactly where updates and DLC will plug in later, which is the second reason to own
+// this step rather than borrow it.
+//
+// NOT HANDLED, and said rather than silently mishandled: themes (category ac with a theme.xml),
+// .pkg archives, which need a zRIF key, and .vci. Each is a different shape of install.
+
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using LbIntegrations.Psf;
+using SharpCompress.Archives;
+
+namespace LbIntegrations.Vita3k
+{
+    /// <summary>What an archive says it is.</summary>
+    internal sealed class VitaContent
+    {
+        public string TitleId;
+        public string Category;
+        public string ContentId;
+        public string Title;
+
+        /// <summary>The path inside the archive that the content starts at - "" when param.sfo is at
+        /// sce_sys/param.sfo, or "foo/" when the archive wraps everything in a folder.</summary>
+        public string Root = "";
+
+        public bool IsGame => !IsPatch && !IsAddon;
+        public bool IsPatch => (Category ?? "").Contains("gp", StringComparison.OrdinalIgnoreCase);
+        public bool IsAddon => string.Equals(Category, "ac", StringComparison.OrdinalIgnoreCase);
+
+        public override string ToString()
+            => (TitleId ?? "?") + " [" + (Category ?? "?") + "]" + (Title != null ? " " + Title : "");
+    }
+
+    internal static class Vita3kContent
+    {
+        private const string SfoPath = "sce_sys/param.sfo";
+
+        /// <summary>Read what an archive holds, WITHOUT unpacking it. Null when it is not something we
+        /// know how to install.</summary>
+        public static VitaContent Describe(string archivePath, out string error)
+        {
+            error = null;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(archivePath) || !File.Exists(archivePath))
+                { error = "there is no archive at " + archivePath; return null; }
+
+                using var archive = ArchiveFactory.Open(archivePath);
+                foreach (var entry in archive.Entries)
+                {
+                    if (entry.IsDirectory) continue;
+                    var key = (entry.Key ?? "").Replace('\\', '/');
+                    if (!key.EndsWith(SfoPath, StringComparison.OrdinalIgnoreCase)) continue;
+
+                    // The content starts where sce_sys/ does, whatever wraps it.
+                    var root = key.Substring(0, key.Length - SfoPath.Length);
+
+                    using var stream = entry.OpenEntryStream();
+                    using var memory = new MemoryStream();
+                    stream.CopyTo(memory);
+                    var sfo = ParamSfo.Parse(memory.ToArray());
+                    if (sfo == null) { error = "the param.sfo in " + Path.GetFileName(archivePath) + " is malformed"; return null; }
+
+                    var content = new VitaContent
+                    {
+                        Root = root,
+                        TitleId = sfo.FirstString("TITLE_ID"),
+                        Category = sfo.FirstString("CATEGORY"),
+                        ContentId = sfo.FirstString("CONTENT_ID"),
+                        Title = sfo.FirstString("STITLE", "TITLE"),
+                    };
+                    if (string.IsNullOrWhiteSpace(content.TitleId))
+                    { error = "the param.sfo carries no TITLE_ID"; return null; }
+                    return content;
+                }
+
+                error = Path.GetFileName(archivePath) + " has no " + SfoPath + " in it - not a .vpk";
+                return null;
+            }
+            catch (Exception ex)
+            {
+                error = ex.GetType().Name + ": " + ex.Message;
+                Log.Warn("could not read " + archivePath, ex);
+                return null;
+            }
+        }
+
+        /// <summary>Where a piece of content belongs under the virtual filesystem, relative to it.
+        /// Null when we do not install this kind.</summary>
+        public static string DestinationFor(VitaContent content, out string why)
+        {
+            why = null;
+            if (content == null) { why = "nothing to place"; return null; }
+
+            if (content.IsPatch) return "ux0/patch/" + content.TitleId;
+
+            if (content.IsAddon)
+            {
+                // Vita3K keeps only the tail of CONTENT_ID, from index 20 - the part before it
+                // repeats the title id and the region.
+                var id = content.ContentId ?? "";
+                if (id.Length <= 20) { why = "this add-on carries no usable CONTENT_ID"; return null; }
+                return "ux0/addcont/" + content.TitleId + "/" + id.Substring(20);
+            }
+
+            return "ux0/app/" + content.TitleId;
+        }
+
+        /// <summary>Unpack an archive into the virtual filesystem. Returns what was installed, or
+        /// null with a reason.
+        ///
+        /// A PATCH REFUSES TO GO IN WITHOUT ITS APP, which is Vita3K's own rule ("Install app before
+        /// patch"): a patch tree on its own is not a game, and installing it would leave something
+        /// that looks playable and is not.</summary>
+        public static VitaContent Install(string archivePath, string vitaFs, out string error)
+        {
+            error = null;
+            try
+            {
+                var content = Describe(archivePath, out error);
+                if (content == null) return null;
+
+                var relative = DestinationFor(content, out var why);
+                if (relative == null) { error = why; return null; }
+
+                var destination = Path.Combine(vitaFs, relative.Replace('/', Path.DirectorySeparatorChar));
+
+                if (content.IsPatch)
+                {
+                    var app = Path.Combine(vitaFs, "ux0", "app", content.TitleId);
+                    if (!Directory.Exists(app) || !Directory.EnumerateFileSystemEntries(app).Any())
+                    { error = "install the game before its update (" + content.TitleId + ")"; return null; }
+                }
+
+                Directory.CreateDirectory(destination);
+                int files = Unpack(archivePath, content.Root, destination);
+                Log.Info("installed " + content + " - " + files + " file(s) into " + relative);
+                return content;
+            }
+            catch (Exception ex)
+            {
+                error = ex.GetType().Name + ": " + ex.Message;
+                Log.Warn("could not install " + archivePath, ex);
+                return null;
+            }
+        }
+
+        /// <summary>Extract everything under <paramref name="root"/> into the destination. Entries
+        /// whose path escapes it are refused rather than trusted - an archive is somebody else's
+        /// file.</summary>
+        private static int Unpack(string archivePath, string root, string destination)
+        {
+            var full = Path.GetFullPath(destination);
+            int files = 0;
+
+            using var archive = ArchiveFactory.Open(archivePath);
+            foreach (var entry in archive.Entries)
+            {
+                if (entry.IsDirectory) continue;
+                var key = (entry.Key ?? "").Replace('\\', '/');
+                if (root.Length > 0)
+                {
+                    if (!key.StartsWith(root, StringComparison.OrdinalIgnoreCase)) continue;
+                    key = key.Substring(root.Length);
+                }
+                if (key.Length == 0) continue;
+
+                var target = Path.GetFullPath(Path.Combine(full, key.Replace('/', Path.DirectorySeparatorChar)));
+                if (!target.StartsWith(full, StringComparison.OrdinalIgnoreCase))
+                    throw new IOException("archive entry escapes the destination: " + entry.Key);
+
+                Directory.CreateDirectory(Path.GetDirectoryName(target));
+                using (var source = entry.OpenEntryStream())
+                using (var file = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None))
+                    source.CopyTo(file);
+                files++;
+            }
+            return files;
+        }
+
+        /// <summary>The uncompressed size of an archive, read from its directory WITHOUT unpacking
+        /// it. This is what the working disk has to be big enough for.</summary>
+        public static long UncompressedSize(string archivePath)
+        {
+            try
+            {
+                using var archive = ArchiveFactory.Open(archivePath);
+                long total = 0;
+                foreach (var entry in archive.Entries)
+                    if (!entry.IsDirectory) total += Math.Max(0, entry.Size);
+                return total;
+            }
+            catch (Exception ex) { Log.Warn("could not size " + archivePath, ex); return -1; }
+        }
+
+        /// <summary>The extensions this plugin will install. Kept in one place because the catalogue
+        /// row publishes them and the launch path checks them.</summary>
+        public static readonly string[] Extensions = { ".vpk", ".zip" };
+
+        public static bool Installable(string path)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(path)) return false;
+                if (Directory.Exists(path)) return true;      // a content folder, as Vita3K accepts
+                var ext = Path.GetExtension(path);
+                return Extensions.Any(e => string.Equals(e, ext, StringComparison.OrdinalIgnoreCase));
+            }
+            catch { return false; }
+        }
+    }
+}
