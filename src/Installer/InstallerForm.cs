@@ -11,6 +11,11 @@ namespace NixxIntegrations;
 
 internal sealed class InstallerForm : Form
 {
+    // EVERY CONTROL IS PLACED BY HAND, so a row's height has to be counted rather than assumed. The
+    // grey paragraph below the buttons is TWO lines tall (30px from y=150), and the RAM disk heading
+    // was first put at 166 - fourteen pixels inside it, invisible behind text that paints later.
+    // Rows here, in order: 14 title, 46 root, 68 state, 104 buttons, 150 note, 192 RAM disk heading,
+    // 214 RAM disk state, 256 RAM disk buttons, 298 closing note. Leave a gap when adding one.
     private string? _root;
 
     private readonly Label _rootLabel  = new() { AutoSize = false, Location = new Point(16, 46), Size = new Size(520, 20) };
@@ -22,9 +27,9 @@ internal sealed class InstallerForm : Form
     // THE OPTIONAL HALF. Nothing in the pack needs a RAM disk today - Vita3K will - and every part
     // of it is missing on a clean machine, so it lives below the line with its own state and its own
     // button rather than mixed into the sentence above.
-    private readonly Label _ramState = new() { AutoSize = false, Location = new Point(16, 186), Size = new Size(520, 36) };
-    private readonly Button _ram     = new() { Text = "Enable RAM disk", Location = new Point(16, 228),  Width = 160, Height = 34 };
-    private readonly Button _imdisk  = new() { Text = "Get ImDisk…",     Location = new Point(186, 228), Width = 160, Height = 34 };
+    private readonly Label _ramState = new() { AutoSize = false, Location = new Point(16, 214), Size = new Size(520, 36) };
+    private readonly Button _ram     = new() { Text = "Enable RAM disk", Location = new Point(16, 256),  Width = 160, Height = 34 };
+    private readonly Button _imdisk  = new() { Text = "Get ImDisk…",     Location = new Point(186, 256), Width = 160, Height = 34 };
 
     public InstallerForm()
     {
@@ -32,7 +37,7 @@ internal sealed class InstallerForm : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(552, 316);
+        ClientSize = new Size(552, 346);
 
         Controls.Add(new Label
         {
@@ -54,7 +59,7 @@ internal sealed class InstallerForm : Form
         Controls.Add(new Label
         {
             AutoSize = false,
-            Location = new Point(16, 166),
+            Location = new Point(16, 192),
             Size = new Size(520, 20),
             Font = new Font(Font, FontStyle.Bold),
             Text = "Optional — RAM disk",
@@ -62,7 +67,7 @@ internal sealed class InstallerForm : Form
         Controls.Add(new Label
         {
             AutoSize = false,
-            Location = new Point(16, 270),
+            Location = new Point(16, 298),
             Size = new Size(520, 36),
             ForeColor = SystemColors.GrayText,
             Text = "Shared with LiteBox: the same helper, in the same folder, run by the same "
