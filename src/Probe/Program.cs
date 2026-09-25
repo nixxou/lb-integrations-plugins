@@ -32,9 +32,17 @@ namespace LbIntegrations.Probe
             // naming a plugin that has nothing to do with the question.
             if (Has(args, "--ramdisk")) return RamDiskCheck.Run(Arg(args, "--lb")) ? 0 : 1;
 
+            // The snapshot engine needs no plugin and no emulator either: it is a walk, a
+            // difference and a zip, all on a tree this forges under the temp folder.
+            if (Has(args, "--snapshot")) return SnapshotCheck.Run() ? 0 : 1;
+
             if (args.Length == 0 || args[0].StartsWith("-"))
             {
-                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--melonds] [--nogba] [--melonds-real ...] [--melonds-describe --rom <f>] [--rows] [--hotkeys] [--saves --emu <exe> --rom <rom>] [--ahk --emu <exe>]\n       Probe --ramdisk --lb <LaunchBox root>");
+                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--melonds] [--nogba] [--melonds-real ...] [--melonds-describe --rom <f>] [--rows] [--hotkeys] [--saves --emu <exe> --rom <rom>] [--ahk --emu <exe>]");
+                // These two take no plugin at all - they exercise shared sources compiled
+                // into this probe, not anything loaded from a DLL.
+                Console.Error.WriteLine("       Probe --ramdisk --lb <LaunchBox root>");
+                Console.Error.WriteLine("       Probe --snapshot");
                 return 2;
             }
 

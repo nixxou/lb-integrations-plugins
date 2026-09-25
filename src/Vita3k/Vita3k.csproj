@@ -30,6 +30,17 @@
     <ProjectReference Include="..\Catalog\Catalog.csproj" />
   </ItemGroup>
 
+
+  <ItemGroup>
+    <!-- THE SNAPSHOT ENGINE, compiled in rather than referenced. A walk of a directory tree, the
+         difference against a reference walk, and a deterministic zip to carry it. It is the DSi
+         save model with the NAND taken out: melonDS needs a native FAT engine because its NAND is
+         an eMMC image, while this one works on an ordinary filesystem and needs nothing native at
+         all. MIT, deliberately - nothing in it touches melonDS, so a plugin using it does not
+         become GPL. See src\Shared.Snapshot\SnapWalk.cs. -->
+    <Compile Include="..\Shared.Snapshot\**\*.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- THE SHARED ROW INJECTION, compiled in rather than referenced. Every plugin of this pack
          publishes rows into LaunchBox's emulator catalogue, and the machinery is identical for every one of
