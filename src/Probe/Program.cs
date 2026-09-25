@@ -38,7 +38,7 @@ namespace LbIntegrations.Probe
 
             if (args.Length == 0 || args[0].StartsWith("-"))
             {
-                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--melonds] [--nogba] [--melonds-real ...] [--melonds-describe --rom <f>] [--rows] [--hotkeys] [--saves --emu <exe> --rom <rom>] [--ahk --emu <exe>]");
+                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--melonds] [--nogba] [--melonds-real ...] [--melonds-describe --rom <f>] [--rows] [--hotkeys] [--saves --emu <exe> --rom <rom>] [--ahk --emu <exe>] [--vita3k]");
                 // These two take no plugin at all - they exercise shared sources compiled
                 // into this probe, not anything loaded from a DLL.
                 Console.Error.WriteLine("       Probe --ramdisk --lb <LaunchBox root>");
@@ -503,6 +503,14 @@ namespace LbIntegrations.Probe
                 if (!MelonDsCheck.Run(plugin)) return 1;
             }
 
+            // The disposable Vita, on a forged install: a .vpk read without unpacking, a console
+            // built from the pristine firmware, a session captured, and the console rebuilt around
+            // its save. Drives the loaded assembly by reflection, so it tests what ships.
+            if (Has(args, "--vita3k"))
+            {
+                if (!Vita3kCheck.Run(asm)) return 1;
+            }
+
             bool nogba = Has(args, "--nogba");
             if (nogba)
             {
@@ -544,6 +552,7 @@ namespace LbIntegrations.Probe
             if (nogba) wroteTo.Add("a forged no$gba in the temp folder");
             if (Has(args, "--melonds-real")) wroteTo.Add("COPIES of the NANDs given, in the temp folder");
             if (hotkeys) wroteTo.Add("a forged Flycast in the temp folder (keyboard mapping)");
+            if (Has(args, "--vita3k")) wroteTo.Add("a forged Vita3K in the temp folder, junction included");
             Console.WriteLine(wroteTo.Count == 0
                 ? "done. Nothing was written."
                 : "done. This run WROTE to: " + string.Join(", ", wroteTo) + ".");

@@ -15,11 +15,12 @@ is published by Unbroken Software), so these are installed by hand.
 | `src/Flycast` | Flycast | Sega Dreamcast, Sega Naomi, Sega Naomi 2, Sammy Atomiswave | download / update, BIOS, RetroAchievements, launch, save management |
 | `src/MelonDs` | melonDS | Nintendo DS | download / update, BIOS, DS/DSi mode, per-title DSi NAND, save management (GPL-3.0) |
 | `src/NoGba` | no$gba | Nintendo Game Boy Advance, Nintendo DS | download / update, BIOS, **raw save format**, save management |
-| `src/Vita3k` | Vita3K | Sony Playstation Vita | download / update, firmware — **install only, for now** |
+| `src/Vita3k` | Vita3K | Sony Playstation Vita | download / update, firmware, **a disposable console per session**, save management |
 
-Two folders are shared sources rather than plugins: `src/Shared.Dsi` (the DSi NAND engine, used by
-melonDS and no$gba) and `src/Shared.Lbip` (the row injection, used by all six). `src/Shared.RamDisk`
-joins them — see below.
+Five folders are shared sources rather than plugins: `src/Shared.Lbip` (the row injection, used by
+all six), `src/Shared.Dsi` (the DSi NAND engine, melonDS and no$gba), `src/Shared.Psf` (PARAM.SFO,
+PPSSPP and Vita3K), `src/Shared.RamDisk` (below) and `src/Shared.Snapshot` (the walk, the difference
+and the deterministic container — Vita3K today, anything that needs a session diff tomorrow).
 
 ## Building
 
@@ -1371,6 +1372,78 @@ is the primary key, and the `Nixx-` prefix means the question of case-insensitiv
 comes up. An official Vita3K integration is in soft-launch on their side, which makes the prefix
 load-bearing here rather than decorative: an official plugin would install into `Emulators\Vita3K`,
 and ours keeps to `Emulators\Nixx-Vita3K`.
+
+### A disposable console per session
+
+**Nothing is ever installed for good.** Every launch builds a Vita from a pristine firmware, installs
+the game onto it, plays, and keeps only what changed. It is melonDS's DSiWare model transposed — and
+without a line of native code, because the DSi forces an eMMC image with FAT inside it while Vita3K
+reads an ordinary directory tree.
+
+```
+<install>\portable\nand-initiale\        the firmware, as it came out of Sony's packages
+<install>\portable\nand-initiale.manifest its walk, taken once
+<install>\portable\work\                 the working tree when there is no RAM disk
+<install>\portable\fs                     a JUNCTION to whichever of the two is in play
+<install>\portable\work.title             which game the working tree currently holds
+<install>\portable\work.reference         the walk of that tree BEFORE the session
+<install>\portable\saves\<TITLE_ID>\state.vitasav
+```
+
+**There is no headless install, and that decided the shape of all of it.** Measured in
+`main.cpp:218-250`: a `.vpk` handed to Vita3K is installed, the first content of category `gd` is
+found, and `run_app_path` is set to its title id — so it boots. Even `--console` ends at `MainWindow`
+and `app.exec()`. But the baseline walk has to happen BETWEEN the install and the session, or what the
+game just wrote is indistinguishable from what the install put there.
+
+**So the plugin installs the game itself**, and that turns out to be small. A `.vpk` is a zip, its
+`sce_sys/param.sfo` carries `TITLE_ID` and `CATEGORY`, and those two decide the destination
+(`interface.cpp:112-134`): `gd` → `ux0/app`, `gp` → `ux0/patch` (and it refuses without its app, as
+Vita3K does), `ac` → `ux0/addcont`. It is also exactly where updates and DLC will plug in.
+
+**The order of a launch is the point**, and it is melonDS's order:
+
+```
+copy the base -> install the game -> TAKE THE REFERENCE -> restore the save -> write work.title
+```
+
+A reference taken after the restore would describe the save as part of the install, and the next
+capture would find nothing at all. `work.title` is written last because a marker naming a game whose
+save was never put back would make the next capture overwrite a good save with a blank one. The probe
+asserts both.
+
+**The RAM check is against free PHYSICAL memory.** An ImDisk drive with no image behind it is a `vm`
+disk, backed by virtual memory: one bigger than the RAM actually free does not fail, it **pages to the
+system drive**. We would be writing the SSD twice while believing we were sparing it, and more slowly
+than a plain folder. Without ImDisk, or without the room, the fallback is `work\` and the rest of the
+path is identical.
+
+**`work\` is not cleared when a session ends.** It keeps the current game's identity in `work.title`,
+and it is swept only when a DIFFERENT game starts. Relaunching the same game mounts nothing, copies
+nothing and reinstalls nothing.
+
+**`portable\fs` is a junction**, because `portable\` overrides `pref-path` (`config.cpp:456-458`) and
+that is the only way to move the filesystem. A junction and not a symbolic link: a junction needs
+neither administrator nor developer mode.
+
+**And the capture is no longer optional.** For the DSi it could be lazy — the image sat on disk and
+could be read later. Nothing in RAM survives anything, so the session comes out before the drive does.
+The process watcher is the only reliable signal (LaunchBox 14 never calls `OnGameExited`, measured),
+and the wait is the DSi's three steps: a floor of one second always paid, the emulator gone, the tree
+still, and a ceiling of five seconds past which **nothing is read** and `work.pending` says so.
+
+```
+dotnet run --project src\Probe -c Release -- <merged>\Vita3k.dll --vita3k
+dotnet run --project src\Probe -c Release -- --snapshot
+```
+
+The first forges an install, a firmware and a `.vpk`, then builds a console, captures a session,
+rebuilds around the save and checks that a different game is what clears the tree. The second is the
+engine on its own: a file added, altered, deleted and a directory left empty, plus the same content
+packed twice in different orders giving the same sha256.
+
+**Not handled yet**: updates and DLC (the install step is where they go, and installed mid-session
+they would land in the difference), `.pkg` archives, which need a zRIF key, and themes.
 
 ## License
 
