@@ -23,6 +23,18 @@ one non-framework entry — `Unbroken.LaunchBox.Plugins` — so there is nothing
 its partition-base probing order are sigil's work; the C# is ours. MPL-2.0 is file-scoped copyleft:
 that one file stays MPL and its source is in this repository, which is what the licence asks.
 
+## Merged into `Vita3k.dll`
+
+| Component | Licence | Used for |
+|---|---|---|
+| [SharpCompress](https://github.com/adamhathcock/sharpcompress) | MIT | reading the release archive - Vita3K publishes a flat `.zip`, but the reader picks its decoder by sniffing rather than by extension |
+| [Lib.Harmony](https://github.com/pardeike/Harmony) | MIT | the postfixes that let LaunchBox read our emulator row |
+
+Nothing of Vita3K itself is in here. The plugin downloads their build, runs their executable and
+reads what it writes; it compiles none of their code and links none of their libraries. The PS Vita
+firmware it fetches is Sony's, fetched from Sony's own update servers at the user's request and
+never redistributed.
+
 ## Merged into `NoGba.dll`
 
 | Component | Licence | Used for |
@@ -145,8 +157,8 @@ lines of arithmetic.
 
 ## `src/Installer` - the single-file release
 
-`release/NixxIntegrations.exe` carries all five merged plugins as embedded resources, alongside the
-.NET runtime and `melonds-nand`. Two of those plugins - `MelonDs.dll` and `NoGba.dll` - are
+`release/NixxIntegrations.exe` carries every merged plugin as an embedded resource, alongside the
+.NET runtime, `melonds-nand` and the RAM disk helper. Two of those plugins - `MelonDs.dll` and `NoGba.dll` - are
 GPL-3.0-or-later, so **the installer is distributed under GPL-3.0-or-later as well**, and its
 `LICENSE.md` says so.
 
@@ -156,6 +168,11 @@ what the GPL calls mere aggregation. The cautious reading was taken because it c
 every line of the installer is this repository's own work, and nobody is worse off for it being
 GPL - and because "it is probably aggregation" is a poor thing to discover you were wrong about
 after publishing.
+
+`tools/ramdisk-helper` is this repository's own work and carries no third-party code: it reads a
+key-value file and shells to `imdisk.exe`. **ImDisk itself is never bundled** - not by this pack
+and not by LiteBox. It is a separate free download the user installs, and the only thing either
+product does with it is check whether `System32\\imdisk.exe` is there.
 
 `tmd-library.bin` travels inside `MelonDs.dll` and therefore inside the release. That is the same
 decision `.gitignore` has left open since it was written, now more visible for being published

@@ -17,6 +17,10 @@ is published by Unbroken Software), so these are installed by hand.
 | `src/NoGba` | no$gba | Nintendo Game Boy Advance, Nintendo DS | download / update, BIOS, **raw save format**, save management |
 | `src/Vita3k` | Vita3K | Sony Playstation Vita | download / update, firmware — **install only, for now** |
 
+Two folders are shared sources rather than plugins: `src/Shared.Dsi` (the DSi NAND engine, used by
+melonDS and no$gba) and `src/Shared.Lbip` (the row injection, used by all six). `src/Shared.RamDisk`
+joins them — see below.
+
 ## Building
 
 ```
@@ -128,6 +132,46 @@ NixxIntegrations.exe --status    "G:\LB1326"
 NixxIntegrations.exe --install   "G:\LB1326"
 NixxIntegrations.exe --uninstall "G:\LB1326"
 ```
+
+### The RAM disk, shared with LiteBox
+
+Optional, off by default, and **nothing in the pack needs it yet** - Vita3K will, for the temporary
+image a session is played on. It is here now because the installer is what can put it in place.
+
+LiteBox already ships this machinery, and this pack deliberately builds none of its own: the same
+helper goes into the same folder, and the same scheduled task drives it. Two elevated tasks doing one
+job would be two things for a user to understand and one of them to get wrong.
+
+Three pieces, each missing for a different reason and each repaired differently:
+
+| | what | how it gets there |
+|---|---|---|
+| **ImDisk** | the driver that makes a RAM drive | a free download, installed by the user - never bundled |
+| **the helper** | a 150 KB exe that runs `imdisk` for us | written by this installer, or by LiteBox, into `<LaunchBox>\ThirdParty\RomExtractor\ramdisk\` |
+| **the task** | `LiteBox_RomExtractor_RamDisk_<hash>`, registered at HIGHEST | one UAC prompt from the installer, then never again |
+
+The installer's window shows all four states separately (the fourth is whether a .NET runtime the
+helper can start on is present), because "not ready" on its own tells nobody what to do about it.
+The same lines come out of `--status`, and `--ramdisk` does the enabling from a script.
+
+**Whoever installs first owns the helper.** Neither side ever overwrites the other's copy: the
+contract between the two is `ramdisk.cfg`, not a build. That file carries `action`, `drive`, `size`
+and `label` - and `label` is read by the helper and then ignored, which is worth knowing before
+someone spends an evening on it.
+
+**The task name is looked up, not only computed.** It is an FNV-1a of `AppContext.BaseDirectory`, and
+a LaunchBox install can carry two LiteBox builds whose base directories differ - the light one under
+`Core\` and a single-file one at the root. So the library asks for the name it would compute, and if
+that is not there it enumerates every task carrying the prefix and keeps one whose action names this
+install's helper. Otherwise it would helpfully register a second task beside the first.
+
+```
+dotnet run --project src\Probe -c Release -- --ramdisk --lb "G:\LB1326"
+```
+
+That prints the four states and then, if they are all there, mounts 64 MB, writes a file, reads it
+back, unmounts and checks the drive is gone. It is the only test that proves the whole chain - task,
+helper, cfg, imdisk, drive letter - and it takes a few seconds.
 
 ### While developing
 

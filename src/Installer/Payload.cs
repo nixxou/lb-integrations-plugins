@@ -107,6 +107,31 @@ internal static class Payload
         new(Contract,                               Xenia,   "LbIntegrations.Catalog.dll"),
     };
 
+
+    /// <summary>Files that do NOT belong to a plugin folder.
+    ///
+    /// One thing so far: the RAM disk helper, which goes to
+    /// &lt;LaunchBox&gt;\ThirdParty\RomExtractor\ramdisk\ - the folder LITEBOX uses. That is the whole
+    /// point. LiteBox already ships this helper, one elevated scheduled task drives it, and the
+    /// ImDisk driver behind it is installed once by the user; a second copy of all that under a name
+    /// of our own would be two tasks doing one job.
+    ///
+    /// A SEPARATE TABLE RATHER THAN A FOURTH FIELD, because these files have a different lifetime.
+    /// Files is what install writes and uninstall removes; this is written only when it is ABSENT and
+    /// is never removed, because the copy sitting there may be LiteBox's and taking it away would
+    /// break its RAM disk. The paths are relative to the LaunchBox root, not to a plugin folder.</summary>
+    public static readonly (string Resource, string Relative)[] SharedFiles =
+    {
+        ("payload/ramdisk/RamDiskHelper.exe",
+             @"ThirdParty\RomExtractor\ramdisk\RamDiskHelper.exe"),
+        ("payload/ramdisk/RamDiskHelper.dll",
+             @"ThirdParty\RomExtractor\ramdisk\RamDiskHelper.dll"),
+        ("payload/ramdisk/RamDiskHelper.deps.json",
+             @"ThirdParty\RomExtractor\ramdisk\RamDiskHelper.deps.json"),
+        ("payload/ramdisk/RamDiskHelper.runtimeconfig.json",
+             @"ThirdParty\RomExtractor\ramdisk\RamDiskHelper.runtimeconfig.json"),
+    };
+
     /// <summary>What an older deploy put in the folder LaunchBox scans, rather than under native\.
     /// Left there, the BadImageFormatException dialog comes back at every start.</summary>
     public static readonly string[] StaleInFolder = { "melonds-nand.dll", "melonds-nandtool.exe" };

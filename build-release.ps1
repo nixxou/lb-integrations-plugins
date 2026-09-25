@@ -101,6 +101,26 @@ foreach ($file in @('melonds-nand.dll', 'melonds-nandtool.exe')) {
     Write-Host ("  staged native\{0,-22} {1,8:N0} KB" -f $file, ((Get-Item $source).Length / 1KB))
 }
 
+# The RAM disk helper. Built here rather than taken from a checkout, because its source is in this
+# repository (tools\ramdisk-helper) - unlike the NAND library, which needs a melonDS checkout.
+#
+# It lands in the SAME folder LiteBox uses, so the two share one helper and one elevated task. The
+# installer writes it only when it is absent, so whichever of the two arrives first owns the file.
+
+Write-Host "Building the RAM disk helper..." -ForegroundColor Cyan
+dotnet build (Join-Path $repo 'tools\ramdisk-helper\RamDiskHelper.csproj') -c $Configuration --nologo -v quiet
+if ($LASTEXITCODE -ne 0) { throw "Build failed: RamDiskHelper" }
+
+$ramDir = Join-Path $payload 'ramdisk'
+New-Item -ItemType Directory -Force -Path $ramDir | Out-Null
+foreach ($file in @('RamDiskHelper.exe', 'RamDiskHelper.dll',
+                    'RamDiskHelper.deps.json', 'RamDiskHelper.runtimeconfig.json')) {
+    $source = Join-Path $repo "tools\ramdisk-helper\bin\$Configuration\$file"
+    if (-not (Test-Path $source)) { throw "The RAM disk helper is missing: $source" }
+    Copy-Item $source (Join-Path $ramDir $file) -Force
+    Write-Host ("  staged ramdisk\{0,-24} {1,8:N0} KB" -f $file, ((Get-Item $source).Length / 1KB))
+}
+
 # ── 3. one file ─────────────────────────────────────────────────────────────
 
 if (Test-Path $release) { Remove-Item $release -Recurse -Force }

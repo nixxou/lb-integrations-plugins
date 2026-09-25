@@ -25,6 +25,17 @@
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 
+
+  <ItemGroup>
+    <!-- THE RAM DISK, compiled in rather than referenced - and pointed at LiteBox's machinery
+         rather than standing up its own. LiteBox already ships an ImDisk mount driven by ONE
+         elevated scheduled task; a second set of the same parts beside it would be two tasks, two
+         helpers and two things for a user to understand. These sources speak its protocol exactly,
+         write to the same folder and look for the same task. See src\Shared.RamDisk\RamDisk.cs for
+         the protocol, and RamDiskLog.cs for how it reaches a log without naming one. -->
+    <Compile Include="..\Shared.RamDisk\**\*.cs" />
+  </ItemGroup>
+
   <!-- THE PAYLOAD, staged by build-release.ps1 and handed over as a property.
        The project does NOT reach into the plugins' bin\ folders itself: the release script builds
        them, copies the merged DLL, the manifest and the native library into one directory, and
@@ -83,6 +94,19 @@
 
     <EmbeddedResource Include="$(PayloadDir)\LbIntegrations.Catalog.dll">
       <LogicalName>payload/LbIntegrations.Catalog.dll</LogicalName>
+    </EmbeddedResource>
+
+    <EmbeddedResource Include="$(PayloadDir)\ramdisk\RamDiskHelper.exe">
+      <LogicalName>payload/ramdisk/RamDiskHelper.exe</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\ramdisk\RamDiskHelper.dll">
+      <LogicalName>payload/ramdisk/RamDiskHelper.dll</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\ramdisk\RamDiskHelper.deps.json">
+      <LogicalName>payload/ramdisk/RamDiskHelper.deps.json</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\ramdisk\RamDiskHelper.runtimeconfig.json">
+      <LogicalName>payload/ramdisk/RamDiskHelper.runtimeconfig.json</LogicalName>
     </EmbeddedResource>
 
     <EmbeddedResource Include="$(PayloadDir)\native\melonds-nand.dll">
