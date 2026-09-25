@@ -15,7 +15,7 @@ internal sealed class InstallerForm : Form
     // grey paragraph below the buttons is TWO lines tall (30px from y=150), and the RAM disk heading
     // was first put at 166 - fourteen pixels inside it, invisible behind text that paints later.
     // Rows here, in order: 14 title, 46 root, 68 state, 104 buttons, 150 note, 192 RAM disk heading,
-    // 214 RAM disk state, 256 RAM disk buttons, 298 closing note. Leave a gap when adding one.
+    // 214 RAM disk state, 256 RAM disk button, 298 closing note. Leave a gap when adding one.
     private string? _root;
 
     private readonly Label _rootLabel  = new() { AutoSize = false, Location = new Point(16, 46), Size = new Size(520, 20) };
@@ -28,8 +28,22 @@ internal sealed class InstallerForm : Form
     // of it is missing on a clean machine, so it lives below the line with its own state and its own
     // button rather than mixed into the sentence above.
     private readonly Label _ramState = new() { AutoSize = false, Location = new Point(16, 214), Size = new Size(520, 36) };
-    private readonly Button _ram     = new() { Text = "Enable RAM disk", Location = new Point(16, 256),  Width = 160, Height = 34 };
-    private readonly Button _imdisk  = new() { Text = "Get ImDisk…",     Location = new Point(186, 256), Width = 160, Height = 34 };
+    private readonly Button _ram     = new() { Location = new Point(16, 256), Width = 160, Height = 34 };
+
+    /// <summary>ONE BUTTON, SAYING THE ONE NEXT THING TO DO - and gone when there is none. LiteBox
+    /// row does exactly this (RomPanel.RefreshCaps), and matching it is worth more than an
+    /// arrangement of our own: it is the same feature, in two windows.
+    ///
+    /// Two buttons side by side was the first attempt and it was worse. "Get ImDisk" sat there
+    /// inviting somebody to fetch a driver they already had, and greying it turned the row into two
+    /// dead controls with nothing to say which one had mattered.</summary>
+    private void ShowRamButton(bool driver, bool ready)
+    {
+        if (ready) { _ram.Visible = false; return; }
+        _ram.Visible = true;
+        _ram.Enabled = true;
+        _ram.Text = driver ? "Install" : "Get ImDisk…";
+    }
 
     public InstallerForm()
     {
@@ -77,13 +91,23 @@ internal sealed class InstallerForm : Form
         _install.Click   += (_, _) => Run(InstallerCore.Install,   "Install");
         _uninstall.Click += (_, _) => Run(InstallerCore.Uninstall, "Uninstall");
         _choose.Click    += (_, _) => Choose();
-        // Same signature as the two above, so it wires the same way. That is what the Run contract
-        // is for.
-        _ram.Click       += (_, _) => Run(RamDiskSetup.Enable, "RAM disk");
-        _imdisk.Click    += (_, _) => Open("https://sourceforge.net/projects/imdisk-toolkit/");
+        // Decided AT THE CLICK rather than from whatever the text happens to say, because the two
+        // can disagree: somebody installs ImDisk in the page this button opened, comes back, and
+        // presses it again before anything refreshed the row. LiteBox re-asks for the same reason.
+        _ram.Click += (_, _) =>
+        {
+            if (!RamDiskSetup.DriverInstalled())
+            {
+                Open("https://sourceforge.net/projects/imdisk-toolkit/");
+                Refresh_();
+                return;
+            }
+            // Same signature as Install and Uninstall, so it runs through the same path.
+            Run(RamDiskSetup.Enable, "RAM disk");
+        };
 
         Controls.AddRange(new Control[] { _rootLabel, _stateLabel, _install, _uninstall, _choose,
-                                          _ramState, _ram, _imdisk });
+                                          _ramState, _ram });
 
         // The exe dropped at the LaunchBox root, or inside Core, are both ordinary ways to run this.
         var here = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
@@ -103,7 +127,10 @@ internal sealed class InstallerForm : Form
             _install.Enabled = false;
             _uninstall.Enabled = false;
             _ramState.Text = "";
-            _ram.Enabled = false;
+            // The driver belongs to the MACHINE, not to an install we have not found yet - so the
+            // button can still offer to fetch it, and nothing else, because the task belongs to an
+            // install.
+            ShowRamButton(RamDiskSetup.DriverInstalled(), ready: true);
             return;
         }
 
@@ -123,9 +150,9 @@ internal sealed class InstallerForm : Form
         // window opened, and the answer is three file checks and one schtasks query.
         var ram = RamDiskSetup.Look(l);
         _ramState.Text = RamDiskSetup.Describe(ram);
-        // Nothing to do when it is already shared and working; everything else is worth a try, even
-        // a missing driver, because the button then says exactly what to go and get.
-        _ram.Enabled = !ram.Ready;
+        // Asked every refresh rather than cached: LiteBox may have registered the task since this
+        // window opened, and the answer is three file checks and one schtasks query.
+        ShowRamButton(ram.Driver, ram.Ready);
     }
 
     private void Choose()

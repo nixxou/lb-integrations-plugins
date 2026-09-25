@@ -28,6 +28,13 @@ internal sealed record RamDiskState(bool Driver, bool Runtime, bool Helper, stri
 
 internal static class RamDiskSetup
 {
+    /// <summary>Is the ImDisk driver on this machine?
+    ///
+    /// ASKED WITHOUT A LAUNCHBOX, deliberately: a driver is installed once per machine and has
+    /// nothing to do with which install is selected. So the window can grey its download button
+    /// before it knows, or ever knows, where LaunchBox is.</summary>
+    public static bool DriverInstalled() => RamDrive.IsDriverInstalled();
+
     /// <summary>Point the shared sources at this install, then ask them what they see.</summary>
     public static RamDiskState Look(Layout l)
     {
