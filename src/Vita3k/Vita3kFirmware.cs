@@ -215,6 +215,17 @@ namespace LbIntegrations.Vita3k
                 }
 
                 report?.Invoke("Installing the " + Describe(package) + "...", null);
+                if (Run(executablePath, pup, vitaFs, package)) return true;
+
+                // ONE RETRY, AND ONLY AFTER A CRASH WE COULD NOT EXPLAIN. Measured on a real install:
+                // the main firmware died with 0xC0000409 less than a second into an install that
+                // takes six, on a first run of an emulator that had never started before - and the
+                // very same package into the very same folder went in cleanly minutes later. Whatever
+                // that is, it is not the download and not the path length: both were checked.
+                //
+                // A second attempt costs seconds and no bytes, since the .pup is already here. It is
+                // not a loop: twice, then the failure is reported honestly.
+                Log.Info("the " + Describe(package) + " did not go in - trying once more");
                 return Run(executablePath, pup, vitaFs, package);
             }
             catch (OperationCanceledException) { throw; }

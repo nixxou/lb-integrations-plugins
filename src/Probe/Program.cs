@@ -38,7 +38,7 @@ namespace LbIntegrations.Probe
 
             if (args.Length == 0 || args[0].StartsWith("-"))
             {
-                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--melonds] [--nogba] [--melonds-real ...] [--melonds-describe --rom <f>] [--rows] [--hotkeys] [--saves --emu <exe> --rom <rom>] [--ahk --emu <exe>] [--vita3k]");
+                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--melonds] [--nogba] [--melonds-real ...] [--melonds-describe --rom <f>] [--rows] [--hotkeys] [--saves --emu <exe> --rom <rom>] [--ahk --emu <exe>] [--vita3k] [--vita3k-real --emu <Vita3K.exe>]");
                 // These two take no plugin at all - they exercise shared sources compiled
                 // into this probe, not anything loaded from a DLL.
                 Console.Error.WriteLine("       Probe --ramdisk --lb <LaunchBox root>");
@@ -511,6 +511,13 @@ namespace LbIntegrations.Probe
                 if (!Vita3kCheck.Run(asm)) return 1;
             }
 
+            // The same model against a REAL install: --vita3k-real --emu <Vita3K.exe>. It writes to
+            // it, because putting a firmware aside happens once and can never be watched afterwards.
+            if (Has(args, "--vita3k-real"))
+            {
+                if (!Vita3kCheck.Real(asm, emuPath)) return 1;
+            }
+
             bool nogba = Has(args, "--nogba");
             if (nogba)
             {
@@ -553,6 +560,7 @@ namespace LbIntegrations.Probe
             if (Has(args, "--melonds-real")) wroteTo.Add("COPIES of the NANDs given, in the temp folder");
             if (hotkeys) wroteTo.Add("a forged Flycast in the temp folder (keyboard mapping)");
             if (Has(args, "--vita3k")) wroteTo.Add("a forged Vita3K in the temp folder, junction included");
+            if (Has(args, "--vita3k-real")) wroteTo.Add("THE REAL Vita3K install given (its firmware was put aside)");
             Console.WriteLine(wroteTo.Count == 0
                 ? "done. Nothing was written."
                 : "done. This run WROTE to: " + string.Join(", ", wroteTo) + ".");

@@ -35,6 +35,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.IO;
 using System.Threading;
 using LbIntegrations.RamDisk;
@@ -136,6 +137,42 @@ namespace LbIntegrations.Vita3k
             {
                 error = ex.GetType().Name + ": " + ex.Message;
                 Log.Warn("could not put the firmware aside", ex);
+                return false;
+            }
+        }
+
+        /// <summary>Put the firmware aside if it is complete and has not been put aside yet.
+        ///
+        /// SEPARATE FROM AdoptFirmware BECAUSE THE FIRMWARE IS NOT ALWAYS OURS TO HAVE JUST
+        /// INSTALLED. Measured on a real install: the three packages went in across two runs - one
+        /// crashed and was redone later - so the install step never saw them all succeed at once and
+        /// never adopted anything. Somebody can also install a firmware from Vita3K itself. Asking
+        /// "is there a complete firmware sitting there" is the honest question, and it costs three
+        /// Directory.Exists.</summary>
+        public static bool EnsureBase(Vita3kLayout layout, out string error)
+        {
+            error = null;
+            if (HasBase(layout)) return true;
+
+            try
+            {
+                var fs = layout?.VitaFs;
+                if (fs == null || !Directory.Exists(fs)) { error = "there is no filesystem yet"; return false; }
+
+                foreach (var part in new[] { "vs0", "sa0", "pd0" })
+                {
+                    var dir = Path.Combine(fs, part);
+                    if (!Directory.Exists(dir) || !Directory.EnumerateFileSystemEntries(dir).Any())
+                    { error = part + " is missing - the firmware is not complete"; return false; }
+                }
+
+                Log.Info("a complete firmware is sitting in fs and has never been put aside - doing it now");
+                return AdoptFirmware(layout, out error);
+            }
+            catch (Exception ex)
+            {
+                error = ex.GetType().Name + ": " + ex.Message;
+                Log.Warn("could not check the firmware", ex);
                 return false;
             }
         }
@@ -315,8 +352,10 @@ namespace LbIntegrations.Vita3k
             error = null;
             try
             {
-                if (!HasBase(layout))
-                { error = "the pristine firmware has not been put aside yet"; return null; }
+                // Self-healing: a complete firmware that was never put aside becomes the base
+                // here rather than requiring the install step to be run again.
+                if (!EnsureBase(layout, out error))
+                { error = "no pristine firmware to build from - " + error; return null; }
                 if (!Vita3kContent.Installable(romPath))
                 { error = "this is not something we install: " + romPath; return null; }
 

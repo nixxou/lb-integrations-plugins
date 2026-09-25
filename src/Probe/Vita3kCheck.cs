@@ -70,6 +70,70 @@ namespace LbIntegrations.Probe
             finally { Scrub(root); }
         }
 
+        /// <summary>Against a REAL installation: put its firmware aside if that has not happened yet,
+        /// and say what it found. This is the one operation of the model that runs once on a real
+        /// console and can then never be observed again, so it gets its own arm rather than a forged
+        /// stand-in.
+        ///
+        /// It WRITES: the filesystem is renamed and walked. That is exactly what the next launch
+        /// would do, and doing it here means watching it happen instead of hoping.</summary>
+        public static bool Real(Assembly pluginAssembly, string emuPath)
+        {
+            Console.WriteLine();
+            Console.WriteLine("-- Vita3K, on a REAL install  [WRITES to it] " + new string('-', 19));
+
+            _asm = pluginAssembly;
+            _bad = 0;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(emuPath) || !File.Exists(emuPath))
+                {
+                    Console.WriteLine("  pass --emu <Vita3K.exe>");
+                    return false;
+                }
+
+                var layout = Resolve(emuPath);
+                var portable = Path.Combine(Path.GetDirectoryName(emuPath), "portable");
+                Console.WriteLine("  install   " + Path.GetDirectoryName(emuPath));
+
+                foreach (var part in new[] { "vs0", "sa0", "pd0", "os0" })
+                {
+                    var dir = Path.Combine(portable, "fs", part);
+                    var n = Directory.Exists(dir)
+                        ? Directory.GetFiles(dir, "*", SearchOption.AllDirectories).Length : 0;
+                    Console.WriteLine("  fs\\" + part.PadRight(6) + (n > 0 ? n + " files" : "absent"));
+                }
+
+                bool had = (bool)Call("Vita3kWorkspace", "HasBase", new object[] { layout });
+                Console.WriteLine("  base      " + (had ? "already put aside" : "not yet"));
+
+                var args = new object[] { layout, null };
+                bool ok = (bool)Call("Vita3kWorkspace", "EnsureBase", args);
+                Check("the firmware is put aside", ok, args[1] as string);
+                Check("nand-initiale exists", Directory.Exists(Path.Combine(portable, "nand-initiale")));
+
+                var manifest = Path.Combine(portable, "nand-initiale.manifest");
+                if (Check("its manifest exists", File.Exists(manifest)))
+                {
+                    var lines = File.ReadAllLines(manifest);
+                    Console.WriteLine("  manifest  " + lines.Length + " entries");
+                    Check("it holds the main firmware", Array.Exists(lines, l => l.Contains("vs0/")));
+                    Check("and the font package", Array.Exists(lines, l => l.Contains("sa0/")));
+                    Check("and the preinstalled package", Array.Exists(lines, l => l.Contains("pd0/")));
+                }
+
+                Console.WriteLine();
+                Console.WriteLine(_bad == 0 ? "  OK - this install now has a console to build sessions from"
+                                            : "  " + _bad + " FAILURE(S) - see above");
+                return _bad == 0;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("  EXCEPTION: " + ex.Message);
+                return false;
+            }
+        }
+
         // ── the archive ──────────────────────────────────────────────────────
 
         private static void TheArchive(string vpk)

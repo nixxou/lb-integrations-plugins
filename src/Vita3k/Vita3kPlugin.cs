@@ -389,7 +389,16 @@ namespace LbIntegrations.Vita3k
                            + " not run a game until it has some.";
 
                 var missing = Vita3kFirmware.Missing(layout.VitaFs, available);
-                if (missing.Count == 0) { Log.Info("every firmware package is already installed"); return ""; }
+                if (missing.Count == 0)
+                {
+                    Log.Info("every firmware package is already installed");
+                    // AND IT STILL HAS TO BECOME THE BASE. Measured: a firmware that went in across
+                    // two runs never reached the branch below, so nothing was ever put aside and
+                    // every launch then had no console to build from.
+                    return Vita3kWorkspace.EnsureBase(layout, out var already)
+                        ? " The firmware was already installed, and is put aside as the pristine console."
+                        : " The firmware was already installed, but could not be put aside: " + already;
+                }
 
                 Log.Info("missing firmware: " + string.Join(", ", missing.Select(m => m.ToString())));
 
@@ -411,7 +420,7 @@ namespace LbIntegrations.Vita3k
                     // AND IT BECOMES THE BASE EVERY SESSION IS BUILT FROM. Done here rather than at
                     // the first launch because this is the one moment the filesystem holds the
                     // firmware and nothing else - a game installed first would be baked into it.
-                    if (!Vita3kWorkspace.AdoptFirmware(layout, out var why))
+                    if (!Vita3kWorkspace.EnsureBase(layout, out var why))
                         return " Firmware installed, but it could not be put aside as the pristine"
                                + " console: " + why;
                     return " Firmware installed (" + string.Join(", ", done)
