@@ -57,6 +57,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 
 namespace LbIntegrations.RamDisk
@@ -96,6 +97,43 @@ namespace LbIntegrations.RamDisk
         /// <summary>True when we have started a run and not yet seen it finish. The next run has to
         /// wait for it: this task ignores a second instance rather than queueing it.</summary>
         private static bool _runInFlight;
+
+        /// <summary>The helper version that understands image, type, sparse and format in
+        /// ramdisk.cfg. 1.0 is the protocol as LiteBox first shipped it.
+        ///
+        /// 1.1.1 AND NOT 1.1.0: the first build of the image protocol defaulted the format
+        /// parameters off whenever an image was named, so CREATING one attached a disk with no
+        /// filesystem - exit 0, a device, and a drive letter that is not a directory. Asking for
+        /// 1.1.1 is how a helper with that in it is refused rather than trusted.
+        ///
+        /// IT IS CHECKED, NOT ASSUMED, because a 1.0 helper does not fail on a key it has never
+        /// heard of - it ignores it and mounts a blank 1024 MB disk instead, which is a wrong answer
+        /// wearing a success. And 1.0 is what is on disk wherever LiteBox got there first.</summary>
+        public static readonly Version ImageProtocol = new Version(1, 1, 1, 0);
+
+        /// <summary>The version of the helper actually deployed here, or null when there is none or
+        /// it carries no version resource.</summary>
+        public static Version HelperVersion
+        {
+            get
+            {
+                try
+                {
+                    var exe = HelperExe;
+                    if (exe == null || !File.Exists(exe)) return null;
+                    var v = FileVersionInfo.GetVersionInfo(exe);
+                    if (v == null || v.FileVersion == null) return null;
+                    return new Version(v.FileMajorPart, v.FileMinorPart, v.FileBuildPart, v.FilePrivatePart);
+                }
+                catch (Exception ex) { RamDiskLog.Warn("could not read the helper version", ex); return null; }
+            }
+        }
+
+        /// <summary>Can the deployed helper be asked to back a drive with an image?</summary>
+        public static bool CanMountImages
+        {
+            get { var v = HelperVersion; return v != null && v >= ImageProtocol; }
+        }
 
         // ── where things live ────────────────────────────────────────────────
 
@@ -499,13 +537,143 @@ namespace LbIntegrations.RamDisk
 
         public static bool HasActiveMounts { get { return !_active.IsEmpty; } }
 
+        // ── images ───────────────────────────────────────────────────────────
+
+        /// <summary>Where the bytes of an image-backed drive live.</summary>
+        internal enum RamImage
+        {
+            /// <summary>Virtual memory, preloaded from the image. The image on disk is never
+            /// written to. The whole declared size is committed up front.</summary>
+            Memory,
+
+            /// <summary>Physical memory, preloaded from the image, through awealloc. Same untouched
+            /// original as Memory, and the size comes from the image rather than being declared -
+            /// which is the difference that matters when nobody knows the right number.</summary>
+            PhysicalMemory,
+
+            /// <summary>The image file IS the disk. Changes land in it. This is the one that
+            /// persists, and the one to use when BUILDING a base image rather than playing on
+            /// one.</summary>
+            File,
+        }
+
+        private static string TypeOf(RamImage mode)
+        {
+            switch (mode)
+            {
+                case RamImage.PhysicalMemory: return "awe";
+                case RamImage.File: return "file";
+                default: return "vm";
+            }
+        }
+
+        /// <summary>Mount a drive backed by an image, and remember it under <paramref name="key"/>.
+        /// Returns the drive root ("X:\") or null.
+        ///
+        /// REFUSES RATHER THAN DEGRADES when the deployed helper is older than the image protocol,
+        /// and that is deliberate. A 1.0 helper reads the image key, does not recognise it, and
+        /// mounts a BLANK 1024 MB disk - a wrong answer that looks exactly like a right one, and
+        /// which a caller would then fill with a session and hand back as a save. The caller is told
+        /// no and can fall back to copying a pristine folder onto a plain RAM disk.</summary>
+        public static string MountImage(string key, string imagePath, RamImage mode,
+                                        int sizeMbIfNew = 0,
+                                        CancellationToken ct = default(CancellationToken))
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(imagePath)) return null;
+                if (!IsDriverInstalled()) { RamDiskLog.Info("no ImDisk driver - not mounting"); return null; }
+
+                if (!CanMountImages)
+                {
+                    RamDiskLog.Warn("the deployed helper is " + (HelperVersion == null ? "unknown" : HelperVersion.ToString())
+                                    + " and images need " + ImageProtocol + " - refusing rather than"
+                                    + " letting it mount a blank disk instead. Run the pack's installer"
+                                    + " to update it.");
+                    return null;
+                }
+
+                bool exists = File.Exists(imagePath);
+                if (!exists && sizeMbIfNew <= 0)
+                {
+                    RamDiskLog.Warn(imagePath + " does not exist and no size was given to create it");
+                    return null;
+                }
+                if (mode != RamImage.File && !exists)
+                {
+                    RamDiskLog.Warn("a memory-backed drive has to be preloaded from an image that"
+                                    + " exists; " + imagePath + " does not");
+                    return null;
+                }
+
+                char letter = FreeDriveLetter();
+                if (letter == '\0') { RamDiskLog.Info("no free drive letter"); return null; }
+                string root = letter + ":\\";
+
+                var task = InstalledTaskName();
+                if (task == null)
+                {
+                    RamDiskLog.Warn("no elevated task is registered - an image mount needs one");
+                    return null;
+                }
+
+                // Sparse only means anything for a file that IS the disk, and only when creating it.
+                bool sparse = mode == RamImage.File && !exists;
+                if (!StartRun(task, "mount", letter, sizeMbIfNew, ct, imagePath, TypeOf(mode), sparse))
+                    return null;
+
+                if (WaitFor(() => Directory.Exists(root), MountSeconds, ct))
+                {
+                    RamDiskLog.Info("mounted " + root + " from " + Path.GetFileName(imagePath)
+                                    + " as " + mode);
+                    if (!string.IsNullOrEmpty(key)) _active[key] = root;
+                    return root;
+                }
+
+                RamDiskLog.Warn("no drive appeared within " + MountSeconds + "s - waiting for the"
+                                + " helper to say why");
+                var said = WaitForResult(ct);
+                _runInFlight = said == null;
+                RamDiskLog.Warn("the image did not mount - the helper said: " + (said ?? "nothing at all"));
+                return null;
+            }
+            catch (Exception ex) { RamDiskLog.Warn("mounting " + imagePath + " threw", ex); return null; }
+        }
+
+        /// <summary>Create an empty image file with a filesystem on it, by mounting it as a
+        /// file-backed disk and letting imdisk format it. Returns the drive root so the caller can
+        /// fill it; UNMOUNT IT when done, and the file is then a usable base image.</summary>
+        public static string CreateImage(string key, string imagePath, int sizeMb, bool sparse = true,
+                                         CancellationToken ct = default(CancellationToken))
+        {
+            try
+            {
+                if (File.Exists(imagePath))
+                {
+                    RamDiskLog.Warn(imagePath + " already exists - not creating over it");
+                    return null;
+                }
+                var dir = Path.GetDirectoryName(imagePath);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                // File mode with no existing file: the helper passes -s, and -o sparse when asked,
+                // so imdisk creates the file and formats it.
+                return MountImage(key, imagePath, RamImage.File, sizeMb, ct);
+            }
+            catch (Exception ex) { RamDiskLog.Warn("could not create " + imagePath, ex); return null; }
+        }
+
         // ── the helper's file ────────────────────────────────────────────────
 
         /// <summary>Put the helper where both this pack and LiteBox look for it.
         ///
-        /// ONLY WHEN IT IS NOT ALREADY THERE, which is LiteBox's own rule for the same file. Whoever
-        /// installed first owns it, and neither side second-guesses the other: the contract between
-        /// the two is ramdisk.cfg, not a build. Returns what happened, for a message.</summary>
+        /// ABSENT OR OLDER, NEVER NEWER - and LiteBox now follows the same rule for the same file.
+        /// Two products write here from one source, neither can see the other's release schedule,
+        /// and the version resource is what lets them agree without talking: whoever was updated
+        /// last owns the file, and nobody steps back over anybody. Only-if-absent was the first
+        /// rule and it was not enough - it froze a 1.0 helper in place for ever, and the pack would
+        /// then have been sending it cfg keys it silently ignores.
+        ///
+        /// Returns what happened, for a message.</summary>
         public static string DeployHelper(Func<string, byte[]> fileByName, out bool ok)
         {
             ok = false;
@@ -513,13 +681,17 @@ namespace LbIntegrations.RamDisk
             {
                 var dir = HelperDir;
                 if (dir == null) return "The LaunchBox root is not known.";
-                if (IsHelperInstalled())
+
+                var installed = HelperVersion;
+                if (installed != null && installed >= ImageProtocol)
                 {
                     ok = true;
-                    return "The RAM disk helper was already in place - left alone, it may be LiteBox's.";
+                    return "The RAM disk helper " + installed + " was already in place - left alone."
+                           + " It may be LiteBox's, and it is new enough either way.";
                 }
 
                 Directory.CreateDirectory(dir);
+                var replacing = installed != null;
                 foreach (var name in HelperFiles)
                 {
                     var bytes = fileByName(name);
@@ -527,8 +699,13 @@ namespace LbIntegrations.RamDisk
                     File.WriteAllBytes(Path.Combine(dir, name), bytes);
                 }
                 ok = true;
-                RamDiskLog.Info("deployed the helper to " + dir);
-                return "The RAM disk helper was installed into " + dir + ".";
+                var now = HelperVersion;
+                RamDiskLog.Info((replacing ? "replaced the helper (" + installed + " -> " + now + ") in "
+                                           : "deployed the helper to ") + dir);
+                return replacing
+                    ? "The RAM disk helper was updated from " + installed + " to " + now + " in " + dir
+                      + ".\n\nLiteBox uses this same file and will not step back over it."
+                    : "The RAM disk helper was installed into " + dir + ".";
             }
             catch (Exception ex)
             {
@@ -548,18 +725,31 @@ namespace LbIntegrations.RamDisk
 
         // ── helpers ──────────────────────────────────────────────────────────
 
-        private static void WriteCfg(string action, char drive, int sizeMb)
+        private static void WriteCfg(string action, char drive, int sizeMb,
+                                    string image = null, string type = null, bool sparse = false)
         {
             try
             {
                 var dir = HelperDir;
                 if (dir == null) return;
                 Directory.CreateDirectory(dir);
-                // Byte for byte what LiteBox writes, label included - the helper reads that key and
-                // then ignores it, and writing it anyway keeps the two files identical.
-                File.WriteAllText(CfgPath,
-                    "action=" + action + "\r\ndrive=" + drive + "\r\nsize=" + sizeMb
-                    + "\r\nlabel=RomExtractorRAM\r\n");
+
+                // The four 1.0 keys, byte for byte what LiteBox writes - label included, which the
+                // helper reads and then ignores. Writing it anyway keeps a plain mount's cfg
+                // identical to theirs.
+                var cfg = new StringBuilder();
+                cfg.Append("action=").Append(action).Append("\r\n");
+                cfg.Append("drive=").Append(drive).Append("\r\n");
+                cfg.Append("size=").Append(sizeMb).Append("\r\n");
+                cfg.Append("label=RomExtractorRAM\r\n");
+
+                // And the 1.1 keys, written ONLY when asked for. A cfg with none of them is a 1.0
+                // cfg, which is what every helper ever deployed understands.
+                if (!string.IsNullOrEmpty(image)) cfg.Append("image=").Append(image).Append("\r\n");
+                if (!string.IsNullOrEmpty(type)) cfg.Append("type=").Append(type).Append("\r\n");
+                if (sparse) cfg.Append("sparse=1\r\n");
+
+                File.WriteAllText(CfgPath, cfg.ToString());
             }
             catch (Exception ex) { RamDiskLog.Warn("could not write ramdisk.cfg", ex); }
         }
@@ -573,7 +763,9 @@ namespace LbIntegrations.RamDisk
         /// it, so asking while the previous run is still going gets 0x800710E0 and silence. In real
         /// use the previous run finished long ago and this returns at once; back to back, it pays the
         /// minute and a half that the caller would otherwise have paid on every single mount.</summary>
-        private static bool StartRun(string task, string action, char drive, int sizeMb, CancellationToken ct)
+        private static bool StartRun(string task, string action, char drive, int sizeMb,
+                                    CancellationToken ct, string image = null, string type = null,
+                                    bool sparse = false)
         {
             if (_runInFlight)
             {
@@ -589,7 +781,7 @@ namespace LbIntegrations.RamDisk
                 RamDiskLog.Info("the previous run ended: " + previous);
             }
 
-            WriteCfg(action, drive, sizeMb);
+            WriteCfg(action, drive, sizeMb, image, type, sparse);
             ClearResult();
             RunTask(task, ct);
             _runInFlight = true;

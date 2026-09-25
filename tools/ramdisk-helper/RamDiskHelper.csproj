@@ -26,6 +26,13 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>RamDiskHelper</AssemblyName>
     <RootNamespace>RamDiskHelper</RootNamespace>
+    <!-- THE NUMBER BOTH PRODUCTS COMPARE. 1.0 is the protocol as it shipped; 1.1 added image,
+         type, sparse and format to ramdisk.cfg. Both sides deploy this helper when the one on
+         disk is ABSENT OR OLDER and never when it is newer, and a caller checks this version
+         before sending a key the older one would silently ignore. Bump it with the protocol,
+         never with an ordinary fix. -->
+    <Version>1.1.1</Version>
+
     <Platforms>AnyCPU;x64</Platforms>
     <UseWindowsForms>false</UseWindowsForms>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>

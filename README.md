@@ -154,10 +154,36 @@ The installer's window shows all four states separately (the fourth is whether a
 helper can start on is present), because "not ready" on its own tells nobody what to do about it.
 The same lines come out of `--status`, and `--ramdisk` does the enabling from a script.
 
-**Whoever installs first owns the helper.** Neither side ever overwrites the other's copy: the
-contract between the two is `ramdisk.cfg`, not a build. That file carries `action`, `drive`, `size`
-and `label` - and `label` is read by the helper and then ignored, which is worth knowing before
-someone spends an evening on it.
+**Absent or older, never newer.** Both sides deploy the helper by comparing its `FileVersion`, so
+whichever product was updated last owns the file and neither steps back over the other. Only-if-absent
+was the first rule and it was not enough: it froze a 1.0 helper in place for ever, and the pack would
+then have been sending it keys it silently ignores. LiteBox follows the same rule
+(`NativeInstaller.IsNewerOnDisk`).
+
+**The contract between the two is `ramdisk.cfg` plus that version**, never a build - two builds of one
+source differ in their embedded commit hash and agree on everything else. `Program.cs` is kept
+byte-identical in both repositories.
+
+| version | keys |
+|---|---|
+| 1.0 | `action`, `drive`, `size`, `label` - and `label` is read by the helper and then **ignored**, which is worth knowing before somebody spends an evening on it |
+| 1.1 | plus `image`, `type` (`vm` \| `file` \| `awe`), `sparse`, `format` |
+
+A caller checks the version **before** sending a 1.1 key, and refuses rather than degrades: a 1.0
+helper does not fail on a key it has never heard of, it mounts a blank 1024 MB disk instead - a wrong
+answer wearing a success.
+
+**What 1.1 is for**: a pristine image, a working copy in memory, and an original nothing writes to.
+`vm` preloads virtual memory from the image; `awe` does the same in physical memory and takes its
+size from the image instead of a declared number; `file` makes the image itself the disk, which is
+how a base image is built in the first place. Proven end to end by the probe below: a file written
+into a base image is there after remounting it into memory, a session file written to the copy is
+not in the image afterwards, and the image is byte-for-byte what it was.
+
+**`format` is defaulted by whether the image EXISTS**, not by whether one was named. Getting that
+backwards attaches a disk with no filesystem on it: imdisk exits 0, the device appears, and the drive
+letter is not a directory. An image that already exists must NOT be formatted, or mounting the base
+would wipe it.
 
 **The task name is looked up, not only computed.** It is an FNV-1a of `AppContext.BaseDirectory`, and
 a LaunchBox install can carry two LiteBox builds whose base directories differ - the light one under
