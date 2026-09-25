@@ -26,9 +26,15 @@ namespace LbIntegrations.Probe
     {
         private static int Main(string[] args)
         {
+            // THE RAM DISK ARM TAKES NO PLUGIN, and is answered before anything is loaded. It
+            // exercises src\Shared.RamDisk, which is compiled into this probe rather than into the
+            // plugin under test - there is nothing to load a DLL for, and requiring one would mean
+            // naming a plugin that has nothing to do with the question.
+            if (Has(args, "--ramdisk")) return RamDiskCheck.Run(Arg(args, "--lb")) ? 0 : 1;
+
             if (args.Length == 0 || args[0].StartsWith("-"))
             {
-                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--melonds] [--nogba] [--melonds-real ...] [--melonds-describe --rom <f>] [--rows] [--hotkeys] [--saves --emu <exe> --rom <rom>] [--ahk --emu <exe>]");
+                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--melonds] [--nogba] [--melonds-real ...] [--melonds-describe --rom <f>] [--rows] [--hotkeys] [--saves --emu <exe> --rom <rom>] [--ahk --emu <exe>]\n       Probe --ramdisk --lb <LaunchBox root>");
                 return 2;
             }
 

@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The elevated ImDisk helper. Built on its own and its output deployed to
+       <LaunchBox>\ThirdParty\RomExtractor\ramdisk\ - the folder LiteBox uses - so one helper
+       serves both. It takes no command-line arguments: it reads ramdisk.cfg beside itself, which
+       is what lets ONE fixed scheduled-task command cover both mount and unmount.
+
+       NOT referenced by any plugin. src\Shared.RamDisk talks to it through the file system, never
+       through a reference. -->
+
+  <PropertyGroup>
+    <!-- WinExe, not Exe: no console is allocated, so the elevated task runs without a cmd window
+         flashing on screen. The helper has no console I/O at all - it reads ramdisk.cfg and writes
+         ramdisk.result. -->
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+
+    <!-- FRAMEWORK-DEPENDENT, AND THAT NEEDS A ROLL-FORWARD. The default policy is Minor, which
+         moves within major 9 and never across it - so a net9.0 build refuses to start on a machine
+         carrying only .NET 10, with a dialog nobody can act on. Major lets it run on whatever is
+         there. It is one line and it removes a silent failure; the build LiteBox ships does not
+         have it, which costs nothing because neither side overwrites the other's file. -->
+    <RollForward>Major</RollForward>
+
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>RamDiskHelper</AssemblyName>
+    <RootNamespace>RamDiskHelper</RootNamespace>
+    <Platforms>AnyCPU;x64</Platforms>
+    <UseWindowsForms>false</UseWindowsForms>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+</Project>
