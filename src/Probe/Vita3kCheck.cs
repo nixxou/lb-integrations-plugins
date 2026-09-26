@@ -99,11 +99,12 @@ namespace LbIntegrations.Probe
                     var built = Path.Combine(repo, "build", "vita3k", "vita3k-install.dll");
                     if (File.Exists(built)) Environment.SetEnvironmentVariable(variable, built);
                 }
-                var library = Environment.GetEnvironmentVariable(variable);
+                // Asked of the plugin, not guessed: from its build folder that is the override just set,
+                // from a deployed folder it is native\ beside it - the path a host would load.
+                var native = _asm.GetType("LbIntegrations.Vita3k.Vita3kNative", throwOnError: true);
+                var library = native.GetProperty("LibraryPath", BindingFlags.Public | BindingFlags.Static)?.GetValue(null) as string;
                 Console.WriteLine("  library   " + (library ?? "(none)"));
                 if (!Check("the library is there", library != null && File.Exists(library))) return false;
-
-                var native = _asm.GetType("LbIntegrations.Vita3k.Vita3kNative", throwOnError: true);
 
                 var selftest = new object[] { null };
                 bool st = (bool)native.GetMethod("Selftest", BindingFlags.Public | BindingFlags.Static).Invoke(null, selftest);
@@ -249,7 +250,10 @@ namespace LbIntegrations.Probe
                     var built = Path.Combine(repo, "build", "vita3k", "vita3k-install.dll");
                     if (File.Exists(built)) Environment.SetEnvironmentVariable(pfsVariable, built);
                 }
-                Console.WriteLine("  native    " + (Environment.GetEnvironmentVariable(pfsVariable) ?? "(none - PFS dumps will be refused)"));
+                var nativeType = _asm.GetType("LbIntegrations.Vita3k.Vita3kNative", throwOnError: true);
+                var nativePath = nativeType.GetProperty("LibraryPath", BindingFlags.Public | BindingFlags.Static)?.GetValue(null) as string;
+                Console.WriteLine("  native    " + (nativePath != null && File.Exists(nativePath)
+                                                    ? nativePath : "(none - PFS dumps will be refused)"));
 
                 var fs = Path.Combine(Path.GetTempPath(), "lbip-vita3k-install-" + Guid.NewGuid().ToString("N"));
                 Directory.CreateDirectory(fs);
