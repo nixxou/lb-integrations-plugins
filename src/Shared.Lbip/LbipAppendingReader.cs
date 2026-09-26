@@ -36,20 +36,10 @@ namespace LbIntegrations.Lbip
         private bool _innerDone;
         private int _index = -1;        // position in _extra once the inner reader is exhausted
 
-        /// <summary>When true the inner reader is never read from: its rows are already part of
-        /// <paramref name="extra"/>. That is what a query carrying ORDER BY and LIMIT needs - see
-        /// LbipRowInjection.RowsFor, which cannot honour either by appending.</summary>
-        private readonly bool _replaced;
-
-        public LbipAppendingReader(DbDataReader inner, IReadOnlyList<object[]> extra,
-                                   bool replaceInner = false)
+        public LbipAppendingReader(DbDataReader inner, IReadOnlyList<object[]> extra)
         {
             _inner = inner;
             _extra = extra;
-            _replaced = replaceInner;
-            // Nothing is ever taken from the inner reader in replace mode, but it is still held and
-            // still disposed: it owns the provider's statement.
-            _innerDone = replaceInner;
             _fieldCount = inner.FieldCount;
             foreach (var row in extra)
                 if (row.Length != _fieldCount)
@@ -82,7 +72,7 @@ namespace LbIntegrations.Lbip
 
         /// <summary>True as soon as WE have rows, even when the host's query found none - which is
         /// exactly the case that matters: an emulator LaunchBox has never heard of.</summary>
-        public override bool HasRows => _extra.Count > 0 || (!_replaced && _inner.HasRows);
+        public override bool HasRows => _inner.HasRows || _extra.Count > 0;
 
         /// <summary>One result set. A second one would not have our columns, and appending to it
         /// would be meaningless.</summary>

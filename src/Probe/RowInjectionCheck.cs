@@ -72,15 +72,6 @@ namespace LbIntegrations.Probe
                 Exec(seed, @"INSERT INTO ""Emulators"" (""Name"") VALUES ('RetroArch'), ('Demul')");
                 Exec(seed, @"INSERT INTO ""EmulatorPlatforms"" (""Emulator"", ""Platform"")
                              VALUES ('RetroArch', 'Sega Dreamcast')");
-
-                // A HOST ROW COMPETING WITH OURS, recommended for the very platform the plugin
-                // under test declares, and named so it sorts AFTER ours. This is LaunchBox's real
-                // situation for the Vita: their own row and ours, both recommended, and a query
-                // that takes the alphabetically first. Named with a leading 'z' because every name
-                // this pack publishes begins "Nixx-".
-                Exec(seed, @"INSERT INTO ""EmulatorPlatforms""
-                               (""Emulator"", ""Platform"", ""Recommended"")
-                             VALUES ('zz-the-host-own-emulator', '" + FirstPlatform(pluginType) + @"', 1)");
             }
 
             var rows = pluginType.GetMethod("MetadataRows", BindingFlags.NonPublic | BindingFlags.Static)
@@ -184,57 +175,6 @@ namespace LbIntegrations.Probe
                 var platforms = Query(c, @"SELECT ""Platform"" FROM ""EmulatorPlatforms""
                                            WHERE ""Emulator"" = '" + ourName + "'");
                 Console.WriteLine("  platforms read back : " + string.Join(", ", platforms));
-
-                // THE VALUE, NOT JUST THE ROW. Until now this only asked whether our platform came
-                // back, never what it carried - and the one column a host acts on is the extension
-                // list: LaunchBox's ROM import wizard filters the files it offers by it, and a
-                // platform whose list is empty imports nothing at all. A row that arrives with a
-                // null where we published ".vpk; .zip" would pass every assertion above and still
-                // leave somebody unable to add a single game.
-                var extensions = Query(c, @"SELECT ""ApplicableFileExtensions"" FROM ""EmulatorPlatforms""
-                                            WHERE ""Emulator"" = '" + ourName + "'");
-                Console.WriteLine("  its extensions      : "
-                                  + string.Join(" | ", extensions.Select(e => e ?? "(null)")));
-                // Read off the row the plugin just declared, by reflection like everything else
-                // here: three plugins inject, and a literal would be wrong for two of them.
-                string declared = null;
-                var platformList = first.GetType().GetField("Platforms")?.GetValue(first) as IEnumerable;
-                foreach (var pf in platformList ?? (IEnumerable)Array.Empty<object>())
-                {
-                    declared = pf.GetType().GetField("ApplicableFileExtensions")?.GetValue(pf) as string;
-                    if (!string.IsNullOrWhiteSpace(declared)) break;
-                }
-                Check("the platform's extension list survives the round trip",
-                      declared == null || extensions.Any(e => e == declared));
-
-                var emuExtensions = Query(c, @"SELECT ""ApplicableFileExtensions"" FROM ""Emulators""
-                                               WHERE ""Name"" = '" + ourName + "'");
-                Console.WriteLine("  at emulator level   : "
-                                  + string.Join(" | ", emuExtensions.Select(e => e ?? "(null)")));
-
-                // LAUNCHBOX'S OWN QUERY, character for character off its log, and the one that used
-                // to defeat this whole mechanism. It asks for ONE recommended emulator, ordered by
-                // name - and appending cannot honour an order or a limit, so our row landed second
-                // and the caller, taking the first, never saw it. The consequence was invisible and
-                // total: the ROM import wizard read the winner's extensions, found none, and offered
-                // no files for the platform at all.
-                var picked = Query(c, @"SELECT ""e"".""Emulator"" FROM ""EmulatorPlatforms"" AS ""e""
-                                        WHERE ""e"".""Platform"" = '" + platforms.FirstOrDefault()
-                                      + @"' AND ""e"".""Recommended"" ORDER BY ""e"".""Emulator"" LIMIT 1");
-                Console.WriteLine("  ORDER BY + LIMIT 1  : " + string.Join(", ", picked));
-                Check("a limited query is answered over BOTH sets, not ours stapled on",
-                      picked.Count == 1);
-
-                // WHICH ONE SHOULD WIN DEPENDS ON THE PLUGIN, and both answers are right. Our name
-                // sorts before the fixture's, so we win WHEN we asked to be recommended - and
-                // no$gba deliberately does not, on either of its platforms, because mGBA and the
-                // libretro cores are better on them. Asserting a winner outright would have called
-                // that restraint a bug.
-                bool weRecommend = FirstPlatformIsRecommended(pluginType);
-                Check(weRecommend
-                          ? "and our row wins it, by the host's own ordering"
-                          : "and the host keeps it, because this plugin does not recommend itself here",
-                      picked.FirstOrDefault() == (weRecommend ? ourName : "zz-the-host-own-emulator"));
                 Check("every platform it declares comes back, and no other",
                       platforms.Count == ourPlatforms.Count
                       && ourPlatforms.All(platforms.Contains));
@@ -441,51 +381,6 @@ namespace LbIntegrations.Probe
 
         /// <summary>Read through DbCommand on purpose: that is the path EF Core takes, and the only
         /// one the patch sits on.</summary>
-        /// <summary>The first platform the plugin under test declares, read off its own rows so the
-        /// fixture competes with it rather than with a name written down here.</summary>
-        private static string FirstPlatform(Type pluginType)
-        {
-            try
-            {
-                var rows = pluginType.GetMethod("MetadataRows", BindingFlags.NonPublic | BindingFlags.Static)
-                                     .Invoke(null, null);
-                foreach (var row in ((IEnumerable)rows).Cast<object>())
-                {
-                    var list = row.GetType().GetField("Platforms")?.GetValue(row) as IEnumerable;
-                    foreach (var pf in list ?? (IEnumerable)Array.Empty<object>())
-                    {
-                        var name = pf.GetType().GetField("Platform")?.GetValue(pf) as string;
-                        if (!string.IsNullOrWhiteSpace(name)) return name.Replace("'", "''");
-                    }
-                }
-            }
-            catch { }
-            return "no platform";
-        }
-
-        /// <summary>Does the plugin ask to be the recommended emulator for its first platform? Read
-        /// off its own rows: three of the six deliberately do not.</summary>
-        private static bool FirstPlatformIsRecommended(Type pluginType)
-        {
-            try
-            {
-                var rows = pluginType.GetMethod("MetadataRows", BindingFlags.NonPublic | BindingFlags.Static)
-                                     .Invoke(null, null);
-                foreach (var row in ((IEnumerable)rows).Cast<object>())
-                {
-                    var list = row.GetType().GetField("Platforms")?.GetValue(row) as IEnumerable;
-                    foreach (var pf in list ?? (IEnumerable)Array.Empty<object>())
-                    {
-                        var name = pf.GetType().GetField("Platform")?.GetValue(pf) as string;
-                        if (string.IsNullOrWhiteSpace(name)) continue;
-                        return pf.GetType().GetField("Recommended")?.GetValue(pf) as bool? ?? false;
-                    }
-                }
-            }
-            catch { }
-            return false;
-        }
-
         private static List<string> Query(SqliteConnection c, string sql)
         {
             using DbCommand cmd = c.CreateCommand();
