@@ -14,7 +14,11 @@
 //   - THE try/catch IS OUTSIDE THE FRAME THAT NAMES WinForms TYPES. An assembly is resolved when a
 //     method using it is entered, so a catch inside that method is too late to catch its own failure
 //     to load. A host without WindowsDesktop gets a log line and no window, never a crash.
-//   - TOPMOST: the host's startup screen may already be covering everything.
+//   - TOPMOST, AND KEPT THERE. The host's startup screen may already be covering everything, and at
+//     the end of a game the host brings itself back to the front AFTER this window has opened - a
+//     TopMost set once lost that race and the closing window was never seen (measured 26/09: 4.8 s
+//     on screen, behind LaunchBox). So it is activated when shown and pushed back to the top of the
+//     topmost band on every tick, without taking the focus again.
 //
 // Report is called from the installing thread; the window reads the latest value on a timer. No
 // BeginInvoke per byte, and no way for a slow UI to slow the install down.
@@ -22,6 +26,7 @@
 using System;
 using System.Drawing;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -107,9 +112,11 @@ namespace LbIntegrations.Vita3k
             form.Controls.Add(bar);
 
             var timer = new System.Windows.Forms.Timer { Interval = 100 };
+            int ticks = 0;
             timer.Tick += (s, e) =>
             {
                 if (_closed) { timer.Stop(); form.Close(); return; }
+                if (++ticks % 3 == 0) KeepOnTop(form.Handle);
 
                 var step = _step;
                 if (label.Text != step) label.Text = step;
@@ -125,11 +132,36 @@ namespace LbIntegrations.Vita3k
                     bar.Value = (int)(f * 1000);
                 }
             };
-            form.Shown += (s, e) => timer.Start();
+            form.Shown += (s, e) =>
+            {
+                KeepOnTop(form.Handle);
+                form.Activate();
+                SetForegroundWindow(form.Handle);
+                timer.Start();
+            };
 
             Application.Run(form);
             timer.Dispose();
         }
+
+        /// <summary>Back to the top of the topmost band, without activating - the focus is taken once,
+        /// when shown, and never fought over afterwards.</summary>
+        private static void KeepOnTop(IntPtr handle)
+        {
+            try { SetWindowPos(handle, HwndTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate | SwpShowWindow); }
+            catch { }
+        }
+
+        private static readonly IntPtr HwndTopmost = new IntPtr(-1);
+        private const uint SwpNoSize = 0x1, SwpNoMove = 0x2, SwpNoActivate = 0x10, SwpShowWindow = 0x40;
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
 
         /// <summary>Close it. Safe when it never opened, safe twice, safe from any thread: the window
         /// notices on its next tick.</summary>
