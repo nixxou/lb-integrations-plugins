@@ -447,7 +447,17 @@ namespace LbIntegrations.Vita3k
                     ready = true;
                     return content.TitleId;
                 }
-                finally { if (!ready) Release(layout, content.TitleId); }
+                finally
+                {
+                    if (!ready)
+                    {
+                        // Said, because it can take a while: unmounting waits for the helper's mount
+                        // run to finish, measured at a minute and a half on a slow desktop. A window
+                        // still reading "Decrypting..." for that long looks exactly like a hang.
+                        report?.Invoke("That did not work - cleaning up...", null);
+                        Release(layout, content.TitleId);
+                    }
+                }
             }
             catch (Exception ex)
             {

@@ -208,6 +208,18 @@ namespace LbIntegrations.Probe
         [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
         private static extern IntPtr FindWindow(string className, string windowName);
 
+        private static void CopyAll(string from, string to)
+        {
+            foreach (var d in Directory.GetDirectories(from, "*", SearchOption.AllDirectories))
+                Directory.CreateDirectory(Path.Combine(to, d.Substring(from.Length).TrimStart('\\')));
+            foreach (var f in Directory.GetFiles(from, "*", SearchOption.AllDirectories))
+            {
+                var t = Path.Combine(to, f.Substring(from.Length).TrimStart('\\'));
+                Directory.CreateDirectory(Path.GetDirectoryName(t));
+                File.Copy(f, t, true);
+            }
+        }
+
         /// <summary>Is this file mapped into the current process? Asked of the process itself, which is
         /// the only honest answer to "was it freed".</summary>
         private static bool Mapped(string path)
@@ -225,7 +237,13 @@ namespace LbIntegrations.Probe
         /// is how our installer is held to them - by listing what it produces, not by trusting it.
         ///
         /// Writes only under %TEMP%.</summary>
-        public static bool Installed(Assembly pluginAssembly, string romPath)
+        public static bool Installed(Assembly pluginAssembly, string romPath) => Installed(pluginAssembly, romPath, null);
+
+        /// <summary>The same, onto a REAL RAM DISK when <paramref name="ramdiskRoot"/> names a LaunchBox
+        /// install whose RAM disk task is set up. The host installs onto one; a probe that only ever
+        /// installed onto a plain folder passed while the first real launch failed - ImDisk volumes
+        /// cannot resolve a final path, and psvpfsparser asks for one.</summary>
+        public static bool Installed(Assembly pluginAssembly, string romPath, string ramdiskRoot)
         {
             Console.WriteLine();
             Console.WriteLine("-- Vita3K, installing a real archive  [writes to %TEMP%] " + new string('-', 6));
@@ -255,8 +273,19 @@ namespace LbIntegrations.Probe
                 Console.WriteLine("  native    " + (nativePath != null && File.Exists(nativePath)
                                                     ? nativePath : "(none - PFS dumps will be refused)"));
 
-                var fs = Path.Combine(Path.GetTempPath(), "lbip-vita3k-install-" + Guid.NewGuid().ToString("N"));
+                string fs, drive = null;
+                if (!string.IsNullOrWhiteSpace(ramdiskRoot))
+                {
+                    LbIntegrations.RamDisk.RamDiskHost.UseRoot(ramdiskRoot);
+                    long need = new FileInfo(romPath).Length * 3 / (1024 * 1024) + 256;
+                    drive = LbIntegrations.RamDisk.RamDrive.MountFor("probe-vita3k", (int)need);
+                    if (!Check("a RAM disk mounts", drive != null)) return false;
+                    fs = Path.Combine(drive, "fs");
+                }
+                else fs = Path.Combine(Path.GetTempPath(), "lbip-vita3k-install-" + Guid.NewGuid().ToString("N"));
                 Directory.CreateDirectory(fs);
+                try
+                {
                 Console.WriteLine("  archive   " + Path.GetFileName(romPath));
                 Console.WriteLine("  into      " + fs);
 
@@ -296,7 +325,25 @@ namespace LbIntegrations.Probe
                 }
 
                 Check("and no staging copy is left behind",
-                      !Directory.GetDirectories(fs, "*.pfs", SearchOption.AllDirectories).Any());
+                      !Directory.GetDirectories(fs, "*.pfs", SearchOption.AllDirectories).Any()
+                      && !Directory.GetDirectories(Path.GetTempPath(), "lbip-vita3k-staging-*").Any());
+
+                if (drive != null)
+                {
+                    // The oracle comparison needs the files after the drive is gone.
+                    var keep = Path.Combine(Path.GetTempPath(), "lbip-vita3k-install-ramdisk-" + Guid.NewGuid().ToString("N"));
+                    CopyAll(fs, keep);
+                    Console.WriteLine("  kept      " + keep + "  (for the oracle comparison)");
+                }
+                }
+                finally
+                {
+                    if (drive != null)
+                    {
+                        Console.WriteLine("  unmounting " + drive + " ...");
+                        Check("the RAM disk unmounts", LbIntegrations.RamDisk.RamDrive.UnmountFor("probe-vita3k"));
+                    }
+                }
 
                 Console.WriteLine();
                 Console.WriteLine(_bad == 0 ? "  OK - what landed matches what a real install produces"

@@ -161,12 +161,31 @@ namespace LbIntegrations.Vita3k
                 int files;
                 if (HasPfs(archivePath, content.Root))
                 {
-                    // ENCRYPTED: unpacked whole beside the destination - sce_pfs/ and the licence are
+                    // ENCRYPTED: unpacked whole into a staging copy - sce_pfs/ and the licence are
                     // the decryptor's input - then decrypted INTO the destination, and the staging
                     // copy dropped. Vita3K does the same with an "_dec" folder it renames; decrypting
                     // straight into place is the same result without the rename.
-                    var staging = destination + ".pfs";
-                    TryDelete(staging);
+                    //
+                    // THE STAGING COPY IS ON A REAL DISK, NEVER ON THE RAM DISK. Measured on the first
+                    // launch through the host:
+                    //     weakly_canonical: Fonction incorrecte.: "Z:/fs/ux0/app/PCSE00965.pfs/sce_sys"
+                    // psvpfsparser maps each source file to its destination with
+                    // std::filesystem::relative, which resolves the real path through
+                    // GetFinalPathNameByHandle - and an ImDisk volume answers that with
+                    // ERROR_INVALID_FUNCTION. Only SOURCE paths are resolved; the destination is
+                    // appended to, never resolved. So the source moves to %TEMP% and the decrypted
+                    // files are still written straight onto the RAM disk. The probe used to stage on
+                    // a real disk only, which is exactly why it never saw this.
+                    var stagingRoot = Path.Combine(Path.GetTempPath(), "lbip-vita3k-staging-" + Guid.NewGuid().ToString("N"));
+                    var staging = Path.Combine(stagingRoot, content.TitleId);
+                    long need = Math.Max(0, UncompressedSize(archivePath));
+                    long room = FreeBytes(stagingRoot);
+                    if (room >= 0 && room < need + 64L * 1024 * 1024)
+                    {
+                        error = "not enough room in the temp folder to unpack " + Name(content) + " before decrypting it ("
+                                + (need / (1024 * 1024)) + " MB needed, " + (room / (1024 * 1024)) + " MB free)";
+                        return null;
+                    }
                     Directory.CreateDirectory(staging);
                     try
                     {
@@ -182,7 +201,7 @@ namespace LbIntegrations.Vita3k
                         if (!Vita3kNative.DecryptApp(staging, licence, destination,
                                                      f => report?.Invoke(null, f), out error)) return null;
                     }
-                    finally { TryDelete(staging); }
+                    finally { TryDelete(stagingRoot); }
 
                     files = Directory.Exists(destination)
                         ? Directory.GetFiles(destination, "*", SearchOption.AllDirectories).Length : 0;
@@ -406,24 +425,24 @@ namespace LbIntegrations.Vita3k
             return File.Exists(work) ? work : null;
         }
 
+        /// <summary>Free bytes on the volume holding <paramref name="path"/>, or -1 when that cannot be
+        /// told - in which case the unpack is simply attempted.</summary>
+        private static long FreeBytes(string path)
+        {
+            try { return new DriveInfo(Path.GetPathRoot(Path.GetFullPath(path))).AvailableFreeSpace; }
+            catch { return -1; }
+        }
+
         private static void TryDelete(string dir)
         {
             try { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
             catch (Exception ex) { Log.Warn("could not remove " + dir, ex); }
         }
 
-        /// <summary>How much room installing this archive needs at its peak. TWICE the content for a
-        /// PFS dump: the encrypted copy and the decrypted one exist side by side until the first is
-        /// dropped. Sizing a RAM disk for the final footprint only would run it out of space halfway
-        /// through the decryption.</summary>
-        public static long WorkingSizeBytes(string archivePath)
-        {
-            long size = UncompressedSize(archivePath);
-            if (size <= 0) return size;
-            string root;
-            try { root = Describe(archivePath, out _)?.Root ?? ""; } catch { root = ""; }
-            return HasPfs(archivePath, root) ? size * 2 : size;
-        }
+        /// <summary>How much room installing this archive needs ON THE WORKING TREE. Once, for a PFS dump
+        /// as for anything else: its encrypted staging copy lives in %TEMP%, not on the tree - see
+        /// Install for why it has to.</summary>
+        public static long WorkingSizeBytes(string archivePath) => UncompressedSize(archivePath);
 
         /// <summary>The uncompressed size of an archive, read from its directory WITHOUT unpacking
         /// it. This is what the working disk has to be big enough for.</summary>

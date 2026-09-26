@@ -527,7 +527,8 @@ namespace LbIntegrations.Probe
             // oracle install: --vita3k-install --rom <archive>
             if (Has(args, "--vita3k-install"))
             {
-                if (!Vita3kCheck.Installed(asm, Arg(args, "--rom"))) return 1;
+                // --on-ramdisk <LaunchBox root>: onto a real RAM disk, as the host does.
+                if (!Vita3kCheck.Installed(asm, Arg(args, "--rom"), Arg(args, "--on-ramdisk"))) return 1;
             }
 
             // The same model against a REAL install: --vita3k-real --emu <Vita3K.exe>. It writes to
