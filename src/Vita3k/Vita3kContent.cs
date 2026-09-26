@@ -179,23 +179,26 @@ namespace LbIntegrations.Vita3k
                     // copy dropped. Vita3K does the same with an "_dec" folder it renames; decrypting
                     // straight into place is the same result without the rename.
                     //
-                    // THE STAGING COPY IS ON A REAL DISK, NEVER ON THE RAM DISK. Measured on the first
-                    // launch through the host:
+                    // THE STAGING COPY LIVES BESIDE THE TREE, ON THE SAME VOLUME - on the RAM disk when
+                    // the session is on one. It used to go to %TEMP%, which meant writing the whole
+                    // game to the system disk at every launch of an encrypted one: exactly what the
+                    // RAM disk is there to avoid. The reason it had to was psvpfsparser mapping each
+                    // source file to its destination with std::filesystem::relative, which resolves
+                    // real paths - and an ImDisk volume answers that with ERROR_INVALID_FUNCTION:
                     //     weakly_canonical: Fonction incorrecte.: "Z:/fs/ux0/app/PCSE00965.pfs/sce_sys"
-                    // psvpfsparser maps each source file to its destination with
-                    // std::filesystem::relative, which resolves the real path through
-                    // GetFinalPathNameByHandle - and an ImDisk volume answers that with
-                    // ERROR_INVALID_FUNCTION. Only SOURCE paths are resolved; the destination is
-                    // appended to, never resolved. So the source moves to %TEMP% and the decrypted
-                    // files are still written straight onto the RAM disk. The probe used to stage on
-                    // a real disk only, which is exactly why it never saw this.
-                    var stagingRoot = Path.Combine(Path.GetTempPath(), "lbip-vita3k-staging-" + Guid.NewGuid().ToString("N"));
+                    // Our copy of that code now computes the path as a string (tools\vita3k-install\
+                    // pfs\Utils.cpp), so the source can sit on the RAM disk like everything else.
+                    //
+                    // AND IT IS SPENT AS IT GOES: each encrypted file is deleted the moment its
+                    // decrypted copy is finished, so the two never both hold the whole game - the peak
+                    // is the game plus its largest file. See WorkingSizeBytes.
+                    var stagingRoot = Path.Combine(StagingParent(vitaFs), StagingPrefix + Guid.NewGuid().ToString("N"));
                     var staging = Path.Combine(stagingRoot, content.TitleId);
                     long need = Math.Max(0, UncompressedSize(archivePath));
                     long room = FreeBytes(stagingRoot);
                     if (room >= 0 && room < need + 64L * 1024 * 1024)
                     {
-                        error = "not enough room in the temp folder to unpack " + Name(content) + " before decrypting it ("
+                        error = "not enough room on the working disk to unpack " + Name(content) + " before decrypting it ("
                                 + (need / (1024 * 1024)) + " MB needed, " + (room / (1024 * 1024)) + " MB free)";
                         return null;
                     }
@@ -215,7 +218,7 @@ namespace LbIntegrations.Vita3k
                         if (!Vita3kNative.DecryptApp(staging, licence, destination,
                                                      f => report?.Invoke(null, f),
                                                      (path, size, sha1) => content.Hashed[prefix + path] = Entry(size, sha1),
-                                                     out error)) return null;
+                                                     consumeSource: true, out error)) return null;
                     }
                     finally { TryDelete(stagingRoot); }
 
@@ -483,10 +486,47 @@ namespace LbIntegrations.Vita3k
             catch (Exception ex) { Log.Warn("could not remove " + dir, ex); }
         }
 
-        /// <summary>How much room installing this archive needs ON THE WORKING TREE. Once, for a PFS dump
-        /// as for anything else: its encrypted staging copy lives in %TEMP%, not on the tree - see
-        /// Install for why it has to.</summary>
-        public static long WorkingSizeBytes(string archivePath) => UncompressedSize(archivePath);
+        /// <summary>How much room installing this archive needs ON THE WORKING VOLUME. For a PFS dump,
+        /// the game plus its LARGEST FILE: its encrypted staging copy sits beside the tree on the same
+        /// volume, but each encrypted file is deleted as soon as it is decrypted - so at worst one file
+        /// exists twice. Not twice the game: an ImDisk drive holds its whole declared size in memory
+        /// for as long as it is mounted, so that would be the game's size again, for the session.</summary>
+        public static long WorkingSizeBytes(string archivePath)
+        {
+            long size = UncompressedSize(archivePath);
+            return size > 0 && CarriesPfs(archivePath, out long largest) ? size + largest : size;
+        }
+
+        /// <summary>The prefix of a staging folder - what a cleanup looks for.</summary>
+        public const string StagingPrefix = "lbip-staging-";
+
+        /// <summary>Where the staging copy goes: the folder that holds the tree ("Z:\" for "Z:\fs"),
+        /// so it is on the same volume and never inside the tree the reference walks.</summary>
+        public static string StagingParent(string vitaFs)
+        {
+            var full = Path.GetFullPath(vitaFs).TrimEnd('\\', '/');
+            return Path.GetDirectoryName(full) ?? full;
+        }
+
+        /// <summary>Does the archive carry a PFS layer anywhere - wherever its content root is.</summary>
+        private static bool CarriesPfs(string archivePath, out long largest)
+        {
+            largest = 0;
+            bool pfs = false;
+            try
+            {
+                using var archive = ArchiveFactory.Open(archivePath);
+                foreach (var entry in archive.Entries)
+                {
+                    if (!entry.IsDirectory) largest = Math.Max(largest, entry.Size);
+                    var key = (entry.Key ?? "").Replace('\\', '/');
+                    if (key.StartsWith("sce_pfs/", StringComparison.OrdinalIgnoreCase)
+                        || key.IndexOf("/sce_pfs/", StringComparison.OrdinalIgnoreCase) >= 0) pfs = true;
+                }
+            }
+            catch (Exception ex) { Log.Warn("could not look into " + archivePath, ex); }
+            return pfs;
+        }
 
         /// <summary>The uncompressed size of an archive, read from its directory WITHOUT unpacking
         /// it. This is what the working disk has to be big enough for.</summary>

@@ -4,7 +4,7 @@
 //
 //   int v3k_abi_version(void)
 //   int v3k_decrypt (app, licence, destination, progress, user, message, message_len)
-//   int v3k_decrypt_hashed(app, licence, destination, progress, on_file, user, message, message_len)
+//   int v3k_decrypt_hashed(app, licence, destination, flags, progress, on_file, user, message, message_len)
 //   int v3k_firmware(pup, vita_fs,              progress, user, message, message_len)
 //   int v3k_selftest(message, message_len)
 //
@@ -15,7 +15,9 @@
 // v3k_decrypt_hashed (ABI 2) is v3k_decrypt that also reports every file it wrote - once the decrypt
 // has succeeded, on the calling thread, as (user, path relative to the destination with forward
 // slashes, size, SHA-1 in upper-case hex). The hash is taken from the bytes as they are written; see
-// written.h for why that matters. A file it could not hash is simply not reported.
+// written.h for why that matters. A file it could not hash is simply not reported. flags bit 0
+// (V3K_CONSUME_SOURCE): delete each file of `app` once it is decrypted - for a staging copy that is
+// the caller's to spend, so it and the decrypted tree never both hold the whole game.
 //
 // THIS CODE RUNS INSIDE THE HOST NOW, so a crash in it is a crash of LaunchBox. Vita3K's firmware code
 // is not armoured - extract_file writes through a FILE* it never checked - so every export runs its
@@ -88,12 +90,14 @@ bool relative_to(const std::filesystem::path &root, const std::filesystem::path 
     return true;
 }
 
-int decrypt_hashed_work(const wchar_t *app, const wchar_t *licence, const wchar_t *dst, v3k_progress_fn cb,
-                        v3k_file_fn on_file, void *user, char *message, int message_len)
+constexpr int ConsumeSource = 1;
+
+int decrypt_hashed_work(const wchar_t *app, const wchar_t *licence, const wchar_t *dst, int flags,
+                        v3k_progress_fn cb, v3k_file_fn on_file, void *user, char *message, int message_len)
 {
     std::string m;
     std::vector<v3k::written::File> files;
-    int r = v3k::decrypt(app, licence, dst, false, wrap(cb, user), m, &files);
+    int r = v3k::decrypt(app, licence, dst, false, wrap(cb, user), m, &files, (flags & ConsumeSource) != 0);
     if (r == 0 && on_file) {
         std::wstring rel;
         for (const auto &f : files)
@@ -144,13 +148,13 @@ V3K_API int v3k_decrypt(const wchar_t *app, const wchar_t *licence, const wchar_
     }
 }
 
-V3K_API int v3k_decrypt_hashed(const wchar_t *app, const wchar_t *licence, const wchar_t *destination,
+V3K_API int v3k_decrypt_hashed(const wchar_t *app, const wchar_t *licence, const wchar_t *destination, int flags,
                                v3k_progress_fn progress, v3k_file_fn on_file, void *user,
                                char *message, int message_len)
 {
     unsigned long code = 0;
     __try {
-        return decrypt_hashed_work(app, licence, destination, progress, on_file, user, message, message_len);
+        return decrypt_hashed_work(app, licence, destination, flags, progress, on_file, user, message, message_len);
     } __except (code = GetExceptionCode(), EXCEPTION_EXECUTE_HANDLER) {
         return crashed(code, message, message_len);
     }

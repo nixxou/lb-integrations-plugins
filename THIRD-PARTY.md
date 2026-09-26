@@ -173,10 +173,11 @@ and `vita3k-installtool.exe`, the same operations from a command line. They do t
   which `Vita3K.exe --firmware` runs with the rest of the emulator starting around it.
 
 Every source it takes from Vita3K is compiled **unmodified**, from a checkout - **except one**:
-psvpfsparser's `Utils.cpp` is compiled from a copy, `tools/vita3k-install/pfs/Utils.cpp`, with two
-added lines marked `LBIP:` that hash every file a decrypt writes as it is written (see
-`tools/vita3k-install/written.h`). The build refuses to run if the original changes, so the copy
-cannot silently drift from it.
+psvpfsparser's `Utils.cpp` is compiled from a copy, `tools/vita3k-install/pfs/Utils.cpp`, with three
+changes marked `LBIP:` - two calls that hash every file a decrypt writes as it is written, and delete
+its encrypted source once it is done when asked to (see `tools/vita3k-install/written.h`), and a
+path computation done as a string instead of through `std::filesystem::relative`, which fails on a
+RAM disk. The build refuses to run if the original changes, so the copy cannot silently drift from it.
 
 | Component | Licence | Used for |
 |---|---|---|

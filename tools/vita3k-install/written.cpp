@@ -100,19 +100,53 @@ struct Entry {
 bool recording = false;
 std::map<std::wstring, Entry> entries;   // keyed by the path as written; a later write replaces
 
+bool consuming = false;
+std::wstring consume_root;               // lexically normal, generic, no trailing slash
+std::filesystem::path pending;           // the source of the file being decrypted now
+std::size_t consumed_count = 0;
+
 std::wstring key_of(const std::filesystem::path &p) { return p.lexically_normal().generic_wstring(); }
+
+// Delete a source file - only one under the root we were given, never anything else.
+void consume(const std::filesystem::path &source)
+{
+    if (!consuming || source.empty() || consume_root.empty()) return;
+    auto s = key_of(source);
+    if (s.size() <= consume_root.size() + 1 || s[consume_root.size()] != L'/') return;
+    if (CompareStringOrdinal(s.c_str(), static_cast<int>(consume_root.size()),
+                             consume_root.c_str(), static_cast<int>(consume_root.size()), TRUE) != CSTR_EQUAL) return;
+    std::error_code ec;
+    if (std::filesystem::remove(source, ec)) ++consumed_count;   // a failure costs only the room it would have freed
+}
+
+void consume_pending()
+{
+    if (!pending.empty()) consume(pending);
+    pending.clear();
+}
 
 } // namespace
 
-void begin()
+void begin(bool consume_sources, const std::filesystem::path &source_root)
 {
     entries.clear();
     recording = true;
+    consuming = consume_sources;
+    consume_root = source_root.empty() ? std::wstring() : key_of(source_root);
+    while (!consume_root.empty() && consume_root.back() == L'/') consume_root.pop_back();
+    pending.clear();
+    consumed_count = 0;
 }
 
-void track(std::ofstream &stream, const std::filesystem::path &path)
+std::size_t consumed() { return consumed_count; }
+
+void track(std::ofstream &stream, const std::filesystem::path &path, const std::filesystem::path &source)
 {
-    if (!recording || !stream.is_open()) return;
+    if (!recording) return;
+    // A new file starts: the previous one is finished, and so is its source.
+    consume_pending();
+    pending = source;
+    if (!stream.is_open()) return;
     auto buf = std::make_unique<HashingBuf>(stream.rdbuf());
     // basic_ios::rdbuf(sb) - ofstream hides the setter behind its own getter.
     stream.std::basic_ios<char>::rdbuf(buf.get());
@@ -145,11 +179,17 @@ void copied(const std::filesystem::path &source, const std::filesystem::path &de
     // A source shorter than the size it is cut to would be padded by the resize: not what was hashed.
     if (whole && left == 0) e.done.sha1 = sha.hex();
     entries[key_of(destination)] = std::move(e);
+
+    in.close();
+    consume_pending();
+    consume(source);
 }
 
 std::vector<File> end()
 {
+    consume_pending();
     recording = false;
+    consuming = false;
     std::vector<File> out;
     for (auto &[key, e] : entries) {
         File f = e.done;

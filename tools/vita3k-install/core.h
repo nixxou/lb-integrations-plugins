@@ -22,7 +22,7 @@ using Progress = std::function<void(std::uint64_t done, std::uint64_t total)>;
 // disk (written.h) - so the caller need not read the tree back to fingerprint it.
 int decrypt(const std::filesystem::path &src, const std::filesystem::path &licence,
             const std::filesystem::path &dst, bool verbose, const Progress &progress, std::string &message,
-            std::vector<written::File> *files = nullptr);
+            std::vector<written::File> *files = nullptr, bool consume_source = false);
 
 int firmware(const std::filesystem::path &pup, const std::filesystem::path &vita_fs, bool verbose,
              const Progress &progress, std::string &message);

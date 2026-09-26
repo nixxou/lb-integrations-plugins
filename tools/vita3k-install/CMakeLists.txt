@@ -12,7 +12,7 @@
 #   firmware   a PS Vita system update (.PUP) into a virtual filesystem
 #
 # EVERY SOURCE OF VITA3K'S IS COMPILED UNMODIFIED, from the checkout - but one: psvpfsparser's
-# Utils.cpp comes from our copy in pfs\ with two added lines (see below). What they reach for outside the
+# Utils.cpp comes from our copy in pfs\ with three changes (see below). What they reach for outside the
 # C++ standard library is supplied by shims in shim\ - measured by grep, not guessed:
 #
 #   OpenSSL      nine EVP calls, AES-128/256 CBC and AES-128 CTR, decryption only  -> shim\evp_cng.cpp
@@ -91,7 +91,8 @@ set(PSVPFS_SOURCES
 list(TRANSFORM PSVPFS_SOURCES PREPEND "${PSVPFS_DIR}/")
 
 # Utils.cpp is OUR COPY, pfs/Utils.cpp: the original plus two calls that hash every file a decrypt
-# writes as it is written (see written.h). Taken from exactly this original - a different one means
+# writes as it is written and can consume its source (see written.h), and a lexical path computation
+# that works on a RAM disk. Taken from exactly this original - a different one means
 # the copy is stale, and building it anyway would silently drop whatever upstream changed.
 file(SHA256 "${PSVPFS_DIR}/Utils.cpp" UTILS_SHA256)
 if (NOT UTILS_SHA256 STREQUAL "952ff43f01129df0cbb1508179c76719fd96e30df227acb6b5e6c11396614c97")

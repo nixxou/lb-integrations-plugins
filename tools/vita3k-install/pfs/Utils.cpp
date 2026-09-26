@@ -1,6 +1,7 @@
 // LBIP: a copy of psvpfsparser's Utils.cpp (psvpfstools e21df9a, sha256 952ff43f...), GPL like
-// its original, with TWO additions marked "LBIP:" - so that every file a decrypt writes is hashed
-// as it is written. See ../written.h. CMakeLists.txt refuses to build if the original changes.
+// its original, with THREE changes marked "LBIP:" - two calls so that every file a decrypt writes is
+// hashed as it is written (see ../written.h), and a lexical source_path_to_dest_path so that the
+// encrypted source can sit on the RAM disk. CMakeLists.txt refuses to build if the original changes.
 
 #include <cstdint>
 #include <iomanip>
@@ -108,7 +109,15 @@ void getFileListNoPfs(psvpfs::path root_path, std::set<psvpfs::path>& files, std
 }
 
 psvpfs::path source_path_to_dest_path(const psvpfs::path& source_root, const psvpfs::path& dest_root, const psvpfs::path& source_path) {
-   psvpfs::path dest_path = dest_root / psvpfs::relative(source_path, source_root);
+   // LBIP: LEXICAL, NOT psvpfs::relative. relative() resolves real paths through weakly_canonical,
+   // i.e. GetFinalPathNameByHandle - which an ImDisk volume answers with ERROR_INVALID_FUNCTION
+   // ("weakly_canonical: Fonction incorrecte", measured). Every source path here is built by walking
+   // source_root, so it starts with it: the relative part is plain string work. The original call is
+   // kept for the case that does not hold.
+   psvpfs::path rel = source_path.lexically_normal().lexically_relative(source_root.lexically_normal());
+   if (rel.empty() || *rel.begin() == "..")
+      rel = psvpfs::relative(source_path, source_root);
+   psvpfs::path dest_path = dest_root / rel;
    return psvpfs::path(dest_path.generic_string());
 }
 
@@ -226,7 +235,7 @@ bool sce_junction::create_empty_file(const psvpfs::path& source_root, const psvp
       return false;
    }
 
-   v3k::written::track(outputStream, new_path);   // LBIP: hash what is written through it
+   v3k::written::track(outputStream, new_path, m_real);   // LBIP: hash what is written through it
 
    return true;
 }

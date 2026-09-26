@@ -15,8 +15,9 @@
 //                     neither, and its output is byte-identical to the emulator's on all four
 //                     partitions - 1825 files.
 //
-// Both are Vita3K's own code, compiled unmodified under tools\vita3k-install (but for two lines
-// added to psvpfsparser's Utils.cpp, which hash each decrypted file as it is written), and LOADED INTO THIS
+// Both are Vita3K's own code, compiled unmodified under tools\vita3k-install (but for three changes
+// to psvpfsparser's Utils.cpp: each decrypted file hashed as it is written, its staging source deleted
+// once done, and a path worked out as a string so it runs on a RAM disk), and LOADED INTO THIS
 // PROCESS - which is why this plugin is GPL-2.0-or-later: see LICENSE.md beside it.
 //
 // ONE LOAD PER CALL. The library is loaded, called once and freed. Vita3K's pup.cpp numbers the
@@ -81,7 +82,7 @@ namespace LbIntegrations.Vita3k
                                      [MarshalAs(UnmanagedType.LPStr)] string sha1);
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
-        private delegate int DecryptHashedFn(string app, string licence, string destination,
+        private delegate int DecryptHashedFn(string app, string licence, string destination, int flags,
                                              ProgressFn progress, FileFn onFile, IntPtr user,
                                              byte[] message, int messageLen);
 
@@ -106,6 +107,14 @@ namespace LbIntegrations.Vita3k
         /// after the decrypt succeeded, on this thread.</summary>
         public static bool DecryptApp(string encryptedApp, string licence, string destination,
                                       Progress progress, Action<string, long, string> onFile, out string error)
+            => DecryptApp(encryptedApp, licence, destination, progress, onFile, false, out error);
+
+        /// <summary>... and with <paramref name="consumeSource"/>, deleting each file of
+        /// <paramref name="encryptedApp"/> as soon as it is decrypted - for a staging copy that is ours
+        /// to spend, so it and the decrypted game never both hold the whole game on the same disk.</summary>
+        public static bool DecryptApp(string encryptedApp, string licence, string destination,
+                                      Progress progress, Action<string, long, string> onFile, bool consumeSource,
+                                      out string error)
         {
             if (!Available)
             {
@@ -124,7 +133,8 @@ namespace LbIntegrations.Vita3k
                 try { onFile(relative, (long)size, sha1); } catch { }
             };
             bool ok = Call("decrypt", progress, out error, (lib, cb, buffer) =>
-                Export<DecryptHashedFn>(lib, "v3k_decrypt_hashed")(encryptedApp, licence, destination, cb, file,
+                Export<DecryptHashedFn>(lib, "v3k_decrypt_hashed")(encryptedApp, licence, destination,
+                                                                   consumeSource ? 1 : 0, cb, file,
                                                                    IntPtr.Zero, buffer, buffer.Length));
             GC.KeepAlive(file);
             return ok;

@@ -88,16 +88,18 @@ struct CoutSilenced
 namespace v3k {
 
 int decrypt(const fs::path &src, const fs::path &licence, const fs::path &dst, bool verbose,
-            const Progress &progress, std::string &message, std::vector<written::File> *files)
+            const Progress &progress, std::string &message, std::vector<written::File> *files,
+            bool consume_source)
 {
     // Recording stops on every way out, the throwing ones included.
     struct Recording {
         std::vector<written::File> *out;
         bool kept = false;
-        explicit Recording(std::vector<written::File> *o) : out(o) { if (out) written::begin(); }
+        Recording(std::vector<written::File> *o, bool consume, const fs::path &root) : out(o)
+        { if (out) written::begin(consume, root); }
         ~Recording() { if (out && !kept) written::end(); }
         void keep() { if (out) { *out = written::end(); kept = true; } }
-    } recording(files);
+    } recording(files, consume_source, src);
 
     try {
         if (!fs::is_directory(src)) return fail(message, "no app directory at " + src.string());
@@ -135,6 +137,7 @@ int decrypt(const fs::path &src, const fs::path &licence, const fs::path &dst, b
         recording.keep();
         message = "OK " + std::to_string(count_files(dst)) + " file(s)";
         if (files) message += ", " + std::to_string(files->size()) + " hashed as written";
+        if (files && consume_source) message += ", " + std::to_string(written::consumed()) + " source(s) consumed as they went";
         return 0;
     } catch (const std::exception &e) {
         return fail(message, std::string("the decryptor threw: ") + e.what());
