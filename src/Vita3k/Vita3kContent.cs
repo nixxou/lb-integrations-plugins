@@ -29,6 +29,7 @@ using System.IO;
 using System.Linq;
 using LbIntegrations.Psf;
 using SharpCompress.Archives;
+using LbIntegrations.Snapshot;
 
 namespace LbIntegrations.Vita3k
 {
@@ -48,6 +49,13 @@ namespace LbIntegrations.Vita3k
         /// reference walk has to hash, everything else being the pristine base. See
         /// SnapWalk.WriteFrom.</summary>
         public List<string> Written = new List<string>();
+
+        /// <summary>Every file the install wrote, keyed like a manifest (relative to the virtual
+        /// filesystem, forward slashes), with the size and SHA-1 of the bytes AS THEY WERE WRITTEN -
+        /// by the unzip, by the decrypt (native, hashed on the way to the disk) and for the licence.
+        /// The reference walk takes these instead of reading the files back: reading a file just
+        /// written is what real-time antivirus makes expensive. A file missing here is simply read.</summary>
+        public Dictionary<string, SnapEntry> Hashed = new Dictionary<string, SnapEntry>(StringComparer.Ordinal);
 
         public bool IsGame => !IsPatch && !IsAddon;
         public bool IsPatch => (Category ?? "").Contains("gp", StringComparison.OrdinalIgnoreCase);
@@ -203,8 +211,11 @@ namespace LbIntegrations.Vita3k
                         { error = content + " is PFS-encrypted and carries no licence to decrypt it with"; return null; }
 
                         report?.Invoke("Decrypting " + Name(content) + "...", 0);
+                        var prefix = relative.Replace('\\', '/').TrimEnd('/') + "/";
                         if (!Vita3kNative.DecryptApp(staging, licence, destination,
-                                                     f => report?.Invoke(null, f), out error)) return null;
+                                                     f => report?.Invoke(null, f),
+                                                     (path, size, sha1) => content.Hashed[prefix + path] = Entry(size, sha1),
+                                                     out error)) return null;
                     }
                     finally { TryDelete(stagingRoot); }
 
@@ -216,7 +227,8 @@ namespace LbIntegrations.Vita3k
                     Directory.CreateDirectory(destination);
                     report?.Invoke("Unpacking " + Name(content) + "...", 0);
                     files = Unpack(archivePath, content.Root, destination,
-                                   progress: f => report?.Invoke(null, f));
+                                   progress: f => report?.Invoke(null, f),
+                                   hashed: content.Hashed, prefix: relative.Replace('\\', '/').TrimEnd('/') + "/");
                 }
 
                 // Vita3K copies the licence for an app or an add-on, never for a patch: a patch runs
@@ -309,6 +321,8 @@ namespace LbIntegrations.Vita3k
                     var dir = Path.Combine(vitaFs, "ux0", "license", titleId);
                     Directory.CreateDirectory(dir);
                     File.WriteAllBytes(Path.Combine(dir, contentId + ".rif"), licence);
+                    content.Hashed["ux0/license/" + titleId + "/" + contentId + ".rif"] =
+                        Entry(licence.Length, Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(licence)));
 
                     content.Written.Add("ux0/license/" + titleId);
                     Log.Info("licence: ux0/license/" + titleId + "/" + contentId + ".rif");
@@ -343,8 +357,14 @@ namespace LbIntegrations.Vita3k
         private static string Name(VitaContent content)
             => string.IsNullOrWhiteSpace(content?.Title) ? (content?.TitleId ?? "the game") : content.Title;
 
+        private static SnapEntry Entry(long size, string sha1)
+            => new SnapEntry { IsDirectory = false, Size = size.ToString(), Sha1 = sha1 };
+
+        /// <summary>... and, given <paramref name="hashed"/>, the SHA-1 of every file as it is written,
+        /// under <paramref name="prefix"/> + its path.</summary>
         private static int Unpack(string archivePath, string root, string destination, bool everything = false,
-                                  Action<double> progress = null)
+                                  Action<double> progress = null,
+                                  Dictionary<string, SnapEntry> hashed = null, string prefix = null)
         {
             var full = Path.GetFullPath(destination);
             int files = 0;
@@ -389,7 +409,24 @@ namespace LbIntegrations.Vita3k
                 Directory.CreateDirectory(Path.GetDirectoryName(target));
                 using (var source = entry.OpenEntryStream())
                 using (var file = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None))
-                    source.CopyTo(file);
+                {
+                    if (hashed == null) source.CopyTo(file);
+                    else
+                    {
+                        using var sha = System.Security.Cryptography.IncrementalHash.CreateHash(
+                            System.Security.Cryptography.HashAlgorithmName.SHA1);
+                        var buffer = new byte[1 << 20];
+                        long size = 0;
+                        int n;
+                        while ((n = source.Read(buffer, 0, buffer.Length)) > 0)
+                        {
+                            file.Write(buffer, 0, n);
+                            sha.AppendData(buffer, 0, n);
+                            size += n;
+                        }
+                        hashed[(prefix ?? "") + key.TrimEnd('/')] = Entry(size, Convert.ToHexString(sha.GetHashAndReset()));
+                    }
+                }
                 files++;
 
                 if (progress != null)

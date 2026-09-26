@@ -13,6 +13,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Security.Cryptography;
 using LbIntegrations.Snapshot;
 
@@ -40,6 +41,7 @@ namespace LbIntegrations.Probe
                 TheDifference(root);
                 PuttingItBack(root);
                 Determinism(root);
+                Stamps(root);
 
                 Console.WriteLine();
                 Console.WriteLine(_bad == 0 ? "  OK - the difference finds every kind of change, and the file is stable"
@@ -174,6 +176,91 @@ namespace LbIntegrations.Probe
             Check("it unpacks", SnapFile.Unpack(fileOne, back, out var e3), e3);
             Check("with every entry", Directory.GetFiles(back).Length == names.Length);
             Check("and the content survives", Read(back, "alpha.bin") == "content of alpha.bin");
+        }
+
+        // ── stamps: the fast walk must be the full walk ──────────────────────
+
+        private static void Stamps(string root)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  stamps");
+
+            var tree = Path.Combine(root, "stamped");
+            var reference = Path.Combine(root, "stamped.txt");
+
+            Write(tree, "vs0/keep.bin", "never touched");
+            Write(tree, "same-size.bin", "AAAA");
+            Write(tree, "ux0/save.dat", "old save");
+            Write(tree, "swap-a.bin", "content A");
+            Thread.Sleep(50);                       // the two to be swapped get different times
+            Write(tree, "swap-b.bin", "content B");
+            Write(tree, "restored.bin", "pristine");
+            Write(tree, "chstat.bin", "1234");
+            Write(tree, "doomed.bin", "goes away");
+
+            Check("the reference walk succeeds", SnapWalk.Write(tree, reference, out var error) > 0, error);
+
+            // THE RESTORE, at its worst: a save file written over a reference file at the same size,
+            // with both times put back to what they were. Only being NAMED keeps it honest.
+            var restored = Path.Combine(tree, "restored.bin");
+            var (w0, c0) = (File.GetLastWriteTimeUtc(restored), File.GetCreationTimeUtc(restored));
+            File.WriteAllText(restored, "fromsave");
+            File.SetLastWriteTimeUtc(restored, w0);
+            File.SetCreationTimeUtc(restored, c0);
+
+            Check("the tree is stamped", SnapStamps.Write(tree, reference, new[] { "restored.bin" }, out error), error);
+
+            // A session, a moment later.
+            Thread.Sleep(100);
+            Write(tree, "same-size.bin", "BBBB");
+            Write(tree, "ux0/save.dat.tmp", "new save");
+            File.Delete(Path.Combine(tree, "ux0/save.dat"));
+            File.Move(Path.Combine(tree, "ux0/save.dat.tmp"), Path.Combine(tree, "ux0/save.dat"));
+            File.Move(Path.Combine(tree, "swap-a.bin"), Path.Combine(tree, "swap.tmp"));
+            File.Move(Path.Combine(tree, "swap-b.bin"), Path.Combine(tree, "swap-a.bin"));
+            File.Move(Path.Combine(tree, "swap.tmp"), Path.Combine(tree, "swap-b.bin"));
+            Write(tree, "ux0/new.bin", "brand new");
+            File.Delete(Path.Combine(tree, "doomed.bin"));
+
+            // The one case the rule does not see, done on purpose: same size, both times put back.
+            var chstat = Path.Combine(tree, "chstat.bin");
+            var (w1, c1) = (File.GetLastWriteTimeUtc(chstat), File.GetCreationTimeUtc(chstat));
+            File.WriteAllText(chstat, "5678");
+            File.SetLastWriteTimeUtc(chstat, w1);
+            File.SetCreationTimeUtc(chstat, c1);
+
+            var stamps = SnapStamps.Read(reference);
+            Check("the stamps belong to their reference", stamps != null);
+            var full = SnapWalk.Of(tree, out error);
+            var fast = SnapWalk.Of(tree, out error, null, SnapWalk.Read(reference), stamps, out int hashed);
+            Check("both walks succeed", full != null && fast != null, error);
+            if (full == null || fast == null) return;
+
+            var differ = full.Keys.Union(fast.Keys)
+                             .Where(k => !full.TryGetValue(k, out var a) || !fast.TryGetValue(k, out var b) || !a.SameAs(b))
+                             .OrderBy(k => k, StringComparer.Ordinal).ToList();
+            Check("the fast walk equals the full walk, but for the one known case",
+                  differ.Count == 1 && differ[0] == "chstat.bin", string.Join(", ", differ));
+            Console.WriteLine("            known, by design: a same-size rewrite with BOTH times put back is not seen"
+                              + (differ.Contains("chstat.bin") ? " - and it was not" : " - yet it was"));
+            Check("only the touched files were read (6: same size, save, the swapped two, restored, new)",
+                  hashed == 6, hashed + " read");
+
+            var state = Path.Combine(root, "stamped-state");
+            int captured = SnapDelta.Capture(tree, reference, state, out error, null, out int read);
+            Check("the capture with stamps succeeds", captured >= 0, error);
+            var index = File.ReadAllText(Path.Combine(state, SnapDelta.IndexName));
+            Check("the restored file is captured again", index.Contains("\trestored.bin\n"));
+            Check("the renamed-over save is captured", index.Contains("\tux0/save.dat\n"));
+            Check("both swapped files are captured", index.Contains("\tswap-a.bin\n") && index.Contains("\tswap-b.bin\n"));
+            Check("the same-size rewrite is captured", index.Contains("\tsame-size.bin\n"));
+            Check("the untouched file is not", !index.Contains("keep.bin"));
+            Check("the deletion is recorded", index.Contains("X\t-\tdoomed.bin"));
+
+            // A reference written again: its old stamps must not be believed.
+            Thread.Sleep(20);
+            SnapWalk.Write(tree, reference, out error);
+            Check("stamps of another reference are refused", SnapStamps.Read(reference) == null);
         }
 
         // ── helpers ──────────────────────────────────────────────────────────

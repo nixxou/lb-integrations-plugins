@@ -4,12 +4,18 @@
 //
 //   int v3k_abi_version(void)
 //   int v3k_decrypt (app, licence, destination, progress, user, message, message_len)
+//   int v3k_decrypt_hashed(app, licence, destination, progress, on_file, user, message, message_len)
 //   int v3k_firmware(pup, vita_fs,              progress, user, message, message_len)
 //   int v3k_selftest(message, message_len)
 //
 // Paths are UTF-16. Each returns 0 on success and writes one line to `message` - "OK ..." or
 // "ERROR ...", NUL-terminated and cut to fit. `progress` may be null; it is called on the calling
 // thread with (user, done, total): bytes for decrypt, percent out of 100 for firmware.
+//
+// v3k_decrypt_hashed (ABI 2) is v3k_decrypt that also reports every file it wrote - once the decrypt
+// has succeeded, on the calling thread, as (user, path relative to the destination with forward
+// slashes, size, SHA-1 in upper-case hex). The hash is taken from the bytes as they are written; see
+// written.h for why that matters. A file it could not hash is simply not reported.
 //
 // THIS CODE RUNS INSIDE THE HOST NOW, so a crash in it is a crash of LaunchBox. Vita3K's firmware code
 // is not armoured - extract_file writes through a FILE* it never checked - so every export runs its
@@ -36,10 +42,11 @@
 #define V3K_API extern "C" __declspec(dllexport)
 
 typedef void(__cdecl *v3k_progress_fn)(void *user, std::uint64_t done, std::uint64_t total);
+typedef void(__cdecl *v3k_file_fn)(void *user, const wchar_t *relative, std::uint64_t size, const char *sha1);
 
 namespace {
 
-constexpr int AbiVersion = 1;
+constexpr int AbiVersion = 2;   // 2: v3k_decrypt_hashed
 
 void copy_out(const char *text, char *out, int out_len)
 {
@@ -63,6 +70,35 @@ int decrypt_work(const wchar_t *app, const wchar_t *licence, const wchar_t *dst,
 {
     std::string m;
     int r = v3k::decrypt(app, licence, dst, false, wrap(cb, user), m);
+    copy_out(m.c_str(), message, message_len);
+    return r;
+}
+
+// The path of a written file, relative to the destination - by string, NOT std::filesystem::relative,
+// which resolves real paths and fails on an ImDisk volume (see Vita3kContent's staging note).
+bool relative_to(const std::filesystem::path &root, const std::filesystem::path &file, std::wstring &out)
+{
+    auto r = root.lexically_normal().generic_wstring();
+    auto f = file.lexically_normal().generic_wstring();
+    while (!r.empty() && r.back() == L'/') r.pop_back();
+    if (f.size() <= r.size() + 1 || f[r.size()] != L'/') return false;
+    if (CompareStringOrdinal(f.c_str(), static_cast<int>(r.size()), r.c_str(), static_cast<int>(r.size()), TRUE) != CSTR_EQUAL)
+        return false;
+    out = f.substr(r.size() + 1);
+    return true;
+}
+
+int decrypt_hashed_work(const wchar_t *app, const wchar_t *licence, const wchar_t *dst, v3k_progress_fn cb,
+                        v3k_file_fn on_file, void *user, char *message, int message_len)
+{
+    std::string m;
+    std::vector<v3k::written::File> files;
+    int r = v3k::decrypt(app, licence, dst, false, wrap(cb, user), m, &files);
+    if (r == 0 && on_file) {
+        std::wstring rel;
+        for (const auto &f : files)
+            if (relative_to(dst, f.path, rel)) on_file(user, rel.c_str(), f.size, f.sha1.c_str());
+    }
     copy_out(m.c_str(), message, message_len);
     return r;
 }
@@ -103,6 +139,18 @@ V3K_API int v3k_decrypt(const wchar_t *app, const wchar_t *licence, const wchar_
     unsigned long code = 0;
     __try {
         return decrypt_work(app, licence, destination, progress, user, message, message_len);
+    } __except (code = GetExceptionCode(), EXCEPTION_EXECUTE_HANDLER) {
+        return crashed(code, message, message_len);
+    }
+}
+
+V3K_API int v3k_decrypt_hashed(const wchar_t *app, const wchar_t *licence, const wchar_t *destination,
+                               v3k_progress_fn progress, v3k_file_fn on_file, void *user,
+                               char *message, int message_len)
+{
+    unsigned long code = 0;
+    __try {
+        return decrypt_hashed_work(app, licence, destination, progress, on_file, user, message, message_len);
     } __except (code = GetExceptionCode(), EXCEPTION_EXECUTE_HANDLER) {
         return crashed(code, message, message_len);
     }

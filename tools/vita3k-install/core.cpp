@@ -88,8 +88,17 @@ struct CoutSilenced
 namespace v3k {
 
 int decrypt(const fs::path &src, const fs::path &licence, const fs::path &dst, bool verbose,
-            const Progress &progress, std::string &message)
+            const Progress &progress, std::string &message, std::vector<written::File> *files)
 {
+    // Recording stops on every way out, the throwing ones included.
+    struct Recording {
+        std::vector<written::File> *out;
+        bool kept = false;
+        explicit Recording(std::vector<written::File> *o) : out(o) { if (out) written::begin(); }
+        ~Recording() { if (out && !kept) written::end(); }
+        void keep() { if (out) { *out = written::end(); kept = true; } }
+    } recording(files);
+
     try {
         if (!fs::is_directory(src)) return fail(message, "no app directory at " + src.string());
         if (!fs::exists(src / "sce_pfs")) return fail(message, "no sce_pfs in " + src.string() + " - nothing to decrypt");
@@ -123,7 +132,9 @@ int decrypt(const fs::path &src, const fs::path &licence, const fs::path &dst, b
         if (get_keystone(cryptops, dst) < 0) return fail(message, "the PFS layer did not decrypt (keystone check)");
 
         if (verbose) std::fprintf(stderr, "aes_cmac calls: %llu\n", (unsigned long long)cryptops->cmac_calls);
+        recording.keep();
         message = "OK " + std::to_string(count_files(dst)) + " file(s)";
+        if (files) message += ", " + std::to_string(files->size()) + " hashed as written";
         return 0;
     } catch (const std::exception &e) {
         return fail(message, std::string("the decryptor threw: ") + e.what());

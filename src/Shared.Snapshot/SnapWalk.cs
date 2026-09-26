@@ -61,8 +61,17 @@ namespace LbIntegrations.Snapshot
         /// <summary>The same walk, reporting how far it is - 0..1, by BYTES hashed rather than by files:
         /// on a game one file is often most of it, and a count would sit at 99% for most of the wait.</summary>
         public static Dictionary<string, SnapEntry> Of(string root, out string error, Action<double> progress)
+            => Of(root, out error, progress, null, null, out _);
+
+        /// <summary>The same walk, taking from <paramref name="reference"/> the entry of every file
+        /// whose stamp is unchanged since it - see SnapStamps for the rule and its one assumption.
+        /// Without stamps it is the full walk. <paramref name="hashed"/> says how many files were read.</summary>
+        public static Dictionary<string, SnapEntry> Of(string root, out string error, Action<double> progress,
+                                                      Dictionary<string, SnapEntry> reference,
+                                                      Dictionary<string, SnapStamp> stamps, out int hashed)
         {
             error = null;
+            hashed = 0;
             try
             {
                 if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
@@ -77,21 +86,22 @@ namespace LbIntegrations.Snapshot
                     if (key != null) entries[key] = new SnapEntry { IsDirectory = true, Size = "-", Sha1 = "-" };
                 }
 
-                // Listed first, so the total is known before the first byte is hashed.
-                var files = new List<FileInfo>();
+                // Listed first, so the total is known before the first byte is hashed. The listing
+                // carries size and times, so a stamp is checked without opening the file.
+                var files = new List<(string key, FileInfo info)>();
                 long total = 0;
-                foreach (var file in Directory.EnumerateFiles(full, "*", SearchOption.AllDirectories))
+                foreach (var info in new DirectoryInfo(full).EnumerateFiles("*", SearchOption.AllDirectories))
                 {
-                    var info = new FileInfo(file);
-                    files.Add(info);
+                    var key = Relative(full, info.FullName);
+                    if (key == null) continue;
+                    if (Untouched(key, info, reference, stamps, out var kept)) { entries[key] = kept; continue; }
+                    files.Add((key, info));
                     try { total += info.Length; } catch { }
                 }
 
                 long done = 0;
-                foreach (var info in files)
+                foreach (var (key, info) in files)
                 {
-                    var key = Relative(full, info.FullName);
-                    if (key == null) continue;
                     entries[key] = Describe(info.FullName);
                     if (progress != null)
                     {
@@ -100,6 +110,7 @@ namespace LbIntegrations.Snapshot
                     }
                 }
 
+                hashed = files.Count;
                 return entries;
             }
             catch (Exception ex)
@@ -108,6 +119,24 @@ namespace LbIntegrations.Snapshot
                 SnapLog.Warn("could not walk " + root, ex);
                 return null;
             }
+        }
+
+        /// <summary>Is this file exactly as it was stamped, and does the reference hold a usable entry
+        /// for it at that size? Then that entry is its answer.</summary>
+        private static bool Untouched(string key, FileInfo info, Dictionary<string, SnapEntry> reference,
+                                      Dictionary<string, SnapStamp> stamps, out SnapEntry kept)
+        {
+            kept = null;
+            if (reference == null || stamps == null) return false;
+            try
+            {
+                if (!stamps.TryGetValue(key, out var was) || !was.Same(SnapStamp.Of(info))) return false;
+                if (!reference.TryGetValue(key, out var entry) || entry.IsDirectory) return false;
+                if (entry.Size != was.Size.ToString() || entry.Sha1 == Unknown) return false;
+                kept = entry;
+                return true;
+            }
+            catch { return false; }   // gone since the listing: read it, and let that say so
         }
 
         /// <summary>Walk a tree and write the manifest. Written beside the target and moved into
@@ -194,9 +223,20 @@ namespace LbIntegrations.Snapshot
         /// and -1 when it fell back.</summary>
         public static int WriteFrom(string root, string baseManifest, IEnumerable<string> freshFolders,
                                     string manifestPath, out string error, Action<double> progress, out int hashed)
+            => WriteFrom(root, baseManifest, freshFolders, null, manifestPath, out error, progress, out hashed, out _);
+
+        /// <summary>The same, taking the entry of a fresh file from <paramref name="known"/> when it
+        /// is there at the same size - the fingerprints an install took of the bytes as it wrote them,
+        /// so they need not be read back (see VitaContent.Hashed). <paramref name="reused"/> says how
+        /// many were; anything not in it is read as before.</summary>
+        public static int WriteFrom(string root, string baseManifest, IEnumerable<string> freshFolders,
+                                    IReadOnlyDictionary<string, SnapEntry> known,
+                                    string manifestPath, out string error, Action<double> progress,
+                                    out int hashed, out int reused)
         {
             error = null;
             hashed = -1;
+            reused = 0;
             try
             {
                 var based = Read(baseManifest);
@@ -242,7 +282,14 @@ namespace LbIntegrations.Snapshot
                         var key = Relative(full, file);
                         if (key == null) continue;
                         long size = new FileInfo(file).Length;
-                        if (IsFresh(key)) { toHash.Add((key, file, size)); continue; }
+                        if (IsFresh(key))
+                        {
+                            if (known != null && known.TryGetValue(key, out var k) && !k.IsDirectory
+                                && k.Size == size.ToString() && k.Sha1 != Unknown && !string.IsNullOrEmpty(k.Sha1))
+                            { entries[key] = k; reused++; continue; }
+                            toHash.Add((key, file, size));
+                            continue;
+                        }
 
                         if (!based.TryGetValue(key, out var b) || b.IsDirectory)
                         { why = "a file the base does not have: " + key; break; }

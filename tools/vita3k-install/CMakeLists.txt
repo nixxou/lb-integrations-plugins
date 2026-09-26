@@ -11,7 +11,8 @@
 #   decrypt    an installed app through its PFS layer (NoNpDRM dumps)
 #   firmware   a PS Vita system update (.PUP) into a virtual filesystem
 #
-# EVERY SOURCE OF VITA3K'S IS COMPILED UNMODIFIED, from the checkout. What they reach for outside the
+# EVERY SOURCE OF VITA3K'S IS COMPILED UNMODIFIED, from the checkout - but one: psvpfsparser's
+# Utils.cpp comes from our copy in pfs\ with two added lines (see below). What they reach for outside the
 # C++ standard library is supplied by shims in shim\ - measured by grep, not guessed:
 #
 #   OpenSSL      nine EVP calls, AES-128/256 CBC and AES-128 CTR, decryption only  -> shim\evp_cng.cpp
@@ -86,9 +87,18 @@ set(PSVPFS_SOURCES
     UnicvDbParser.cpp
     UnicvDbTypes.cpp
     UnicvDbUtils.cpp
-    Utils.cpp
 )
 list(TRANSFORM PSVPFS_SOURCES PREPEND "${PSVPFS_DIR}/")
+
+# Utils.cpp is OUR COPY, pfs/Utils.cpp: the original plus two calls that hash every file a decrypt
+# writes as it is written (see written.h). Taken from exactly this original - a different one means
+# the copy is stale, and building it anyway would silently drop whatever upstream changed.
+file(SHA256 "${PSVPFS_DIR}/Utils.cpp" UTILS_SHA256)
+if (NOT UTILS_SHA256 STREQUAL "952ff43f01129df0cbb1508179c76719fd96e30df227acb6b5e6c11396614c97")
+    message(FATAL_ERROR "${PSVPFS_DIR}/Utils.cpp is not the one pfs/Utils.cpp was copied from"
+                        " (sha256 ${UTILS_SHA256}) - redo the copy with its two LBIP lines, then update this hash")
+endif()
+list(APPEND PSVPFS_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/pfs/Utils.cpp")
 
 # Vita3K's firmware install: the PUP reader, the SCE segment decryptor and key table, the FAT16 and
 # exFAT readers. sce_utils.cpp also carries SELF decryption, unused here but compiled as it stands.
@@ -106,6 +116,7 @@ set(FIRMWARE_SOURCES
 add_library(vita3k-install-core STATIC
     core.cpp
     firmware.cpp
+    written.cpp
     cng_crypto.cpp
     shim/evp_cng.cpp
     ${PSVPFS_SOURCES}

@@ -96,8 +96,15 @@ namespace LbIntegrations.Snapshot
         /// <summary>The same capture, saying how far its walk of the tree has got - 0..1, by bytes.</summary>
         public static int Capture(string root, string referencePath, string stateDir, out string error,
                                   Action<double> progress)
+            => Capture(root, referencePath, stateDir, out error, progress, out _);
+
+        /// <summary>The same capture; <paramref name="hashed"/> says how many files it had to read.
+        /// When the reference has stamps (SnapStamps), only files touched since are read.</summary>
+        public static int Capture(string root, string referencePath, string stateDir, out string error,
+                                  Action<double> progress, out int hashed)
         {
             error = null;
+            hashed = -1;
             string building = null;
             try
             {
@@ -105,7 +112,8 @@ namespace LbIntegrations.Snapshot
                 if (reference.Count == 0)
                 { error = "there is no reference to compare against"; return -1; }
 
-                var actual = SnapWalk.Of(root, out error, progress);
+                var stamps = SnapStamps.Read(referencePath);
+                var actual = SnapWalk.Of(root, out error, progress, reference, stamps, out hashed);
                 if (actual == null) return -1;
 
                 List<string> differing, removed, directories;
@@ -115,7 +123,7 @@ namespace LbIntegrations.Snapshot
                 // is still, not whether the user deleted too much.
                 if (removed.Count > 0)
                 {
-                    var again = SnapWalk.Of(root, out error);
+                    var again = SnapWalk.Of(root, out error, null, reference, stamps, out _);
                     if (again == null) return -1;
 
                     List<string> differing2, removed2, directories2;
@@ -163,6 +171,26 @@ namespace LbIntegrations.Snapshot
         }
 
         // ── putting it back ──────────────────────────────────────────────────
+
+        /// <summary>The paths a state folder writes as files ("F" lines), in index order. Empty when
+        /// there is no index.</summary>
+        public static List<string> FilesIn(string stateDir)
+        {
+            var paths = new List<string>();
+            try
+            {
+                var index = Path.Combine(stateDir ?? "", IndexName);
+                if (!File.Exists(index)) return paths;
+                foreach (var line in File.ReadAllLines(index))
+                {
+                    var parts = line.Split('\t');
+                    if (parts.Length < 3 || parts[0] != "F") continue;
+                    paths.Add(parts.Length == 3 ? parts[2] : string.Join("\t", parts, 2, parts.Length - 2));
+                }
+            }
+            catch (Exception ex) { SnapLog.Warn("could not read the index of " + stateDir, ex); }
+            return paths;
+        }
 
         /// <summary>Apply a state folder onto <paramref name="root"/>. Returns the number of files
         /// written, or -1. A missing index is 0 and not a failure: a session that changed nothing is
@@ -232,11 +260,27 @@ namespace LbIntegrations.Snapshot
             if (Directory.Exists(stateDir))
             {
                 retired = stateDir + "." + Guid.NewGuid().ToString("N") + ".old";
-                Directory.Move(stateDir, retired);
+                Move(stateDir, retired);
             }
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(stateDir)));
-            Directory.Move(building, stateDir);
+            Move(building, stateDir);
             if (retired != null) Scrub(retired);
+        }
+
+        /// <summary>A folder rename that outlasts a brief lock. The files in it were copied a moment
+        /// ago, and real-time antivirus opens each new one to scan it; while it does, renaming the
+        /// folder is refused ("access denied", measured once in three runs of the probe). Two seconds
+        /// at most, then the error is the caller's.</summary>
+        private static void Move(string from, string to)
+        {
+            for (int attempt = 1; ; attempt++)
+            {
+                try { Directory.Move(from, to); return; }
+                catch (Exception ex) when ((ex is IOException || ex is UnauthorizedAccessException) && attempt < 20)
+                {
+                    System.Threading.Thread.Sleep(100);
+                }
+            }
         }
 
         private static void Scrub(string dir)

@@ -441,6 +441,32 @@ namespace LbIntegrations.Probe
                           head[0] == (byte)'S' && head[1] == (byte)'C' && head[2] == (byte)'E' && head[3] == 0);
                 }
 
+                // HASHED AS WRITTEN: every file that landed must have its fingerprint from the install,
+                // and it must be the one reading the file back gives. This is what lets the reference walk
+                // skip reading a fresh game - so it is checked against the slow way, file by file.
+                var hashedField = content.GetType().GetField("Hashed");
+                var hashedMap = hashedField?.GetValue(content) as System.Collections.IDictionary;
+                int missing = 0, wrong = 0;
+                var firstBad = new List<string>();
+                foreach (var rel in landed)
+                {
+                    var entry = hashedMap != null && hashedMap.Contains(rel) ? hashedMap[rel] : null;
+                    if (entry == null) { missing++; if (firstBad.Count < 5) firstBad.Add("missing " + rel); continue; }
+                    var size = entry.GetType().GetField("Size").GetValue(entry) as string;
+                    var sha1 = entry.GetType().GetField("Sha1").GetValue(entry) as string;
+                    var path = Path.Combine(fs, rel.Replace('/', Path.DirectorySeparatorChar));
+                    string actual;
+                    using (var f = File.OpenRead(path))
+                    using (var sha = System.Security.Cryptography.SHA1.Create())
+                        actual = Convert.ToHexString(sha.ComputeHash(f));
+                    if (size != new FileInfo(path).Length.ToString() || sha1 != actual)
+                    { wrong++; if (firstBad.Count < 5) firstBad.Add("differs " + rel); }
+                }
+                Console.WriteLine("  hashed    " + (hashedMap?.Count ?? 0) + " as written, " + missing + " missing, " + wrong + " wrong");
+                foreach (var b in firstBad) Console.WriteLine("      " + b);
+                Check("every installed file was hashed as it was written", hashedMap != null && missing == 0);
+                Check("and every one of those equals the file read back", hashedMap != null && wrong == 0);
+
                 Check("and no staging copy is left behind",
                       !Directory.GetDirectories(fs, "*.pfs", SearchOption.AllDirectories).Any()
                       && !Directory.GetDirectories(Path.GetTempPath(), "lbip-vita3k-staging-*").Any());

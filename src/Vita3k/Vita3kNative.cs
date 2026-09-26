@@ -15,7 +15,8 @@
 //                     neither, and its output is byte-identical to the emulator's on all four
 //                     partitions - 1825 files.
 //
-// Both are Vita3K's own code, compiled unmodified under tools\vita3k-install, and LOADED INTO THIS
+// Both are Vita3K's own code, compiled unmodified under tools\vita3k-install (but for two lines
+// added to psvpfsparser's Utils.cpp, which hash each decrypted file as it is written), and LOADED INTO THIS
 // PROCESS - which is why this plugin is GPL-2.0-or-later: see LICENSE.md beside it.
 //
 // ONE LOAD PER CALL. The library is loaded, called once and freed. Vita3K's pup.cpp numbers the
@@ -41,7 +42,7 @@ namespace LbIntegrations.Vita3k
 
         /// <summary>The ABI the plugin was written against. A library that answers anything else is
         /// not called: the argument lists would not mean the same thing.</summary>
-        private const int AbiVersion = 1;
+        private const int AbiVersion = 2;   // 2: v3k_decrypt_hashed
 
         /// <summary>Set by the probe, which runs the plugin from its build folder where there is no
         /// native\ beside it. Nothing else should need it.</summary>
@@ -76,6 +77,15 @@ namespace LbIntegrations.Vita3k
                                        ProgressFn progress, IntPtr user, byte[] message, int messageLen);
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
+        private delegate void FileFn(IntPtr user, [MarshalAs(UnmanagedType.LPWStr)] string relative, ulong size,
+                                     [MarshalAs(UnmanagedType.LPStr)] string sha1);
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
+        private delegate int DecryptHashedFn(string app, string licence, string destination,
+                                             ProgressFn progress, FileFn onFile, IntPtr user,
+                                             byte[] message, int messageLen);
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
         private delegate int FirmwareFn(string pup, string vitaFs,
                                         ProgressFn progress, IntPtr user, byte[] message, int messageLen);
 
@@ -88,6 +98,14 @@ namespace LbIntegrations.Vita3k
         /// the library clears first.</summary>
         public static bool DecryptApp(string encryptedApp, string licence, string destination,
                                       Progress progress, out string error)
+            => DecryptApp(encryptedApp, licence, destination, progress, null, out error);
+
+        /// <summary>The same decrypt, telling <paramref name="onFile"/> about every file it wrote -
+        /// (path relative to the destination with forward slashes, size, SHA-1 in upper-case hex),
+        /// hashed from the bytes as they went to the disk, so nobody has to read them back. Called
+        /// after the decrypt succeeded, on this thread.</summary>
+        public static bool DecryptApp(string encryptedApp, string licence, string destination,
+                                      Progress progress, Action<string, long, string> onFile, out string error)
         {
             if (!Available)
             {
@@ -96,8 +114,20 @@ namespace LbIntegrations.Vita3k
                 Log.Warn(error);
                 return false;
             }
-            return Call("decrypt", progress, out error, (lib, cb, buffer) =>
-                Export<DecryptFn>(lib, "v3k_decrypt")(encryptedApp, licence, destination, cb, IntPtr.Zero, buffer, buffer.Length));
+            if (onFile == null)
+                return Call("decrypt", progress, out error, (lib, cb, buffer) =>
+                    Export<DecryptFn>(lib, "v3k_decrypt")(encryptedApp, licence, destination, cb, IntPtr.Zero, buffer, buffer.Length));
+
+            // Never throws back into native code: that would be a crash of the host.
+            FileFn file = (user, relative, size, sha1) =>
+            {
+                try { onFile(relative, (long)size, sha1); } catch { }
+            };
+            bool ok = Call("decrypt", progress, out error, (lib, cb, buffer) =>
+                Export<DecryptHashedFn>(lib, "v3k_decrypt_hashed")(encryptedApp, licence, destination, cb, file,
+                                                                   IntPtr.Zero, buffer, buffer.Length));
+            GC.KeepAlive(file);
+            return ok;
         }
 
         /// <summary>Install one firmware package into <paramref name="vitaFs"/>. The caller still checks

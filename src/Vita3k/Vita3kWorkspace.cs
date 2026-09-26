@@ -484,15 +484,29 @@ namespace LbIntegrations.Vita3k
                     // exactly that.
                     report?.Invoke("Taking the console's fingerprint...", 0);
                     var watch = System.Diagnostics.Stopwatch.StartNew();
-                    int walked = SnapWalk.WriteFrom(root, BaseManifestPath(layout), installed.Written,
+                    int walked = SnapWalk.WriteFrom(root, BaseManifestPath(layout), installed.Written, installed.Hashed,
                                                     ReferencePath(layout), out error, f => report?.Invoke(null, f),
-                                                    out int hashed);
+                                                    out int hashed, out int reused);
                     if (walked < 0) return null;
                     Log.Info("reference walk: " + walked + " entries in " + watch.ElapsedMilliseconds + " ms"
-                             + (hashed >= 0 ? " - " + hashed + " file(s) hashed, the rest from the base"
+                             + (hashed >= 0 ? " - " + hashed + " file(s) read, " + reused
+                                              + " hashed as the install wrote them, the rest from the base"
                                             : " - full walk"));
 
-                    RestoreSave(layout, content.TitleId, root);
+
+                    var restored = RestoreSave(layout, content.TitleId, root);
+
+                    // And what every file looks like from outside, so the capture at the end reads only
+                    // what the session touched. AFTER the restore and WITHOUT what it wrote: a restored
+                    // file differs from the reference and has to be captured again every time, and
+                    // File.Copy keeps the old write time - so it is not left to times at all, it is
+                    // simply never trusted. Failing costs only speed: the capture reads everything.
+                    watch.Restart();
+                    if (SnapStamps.Write(root, ReferencePath(layout), restored, out var stampError))
+                        Log.Info("stamped the tree in " + watch.ElapsedMilliseconds + " ms, "
+                                 + restored.Count + " restored file(s) left to be read");
+                    else
+                        Log.Warn("no stamps (" + stampError + ") - the capture will read the whole tree");
 
                     Remember(layout, content.TitleId, romPath, root);
                     ready = true;
@@ -579,7 +593,7 @@ namespace LbIntegrations.Vita3k
                     catch (Exception ex) { Log.Warn("could not clear " + work, ex); }
                 }
 
-                try { var r = ReferencePath(layout); if (r != null && File.Exists(r)) File.Delete(r); } catch { }
+                try { var r = ReferencePath(layout); if (r != null && File.Exists(r)) File.Delete(r); SnapStamps.Delete(r); } catch { }
                 Log.Info("the half-built session of " + titleId + " was given back");
             }
             catch (Exception ex) { Log.Warn("could not give back the half-built session", ex); }
@@ -607,7 +621,7 @@ namespace LbIntegrations.Vita3k
                     catch (Exception ex) { Log.Warn("could not clear " + work, ex); }
                 }
 
-                try { var r = ReferencePath(layout); if (r != null && File.Exists(r)) File.Delete(r); } catch { }
+                try { var r = ReferencePath(layout); if (r != null && File.Exists(r)) File.Delete(r); SnapStamps.Delete(r); } catch { }
                 Forget(layout);
                 if (previous != null) Log.Info("cleared the working tree that held " + previous);
             }
@@ -658,8 +672,7 @@ namespace LbIntegrations.Vita3k
                 if (!string.Equals(WorkTitle(layout), titleId, StringComparison.Ordinal)) return false;
 
                 // THE CLOSING WINDOW, as the launch has one. It stays invisible for a quick save -
-                // see Vita3kProgressWindow - and shows for the RAM disk release, which waits for the
-                // helper and has been measured at a minute and a half.
+                // see Vita3kProgressWindow.
                 using var window = Vita3kProgressWindow.Open("Vita3K - saving " + NameOf(titleId));
                 Action<string, double?> report = (step, fraction) => window?.Report(step, fraction);
 
@@ -675,8 +688,13 @@ namespace LbIntegrations.Vita3k
                 if (!taken)
                 {
                     report("Waiting for Vita3K to finish writing...", null);
+                    var settle = System.Diagnostics.Stopwatch.StartNew();
                     var deadline = DateTime.UtcNow + SettleBudget;
-                    Thread.Sleep(SettleFloor);
+
+                    // THE FLOOR IS FOR A SIGNAL THAT COMES BEFORE THE PROCESS HAS GONE - the host's
+                    // OnGameExited may. When Vita3K is already out of the process list nothing is left
+                    // to write, and the stillness check below is the only wait worth paying.
+                    if (Vita3kPaths.EmulatorRunning()) Thread.Sleep(SettleFloor);
 
                     while (true)
                     {
@@ -690,6 +708,7 @@ namespace LbIntegrations.Vita3k
                         }
                         Thread.Sleep(250);
                     }
+                    Log.Info("the tree was still after " + settle.ElapsedMilliseconds + " ms");
 
                     taken = CaptureLocked(layout, titleId, report);
                 }
@@ -705,7 +724,9 @@ namespace LbIntegrations.Vita3k
                     if (OnRamDisk(layout))
                     {
                         Log.Info("releasing the RAM disk of " + titleId + " - the session is saved");
+                        var release = System.Diagnostics.Stopwatch.StartNew();
                         Teardown(layout, report);
+                        Log.Info("released in " + release.ElapsedMilliseconds + " ms");
                     }
                 }
                 return taken;
@@ -763,12 +784,18 @@ namespace LbIntegrations.Vita3k
 
                 building = save + "." + Guid.NewGuid().ToString("N") + ".state";
                 report?.Invoke("Looking for what the game changed...", 0);
-                int files = SnapDelta.Capture(root, reference, building, out var error, f => report?.Invoke(null, f));
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                int files = SnapDelta.Capture(root, reference, building, out var error, f => report?.Invoke(null, f),
+                                              out int hashed);
                 if (files < 0) { Log.Warn("nothing captured: " + error); return false; }
+                Log.Info("capture walk in " + watch.ElapsedMilliseconds + " ms - " + hashed + " file(s) read"
+                         + (SnapStamps.Read(reference) == null ? " (no stamps: the whole tree)" : ", the rest untouched since the reference"));
 
                 report?.Invoke("Packing the save...", null);
+                watch.Restart();
                 if (!SnapFile.Pack(building, save, out error))
                 { Log.Warn("could not pack the save: " + error); return false; }
+                Log.Info("packed in " + watch.ElapsedMilliseconds + " ms");
 
                 _lastCaptured = titleId;
                 _lastCapturedAt = DateTime.UtcNow;
@@ -786,19 +813,23 @@ namespace LbIntegrations.Vita3k
         }
 
         /// <summary>Put a previous session back into a freshly built tree. A missing save is the
-        /// ordinary case of a game nobody has played yet.</summary>
-        private static void RestoreSave(Vita3kLayout layout, string titleId, string root)
+        /// ordinary case of a game nobody has played yet.
+        ///
+        /// Returns the paths the save names as files, written or not - never null.</summary>
+        private static List<string> RestoreSave(Vita3kLayout layout, string titleId, string root)
         {
             string folder = null;
+            var named = new List<string>();
             try
             {
                 var save = SavePathFor(layout, titleId);
-                if (save == null || !File.Exists(save)) return;
+                if (save == null || !File.Exists(save)) return named;
 
                 folder = save + "." + Guid.NewGuid().ToString("N") + ".open";
                 if (!SnapFile.Unpack(save, folder, out var error))
-                { Log.Warn("could not open the save: " + error); return; }
+                { Log.Warn("could not open the save: " + error); return named; }
 
+                named = SnapDelta.FilesIn(folder);
                 int written = SnapDelta.Apply(root, folder, out error);
                 Log.Info("restored " + written + " file(s) of " + titleId + "'s save");
             }
@@ -808,6 +839,7 @@ namespace LbIntegrations.Vita3k
                 try { if (folder != null && Directory.Exists(folder)) Directory.Delete(folder, true); }
                 catch { }
             }
+            return named;
         }
 
         /// <summary>The lazy net, for whatever the watcher missed: capture only when this game is the

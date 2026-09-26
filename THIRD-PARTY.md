@@ -172,7 +172,11 @@ and `vita3k-installtool.exe`, the same operations from a command line. They do t
 - **`firmware`** - a PS Vita system update (`.PUP`) into a virtual filesystem, Vita3K's `install_pup`,
   which `Vita3K.exe --firmware` runs with the rest of the emulator starting around it.
 
-Every source it takes from Vita3K is compiled **unmodified**, from a checkout:
+Every source it takes from Vita3K is compiled **unmodified**, from a checkout - **except one**:
+psvpfsparser's `Utils.cpp` is compiled from a copy, `tools/vita3k-install/pfs/Utils.cpp`, with two
+added lines marked `LBIP:` that hash every file a decrypt writes as it is written (see
+`tools/vita3k-install/written.h`). The build refuses to run if the original changes, so the copy
+cannot silently drift from it.
 
 | Component | Licence | Used for |
 |---|---|---|
