@@ -17,6 +17,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Linq;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
@@ -37,52 +38,105 @@ namespace LbIntegrations.Vita3k
 
         /// <summary>The command line that runs the app WE installed, rather than installing it again.
         ///
-        /// TWO THINGS MEASURED ON A REAL LAUNCH, and neither is guessable from the documentation.
+        /// MEASURED ON REAL LAUNCHES, three facts, and the third corrected an earlier reading of the
+        /// first two.
         ///
-        /// -r wants a TITLE ID, and the host appends the game's path after the command line. So the
-        /// emulator received `-r "C:\...\GAME.zip"` - and -r is VALIDATED against the installed app
-        /// list, so CLI11 rejected the value and the process was gone in 250 ms. The host said
-        /// nothing beyond a failure dialog. Hence -r carries the title id the install just produced.
+        /// -r wants a TITLE ID. The line the host hands us is the FINAL one, game path included:
+        /// `-F -r "C:\...\GAME.zip"` - and -r is VALIDATED against the installed app list, so CLI11
+        /// rejected the path and the process was gone in 250 ms.
         ///
-        /// AND THE APPENDED PATH STILL HAS TO GO SOMEWHERE. Left as a positional it means "install
-        /// this and run it" - and it WINS over -r: measured, the log reads
+        /// A game path left as a positional means "install this and run it", and it WINS over -r:
         ///     input-content-path: C:\...\GAME.zip
         ///     input-installed-path: PCSE00965
         ///     Installing archive from CLI: C:\...\GAME.zip
-        /// That would unpack the game a second time, over our own install, AFTER the reference walk
-        /// was taken - so anything the second pass wrote differently would land in the save.
+        /// That would unpack the game a second time, after the reference walk was taken.
         ///
-        /// So the line ends with -Z (--app-args), which takes one free TEXT and swallows the path
-        /// the host is about to add. Measured: the emulator stays up and installs nothing.
+        /// AND NewCommandLine REPLACES THAT WHOLE LINE - nothing is appended after it. LiteBox's
+        /// EmuPlugins.PrepareForLaunch says so in as many words, and LaunchBox showed it: an earlier
+        /// version assumed the host would append the path and ended the line with -Z to swallow it.
+        /// Split on spaces, the quoted path came apart, its first word became -r's value, the rest
+        /// was left lying on the line - "-F [PCSE00965] [USA] [NoNpDRM].zip" -r PCSE00965 -Z" - and
+        /// the emulator opened on its own window instead of the game.
         ///
-        /// -Z is added ONLY when there is a game path to swallow, because a dangling -Z is a missing
-        /// required value and CLI11 would refuse the whole line.</summary>
-        internal static string CommandLineFor(string current, string titleId, bool hostWillAppendPath)
+        /// So the path is REMOVED, respecting quotes, and -r names the title id. With no title id -
+        /// no console to build one on - the path is KEPT and only -r goes: Vita3K then installs and
+        /// runs the game itself, which is the right fallback and what it would do without us.</summary>
+        internal static string CommandLineFor(string current, string titleId, string romPath)
         {
+            var tokens = Tokenize(current);
             var kept = new List<string>();
-            var words = (current ?? "").Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-            for (int i = 0; i < words.Length; i++)
+
+            for (int i = 0; i < tokens.Count; i++)
             {
-                // Drop any -r/--installed-path already there, with its value when it has one: ours
-                // is the one that names the app actually installed in this session.
-                if (words[i] == "-r" || words[i] == "--installed-path")
+                var t = tokens[i];
+
+                if (t == "-r" || t == "--installed-path" || t == "-Z" || t == "--app-args")
                 {
-                    if (i + 1 < words.Length && !words[i + 1].StartsWith("-")) i++;
+                    // Its value goes with it - unless that "value" is the game path the host put right
+                    // after an emulator line ending in -r, which is the fallback's positional.
+                    if (i + 1 < tokens.Count && !tokens[i + 1].StartsWith("-")
+                        && (titleId != null || !IsTheGame(tokens[i + 1], romPath)))
+                        i++;
                     continue;
                 }
-                // A trailing -Z from an earlier build of this method would swallow our own -r.
-                if (words[i] == "-Z" || words[i] == "--app-args")
-                {
-                    if (i + 1 < words.Length && !words[i + 1].StartsWith("-")) i++;
-                    continue;
-                }
-                kept.Add(words[i]);
+
+                if (titleId != null && IsTheGame(t, romPath)) continue;
+                kept.Add(t);
             }
 
-            kept.Add("-r");
-            kept.Add(titleId);
-            if (hostWillAppendPath) kept.Add("-Z");
-            return string.Join(" ", kept);
+            if (titleId != null) { kept.Add("-r"); kept.Add(titleId); }
+            return string.Join(" ", kept.ConvertAll(Quote));
+        }
+
+        /// <summary>Split a Windows command line the way the runtime will: spaces outside quotes
+        /// separate, quotes group and are dropped. Backslash escapes are not honoured - a game path
+        /// does not end in a quote.</summary>
+        private static List<string> Tokenize(string line)
+        {
+            var tokens = new List<string>();
+            var current = new StringBuilder();
+            bool quoted = false, any = false;
+            foreach (var c in line ?? "")
+            {
+                if (c == '"') { quoted = !quoted; any = true; continue; }
+                if (!quoted && (c == ' ' || c == '\t'))
+                {
+                    if (any || current.Length > 0) tokens.Add(current.ToString());
+                    current.Clear();
+                    any = false;
+                    continue;
+                }
+                current.Append(c);
+            }
+            if (any || current.Length > 0) tokens.Add(current.ToString());
+            return tokens;
+        }
+
+        private static string Quote(string token)
+            => token.Length == 0 || token.IndexOfAny(new[] { ' ', '\t' }) >= 0 ? "\"" + token + "\"" : token;
+
+        /// <summary>Is this token the game? The full path, or the bare file name for an emulator entry
+        /// set to pass the name without its folder or extension.</summary>
+        private static bool IsTheGame(string token, string romPath)
+        {
+            if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(romPath)) return false;
+            try
+            {
+                if (string.Equals(Path.GetFullPath(token), Path.GetFullPath(romPath), StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            catch { }
+            return string.Equals(token, Path.GetFileName(romPath), StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(token, Path.GetFileNameWithoutExtension(romPath), StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>The line the host is about to run. A host that passes none gets the emulator
+        /// entry's own line, the least wrong thing to start from.</summary>
+        private static string CurrentLine(PrepareForLaunchArgs args)
+        {
+            var line = Safe(() => args?.CurrentCommandLine);
+            if (!string.IsNullOrWhiteSpace(line)) return line;
+            return Safe(() => args?.EmulatorBeingLaunched?.CommandLine) ?? "";
         }
 
         public override PrepareForLaunchResponse PrepareEmulatorForLaunch(PrepareForLaunchArgs args)
@@ -100,10 +154,12 @@ namespace LbIntegrations.Vita3k
                 if (!Vita3kWorkspace.HasBase(layout))
                 {
                     // Nothing to build a console from. Not a reason to refuse somebody their game:
-                    // Vita3K will open on whatever it has and say what is missing far better than we
-                    // could from here.
+                    // Vita3K installs and runs it itself, and says what is missing far better than we
+                    // could from here - once -r is off the line, since -r would reject the path.
                     Log.Warn("no pristine firmware is put aside - launching without a disposable Vita");
-                    return new PrepareForLaunchResponse(success: true);
+                    var plain = CommandLineFor(CurrentLine(args), null, ResolveFullPath(rom));
+                    Log.Info("command line: " + plain);
+                    return new PrepareForLaunchResponse(success: true) { NewCommandLine = plain };
                 }
 
                 // THE ONLY PROGRESS THE USER GETS AT LAUNCH: PrepareForLaunchArgs has no channel for
@@ -127,8 +183,7 @@ namespace LbIntegrations.Vita3k
                 Playing(layout, titleId);
                 go = true;
 
-                var line = CommandLineFor(Safe(() => args?.CurrentCommandLine), titleId,
-                                          !string.IsNullOrWhiteSpace(rom));
+                var line = CommandLineFor(CurrentLine(args), titleId, ResolveFullPath(rom));
                 Log.Info("command line: " + line);
                 return new PrepareForLaunchResponse(success: true) { NewCommandLine = line };
             }
@@ -155,8 +210,10 @@ namespace LbIntegrations.Vita3k
 
         public void OnAfterGameLaunched(IGame game, IAdditionalApplication app, IEmulator emulator) { }
 
-        /// <summary>KEPT FOR A HOST THAT SAYS SOMETHING. LaunchBox 14 is not one - measured - so the
-        /// watcher below is what actually takes the session out.</summary>
+        /// <summary>The host saying the game ended. LaunchBox 14 DOES call this - measured on a real
+        /// Vita session, 60 ms apart from the watcher below, which is how two captures came to race
+        /// for the same file. Both paths stay, since neither can be relied on alone, and the
+        /// workspace serialises them.</summary>
         public void OnGameExited()
         {
             var layout = _playingLayout;

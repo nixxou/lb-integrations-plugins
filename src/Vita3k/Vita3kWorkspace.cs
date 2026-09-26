@@ -191,8 +191,22 @@ namespace LbIntegrations.Vita3k
         {
             try
             {
-                var config = Path.Combine(Vita3kPaths.PortableDirOf(layout?.InstallDir) ?? "", "config.yml");
-                if (!File.Exists(config)) return;
+                var portable = Vita3kPaths.PortableDirOf(layout?.InstallDir);
+                if (string.IsNullOrEmpty(portable) || !Directory.Exists(portable)) return;
+                var config = Path.Combine(portable, "config.yml");
+
+                // NO FILE YET IS THE USUAL CASE NOW, and it is the case that matters: the firmware is
+                // installed by our own library, so the emulator has never run when the first game
+                // starts, and it writes a fresh config.yml - with the welcome dialog on - on that very
+                // run. A config.yml holding this one line is enough: Vita3K reads every key it finds
+                // and takes its default for the rest (update_members, config.cpp), then writes the
+                // whole file back on exit, keeping ours.
+                if (!File.Exists(config))
+                {
+                    File.WriteAllText(config, "show-welcome: false\n");
+                    Log.Info("wrote a config.yml with the welcome dialog off - the emulator has not run yet");
+                    return;
+                }
 
                 var text = File.ReadAllText(config);
                 if (text.IndexOf("show-welcome: true", StringComparison.Ordinal) < 0) return;
@@ -382,6 +396,19 @@ namespace LbIntegrations.Vita3k
         public static string Prepare(Vita3kLayout layout, string romPath, out string error,
                                      Action<string, double?> report)
         {
+            // Waits for an end-of-session release still in progress rather than racing it.
+            if (!Monitor.TryEnter(SessionGate))
+            {
+                report?.Invoke("Waiting for the previous session to be put away...", null);
+                Monitor.Enter(SessionGate);
+            }
+            try { return PrepareLocked(layout, romPath, out error, report); }
+            finally { Monitor.Exit(SessionGate); }
+        }
+
+        private static string PrepareLocked(Vita3kLayout layout, string romPath, out string error,
+                                            Action<string, double?> report)
+        {
             error = null;
             try
             {
@@ -404,6 +431,10 @@ namespace LbIntegrations.Vita3k
                 if (CanReuse(layout, content.TitleId, romPath))
                 {
                     Log.Info("the working tree already holds " + content.TitleId + " - reusing it");
+                    // The link is remade every time: a release interrupted after it dropped the
+                    // junction and before it forgot the tree would otherwise leave a console the
+                    // emulator cannot see.
+                    if (!Link(layout, WorkRoot(layout), out error)) return null;
                     return content.TitleId;
                 }
 
@@ -566,7 +597,19 @@ namespace LbIntegrations.Vita3k
         /// and the tree still, then a ceiling of five. Past the ceiling NOTHING IS READ - a marker
         /// says which game is still in there, and the lazy path finishes the job. Reading a tree
         /// somebody is still writing is what produced destructive saves next door.</summary>
+        /// <summary>ONE SESSION OPERATION AT A TIME. Measured: the host's OnGameExited and our own
+        /// watcher both fired at the end of the same session, 60 ms apart, and the second capture
+        /// failed on the first one's half-written file. And the RAM disk is released at the end of a
+        /// session, which waits for the helper - a relaunch during that wait must not reuse a console
+        /// that is being taken away. Capture, release and Prepare all hold this.</summary>
+        private static readonly object SessionGate = new object();
+
         public static bool CaptureOnExit(Vita3kLayout layout, string titleId)
+        {
+            lock (SessionGate) return CaptureOnExitLocked(layout, titleId);
+        }
+
+        private static bool CaptureOnExitLocked(Vita3kLayout layout, string titleId)
         {
             try
             {
@@ -591,7 +634,20 @@ namespace LbIntegrations.Vita3k
                 }
 
                 bool taken = Capture(layout, titleId);
-                if (taken) ClearPending(layout);
+                if (taken)
+                {
+                    ClearPending(layout);
+
+                    // A RAM DISK IS GIVEN BACK ONCE THE SESSION IS SAFE. Kept mounted it holds its
+                    // memory until another game or a reboot - past the host's own exit. So it goes,
+                    // AFTER the capture and never before: what is in RAM survives nothing. The
+                    // folder fallback stays, as asked: work\ is only cleared by another game.
+                    if (OnRamDisk(layout))
+                    {
+                        Log.Info("releasing the RAM disk of " + titleId + " - the session is saved");
+                        Teardown(layout);
+                    }
+                }
                 return taken;
             }
             catch (Exception ex)
@@ -602,8 +658,23 @@ namespace LbIntegrations.Vita3k
             }
         }
 
+        /// <summary>Is the current working tree on a RAM disk, rather than the work\ folder?</summary>
+        private static bool OnRamDisk(Vita3kLayout layout)
+        {
+            var root = WorkRoot(layout);
+            var work = WorkDir(layout);
+            if (string.IsNullOrEmpty(root)) return false;
+            return work == null || !string.Equals(Path.GetFullPath(root).TrimEnd('\\'),
+                                                  Path.GetFullPath(work).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+        }
+
         /// <summary>Compare the tree with its reference and pack the difference.</summary>
         public static bool Capture(Vita3kLayout layout, string titleId)
+        {
+            lock (SessionGate) return CaptureLocked(layout, titleId);
+        }
+
+        private static bool CaptureLocked(Vita3kLayout layout, string titleId)
         {
             string building = null;
             try
@@ -675,7 +746,12 @@ namespace LbIntegrations.Vita3k
                 var newest = Newest(root);
                 if (File.Exists(save) && newest <= File.GetLastWriteTimeUtc(save)) return save;
 
-                Capture(layout, titleId);
+                // NEVER WAITS. This runs when the host asks for saves - possibly on its UI thread - and
+                // a session operation holding the gate may be releasing a RAM disk, which takes a
+                // minute and a half. That operation captures the session itself; this one steps aside.
+                if (!Monitor.TryEnter(SessionGate)) return save;
+                try { CaptureLocked(layout, titleId); }
+                finally { Monitor.Exit(SessionGate); }
                 return save;
             }
             catch (Exception ex) { Log.Warn("could not refresh the save of " + titleId, ex); return null; }

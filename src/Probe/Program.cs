@@ -509,6 +509,7 @@ namespace LbIntegrations.Probe
             if (Has(args, "--vita3k"))
             {
                 if (!Vita3kCheck.Run(asm)) return 1;
+                if (!Vita3kCheck.CommandLine(asm)) return 1;
             }
 
             // The launch-time progress window: --vita3k-window. It opens on screen for three seconds.

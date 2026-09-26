@@ -38,10 +38,11 @@ namespace LbIntegrations.Vita3k
         private const string Repo = "Vita3K/Vita3K";
         private const string VitaPlatform = "Sony Playstation Vita";
 
-        // Their own defaults, and LaunchBox's row carries the same pair: -F is --fullscreen and -r is
-        // --installed-path, the title id of an app under ux0/app. Measured in config.cpp, where -r is
-        // even validated against the installed list.
-        private const string DefaultCommandLine = "-F -r";
+        // -F is --fullscreen. NOT "-F -r", which is what LaunchBox's own row carries: -r wants a title
+        // id and the host puts the game's PATH after the line, so "-F -r" alone is rejected by CLI11
+        // the moment it runs. The plugin writes "-r <title id>" itself at launch; without it, the path
+        // is a positional and Vita3K installs and runs the game - the right fallback.
+        private const string DefaultCommandLine = "-F";
 
         // "windows-latest.zip", and NOT "windows-arm64-latest.zip" - which contains every substring
         // the first one does, so the arm64 build has to be excluded by name rather than merely

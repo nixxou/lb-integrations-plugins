@@ -157,6 +157,54 @@ namespace LbIntegrations.Probe
             }
         }
 
+        /// <summary>The launch command line, case by case. A pure function, so it is checked here
+        /// rather than discovered at the next launch - the first case is the line LaunchBox really
+        /// handed over, which an earlier version turned into
+        ///     -F [PCSE00965] [USA] [NoNpDRM].zip" -r PCSE00965 -Z
+        /// and the emulator opened on its own window instead of the game.</summary>
+        public static bool CommandLine(Assembly pluginAssembly)
+        {
+            Console.WriteLine();
+            Console.WriteLine("-- Vita3K, the launch command line " + new string('-', 30));
+
+            _asm = pluginAssembly;
+            _bad = 0;
+            try
+            {
+                var type = _asm.GetType("LbIntegrations.Vita3k.Vita3kPlugin", throwOnError: true);
+                var build = type.GetMethod("CommandLineFor", BindingFlags.NonPublic | BindingFlags.Static);
+                if (!Check("CommandLineFor exists", build != null)) return false;
+
+                const string rom = @"C:\Users\mehdi\Downloads\KILLALLZOMBIES [PCSE00965] [USA] [NoNpDRM].zip";
+                string Line(string current, string titleId) => (string)build.Invoke(null, new object[] { current, titleId, rom });
+
+                void Case(string what, string current, string titleId, string want)
+                {
+                    var got = Line(current, titleId);
+                    Console.WriteLine("  " + what);
+                    Console.WriteLine("      in   " + current);
+                    Console.WriteLine("      out  " + got);
+                    Check("    gives " + want, got == want);
+                }
+
+                Case("the line LaunchBox really passed", "-F -r \"" + rom + "\"", "PCSE00965", "-F -r PCSE00965");
+                Case("the new default line", "-F \"" + rom + "\"", "PCSE00965", "-F -r PCSE00965");
+                Case("a line an earlier build rewrote", "-F -r PCSE00965 -Z \"" + rom + "\"", "PCSE00965", "-F -r PCSE00965");
+                Case("no console to build on: the game stays, -r goes", "-F -r \"" + rom + "\"", null, "-F \"" + rom + "\"");
+                Case("a user's own switch is kept", "-F --log-level 2 \"" + rom + "\"", "PCSE00965", "-F --log-level 2 -r PCSE00965");
+
+                Console.WriteLine();
+                Console.WriteLine(_bad == 0 ? "  OK - the game path never reaches the emulator beside -r"
+                                            : "  " + _bad + " FAILURE(S) - see above");
+                return _bad == 0;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("  EXCEPTION: " + (ex.InnerException ?? ex).Message);
+                return false;
+            }
+        }
+
         /// <summary>The progress window a game install shows at launch, looked for by its title among
         /// the desktop's windows: absent during its delay, present after it, gone once disposed. It
         /// does open on screen for about three seconds - that is the point of it.</summary>
