@@ -657,36 +657,43 @@ namespace LbIntegrations.Vita3k
                 if (root == null || !Directory.Exists(root)) return false;
                 if (!string.Equals(WorkTitle(layout), titleId, StringComparison.Ordinal)) return false;
 
-                // Already done by the other end-of-session signal, and nothing written since.
-                if (string.Equals(_lastCaptured, titleId, StringComparison.Ordinal)
-                    && (DateTime.UtcNow - _lastCapturedAt).TotalSeconds < 60
-                    && Newest(root) <= _lastCapturedAt)
-                    return true;
-
                 // THE CLOSING WINDOW, as the launch has one. It stays invisible for a quick save -
                 // see Vita3kProgressWindow - and shows for the RAM disk release, which waits for the
                 // helper and has been measured at a minute and a half.
                 using var window = Vita3kProgressWindow.Open("Vita3K - saving " + NameOf(titleId));
                 Action<string, double?> report = (step, fraction) => window?.Report(step, fraction);
 
-                report("Waiting for Vita3K to finish writing...", null);
-                var deadline = DateTime.UtcNow + SettleBudget;
-                Thread.Sleep(SettleFloor);
+                // ALREADY CAPTURED - by the other end-of-session signal, or by the lazy path GetSaves
+                // runs the moment the host lists saves after a game - and nothing written since. That
+                // spares the CAPTURE, and nothing else. Measured: an earlier version returned here
+                // outright, GetSaves had captured four seconds before the watcher arrived, and the RAM
+                // disk was never released.
+                bool taken = string.Equals(_lastCaptured, titleId, StringComparison.Ordinal)
+                             && (DateTime.UtcNow - _lastCapturedAt).TotalSeconds < 60
+                             && Newest(root) <= _lastCapturedAt;
 
-                while (true)
+                if (!taken)
                 {
-                    if (!Vita3kPaths.EmulatorRunning() && Quiet(root)) break;
-                    if (DateTime.UtcNow >= deadline)
+                    report("Waiting for Vita3K to finish writing...", null);
+                    var deadline = DateTime.UtcNow + SettleBudget;
+                    Thread.Sleep(SettleFloor);
+
+                    while (true)
                     {
-                        MarkPending(layout, titleId);
-                        Log.Info("the working tree was still busy after " + (int)SettleBudget.TotalSeconds
-                                 + "s - nothing read, " + PendingName + " says so");
-                        return false;
+                        if (!Vita3kPaths.EmulatorRunning() && Quiet(root)) break;
+                        if (DateTime.UtcNow >= deadline)
+                        {
+                            MarkPending(layout, titleId);
+                            Log.Info("the working tree was still busy after " + (int)SettleBudget.TotalSeconds
+                                     + "s - nothing read, " + PendingName + " says so");
+                            return false;
+                        }
+                        Thread.Sleep(250);
                     }
-                    Thread.Sleep(250);
+
+                    taken = CaptureLocked(layout, titleId, report);
                 }
 
-                bool taken = CaptureLocked(layout, titleId, report);
                 if (taken)
                 {
                     ClearPending(layout);
