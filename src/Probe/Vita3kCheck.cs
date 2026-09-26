@@ -57,6 +57,7 @@ namespace LbIntegrations.Probe
                 TheCapture(layout, portable, sessionRoot);
                 TheSecondLaunch(layout, portable, vpk);
                 AnotherGame(layout, portable, root);
+                OrphanedJunction(layout, portable, root);
 
                 Console.WriteLine();
                 Console.WriteLine(_bad == 0 ? "  OK - a console is built, played, captured and rebuilt around its save"
@@ -753,6 +754,32 @@ namespace LbIntegrations.Probe
                 File.AppendAllText(any, "grown");
             }, expectFallback: true);
             Trial("a missing file", t => File.Delete(Directory.GetFiles(t, "*", SearchOption.AllDirectories)[0]), expectFallback: true);
+        }
+
+        /// <summary>A junction whose target is GONE - what a reboot leaves: the RAM disk vanished,
+        /// portable\fs still points at it. It has to be recognised as a link and removed, or the next
+        /// mklink fails because the name is taken. An Exists check asks about the target and can
+        /// miss it; the plugin reads the entry's own attributes.</summary>
+        private static void OrphanedJunction(object layout, string portable, string root)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  an orphaned junction");
+
+            Call("Vita3kWorkspace", "Teardown", new object[] { layout });
+            var link = Path.Combine(portable, "fs");
+            var target = Path.Combine(root, "vanished-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(target);
+
+            var psi = new System.Diagnostics.ProcessStartInfo("cmd.exe", "/c mklink /J \"" + link + "\" \"" + target + "\"")
+            { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
+            using (var p = System.Diagnostics.Process.Start(psi)) p.WaitForExit(30000);
+            Directory.Delete(target);
+
+            bool listed() => Directory.EnumerateFileSystemEntries(portable).Any(e => string.Equals(e, link, StringComparison.OrdinalIgnoreCase));
+            if (!Check("a junction pointing nowhere is in place", listed())) return;
+
+            Call("Vita3kWorkspace", "Teardown", new object[] { layout });
+            Check("tearing down removes it all the same", !listed());
         }
 
         // ── a different game is what clears it ───────────────────────────────

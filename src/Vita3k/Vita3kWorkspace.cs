@@ -369,17 +369,28 @@ namespace LbIntegrations.Vita3k
             {
                 var link = FsLink(layout);
                 if (link == null) return;
-                var info = new DirectoryInfo(link);
-                if (!info.Exists) return;
 
-                if (info.LinkTarget == null && info.Attributes.HasFlag(FileAttributes.ReparsePoint) == false)
+                // THE LINK'S OWN ATTRIBUTES, NOT ITS TARGET'S. The question is "is a link sitting here",
+                // and it has to be answered for an ORPHANED junction too: after a reboot the RAM disk is
+                // gone but portable\fs still points at it, and the next mklink fails because the name
+                // is taken. An Exists check asks about the target and can say no while the link is
+                // there. GetAttributes reads the entry itself and never follows the reparse point.
+                FileAttributes attributes;
+                try { attributes = File.GetAttributes(link); }
+                catch (FileNotFoundException) { return; }
+                catch (DirectoryNotFoundException) { return; }
+
+                if (!attributes.HasFlag(FileAttributes.ReparsePoint))
                 {
                     // A REAL folder, not a link. That is somebody's filesystem, or a firmware that was
                     // never put aside. It is not ours to delete.
                     Log.Warn("portable\\fs is a real folder, not a junction - leaving it alone");
                     return;
                 }
+
+                // Removes the link, never what it points at - and needs no target to do it.
                 Directory.Delete(link);
+                Log.Info("removed the junction portable\\fs");
             }
             catch (Exception ex) { Log.Warn("could not remove the junction", ex); }
         }
