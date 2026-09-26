@@ -1,9 +1,10 @@
 // Vita3K integration for LaunchBox / LiteBox.
 //
-// THIS ONE ONLY INSTALLS, for now. It claims a Vita3K, publishes a row, reports versions, downloads
-// the emulator and gets its firmware in - and stops there. No save management, no launch handling:
-// the way a PS Vita title's data should be captured is a design that has not been settled, and
-// shipping half of it would leave users with saves in a shape we then have to migrate.
+// IT INSTALLS, AND IT PLAYS ON A CONSOLE IT THROWS AWAY. It claims a Vita3K, publishes a row,
+// reports versions, downloads the emulator and gets its firmware in - then puts that firmware aside
+// as a pristine console. Every session is built fresh from it, in RAM when the machine allows, the
+// game is installed onto it by us, and what changed at the end becomes the save. Nothing is ever
+// installed for good. See Vita3kWorkspace for the lifecycle and Vita3kSaves for the capture.
 //
 // Like the other four, this talks ONLY to the public SDK - no reference to any LaunchBox core
 // assembly - so it behaves identically under both hosts. Every entry point is defensive: the host

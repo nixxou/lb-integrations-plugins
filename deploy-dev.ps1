@@ -158,6 +158,31 @@ if (Test-Path $contract) {
         throw "The catalogue contract was not written: $contractTarget."
     }
     Write-Host "           $contractTarget"
+
+    # AND IT HAS TO BE THE SAME BYTES IN EVERY PLUGIN FOLDER. Measured 26/09: deploying ONE plugin
+    # rebuilds this contract - a fresh MVID alone changes the file - and leaves the other five
+    # carrying the previous build. Same assembly identity, different bytes, and LaunchBox opens the
+    # next start with
+    #     LOCAL EXCEPTION: Could not load file or assembly 'LbIntegrations.Catalog' ...
+    #     Assembly with same name is already loaded
+    # The plugins all load anyway, so nothing on screen says the deploy was wrong - which is the very
+    # kind of quiet drift this script exists to refuse. The siblings are brought back into line here
+    # rather than reported and left broken; a locked one is named, because that one needs the host
+    # closed and cannot be fixed from here.
+    $contractHash = (Get-FileHash $contract -Algorithm SHA256).Hash
+    foreach ($key in $Pack.Keys) {
+        $otherFolder = $Pack[$key].Folder
+        if ($otherFolder -eq $FolderName) { continue }
+        $sibling = Join-Path $LbRoot "Local\Plugins\$otherFolder\LbIntegrations.Catalog.dll"
+        if (-not (Test-Path $sibling)) { continue }   # that plugin is not deployed into this root
+        if ((Get-FileHash $sibling -Algorithm SHA256).Hash -eq $contractHash) { continue }
+        try {
+            Copy-Item $contract $sibling -Force -ErrorAction Stop
+            Write-Host "  realigned $otherFolder - it carried an older catalogue contract" -ForegroundColor Yellow
+        } catch {
+            Write-Host "  ! $otherFolder still carries an older catalogue contract and is locked. Close the host and deploy again, or LaunchBox will throw at start-up." -ForegroundColor Red
+        }
+    }
 }
 
 # A native companion, when the plugin has one and this checkout has built it. Only melonDS does
