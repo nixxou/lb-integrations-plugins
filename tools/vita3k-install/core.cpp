@@ -23,6 +23,7 @@
 #include "F00DNativeKeyEncryptor.h"
 #include "LocalKeyGenerator.h"
 #include "PfsFilesystem.h"
+#include "zipsource.h"
 
 #include <cstdio>
 #include <cstring>
@@ -142,6 +143,32 @@ int decrypt(const fs::path &src, const fs::path &licence, const fs::path &dst, b
     } catch (const std::exception &e) {
         return fail(message, std::string("the decryptor threw: ") + e.what());
     }
+}
+
+int decrypt_zip(const fs::path &zip, const std::string &root, const fs::path &stage, const fs::path &licence,
+                const fs::path &dst, const Progress &progress, std::string &message, std::vector<written::File> *files)
+{
+    // Small entries are extracted for real: psvpfsparser opens some metadata by path (files.db,
+    // unicv.db, keystone, sealedkey) rather than through the door zipsource serves.
+    constexpr std::uint64_t SmallLimit = 64 * 1024;
+    struct Closer { ~Closer() { zipsource::close(); } } closer;
+
+    std::string why;
+    std::size_t placeholders = 0, extracted = 0;
+    try {
+        if (!zipsource::open(zip, root, stage, SmallLimit, why, placeholders, extracted))
+            return fail(message, "reading from the zip is not possible: " + why);
+    } catch (const std::exception &e) {
+        return fail(message, std::string("laying out the stage threw: ") + e.what());
+    }
+
+    int r = decrypt(stage, licence, dst, false, progress, message, files, false);
+    if (r == 0 && zipsource::failed())
+        return fail(message, "an entry of the zip did not read back whole - not trusting this decrypt");
+    if (r == 0)
+        message += ", read from the zip (" + std::to_string(placeholders) + " placeholder(s), "
+                   + std::to_string(extracted) + " small file(s) extracted)";
+    return r;
 }
 
 int firmware(const fs::path &pup, const fs::path &vita_fs, bool verbose, const Progress &progress,

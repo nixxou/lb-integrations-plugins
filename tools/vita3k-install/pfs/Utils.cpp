@@ -1,7 +1,8 @@
 // LBIP: a copy of psvpfsparser's Utils.cpp (psvpfstools e21df9a, sha256 952ff43f...), GPL like
-// its original, with THREE changes marked "LBIP:" - two calls so that every file a decrypt writes is
-// hashed as it is written (see ../written.h), and a lexical source_path_to_dest_path so that the
-// encrypted source can sit on the RAM disk. CMakeLists.txt refuses to build if the original changes.
+// its original, with changes marked "LBIP:" - every file a decrypt writes hashed as it is written
+// (../written.h), a lexical source_path_to_dest_path so the source can sit on the RAM disk, and every
+// read of a source served from the zip when it is a placeholder (../zipsource.h). CMakeLists.txt
+// refuses to build if the original changes.
 
 #include <cstdint>
 #include <iomanip>
@@ -11,7 +12,8 @@
 #include <set>
 
 #include "Utils.h"
-#include "written.h"   // LBIP
+#include "written.h"     // LBIP
+#include "zipsource.h"   // LBIP
 
 #ifdef PSVPFS_BOOST
 #include <boost/algorithm/string.hpp>
@@ -185,6 +187,10 @@ std::uintmax_t sce_junction::file_size() const
 //open real file linked with this junction
 bool sce_junction::open(std::ifstream& in) const
 {
+   // LBIP: a placeholder's bytes are in the zip - read them from there, as they are asked for.
+   if(v3k::zipsource::attach(in, m_real))
+      return true;
+
    if(m_real.generic_string().length() > 0)
    {
       in.open(m_real.generic_string().c_str(), std::ios::in | std::ios::binary);
@@ -286,6 +292,25 @@ bool sce_junction::copy_existing_file(const psvpfs::path& source_root, const psv
 
 bool sce_junction::copy_existing_file(const psvpfs::path& source_root, const psvpfs::path& destination_root, std::uintmax_t size) const
 {
+   // LBIP: a placeholder is copied from its zip entry, not from the empty file standing in for it.
+   {
+      psvpfs::path zip_dest = source_path_to_dest_path(source_root, destination_root, m_real);
+      psvpfs::path zip_dir = zip_dest;
+      zip_dir.remove_filename();
+      psvpfs::create_directories(zip_dir);
+      switch(v3k::zipsource::copy_to(m_real, zip_dest, size))
+      {
+      case v3k::zipsource::Copy::Ok:
+         v3k::written::copied(m_real, zip_dest, size);
+         return true;
+      case v3k::zipsource::Copy::Failed:
+         std::cout << "Failed to copy from the zip: " << m_real.generic_string() << std::endl;
+         return false;
+      default:
+         break;
+      }
+   }
+
    if (!copy_existing_file(source_root, destination_root))
       return false;
 

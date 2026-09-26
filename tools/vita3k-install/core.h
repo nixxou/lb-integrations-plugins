@@ -24,6 +24,13 @@ int decrypt(const std::filesystem::path &src, const std::filesystem::path &licen
             const std::filesystem::path &dst, bool verbose, const Progress &progress, std::string &message,
             std::vector<written::File> *files = nullptr, bool consume_source = false);
 
+// The same decrypt, reading the encrypted app STRAIGHT FROM ITS ZIP (zipsource.h): `stage` is laid
+// out with the index and small files extracted and everything else as empty placeholders, and every
+// read of a placeholder is served from the archive. `root` is the app's folder inside it (UTF-8).
+int decrypt_zip(const std::filesystem::path &zip, const std::string &root, const std::filesystem::path &stage,
+                const std::filesystem::path &licence, const std::filesystem::path &dst, const Progress &progress,
+                std::string &message, std::vector<written::File> *files);
+
 int firmware(const std::filesystem::path &pup, const std::filesystem::path &vita_fs, bool verbose,
              const Progress &progress, std::string &message);
 

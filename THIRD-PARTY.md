@@ -175,15 +175,16 @@ and `vita3k-installtool.exe`, the same operations from a command line. They do t
 Every source it takes from Vita3K is compiled **unmodified**, from a checkout - **except one**:
 psvpfsparser's `Utils.cpp` is compiled from a copy, `tools/vita3k-install/pfs/Utils.cpp`, with three
 changes marked `LBIP:` - two calls that hash every file a decrypt writes as it is written, and delete
-its encrypted source once it is done when asked to (see `tools/vita3k-install/written.h`), and a
-path computation done as a string instead of through `std::filesystem::relative`, which fails on a
-RAM disk. The build refuses to run if the original changes, so the copy cannot silently drift from it.
+its encrypted source once it is done when asked to (see `tools/vita3k-install/written.h`); a path
+computation done as a string instead of through `std::filesystem::relative`, which fails on a RAM
+disk; and every read of a source file served from the game's zip when the file is only a placeholder
+(see `tools/vita3k-install/zipsource.h`), so an encrypted game is decrypted without any copy of it. The build refuses to run if the original changes, so the copy cannot silently drift from it.
 
 | Component | Licence | Used for |
 |---|---|---|
 | [Vita3K](https://github.com/Vita3K/Vita3K) - `vita3k/packages/src/pup.cpp`, `sce_utils.cpp`, `exfat.cpp` | GPL-2.0-or-later | reading the PUP, decrypting its SCE segments with the key table `sce_utils.cpp` carries, extracting the FAT16 and exFAT partitions |
 | [libfat16](https://github.com/Vita3K/libfat16) | MIT | reading the FAT16 partition images (`os0`, `vs0`, `sa0`) |
-| [miniz](https://github.com/richgel999/miniz) | MIT | inflating the compressed firmware segments |
+| [miniz](https://github.com/richgel999/miniz) | MIT | inflating the compressed firmware segments, and reading a game straight from its zip |
 | [vita-toolchain](https://github.com/vitasdk/vita-toolchain) - `src/self.h` only | MIT | the SELF header structures `sce_utils.cpp` names |
 | psvpfsparser ([Vita3K fork](https://github.com/Vita3K/psvpfsparser), originally by motoharu-gosuto) | **none stated** - see below | parsing `files.db` / `unicv.db` and decrypting every file of an app |
 

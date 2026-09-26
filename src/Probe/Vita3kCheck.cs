@@ -408,8 +408,32 @@ namespace LbIntegrations.Probe
                 Console.WriteLine("  into      " + fs);
 
                 var tempBefore = new HashSet<string>(Directory.GetDirectories(Path.GetTempPath(), "lbip-*"), StringComparer.OrdinalIgnoreCase);
+
+                // THE PEAK, measured rather than argued: what the RAM disk held at its fullest during
+                // the install. An ImDisk drive keeps its declared size in memory, so this is what the
+                // disk has to be sized for.
+                long usedBefore = 0, peak = 0;
+                bool sampling = drive != null;
+                System.Threading.Thread sampler = null;
+                if (sampling)
+                {
+                    var info = new DriveInfo(drive);
+                    usedBefore = info.TotalSize - info.AvailableFreeSpace;
+                    sampler = new System.Threading.Thread(() =>
+                    {
+                        while (sampling)
+                        {
+                            try { var i = new DriveInfo(drive); peak = Math.Max(peak, i.TotalSize - i.AvailableFreeSpace - usedBefore); } catch { }
+                            System.Threading.Thread.Sleep(5);
+                        }
+                    }) { IsBackground = true };
+                    sampler.Start();
+                }
+
                 var args = new object[] { romPath, fs, null };
                 var content = Call("Vita3kContent", "Install", args);
+                sampling = false;
+                sampler?.Join();
                 if (!Check("the archive installs", content != null, args[2] as string)) return false;
 
                 var landed = Directory.GetFiles(fs, "*", SearchOption.AllDirectories)
@@ -478,8 +502,21 @@ namespace LbIntegrations.Probe
                                        .Where(d => !tempBefore.Contains(d) && !d.StartsWith(fs, StringComparison.OrdinalIgnoreCase)
                                                    && !fs.StartsWith(d, StringComparison.OrdinalIgnoreCase)).ToList();
                 if (drive != null)
+                {
                     Check("and the install wrote nothing to %TEMP% - the staging copy stayed on the RAM disk",
                           tempNew.Count == 0, string.Join(", ", tempNew));
+                    long installed = landed.Sum(p => new FileInfo(Path.Combine(fs, p.Replace('/', Path.DirectorySeparatorChar))).Length);
+                    Console.WriteLine("  RAM disk  peak " + (peak / 1024 / 1024.0).ToString("0.0") + " MB used during the install, for "
+                                      + (installed / 1024 / 1024.0).ToString("0.0") + " MB installed");
+                    // The game once, and the NTFS overhead of its files - not the game plus a copy. The
+                    // unpacking fallback (LBIP_VITA3K_NO_ZIP=1) holds a file twice at worst: not checked.
+                    if (Environment.GetEnvironmentVariable("LBIP_VITA3K_NO_ZIP") != "1")
+                        Check("the RAM disk never held more than the installed game (+10% and 8 MB of filesystem overhead)",
+                              peak <= installed + installed / 10 + 8L * 1024 * 1024,
+                              (peak / 1024 / 1024) + " MB peak for " + (installed / 1024 / 1024) + " MB");
+                    else
+                        Console.WriteLine("            (the unpacking fallback: the peak is shown, not held to the game's size)");
+                }
 
                 if (drive != null)
                 {
@@ -488,6 +525,7 @@ namespace LbIntegrations.Probe
                     CopyAll(fs, keep);
                     Console.WriteLine("  kept      " + keep + "  (for the oracle comparison)");
                 }
+                else Console.WriteLine("  kept      " + fs + "  (for the oracle comparison - it is not deleted)");
                 }
                 finally
                 {

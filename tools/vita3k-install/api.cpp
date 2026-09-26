@@ -5,6 +5,7 @@
 //   int v3k_abi_version(void)
 //   int v3k_decrypt (app, licence, destination, progress, user, message, message_len)
 //   int v3k_decrypt_hashed(app, licence, destination, flags, progress, on_file, user, message, message_len)
+//   int v3k_decrypt_zip   (zip, root, stage, licence, destination, progress, on_file, user, message, message_len)
 //   int v3k_firmware(pup, vita_fs,              progress, user, message, message_len)
 //   int v3k_selftest(message, message_len)
 //
@@ -18,6 +19,11 @@
 // written.h for why that matters. A file it could not hash is simply not reported. flags bit 0
 // (V3K_CONSUME_SOURCE): delete each file of `app` once it is decrypted - for a staging copy that is
 // the caller's to spend, so it and the decrypted tree never both hold the whole game.
+//
+// v3k_decrypt_zip (ABI 3) decrypts without any copy of the encrypted app: `root` (UTF-8) is the app's
+// folder inside `zip`, `stage` an empty folder it lays out with the index and placeholders - see
+// zipsource.h. Reports files the way v3k_decrypt_hashed does. Any failure leaves the caller free to
+// unpack and use v3k_decrypt_hashed instead.
 //
 // THIS CODE RUNS INSIDE THE HOST NOW, so a crash in it is a crash of LaunchBox. Vita3K's firmware code
 // is not armoured - extract_file writes through a FILE* it never checked - so every export runs its
@@ -48,7 +54,7 @@ typedef void(__cdecl *v3k_file_fn)(void *user, const wchar_t *relative, std::uin
 
 namespace {
 
-constexpr int AbiVersion = 2;   // 2: v3k_decrypt_hashed
+constexpr int AbiVersion = 3;   // 2: v3k_decrypt_hashed, 3: v3k_decrypt_zip
 
 void copy_out(const char *text, char *out, int out_len)
 {
@@ -107,6 +113,22 @@ int decrypt_hashed_work(const wchar_t *app, const wchar_t *licence, const wchar_
     return r;
 }
 
+int decrypt_zip_work(const wchar_t *zip, const char *root, const wchar_t *stage, const wchar_t *licence,
+                     const wchar_t *dst, v3k_progress_fn cb, v3k_file_fn on_file, void *user,
+                     char *message, int message_len)
+{
+    std::string m;
+    std::vector<v3k::written::File> files;
+    int r = v3k::decrypt_zip(zip, root ? root : "", stage, licence, dst, wrap(cb, user), m, &files);
+    if (r == 0 && on_file) {
+        std::wstring rel;
+        for (const auto &f : files)
+            if (relative_to(dst, f.path, rel)) on_file(user, rel.c_str(), f.size, f.sha1.c_str());
+    }
+    copy_out(m.c_str(), message, message_len);
+    return r;
+}
+
 int firmware_work(const wchar_t *pup, const wchar_t *vita_fs, v3k_progress_fn cb, void *user,
                   char *message, int message_len)
 {
@@ -155,6 +177,18 @@ V3K_API int v3k_decrypt_hashed(const wchar_t *app, const wchar_t *licence, const
     unsigned long code = 0;
     __try {
         return decrypt_hashed_work(app, licence, destination, flags, progress, on_file, user, message, message_len);
+    } __except (code = GetExceptionCode(), EXCEPTION_EXECUTE_HANDLER) {
+        return crashed(code, message, message_len);
+    }
+}
+
+V3K_API int v3k_decrypt_zip(const wchar_t *zip, const char *root, const wchar_t *stage, const wchar_t *licence,
+                            const wchar_t *destination, v3k_progress_fn progress, v3k_file_fn on_file, void *user,
+                            char *message, int message_len)
+{
+    unsigned long code = 0;
+    __try {
+        return decrypt_zip_work(zip, root, stage, licence, destination, progress, on_file, user, message, message_len);
     } __except (code = GetExceptionCode(), EXCEPTION_EXECUTE_HANDLER) {
         return crashed(code, message, message_len);
     }

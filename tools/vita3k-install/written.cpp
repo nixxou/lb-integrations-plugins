@@ -2,6 +2,7 @@
 // See written.h.
 
 #include "written.h"
+#include "zipsource.h"
 
 #include <windows.h>
 #include <bcrypt.h>
@@ -163,7 +164,9 @@ void copied(const std::filesystem::path &source, const std::filesystem::path &de
     e.done.path = destination;
     e.done.size = size;
 
-    std::ifstream in(source, std::ios::binary);
+    // From the zip when the source is a placeholder: the placeholder itself holds nothing.
+    std::ifstream in;
+    if (!zipsource::attach(in, source)) in.open(source, std::ios::binary);
     Sha1 sha;
     std::vector<char> chunk(1 << 20);
     std::uint64_t left = size;

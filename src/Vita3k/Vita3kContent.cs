@@ -192,33 +192,63 @@ namespace LbIntegrations.Vita3k
                     // AND IT IS SPENT AS IT GOES: each encrypted file is deleted the moment its
                     // decrypted copy is finished, so the two never both hold the whole game - the peak
                     // is the game plus its largest file. See WorkingSizeBytes.
+                    //
+                    // AND BEFORE ALL THAT, NO COPY AT ALL. The first attempt reads the encrypted app
+                    // straight from its zip: the stage holds the index and empty sparse placeholders,
+                    // and the native side serves every read from the archive (tools\vita3k-install\
+                    // zipsource.h). The RAM disk then holds the decrypted game and nothing else. The
+                    // unpack below is the fallback, for an archive that cannot be read that way.
                     var stagingRoot = Path.Combine(StagingParent(vitaFs), StagingPrefix + Guid.NewGuid().ToString("N"));
                     var staging = Path.Combine(stagingRoot, content.TitleId);
-                    long need = Math.Max(0, UncompressedSize(archivePath));
-                    long room = FreeBytes(stagingRoot);
-                    if (room >= 0 && room < need + 64L * 1024 * 1024)
-                    {
-                        error = "not enough room on the working disk to unpack " + Name(content) + " before decrypting it ("
-                                + (need / (1024 * 1024)) + " MB needed, " + (room / (1024 * 1024)) + " MB free)";
-                        return null;
-                    }
+                    var prefix = relative.Replace('\\', '/').TrimEnd('/') + "/";
+                    Action<string, long, string> onFile = (path, size, sha1) => content.Hashed[prefix + path] = Entry(size, sha1);
                     Directory.CreateDirectory(staging);
                     try
                     {
-                        report?.Invoke("Unpacking " + Name(content) + "...", 0);
-                        Unpack(archivePath, content.Root, staging, everything: true,
-                               progress: f => report?.Invoke(null, f));
+                        bool done = false;
+                        if (IsZip(archivePath) && ArchiveHas(archivePath, content.Root + "sce_sys/package/work.bin")
+                            && Environment.GetEnvironmentVariable(NoZipVariable) != "1")
+                        {
+                            // The licence the stage WILL hold: the native side extracts the package
+                            // folder for real before it decrypts anything.
+                            var licence = InstalledLicence(content, vitaFs)
+                                          ?? Path.Combine(staging, "sce_sys", "package", "work.bin");
+                            report?.Invoke("Decrypting " + Name(content) + "...", 0);
+                            done = Vita3kNative.DecryptFromZip(archivePath, content.Root, staging, licence, destination,
+                                                               f => report?.Invoke(null, f), onFile, out error);
+                            if (!done)
+                            {
+                                Log.Warn("could not decrypt " + Name(content) + " from its zip (" + error
+                                         + ") - unpacking it first instead");
+                                content.Hashed.Clear();
+                                TryDelete(staging);
+                                Directory.CreateDirectory(staging);
+                            }
+                        }
 
-                        var licence = LicenceFor(content, staging, vitaFs);
-                        if (licence == null)
-                        { error = content + " is PFS-encrypted and carries no licence to decrypt it with"; return null; }
+                        if (!done)
+                        {
+                            long need = Math.Max(0, UncompressedSize(archivePath));
+                            long room = FreeBytes(stagingRoot);
+                            if (room >= 0 && room < need + 64L * 1024 * 1024)
+                            {
+                                error = "not enough room on the working disk to unpack " + Name(content) + " before decrypting it ("
+                                        + (need / (1024 * 1024)) + " MB needed, " + (room / (1024 * 1024)) + " MB free)";
+                                return null;
+                            }
+                            report?.Invoke("Unpacking " + Name(content) + "...", 0);
+                            Unpack(archivePath, content.Root, staging, everything: true,
+                                   progress: f => report?.Invoke(null, f));
 
-                        report?.Invoke("Decrypting " + Name(content) + "...", 0);
-                        var prefix = relative.Replace('\\', '/').TrimEnd('/') + "/";
-                        if (!Vita3kNative.DecryptApp(staging, licence, destination,
-                                                     f => report?.Invoke(null, f),
-                                                     (path, size, sha1) => content.Hashed[prefix + path] = Entry(size, sha1),
-                                                     consumeSource: true, out error)) return null;
+                            var licence = LicenceFor(content, staging, vitaFs);
+                            if (licence == null)
+                            { error = content + " is PFS-encrypted and carries no licence to decrypt it with"; return null; }
+
+                            report?.Invoke("Decrypting " + Name(content) + "...", 0);
+                            if (!Vita3kNative.DecryptApp(staging, licence, destination,
+                                                         f => report?.Invoke(null, f), onFile,
+                                                         consumeSource: true, out error)) return null;
+                        }
                     }
                     finally { TryDelete(stagingRoot); }
 
@@ -463,13 +493,42 @@ namespace LbIntegrations.Vita3k
         /// work.bin it carries.</summary>
         private static string LicenceFor(VitaContent content, string staging, string vitaFs)
         {
-            if (content.IsPatch && !string.IsNullOrWhiteSpace(content.ContentId))
-            {
-                var app = Path.Combine(vitaFs, "ux0", "license", content.TitleId, content.ContentId + ".rif");
-                if (File.Exists(app)) return app;
-            }
+            var installed = InstalledLicence(content, vitaFs);
+            if (installed != null) return installed;
             var work = Path.Combine(staging, "sce_sys", "package", "work.bin");
             return File.Exists(work) ? work : null;
+        }
+
+        /// <summary>The app's own licence, when this is a patch and the app is installed.</summary>
+        private static string InstalledLicence(VitaContent content, string vitaFs)
+        {
+            if (!content.IsPatch || string.IsNullOrWhiteSpace(content.ContentId)) return null;
+            var app = Path.Combine(vitaFs, "ux0", "license", content.TitleId, content.ContentId + ".rif");
+            return File.Exists(app) ? app : null;
+        }
+
+        /// <summary>A zip by its signature, not its name: a .vpk is one too, and a renamed 7z is not.</summary>
+        private static bool IsZip(string archivePath)
+        {
+            try
+            {
+                using var f = File.OpenRead(archivePath);
+                var head = new byte[4];
+                return f.Read(head, 0, 4) == 4 && head[0] == 0x50 && head[1] == 0x4B && head[2] == 0x03 && head[3] == 0x04;
+            }
+            catch { return false; }
+        }
+
+        private static bool ArchiveHas(string archivePath, string key)
+        {
+            try
+            {
+                using var archive = ArchiveFactory.Open(archivePath);
+                foreach (var entry in archive.Entries)
+                    if (string.Equals((entry.Key ?? "").Replace('\\', '/'), key, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            catch { }
+            return false;
         }
 
         /// <summary>Free bytes on the volume holding <paramref name="path"/>, or -1 when that cannot be
@@ -486,16 +545,18 @@ namespace LbIntegrations.Vita3k
             catch (Exception ex) { Log.Warn("could not remove " + dir, ex); }
         }
 
-        /// <summary>How much room installing this archive needs ON THE WORKING VOLUME. For a PFS dump,
-        /// the game plus its LARGEST FILE: its encrypted staging copy sits beside the tree on the same
-        /// volume, but each encrypted file is deleted as soon as it is decrypted - so at worst one file
-        /// exists twice. Not twice the game: an ImDisk drive holds its whole declared size in memory
-        /// for as long as it is mounted, so that would be the game's size again, for the session.</summary>
-        public static long WorkingSizeBytes(string archivePath)
-        {
-            long size = UncompressedSize(archivePath);
-            return size > 0 && CarriesPfs(archivePath, out long largest) ? size + largest : size;
-        }
+        /// <summary>How much room installing this archive needs ON THE WORKING VOLUME: the game, once,
+        /// for a PFS dump as for anything else - it is decrypted straight from its zip, and the stage
+        /// holds only placeholders that take no room. An ImDisk drive holds its whole declared size in
+        /// memory for as long as it is mounted, so this is RAM held for the session: not a byte more.
+        ///
+        /// The unpacking fallback needs the game plus its largest file; it checks the room it has and
+        /// says so plainly when it is short, rather than every launch paying for a case that should not
+        /// happen.</summary>
+        public static long WorkingSizeBytes(string archivePath) => UncompressedSize(archivePath);
+
+        /// <summary>Set to 1 by the probe to exercise the unpacking fallback. Nothing else sets it.</summary>
+        public const string NoZipVariable = "LBIP_VITA3K_NO_ZIP";
 
         /// <summary>The prefix of a staging folder - what a cleanup looks for.</summary>
         public const string StagingPrefix = "lbip-staging-";
@@ -508,25 +569,6 @@ namespace LbIntegrations.Vita3k
             return Path.GetDirectoryName(full) ?? full;
         }
 
-        /// <summary>Does the archive carry a PFS layer anywhere - wherever its content root is.</summary>
-        private static bool CarriesPfs(string archivePath, out long largest)
-        {
-            largest = 0;
-            bool pfs = false;
-            try
-            {
-                using var archive = ArchiveFactory.Open(archivePath);
-                foreach (var entry in archive.Entries)
-                {
-                    if (!entry.IsDirectory) largest = Math.Max(largest, entry.Size);
-                    var key = (entry.Key ?? "").Replace('\\', '/');
-                    if (key.StartsWith("sce_pfs/", StringComparison.OrdinalIgnoreCase)
-                        || key.IndexOf("/sce_pfs/", StringComparison.OrdinalIgnoreCase) >= 0) pfs = true;
-                }
-            }
-            catch (Exception ex) { Log.Warn("could not look into " + archivePath, ex); }
-            return pfs;
-        }
 
         /// <summary>The uncompressed size of an archive, read from its directory WITHOUT unpacking
         /// it. This is what the working disk has to be big enough for.</summary>

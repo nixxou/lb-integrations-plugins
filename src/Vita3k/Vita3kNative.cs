@@ -15,9 +15,10 @@
 //                     neither, and its output is byte-identical to the emulator's on all four
 //                     partitions - 1825 files.
 //
-// Both are Vita3K's own code, compiled unmodified under tools\vita3k-install (but for three changes
-// to psvpfsparser's Utils.cpp: each decrypted file hashed as it is written, its staging source deleted
-// once done, and a path worked out as a string so it runs on a RAM disk), and LOADED INTO THIS
+// Both are Vita3K's own code, compiled unmodified under tools\vita3k-install (but for a few marked
+// changes to psvpfsparser's Utils.cpp: each decrypted file hashed as it is written, its source read
+// straight from the zip or deleted once done, a path worked out as a string so it runs on a RAM
+// disk), and LOADED INTO THIS
 // PROCESS - which is why this plugin is GPL-2.0-or-later: see LICENSE.md beside it.
 //
 // ONE LOAD PER CALL. The library is loaded, called once and freed. Vita3K's pup.cpp numbers the
@@ -43,7 +44,7 @@ namespace LbIntegrations.Vita3k
 
         /// <summary>The ABI the plugin was written against. A library that answers anything else is
         /// not called: the argument lists would not mean the same thing.</summary>
-        private const int AbiVersion = 2;   // 2: v3k_decrypt_hashed
+        private const int AbiVersion = 3;   // 2: v3k_decrypt_hashed, 3: v3k_decrypt_zip
 
         /// <summary>Set by the probe, which runs the plugin from its build folder where there is no
         /// native\ beside it. Nothing else should need it.</summary>
@@ -85,6 +86,11 @@ namespace LbIntegrations.Vita3k
         private delegate int DecryptHashedFn(string app, string licence, string destination, int flags,
                                              ProgressFn progress, FileFn onFile, IntPtr user,
                                              byte[] message, int messageLen);
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
+        private delegate int DecryptZipFn(string zip, [MarshalAs(UnmanagedType.LPUTF8Str)] string root, string stage,
+                                          string licence, string destination, ProgressFn progress, FileFn onFile,
+                                          IntPtr user, byte[] message, int messageLen);
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
         private delegate int FirmwareFn(string pup, string vitaFs,
@@ -136,6 +142,26 @@ namespace LbIntegrations.Vita3k
                 Export<DecryptHashedFn>(lib, "v3k_decrypt_hashed")(encryptedApp, licence, destination,
                                                                    consumeSource ? 1 : 0, cb, file,
                                                                    IntPtr.Zero, buffer, buffer.Length));
+            GC.KeepAlive(file);
+            return ok;
+        }
+
+        /// <summary>Decrypt the app at <paramref name="root"/> inside <paramref name="zip"/> into
+        /// <paramref name="destination"/> WITHOUT ANY COPY of the encrypted app: <paramref name="stage"/>
+        /// (an empty folder) is laid out with the index and empty sparse placeholders, and every read
+        /// is served from the archive. Files are reported as DecryptApp reports them. False on any
+        /// failure - the caller then unpacks and decrypts the way it did before.</summary>
+        public static bool DecryptFromZip(string zip, string root, string stage, string licence, string destination,
+                                          Progress progress, Action<string, long, string> onFile, out string error)
+        {
+            if (!Available) { error = FileName + " is not installed beside the plugin"; return false; }
+            FileFn file = (user, relative, size, sha1) =>
+            {
+                try { onFile?.Invoke(relative, (long)size, sha1); } catch { }
+            };
+            bool ok = Call("decrypt from the zip", progress, out error, (lib, cb, buffer) =>
+                Export<DecryptZipFn>(lib, "v3k_decrypt_zip")(zip, root ?? "", stage, licence, destination, cb, file,
+                                                             IntPtr.Zero, buffer, buffer.Length));
             GC.KeepAlive(file);
             return ok;
         }
