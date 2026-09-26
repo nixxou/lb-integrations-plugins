@@ -511,6 +511,18 @@ namespace LbIntegrations.Probe
                 if (!Vita3kCheck.Run(asm)) return 1;
             }
 
+            // The launch-time progress window: --vita3k-window. It opens on screen for three seconds.
+            if (Has(args, "--vita3k-window"))
+            {
+                if (!Vita3kCheck.Window(asm)) return 1;
+            }
+
+            // The native library, called as the plugin calls it: --vita3k-native [--pup-dir <dir>]
+            if (Has(args, "--vita3k-native"))
+            {
+                if (!Vita3kCheck.Native(asm, Arg(args, "--pup-dir"))) return 1;
+            }
+
             // What our installer actually produces from a real archive, for comparing against an
             // oracle install: --vita3k-install --rom <archive>
             if (Has(args, "--vita3k-install"))

@@ -134,6 +134,11 @@ namespace LbIntegrations.Vita3k
         /// patch"): a patch tree on its own is not a game, and installing it would leave something
         /// that looks playable and is not.</summary>
         public static VitaContent Install(string archivePath, string vitaFs, out string error)
+            => Install(archivePath, vitaFs, out error, null);
+
+        /// <summary>The same install, saying what it is doing - see Vita3kProgressWindow.</summary>
+        public static VitaContent Install(string archivePath, string vitaFs, out string error,
+                                          Action<string, double?> report)
         {
             error = null;
             try
@@ -165,13 +170,17 @@ namespace LbIntegrations.Vita3k
                     Directory.CreateDirectory(staging);
                     try
                     {
-                        Unpack(archivePath, content.Root, staging, everything: true);
+                        report?.Invoke("Unpacking " + Name(content) + "...", 0);
+                        Unpack(archivePath, content.Root, staging, everything: true,
+                               progress: f => report?.Invoke(null, f));
 
                         var licence = LicenceFor(content, staging, vitaFs);
                         if (licence == null)
                         { error = content + " is PFS-encrypted and carries no licence to decrypt it with"; return null; }
 
-                        if (!Vita3kTool.DecryptApp(staging, licence, destination, out error)) return null;
+                        report?.Invoke("Decrypting " + Name(content) + "...", 0);
+                        if (!Vita3kNative.DecryptApp(staging, licence, destination,
+                                                     f => report?.Invoke(null, f), out error)) return null;
                     }
                     finally { TryDelete(staging); }
 
@@ -181,7 +190,9 @@ namespace LbIntegrations.Vita3k
                 else
                 {
                     Directory.CreateDirectory(destination);
-                    files = Unpack(archivePath, content.Root, destination);
+                    report?.Invoke("Unpacking " + Name(content) + "...", 0);
+                    files = Unpack(archivePath, content.Root, destination,
+                                   progress: f => report?.Invoke(null, f));
                 }
 
                 // Vita3K copies the licence for an app or an add-on, never for a patch: a patch runs
@@ -303,12 +314,23 @@ namespace LbIntegrations.Vita3k
         /// <summary>Extract everything under <paramref name="root"/> into the destination, MINUS the
         /// folders an install does not copy - see NotInstalled. Entries whose path escapes it are
         /// refused rather than trusted - an archive is somebody else's file.</summary>
-        private static int Unpack(string archivePath, string root, string destination, bool everything = false)
+        private static string Name(VitaContent content)
+            => string.IsNullOrWhiteSpace(content?.Title) ? (content?.TitleId ?? "the game") : content.Title;
+
+        private static int Unpack(string archivePath, string root, string destination, bool everything = false,
+                                  Action<double> progress = null)
         {
             var full = Path.GetFullPath(destination);
             int files = 0;
 
             using var archive = ArchiveFactory.Open(archivePath);
+
+            // By bytes, from the archive's own directory - known before anything is unpacked.
+            long total = 0, done = 0;
+            if (progress != null)
+                foreach (var e in archive.Entries)
+                    if (!e.IsDirectory) total += Math.Max(0, e.Size);
+
             foreach (var entry in archive.Entries)
             {
                 var key = (entry.Key ?? "").Replace('\\', '/');
@@ -343,6 +365,12 @@ namespace LbIntegrations.Vita3k
                 using (var file = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None))
                     source.CopyTo(file);
                 files++;
+
+                if (progress != null)
+                {
+                    done += Math.Max(0, entry.Size);
+                    try { progress(total > 0 ? (double)done / total : 1.0); } catch { }
+                }
             }
             return files;
         }

@@ -56,6 +56,11 @@ namespace LbIntegrations.Snapshot
         /// <summary>Walk <paramref name="root"/> into a dictionary keyed by relative path. Returns
         /// null on failure, never throws.</summary>
         public static Dictionary<string, SnapEntry> Of(string root, out string error)
+            => Of(root, out error, null);
+
+        /// <summary>The same walk, reporting how far it is - 0..1, by BYTES hashed rather than by files:
+        /// on a game one file is often most of it, and a count would sit at 99% for most of the wait.</summary>
+        public static Dictionary<string, SnapEntry> Of(string root, out string error, Action<double> progress)
         {
             error = null;
             try
@@ -72,11 +77,27 @@ namespace LbIntegrations.Snapshot
                     if (key != null) entries[key] = new SnapEntry { IsDirectory = true, Size = "-", Sha1 = "-" };
                 }
 
+                // Listed first, so the total is known before the first byte is hashed.
+                var files = new List<FileInfo>();
+                long total = 0;
                 foreach (var file in Directory.EnumerateFiles(full, "*", SearchOption.AllDirectories))
                 {
-                    var key = Relative(full, file);
+                    var info = new FileInfo(file);
+                    files.Add(info);
+                    try { total += info.Length; } catch { }
+                }
+
+                long done = 0;
+                foreach (var info in files)
+                {
+                    var key = Relative(full, info.FullName);
                     if (key == null) continue;
-                    entries[key] = Describe(file);
+                    entries[key] = Describe(info.FullName);
+                    if (progress != null)
+                    {
+                        try { done += info.Length; } catch { }
+                        try { progress(total > 0 ? (double)done / total : 1.0); } catch { }
+                    }
                 }
 
                 return entries;
@@ -93,12 +114,15 @@ namespace LbIntegrations.Snapshot
         /// place, so an interrupted walk never leaves half a reference - which would read as a tree
         /// that lost most of its files. Returns the entry count, or -1.</summary>
         public static int Write(string root, string manifestPath, out string error)
+            => Write(root, manifestPath, out error, null);
+
+        public static int Write(string root, string manifestPath, out string error, Action<double> progress)
         {
             error = null;
             string partial = null;
             try
             {
-                var entries = Of(root, out error);
+                var entries = Of(root, out error, progress);
                 if (entries == null) return -1;
 
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(manifestPath)));

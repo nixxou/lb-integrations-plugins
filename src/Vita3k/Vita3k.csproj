@@ -5,6 +5,9 @@
     <!-- net9 and not net10: a net9 assembly loads on the .NET 9 runtime (LaunchBox 13.27)
          AND on .NET 10 (13.28+, 14), so one build covers every host. -->
     <TargetFramework>net9.0-windows</TargetFramework>
+    <!-- For the progress window a game install shows at launch: the SDK gives a plugin no way to
+         say anything at that moment. See Vita3kProgressWindow.cs. -->
+    <UseWindowsForms>true</UseWindowsForms>
     <Platforms>AnyCPU;x64</Platforms>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>

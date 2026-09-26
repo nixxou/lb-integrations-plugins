@@ -57,31 +57,27 @@ Providers &providers()
     return p;
 }
 
-// One cached key per mode: the hot path re-uses the same tweak key for a whole file, and building a
-// key object costs far more than the 16 bytes it then encrypts.
-struct KeyCache
+// The key a cache holds, rebuilt only when the key bytes change. See KeyCache in the header.
+BCRYPT_KEY_HANDLE cached_key(CngCryptoOperations::KeyCache &cache, BCRYPT_ALG_HANDLE alg, const unsigned char *key)
 {
-    unsigned char bytes[16] = {};
+    if (cache.valid && std::memcmp(cache.bytes, key, 16) == 0) return (BCRYPT_KEY_HANDLE)cache.handle;
+    if (cache.handle) { BCryptDestroyKey((BCRYPT_KEY_HANDLE)cache.handle); cache.handle = nullptr; }
+    cache.valid = false;
     BCRYPT_KEY_HANDLE handle = nullptr;
-    bool valid = false;
+    if (!NT_SUCCESS(BCryptGenerateSymmetricKey(alg, &handle, nullptr, 0, (PUCHAR)key, 16, 0)))
+        return nullptr;
+    std::memcpy(cache.bytes, key, 16);
+    cache.handle = handle;
+    cache.valid = true;
+    return handle;
+}
 
-    ~KeyCache() { if (handle) BCryptDestroyKey(handle); }
-
-    BCRYPT_KEY_HANDLE get(BCRYPT_ALG_HANDLE alg, const unsigned char *key)
-    {
-        if (valid && std::memcmp(bytes, key, 16) == 0) return handle;
-        if (handle) { BCryptDestroyKey(handle); handle = nullptr; }
-        valid = false;
-        if (!NT_SUCCESS(BCryptGenerateSymmetricKey(alg, &handle, nullptr, 0, (PUCHAR)key, 16, 0)))
-            return nullptr;
-        std::memcpy(bytes, key, 16);
-        valid = true;
-        return handle;
-    }
-};
-
-thread_local KeyCache ecb_keys;
-thread_local KeyCache cbc_keys;
+void release(CngCryptoOperations::KeyCache &cache)
+{
+    if (cache.handle) BCryptDestroyKey((BCRYPT_KEY_HANDLE)cache.handle);
+    cache.handle = nullptr;
+    cache.valid = false;
+}
 
 void increment_be(unsigned char *counter, std::uint64_t by)
 {
@@ -95,7 +91,12 @@ void increment_be(unsigned char *counter, std::uint64_t by)
 } // namespace
 
 CngCryptoOperations::CngCryptoOperations() {}
-CngCryptoOperations::~CngCryptoOperations() {}
+
+CngCryptoOperations::~CngCryptoOperations()
+{
+    release(ecb_keys_);
+    release(cbc_keys_);
+}
 
 int CngCryptoOperations::aes(bool encrypt, const wchar_t *mode, const unsigned char *src, unsigned char *dst,
                              int size, const unsigned char *key, int key_size, unsigned char *iv) const
@@ -108,7 +109,7 @@ int CngCryptoOperations::aes(bool encrypt, const wchar_t *mode, const unsigned c
     if (!p.ok) return -1;
 
     const bool cbc = std::wcscmp(mode, BCRYPT_CHAIN_MODE_CBC) == 0;
-    BCRYPT_KEY_HANDLE k = cbc ? cbc_keys.get(p.aes_cbc, key) : ecb_keys.get(p.aes_ecb, key);
+    BCRYPT_KEY_HANDLE k = cbc ? cached_key(cbc_keys_, p.aes_cbc, key) : cached_key(ecb_keys_, p.aes_ecb, key);
     if (!k) return -1;
 
     // CNG writes the chained IV back into the buffer it is given; OpenSSL's EVP copies it. The

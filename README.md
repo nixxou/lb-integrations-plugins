@@ -1452,6 +1452,8 @@ MIT for most of it, see `LICENSE`.
 **Four directories are GPL-3.0-or-later**, and they are the ones that touch melonDS's NAND code:
 `tools/melonds-nand`, `src/Shared.Dsi`, `src/MelonDs` and `src/NoGba`. The shared DSi engine calls
 that library through P/Invoke, and both plugins compile the engine in, so the licence follows it.
-Flycast, Xenia, PPSSPP and Vita3K touch none of it and remain MIT. `THIRD-PARTY.md` sets out the whole of
+**Two more are GPL-2.0-or-later**, for the same reason with a different emulator: `tools/vita3k-install`
+is built from Vita3K's own install code, and `src/Vita3k` loads it into its process.
+Flycast, Xenia and PPSSPP touch none of either and remain MIT. `THIRD-PARTY.md` sets out the whole of
 it, including the LGPL-2.1 component the shipped binary statically links and how the relinking
 requirement is met.

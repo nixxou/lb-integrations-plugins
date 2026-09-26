@@ -216,12 +216,12 @@ namespace LbIntegrations.Vita3k
 
                 report?.Invoke("Installing the " + Describe(package) + "...", null);
 
-                // OURS FIRST: Vita3K's install_pup, compiled on its own - see Vita3kTool. The
+                // OURS FIRST: Vita3K's install_pup, compiled on its own - see Vita3kNative. The
                 // emulator's --firmware below is the fallback for a checkout that did not build it,
                 // not a second opinion: the two produce the same 1825 files, byte for byte.
-                if (Vita3kTool.Available)
+                if (Vita3kNative.Available)
                 {
-                    if (RunOurs(pup, vitaFs, package)) return true;
+                    if (RunOurs(pup, vitaFs, package, report)) return true;
                     Log.Info("our installer did not get the " + Describe(package) + " in - trying the emulator's own");
                 }
 
@@ -252,13 +252,17 @@ namespace LbIntegrations.Vita3k
 
         /// <summary>Install a .pup with vita3k-install.exe and say whether the package arrived - the
         /// same double answer as Run: the tool's verdict, and the partition this package fills.</summary>
-        private static bool RunOurs(string pupPath, string vitaFs, FirmwarePackage package)
+        private static bool RunOurs(string pupPath, string vitaFs, FirmwarePackage package,
+                                    Action<string, double?> report)
         {
-            bool ran = Vita3kTool.InstallFirmware(pupPath, vitaFs, out _);
+            // Progress goes to the host's own install window - Add Emulator shows it. install_pup's
+            // steps are coarse (10, 20, 30, 70, 100) but they are real, which --firmware never gave.
+            var what = "Installing the " + Describe(package) + "...";
+            bool ran = Vita3kNative.InstallFirmware(pupPath, vitaFs, f => report?.Invoke(what, f), out _);
             Scrub(vitaFs);
             bool installed = ran && IsInstalled(vitaFs, package);
             Log.Info((installed ? "installed " : "FAILED to install ") + Describe(package)
-                     + " with " + Vita3kTool.ToolName + " - " + Path.Combine(vitaFs, package.Directory)
+                     + " with " + Vita3kNative.FileName + " - " + Path.Combine(vitaFs, package.Directory)
                      + (installed ? " is populated" : " is missing or empty"));
             return installed;
         }

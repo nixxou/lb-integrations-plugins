@@ -1,7 +1,12 @@
 # vita3k-install, built against a Vita3K checkout rather than vendoring it.
 #
-# One product: vita3k-install.exe, which does the two installs Vita3K performs and a plain unzip cannot.
-# The Vita3K plugin runs it as a separate process; nothing here is loaded into a host.
+# The two installs Vita3K performs and a plain unzip cannot, as two products from one set of objects
+# - the same arrangement as melonds-nand:
+#
+#   vita3k-install.dll      the C door the Vita3K plugin loads (api.cpp), shipped as
+#                           native\vita3k-install.native so LaunchBox does not try to load it
+#   vita3k-installtool.exe  the same operations from a command line (main.cpp), for doing them by
+#                           hand and for the comparisons against installs made by Vita3K itself
 #
 #   decrypt    an installed app through its PFS layer (NoNpDRM dumps)
 #   firmware   a PS Vita system update (.PUP) into a virtual filesystem
@@ -95,8 +100,11 @@ set(FIRMWARE_SOURCES
     "${MINIZ_DIR}/miniz.c"
 )
 
-add_executable(vita3k-install
-    main.cpp
+# The shared middle: everything but the two front doors. api.cpp is deliberately NOT in it - its
+# symbols are dllexport-ed, and a static library only contributes the objects the linker has a reason
+# to pull, so the DLL would come out with no exports at all. Measured with melonds-nand.
+add_library(vita3k-install-core STATIC
+    core.cpp
     firmware.cpp
     cng_crypto.cpp
     shim/evp_cng.cpp
@@ -105,7 +113,7 @@ add_executable(vita3k-install
 )
 
 # shim\ FIRST: its util\ and openssl\ must win over anything else of the same name.
-target_include_directories(vita3k-install PRIVATE
+target_include_directories(vita3k-install-core PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/shim"
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${PSVPFS_DIR}"
@@ -114,11 +122,17 @@ target_include_directories(vita3k-install PRIVATE
     "${TOOLCHAIN_DIR}"
     "${MINIZ_DIR}"
 )
-target_compile_definitions(vita3k-install PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE)
-target_link_libraries(vita3k-install PRIVATE bcrypt)
+target_compile_definitions(vita3k-install-core PUBLIC _CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE)
+target_link_libraries(vita3k-install-core PUBLIC bcrypt)
 
 if (MSVC)
     # /Zc:preprocessor for __VA_OPT__ in shim\util\log.h. C++-only flags stay off miniz.c.
-    target_compile_options(vita3k-install PRIVATE /utf-8
+    target_compile_options(vita3k-install-core PUBLIC /utf-8
         $<$<COMPILE_LANGUAGE:CXX>:/EHsc /Zc:__cplusplus /Zc:preprocessor>)
 endif()
+
+add_library(vita3k-install SHARED api.cpp)
+target_link_libraries(vita3k-install PRIVATE vita3k-install-core)
+
+add_executable(vita3k-installtool main.cpp)
+target_link_libraries(vita3k-installtool PRIVATE vita3k-install-core)

@@ -115,8 +115,8 @@
     <EmbeddedResource Include="$(PayloadDir)\native\melonds-nandtool.exe">
       <LogicalName>payload/native/melonds-nandtool.exe</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="$(PayloadDir)\native\vita3k-install.exe">
-      <LogicalName>payload/native/vita3k-install.exe</LogicalName>
+    <EmbeddedResource Include="$(PayloadDir)\native\vita3k-install.dll">
+      <LogicalName>payload/native/vita3k-install.dll</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

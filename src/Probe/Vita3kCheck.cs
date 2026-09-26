@@ -71,6 +71,152 @@ namespace LbIntegrations.Probe
             finally { Scrub(root); }
         }
 
+        /// <summary>The native library the plugin loads, called the way the plugin calls it.
+        ///
+        /// Three claims are measured here rather than trusted. That the library answers its own
+        /// known-answer test. That a firmware installed THROUGH IT lands complete, with progress
+        /// reported to the end - the output folders are printed so they can be compared, byte for
+        /// byte, against an install made by Vita3K. And that it is UNLOADED after every call: pup.cpp
+        /// keeps a static counter that only a fresh load resets, so a library still mapped after a call
+        /// would be a corrupt partition waiting to happen. Two rounds, so the second one runs on a
+        /// library that has been loaded and freed before.
+        ///
+        /// Writes only under %TEMP%.</summary>
+        public static bool Native(Assembly pluginAssembly, string pupDir)
+        {
+            Console.WriteLine();
+            Console.WriteLine("-- Vita3K, the native library  [writes to %TEMP%] " + new string('-', 13));
+
+            _asm = pluginAssembly;
+            _bad = 0;
+            try
+            {
+                const string variable = "LBIP_VITA3K_NATIVE";
+                if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(variable)))
+                {
+                    var repo = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(pluginAssembly.Location),
+                                                             "..", "..", "..", "..", ".."));
+                    var built = Path.Combine(repo, "build", "vita3k", "vita3k-install.dll");
+                    if (File.Exists(built)) Environment.SetEnvironmentVariable(variable, built);
+                }
+                var library = Environment.GetEnvironmentVariable(variable);
+                Console.WriteLine("  library   " + (library ?? "(none)"));
+                if (!Check("the library is there", library != null && File.Exists(library))) return false;
+
+                var native = _asm.GetType("LbIntegrations.Vita3k.Vita3kNative", throwOnError: true);
+
+                var selftest = new object[] { null };
+                bool st = (bool)native.GetMethod("Selftest", BindingFlags.Public | BindingFlags.Static).Invoke(null, selftest);
+                Check("it passes its own known-answer test", st, selftest[0] as string);
+                Check("and is unloaded afterwards", !Mapped(library));
+
+                var pups = string.IsNullOrWhiteSpace(pupDir) || !Directory.Exists(pupDir)
+                    ? new string[0] : Directory.GetFiles(pupDir, "*.PUP");
+                Array.Sort(pups, StringComparer.OrdinalIgnoreCase);
+                if (pups.Length == 0)
+                {
+                    Console.WriteLine("  (no --pup-dir with .PUP files: firmware not exercised)");
+                }
+                else
+                {
+                    var progressType = native.GetNestedType("Progress");
+                    var install = native.GetMethod("InstallFirmware", BindingFlags.Public | BindingFlags.Static);
+
+                    for (int round = 1; round <= 2; round++)
+                    {
+                        var fs = Path.Combine(Path.GetTempPath(), "lbip-vita3k-fw-" + round + "-" + Guid.NewGuid().ToString("N"), "fs");
+                        Console.WriteLine("  round " + round + "  " + fs);
+                        foreach (var pup in pups)
+                        {
+                            int calls = 0;
+                            double last = -1;
+                            Action<double> seen = f => { calls++; last = f; };
+                            var progress = Delegate.CreateDelegate(progressType, seen.Target, seen.Method);
+
+                            var a = new object[] { pup, fs, progress, null };
+                            bool ok = (bool)install.Invoke(null, a);
+                            Console.WriteLine("            " + Path.GetFileName(pup) + "  " + calls + " progress call(s), last " + last.ToString("0.00"));
+                            Check(Path.GetFileName(pup) + " installs", ok, a[3] as string);
+                            Check("  progress reaches the end", calls > 0 && last >= 0.999);
+                            Check("  and the library is unloaded afterwards", !Mapped(library));
+                        }
+                        Console.WriteLine("  OUTPUT " + fs);
+                    }
+                }
+
+                Console.WriteLine();
+                Console.WriteLine(_bad == 0 ? "  OK - loaded, called, freed, and it did what it said"
+                                            : "  " + _bad + " FAILURE(S) - see above");
+                return _bad == 0;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("  EXCEPTION: " + (ex.InnerException ?? ex).Message);
+                return false;
+            }
+        }
+
+        /// <summary>The progress window a game install shows at launch, looked for by its title among
+        /// the desktop's windows: absent during its delay, present after it, gone once disposed. It
+        /// does open on screen for about three seconds - that is the point of it.</summary>
+        public static bool Window(Assembly pluginAssembly)
+        {
+            Console.WriteLine();
+            Console.WriteLine("-- Vita3K, the progress window  [opens a window] " + new string('-', 15));
+
+            _asm = pluginAssembly;
+            _bad = 0;
+            try
+            {
+                var type = _asm.GetType("LbIntegrations.Vita3k.Vita3kProgressWindow", throwOnError: true);
+                var title = "Vita3K - probe " + Guid.NewGuid().ToString("N").Substring(0, 8);
+                var window = type.GetMethod("Open", BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { title });
+                if (!Check("it opens", window != null)) return false;
+                var report = type.GetMethod("Report");
+
+                report.Invoke(window, new object[] { "Unpacking the game...", 0.0 });
+                System.Threading.Thread.Sleep(300);
+                Check("nothing is drawn during the first moments", FindWindow(null, title) == IntPtr.Zero);
+
+                for (int i = 0; i <= 25; i++)
+                {
+                    report.Invoke(window, new object[] { i < 12 ? "Unpacking the game..." : "Decrypting the game...", i / 25.0 });
+                    System.Threading.Thread.Sleep(100);
+                }
+                Check("it is on screen for a longer wait", FindWindow(null, title) != IntPtr.Zero);
+
+                report.Invoke(window, new object[] { "Taking the console's fingerprint...", null });
+                System.Threading.Thread.Sleep(400);
+
+                ((IDisposable)window).Dispose();
+                System.Threading.Thread.Sleep(500);
+                Check("and gone once disposed", FindWindow(null, title) == IntPtr.Zero);
+
+                Console.WriteLine();
+                Console.WriteLine(_bad == 0 ? "  OK - quiet for a quick wait, visible for a long one, gone after"
+                                            : "  " + _bad + " FAILURE(S) - see above");
+                return _bad == 0;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("  EXCEPTION: " + (ex.InnerException ?? ex).Message);
+                return false;
+            }
+        }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private static extern IntPtr FindWindow(string className, string windowName);
+
+        /// <summary>Is this file mapped into the current process? Asked of the process itself, which is
+        /// the only honest answer to "was it freed".</summary>
+        private static bool Mapped(string path)
+        {
+            var full = Path.GetFullPath(path);
+            foreach (System.Diagnostics.ProcessModule m in System.Diagnostics.Process.GetCurrentProcess().Modules)
+                if (string.Equals(Path.GetFullPath(m.FileName), full, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
         /// <summary>Install a REAL archive into a throwaway filesystem and print exactly what landed.
         ///
         /// FOR COMPARING AGAINST AN ORACLE: the same emulator before and after installing the same
@@ -95,15 +241,15 @@ namespace LbIntegrations.Probe
 
                 // The plugin runs from its build folder here, with no native\ beside it: point it at the
                 // tool this checkout built, unless the caller already chose one.
-                const string pfsVariable = "LBIP_VITA3K_TOOL";
+                const string pfsVariable = "LBIP_VITA3K_NATIVE";
                 if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(pfsVariable)))
                 {
                     var repo = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(pluginAssembly.Location),
                                                              "..", "..", "..", "..", ".."));
-                    var built = Path.Combine(repo, "build", "vita3k", "vita3k-install.exe");
+                    var built = Path.Combine(repo, "build", "vita3k", "vita3k-install.dll");
                     if (File.Exists(built)) Environment.SetEnvironmentVariable(pfsVariable, built);
                 }
-                Console.WriteLine("  decryptor " + (Environment.GetEnvironmentVariable(pfsVariable) ?? "(none - PFS dumps will be refused)"));
+                Console.WriteLine("  native    " + (Environment.GetEnvironmentVariable(pfsVariable) ?? "(none - PFS dumps will be refused)"));
 
                 var fs = Path.Combine(Path.GetTempPath(), "lbip-vita3k-install-" + Guid.NewGuid().ToString("N"));
                 Directory.CreateDirectory(fs);

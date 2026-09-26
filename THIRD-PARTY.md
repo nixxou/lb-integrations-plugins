@@ -35,11 +35,10 @@ reads what it writes; it compiles none of their code and links none of their lib
 firmware it fetches is Sony's, fetched from Sony's own update servers at the user's request and
 never redistributed.
 
-It does RUN one program built from their code: `native\vita3k-install.exe`, which decrypts a NoNpDRM
-dump and installs the firmware the way their installer does. That program is described under `tools/vita3k-install` below. The
-plugin starts it as a separate process and reads one line of its output - the arm's-length
-arrangement this file already describes for the DSi tool, before the NAND library was called
-directly - so `src/Vita3k` stays MIT.
+It does LOAD one library built from their code: `native\vita3k-install.native`, which decrypts a
+NoNpDRM dump and installs the firmware the way their installer does. That library is described under
+`tools/vita3k-install` below, and loading it into the plugin's process is why **`src/Vita3k` is
+GPL-2.0-or-later** - see its `LICENSE.md`.
 
 ## Merged into `NoGba.dll`
 
@@ -163,7 +162,9 @@ lines of arithmetic.
 
 ## `tools/vita3k-install` - GPL-2.0-or-later
 
-`tools/vita3k-install` builds one program, `vita3k-install.exe`, that does the two installs
+`tools/vita3k-install` builds two products from one set of objects, as `tools/melonds-nand` does -
+`vita3k-install.dll`, the C door the Vita3K plugin loads (shipped as `native\vita3k-install.native`),
+and `vita3k-installtool.exe`, the same operations from a command line. They do the two installs
 [Vita3K](https://github.com/Vita3K/Vita3K) performs and a plain unzip cannot:
 
 - **`decrypt`** - an installed app through its PFS layer, the step Vita3K's installer performs in
@@ -190,15 +191,16 @@ OpenSSL, zRIF or boost.
 
 **psvpfsparser carries no licence file**, in the Vita3K fork or upstream, and this repository does not
 invent one for it. Vita3K distributes it inside a GPL-2.0-or-later program without further notice;
-this tool does the same, and its own sources (`main.cpp`, `firmware.cpp`, `cng_crypto.*`, `shim\`) are
-offered under GPL-2.0-or-later like the Vita3K code they are compiled with. That is Vita3K's posture,
+this tool does the same, and its own sources (`api.cpp`, `core.*`, `main.cpp`, `firmware.cpp`,
+`cng_crypto.*`, `shim\`) are offered under GPL-2.0-or-later like the Vita3K code they are compiled
+with. That is Vita3K's posture,
 reproduced rather than improved on - worth settling before a release carries the binary.
 
 The same applies to the SCE key table in `sce_utils.cpp`: it is Vita3K's, published in their
 repository, compiled here as it stands.
 
 **Measured against the emulator itself**, not merely built: the crypto against published known answers
-(`vita3k-install selftest`: FIPS-197, SP 800-38A, RFC 4493, 2202, 4231); `decrypt` against a game
+(`vita3k-installtool selftest`: FIPS-197, SP 800-38A, RFC 4493, 2202, 4231); `decrypt` against a game
 installed by Vita3K - 35 files, byte-identical; `firmware` against a firmware installed by Vita3K - all
 four partitions, 1825 files, byte-identical, from a folder deeper than MAX_PATH that the emulator
 itself crashes in.

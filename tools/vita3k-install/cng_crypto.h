@@ -46,7 +46,24 @@ public:
     // path is even taken is measured rather than argued.
     mutable std::uint64_t cmac_calls = 0;
 
+    // One cached key per mode: the hot path re-uses the same tweak key for a whole file, and building
+    // a key object costs far more than the 16 bytes it then encrypts. PER INSTANCE, not thread_local:
+    // in the DLL the thread is the host's and outlives the library, so a thread-local cache would hold
+    // CNG key handles past the FreeLibrary that follows every operation.
+    struct KeyCache
+    {
+        unsigned char bytes[16] = {};
+        void *handle = nullptr;          // BCRYPT_KEY_HANDLE
+        bool valid = false;
+    };
+
+    CngCryptoOperations(const CngCryptoOperations &) = delete;
+    CngCryptoOperations &operator=(const CngCryptoOperations &) = delete;
+
 private:
+    mutable KeyCache ecb_keys_;
+    mutable KeyCache cbc_keys_;
+
     int aes(bool encrypt, const wchar_t *mode, const unsigned char *src, unsigned char *dst, int size,
             const unsigned char *key, int key_size, unsigned char *iv) const;
     int hash(const wchar_t *alg, bool hmac, const unsigned char *src, unsigned char *dst, int size,

@@ -106,7 +106,15 @@ namespace LbIntegrations.Vita3k
                     return new PrepareForLaunchResponse(success: true);
                 }
 
-                var titleId = Vita3kWorkspace.Prepare(layout, ResolveFullPath(rom), out var error);
+                // THE ONLY PROGRESS THE USER GETS AT LAUNCH: PrepareForLaunchArgs has no channel for
+                // it. The window stays invisible for a quick relaunch - see Vita3kProgressWindow.
+                string titleId, error;
+                var gameTitle = Safe(() => args?.GameBeingLaunched?.Title);
+                using (var window = Vita3kProgressWindow.Open("Vita3K - " + (string.IsNullOrWhiteSpace(gameTitle) ? "preparing the game" : gameTitle)))
+                {
+                    titleId = Vita3kWorkspace.Prepare(layout, ResolveFullPath(rom), out error,
+                                                      (step, fraction) => window?.Report(step, fraction));
+                }
                 if (titleId == null)
                 {
                     // REFUSED, and this is the one place we do refuse. A game that starts on a

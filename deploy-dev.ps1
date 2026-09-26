@@ -228,25 +228,34 @@ if ($Plugin -eq 'MelonDs' -or $Plugin -eq 'NoGba') {
     }
 }
 
-# THE PFS DECRYPTOR, for Vita3K. A NoNpDRM dump ships its files still encrypted, and a plain unzip
-# makes a game that does not boot; this is Vita3K's own decryption, built into one exe under
-# tools\vita3k-install. It is a separate program the plugin RUNS - nothing of it is loaded - so it sits in
-# native\ as an .exe, where LaunchBox does not try to load it as an assembly.
-# Optional here, as the NAND library is: without it the plugin still installs homebrew and refuses a
-# PFS dump with a sentence saying why. build-release.ps1 requires it.
+# THE VITA3K INSTALL LIBRARY: Vita3K's own PFS decryption and firmware install, built from
+# tools\vita3k-install. The plugin loads it into its process, so - like the NAND library - it goes into
+# native\ and loses its .dll extension: LaunchBox would try to load a .dll there as an assembly.
+# Optional here, as the NAND library is: without it the plugin installs homebrew, refuses a PFS dump
+# with a sentence saying why, and falls back to the emulator for the firmware. build-release.ps1
+# requires it.
 if ($Plugin -eq 'Vita3k') {
-    $pfs = Join-Path $repo "build\vita3k\vita3k-install.exe"
-    if (Test-Path $pfs) {
-        $nativeDir = Join-Path $targetDir "native"
+    $v3k = Join-Path $repo "build\vita3k\vita3k-install.dll"
+    $nativeDir = Join-Path $targetDir "native"
+    if (Test-Path $v3k) {
         New-Item -ItemType Directory -Force -Path $nativeDir | Out-Null
-        $pfsTarget = Join-Path $nativeDir "vita3k-install.exe"
-        Copy-Item $pfs $pfsTarget -Force
-        if ((Get-FileHash $pfs -Algorithm SHA256).Hash -ne (Get-FileHash $pfsTarget -Algorithm SHA256).Hash) {
-            throw "The PFS decryptor was not written: $pfsTarget."
+        $v3kTarget = Join-Path $nativeDir "vita3k-install.native"
+        Copy-Item $v3k $v3kTarget -Force
+        if ((Get-FileHash $v3k -Algorithm SHA256).Hash -ne (Get-FileHash $v3kTarget -Algorithm SHA256).Hash) {
+            throw "The Vita3K install library was not written: $v3kTarget."
         }
-        Write-Host "           $pfsTarget"
+        Write-Host "           $v3kTarget"
     } else {
-        Write-Host "  ! no build\vita3k\vita3k-install.exe - build tools\vita3k-install, or PFS dumps will be refused" -ForegroundColor Yellow
+        Write-Host "  ! no build\vita3k\vita3k-install.dll - build tools\vita3k-install, or PFS dumps will be refused" -ForegroundColor Yellow
+    }
+
+    # What earlier builds of this script put there: the out-of-process tool the library replaced.
+    foreach ($stale in @("vita3k-install.exe", "vita3k-pfs.exe")) {
+        $old = Join-Path $nativeDir $stale
+        if (Test-Path $old) {
+            Remove-Item $old -Force
+            Write-Host "  removed $old - the plugin loads the library now" -ForegroundColor Yellow
+        }
     }
 }
 

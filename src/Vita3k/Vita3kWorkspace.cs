@@ -375,6 +375,12 @@ namespace LbIntegrations.Vita3k
         /// <summary>Build the virtual Vita a session will be played on. Returns the title id, or null
         /// when the launch should be abandoned.</summary>
         public static string Prepare(Vita3kLayout layout, string romPath, out string error)
+            => Prepare(layout, romPath, out error, null);
+
+        /// <summary>The same preparation, saying what it is doing at each step - see
+        /// Vita3kProgressWindow, which is what listens at launch.</summary>
+        public static string Prepare(Vita3kLayout layout, string romPath, out string error,
+                                     Action<string, double?> report)
         {
             error = null;
             try
@@ -402,12 +408,14 @@ namespace LbIntegrations.Vita3k
                 }
 
                 // A DIFFERENT GAME. This is the only moment anything is cleared.
+                report?.Invoke("Putting the previous game away...", null);
                 Teardown(layout);
 
                 int sizeMb = BaseSizeMb(layout)
                              + (int)(Math.Max(0, Vita3kContent.WorkingSizeBytes(romPath)) / (1024 * 1024))
                              + MarginMb;
 
+                report?.Invoke("Preparing a fresh console...", null);
                 var root = OpenWorkingTree(layout, content.TitleId, sizeMb);
                 if (root == null) { error = "could not make a working tree"; return null; }
 
@@ -421,13 +429,15 @@ namespace LbIntegrations.Vita3k
                     if (!Link(layout, root, out error)) return null;
 
                     Log.Info("copying the pristine firmware into " + root);
-                    CopyTree(BaseDir(layout), root);
+                    report?.Invoke("Copying the console firmware...", 0);
+                    CopyTree(BaseDir(layout), root, f => report?.Invoke(null, f));
 
-                    var installed = Vita3kContent.Install(romPath, root, out error);
+                    var installed = Vita3kContent.Install(romPath, root, out error, report);
                     if (installed == null) return null;
 
                     // THE REFERENCE, between the install and everything else. See the header.
-                    int walked = SnapWalk.Write(root, ReferencePath(layout), out error);
+                    report?.Invoke("Taking the console's fingerprint...", 0);
+                    int walked = SnapWalk.Write(root, ReferencePath(layout), out error, f => report?.Invoke(null, f));
                     if (walked < 0) return null;
                     Log.Info("reference walk: " + walked + " entries");
 
@@ -705,15 +715,19 @@ namespace LbIntegrations.Vita3k
             return newest;
         }
 
-        private static void CopyTree(string from, string to)
+        private static void CopyTree(string from, string to, Action<double> progress = null)
         {
             foreach (var dir in Directory.EnumerateDirectories(from, "*", SearchOption.AllDirectories))
                 Directory.CreateDirectory(Path.Combine(to, dir.Substring(from.Length).TrimStart('\\', '/')));
-            foreach (var file in Directory.EnumerateFiles(from, "*", SearchOption.AllDirectories))
+
+            var files = new List<string>(Directory.EnumerateFiles(from, "*", SearchOption.AllDirectories));
+            for (int i = 0; i < files.Count; i++)
             {
+                var file = files[i];
                 var target = Path.Combine(to, file.Substring(from.Length).TrimStart('\\', '/'));
                 Directory.CreateDirectory(Path.GetDirectoryName(target));
                 File.Copy(file, target, overwrite: true);
+                if (progress != null) { try { progress((double)(i + 1) / files.Count); } catch { } }
             }
         }
 

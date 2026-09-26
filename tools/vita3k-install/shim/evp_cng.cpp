@@ -9,6 +9,7 @@
 #include <windows.h>
 #include <bcrypt.h>
 
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -36,17 +37,30 @@ struct EVP_CIPHER_CTX
 
 namespace {
 
+// Opened once per load and CLOSED at unload: the DLL is loaded and freed around every operation, so a
+// provider that is only ever opened would leak one handle per install into the host.
+struct EcbProvider
+{
+    BCRYPT_ALG_HANDLE handle = nullptr;
+
+    EcbProvider()
+    {
+        if (!NT_SUCCESS(BCryptOpenAlgorithmProvider(&handle, BCRYPT_AES_ALGORITHM, nullptr, 0))) { handle = nullptr; return; }
+        const wchar_t *mode = BCRYPT_CHAIN_MODE_ECB;
+        if (!NT_SUCCESS(BCryptSetProperty(handle, BCRYPT_CHAINING_MODE, (PUCHAR)mode,
+                                          (ULONG)((wcslen(mode) + 1) * sizeof(wchar_t)), 0))) {
+            BCryptCloseAlgorithmProvider(handle, 0);
+            handle = nullptr;
+        }
+    }
+
+    ~EcbProvider() { if (handle) BCryptCloseAlgorithmProvider(handle, 0); }
+};
+
 BCRYPT_ALG_HANDLE ecb()
 {
-    static BCRYPT_ALG_HANDLE h = [] {
-        BCRYPT_ALG_HANDLE a = nullptr;
-        if (!NT_SUCCESS(BCryptOpenAlgorithmProvider(&a, BCRYPT_AES_ALGORITHM, nullptr, 0))) return (BCRYPT_ALG_HANDLE) nullptr;
-        const wchar_t *mode = BCRYPT_CHAIN_MODE_ECB;
-        if (!NT_SUCCESS(BCryptSetProperty(a, BCRYPT_CHAINING_MODE, (PUCHAR)mode,
-                                          (ULONG)((wcslen(mode) + 1) * sizeof(wchar_t)), 0))) return (BCRYPT_ALG_HANDLE) nullptr;
-        return a;
-    }();
-    return h;
+    static EcbProvider provider;
+    return provider.handle;
 }
 
 bool ecb_run(BCRYPT_KEY_HANDLE key, bool encrypt, const unsigned char *in, unsigned char *out, std::size_t n)
