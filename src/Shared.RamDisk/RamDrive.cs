@@ -27,9 +27,10 @@
 //   unmount                                              | drive gone  29.5s | helper done 88.1s
 //
 // So the drive is ready almost at once, and then imdisk sits there for another minute and a half.
-// 88.1, 88.3, 88.5 across three runs is a fixed cost, not work: something inside imdisk waits on a
-// timeout. What it waits for has not been established here, and the number is quoted as measured
-// rather than explained.
+// 88.1, 88.3, 88.5 across three runs is a fixed cost, not work: imdisk.exe broadcasts the new drive
+// to every top-level window and waits on each, and HUNG windows were answering at ~29 s apiece
+// (a stuck installer, measured 26/09; without it the whole run is ~5 s). An unmount no longer goes
+// through any of this - see "the direct unmount" below. A mount still does.
 //
 // WAITING FOR THE HELPER AFTER A MOUNT WOULD THEREFORE COST 88 SECONDS PER LAUNCH, which is not a
 // price for anything. But NOT waiting at all is how the first version of this broke: the drive
@@ -497,6 +498,8 @@ namespace LbIntegrations.RamDisk
                 if (string.IsNullOrEmpty(driveRoot)) return false;
                 char letter = driveRoot[0];
 
+                if (DropDirect(driveRoot)) return true;
+
                 var task = InstalledTaskName();
                 if (task != null)
                 {
@@ -515,6 +518,169 @@ namespace LbIntegrations.RamDisk
             }
             catch (Exception ex) { RamDiskLog.Warn("unmount threw", ex); return false; }
         }
+
+        // ── the direct unmount ───────────────────────────────────────────────
+        //
+        // WHAT THE 88 SECONDS WERE. imdisk.exe (and the helper through it) announces a drive coming
+        // and going by broadcasting to EVERY top-level window and waiting on each one - and a single
+        // hung window anywhere on the machine costs about 29 s per broadcast. Measured with a stuck
+        // installer holding seven of them: 117 s from asking to gone; without it, 5.3 s, of which
+        // most is the wait for the mount's own helper run. The driver itself sends nothing.
+        //
+        // So an unmount does not need the helper at all. imdisk.cpl's own calls do it unelevated:
+        // open the device with NO data access (GENERIC_READ is refused to a standard user, error 5,
+        // measured), force-remove it, drop the letter WITHOUT a broadcast, and tell the shell alone,
+        // without waiting. 6 ms, measured with and without hung windows.
+        //
+        // ONLY FOR A MEMORY-BACKED DRIVE, read from the driver. A forced removal does not flush the
+        // volume's cache: on a vm drive that loses nothing, because nothing outlives it anyway; on a
+        // drive backed by an image file it would leave the image corrupt. Anything that is not
+        // plainly ours and plainly in memory goes to the task, as before.
+        //
+        // ONLY WHAT IS OURS. The letter must point at \Device\ImDisk<n>, the device the driver
+        // reports must be that n, and the letter is dropped only if it still points there.
+        //
+        // What it does not do: tell applications other than the shell. Anything else that lists
+        // drives sees a stale letter until it next looks. Nothing breaks.
+
+        /// <summary>Try the direct unmount. True when the drive is gone; false leaves it for the
+        /// task, with nothing done or with only the letter left behind.</summary>
+        private static bool DropDirect(string driveRoot)
+        {
+            try
+            {
+                if (driveRoot.Length < 2 || driveRoot[1] != ':') return false;
+                var letter = char.ToUpperInvariant(driveRoot[0]) + ":";
+                var target = DosTarget(letter);
+                if (!ImDiskNumber(target, out var number))
+                {
+                    RamDiskLog.Info(letter + " is " + (target ?? "nothing") + ", not an ImDisk drive - not removing it directly");
+                    return false;
+                }
+
+                // By number, the same device the letter was checked to point at.
+                var device = ImDiskOpenDeviceByNumber(number, 0);
+                if (device == IntPtr.Zero || device == new IntPtr(-1))
+                {
+                    RamDiskLog.Info("could not open " + letter + " directly (error " + Marshal.GetLastWin32Error() + ") - asking the task");
+                    return false;
+                }
+                try
+                {
+                    var data = new byte[1024];
+                    if (!ImDiskQueryDevice(number, data, (uint)data.Length))
+                    {
+                        RamDiskLog.Info("could not query " + letter + " (error " + Marshal.GetLastWin32Error() + ") - asking the task");
+                        return false;
+                    }
+                    // IMDISK_CREATE_DATA: DeviceNumber at 0, Flags at 40 (after the 8-aligned
+                    // DISK_GEOMETRY and ImageOffset). The number is the check that the layout is right.
+                    uint reported = BitConverter.ToUInt32(data, 0);
+                    uint flags = BitConverter.ToUInt32(data, 40);
+                    if (reported != number || (flags & ImDiskTypeMask) != ImDiskTypeVm)
+                    {
+                        RamDiskLog.Info(letter + " is device " + reported + " with flags 0x" + flags.ToString("x")
+                                        + " - not a memory drive of ours, asking the task");
+                        return false;
+                    }
+                    if (!ImDiskForceRemoveDevice(device, 0))
+                    {
+                        RamDiskLog.Info("direct removal of " + letter + " failed (error " + Marshal.GetLastWin32Error() + ") - asking the task");
+                        return false;
+                    }
+                }
+                finally { CloseHandle(device); }
+
+                // The device is gone; now its letter. Removed by number, the driver takes the letter
+                // with it (measured: nothing left to query), so usually there is nothing to do. When
+                // it is still there and still ours, it goes quietly; exact-match removal answers "not
+                // found" even with the right target (measured), so the newest definition is removed,
+                // having just checked it is ours. A letter that now points elsewhere is not ours.
+                var now = DosTarget(letter);
+                bool unmapped = now == null;
+                if (!unmapped && string.Equals(now, target, StringComparison.OrdinalIgnoreCase))
+                {
+                    unmapped = DefineDosDevice(DDD_REMOVE_DEFINITION | DDD_NO_BROADCAST_SYSTEM, letter, null);
+                    if (!unmapped)
+                    {
+                        // The slow way, which broadcasts - but it only runs when the quiet one failed.
+                        RamDiskLog.Warn("could not drop " + letter + " quietly (error " + Marshal.GetLastWin32Error() + ") - through imdisk.cpl instead");
+                        unmapped = ImDiskRemoveMountPoint(letter + "\\");
+                    }
+                }
+                SHChangeNotify(SHCNE_DRIVEREMOVED, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, letter + "\\", IntPtr.Zero);
+
+                bool gone = !Directory.Exists(driveRoot);
+                RamDiskLog.Info("unmounted " + driveRoot + " directly (gone=" + gone + ", letter dropped=" + unmapped + ")");
+                return gone;
+            }
+            catch (Exception ex)
+            {
+                // imdisk.cpl missing, an export renamed: the task still knows how.
+                RamDiskLog.Warn("the direct unmount could not run - asking the task", ex);
+                return false;
+            }
+        }
+
+        /// <summary>Is this drive root an ImDisk drive? What a caller checks before unmounting a
+        /// letter it only knows from a file, since after a reboot that letter may be anything.</summary>
+        public static bool IsImDiskDrive(string driveRoot)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(driveRoot) || driveRoot.Length < 2 || driveRoot[1] != ':') return false;
+                return ImDiskNumber(DosTarget(char.ToUpperInvariant(driveRoot[0]) + ":"), out _);
+            }
+            catch { return false; }
+        }
+
+        private static string DosTarget(string letter)
+        {
+            var buffer = new StringBuilder(1024);
+            return QueryDosDevice(letter, buffer, buffer.Capacity) == 0 ? null : buffer.ToString();
+        }
+
+        private static bool ImDiskNumber(string target, out uint number)
+        {
+            number = 0;
+            const string prefix = @"\Device\ImDisk";
+            return target != null && target.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                   && uint.TryParse(target.Substring(prefix.Length), out number);
+        }
+
+        private const uint ImDiskTypeMask = 0xF00, ImDiskTypeVm = 0x200;
+        private const uint DDD_REMOVE_DEFINITION = 0x2, DDD_NO_BROADCAST_SYSTEM = 0x8;
+        private const int SHCNE_DRIVEREMOVED = 0x80;
+        private const uint SHCNF_PATHW = 0x5, SHCNF_FLUSHNOWAIT = 0x3000;
+
+        [DllImport("imdisk.cpl", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr ImDiskOpenDeviceByNumber(uint deviceNumber, uint accessMode);
+
+        [DllImport("imdisk.cpl", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool ImDiskQueryDevice(uint deviceNumber, byte[] createData, uint createDataSize);   // a NUMBER, not a handle (inc\imdisk.h)
+
+        [DllImport("imdisk.cpl", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool ImDiskForceRemoveDevice(IntPtr device, uint deviceNumber);
+
+        [DllImport("imdisk.cpl", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool ImDiskRemoveMountPoint(string mountPoint);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern uint QueryDosDevice(string deviceName, StringBuilder targetPath, int max);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool DefineDosDevice(uint flags, string deviceName, string targetPath);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CloseHandle(IntPtr handle);
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        private static extern void SHChangeNotify(int eventId, uint flags, string item1, IntPtr item2);
 
         /// <summary>Unmount whatever was mounted under this key.</summary>
         public static bool UnmountFor(string key)

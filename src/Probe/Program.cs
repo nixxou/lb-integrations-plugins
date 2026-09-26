@@ -30,6 +30,8 @@ namespace LbIntegrations.Probe
             // exercises src\Shared.RamDisk, which is compiled into this probe rather than into the
             // plugin under test - there is nothing to load a DLL for, and requiring one would mean
             // naming a plugin that has nothing to do with the question.
+            // How long unmounting takes by each method: --ramdisk-bench --lb <root> [--only-api | --shipped].
+            if (Has(args, "--ramdisk-bench")) return RamDiskBench.Run(Arg(args, "--lb"), Has(args, "--only-api"), Has(args, "--shipped")) ? 0 : 1;
             if (Has(args, "--ramdisk")) return RamDiskCheck.Run(Arg(args, "--lb")) ? 0 : 1;
 
             // The snapshot engine needs no plugin and no emulator either: it is a walk, a

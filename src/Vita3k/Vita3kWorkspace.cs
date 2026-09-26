@@ -596,8 +596,8 @@ namespace LbIntegrations.Vita3k
                 var previous = WorkTitle(layout);
                 DropLink(layout);
                 if (previous != null && OnRamDisk(layout))
-                    report?.Invoke("Releasing the RAM disk - waiting for its helper to finish...", null);
-                if (previous != null) RamDrive.UnmountFor(previous);
+                    report?.Invoke("Releasing the RAM disk...", null);
+                if (previous != null) ReleaseDrive(layout, previous);
                 report?.Invoke("Clearing the console...", null);
 
                 var work = WorkDir(layout);
@@ -716,6 +716,21 @@ namespace LbIntegrations.Vita3k
                 MarkPending(layout, titleId);
                 return false;
             }
+        }
+
+        /// <summary>Give back the session's drive.
+        ///
+        /// By key when this process mounted it. By the marker when it did not - LaunchBox restarted
+        /// between the launch and now, and the drive would otherwise stay mounted until a reboot. A
+        /// letter read from a file may be anything by now, so it is unmounted only while it is still
+        /// an ImDisk drive.</summary>
+        private static void ReleaseDrive(Vita3kLayout layout, string titleId)
+        {
+            if (RamDrive.UnmountFor(titleId) || !OnRamDisk(layout)) return;
+            var drive = Path.GetPathRoot(WorkRoot(layout) ?? "");
+            if (string.IsNullOrEmpty(drive) || !RamDrive.IsImDiskDrive(drive)) return;
+            Log.Info("the RAM disk " + drive + " was not mounted by this process - releasing it from the marker");
+            RamDrive.Unmount(drive);
         }
 
         /// <summary>Is the current working tree on a RAM disk, rather than the work\ folder?</summary>
