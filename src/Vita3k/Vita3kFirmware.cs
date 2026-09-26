@@ -215,6 +215,16 @@ namespace LbIntegrations.Vita3k
                 }
 
                 report?.Invoke("Installing the " + Describe(package) + "...", null);
+
+                // OURS FIRST: Vita3K's install_pup, compiled on its own - see Vita3kTool. The
+                // emulator's --firmware below is the fallback for a checkout that did not build it,
+                // not a second opinion: the two produce the same 1825 files, byte for byte.
+                if (Vita3kTool.Available)
+                {
+                    if (RunOurs(pup, vitaFs, package)) return true;
+                    Log.Info("our installer did not get the " + Describe(package) + " in - trying the emulator's own");
+                }
+
                 if (Run(executablePath, pup, vitaFs, package)) return true;
 
                 // ONE RETRY, AND ONLY AFTER A CRASH WE COULD NOT EXPLAIN. Measured on a real install:
@@ -238,6 +248,19 @@ namespace LbIntegrations.Vita3k
             {
                 try { if (pup != null && File.Exists(pup)) File.Delete(pup); } catch { }
             }
+        }
+
+        /// <summary>Install a .pup with vita3k-install.exe and say whether the package arrived - the
+        /// same double answer as Run: the tool's verdict, and the partition this package fills.</summary>
+        private static bool RunOurs(string pupPath, string vitaFs, FirmwarePackage package)
+        {
+            bool ran = Vita3kTool.InstallFirmware(pupPath, vitaFs, out _);
+            Scrub(vitaFs);
+            bool installed = ran && IsInstalled(vitaFs, package);
+            Log.Info((installed ? "installed " : "FAILED to install ") + Describe(package)
+                     + " with " + Vita3kTool.ToolName + " - " + Path.Combine(vitaFs, package.Directory)
+                     + (installed ? " is populated" : " is missing or empty"));
+            return installed;
         }
 
         /// <summary>Run the emulator on a .pup and say whether the package arrived.

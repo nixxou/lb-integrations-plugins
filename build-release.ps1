@@ -103,13 +103,13 @@ foreach ($file in @('melonds-nand.dll', 'melonds-nandtool.exe')) {
 
 # The PFS decryptor for Vita3K. REQUIRED, for the same reason as the NAND library: a release without
 # it is a Vita3K that installs a NoNpDRM dump which then never boots, with nothing to tell the user
-# why. Built from tools\vita3k-pfs against a Vita3K checkout.
-$pfs = Join-Path $repo "build\pfs\vita3k-pfs.exe"
+# why. Built from tools\vita3k-install against a Vita3K checkout.
+$pfs = Join-Path $repo "build\vita3k\vita3k-install.exe"
 if (-not (Test-Path $pfs)) {
-    throw "The PFS decryptor is missing: $pfs. Build tools\vita3k-pfs first - a release without it ships a Vita3K whose NoNpDRM games do not boot."
+    throw "The PFS decryptor is missing: $pfs. Build tools\vita3k-install first - a release without it ships a Vita3K whose NoNpDRM games do not boot."
 }
-Copy-Item $pfs (Join-Path $nativeDir 'vita3k-pfs.exe') -Force
-Write-Host ("  staged native\{0,-22} {1,8:N0} KB" -f 'vita3k-pfs.exe', ((Get-Item $pfs).Length / 1KB))
+Copy-Item $pfs (Join-Path $nativeDir 'vita3k-install.exe') -Force
+Write-Host ("  staged native\{0,-22} {1,8:N0} KB" -f 'vita3k-install.exe', ((Get-Item $pfs).Length / 1KB))
 
 # The RAM disk helper. Built here rather than taken from a checkout, because its source is in this
 # repository (tools\ramdisk-helper) - unlike the NAND library, which needs a melonDS checkout.

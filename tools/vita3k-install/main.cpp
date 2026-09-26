@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// vita3k-pfs: decrypt an installed PS Vita app through its PFS layer, the way Vita3K's own installer
+// vita3k-install: decrypt an installed PS Vita app through its PFS layer, the way Vita3K's own installer
 // does, so an app can be installed WITHOUT running the emulator.
 //
-//   vita3k-pfs decrypt <app dir> <licence> <destination dir>
-//   vita3k-pfs selftest
+//   vita3k-install decrypt <app dir> <licence> <destination dir>
+//   vita3k-install selftest
 //
 // <app dir> is the app as unpacked from its archive - sce_pfs/ and all. <licence> is the NoNpDRM
 // work.bin (a raw 0x200-byte licence). The decrypted app is written to <destination dir>, which the
@@ -115,6 +115,58 @@ int decrypt(const fs::path &src, const fs::path &licence, const fs::path &dst, b
     return 0;
 }
 
+} // namespace
+
+// Defined in firmware.cpp, which sees Vita3K's `fs` rather than this file's. Outside the anonymous
+// namespace, or it names a different function that nothing defines.
+int run_firmware(const std::filesystem::path &pup, const std::filesystem::path &vita_fs, bool verbose,
+                 std::string &version, std::string &error);
+
+namespace {
+
+// Long-path form of an absolute path. Vita3K's extract_file opens every file with _wfopen and writes
+// WITHOUT checking the handle: past MAX_PATH that is fwrite on NULL - the crash measured when the
+// emulator installed a firmware from a 174-character folder. Under the \\?\ prefix there is no such
+// limit. Safe here because the firmware code builds every path with operator/ and single
+// components: Windows stops translating '/' under this prefix, and none is ever inserted.
+fs::path long_path(const fs::path &p)
+{
+    std::wstring s = fs::absolute(p).wstring();
+    if (s.rfind(L"\\\\?\\", 0) != 0) s = L"\\\\?\\" + s;
+    return fs::path(s);
+}
+
+int firmware(const fs::path &pup, const fs::path &vita_fs, bool verbose)
+{
+    if (!fs::is_regular_file(pup)) return fail("no firmware file at " + pup.string());
+
+    std::error_code ec;
+    fs::create_directories(vita_fs, ec);
+    if (!fs::is_directory(vita_fs)) return fail("cannot create " + vita_fs.string());
+
+    std::string version, error;
+    if (run_firmware(long_path(pup), long_path(vita_fs), verbose, version, error) < 0)
+        return fail("the firmware install threw: " + error);
+
+    // install_pup reports almost none of its failures - an invalid PUP is a log line and a normal
+    // return. So the verdict is what landed on disk.
+    std::string parts;
+    std::size_t total = 0;
+    for (const char *part : { "os0", "vs0", "sa0", "pd0" }) {
+        const auto dir = vita_fs / part;
+        if (!fs::is_directory(dir)) continue;
+        const auto n = count_files(dir);
+        if (n == 0) continue;
+        total += n;
+        parts += std::string(parts.empty() ? "" : ", ") + part + " " + std::to_string(n);
+    }
+    if (fs::exists(vita_fs / "PUP_DEC")) return fail("the work folder PUP_DEC was left behind - the install stopped halfway");
+    if (total == 0) return fail("nothing was extracted - not a firmware update, or it did not decrypt");
+
+    std::printf("OK firmware %s - %s file(s)\n", version.empty() ? "(no version.txt)" : version.c_str(), parts.c_str());
+    return 0;
+}
+
 // Known answers, so a wrong CNG wrapper shows up here and not as a game that will not boot.
 bool hex(const char *s, std::vector<unsigned char> &out)
 {
@@ -199,8 +251,11 @@ int wmain(int argc, wchar_t **argv)
     if (args.size() == 1 && args[0] == L"selftest") return selftest();
     if (args.size() == 4 && args[0] == L"decrypt")
         return decrypt(fs::path(args[1]), fs::path(args[2]), fs::path(args[3]), verbose);
+    if (args.size() == 3 && args[0] == L"firmware")
+        return firmware(fs::path(args[1]), fs::path(args[2]), verbose);
 
-    std::printf("usage: vita3k-pfs decrypt <app dir> <licence> <destination dir> [--verbose]\n"
-                "       vita3k-pfs selftest\n");
+    std::printf("usage: vita3k-install decrypt <app dir> <licence> <destination dir> [--verbose]\n"
+                "       vita3k-install firmware <update.pup> <vita fs dir> [--verbose]\n"
+                "       vita3k-install selftest\n");
     return 2;
 }

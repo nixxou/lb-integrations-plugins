@@ -171,7 +171,7 @@ namespace LbIntegrations.Vita3k
                         if (licence == null)
                         { error = content + " is PFS-encrypted and carries no licence to decrypt it with"; return null; }
 
-                        if (!Vita3kPfs.Decrypt(staging, licence, destination, out error)) return null;
+                        if (!Vita3kTool.DecryptApp(staging, licence, destination, out error)) return null;
                     }
                     finally { TryDelete(staging); }
 
@@ -241,7 +241,6 @@ namespace LbIntegrations.Vita3k
             error = null;
             try
             {
-                if (string.IsNullOrWhiteSpace(content.ContentId)) return true;
                 var wanted = content.Root + "sce_sys/package/work.bin";
 
                 using var archive = ArchiveFactory.Open(archivePath);
@@ -251,15 +250,31 @@ namespace LbIntegrations.Vita3k
                     var key = (entry.Key ?? "").Replace('\\', '/');
                     if (!string.Equals(key, wanted, StringComparison.OrdinalIgnoreCase)) continue;
 
-                    var dir = Path.Combine(vitaFs, "ux0", "license", content.TitleId);
-                    Directory.CreateDirectory(dir);
-                    var rif = Path.Combine(dir, content.ContentId + ".rif");
-
+                    byte[] licence;
                     using (var source = entry.OpenEntryStream())
-                    using (var file = new FileStream(rif, FileMode.Create, FileAccess.Write, FileShare.None))
-                        source.CopyTo(file);
+                    using (var memory = new MemoryStream())
+                    {
+                        source.CopyTo(memory);
+                        licence = memory.ToArray();
+                    }
 
-                    Log.Info("licence: ux0/license/" + content.TitleId + "/" + content.ContentId + ".rif");
+                    // NAMED FROM THE LICENCE ITSELF, as Vita3K's copy_license does (license.cpp): the
+                    // content id is the licence's own field at 0x10, and the title id is its nine
+                    // characters from the seventh - "UP4235-PCSE00965_00-..." gives PCSE00965. For a
+                    // game the param.sfo says the same thing; the licence is what the emulator reads
+                    // back at boot (get_license), so it is the one that decides the path. The
+                    // param.sfo is the fallback for a licence too short or too blank to name itself.
+                    var (titleId, contentId) = NamesIn(licence);
+                    titleId ??= content.TitleId;
+                    contentId ??= content.ContentId;
+                    if (string.IsNullOrWhiteSpace(titleId) || string.IsNullOrWhiteSpace(contentId))
+                    { Log.Warn("the licence names nothing and neither does the param.sfo - not placed"); return true; }
+
+                    var dir = Path.Combine(vitaFs, "ux0", "license", titleId);
+                    Directory.CreateDirectory(dir);
+                    File.WriteAllBytes(Path.Combine(dir, contentId + ".rif"), licence);
+
+                    Log.Info("licence: ux0/license/" + titleId + "/" + contentId + ".rif");
                     return true;
                 }
                 return true;   // no work.bin - homebrew, and it needs none
@@ -270,6 +285,19 @@ namespace LbIntegrations.Vita3k
                 Log.Warn(error, ex);
                 return false;
             }
+        }
+
+        /// <summary>The title id and content id a NoNpDRM licence names for itself - SceNpDrmLicense
+        /// (zRIF/rif.h): content_id is 0x30 bytes at 0x10, NUL-padded. Nulls when it does not hold a
+        /// usable one.</summary>
+        internal static (string titleId, string contentId) NamesIn(byte[] licence)
+        {
+            if (licence == null || licence.Length < 0x40) return (null, null);
+            int end = 0x10;
+            while (end < 0x40 && licence[end] != 0) end++;
+            var contentId = System.Text.Encoding.ASCII.GetString(licence, 0x10, end - 0x10).Trim();
+            if (contentId.Length < 16) return (null, null);
+            return (contentId.Substring(7, 9), contentId);
         }
 
         /// <summary>Extract everything under <paramref name="root"/> into the destination, MINUS the

@@ -95,12 +95,12 @@ namespace LbIntegrations.Probe
 
                 // The plugin runs from its build folder here, with no native\ beside it: point it at the
                 // tool this checkout built, unless the caller already chose one.
-                const string pfsVariable = "LBIP_VITA3K_PFS";
+                const string pfsVariable = "LBIP_VITA3K_TOOL";
                 if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(pfsVariable)))
                 {
                     var repo = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(pluginAssembly.Location),
                                                              "..", "..", "..", "..", ".."));
-                    var built = Path.Combine(repo, "build", "pfs", "vita3k-pfs.exe");
+                    var built = Path.Combine(repo, "build", "vita3k", "vita3k-install.exe");
                     if (File.Exists(built)) Environment.SetEnvironmentVariable(pfsVariable, built);
                 }
                 Console.WriteLine("  decryptor " + (Environment.GetEnvironmentVariable(pfsVariable) ?? "(none - PFS dumps will be refused)"));

@@ -35,8 +35,8 @@ reads what it writes; it compiles none of their code and links none of their lib
 firmware it fetches is Sony's, fetched from Sony's own update servers at the user's request and
 never redistributed.
 
-It does RUN one program built from their code: `native\vita3k-pfs.exe`, which decrypts a NoNpDRM
-dump the way their installer does. That program is described under `tools/vita3k-pfs` below. The
+It does RUN one program built from their code: `native\vita3k-install.exe`, which decrypts a NoNpDRM
+dump and installs the firmware the way their installer does. That program is described under `tools/vita3k-install` below. The
 plugin starts it as a separate process and reads one line of its output - the arm's-length
 arrangement this file already describes for the DSi tool, before the NAND library was called
 directly - so `src/Vita3k` stays MIT.
@@ -161,30 +161,47 @@ Two files in the tool are melonDS's own work rather than ours, and say so at the
 `src/DSi_AES.cpp`, because compiling that file would have pulled in most of the emulator for twenty
 lines of arithmetic.
 
-## `tools/vita3k-pfs` - GPL-2.0-or-later
+## `tools/vita3k-install` - GPL-2.0-or-later
 
-`tools/vita3k-pfs` is compiled together with source files from **psvpfsparser**, the PFS decryptor
-[Vita3K](https://github.com/Vita3K/Vita3K) carries as a submodule
-(`external/psvpfstools/psvpfsparser`, pinned there at `d14381f`). It builds one program,
-`vita3k-pfs.exe`, which decrypts an installed PS Vita app through its PFS layer - the step Vita3K's
-own installer performs in `decrypt_install_nonpdrm` and that a plain unzip cannot.
+`tools/vita3k-install` builds one program, `vita3k-install.exe`, that does the two installs
+[Vita3K](https://github.com/Vita3K/Vita3K) performs and a plain unzip cannot:
+
+- **`decrypt`** - an installed app through its PFS layer, the step Vita3K's installer performs in
+  `decrypt_install_nonpdrm` for a NoNpDRM dump;
+- **`firmware`** - a PS Vita system update (`.PUP`) into a virtual filesystem, Vita3K's `install_pup`,
+  which `Vita3K.exe --firmware` runs with the rest of the emulator starting around it.
+
+Every source it takes from Vita3K is compiled **unmodified**, from a checkout:
 
 | Component | Licence | Used for |
 |---|---|---|
-| psvpfsparser ([Vita3K fork](https://github.com/Vita3K/psvpfsparser), originally by motoharu-gosuto) | **none stated** - see below | parsing `files.db` / `unicv.db` and decrypting every file of the app |
-| [Vita3K](https://github.com/Vita3K/Vita3K) | GPL-2.0-or-later | the project that distributes it, and whose install sequence the tool reproduces |
+| [Vita3K](https://github.com/Vita3K/Vita3K) - `vita3k/packages/src/pup.cpp`, `sce_utils.cpp`, `exfat.cpp` | GPL-2.0-or-later | reading the PUP, decrypting its SCE segments with the key table `sce_utils.cpp` carries, extracting the FAT16 and exFAT partitions |
+| [libfat16](https://github.com/Vita3K/libfat16) | MIT | reading the FAT16 partition images (`os0`, `vs0`, `sa0`) |
+| [miniz](https://github.com/richgel999/miniz) | MIT | inflating the compressed firmware segments |
+| [vita-toolchain](https://github.com/vitasdk/vita-toolchain) - `src/self.h` only | MIT | the SELF header structures `sce_utils.cpp` names |
+| psvpfsparser ([Vita3K fork](https://github.com/Vita3K/psvpfsparser), originally by motoharu-gosuto) | **none stated** - see below | parsing `files.db` / `unicv.db` and decrypting every file of an app |
+
+What those sources reach for outside the C++ standard library is supplied by this repository's own
+shims under `shim\`, not by the libraries themselves: OpenSSL (nine EVP calls, AES-128/256 CBC and
+AES-128 CTR, decryption only - `shim\evp_cng.cpp`, over Windows CNG), boost (Vita3K's `fs` is
+boost::filesystem - `shim\util\fs.h`), fmt and spdlog (`shim\util\*.h`). psvpfsparser's own crypto
+interface is answered by `cng_crypto.cpp`, and of its sources the tool leaves out every one that needs
+OpenSSL, zRIF or boost.
 
 **psvpfsparser carries no licence file**, in the Vita3K fork or upstream, and this repository does not
-invent one for it. It is distributed by the Vita3K project inside a GPL-2.0-or-later program, which is
-the basis on which the tool's own sources (`main.cpp`, `cng_crypto.*`) are offered under
-GPL-2.0-or-later too. That is a question to settle before a release carries the binary, not one this
-file can answer.
+invent one for it. Vita3K distributes it inside a GPL-2.0-or-later program without further notice;
+this tool does the same, and its own sources (`main.cpp`, `firmware.cpp`, `cng_crypto.*`, `shim\`) are
+offered under GPL-2.0-or-later like the Vita3K code they are compiled with. That is Vita3K's posture,
+reproduced rather than improved on - worth settling before a release carries the binary.
 
-Of psvpfsparser's sources, the tool compiles 23 and leaves out every one that reaches outside the C++
-standard library: the OpenSSL back end (replaced by `cng_crypto.cpp`, over Windows CNG), the zRIF
-round trip (the key is read from the licence directly) and the file-based F00D encryptor (boost). Its
-cryptography is checked against published known answers - `vita3k-pfs selftest` - and its output
-against an install made by Vita3K itself: byte-identical on the reference game.
+The same applies to the SCE key table in `sce_utils.cpp`: it is Vita3K's, published in their
+repository, compiled here as it stands.
+
+**Measured against the emulator itself**, not merely built: the crypto against published known answers
+(`vita3k-install selftest`: FIPS-197, SP 800-38A, RFC 4493, 2202, 4231); `decrypt` against a game
+installed by Vita3K - 35 files, byte-identical; `firmware` against a firmware installed by Vita3K - all
+four partitions, 1825 files, byte-identical, from a folder deeper than MAX_PATH that the emulator
+itself crashes in.
 
 ## `src/Installer` - the single-file release
 

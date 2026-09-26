@@ -64,8 +64,8 @@ internal static class Payload
     private const string NandTool = "payload/native/melonds-nandtool.exe";
 
     // Vita3K's PFS decryptor, run by the Vita3K plugin to install a NoNpDRM dump. See
-    // src\Vita3k\Vita3kPfs.cs and tools\vita3k-pfs.
-    private const string PfsTool = "payload/native/vita3k-pfs.exe";
+    // src\Vita3k\Vita3kTool.cs and tools\vita3k-install.
+    private const string PfsTool = "payload/native/vita3k-install.exe";
 
     // THE CATALOGUE CONTRACT, the one managed file that is not the plugin itself. It cannot be
     // merged in: a host and a plugin have to mean the SAME interface type, and type identity in
@@ -105,7 +105,7 @@ internal static class Payload
         new("payload/Nixx-Vita3K/Vita3k.dll",       Vita3k,  "Vita3k.dll"),
         new("payload/Nixx-Vita3K/manifest.json",    Vita3k,  "manifest.json"),
         new(Contract,                               Vita3k,  "LbIntegrations.Catalog.dll"),
-        new(PfsTool,                                Vita3k,  @"native\vita3k-pfs.exe"),
+        new(PfsTool,                                Vita3k,  @"native\vita3k-install.exe"),
 
         new("payload/Nixx-Xenia/Xenia.dll",         Xenia,   "Xenia.dll"),
         new("payload/Nixx-Xenia/manifest.json",     Xenia,   "manifest.json"),
