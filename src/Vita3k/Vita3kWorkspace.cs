@@ -276,7 +276,8 @@ namespace LbIntegrations.Vita3k
 
         // ── the junction ─────────────────────────────────────────────────────
 
-        /// <summary>Point portable\fs at a folder or a drive root.
+        /// <summary>Point portable\fs at a folder - never at a volume root, which mklink /J
+        /// refuses. See OpenWorkingTree.
         ///
         /// mklink /J and not Directory.CreateSymbolicLink: a junction needs no administrator and no
         /// developer mode, a symbolic link needs one or the other. This runs on somebody's ordinary
@@ -379,23 +380,34 @@ namespace LbIntegrations.Vita3k
 
                 var root = OpenWorkingTree(layout, content.TitleId, sizeMb);
                 if (root == null) { error = "could not make a working tree"; return null; }
-                if (!Link(layout, root, out error)) return null;
 
-                Log.Info("copying the pristine firmware into " + root);
-                CopyTree(BaseDir(layout), root);
+                // FROM HERE, A FAILURE OWES WHAT IT TOOK BACK. Measured: the junction was refused,
+                // we reported the error honestly and left a 902 MB RAM disk mounted holding nothing.
+                // The user saw one dialog and the memory stayed gone. Every exit below this line
+                // goes through Release.
+                bool ready = false;
+                try
+                {
+                    if (!Link(layout, root, out error)) return null;
 
-                var installed = Vita3kContent.Install(romPath, root, out error);
-                if (installed == null) return null;
+                    Log.Info("copying the pristine firmware into " + root);
+                    CopyTree(BaseDir(layout), root);
 
-                // THE REFERENCE, between the install and everything else. See the header.
-                int walked = SnapWalk.Write(root, ReferencePath(layout), out error);
-                if (walked < 0) return null;
-                Log.Info("reference walk: " + walked + " entries");
+                    var installed = Vita3kContent.Install(romPath, root, out error);
+                    if (installed == null) return null;
 
-                RestoreSave(layout, content.TitleId, root);
+                    // THE REFERENCE, between the install and everything else. See the header.
+                    int walked = SnapWalk.Write(root, ReferencePath(layout), out error);
+                    if (walked < 0) return null;
+                    Log.Info("reference walk: " + walked + " entries");
 
-                Remember(layout, content.TitleId, romPath, root);
-                return content.TitleId;
+                    RestoreSave(layout, content.TitleId, root);
+
+                    Remember(layout, content.TitleId, romPath, root);
+                    ready = true;
+                    return content.TitleId;
+                }
+                finally { if (!ready) Release(layout, content.TitleId); }
             }
             catch (Exception ex)
             {
@@ -421,8 +433,19 @@ namespace LbIntegrations.Vita3k
                 var drive = RamDrive.MountFor(titleId, sizeMb);
                 if (drive != null)
                 {
-                    Log.Info("working on a RAM disk at " + drive + " (" + sizeMb + " MB of " + free + " free)");
-                    return drive;
+                    // ONE FOLDER DOWN, NEVER THE DRIVE ROOT. A junction cannot point at a volume
+                    // root: mklink /J answers "Local volumes are required to complete the operation"
+                    // and creates nothing. Measured on a mounted Z:\ - the same call against Z:\fs
+                    // succeeds. It is a Windows rule, not an ImDisk quirk, and it cost a launch:
+                    // the drive mounted, the link was refused, and the host said only "Failed to
+                    // prepare emulator to launch this game!".
+                    //
+                    // It also makes the two branches symmetric - the fallback was already a folder -
+                    // and costs nothing, since the drive holds this session and nothing else.
+                    var root = Path.Combine(drive, FsName);
+                    Directory.CreateDirectory(root);
+                    Log.Info("working on a RAM disk at " + root + " (" + sizeMb + " MB of " + free + " free)");
+                    return root;
                 }
                 Log.Warn("the RAM disk did not mount - falling back to a folder");
             }
@@ -435,6 +458,30 @@ namespace LbIntegrations.Vita3k
             var work = WorkDir(layout);
             Directory.CreateDirectory(work);
             return work;
+        }
+
+        /// <summary>Give back everything a HALF-BUILT session took.
+        ///
+        /// Teardown cannot do this job: it reads the title marker to learn what to unmount, and a
+        /// session that failed before Remember never wrote one. So this one is told the title.</summary>
+        private static void Release(Vita3kLayout layout, string titleId)
+        {
+            try
+            {
+                DropLink(layout);
+                if (titleId != null) RamDrive.UnmountFor(titleId);
+
+                var work = WorkDir(layout);
+                if (work != null && Directory.Exists(work))
+                {
+                    try { Directory.Delete(work, recursive: true); }
+                    catch (Exception ex) { Log.Warn("could not clear " + work, ex); }
+                }
+
+                try { var r = ReferencePath(layout); if (r != null && File.Exists(r)) File.Delete(r); } catch { }
+                Log.Info("the half-built session of " + titleId + " was given back");
+            }
+            catch (Exception ex) { Log.Warn("could not give back the half-built session", ex); }
         }
 
         /// <summary>Let go of the previous session's tree. Called when a DIFFERENT game starts, never

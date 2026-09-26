@@ -195,6 +195,35 @@ namespace LbIntegrations.Probe
             return false;
         }
 
+        /// <summary>mklink /J, and report whether the link exists afterwards. The same call the
+        /// Vita3K workspace makes, on purpose: a stand-in that used CreateSymbolicLink would not
+        /// meet the rule being measured.</summary>
+        private static bool Junction(string link, string target)
+        {
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo("cmd.exe")
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                };
+                psi.ArgumentList.Add("/c");
+                psi.ArgumentList.Add("mklink");
+                psi.ArgumentList.Add("/J");
+                psi.ArgumentList.Add(link);
+                psi.ArgumentList.Add(target.TrimEnd('\\', '/'));
+
+                using var p = System.Diagnostics.Process.Start(psi);
+                var said = (p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd()).Trim();
+                p.WaitForExit(30000);
+                if (!Directory.Exists(link)) { Console.WriteLine("    mklink said: " + said); return false; }
+                return true;
+            }
+            catch (Exception ex) { Console.WriteLine("    mklink threw: " + ex.Message); return false; }
+        }
+
         private static bool Mount()
         {
             int bad = 0;
@@ -222,6 +251,30 @@ namespace LbIntegrations.Probe
                                   + Safe(() => (drive.TotalSize / (1024 * 1024)) + " MB total"));
                 if (!Check("it is formatted NTFS", string.Equals(Safe(() => drive.DriveFormat), "NTFS",
                                                                  StringComparison.OrdinalIgnoreCase))) bad++;
+
+                // THE RULE THAT COST A LAUNCH. A junction cannot point at a volume ROOT: mklink /J
+                // answers "Local volumes are required to complete the operation" and creates
+                // nothing. One folder down it works. Vita3K hangs portable\fs on the mounted drive,
+                // so this is measured here, against a real drive, rather than remembered.
+                var linkDir = Path.Combine(Path.GetTempPath(), "lbip-probe-junction-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(linkDir);
+                try
+                {
+                    if (!Check("a junction to the drive ROOT is refused",
+                               !Junction(Path.Combine(linkDir, "at-root"), root))) bad++;
+
+                    var inside = Path.Combine(root, "fs");
+                    Directory.CreateDirectory(inside);
+                    var good = Path.Combine(linkDir, "one-down");
+                    if (!Check("but one folder down it is created", Junction(good, inside))) bad++;
+                    else
+                    {
+                        File.WriteAllText(Path.Combine(good, "through.txt"), "through the junction");
+                        if (!Check("and writing through it lands on the drive",
+                                   File.Exists(Path.Combine(inside, "through.txt")))) bad++;
+                    }
+                }
+                finally { try { Directory.Delete(linkDir, recursive: true); } catch { } }
 
                 // Usually "<nothing>" at this point, and that is RIGHT: the drive is usable in a
                 // third of a second while the helper runs on for another minute and a half. Its
