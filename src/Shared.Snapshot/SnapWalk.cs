@@ -124,7 +124,24 @@ namespace LbIntegrations.Snapshot
             {
                 var entries = Of(root, out error, progress);
                 if (entries == null) return -1;
+                return WriteEntries(entries, manifestPath, out error);
+            }
+            catch (Exception ex)
+            {
+                error = ex.GetType().Name + ": " + ex.Message;
+                SnapLog.Warn("could not write the manifest " + manifestPath, ex);
+                return -1;
+            }
+        }
 
+        /// <summary>The manifest text, one writer for Write and WriteFrom so the two cannot drift -
+        /// the probe holds them to the same bytes.</summary>
+        private static int WriteEntries(Dictionary<string, SnapEntry> entries, string manifestPath, out string error)
+        {
+            error = null;
+            string partial = null;
+            try
+            {
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(manifestPath)));
                 partial = manifestPath + "." + Guid.NewGuid().ToString("N") + ".part";
 
@@ -154,6 +171,115 @@ namespace LbIntegrations.Snapshot
                 return -1;
             }
             finally { if (partial != null) try { File.Delete(partial); } catch { } }
+        }
+
+        /// <summary>The same manifest as Write, for a tree that is a KNOWN BASE plus a few fresh folders
+        /// - hashing only the fresh ones.
+        ///
+        /// WHY: on the tree a session is built on, the base is a copy of a folder already walked once,
+        /// and hashing it again cost most of a launch. Measured on a RAM disk, 2253 firmware files:
+        ///     walk of files just copied    3985 ms
+        ///     the same walk straight after  503 ms
+        /// The difference is real-time antivirus scanning each new file on its first open. Not
+        /// opening the copies is what saves the time, more than not hashing them.
+        ///
+        /// EXACT, OR IT FALLS BACK. Every entry of the tree is still ENUMERATED - listing a folder
+        /// opens no file and costs nothing - and must be accounted for: under a fresh folder, it is
+        /// hashed; elsewhere it must be in the base with the same kind and size, and every base entry
+        /// must be there. One mismatch - a leftover file, a missing one, a size that changed - and the
+        /// whole tree is walked the slow way instead. A file this skipped would otherwise come out of
+        /// the next session as a "change", straight into somebody's save.
+        ///
+        /// Returns the entry count, or -1; <paramref name="hashed"/> says how many files were read,
+        /// and -1 when it fell back.</summary>
+        public static int WriteFrom(string root, string baseManifest, IEnumerable<string> freshFolders,
+                                    string manifestPath, out string error, Action<double> progress, out int hashed)
+        {
+            error = null;
+            hashed = -1;
+            try
+            {
+                var based = Read(baseManifest);
+                if (based.Count == 0) return Write(root, manifestPath, out error, progress);
+
+                var full = Path.GetFullPath(root);
+                var fresh = new List<string>();
+                foreach (var f in freshFolders ?? new string[0])
+                    if (!string.IsNullOrWhiteSpace(f)) fresh.Add(f.Replace('\\', '/').Trim('/'));
+
+                bool IsFresh(string key)
+                {
+                    foreach (var f in fresh)
+                        if (key == f || key.StartsWith(f + "/", StringComparison.Ordinal)) return true;
+                    return false;
+                }
+
+                // A fresh folder's ancestors ("ux0/app" above "ux0/app/PCSE00965") may be new too.
+                bool IsAncestorOfFresh(string key)
+                {
+                    foreach (var f in fresh)
+                        if (f.StartsWith(key + "/", StringComparison.Ordinal)) return true;
+                    return false;
+                }
+
+                var entries = new Dictionary<string, SnapEntry>(StringComparer.Ordinal);
+                var toHash = new List<(string key, string file, long size)>();
+                string why = null;
+
+                foreach (var dir in Directory.EnumerateDirectories(full, "*", SearchOption.AllDirectories))
+                {
+                    var key = Relative(full, dir);
+                    if (key == null) continue;
+                    if (!IsFresh(key) && !IsAncestorOfFresh(key)
+                        && !(based.TryGetValue(key, out var b) && b.IsDirectory))
+                    { why = "a folder the base does not have: " + key; break; }
+                    entries[key] = new SnapEntry { IsDirectory = true, Size = "-", Sha1 = "-" };
+                }
+
+                if (why == null)
+                    foreach (var file in Directory.EnumerateFiles(full, "*", SearchOption.AllDirectories))
+                    {
+                        var key = Relative(full, file);
+                        if (key == null) continue;
+                        long size = new FileInfo(file).Length;
+                        if (IsFresh(key)) { toHash.Add((key, file, size)); continue; }
+
+                        if (!based.TryGetValue(key, out var b) || b.IsDirectory)
+                        { why = "a file the base does not have: " + key; break; }
+                        if (b.Size != size.ToString())
+                        { why = "a size that is not the base's: " + key; break; }
+                        entries[key] = b;
+                    }
+
+                if (why == null)
+                    foreach (var pair in based)
+                        if (!entries.ContainsKey(pair.Key) && !IsFresh(pair.Key))
+                        { why = "the base has it and the tree does not: " + pair.Key; break; }
+
+                if (why != null)
+                {
+                    SnapLog.Info("the tree is not the base plus the fresh folders (" + why + ") - walking all of it");
+                    return Write(root, manifestPath, out error, progress);
+                }
+
+                long total = 0, done = 0;
+                foreach (var t in toHash) total += t.size;
+                foreach (var t in toHash)
+                {
+                    entries[t.key] = Describe(t.file);
+                    done += t.size;
+                    if (progress != null) { try { progress(total > 0 ? (double)done / total : 1.0); } catch { } }
+                }
+
+                hashed = toHash.Count;
+                return WriteEntries(entries, manifestPath, out error);
+            }
+            catch (Exception ex)
+            {
+                error = ex.GetType().Name + ": " + ex.Message;
+                SnapLog.Warn("could not write the manifest from its base " + manifestPath, ex);
+                return -1;
+            }
         }
 
         /// <summary>Read a manifest back. An empty or missing one gives an EMPTY dictionary rather

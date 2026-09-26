@@ -157,6 +157,74 @@ namespace LbIntegrations.Probe
             }
         }
 
+        /// <summary>A REAL launch preparation, without a host: the current session is put away, then a
+        /// console is built for the game exactly as PrepareEmulatorForLaunch would - on the RAM disk
+        /// when there is one - and every step timed. It WRITES to the real install and leaves a
+        /// prepared console behind, which the next launch of the same game reuses.</summary>
+        public static bool Prepare(Assembly pluginAssembly, string emuPath, string romPath)
+        {
+            Console.WriteLine();
+            Console.WriteLine("-- Vita3K, a real launch preparation  [WRITES to the install] " + new string('-', 2));
+
+            _asm = pluginAssembly;
+            _bad = 0;
+            try
+            {
+                if (!File.Exists(emuPath ?? "") || !File.Exists(romPath ?? ""))
+                { Console.WriteLine("  pass --emu <Vita3K.exe> --rom <archive>"); return false; }
+
+                // From the build folder there is no native\ beside the plugin: point it at the library this
+                // checkout built, as the other arms do - measured, without it the install is refused.
+                const string variable = "LBIP_VITA3K_NATIVE";
+                if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(variable)))
+                {
+                    var repo = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(pluginAssembly.Location),
+                                                             "..", "..", "..", "..", ".."));
+                    var built = Path.Combine(repo, "build", "vita3k", "vita3k-install.dll");
+                    if (File.Exists(built)) Environment.SetEnvironmentVariable(variable, built);
+                }
+
+                var layout = Resolve(emuPath);
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                Call("Vita3kWorkspace", "Teardown", new object[] { layout });
+                Console.WriteLine("  previous session put away in " + watch.ElapsedMilliseconds + " ms");
+
+                string lastStep = null;
+                var steps = new System.Collections.Generic.List<string>();
+                var stepWatch = System.Diagnostics.Stopwatch.StartNew();
+                Action<string, double?> report = (step, fraction) =>
+                {
+                    if (step == null || step == lastStep) return;
+                    if (lastStep != null) steps.Add(string.Format("  {0,6} ms  {1}", stepWatch.ElapsedMilliseconds, lastStep));
+                    lastStep = step;
+                    stepWatch.Restart();
+                };
+
+                var t = _asm.GetType("LbIntegrations.Vita3k.Vita3kWorkspace", throwOnError: true);
+                var prepare = t.GetMethod("Prepare", BindingFlags.Public | BindingFlags.Static, null,
+                    new[] { layout.GetType(), typeof(string), typeof(string).MakeByRefType(), typeof(Action<string, double?>) }, null);
+                var a = new object[] { layout, romPath, null, report };
+                watch.Restart();
+                var titleId = prepare.Invoke(null, a) as string;
+                long total = watch.ElapsedMilliseconds;
+                if (lastStep != null) steps.Add(string.Format("  {0,6} ms  {1}", stepWatch.ElapsedMilliseconds, lastStep));
+
+                foreach (var line in steps) Console.WriteLine(line);
+                Console.WriteLine("  ------");
+                Console.WriteLine(string.Format("  {0,6} ms  in all", total));
+                Check("a console is prepared", titleId != null, a[2] as string);
+
+                Console.WriteLine();
+                Console.WriteLine(_bad == 0 ? "  OK - prepared; the next launch of this game reuses it" : "  " + _bad + " FAILURE(S)");
+                return _bad == 0;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("  EXCEPTION: " + (ex.InnerException ?? ex).Message);
+                return false;
+            }
+        }
+
         /// <summary>The launch command line, case by case. A pure function, so it is checked here
         /// rather than discovered at the next launch - the first case is the line LaunchBox really
         /// handed over, which an earlier version turned into
@@ -543,6 +611,18 @@ namespace LbIntegrations.Probe
             // NO RAM DISK HERE, deliberately: this is the path a machine without ImDisk takes, and it
             // is the one that has to work everywhere.
             var work = Path.Combine(portable, "work");
+
+            // THE FAST REFERENCE MUST BE THE SLOW ONE, BYTE FOR BYTE. It is built from the base's own
+            // manifest plus a hash of what the install wrote; a full walk of the same tree, taken now -
+            // nothing has touched it since, there is no save to restore on a first session - is the
+            // answer it has to give.
+            var slow = Path.Combine(Path.GetTempPath(), "lbip-probe-full-" + Guid.NewGuid().ToString("N") + ".manifest");
+            LbIntegrations.Snapshot.SnapWalk.Write(work, slow, out _);
+            Check("the reference from the base is the full walk, byte for byte",
+                  File.ReadAllText(Path.Combine(portable, "work.reference")) == File.ReadAllText(slow));
+            File.Delete(slow);
+
+            FallsBackWhenTheTreeIsNotTheBase(portable);
             Check("the fallback folder is the working tree", Directory.Exists(work));
 
             Check("the firmware was copied onto it", File.Exists(Path.Combine(work, "vs0", "data", "font.pvf")));
@@ -627,6 +707,52 @@ namespace LbIntegrations.Probe
             var reference = File.ReadAllText(Path.Combine(portable, "work.reference"));
             Check("the fresh reference does NOT contain the restored save",
                   !reference.Contains("savedata/" + TitleId));
+        }
+
+        /// <summary>A tree that is NOT the base plus the fresh folders must be walked in full - a file the
+        /// fast path skipped would come out of the next session as a "change", into a save. A leftover
+        /// file, a file of another size, a missing one: each must fall back, and each must still give
+        /// the full walk's bytes.</summary>
+        private static void FallsBackWhenTheTreeIsNotTheBase(string portable)
+        {
+            var baseDir = Path.Combine(portable, "nand-initiale");
+            var baseManifest = Path.Combine(portable, "nand-initiale.manifest");
+            if (!Directory.Exists(baseDir) || !File.Exists(baseManifest)) { Check("a base to test against", false); return; }
+
+            void Trial(string what, Action<string> spoil, bool expectFallback)
+            {
+                var tree = Path.Combine(Path.GetTempPath(), "lbip-probe-tree-" + Guid.NewGuid().ToString("N"));
+                try
+                {
+                    foreach (var d in Directory.GetDirectories(baseDir, "*", SearchOption.AllDirectories))
+                        Directory.CreateDirectory(Path.Combine(tree, d.Substring(baseDir.Length).TrimStart('\\')));
+                    Directory.CreateDirectory(tree);
+                    foreach (var f in Directory.GetFiles(baseDir, "*", SearchOption.AllDirectories))
+                        File.Copy(f, Path.Combine(tree, f.Substring(baseDir.Length).TrimStart('\\')));
+                    spoil?.Invoke(tree);
+
+                    var fast = tree + ".fast";
+                    var full = tree + ".full";
+                    LbIntegrations.Snapshot.SnapWalk.WriteFrom(tree, baseManifest, new string[0], fast, out _, null, out int hashed);
+                    LbIntegrations.Snapshot.SnapWalk.Write(tree, full, out _);
+                    Check("  " + what + (expectFallback ? " - falls back to a full walk" : " - reads nothing"),
+                          expectFallback ? hashed < 0 : hashed == 0);
+                    Check("  " + what + " - same bytes as the full walk", File.ReadAllText(fast) == File.ReadAllText(full));
+                    File.Delete(fast);
+                    File.Delete(full);
+                }
+                finally { try { Directory.Delete(tree, true); } catch { } }
+            }
+
+            Console.WriteLine("  the fast reference against trees that are not the base");
+            Trial("the base as it is", null, expectFallback: false);
+            Trial("a leftover file", t => File.WriteAllText(Path.Combine(t, "leftover.txt"), "not the base"), expectFallback: true);
+            Trial("a file of another size", t =>
+            {
+                var any = Directory.GetFiles(t, "*", SearchOption.AllDirectories)[0];
+                File.AppendAllText(any, "grown");
+            }, expectFallback: true);
+            Trial("a missing file", t => File.Delete(Directory.GetFiles(t, "*", SearchOption.AllDirectories)[0]), expectFallback: true);
         }
 
         // ── a different game is what clears it ───────────────────────────────

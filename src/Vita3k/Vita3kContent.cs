@@ -44,6 +44,11 @@ namespace LbIntegrations.Vita3k
         /// sce_sys/param.sfo, or "foo/" when the archive wraps everything in a folder.</summary>
         public string Root = "";
 
+        /// <summary>The folders the install wrote into, relative to the virtual filesystem - what the
+        /// reference walk has to hash, everything else being the pristine base. See
+        /// SnapWalk.WriteFrom.</summary>
+        public List<string> Written = new List<string>();
+
         public bool IsGame => !IsPatch && !IsAddon;
         public bool IsPatch => (Category ?? "").Contains("gp", StringComparison.OrdinalIgnoreCase);
         public bool IsAddon => string.Equals(Category, "ac", StringComparison.OrdinalIgnoreCase);
@@ -218,6 +223,7 @@ namespace LbIntegrations.Vita3k
                 // under the licence of the app it patches.
                 if (!content.IsPatch && !PlaceLicence(archivePath, content, vitaFs, out error)) return null;
 
+                content.Written.Add(relative.Replace('\\', '/'));
                 Log.Info("installed " + content + " - " + files + " file(s) into " + relative);
                 return content;
             }
@@ -304,6 +310,7 @@ namespace LbIntegrations.Vita3k
                     Directory.CreateDirectory(dir);
                     File.WriteAllBytes(Path.Combine(dir, contentId + ".rif"), licence);
 
+                    content.Written.Add("ux0/license/" + titleId);
                     Log.Info("licence: ux0/license/" + titleId + "/" + contentId + ".rif");
                     return true;
                 }

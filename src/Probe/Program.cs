@@ -36,6 +36,21 @@ namespace LbIntegrations.Probe
             // difference and a zip, all on a tree this forges under the temp folder.
             if (Has(args, "--snapshot")) return SnapshotCheck.Run() ? 0 : 1;
 
+            // Time the reference walk over a real tree: --walk <dir>. Writes the manifest to %TEMP%.
+            if (Has(args, "--walk"))
+            {
+                var dir = Arg(args, "--walk");
+                var manifest = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lbip-walk-" + System.Guid.NewGuid().ToString("N") + ".manifest");
+                for (int round = 1; round <= 2; round++)
+                {
+                    var watch = System.Diagnostics.Stopwatch.StartNew();
+                    int n = LbIntegrations.Snapshot.SnapWalk.Write(dir, manifest, out var werr);
+                    Console.WriteLine("  walk " + round + "  " + n + " entries  " + watch.ElapsedMilliseconds + " ms" + (werr != null ? "  " + werr : ""));
+                }
+                Console.WriteLine("  manifest " + manifest);
+                return 0;
+            }
+
             if (args.Length == 0 || args[0].StartsWith("-"))
             {
                 Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--melonds] [--nogba] [--melonds-real ...] [--melonds-describe --rom <f>] [--rows] [--hotkeys] [--saves --emu <exe> --rom <rom>] [--ahk --emu <exe>] [--vita3k] [--vita3k-install --rom <f>] [--vita3k-real --emu <Vita3K.exe>]");
@@ -510,6 +525,12 @@ namespace LbIntegrations.Probe
             {
                 if (!Vita3kCheck.Run(asm)) return 1;
                 if (!Vita3kCheck.CommandLine(asm)) return 1;
+            }
+
+            // A real launch preparation, timed: --vita3k-prepare --emu <Vita3K.exe> --rom <archive>.
+            if (Has(args, "--vita3k-prepare"))
+            {
+                if (!Vita3kCheck.Prepare(asm, emuPath, Arg(args, "--rom"))) return 1;
             }
 
             // The launch-time progress window: --vita3k-window. It opens on screen for three seconds.

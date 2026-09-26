@@ -467,10 +467,18 @@ namespace LbIntegrations.Vita3k
                     if (installed == null) return null;
 
                     // THE REFERENCE, between the install and everything else. See the header.
+                    // From the base's own manifest, hashing only what the install wrote - see
+                    // SnapWalk.WriteFrom, which falls back to a full walk the moment the tree is not
+                    // exactly that.
                     report?.Invoke("Taking the console's fingerprint...", 0);
-                    int walked = SnapWalk.Write(root, ReferencePath(layout), out error, f => report?.Invoke(null, f));
+                    var watch = System.Diagnostics.Stopwatch.StartNew();
+                    int walked = SnapWalk.WriteFrom(root, BaseManifestPath(layout), installed.Written,
+                                                    ReferencePath(layout), out error, f => report?.Invoke(null, f),
+                                                    out int hashed);
                     if (walked < 0) return null;
-                    Log.Info("reference walk: " + walked + " entries");
+                    Log.Info("reference walk: " + walked + " entries in " + watch.ElapsedMilliseconds + " ms"
+                             + (hashed >= 0 ? " - " + hashed + " file(s) hashed, the rest from the base"
+                                            : " - full walk"));
 
                     RestoreSave(layout, content.TitleId, root);
 
