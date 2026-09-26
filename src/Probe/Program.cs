@@ -38,7 +38,7 @@ namespace LbIntegrations.Probe
 
             if (args.Length == 0 || args[0].StartsWith("-"))
             {
-                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--melonds] [--nogba] [--melonds-real ...] [--melonds-describe --rom <f>] [--rows] [--hotkeys] [--saves --emu <exe> --rom <rom>] [--ahk --emu <exe>] [--vita3k] [--vita3k-real --emu <Vita3K.exe>]");
+                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--melonds] [--nogba] [--melonds-real ...] [--melonds-describe --rom <f>] [--rows] [--hotkeys] [--saves --emu <exe> --rom <rom>] [--ahk --emu <exe>] [--vita3k] [--vita3k-install --rom <f>] [--vita3k-real --emu <Vita3K.exe>]");
                 // These two take no plugin at all - they exercise shared sources compiled
                 // into this probe, not anything loaded from a DLL.
                 Console.Error.WriteLine("       Probe --ramdisk --lb <LaunchBox root>");
@@ -509,6 +509,13 @@ namespace LbIntegrations.Probe
             if (Has(args, "--vita3k"))
             {
                 if (!Vita3kCheck.Run(asm)) return 1;
+            }
+
+            // What our installer actually produces from a real archive, for comparing against an
+            // oracle install: --vita3k-install --rom <archive>
+            if (Has(args, "--vita3k-install"))
+            {
+                if (!Vita3kCheck.Installed(asm, Arg(args, "--rom"))) return 1;
             }
 
             // The same model against a REAL install: --vita3k-real --emu <Vita3K.exe>. It writes to

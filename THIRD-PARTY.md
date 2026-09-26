@@ -35,6 +35,12 @@ reads what it writes; it compiles none of their code and links none of their lib
 firmware it fetches is Sony's, fetched from Sony's own update servers at the user's request and
 never redistributed.
 
+It does RUN one program built from their code: `native\vita3k-pfs.exe`, which decrypts a NoNpDRM
+dump the way their installer does. That program is described under `tools/vita3k-pfs` below. The
+plugin starts it as a separate process and reads one line of its output - the arm's-length
+arrangement this file already describes for the DSi tool, before the NAND library was called
+directly - so `src/Vita3k` stays MIT.
+
 ## Merged into `NoGba.dll`
 
 | Component | Licence | Used for |
@@ -154,6 +160,31 @@ Two files in the tool are melonDS's own work rather than ours, and say so at the
 `aes_key.cpp` carries `DSi_AES::ROL16` and `DSi_AES::DeriveNormalKey` copied verbatim from
 `src/DSi_AES.cpp`, because compiling that file would have pulled in most of the emulator for twenty
 lines of arithmetic.
+
+## `tools/vita3k-pfs` - GPL-2.0-or-later
+
+`tools/vita3k-pfs` is compiled together with source files from **psvpfsparser**, the PFS decryptor
+[Vita3K](https://github.com/Vita3K/Vita3K) carries as a submodule
+(`external/psvpfstools/psvpfsparser`, pinned there at `d14381f`). It builds one program,
+`vita3k-pfs.exe`, which decrypts an installed PS Vita app through its PFS layer - the step Vita3K's
+own installer performs in `decrypt_install_nonpdrm` and that a plain unzip cannot.
+
+| Component | Licence | Used for |
+|---|---|---|
+| psvpfsparser ([Vita3K fork](https://github.com/Vita3K/psvpfsparser), originally by motoharu-gosuto) | **none stated** - see below | parsing `files.db` / `unicv.db` and decrypting every file of the app |
+| [Vita3K](https://github.com/Vita3K/Vita3K) | GPL-2.0-or-later | the project that distributes it, and whose install sequence the tool reproduces |
+
+**psvpfsparser carries no licence file**, in the Vita3K fork or upstream, and this repository does not
+invent one for it. It is distributed by the Vita3K project inside a GPL-2.0-or-later program, which is
+the basis on which the tool's own sources (`main.cpp`, `cng_crypto.*`) are offered under
+GPL-2.0-or-later too. That is a question to settle before a release carries the binary, not one this
+file can answer.
+
+Of psvpfsparser's sources, the tool compiles 23 and leaves out every one that reaches outside the C++
+standard library: the OpenSSL back end (replaced by `cng_crypto.cpp`, over Windows CNG), the zRIF
+round trip (the key is read from the licence directly) and the file-based F00D encryptor (boost). Its
+cryptography is checked against published known answers - `vita3k-pfs selftest` - and its output
+against an install made by Vita3K itself: byte-identical on the reference game.
 
 ## `src/Installer` - the single-file release
 

@@ -19,6 +19,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Reflection;
 using System.Text;
 
@@ -68,6 +69,95 @@ namespace LbIntegrations.Probe
                 return false;
             }
             finally { Scrub(root); }
+        }
+
+        /// <summary>Install a REAL archive into a throwaway filesystem and print exactly what landed.
+        ///
+        /// FOR COMPARING AGAINST AN ORACLE: the same emulator before and after installing the same
+        /// game through its own installer. That pair is what settled the NoNpDRM rules, and this arm
+        /// is how our installer is held to them - by listing what it produces, not by trusting it.
+        ///
+        /// Writes only under %TEMP%.</summary>
+        public static bool Installed(Assembly pluginAssembly, string romPath)
+        {
+            Console.WriteLine();
+            Console.WriteLine("-- Vita3K, installing a real archive  [writes to %TEMP%] " + new string('-', 6));
+
+            _asm = pluginAssembly;
+            _bad = 0;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(romPath) || !File.Exists(romPath))
+                {
+                    Console.WriteLine("  pass --rom <archive.vpk|.zip>");
+                    return false;
+                }
+
+                // The plugin runs from its build folder here, with no native\ beside it: point it at the
+                // tool this checkout built, unless the caller already chose one.
+                const string pfsVariable = "LBIP_VITA3K_PFS";
+                if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(pfsVariable)))
+                {
+                    var repo = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(pluginAssembly.Location),
+                                                             "..", "..", "..", "..", ".."));
+                    var built = Path.Combine(repo, "build", "pfs", "vita3k-pfs.exe");
+                    if (File.Exists(built)) Environment.SetEnvironmentVariable(pfsVariable, built);
+                }
+                Console.WriteLine("  decryptor " + (Environment.GetEnvironmentVariable(pfsVariable) ?? "(none - PFS dumps will be refused)"));
+
+                var fs = Path.Combine(Path.GetTempPath(), "lbip-vita3k-install-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(fs);
+                Console.WriteLine("  archive   " + Path.GetFileName(romPath));
+                Console.WriteLine("  into      " + fs);
+
+                var args = new object[] { romPath, fs, null };
+                var content = Call("Vita3kContent", "Install", args);
+                if (!Check("the archive installs", content != null, args[2] as string)) return false;
+
+                var landed = Directory.GetFiles(fs, "*", SearchOption.AllDirectories)
+                                      .Select(p => p.Substring(fs.Length + 1).Replace('\\', '/'))
+                                      .OrderBy(p => p, StringComparer.Ordinal)
+                                      .ToList();
+
+                Console.WriteLine("  files     " + landed.Count);
+                foreach (var p in landed) Console.WriteLine("      " + p);
+
+                // THE THREE RULES THE ORACLE ESTABLISHED.
+                Check("the PFS layer is NOT installed - it is what keeps eboot.bin unreadable",
+                      !landed.Any(p => p.IndexOf("/sce_pfs/", StringComparison.OrdinalIgnoreCase) >= 0));
+                Check("the NoNpDRM package folder is NOT installed",
+                      !landed.Any(p => p.IndexOf("/sce_sys/package/", StringComparison.OrdinalIgnoreCase) >= 0));
+                Check("and the licence is placed under ux0/license",
+                      landed.Any(p => p.StartsWith("ux0/license/", StringComparison.OrdinalIgnoreCase)
+                                      && p.EndsWith(".rif", StringComparison.OrdinalIgnoreCase)));
+
+                // THE CHECK THAT NEEDS NO ORACLE. An executable the emulator can load is a SELF, and a
+                // SELF starts "SCE\0". Still encrypted, this game's eboot.bin started 92 99 77 50 - and
+                // the emulator said exactly that: "file is either not a SELF or is still encrypted".
+                var eboot = landed.FirstOrDefault(p => p.EndsWith("/eboot.bin", StringComparison.OrdinalIgnoreCase));
+                if (eboot != null)
+                {
+                    var head = new byte[4];
+                    using (var f = File.OpenRead(Path.Combine(fs, eboot.Replace('/', Path.DirectorySeparatorChar))))
+                        f.Read(head, 0, 4);
+                    Console.WriteLine("  eboot     " + BitConverter.ToString(head));
+                    Check("eboot.bin is a SELF the emulator can load (starts SCE\\0)",
+                          head[0] == (byte)'S' && head[1] == (byte)'C' && head[2] == (byte)'E' && head[3] == 0);
+                }
+
+                Check("and no staging copy is left behind",
+                      !Directory.GetDirectories(fs, "*.pfs", SearchOption.AllDirectories).Any());
+
+                Console.WriteLine();
+                Console.WriteLine(_bad == 0 ? "  OK - what landed matches what a real install produces"
+                                            : "  " + _bad + " FAILURE(S) - see above");
+                return _bad == 0;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("  EXCEPTION: " + ex.Message);
+                return false;
+            }
         }
 
         /// <summary>Against a REAL installation: put its firmware aside if that has not happened yet,

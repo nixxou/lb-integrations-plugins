@@ -35,6 +35,56 @@ namespace LbIntegrations.Vita3k
 
         // ── the launch ───────────────────────────────────────────────────────
 
+        /// <summary>The command line that runs the app WE installed, rather than installing it again.
+        ///
+        /// TWO THINGS MEASURED ON A REAL LAUNCH, and neither is guessable from the documentation.
+        ///
+        /// -r wants a TITLE ID, and the host appends the game's path after the command line. So the
+        /// emulator received `-r "C:\...\GAME.zip"` - and -r is VALIDATED against the installed app
+        /// list, so CLI11 rejected the value and the process was gone in 250 ms. The host said
+        /// nothing beyond a failure dialog. Hence -r carries the title id the install just produced.
+        ///
+        /// AND THE APPENDED PATH STILL HAS TO GO SOMEWHERE. Left as a positional it means "install
+        /// this and run it" - and it WINS over -r: measured, the log reads
+        ///     input-content-path: C:\...\GAME.zip
+        ///     input-installed-path: PCSE00965
+        ///     Installing archive from CLI: C:\...\GAME.zip
+        /// That would unpack the game a second time, over our own install, AFTER the reference walk
+        /// was taken - so anything the second pass wrote differently would land in the save.
+        ///
+        /// So the line ends with -Z (--app-args), which takes one free TEXT and swallows the path
+        /// the host is about to add. Measured: the emulator stays up and installs nothing.
+        ///
+        /// -Z is added ONLY when there is a game path to swallow, because a dangling -Z is a missing
+        /// required value and CLI11 would refuse the whole line.</summary>
+        internal static string CommandLineFor(string current, string titleId, bool hostWillAppendPath)
+        {
+            var kept = new List<string>();
+            var words = (current ?? "").Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < words.Length; i++)
+            {
+                // Drop any -r/--installed-path already there, with its value when it has one: ours
+                // is the one that names the app actually installed in this session.
+                if (words[i] == "-r" || words[i] == "--installed-path")
+                {
+                    if (i + 1 < words.Length && !words[i + 1].StartsWith("-")) i++;
+                    continue;
+                }
+                // A trailing -Z from an earlier build of this method would swallow our own -r.
+                if (words[i] == "-Z" || words[i] == "--app-args")
+                {
+                    if (i + 1 < words.Length && !words[i + 1].StartsWith("-")) i++;
+                    continue;
+                }
+                kept.Add(words[i]);
+            }
+
+            kept.Add("-r");
+            kept.Add(titleId);
+            if (hostWillAppendPath) kept.Add("-Z");
+            return string.Join(" ", kept);
+        }
+
         public override PrepareForLaunchResponse PrepareEmulatorForLaunch(PrepareForLaunchArgs args)
         {
             bool go = true;
@@ -68,11 +118,14 @@ namespace LbIntegrations.Vita3k
 
                 Playing(layout, titleId);
                 go = true;
+
+                var line = CommandLineFor(Safe(() => args?.CurrentCommandLine), titleId,
+                                          !string.IsNullOrWhiteSpace(rom));
+                Log.Info("command line: " + line);
+                return new PrepareForLaunchResponse(success: true) { NewCommandLine = line };
             }
             catch (Exception ex) { Log.Warn("PrepareEmulatorForLaunch", ex); }
 
-            // The command line is left alone: the host appends the game's path, and the emulator
-            // entry carries -F. What we changed is what the emulator will FIND, not how it is told.
             return new PrepareForLaunchResponse(success: go);
         }
 

@@ -167,6 +167,7 @@ namespace LbIntegrations.Vita3k
                 }
 
                 Log.Info("a complete firmware is sitting in fs and has never been put aside - doing it now");
+                QuietTheFirstRun(layout);
                 return AdoptFirmware(layout, out error);
             }
             catch (Exception ex)
@@ -175,6 +176,31 @@ namespace LbIntegrations.Vita3k
                 Log.Warn("could not check the firmware", ex);
                 return false;
             }
+        }
+
+        /// <summary>Put down the one setting that stops a launch dead.
+        ///
+        /// MEASURED: with show-welcome left true, Vita3K opens on its "Welcome to Vita3K" dialog and
+        /// waits for a click - before booting anything. From a front end that is simply a game that
+        /// never starts. The flag lives in portable\config.yml, which is ours, and the emulator
+        /// rewrites the file on exit keeping whatever we set.
+        ///
+        /// Only that one line is touched, and only when it says true: the rest of the file is the
+        /// user's, including anything they changed in the emulator's own settings.</summary>
+        public static void QuietTheFirstRun(Vita3kLayout layout)
+        {
+            try
+            {
+                var config = Path.Combine(Vita3kPaths.PortableDirOf(layout?.InstallDir) ?? "", "config.yml");
+                if (!File.Exists(config)) return;
+
+                var text = File.ReadAllText(config);
+                if (text.IndexOf("show-welcome: true", StringComparison.Ordinal) < 0) return;
+
+                File.WriteAllText(config, text.Replace("show-welcome: true", "show-welcome: false"));
+                Log.Info("turned off the welcome dialog - it waits for a click before booting anything");
+            }
+            catch (Exception ex) { Log.Warn("could not quiet the welcome dialog", ex); }
         }
 
         public static bool HasBase(Vita3kLayout layout)
@@ -353,6 +379,10 @@ namespace LbIntegrations.Vita3k
             error = null;
             try
             {
+                // Cheap, and it costs one read of a small file: somebody can turn the dialog back
+                // on from the emulator's own settings between two launches.
+                QuietTheFirstRun(layout);
+
                 // Self-healing: a complete firmware that was never put aside becomes the base
                 // here rather than requiring the install step to be run again.
                 if (!EnsureBase(layout, out error))
@@ -375,7 +405,7 @@ namespace LbIntegrations.Vita3k
                 Teardown(layout);
 
                 int sizeMb = BaseSizeMb(layout)
-                             + (int)(Math.Max(0, Vita3kContent.UncompressedSize(romPath)) / (1024 * 1024))
+                             + (int)(Math.Max(0, Vita3kContent.WorkingSizeBytes(romPath)) / (1024 * 1024))
                              + MarginMb;
 
                 var root = OpenWorkingTree(layout, content.TitleId, sizeMb);

@@ -115,6 +115,9 @@
     <EmbeddedResource Include="$(PayloadDir)\native\melonds-nandtool.exe">
       <LogicalName>payload/native/melonds-nandtool.exe</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\native\vita3k-pfs.exe">
+      <LogicalName>payload/native/vita3k-pfs.exe</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <!-- FAIL LOUDLY RATHER THAN SHIP AN EMPTY INSTALLER. An exe with no payload builds perfectly

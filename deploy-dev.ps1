@@ -228,6 +228,28 @@ if ($Plugin -eq 'MelonDs' -or $Plugin -eq 'NoGba') {
     }
 }
 
+# THE PFS DECRYPTOR, for Vita3K. A NoNpDRM dump ships its files still encrypted, and a plain unzip
+# makes a game that does not boot; this is Vita3K's own decryption, built into one exe under
+# tools\vita3k-pfs. It is a separate program the plugin RUNS - nothing of it is loaded - so it sits in
+# native\ as an .exe, where LaunchBox does not try to load it as an assembly.
+# Optional here, as the NAND library is: without it the plugin still installs homebrew and refuses a
+# PFS dump with a sentence saying why. build-release.ps1 requires it.
+if ($Plugin -eq 'Vita3k') {
+    $pfs = Join-Path $repo "build\pfs\vita3k-pfs.exe"
+    if (Test-Path $pfs) {
+        $nativeDir = Join-Path $targetDir "native"
+        New-Item -ItemType Directory -Force -Path $nativeDir | Out-Null
+        $pfsTarget = Join-Path $nativeDir "vita3k-pfs.exe"
+        Copy-Item $pfs $pfsTarget -Force
+        if ((Get-FileHash $pfs -Algorithm SHA256).Hash -ne (Get-FileHash $pfsTarget -Algorithm SHA256).Hash) {
+            throw "The PFS decryptor was not written: $pfsTarget."
+        }
+        Write-Host "           $pfsTarget"
+    } else {
+        Write-Host "  ! no build\pfs\vita3k-pfs.exe - build tools\vita3k-pfs, or PFS dumps will be refused" -ForegroundColor Yellow
+    }
+}
+
 Write-Host "Deployed -> $target" -ForegroundColor Green
 Write-Host "           $manifestTarget"
 Write-Host "  sha256 $($targetHash.Substring(0,16))...  $((Get-Item $target).Length) bytes"
