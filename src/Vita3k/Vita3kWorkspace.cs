@@ -425,6 +425,7 @@ namespace LbIntegrations.Vita3k
 
                 var content = Vita3kContent.Describe(romPath, out error);
                 if (content == null) return null;
+                lock (Names) Names[content.TitleId] = content.Title;
                 if (!content.IsGame)
                 { error = content + " is not a game - updates and add-ons are not launched"; return null; }
 
@@ -575,13 +576,18 @@ namespace LbIntegrations.Vita3k
 
         /// <summary>Let go of the previous session's tree. Called when a DIFFERENT game starts, never
         /// when one ends.</summary>
-        public static void Teardown(Vita3kLayout layout)
+        public static void Teardown(Vita3kLayout layout) => Teardown(layout, null);
+
+        public static void Teardown(Vita3kLayout layout, Action<string, double?> report)
         {
             try
             {
                 var previous = WorkTitle(layout);
                 DropLink(layout);
+                if (previous != null && OnRamDisk(layout))
+                    report?.Invoke("Releasing the RAM disk - waiting for its helper to finish...", null);
                 if (previous != null) RamDrive.UnmountFor(previous);
+                report?.Invoke("Clearing the console...", null);
 
                 var work = WorkDir(layout);
                 if (work != null && Directory.Exists(work))
@@ -612,6 +618,21 @@ namespace LbIntegrations.Vita3k
         /// that is being taken away. Capture, release and Prepare all hold this.</summary>
         private static readonly object SessionGate = new object();
 
+        /// <summary>A game's own name, by title id, as its param.sfo gave it when the console was built -
+        /// for the window that says the session is being saved.</summary>
+        private static readonly Dictionary<string, string> Names = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        private static string NameOf(string titleId)
+        {
+            lock (Names) return Names.TryGetValue(titleId ?? "", out var n) && !string.IsNullOrWhiteSpace(n) ? n : titleId;
+        }
+
+        /// <summary>The last session taken out: title and when. The host's OnGameExited and our own
+        /// watcher both end the same session; the second one, arriving after the first, finds the job
+        /// done and says nothing - no second window, no second capture.</summary>
+        private static string _lastCaptured;
+        private static DateTime _lastCapturedAt;
+
         public static bool CaptureOnExit(Vita3kLayout layout, string titleId)
         {
             lock (SessionGate) return CaptureOnExitLocked(layout, titleId);
@@ -625,6 +646,19 @@ namespace LbIntegrations.Vita3k
                 if (root == null || !Directory.Exists(root)) return false;
                 if (!string.Equals(WorkTitle(layout), titleId, StringComparison.Ordinal)) return false;
 
+                // Already done by the other end-of-session signal, and nothing written since.
+                if (string.Equals(_lastCaptured, titleId, StringComparison.Ordinal)
+                    && (DateTime.UtcNow - _lastCapturedAt).TotalSeconds < 60
+                    && Newest(root) <= _lastCapturedAt)
+                    return true;
+
+                // THE CLOSING WINDOW, as the launch has one. It stays invisible for a quick save -
+                // see Vita3kProgressWindow - and shows for the RAM disk release, which waits for the
+                // helper and has been measured at a minute and a half.
+                using var window = Vita3kProgressWindow.Open("Vita3K - saving " + NameOf(titleId));
+                Action<string, double?> report = (step, fraction) => window?.Report(step, fraction);
+
+                report("Waiting for Vita3K to finish writing...", null);
                 var deadline = DateTime.UtcNow + SettleBudget;
                 Thread.Sleep(SettleFloor);
 
@@ -641,7 +675,7 @@ namespace LbIntegrations.Vita3k
                     Thread.Sleep(250);
                 }
 
-                bool taken = Capture(layout, titleId);
+                bool taken = CaptureLocked(layout, titleId, report);
                 if (taken)
                 {
                     ClearPending(layout);
@@ -653,7 +687,7 @@ namespace LbIntegrations.Vita3k
                     if (OnRamDisk(layout))
                     {
                         Log.Info("releasing the RAM disk of " + titleId + " - the session is saved");
-                        Teardown(layout);
+                        Teardown(layout, report);
                     }
                 }
                 return taken;
@@ -682,7 +716,9 @@ namespace LbIntegrations.Vita3k
             lock (SessionGate) return CaptureLocked(layout, titleId);
         }
 
-        private static bool CaptureLocked(Vita3kLayout layout, string titleId)
+        private static bool CaptureLocked(Vita3kLayout layout, string titleId) => CaptureLocked(layout, titleId, null);
+
+        private static bool CaptureLocked(Vita3kLayout layout, string titleId, Action<string, double?> report)
         {
             string building = null;
             try
@@ -693,11 +729,16 @@ namespace LbIntegrations.Vita3k
                 if (root == null || save == null || !File.Exists(reference)) return false;
 
                 building = save + "." + Guid.NewGuid().ToString("N") + ".state";
-                int files = SnapDelta.Capture(root, reference, building, out var error);
+                report?.Invoke("Looking for what the game changed...", 0);
+                int files = SnapDelta.Capture(root, reference, building, out var error, f => report?.Invoke(null, f));
                 if (files < 0) { Log.Warn("nothing captured: " + error); return false; }
 
+                report?.Invoke("Packing the save...", null);
                 if (!SnapFile.Pack(building, save, out error))
                 { Log.Warn("could not pack the save: " + error); return false; }
+
+                _lastCaptured = titleId;
+                _lastCapturedAt = DateTime.UtcNow;
 
                 Log.Info("the session of " + titleId + " came out of the tree - " + files
                          + " file(s) into " + Path.GetFileName(save));

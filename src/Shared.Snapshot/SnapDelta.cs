@@ -91,6 +91,11 @@ namespace LbIntegrations.Snapshot
         /// The folder is built under a temporary name and swapped in, so a capture interrupted half
         /// way never leaves a state that is neither the old one nor the new one.</summary>
         public static int Capture(string root, string referencePath, string stateDir, out string error)
+            => Capture(root, referencePath, stateDir, out error, null);
+
+        /// <summary>The same capture, saying how far its walk of the tree has got - 0..1, by bytes.</summary>
+        public static int Capture(string root, string referencePath, string stateDir, out string error,
+                                  Action<double> progress)
         {
             error = null;
             string building = null;
@@ -100,7 +105,7 @@ namespace LbIntegrations.Snapshot
                 if (reference.Count == 0)
                 { error = "there is no reference to compare against"; return -1; }
 
-                var actual = SnapWalk.Of(root, out error);
+                var actual = SnapWalk.Of(root, out error, progress);
                 if (actual == null) return -1;
 
                 List<string> differing, removed, directories;
