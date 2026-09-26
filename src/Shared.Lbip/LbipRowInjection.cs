@@ -113,6 +113,11 @@ namespace LbIntegrations.Lbip
         private static DbConnection _mirror;
         private static int _mirrorLines = -1;
 
+        /// <summary>A second mirror that also holds the HOST's rows, built only when a query needs
+        /// it. See EnsureMirror.</summary>
+        private static DbConnection _whole;
+        private static int _wholeLines = -1;
+
         /// <summary>Databases we have already said are not the metadata one, so we say it once.</summary>
         private static readonly HashSet<string> _saidNotOurs =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -345,9 +350,9 @@ namespace LbIntegrations.Lbip
         public static void AfterExecuteReader(DbCommand __instance, ref DbDataReader __result)
         {
             if (__result == null) return;
-            var extra = RowsFor(__instance);
+            var extra = RowsFor(__instance, out var replace);
             if (extra == null) return;
-            __result = new LbipAppendingReader(__result, extra);
+            __result = new LbipAppendingReader(__result, extra, replace);
         }
 
         /// <summary>The same thing for the asynchronous path, which is the one LaunchBox takes.
@@ -358,20 +363,24 @@ namespace LbIntegrations.Lbip
         public static void AfterExecuteReaderAsync(DbCommand __instance, ref Task<DbDataReader> __result)
         {
             if (__result == null) return;
-            var extra = RowsFor(__instance);
+            var extra = RowsFor(__instance, out var replace);
             if (extra == null) return;
-            __result = WrapWhenReady(__result, extra);
+            __result = WrapWhenReady(__result, extra, replace);
         }
 
-        private static async Task<DbDataReader> WrapWhenReady(Task<DbDataReader> inner, List<object[]> extra)
-            => new LbipAppendingReader(await inner.ConfigureAwait(false), extra);
+        private static async Task<DbDataReader> WrapWhenReady(Task<DbDataReader> inner,
+                                                             List<object[]> extra, bool replace)
+            => new LbipAppendingReader(await inner.ConfigureAwait(false), extra, replace);
 
         /// <summary>Our rows for this command's query, or null when there is nothing to add.
         ///
         /// Everything here is best-effort: on any failure the caller leaves the result exactly as
         /// the provider built it, and LaunchBox carries on with its own data.</summary>
-        private static List<object[]> RowsFor(DbCommand command)
+        private static List<object[]> RowsFor(DbCommand command) => RowsFor(command, out _);
+
+        private static List<object[]> RowsFor(DbCommand command, out bool replace)
         {
+            replace = false;
             if (_inOurOwnWork || command == null) return null;
 
             var sql = command.CommandText;
@@ -393,7 +402,12 @@ namespace LbIntegrations.Lbip
             _inOurOwnWork = true;
             try
             {
-                var mirror = EnsureMirror(command.Connection);
+                // A LIMIT means the answer is a slice of an order, so it has to be computed over
+                // BOTH sets at once. The mirror then carries the host's rows as well and the whole
+                // query is replayed on it - SQLite does the sorting and the cutting, and we do not
+                // parse a line of SQL.
+                bool whole = IsOrderedSlice(sql);
+                var mirror = EnsureMirror(command.Connection, whole);
                 if (mirror == null)
                 {
                     if (LbipLog.Tracing) LbipLog.Info("no mirror for this connection - nothing added");
@@ -410,8 +424,11 @@ namespace LbIntegrations.Lbip
                 if (LbipLog.Tracing || !_saidItWorks)
                 {
                     _saidItWorks = true;
-                    LbipLog.Info("added " + extra.Count + " row(s) to a metadata query: " + Shorten(sql));
+                    LbipLog.Info((whole ? "answered a limited query with " : "added ")
+                                 + extra.Count + " row(s) " + (whole ? "of its own: " : "to a metadata query: ")
+                                 + Shorten(sql));
                 }
+                replace = whole;
                 return extra;
             }
             catch (Exception ex)
@@ -422,10 +439,67 @@ namespace LbIntegrations.Lbip
             finally { _inOurOwnWork = false; }
         }
 
+        /// <summary>Copy every row of one table from the host into the mirror, by value. Best
+        /// effort: a table that cannot be read leaves the mirror with our rows alone, which is the
+        /// behaviour this had before there was a whole mirror at all.</summary>
+        private static void CopyTable(DbConnection host, DbConnection mirror, string table)
+        {
+            try
+            {
+                using var read = host.CreateCommand();
+                read.CommandText = "SELECT * FROM \"" + table + "\"";
+                using var reader = read.ExecuteReader();
+
+                int n = reader.FieldCount;
+                var names = new string[n];
+                for (int i = 0; i < n; i++) names[i] = "\"" + reader.GetName(i) + "\"";
+                var holes = new string[n];
+                for (int i = 0; i < n; i++) holes[i] = "@p" + i;
+                var sql = "INSERT INTO \"" + table + "\" (" + string.Join(", ", names)
+                          + ") VALUES (" + string.Join(", ", holes) + ")";
+
+                int rows = 0;
+                while (reader.Read())
+                {
+                    using var write = mirror.CreateCommand();
+                    write.CommandText = sql;
+                    for (int i = 0; i < n; i++)
+                    {
+                        var p = write.CreateParameter();
+                        p.ParameterName = "@p" + i;
+                        p.Value = reader.IsDBNull(i) ? DBNull.Value : reader.GetValue(i);
+                        write.Parameters.Add(p);
+                    }
+                    write.ExecuteNonQuery();
+                    rows++;
+                }
+                if (LbipLog.Tracing) LbipLog.Info("copied " + rows + " host row(s) of \"" + table + "\"");
+            }
+            catch (Exception ex) { LbipLog.Warn("could not copy \"" + table + "\" into the mirror", ex); }
+        }
+
         /// <summary>Quoted identifiers are what makes this safe: `"Emulators"` cannot match inside
         /// `"EmulatorPlatforms"`, and EF Core's SQLite provider always quotes.</summary>
         private static bool TouchesOurTables(string sql)
             => LbipRows.TableNames.Any(t => sql.IndexOf("\"" + t + "\"", StringComparison.Ordinal) >= 0);
+
+        /// <summary>Does this query pick a few rows out of an order?
+        ///
+        /// APPENDING CANNOT ANSWER ONE OF THESE, and the failure is silent. Measured on LaunchBox 14,
+        /// whose ROM import wizard asks:
+        ///
+        ///     SELECT "e"."Emulator" FROM "EmulatorPlatforms" AS "e"
+        ///     WHERE "e"."Platform" = @platform AND "e"."Recommended"
+        ///     ORDER BY "e"."Emulator" LIMIT 1
+        ///
+        /// SQLite sorted and cut the HOST's rows, we stapled ours on after - in second place, where
+        /// a caller taking the first never sees it. By their own ordering ours should have won, and
+        /// the import offered no files at all because the row that did win carries no extensions.
+        ///
+        /// So these are answered whole instead: see EnsureMirror(withHostRows: true).</summary>
+        private static bool IsOrderedSlice(string sql)
+            => sql.IndexOf(" limit ", StringComparison.OrdinalIgnoreCase) >= 0
+               || sql.EndsWith(" limit", StringComparison.OrdinalIgnoreCase);
 
         /// <summary>A query that folds its rows into one value must not gain another. We would rather
         /// leave such a query alone than answer it wrongly.</summary>
@@ -442,15 +516,24 @@ namespace LbIntegrations.Lbip
         ///
         /// Returns null - without remembering the failure - when this connection is not the metadata
         /// database. LaunchBox opens several SQLite files, and only one of them has these tables.</summary>
-        private static DbConnection EnsureMirror(DbConnection host)
+        private static DbConnection EnsureMirror(DbConnection host, bool withHostRows = false)
         {
             if (host == null || host.State != ConnectionState.Open) return null;
 
             // Rebuilt when a plugin publishes after we built it - they do not all load at once.
             var lines = Shared();
-            if (_mirror != null && lines.Count == _mirrorLines) return _mirror;
-            if (_mirror != null) { _mirror.Dispose(); _mirror = null; }
-            _mirrorLines = lines.Count;
+            if (withHostRows)
+            {
+                if (_whole != null && lines.Count == _wholeLines) return _whole;
+                if (_whole != null) { _whole.Dispose(); _whole = null; }
+                _wholeLines = lines.Count;
+            }
+            else
+            {
+                if (_mirror != null && lines.Count == _mirrorLines) return _mirror;
+                if (_mirror != null) { _mirror.Dispose(); _mirror = null; }
+                _mirrorLines = lines.Count;
+            }
 
             var ddl = new List<string>();
             foreach (var table in LbipRows.TableNames)
@@ -493,8 +576,25 @@ namespace LbIntegrations.Lbip
 
             var mirror = (DbConnection)Activator.CreateInstance(_connectionType, "Data Source=:memory:");
             mirror.Open();
-            foreach (var statement in ddl.Concat(LbipRows.BuildInserts(rows)))
+            foreach (var statement in ddl)
                 using (var c = mirror.CreateCommand()) { c.CommandText = statement; c.ExecuteNonQuery(); }
+
+            // THE HOST'S ROWS FIRST, when this mirror has to answer a query whole. Copied rather
+            // than joined: the mirror is a separate in-memory database, and these tables hold tens
+            // of rows, not thousands. It is cached like the other one, and metadata does not change
+            // while a host is running.
+            if (withHostRows)
+                foreach (var table in LbipRows.TableNames) CopyTable(host, mirror, table);
+
+            foreach (var statement in LbipRows.BuildInserts(rows))
+                using (var c = mirror.CreateCommand()) { c.CommandText = statement; c.ExecuteNonQuery(); }
+
+            if (withHostRows)
+            {
+                _whole = mirror;
+                LbipLog.Info("whole mirror built (host rows included), " + rows.Count + " emulator(s) of ours");
+                return _whole;
+            }
 
             _mirror = mirror;
             LbipLog.Info("mirror built in memory from the host's schema, " + rows.Count + " emulator(s)");
