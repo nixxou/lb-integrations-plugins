@@ -309,7 +309,11 @@ namespace LbIntegrations.Vita3k
                 if (!File.Exists(ReferencePath(layout))) return false;
 
                 var root = parts[4];
-                return !string.IsNullOrEmpty(root) && Directory.Exists(root);
+                if (string.IsNullOrEmpty(root) || !Directory.Exists(root)) return false;
+
+                // A LETTER READ FROM A FILE MAY BE ANYTHING BY NOW - after a restart Z: can be somebody
+                // else's drive. On a RAM disk the tree is only ours if the drive says so.
+                return !OnRamDisk(layout) || Owns(layout, root);
             }
             catch { return false; }
         }
@@ -450,8 +454,11 @@ namespace LbIntegrations.Vita3k
                     return content.TitleId;
                 }
 
-                // A DIFFERENT GAME. This is the only moment anything is cleared.
+                // A DIFFERENT GAME. This is the only moment anything is cleared - so it is also the
+                // last chance to save a session that never ended properly.
                 report?.Invoke("Putting the previous game away...", null);
+                var previous = WorkTitle(layout);
+                if (previous != null) SaveBeforeClearing(layout, previous);
                 Teardown(layout);
 
                 int sizeMb = BaseSizeMb(layout)
@@ -559,6 +566,7 @@ namespace LbIntegrations.Vita3k
                     // and costs nothing, since the drive holds this session and nothing else.
                     var root = Path.Combine(drive, FsName);
                     Directory.CreateDirectory(root);
+                    Claim(layout, drive);
                     Log.Info("working on a RAM disk at " + root + " (" + sizeMb + " MB of " + free + " free)");
                     return root;
                 }
@@ -750,6 +758,13 @@ namespace LbIntegrations.Vita3k
             if (RamDrive.UnmountFor(titleId) || !OnRamDisk(layout)) return;
             var drive = Path.GetPathRoot(WorkRoot(layout) ?? "");
             if (string.IsNullOrEmpty(drive) || !RamDrive.IsImDiskDrive(drive)) return;
+            if (!Owns(layout, drive))
+            {
+                // Measured risk, not a guess: LiteBox mounts its own RAM disks from the same helper
+                // and picks letters from Z down, exactly as we do.
+                Log.Info(drive + " is an ImDisk drive but not this console's - left mounted");
+                return;
+            }
             Log.Info("the RAM disk " + drive + " was not mounted by this process - releasing it from the marker");
             RamDrive.Unmount(drive);
         }
@@ -929,6 +944,185 @@ namespace LbIntegrations.Vita3k
                 File.Copy(file, target, overwrite: true);
                 if (progress != null) { try { progress((double)(i + 1) / files.Count); } catch { } }
             }
+        }
+
+        // ── what a session that never ended leaves behind ────────────────────
+        //
+        // A SESSION CAN STOP WITHOUT ENDING. The machine loses power, the host is killed, the watcher
+        // dies with it - and nothing captures, nothing releases. What that leaves:
+        //   - a RAM disk still mounted, holding progress nobody saved (host killed, machine up)
+        //   - a junction pointing at a drive that no longer exists (machine restarted)
+        //   - a work\ tree newer than its save (either, on the disk fallback)
+        //   - staging copies and half-built temporaries nothing will ever delete
+        // Three things answer it: a proof of ownership on the drive, a capture before anything is
+        // cleared, and a look around when the plugin starts.
+
+        /// <summary>The file at the root of a session's RAM disk that says whose it is.</summary>
+        public const string OwnerName = "lbip-vita3k.owner";
+
+        private static string Owner(Vita3kLayout layout)
+        {
+            var portable = Portable(layout);
+            return portable == null ? null : Path.GetFullPath(portable).TrimEnd(Path.DirectorySeparatorChar);
+        }
+
+        /// <summary>Write the drive's owner: this install's portable folder. A second install of the
+        /// plugin, LiteBox's own RAM disks, a USB stick given the letter after a restart - none of
+        /// them carries it.</summary>
+        private static void Claim(Vita3kLayout layout, string drive)
+        {
+            try { File.WriteAllText(Path.Combine(Path.GetPathRoot(drive), OwnerName), Owner(layout)); }
+            catch (Exception ex) { Log.Warn("could not mark the RAM disk as this console's", ex); }
+        }
+
+        /// <summary>Does the drive holding <paramref name="path"/> say it is this console's?</summary>
+        private static bool Owns(Vita3kLayout layout, string path)
+        {
+            try
+            {
+                var owner = Owner(layout);
+                var file = Path.Combine(Path.GetPathRoot(path) ?? "", OwnerName);
+                return owner != null && File.Exists(file)
+                       && string.Equals(File.ReadAllText(file).Trim(), owner, StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return false; }
+        }
+
+        /// <summary>Capture the session of <paramref name="titleId"/> if its tree is newer than its
+        /// save - the case of a session that stopped without ending. True when it is safe to clear
+        /// the tree now: captured, or nothing to capture.</summary>
+        private static bool SaveBeforeClearing(Vita3kLayout layout, string titleId)
+        {
+            try
+            {
+                var root = WorkRoot(layout);
+                if (root == null || !Directory.Exists(root)) return true;              // nothing left to read
+                if (OnRamDisk(layout) && !Owns(layout, root)) return true;               // not ours to read
+                if (!File.Exists(ReferencePath(layout))) return true;                    // never finished building
+
+                var save = SavePathFor(layout, titleId);
+                if (save != null && File.Exists(save) && Newest(root) <= File.GetLastWriteTimeUtc(save)) return true;
+
+                if (Vita3kPaths.EmulatorRunning())
+                {
+                    Log.Warn("the session of " + titleId + " was never saved, and Vita3K is still running -"
+                             + " not reading a tree it may still be writing");
+                    return false;
+                }
+
+                Log.Info("the session of " + titleId + " never ended (the host or the machine stopped first)"
+                         + " - saving it before its tree is cleared");
+                return CaptureLocked(layout, titleId);
+            }
+            catch (Exception ex) { Log.Warn("could not save the session of " + titleId + " before clearing it", ex); return false; }
+        }
+
+        /// <summary>The look around when the plugin starts. Never while Vita3K runs, never waiting for
+        /// a session in progress, never throwing.</summary>
+        public static void CleanUpAtStart(Vita3kLayout layout)
+        {
+            try
+            {
+                var portable = Portable(layout);
+                if (portable == null || !Directory.Exists(portable)) return;
+                if (Vita3kPaths.EmulatorRunning()) { Log.Info("start-up check skipped - Vita3K is running"); return; }
+                if (!Monitor.TryEnter(SessionGate)) return;
+                try
+                {
+                    RamDiskHost.LaunchBoxRoot = () => Vita3kPaths.LaunchBoxRootOf(layout);
+
+                    var title = WorkTitle(layout);
+                    var root = WorkRoot(layout);
+                    bool there = root != null && Directory.Exists(root);
+
+                    if (title != null && OnRamDisk(layout))
+                    {
+                        if (there && Owns(layout, root))
+                        {
+                            // The host went, the machine did not: the drive holds the session, maybe
+                            // unsaved. Saved first, then given back - kept, it holds its memory until
+                            // a reboot. Relaunching the game only costs a rebuild.
+                            if (SaveBeforeClearing(layout, title))
+                            {
+                                Log.Info("start-up: the RAM disk of " + title + " outlived its session - releasing it");
+                                Teardown(layout);
+                            }
+                        }
+                        else if (!there)
+                        {
+                            // The machine restarted: the drive and whatever it held are gone. What is
+                            // left is a junction into nothing and a marker for a tree that does not exist.
+                            Log.Info("start-up: the RAM disk of " + title + " is gone - forgetting the session");
+                            Teardown(layout);
+                        }
+                        // There but not ours: somebody else's drive under our old letter. Left alone;
+                        // the next launch will not reuse it either.
+                    }
+                    else if (title != null && there)
+                    {
+                        // The disk fallback: saved if it needs to be, and KEPT - work\ is only ever
+                        // cleared by another game.
+                        SaveBeforeClearing(layout, title);
+                    }
+                    else if (title == null)
+                    {
+                        DropLink(layout);   // a junction with no session behind it
+                    }
+
+                    if (WorkTitle(layout) == null || WorkRoot(layout) is string r && !Directory.Exists(r))
+                        ClearPending(layout);
+
+                    SweepLeftovers(layout);
+                }
+                finally { Monitor.Exit(SessionGate); }
+            }
+            catch (Exception ex) { Log.Warn("start-up check", ex); }
+        }
+
+        /// <summary>Older than this and still there, a temporary is an orphan: every one of them lives
+        /// for the few seconds of the operation that made it.</summary>
+        private static readonly TimeSpan OrphanAge = TimeSpan.FromHours(1);
+
+        /// <summary>Staging copies and half-built temporaries whose operation never finished.</summary>
+        private static void SweepLeftovers(Vita3kLayout layout)
+        {
+            int removed = 0;
+            var portable = Portable(layout);
+
+            void Remove(FileSystemInfo item)
+            {
+                try
+                {
+                    if (DateTime.UtcNow - item.LastWriteTimeUtc < OrphanAge) return;
+                    if (item is DirectoryInfo d) d.Delete(recursive: true); else item.Delete();
+                    removed++;
+                    Log.Info("start-up: removed the leftover " + item.FullName);
+                }
+                catch (Exception ex) { Log.Warn("could not remove the leftover " + item.FullName, ex); }
+            }
+
+            try
+            {
+                // Staging beside the disk fallback's tree, and the %TEMP% ones of older versions.
+                foreach (var d in new DirectoryInfo(portable).EnumerateDirectories(Vita3kContent.StagingPrefix + "*")) Remove(d);
+                foreach (var d in new DirectoryInfo(Path.GetTempPath()).EnumerateDirectories("lbip-vita3k-staging-*")) Remove(d);
+
+                // Half-written manifests and stamps.
+                foreach (var f in new DirectoryInfo(portable).EnumerateFiles("*.part")) Remove(f);
+
+                // A capture, a restore or a swap that never finished, beside the saves.
+                var saves = new DirectoryInfo(Path.Combine(portable, SavesName));
+                if (saves.Exists)
+                    foreach (var item in saves.EnumerateFileSystemInfos("*", SearchOption.AllDirectories).ToList())
+                    {
+                        var n = item.Name;
+                        if (n.EndsWith(".state", StringComparison.OrdinalIgnoreCase) || n.EndsWith(".open", StringComparison.OrdinalIgnoreCase)
+                            || n.EndsWith(".part", StringComparison.OrdinalIgnoreCase) || n.EndsWith(".old", StringComparison.OrdinalIgnoreCase))
+                            if (item.Exists) Remove(item);
+                    }
+            }
+            catch (Exception ex) { Log.Warn("could not look for leftovers", ex); }
+            if (removed > 0) Log.Info("start-up: " + removed + " leftover(s) removed");
         }
 
         private static void MarkPending(Vita3kLayout layout, string titleId)

@@ -57,6 +57,7 @@ namespace LbIntegrations.Probe
                 TheCapture(layout, portable, sessionRoot);
                 TheSecondLaunch(layout, portable, vpk);
                 AnotherGame(layout, portable, root);
+                NeverEnded(layout, portable, root, vpk);
                 OrphanedJunction(layout, portable, root);
 
                 Console.WriteLine();
@@ -406,6 +407,7 @@ namespace LbIntegrations.Probe
                 Console.WriteLine("  archive   " + Path.GetFileName(romPath));
                 Console.WriteLine("  into      " + fs);
 
+                var tempBefore = new HashSet<string>(Directory.GetDirectories(Path.GetTempPath(), "lbip-*"), StringComparer.OrdinalIgnoreCase);
                 var args = new object[] { romPath, fs, null };
                 var content = Call("Vita3kContent", "Install", args);
                 if (!Check("the archive installs", content != null, args[2] as string)) return false;
@@ -467,9 +469,17 @@ namespace LbIntegrations.Probe
                 Check("every installed file was hashed as it was written", hashedMap != null && missing == 0);
                 Check("and every one of those equals the file read back", hashedMap != null && wrong == 0);
 
+                var besideTree = Path.GetDirectoryName(Path.GetFullPath(fs).TrimEnd(Path.DirectorySeparatorChar)) ?? fs;
                 Check("and no staging copy is left behind",
                       !Directory.GetDirectories(fs, "*.pfs", SearchOption.AllDirectories).Any()
+                      && !Directory.GetDirectories(besideTree, "lbip-staging-*").Any()
                       && !Directory.GetDirectories(Path.GetTempPath(), "lbip-vita3k-staging-*").Any());
+                var tempNew = Directory.GetDirectories(Path.GetTempPath(), "lbip-*")
+                                       .Where(d => !tempBefore.Contains(d) && !d.StartsWith(fs, StringComparison.OrdinalIgnoreCase)
+                                                   && !fs.StartsWith(d, StringComparison.OrdinalIgnoreCase)).ToList();
+                if (drive != null)
+                    Check("and the install wrote nothing to %TEMP% - the staging copy stayed on the RAM disk",
+                          tempNew.Count == 0, string.Join(", ", tempNew));
 
                 if (drive != null)
                 {
@@ -806,6 +816,130 @@ namespace LbIntegrations.Probe
 
             Call("Vita3kWorkspace", "Teardown", new object[] { layout });
             Check("tearing down removes it all the same", !listed());
+        }
+
+        /// <summary>The proof of ownership, on REAL RAM disks: a drive under the marker's letter that
+        /// is not this console's - LiteBox's, say - must be left mounted; one that is, released.
+        /// MOUNTS REAL DRIVES through the elevated task of <paramref name="lbRoot"/>.</summary>
+        public static bool Ownership(Assembly pluginAssembly, string lbRoot)
+        {
+            Console.WriteLine();
+            Console.WriteLine("-- Vita3K, whose RAM disk is it  [MOUNTS REAL DRIVES] " + new string('-', 9));
+            _asm = pluginAssembly;
+            _bad = 0;
+            var root = Path.Combine(Path.GetTempPath(), "lbip-vita3k-owner-" + Guid.NewGuid().ToString("N"));
+            string drive = null;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(lbRoot) || !Directory.Exists(lbRoot)) { Console.WriteLine("  pass --lb <LaunchBox root>"); return false; }
+                var install = Path.Combine(root, "Emulators", "Nixx-Vita3K");
+                var portable = Path.Combine(install, "portable");
+                Directory.CreateDirectory(portable);
+                File.WriteAllText(Path.Combine(install, "Vita3K.exe"), "not really an executable");
+                var layout = Resolve(Path.Combine(install, "Vita3K.exe"));
+
+                LbIntegrations.RamDisk.RamDiskHost.UseRoot(lbRoot);
+                drive = LbIntegrations.RamDisk.RamDrive.MountFor("probe-owner", 64);
+                if (!Check("a RAM disk mounts", drive != null)) return false;
+                var fs = Path.Combine(drive, "fs");
+                Directory.CreateDirectory(fs);
+                File.WriteAllText(Path.Combine(portable, "work.title"), TitleId + "\t0\t0\t0\t" + fs);
+
+                // Somebody else's drive under our old letter: no proof on it.
+                Call("Vita3kWorkspace", "CleanUpAtStart", new object[] { layout });
+                Check("a drive without our proof is left mounted by the start-up check", Directory.Exists(drive));
+                Call("Vita3kWorkspace", "Teardown", new object[] { layout });
+                Check("and by a teardown", Directory.Exists(drive));
+                Check("(the teardown still forgot our session)", !File.Exists(Path.Combine(portable, "work.title")));
+
+                // Ours: the proof names this console's portable folder.
+                File.WriteAllText(Path.Combine(portable, "work.title"), TitleId + "\t0\t0\t0\t" + fs);
+                File.WriteAllText(Path.Combine(drive, "lbip-vita3k.owner"), Path.GetFullPath(portable));
+                Call("Vita3kWorkspace", "CleanUpAtStart", new object[] { layout });
+                bool gone = !Directory.Exists(drive);
+                Check("a drive with our proof, outliving its session, is released at start-up", gone);
+                if (gone) drive = null;
+
+                Console.WriteLine();
+                Console.WriteLine(_bad == 0 ? "  OK - only this console's drive is ever released" : "  " + _bad + " FAILURE(S) - see above");
+                return _bad == 0;
+            }
+            catch (Exception ex) { Console.WriteLine("  EXCEPTION: " + ex); return false; }
+            finally
+            {
+                if (drive != null)
+                {
+                    LbIntegrations.RamDisk.RamDiskHost.UseRoot(lbRoot);
+                    LbIntegrations.RamDisk.RamDrive.Unmount(drive);
+                }
+                Scrub(root);
+            }
+        }
+
+        // ── a session that stopped without ending ────────────────────────────
+
+        private static void NeverEnded(object layout, string portable, string root, string vpk)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  a session that never ended");
+
+            var work = Path.Combine(portable, "work");
+            var saves = Path.Combine(portable, "saves");
+
+            // 1. The host died during PCSE99999's session: progress in the tree, never captured. The
+            //    next launch is ANOTHER game - the one moment the tree is cleared.
+            Write(work, "ux0/user/00/savedata/PCSE99999/data.bin", "progress nobody saved");
+            var otherSave = Path.Combine(saves, "PCSE99999", "state.vitasav");
+            Check("(the other game has no save yet)", !File.Exists(otherSave));
+            var args = new object[] { layout, vpk, null };
+            Check("launching another game still works", Call("Vita3kWorkspace", "Prepare", args) as string == TitleId, args[2] as string);
+            Check("and the unsaved session was captured BEFORE its tree was cleared", File.Exists(otherSave));
+
+            // 2. The same, found by the start-up check on the disk fallback: saved, and work\ KEPT.
+            var save = Path.Combine(saves, TitleId, "state.vitasav");
+            var savedAt = File.GetLastWriteTimeUtc(save);
+            System.Threading.Thread.Sleep(50);
+            Write(work, "ux0/user/00/savedata/" + TitleId + "/data.bin", "progress after a crash");
+            Call("Vita3kWorkspace", "CleanUpAtStart", new object[] { layout });
+            Check("the start-up check saves a tree newer than its save", File.GetLastWriteTimeUtc(save) > savedAt);
+            Check("and keeps work - only another game clears it", Directory.Exists(Path.Combine(work, "ux0", "app", TitleId)));
+            Check("with its marker", File.Exists(Path.Combine(portable, "work.title")));
+
+            // 3. The machine restarted: the marker names a RAM disk that no longer exists, and the
+            //    junction points into it.
+            Call("Vita3kWorkspace", "Teardown", new object[] { layout });
+            var vanished = Path.Combine(root, "a-drive-that-is-gone", "fs");
+            Directory.CreateDirectory(vanished);
+            var link = Path.Combine(portable, "fs");
+            var psi = new System.Diagnostics.ProcessStartInfo("cmd.exe", "/c mklink /J \"" + link + "\" \"" + vanished + "\"")
+            { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
+            using (var p = System.Diagnostics.Process.Start(psi)) p.WaitForExit(30000);
+            Directory.Delete(Path.GetDirectoryName(vanished), recursive: true);
+            File.WriteAllText(Path.Combine(portable, "work.title"), TitleId + "\t0\t0\t0\t" + vanished);
+            bool linkListed() => Directory.EnumerateFileSystemEntries(portable).Any(e => string.Equals(e, link, StringComparison.OrdinalIgnoreCase));
+            Check("(a junction into the gone drive is in place)", linkListed());
+            Call("Vita3kWorkspace", "CleanUpAtStart", new object[] { layout });
+            Check("the start-up check forgets the session of a drive that is gone", !File.Exists(Path.Combine(portable, "work.title")));
+            Check("and removes the junction into nothing", !linkListed());
+            Check("and the save is untouched", File.Exists(save));
+
+            // 4. Leftovers: old ones go, fresh ones - an operation in progress - stay.
+            var oldStaging = Directory.CreateDirectory(Path.Combine(portable, "lbip-staging-old"));
+            var newStaging = Directory.CreateDirectory(Path.Combine(portable, "lbip-staging-new"));
+            var oldState = Directory.CreateDirectory(Path.Combine(saves, TitleId, "state.vitasav.abc.state"));
+            var oldPart = Path.Combine(portable, "work.reference.abc.part");
+            File.WriteAllText(oldPart, "half a manifest");
+            var twoHoursAgo = DateTime.UtcNow.AddHours(-2);
+            Directory.SetLastWriteTimeUtc(oldStaging.FullName, twoHoursAgo);
+            Directory.SetLastWriteTimeUtc(oldState.FullName, twoHoursAgo);
+            File.SetLastWriteTimeUtc(oldPart, twoHoursAgo);
+            Call("Vita3kWorkspace", "CleanUpAtStart", new object[] { layout });
+            Check("an old staging copy is removed", !Directory.Exists(oldStaging.FullName));
+            Check("a fresh one is left alone", Directory.Exists(newStaging.FullName));
+            Check("a capture that never finished is removed", !Directory.Exists(oldState.FullName));
+            Check("so is half a manifest", !File.Exists(oldPart));
+            Check("and the save itself is not a leftover", File.Exists(save));
+            Directory.Delete(newStaging.FullName);
         }
 
         // ── a different game is what clears it ───────────────────────────────

@@ -67,6 +67,63 @@ namespace LbIntegrations.Vita3k
             // As early as possible: the patch only sees connections opened AFTER it is installed,
             // and LaunchBox reads its metadata the moment a window asks for it.
             LbipRowInjection.Install("com.nixxou.lbip.vita3k", MetadataRows());
+
+            StartUpCheck();
+        }
+
+        /// <summary>Look at every console this host knows, a few seconds after start: a session that
+        /// stopped without ending - the machine lost power, the host was killed - leaves a RAM disk
+        /// holding unsaved progress, or a junction into nothing. See Vita3kWorkspace.CleanUpAtStart.
+        ///
+        /// ONLY INSIDE A HOST. The probe loads this plugin too, from a build folder, and must never
+        /// go tidying the real install behind somebody's back.</summary>
+        private static void StartUpCheck()
+        {
+            try
+            {
+                var process = System.Diagnostics.Process.GetCurrentProcess().ProcessName;
+                if (!new[] { "LaunchBox", "BigBox", "LiteBox" }.Any(h => string.Equals(h, process, StringComparison.OrdinalIgnoreCase)))
+                    return;
+
+                var thread = new System.Threading.Thread(() =>
+                {
+                    try
+                    {
+                        // Let the host finish starting: the data manager is not there at construction.
+                        System.Threading.Thread.Sleep(3000);
+                        foreach (var exe in KnownExecutables())
+                            Vita3kWorkspace.CleanUpAtStart(Vita3kPaths.Resolve(exe));
+                    }
+                    catch (Exception ex) { Log.Warn("start-up check", ex); }
+                })
+                { IsBackground = true, Name = "Vita3K start-up check" };
+                thread.Start();
+            }
+            catch (Exception ex) { Log.Warn("could not start the start-up check", ex); }
+        }
+
+        /// <summary>Our install folder, and every emulator entry carrying our name - an install moved
+        /// somewhere else is still ours.</summary>
+        private static IEnumerable<string> KnownExecutables()
+        {
+            var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                var exe = Vita3kPaths.FindExecutable(Path.Combine(LaunchBoxRoot(), "Emulators", PackName));
+                if (exe != null) found.Add(Path.GetFullPath(exe));
+            }
+            catch { }
+            try
+            {
+                foreach (var emu in PluginHelper.DataManager?.GetAllEmulators() ?? new IEmulator[0])
+                {
+                    if (!string.Equals(emu?.Title, PackName, StringComparison.OrdinalIgnoreCase)) continue;
+                    var exe = ResolveFullPath(emu.ApplicationPath);
+                    if (!string.IsNullOrEmpty(exe) && File.Exists(exe)) found.Add(Path.GetFullPath(exe));
+                }
+            }
+            catch { }
+            return found;
         }
 
         /// <summary>The name this pack publishes under, in one place so its four uses cannot disagree:

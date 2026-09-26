@@ -549,6 +549,9 @@ namespace LbIntegrations.Probe
 
             // What our installer actually produces from a real archive, for comparing against an
             // oracle install: --vita3k-install --rom <archive>
+            // whose RAM disk is it: --vita3k-ownership --lb <LaunchBox root>. MOUNTS REAL DRIVES.
+            if (Has(args, "--vita3k-ownership")) return Vita3kCheck.Ownership(asm, Arg(args, "--lb")) ? 0 : 1;
+
             if (Has(args, "--vita3k-install"))
             {
                 // --on-ramdisk <LaunchBox root>: onto a real RAM disk, as the host does.
