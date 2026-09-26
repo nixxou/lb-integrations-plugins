@@ -162,6 +162,18 @@ namespace LbIntegrations.Vita3k
                     return new PrepareForLaunchResponse(success: true) { NewCommandLine = plain };
                 }
 
+                // NOT AN ARCHIVE WE INSTALL - a folder, an eboot, no game at all: then no console is
+                // built, so there is no half-built one to protect, and refusing would only stop a game
+                // Vita3K can very well start itself. Passed through, -r off the line. The probe's
+                // generic launch check found this refusing a launch with no game at all.
+                var romFull = ResolveFullPath(rom);
+                if (string.IsNullOrWhiteSpace(romFull) || !Vita3kContent.Installable(romFull))
+                {
+                    Log.Info("not an archive this plugin installs (" + (romFull ?? "no game") + ") - handing it to Vita3K as it is");
+                    var plain = CommandLineFor(CurrentLine(args), null, romFull);
+                    return new PrepareForLaunchResponse(success: true) { NewCommandLine = plain };
+                }
+
                 // THE ONLY PROGRESS THE USER GETS AT LAUNCH: PrepareForLaunchArgs has no channel for
                 // it. The window stays invisible for a quick relaunch - see Vita3kProgressWindow.
                 string titleId, error;
