@@ -378,6 +378,17 @@ namespace LbIntegrations.Vita3k
             {
                 if (layout?.VitaFs == null) return "";
 
+                // AN UPDATE TOUCHES NOTHING IN portable\. Once the firmware has been put aside as
+                // the pristine console, portable\fs is only the junction a session puts up while a
+                // game runs - so between games it is ABSENT, and asking it which firmware is missing
+                // answers "all of it". Measured on an update: the three packages were installed
+                // again into a real portable\fs, which then blocked the next launch's junction.
+                if (Vita3kWorkspace.HasBase(layout))
+                {
+                    Log.Info("the pristine console is already put aside - the firmware is left as it is");
+                    return "";
+                }
+
                 // BEFORE ANYTHING IS DOWNLOADED. Three hundred megabytes fetched to be refused at the
                 // last step is three hundred megabytes of somebody's connection, and the answer does
                 // not depend on any of it.
