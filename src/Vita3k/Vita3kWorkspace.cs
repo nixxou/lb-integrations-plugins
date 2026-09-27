@@ -14,6 +14,10 @@
 //     <install>\portable\work.pending        a session that could not be taken out in time
 //     <install>\portable\saves\<TITLE_ID>\state.vitasav
 //
+// WITH --use-vhdx the tree is none of those: it is a DIFFERENCING DISK over the game's own disk,
+// attached for the session, captured like any other tree, then detached and deleted. The marker's
+// seventh field names it. See Vita3kVhdx for the disks, PrepareOnVhdx for the session.
+//
 // THE JUNCTION IS HOW VITA3K IS POINTED AT IT. Measured: `portable\` beside the executable overrides
 // everything else, including the pref-path setting (config.cpp:456-458), so the only way to move the
 // filesystem is to make `portable\fs` be somewhere else. A junction and not a symbolic link, because
@@ -325,6 +329,16 @@ namespace LbIntegrations.Vita3k
         /// nothing is set up.</summary>
         public static string WorkRoot(Vita3kLayout layout) => MarkerParts(layout)?[4];
 
+        /// <summary>The session disk the tree lives on - the seventh field, written by a --use-vhdx
+        /// session only. Null for a RAM disk or the work folder.</summary>
+        public static string WorkVhdx(Vita3kLayout layout)
+        {
+            var parts = MarkerParts(layout);
+            return parts != null && parts.Length > 6 && parts[6].Trim().Length > 0 ? parts[6].Trim() : null;
+        }
+
+        private static bool OnVhdx(Vita3kLayout layout) => WorkVhdx(layout) != null;
+
         private static string Fingerprint(string romPath)
         {
             try
@@ -335,11 +349,13 @@ namespace LbIntegrations.Vita3k
             catch { return romPath + "\t0\t0"; }
         }
 
-        private static void Remember(Vita3kLayout layout, string titleId, string romPath, string root, string extrasKey = "")
+        private static void Remember(Vita3kLayout layout, string titleId, string romPath, string root, string extrasKey = "",
+                                     string vhdx = null)
         {
             try
             {
-                File.WriteAllText(MarkerPath(layout), titleId + "\t" + Fingerprint(romPath) + "\t" + root + "\t" + (extrasKey ?? ""));
+                File.WriteAllText(MarkerPath(layout), titleId + "\t" + Fingerprint(romPath) + "\t" + root + "\t" + (extrasKey ?? "")
+                                                      + (vhdx != null ? "\t" + vhdx : ""));
             }
             catch (Exception ex) { Log.Warn("could not write " + TitleMarker, ex); }
         }
@@ -366,6 +382,9 @@ namespace LbIntegrations.Vita3k
             {
                 var parts = MarkerParts(layout);
                 if (parts == null) return false;
+                // A SESSION DISK IS NEVER REUSED: it is thrown away once captured, and one still
+                // there is a session that did not end - saved first, like a different game.
+                if (parts.Length > 6 && parts[6].Trim().Length > 0) return false;
                 var had = parts.Length > 5 ? parts[5] : "";
                 if (!string.Equals(had, extrasKey ?? "", StringComparison.Ordinal))
                 {
@@ -537,13 +556,11 @@ namespace LbIntegrations.Vita3k
                         Log.Warn(Vita3kPlugin.UseVhdxFlag + ": " + whyNot + " - this session takes the usual path");
                     else
                     {
-                        var gameDisk = Vita3kVhdx.EnsureGameBase(layout, vhdxDir, romPath, content, extras, report, out var vhdxError);
-                        if (gameDisk == null)
-                            Log.Warn(Vita3kPlugin.UseVhdxFlag + ": " + vhdxError + " - this session takes the usual path");
-                        else
-                            // Lot 2 stops here: the base is built, sessions do not run on it yet.
-                            Log.Info(Vita3kPlugin.UseVhdxFlag + ": the disk of " + content.TitleId + " is ready ("
-                                     + gameDisk + ") - sessions on it are not wired yet, this one takes the usual path");
+                        if (noRamDisk || launch.MarginMb != null || vita3kRamMb != null)
+                            Log.Info("the RAM disk flags are not used: this session is on a VHDX");
+                        var onDisk = PrepareOnVhdx(layout, vhdxDir, romPath, content, extras, extrasKey, report, out var vhdxError);
+                        if (onDisk != null) return onDisk;
+                        Log.Warn(Vita3kPlugin.UseVhdxFlag + ": " + vhdxError + " - this session takes the usual path");
                     }
                 }
 
@@ -619,9 +636,7 @@ namespace LbIntegrations.Vita3k
                                             : " - full walk"));
 
 
-                    var context = new SaveContext { AppVer = extras.Update?.Content.AppVer ?? content.AppVer };
-                    foreach (var a in extras.Addons)
-                        if (!string.IsNullOrEmpty(a.Content.ContentId)) context.Dlc.Add(a.Content.ContentId);
+                    var context = ContextFor(content, extras);
                     var restored = RestoreSave(layout, content, root, context);
                     try { File.WriteAllText(Under(layout, ContextName), context.Text()); }
                     catch (Exception ex) { Log.Warn("could not write " + ContextName + " - the next save will not know what it was made with", ex); }
@@ -659,6 +674,191 @@ namespace LbIntegrations.Vita3k
                 error = ex.GetType().Name + ": " + ex.Message;
                 Log.Warn("could not prepare the session", ex);
                 return null;
+            }
+        }
+
+        /// <summary>What a console built with this game, update and DLC gives a save to remember.</summary>
+        private static SaveContext ContextFor(VitaContent content, VitaExtras extras)
+        {
+            var context = new SaveContext { AppVer = extras?.Update?.Content.AppVer ?? content.AppVer };
+            foreach (var a in extras?.Addons ?? new List<VitaExtra>())
+                if (!string.IsNullOrEmpty(a.Content.ContentId)) context.Dlc.Add(a.Content.ContentId);
+            return context;
+        }
+
+        // ── a session on a VHDX ──────────────────────────────────────────────
+
+        /// <summary>--use-vhdx: the previous session put away, any orphaned session disk in the folder
+        /// saved, the game's disk built or reused, and a fresh differencing disk over it for this
+        /// session - the title id, or null with <paramref name="error"/> (the usual path then runs, on
+        /// a console already cleared: nothing half-built is left for it to trip on).
+        ///
+        /// NOTHING IS INSTALLED HERE. The firmware, the game, its update and its DLC are in the disks
+        /// under this one; what a launch does is create the session's disk (well under a second),
+        /// attach it, put the save back, and stamp the tree.</summary>
+        private static string PrepareOnVhdx(Vita3kLayout layout, string dir, string romPath, VitaContent content,
+                                            VitaExtras extras, string extrasKey, Action<string, double?> report, out string error)
+        {
+            error = null;
+            var watch = Stopwatch.StartNew();
+
+            // The previous session first, whatever it was on - a RAM disk, work\, a session disk -
+            // and saved if it never ended: a console is only ever cleared by the next launch.
+            report?.Invoke("Putting the previous game away...", null);
+            var previous = WorkTitle(layout);
+            if (previous != null) SaveBeforeClearing(layout, previous);
+            Teardown(layout);
+
+            RecoverOrphanSessions(layout, dir, report);
+
+            var gameDisk = Vita3kVhdx.EnsureGameBase(layout, dir, romPath, content, extras, report, out error);
+            if (gameDisk == null) return null;
+
+            var titleId = content.TitleId;
+            var session = Vita3kVhdx.SessionVhdx(dir, titleId);
+            report?.Invoke("Preparing the console...", null);
+            if (File.Exists(session)) DropSessionDisk(session);
+            if (!RamDrive.CreateDifferencingVhdx(session, gameDisk, out error)) { DropSessionDisk(session); return null; }
+
+            string drive = null;
+            bool ready = false;
+            try
+            {
+                drive = RamDrive.AttachVhdx(session, false, out error);
+                if (drive == null) return null;
+                var root = Path.Combine(drive, Vita3kVhdx.FsName);
+                if (!Directory.Exists(root)) { error = "the session disk holds no console at " + root; return null; }
+                Claim(layout, drive);
+
+                // THE GAME'S REFERENCE, taken once when its disk was built - the tree under the
+                // session is exactly that, by construction.
+                File.Copy(Vita3kVhdx.GameReference(dir, titleId), ReferencePath(layout), overwrite: true);
+                SnapStamps.Delete(ReferencePath(layout));
+                if (!Link(layout, root, out error)) return null;
+
+                var context = ContextFor(content, extras);
+                var restored = RestoreSave(layout, content, root, context);
+                try { File.WriteAllText(Under(layout, ContextName), context.Text()); }
+                catch (Exception ex) { Log.Warn("could not write " + ContextName + " - the next save will not know what it was made with", ex); }
+
+                var stamps = Stopwatch.StartNew();
+                if (SnapStamps.Write(root, ReferencePath(layout), restored, out var stampError))
+                    Log.Info("stamped the tree in " + stamps.ElapsedMilliseconds + " ms, " + restored.Count + " restored file(s) left to be read");
+                else
+                    Log.Warn("no stamps (" + stampError + ") - the capture will read the whole tree");
+
+                Remember(layout, titleId, romPath, root, extrasKey, session);
+                ready = true;
+                Log.Info("working on the session disk " + Path.GetFileName(session) + " at " + root
+                         + ", over " + Path.GetFileName(gameDisk) + " - ready in " + watch.ElapsedMilliseconds + " ms");
+                return titleId;
+            }
+            catch (Exception ex)
+            {
+                error = ex.GetType().Name + ": " + ex.Message;
+                Log.Warn("could not prepare the session disk", ex);
+                return null;
+            }
+            finally
+            {
+                if (!ready)
+                {
+                    report?.Invoke("That did not work - cleaning up...", null);
+                    DropLink(layout);
+                    DropSessionDisk(session);
+                    try { var r = ReferencePath(layout); if (File.Exists(r)) File.Delete(r); SnapStamps.Delete(r); } catch { }
+                    Forget(layout);
+                }
+            }
+        }
+
+        /// <summary>A session disk gone: detached if it is attached, then deleted.</summary>
+        private static void DropSessionDisk(string session)
+        {
+            if (string.IsNullOrEmpty(session) || !File.Exists(session)) return;
+            RamDrive.DetachVhdx(session, out _);   // refused when it is not attached: nothing to do then
+            try { File.Delete(session); Log.Info("deleted the session disk " + Path.GetFileName(session)); }
+            catch (Exception ex) { Log.Warn("could not delete the session disk " + session, ex); }
+        }
+
+        /// <summary>The session disk the marker names, attached again READ-ONLY when nothing has it -
+        /// the machine restarted, or its drive was unplugged and is back - and the marker pointed at
+        /// its new letter. True when the tree can be read.</summary>
+        private static bool Reattach(Vita3kLayout layout)
+        {
+            var session = WorkVhdx(layout);
+            if (session == null) return false;
+            var root = WorkRoot(layout);
+            if (root != null && Directory.Exists(root) && Owns(layout, root)) return true;
+            if (!File.Exists(session)) return false;
+
+            RamDiskHost.LaunchBoxRoot = () => Vita3kPaths.LaunchBoxRootOf(layout);
+            var drive = RamDrive.AttachVhdx(session, true, out var error);
+            if (drive == null) { Log.Warn("could not attach the session disk " + session + " again: " + error); return false; }
+            try
+            {
+                var parts = MarkerParts(layout);
+                parts[4] = Path.Combine(drive, Vita3kVhdx.FsName);
+                File.WriteAllText(MarkerPath(layout), string.Join("\t", parts));
+                Log.Info("attached the session disk " + Path.GetFileName(session) + " again, read-only, at " + parts[4]);
+                return true;
+            }
+            catch (Exception ex) { Log.Warn("could not point the marker at the reattached session disk", ex); return false; }
+        }
+
+        /// <summary>Session disks in the folder that no marker of this console names - its drive was
+        /// unplugged while the session ran and another game has been played since, say. Saved when
+        /// they are newer than the game's save, then deleted. THEIR OWN PROOF DECIDES: a session disk
+        /// whose owner file names another install is that install's, left alone; one attached by
+        /// somebody (in use) is left alone too.
+        ///
+        /// Without its marker the session has no stamps and no context file: the capture reads the
+        /// whole tree, and the context is the one the game's identity gives - the disk it sits on.</summary>
+        private static void RecoverOrphanSessions(Vita3kLayout layout, string dir, Action<string, double?> report)
+        {
+            string[] sessions;
+            try { sessions = Directory.GetFiles(dir, "*.session.vhdx"); }
+            catch (Exception ex) { Log.Warn("could not look for session disks in " + dir, ex); return; }
+
+            foreach (var session in sessions)
+            {
+                var titleId = Path.GetFileName(session);
+                titleId = titleId.Substring(0, titleId.Length - ".session.vhdx".Length);
+                string drive = null;
+                try
+                {
+                    drive = RamDrive.AttachVhdx(session, true, out var error);
+                    if (drive == null) { Log.Info("the session disk " + Path.GetFileName(session) + " cannot be attached (" + error + ") - in use elsewhere? left alone"); continue; }
+                    if (!Owns(layout, drive))
+                    {
+                        Log.Info("the session disk " + Path.GetFileName(session) + " is another install's - left alone");
+                        RamDrive.DetachVhdx(session, out _); drive = null;
+                        continue;
+                    }
+
+                    var save = SavePathFor(layout, titleId);
+                    var reference = Vita3kVhdx.GameReference(dir, titleId);
+                    bool newer = save != null && (!File.Exists(save) || File.GetLastWriteTimeUtc(session) > File.GetLastWriteTimeUtc(save));
+                    if (newer && File.Exists(reference))
+                    {
+                        Log.Info("the session disk " + Path.GetFileName(session) + " was never saved - saving it before it goes");
+                        report?.Invoke("Saving a session that never ended...", null);
+                        var context = Vita3kVhdx.ContextFrom(Vita3kVhdx.ReadIdentity(Vita3kVhdx.GameIdentity(dir, titleId)));
+                        if (!CaptureFrom(layout, titleId, Path.Combine(drive, Vita3kVhdx.FsName), reference, context?.Text(), report))
+                        {
+                            Log.Warn("the orphaned session of " + titleId + " could not be saved - its disk is kept");
+                            RamDrive.DetachVhdx(session, out _); drive = null;
+                            continue;
+                        }
+                    }
+                    else
+                        Log.Info("the session disk " + Path.GetFileName(session) + " is older than the save of " + titleId + " - nothing to take from it");
+
+                    drive = null;
+                    DropSessionDisk(session);   // detaches it, then deletes it
+                }
+                catch (Exception ex) { Log.Warn("could not recover the session disk " + session, ex); }
+                finally { if (drive != null) RamDrive.DetachVhdx(session, out _); }
             }
         }
 
@@ -827,7 +1027,7 @@ namespace LbIntegrations.Vita3k
                 var previous = WorkTitle(layout);
                 DropLink(layout);
                 if (previous != null && OnRamDisk(layout))
-                    report?.Invoke("Releasing the RAM disk...", null);
+                    report?.Invoke(OnVhdx(layout) ? "Releasing the session disk..." : "Releasing the RAM disk...", null);
                 if (previous != null) ReleaseDrive(layout, previous);
                 report?.Invoke("Clearing the console...", null);
 
@@ -940,7 +1140,7 @@ namespace LbIntegrations.Vita3k
                     // folder fallback stays, as asked: work\ is only cleared by another game.
                     if (OnRamDisk(layout))
                     {
-                        Log.Info("releasing the RAM disk of " + titleId + " - the session is saved");
+                        Log.Info("releasing the " + (OnVhdx(layout) ? "session disk" : "RAM disk") + " of " + titleId + " - the session is saved");
                         var release = System.Diagnostics.Stopwatch.StartNew();
                         Teardown(layout, report);
                         Log.Info("released in " + release.ElapsedMilliseconds + " ms");
@@ -964,6 +1164,10 @@ namespace LbIntegrations.Vita3k
         /// an ImDisk drive.</summary>
         private static void ReleaseDrive(Vita3kLayout layout, string titleId)
         {
+            // A SESSION DISK is not a drive to unmount: it is detached, and deleted - the session in
+            // it has been saved, or is being given up by whoever called this.
+            var session = WorkVhdx(layout);
+            if (session != null) { DropSessionDisk(session); return; }
             if (RamDrive.UnmountFor(titleId) || !OnRamDisk(layout)) return;
             var drive = Path.GetPathRoot(WorkRoot(layout) ?? "");
             if (string.IsNullOrEmpty(drive) || !RamDrive.IsImDiskDrive(drive)) return;
@@ -998,11 +1202,20 @@ namespace LbIntegrations.Vita3k
 
         private static bool CaptureLocked(Vita3kLayout layout, string titleId, Action<string, double?> report)
         {
+            string context = null;
+            try { var c = Under(layout, ContextName); if (c != null && File.Exists(c)) context = File.ReadAllText(c); } catch { }
+            return CaptureFrom(layout, titleId, WorkRoot(layout), ReferencePath(layout), context, report);
+        }
+
+        /// <summary>Compare a tree with a reference and pack the difference into the game's save, with
+        /// <paramref name="context"/> (SaveContext.Text) inside it - the session's tree by default,
+        /// an orphaned session disk's for RecoverOrphanSessions.</summary>
+        private static bool CaptureFrom(Vita3kLayout layout, string titleId, string root, string reference, string context,
+                                        Action<string, double?> report)
+        {
             string building = null;
             try
             {
-                var root = WorkRoot(layout);
-                var reference = ReferencePath(layout);
                 var save = SavePathFor(layout, titleId);
                 if (root == null || save == null || !File.Exists(reference)) return false;
 
@@ -1016,8 +1229,7 @@ namespace LbIntegrations.Vita3k
                          + (SnapStamps.Read(reference) == null ? " (no stamps: the whole tree)" : ", the rest untouched since the reference"));
 
                 // WHAT IT WAS MADE WITH, into the save itself - see SaveContext.
-                var context = Under(layout, ContextName);
-                if (context != null && File.Exists(context)) File.Copy(context, Path.Combine(building, SaveContextName), overwrite: true);
+                if (context != null) File.WriteAllText(Path.Combine(building, SaveContextName), context);
 
                 report?.Invoke("Packing the save...", null);
                 watch.Restart();
@@ -1339,6 +1551,7 @@ namespace LbIntegrations.Vita3k
         {
             try
             {
+                if (OnVhdx(layout)) Reattach(layout);                                    // a reboot detached it
                 var root = WorkRoot(layout);
                 if (root == null || !Directory.Exists(root)) return true;              // nothing left to read
                 if (OnRamDisk(layout) && !Owns(layout, root)) return true;               // not ours to read
@@ -1379,7 +1592,26 @@ namespace LbIntegrations.Vita3k
                     var root = WorkRoot(layout);
                     bool there = root != null && Directory.Exists(root);
 
-                    if (title != null && OnRamDisk(layout))
+                    if (title != null && OnVhdx(layout))
+                    {
+                        var session = WorkVhdx(layout);
+                        var holder = Path.GetPathRoot(session);
+                        if (string.IsNullOrEmpty(holder) || !Directory.Exists(holder))
+                            // AN EXTERNAL DRIVE UNPLUGGED: the session is on it, maybe unsaved. Kept, marker
+                            // and all, for when it comes back - forgetting it here would lose it.
+                            Log.Info("start-up: the drive holding the session disk of " + title + " is not there - the session is kept for when it is");
+                        else if (!File.Exists(session))
+                        {
+                            Log.Info("start-up: the session disk of " + title + " is gone - forgetting the session");
+                            Teardown(layout);
+                        }
+                        else if (SaveBeforeClearing(layout, title))
+                        {
+                            Log.Info("start-up: the session disk of " + title + " outlived its session - saved, and thrown away");
+                            Teardown(layout);
+                        }
+                    }
+                    else if (title != null && OnRamDisk(layout))
                     {
                         if (there && Owns(layout, root))
                         {

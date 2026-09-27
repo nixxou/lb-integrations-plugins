@@ -170,6 +170,20 @@ namespace LbIntegrations.Vita3k
             catch { return null; }
         }
 
+        /// <summary>What a save made on a game's disk was made with, read back from its identity - for
+        /// a session disk that lost its marker and its context file with it.</summary>
+        public static SaveContext ContextFrom(List<string> identity)
+        {
+            if (identity == null) return null;
+            var context = new SaveContext { AppVer = Value(identity, "app_ver") };
+            foreach (var l in identity.Where(l => l.StartsWith("dlc=", StringComparison.Ordinal)))
+            {
+                var id = l.Substring(l.LastIndexOf('|') + 1);
+                if (id.Length > 0) context.Dlc.Add(id);
+            }
+            return context;
+        }
+
         /// <summary>The value of one key in identity lines, or null.</summary>
         public static string Value(List<string> lines, string key)
             => lines?.FirstOrDefault(l => l.StartsWith(key + "=", StringComparison.Ordinal))?.Substring(key.Length + 1);

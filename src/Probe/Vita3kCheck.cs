@@ -1136,6 +1136,26 @@ namespace LbIntegrations.Probe
                 disk = Build(out err);
                 Check("and built once it is released", disk != null && File.Exists(gameId), err);
 
+                // THE FOLDER MOVED - an external drive back under another letter looks the same to a
+                // differencing disk: its parent's absolute path is gone, only the relative one is left.
+                Console.WriteLine("  the whole folder moved elsewhere: the chain still resolves");
+                var moved = dir + "-moved";
+                Directory.Move(dir, moved);
+                dir = moved;
+                var session = Path.Combine(moved, id + ".session.vhdx");
+                Check("a session disk is created over the moved game's disk",
+                      LbIntegrations.RamDisk.RamDrive.CreateDifferencingVhdx(session, Path.Combine(moved, id + ".vhdx"), out err), err);
+                root = LbIntegrations.RamDisk.RamDrive.AttachVhdx(session, true, out err);
+                if (Check("it attaches, three levels down a moved folder", root != null, err))
+                {
+                    Check("and sees the game and the firmware", File.Exists(Path.Combine(root, "fs", "ux0", "app", id, "sce_sys", "param.sfo"))
+                          && Directory.Exists(Path.Combine(root, "fs", "vs0")));
+                    LbIntegrations.RamDisk.RamDrive.DetachVhdx(session, out _);
+                }
+                root = LbIntegrations.RamDisk.RamDrive.AttachVhdx(Path.Combine(moved, id + ".vhdx"), true, out err);
+                if (Check("the game's disk attaches from the moved folder too", root != null, err))
+                    LbIntegrations.RamDisk.RamDrive.DetachVhdx(Path.Combine(moved, id + ".vhdx"), out _);
+
                 Console.WriteLine();
                 Console.WriteLine(_bad == 0 ? "  OK - a base is built once, reused, and rebuilt exactly when its identity says so" : "  " + _bad + " FAILURE(S) - see above");
                 return _bad == 0;
@@ -1145,6 +1165,145 @@ namespace LbIntegrations.Probe
             {
                 if (Environment.GetEnvironmentVariable("LBIP_PROBE_KEEP") == "1") Console.WriteLine("  kept: " + dir);
                 else Scrub(dir);
+            }
+        }
+
+        /// <summary>Whole sessions with --use-vhdx, on REAL disks: a session on a differencing disk over
+        /// the game's, captured and thrown away; a relaunch that installs nothing and finds its save; a
+        /// reboot (the session disk detached under a live marker) saved at start-up; an orphaned session
+        /// disk (its marker gone) saved by the next launch. A forged emulator under
+        /// &lt;LaunchBox root&gt;\Emulators\lbip-probe-* (the helper is found from there), removed
+        /// afterwards; the disks under %TEMP%. The real install is only READ, for its firmware.
+        /// --vita3k-vhdx-session --lb &lt;LaunchBox root&gt; --rom &lt;game archive&gt;</summary>
+        public static bool VhdxSession(Assembly pluginAssembly, string lbRoot, string romPath)
+        {
+            Console.WriteLine();
+            Console.WriteLine("-- Vita3K, sessions on a VHDX  [ATTACHES DISKS] " + new string('-', 15));
+            _asm = pluginAssembly;
+            _bad = 0;
+            if (string.IsNullOrWhiteSpace(lbRoot) || !Directory.Exists(lbRoot)) { Console.WriteLine("  pass --lb <LaunchBox root>"); return false; }
+            if (string.IsNullOrWhiteSpace(romPath) || !File.Exists(romPath)) { Console.WriteLine("  pass --rom <game archive>"); return false; }
+            var real = Path.Combine(lbRoot, "Emulators", "Nixx-Vita3K", "portable");
+            var install = Path.Combine(lbRoot, "Emulators", "lbip-probe-" + Guid.NewGuid().ToString("N"));
+            var portable = Path.Combine(install, "portable");
+            var dir = Path.Combine(Path.GetTempPath(), "lbip-vhdx-session-" + Guid.NewGuid().ToString("N"));
+            object layout = null;
+            string id = null;
+            try
+            {
+                Directory.CreateDirectory(portable);
+                File.WriteAllText(Path.Combine(install, "Vita3K.exe"), "not really an executable");
+                Console.WriteLine("  copying the real pristine firmware into the forged emulator...");
+                CopyDir(Path.Combine(real, "nand-initiale"), Path.Combine(portable, "nand-initiale"));
+                File.Copy(Path.Combine(real, "nand-initiale.manifest"), Path.Combine(portable, "nand-initiale.manifest"));
+                layout = Resolve(Path.Combine(install, "Vita3K.exe"));
+                LbIntegrations.RamDisk.RamDiskHost.UseRoot(lbRoot);
+
+                var ws = _asm.GetType("LbIntegrations.Vita3k.Vita3kWorkspace", throwOnError: true);
+                ws.GetField("Ask", BindingFlags.NonPublic | BindingFlags.Static)
+                  .SetValue(null, new Func<string, string, bool>((t, x) => { Console.WriteLine("    [asked] " + t); return true; }));
+
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                string Launch(out string error)
+                {
+                    var launch = Activator.CreateInstance(_asm.GetType("LbIntegrations.Vita3k.Vita3kLaunch", throwOnError: true));
+                    launch.GetType().GetField("UseVhdx").SetValue(launch, true);
+                    launch.GetType().GetField("VhdxDir").SetValue(launch, dir);
+                    var a = new object[] { layout, romPath, null, null, launch };
+                    watch.Restart();
+                    var got = (string)Call("Vita3kWorkspace", "Prepare", a);
+                    error = a[2] as string;
+                    Console.WriteLine("            prepared in " + watch.ElapsedMilliseconds + " ms" + (error != null ? " - " + error : ""));
+                    return got;
+                }
+                string Marker() { var m = Path.Combine(portable, "work.title"); return File.Exists(m) ? File.ReadAllText(m) : null; }
+                string Root() => Marker()?.Split('\t')[4];
+                string Sav(string root) => Path.Combine(root, "ux0", "user", "00", "savedata", id, "probe.sav");
+                string Read(string root) { var p = Sav(root); return File.Exists(p) ? File.ReadAllText(p) : null; }
+                void Play(string root, string text) { Directory.CreateDirectory(Path.GetDirectoryName(Sav(root))); File.WriteAllText(Sav(root), text); }
+                bool End() { watch.Restart(); var ok = (bool)Call("Vita3kWorkspace", "CaptureOnExit", new object[] { layout, id }); Console.WriteLine("            ended in " + watch.ElapsedMilliseconds + " ms"); return ok; }
+
+                Console.WriteLine("  1. the first launch: disks built, a session disk over them");
+                id = Launch(out var err);
+                if (!Check("the session is ready", id != null, err)) return false;
+                var session = Path.Combine(dir, id + ".session.vhdx");
+                var game = Path.Combine(dir, id + ".vhdx");
+                var marker = Marker();
+                Check("the marker names the session disk", marker != null && marker.Split('\t').Length == 7 && marker.Split('\t')[6] == session);
+                Check("the session disk is there", File.Exists(session));
+                var root = Root();
+                Check("the console sees the game", File.Exists(Path.Combine(root, "ux0", "app", id, "sce_sys", "param.sfo")));
+                Check("through portable\\fs", File.Exists(Path.Combine(portable, "fs", "ux0", "app", id, "sce_sys", "param.sfo")));
+                var gameStamp = File.GetLastWriteTimeUtc(game);
+                Play(root, "session 1");
+
+                if (!Check("2. the end of the session is captured", End())) return false;
+                Check("the save is there", File.Exists(Path.Combine(portable, "saves", id, "state.vitasav")));
+                Check("the session disk is gone", !File.Exists(session));
+                Check("and the junction", !Directory.Exists(Path.Combine(portable, "fs")));
+                Check("and the marker", Marker() == null);
+                Check("the game's disk is untouched", File.GetLastWriteTimeUtc(game) == gameStamp);
+
+                Console.WriteLine("  3. the next launch: nothing installed");
+                id = Launch(out err);
+                if (!Check("the session is ready", id != null, err)) return false;
+                Check("in under ten seconds", watch.ElapsedMilliseconds < 10000);
+                root = Root();
+                Check("with the save put back", Read(root) == "session 1", Read(root));
+                Play(root, "session 2");
+
+                Console.WriteLine("  4. a reboot: the session disk detached under its marker, then the start-up check");
+                Check("detached", LbIntegrations.RamDisk.RamDrive.DetachVhdx(session, out err) && !Directory.Exists(root), err);
+                Call("Vita3kWorkspace", "CleanUpAtStart", new object[] { layout });
+                Check("the session is gone, disk and marker", !File.Exists(session) && Marker() == null);
+                id = Launch(out err);
+                root = Root();
+                Check("and its save came out of it", id != null && Read(root) == "session 2", Read(root ?? "") ?? err);
+                Play(root, "session 3");
+
+                Console.WriteLine("  5. an orphan: the session disk detached AND its marker lost, then a launch");
+                Check("detached", LbIntegrations.RamDisk.RamDrive.DetachVhdx(session, out err), err);
+                File.Delete(Path.Combine(portable, "work.title"));
+                System.Threading.Thread.Sleep(1100);
+                id = Launch(out err);
+                root = Root();
+                Check("the orphan's save came out of it", id != null && Read(root) == "session 3", Read(root ?? "") ?? err);
+                Check("and a fresh session disk replaced it", File.Exists(session) && Marker()?.Split('\t')[6] == session);
+
+                Check("6. the last session ends cleanly", End() && !File.Exists(session));
+                Check("the folder holds the bases and nothing else", Directory.GetFiles(dir, "*.vhdx").Select(Path.GetFileName)
+                      .OrderBy(n => n).SequenceEqual(new[] { id + ".vhdx", "firmware.vhdx" }.OrderBy(n => n)));
+
+                Console.WriteLine();
+                Console.WriteLine(_bad == 0 ? "  OK - every session on a VHDX comes out as a save, and nothing is left attached" : "  " + _bad + " FAILURE(S) - see above");
+                return _bad == 0;
+            }
+            catch (Exception ex) { Console.WriteLine("  EXCEPTION: " + (ex.InnerException ?? ex)); return false; }
+            finally
+            {
+                try
+                {
+                    var link = Path.Combine(portable, "fs");
+                    if (Directory.Exists(link) && new DirectoryInfo(link).Attributes.HasFlag(FileAttributes.ReparsePoint)) Directory.Delete(link);
+                }
+                catch { }
+                if (id != null) LbIntegrations.RamDisk.RamDrive.DetachVhdx(Path.Combine(dir, id + ".session.vhdx"), out _);
+                if (Environment.GetEnvironmentVariable("LBIP_PROBE_KEEP") == "1") Console.WriteLine("  kept: " + dir + " and " + install);
+                else { Scrub(dir); Scrub(install); }
+                Console.WriteLine("  removed: " + (!Directory.Exists(dir) && !Directory.Exists(install)));
+            }
+        }
+
+        private static void CopyDir(string from, string to)
+        {
+            foreach (var d in Directory.GetDirectories(from, "*", SearchOption.AllDirectories))
+                Directory.CreateDirectory(Path.Combine(to, Path.GetRelativePath(from, d)));
+            Directory.CreateDirectory(to);
+            foreach (var f in Directory.GetFiles(from, "*", SearchOption.AllDirectories))
+            {
+                var target = Path.Combine(to, Path.GetRelativePath(from, f));
+                File.Copy(f, target);
+                File.SetLastWriteTimeUtc(target, File.GetLastWriteTimeUtc(f));
             }
         }
 
