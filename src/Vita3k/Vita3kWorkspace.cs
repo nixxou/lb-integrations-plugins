@@ -1462,10 +1462,13 @@ namespace LbIntegrations.Vita3k
         // memory, textures, shaders - and how much depends on the game. So it is MEASURED: the watcher
         // records the emulator's peak working set at the end of every session, per game, and the
         // next launch keeps that much free beside the disk, with a margin. A game never measured
-        // gets the largest peak seen so far, or a default until there is one.
+        // gets the largest peak seen so far, or a default until there is one. And NEVER LESS THAN
+        // 1.5 GB (Mehdi): a peak taken on a short session - a menu, a crash - says little about the
+        // next one. --vita3k-ram= is taken as it is, floor or not: whoever wrote it knows the game.
 
         public const string MemoryName = "lbip-vita3k.memory";
         private const int DefaultReserveMb = 2048;
+        public const int MinReserveMb = 1536;
         private const int ReserveMarginPercent = 115;   // integers: 3000 * 1.15 is 3449.99... in floating point
 
         /// <summary>What to keep free for Vita3K itself when it runs <paramref name="titleId"/>.</summary>
@@ -1473,8 +1476,8 @@ namespace LbIntegrations.Vita3k
         {
             var peaks = ReadPeaks(layout);
             int measured;
-            if (titleId != null && peaks.TryGetValue(titleId, out measured)) return measured * ReserveMarginPercent / 100;
-            if (peaks.Count > 0) return peaks.Values.Max() * ReserveMarginPercent / 100;
+            if (titleId != null && peaks.TryGetValue(titleId, out measured)) return Math.Max(MinReserveMb, measured * ReserveMarginPercent / 100);
+            if (peaks.Count > 0) return Math.Max(MinReserveMb, peaks.Values.Max() * ReserveMarginPercent / 100);
             return DefaultReserveMb;
         }
 
@@ -1491,7 +1494,8 @@ namespace LbIntegrations.Vita3k
                 peaks[titleId] = peakMb;
                 File.WriteAllLines(path, peaks.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => p.Key + "\t" + p.Value));
                 Log.Info("Vita3K peaked at " + peakMb + " MB running " + titleId + " - the next launch keeps "
-                         + peakMb * ReserveMarginPercent / 100 + " MB free for it");
+                         + Math.Max(MinReserveMb, peakMb * ReserveMarginPercent / 100) + " MB free for it"
+                         + (peakMb * ReserveMarginPercent / 100 < MinReserveMb ? " (the floor; its peak + 15% is " + peakMb * ReserveMarginPercent / 100 + ")" : ""));
             }
             catch (Exception ex) { Log.Warn("could not record the emulator's memory", ex); }
         }

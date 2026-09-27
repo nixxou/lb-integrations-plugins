@@ -51,6 +51,8 @@ namespace LbIntegrations.Probe
                 Console.WriteLine("  game      " + Path.GetFileName(vpk));
 
                 TheArchive(vpk);
+                TheGameMenu();
+                TheOptions();
                 var layout = Resolve(Path.Combine(install, "Vita3K.exe"));
                 TheFirmware(layout, portable);
                 var sessionRoot = TheSession(layout, portable, vpk);
@@ -1307,6 +1309,161 @@ namespace LbIntegrations.Probe
             }
         }
 
+        /// <summary>The right-click entry, as the relay finds it. NO game menu type in this assembly -
+        /// a plugin in Local\Plugins never has one asked on LaunchBox 14, and LiteBox, which loads both
+        /// roots, would show it twice beside Nixx-Menus - and a GameMenu class with exactly the
+        /// signatures the relay binds. Then the REAL relay (src\Menus, built in this checkout) is
+        /// loaded and must find it.</summary>
+        private static void TheGameMenu()
+        {
+            Console.WriteLine();
+            Console.WriteLine("  the right-click entry on games");
+            Check("no type of this plugin is a game menu (the relay shows it)",
+                  !_asm.GetExportedTypes().Any(x => typeof(Unbroken.LaunchBox.Plugins.IGameMenuItemPlugin).IsAssignableFrom(x)
+                                                 || typeof(Unbroken.LaunchBox.Plugins.IGameMultiMenuItemPlugin).IsAssignableFrom(x)));
+            var t = _asm.GetType("LbIntegrations.Vita3k.GameMenu");
+            if (!Check("LbIntegrations.Vita3k.GameMenu is there, public", t != null && t.IsPublic && t.IsAbstract && t.IsSealed)) return;
+            var flags = BindingFlags.Public | BindingFlags.Static;
+            var entries = t.GetMethod("Entries", flags, null, new[] { typeof(Unbroken.LaunchBox.Plugins.Data.IGame[]) }, null);
+            Check("Entries(IGame[]) -> string[]", entries != null && entries.ReturnType == typeof(string[]));
+            Check("Selected(string, IGame[])", t.GetMethod("Selected", flags, null, new[] { typeof(string), typeof(Unbroken.LaunchBox.Plugins.Data.IGame[]) }, null) != null);
+            Check("an icon", t.GetProperty("Icon", flags)?.GetValue(null) is System.Drawing.Image);
+            Check("nothing offered for no game", entries != null
+                  && ((string[])entries.Invoke(null, new object[] { null })).Length == 0
+                  && ((string[])entries.Invoke(null, new object[] { new Unbroken.LaunchBox.Plugins.Data.IGame[0] })).Length == 0);
+
+            // THE RELAY ITSELF, as built in this checkout.
+            var dir = Path.GetDirectoryName(_asm.Location);
+            string relay = null;
+            for (int up = 0; up < 6 && dir != null && relay == null; up++, dir = Path.GetDirectoryName(dir))
+            {
+                var candidate = Path.Combine(dir, "Menus", "bin", "Release", "NixxMenus.dll");
+                if (File.Exists(candidate)) relay = candidate;
+            }
+            if (!Check("the relay is built (dotnet build src\\Menus -c Release)", relay != null)) return;
+            var menus = Assembly.LoadFrom(relay);
+            var plugin = menus.GetType("LbIntegrations.Menus.NixxGameMenus");
+            Check("the relay is a multi-entry game menu", plugin != null && plugin.IsPublic
+                  && typeof(Unbroken.LaunchBox.Plugins.IGameMultiMenuItemPlugin).IsAssignableFrom(plugin));
+            var all = (System.Collections.IList)menus.GetType("LbIntegrations.Menus.Providers")
+                          .GetMethod("All", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, null);
+            var names = all.Cast<object>().Select(o => (string)o.GetType().GetField("Name").GetValue(o)).ToList();
+            Console.WriteLine("            relaying: " + string.Join(", ", names));
+            Check("and it finds this plugin by name", names.Contains(_asm.GetName().Name));
+            var instance = (Unbroken.LaunchBox.Plugins.IGameMultiMenuItemPlugin)Activator.CreateInstance(plugin);
+            Check("and offers nothing for no game", !instance.GetMenuItems(new Unbroken.LaunchBox.Plugins.Data.IGame[0]).Any());
+        }
+
+        /// <summary>The options window's editing of a command line: our flags cut out and put back,
+        /// everything else left as it was written; a game given back to the emulator's line when
+        /// nothing of ours is left; and the window itself, built off screen on a selection that does
+        /// not agree.</summary>
+        private static void TheOptions()
+        {
+            Console.WriteLine();
+            Console.WriteLine("  the options window: our flags on a game's command line");
+            const string rom = @"C:\Users\mehdi\Downloads\KILLALLZOMBIES [PCSE00965] [USA] [NoNpDRM].zip";
+            var optType = _asm.GetType("LbIntegrations.Vita3k.Vita3kOptions", throwOnError: true);
+            object Opt(bool vhdx = false, string dir = null, bool noRam = false, int? margin = null, int? ram = null)
+            {
+                var o = Activator.CreateInstance(optType);
+                optType.GetField("UseVhdx").SetValue(o, vhdx);
+                optType.GetField("VhdxDir").SetValue(o, dir);
+                optType.GetField("NoRamDisk").SetValue(o, noRam);
+                optType.GetField("MarginMb").SetValue(o, margin);
+                optType.GetField("Vita3kRamMb").SetValue(o, ram);
+                return o;
+            }
+            string Strip(string line) => (string)Call("Vita3kCommandLines", "Strip", new object[] { line, rom });
+            string With(string line, object o) => (string)Call("Vita3kCommandLines", "With", new object[] { line, o, rom });
+            string Own(string own, string inherited, object o) => (string)Call("Vita3kCommandLines", "NewOwnLine", new object[] { own, inherited, o, rom });
+            string Key(object o) => (string)optType.GetProperty("Key").GetValue(o);
+            object From(string line) => optType.GetMethod("From", BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { line, rom });
+            void Is(string what, string got, string want)
+            {
+                if (!Check(what, got == want)) Console.WriteLine("        got  [" + got + "]\n        want [" + want + "]");
+            }
+
+            Is("a flag in the middle goes, the rest stays", Strip("-F --no-ramdisk --fullscreen"), "-F --fullscreen");
+            Is("a flag opening the line goes with the space after it", Strip("--no-ramdisk -F"), "-F");
+            Is("a quoted flag goes; odd spacing elsewhere is left as written",
+               Strip("-F  \"--use-vhdx=E:\\Mes VHDX\"   --log-level 2"), "-F   --log-level 2");
+            Is("a value in the space spelling goes with its flag, a quoted word of somebody else's stays",
+               Strip("-F --ramdisk-margin 1024 \"C:\\a b\\x.txt\""), "-F \"C:\\a b\\x.txt\"");
+            Is("--use-vhdx and its folder in the space spelling", Strip("-F --use-vhdx E:\\VitaVhdx --fullscreen"), "-F --fullscreen");
+            Is("a line with nothing of ours is returned as it is", Strip("-F   --fullscreen "), "-F   --fullscreen ");
+            Is("all of them at once", Strip("--vita3k-ram=3072 -F --use-vhdx --ramdisk-margin=256 --no-ramdisk"), "-F");
+
+            Is("the new options go at the end, a folder with a space quoted",
+               With("-F --fullscreen", Opt(vhdx: true, dir: @"E:\Mes VHDX", margin: 256)),
+               "-F --fullscreen \"--use-vhdx=E:\\Mes VHDX\" --ramdisk-margin=256");
+            Is("and they REPLACE the old ones", With("-F --no-ramdisk --vita3k-ram=1000", Opt(ram: 2000)), "-F --vita3k-ram=2000");
+
+            Is("a game that inherits and gets nothing keeps inheriting", Own("", "-F", Opt()), "");
+            Is("a game that inherits and gets a flag: the emulator's line plus the flag", Own("", "-F", Opt(noRam: true)), "-F --no-ramdisk");
+            Is("a game left with nothing of ours and the emulator's line inherits again", Own("-F  --no-ramdisk", "-F", Opt()), "");
+            Is("a game left with nothing of ours and a line of its own keeps its line", Own("-F --fullscreen --no-ramdisk", "-F", Opt()), "-F --fullscreen");
+            Is("a game with its own line keeps it, the flags change", Own("-F --fullscreen --no-ramdisk", "-F", Opt(vhdx: true)), "-F --fullscreen --use-vhdx");
+
+            // THE SAME READING AS A LAUNCH: what the window writes is what PrepareEmulatorForLaunch reads,
+            // and none of it reaches Vita3K.
+            var all = Opt(vhdx: true, dir: @"E:\Mes VHDX", noRam: true, margin: 128, ram: 4096);
+            var written = With("-F --fullscreen", all);
+            Is("read back, the same options", Key(From(written)), Key(all));
+            var build = _asm.GetType("LbIntegrations.Vita3k.Vita3kPlugin").GetMethod("CommandLineFor", BindingFlags.NonPublic | BindingFlags.Static);
+            Is("and Vita3K is given none of them", (string)build.Invoke(null, new object[] { written + " \"" + rom + "\"", "PCSE00965", rom }),
+               "-F --fullscreen -r PCSE00965");
+
+            // THE WINDOW, built and never shown: two groups, so a combo box, and a preview.
+            var formType = _asm.GetType("LbIntegrations.Vita3k.Vita3kOptionsForm", throwOnError: true);
+            var entryType = formType.GetNestedType("Entry", BindingFlags.NonPublic | BindingFlags.Public);
+            var list = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(entryType));
+            foreach (var (title, own) in new[] { ("Game A", ""), ("Game B", ""), ("Game C", "-F --use-vhdx") })
+            {
+                var e = Activator.CreateInstance(entryType);
+                entryType.GetField("Title").SetValue(e, title);
+                entryType.GetField("Rom").SetValue(e, rom);
+                entryType.GetField("Own").SetValue(e, own);
+                entryType.GetField("Inherited").SetValue(e, "-F");
+                entryType.GetField("Options").SetValue(e, From(own.Length > 0 ? own : "-F"));
+                list.Add(e);
+            }
+            using (var form = (System.Windows.Forms.Form)Activator.CreateInstance(formType, list))
+            {
+                var source = (System.Windows.Forms.ComboBox)formType.GetField("_source", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(form);
+                var preview = (System.Windows.Forms.TextBox)formType.GetField("_preview", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(form);
+                var vhdx = (System.Windows.Forms.RadioButton)formType.GetField("_useVhdx", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(form);
+                var disk = (System.Windows.Forms.RadioButton)formType.GetField("_diskOnly", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(form);
+                var ram = (System.Windows.Forms.RadioButton)formType.GetField("_ramDisk", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(form);
+                Check("the window builds on three games in two groups, with a combo box of two", source != null && source.Items.Count == 2);
+                Console.WriteLine("            " + string.Join(" | ", source.Items.Cast<object>()));
+                Check("the first group names its games", source.Items[0].ToString().StartsWith("Game A <and 1 other>"));
+                Check("it starts from the first group: inherited, nothing of ours", !vhdx.Checked && preview.Text.Contains("inherited"));
+                source.SelectedIndex = 1;
+                Check("choosing the other group loads its options", vhdx.Checked && preview.Text == "-F --use-vhdx");
+                Check("three exclusive choices: VHDX alone is checked", vhdx.Checked && !disk.Checked && !ram.Checked);
+                disk.Checked = true;
+                Check("choosing disk only takes VHDX off the line", !vhdx.Checked && preview.Text == "-F --no-ramdisk");
+                vhdx.Checked = true;
+                Console.WriteLine("            preview: " + preview.Text);
+
+                // LBIP_PROBE_SHOT=<png>: the window as drawn, off screen, for a look at its layout.
+                var shot = Environment.GetEnvironmentVariable("LBIP_PROBE_SHOT");
+                if (!string.IsNullOrEmpty(shot))
+                {
+                    form.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
+                    form.Location = new System.Drawing.Point(-4000, -4000);
+                    form.Show();
+                    System.Windows.Forms.Application.DoEvents();
+                    using var bmp = new System.Drawing.Bitmap(form.Width, form.Height);
+                    form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, form.Width, form.Height));
+                    bmp.Save(shot);
+                    Console.WriteLine("            drawn to " + shot);
+                    form.Hide();
+                }
+            }
+        }
+
         // ── what Vita3K itself is given ──────────────────────────────────────
 
         private static void TheEmulatorsShare(object layout)
@@ -1316,13 +1473,15 @@ namespace LbIntegrations.Probe
             int Reserve(string id) => (int)Call("Vita3kWorkspace", "EmulatorReserveMb", new object[] { layout, id });
 
             Check("a game never measured, on an install that measured nothing, gets the default (2048 MB)", Reserve(TitleId) == 2048);
-            Call("Vita3kWorkspace", "RememberEmulatorPeak", new object[] { layout, TitleId, 1000 });
-            Check("a measured game gets its peak plus 15% (1150 MB)", Reserve(TitleId) == 1150);
+            Call("Vita3kWorkspace", "RememberEmulatorPeak", new object[] { layout, TitleId, 2000 });
+            Check("a measured game gets its peak plus 15% (2300 MB)", Reserve(TitleId) == 2300);
             Call("Vita3kWorkspace", "RememberEmulatorPeak", new object[] { layout, "PCSE99999", 3000 });
-            Check("each game keeps its own", Reserve(TitleId) == 1150 && Reserve("PCSE99999") == 3450);
+            Check("each game keeps its own", Reserve(TitleId) == 2300 && Reserve("PCSE99999") == 3450);
             Check("a game never measured gets the largest peak seen (3450 MB)", Reserve("PCSG00001") == 3450);
-            Call("Vita3kWorkspace", "RememberEmulatorPeak", new object[] { layout, TitleId, 800 });
-            Check("the latest session of a game is the one kept (920 MB)", Reserve(TitleId) == 920);
+            Call("Vita3kWorkspace", "RememberEmulatorPeak", new object[] { layout, TitleId, 2200 });
+            Check("the latest session of a game is the one kept (2530 MB)", Reserve(TitleId) == 2530);
+            Call("Vita3kWorkspace", "RememberEmulatorPeak", new object[] { layout, TitleId, 967 });
+            Check("never under 1536 MB: LittleBigPlanet's 967 MB peak keeps 1536, not 1112", Reserve(TitleId) == 1536);
         }
 
         /// <summary>A REAL game with its real update and DLC, found beside it, installed and decrypted

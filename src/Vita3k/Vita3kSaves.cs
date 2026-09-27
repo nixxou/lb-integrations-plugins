@@ -45,7 +45,7 @@ namespace LbIntegrations.Vita3k
         ///                                game, for saves, shader caches and logs - 512 when not given
         ///     --vita3k-ram=&lt;MB&gt;         RAM kept free for Vita3K itself beside the RAM disk, taken
         ///                                as it is - instead of the peak measured for this game plus
-        ///                                15%, or 2048 before any measurement
+        ///                                15% and at least 1536, or 2048 before any measurement
         ///     --use-vhdx[=&lt;dir&gt;]        the console lives in VHDX kept in &lt;dir&gt; - the emulator's
         ///                                own vhdx folder when no dir is given - and the RAM disk
         ///                                flags apply only when that falls back. See Vita3kVhdx.
@@ -91,7 +91,7 @@ namespace LbIntegrations.Vita3k
         /// game, not a switch and not an existing file: the flag has a meaning alone, so a word is
         /// taken from the line only when it cannot be anything else. An unplugged drive's folder is
         /// still taken - it is not a file either - and refused later with its reason.</summary>
-        private static bool TakesAsVhdxDir(string next, string romPath)
+        internal static bool TakesAsVhdxDir(string next, string romPath)
         {
             if (string.IsNullOrWhiteSpace(next) || next.StartsWith("-") || IsTheGame(next, romPath)) return false;
             try { return Path.IsPathFullyQualified(next) && !File.Exists(next); }
@@ -172,23 +172,7 @@ namespace LbIntegrations.Vita3k
             {
                 var t = tokens[i];
 
-                if (Array.Exists(OurFlags, f => string.Equals(f, t, StringComparison.OrdinalIgnoreCase))) continue;
-                if (t.StartsWith(UseVhdxFlag + "=", StringComparison.OrdinalIgnoreCase)) continue;
-                if (string.Equals(t, UseVhdxFlag, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (i + 1 < tokens.Count && TakesAsVhdxDir(tokens[i + 1], romPath)) i++;
-                    continue;
-                }
-                if (Array.Exists(OurFlagsWithValue, f => t.StartsWith(f + "=", StringComparison.OrdinalIgnoreCase))) continue;
-                if (Array.Exists(OurFlagsWithValue, f => string.Equals(f, t, StringComparison.OrdinalIgnoreCase)))
-                {
-                    // Its value goes with it - never the game path. A NEGATIVE number is a value too,
-                    // refused by MarginFrom but still ours: left on the line, Vita3K would take "-5"
-                    // for an option it does not know and not start.
-                    if (i + 1 < tokens.Count && !IsTheGame(tokens[i + 1], romPath)
-                        && (!tokens[i + 1].StartsWith("-") || long.TryParse(tokens[i + 1], out _))) i++;
-                    continue;
-                }
+                if (IsOurFlag(tokens, i, romPath, out bool withValue)) { if (withValue) i++; continue; }
 
                 if (t == "-r" || t == "--installed-path" || t == "-Z" || t == "--app-args")
                 {
@@ -208,27 +192,64 @@ namespace LbIntegrations.Vita3k
             return string.Join(" ", kept.ConvertAll(Quote));
         }
 
+        /// <summary>Is tokens[i] one of OUR flags - the host's line carries it, Vita3K must never see
+        /// it? And does the word after it go with it (<paramref name="withValue"/>)? THE ONE RULE, used
+        /// by the launch (CommandLineFor) and by the options window (Vita3kCommandLines), so that the
+        /// window edits exactly what a launch reads.</summary>
+        internal static bool IsOurFlag(List<string> tokens, int i, string romPath, out bool withValue)
+        {
+            withValue = false;
+            var t = tokens[i];
+            if (Array.Exists(OurFlags, f => string.Equals(f, t, StringComparison.OrdinalIgnoreCase))) return true;
+            if (t.StartsWith(UseVhdxFlag + "=", StringComparison.OrdinalIgnoreCase)) return true;
+            if (string.Equals(t, UseVhdxFlag, StringComparison.OrdinalIgnoreCase))
+            {
+                withValue = i + 1 < tokens.Count && TakesAsVhdxDir(tokens[i + 1], romPath);
+                return true;
+            }
+            if (Array.Exists(OurFlagsWithValue, f => t.StartsWith(f + "=", StringComparison.OrdinalIgnoreCase))) return true;
+            if (Array.Exists(OurFlagsWithValue, f => string.Equals(f, t, StringComparison.OrdinalIgnoreCase)))
+            {
+                // Its value goes with it - never the game path. A NEGATIVE number is a value too,
+                // refused by MarginFrom but still ours: left on the line, Vita3K would take "-5"
+                // for an option it does not know and not start.
+                withValue = i + 1 < tokens.Count && !IsTheGame(tokens[i + 1], romPath)
+                            && (!tokens[i + 1].StartsWith("-") || long.TryParse(tokens[i + 1], out _));
+                return true;
+            }
+            return false;
+        }
+
         /// <summary>Split a Windows command line the way the runtime will: spaces outside quotes
         /// separate, quotes group and are dropped. Backslash escapes are not honoured - a game path
         /// does not end in a quote.</summary>
-        private static List<string> Tokenize(string line)
+        internal static List<string> Tokenize(string line) => TokenizeSpans(line).ConvertAll(s => s.Text);
+
+        /// <summary>The same split, each word with WHERE it is in the line - [Start, End), quotes
+        /// included - so a word can be cut out and everything else left exactly as it was written.</summary>
+        internal static List<(string Text, int Start, int End)> TokenizeSpans(string line)
         {
-            var tokens = new List<string>();
+            line ??= "";
+            var tokens = new List<(string, int, int)>();
             var current = new StringBuilder();
             bool quoted = false, any = false;
-            foreach (var c in line ?? "")
+            int start = -1;
+            for (int k = 0; k < line.Length; k++)
             {
-                if (c == '"') { quoted = !quoted; any = true; continue; }
+                var c = line[k];
                 if (!quoted && (c == ' ' || c == '\t'))
                 {
-                    if (any || current.Length > 0) tokens.Add(current.ToString());
+                    if (any || current.Length > 0) tokens.Add((current.ToString(), start, k));
                     current.Clear();
                     any = false;
+                    start = -1;
                     continue;
                 }
+                if (start < 0) start = k;
+                if (c == '"') { quoted = !quoted; any = true; continue; }
                 current.Append(c);
             }
-            if (any || current.Length > 0) tokens.Add(current.ToString());
+            if (any || current.Length > 0) tokens.Add((current.ToString(), start, line.Length));
             return tokens;
         }
 
