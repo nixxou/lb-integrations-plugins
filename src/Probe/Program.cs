@@ -556,6 +556,8 @@ namespace LbIntegrations.Probe
             // oracle install: --vita3k-install --rom <archive>
             // whose RAM disk is it: --vita3k-ownership --lb <LaunchBox root>. MOUNTS REAL DRIVES.
             if (Has(args, "--vita3k-ownership")) return Vita3kCheck.Ownership(asm, Arg(args, "--lb")) ? 0 : 1;
+            // where --use-vhdx may keep its disks: --vita3k-vhdx-folder --emu <Vita3K.exe of a real install>
+            if (Has(args, "--vita3k-vhdx-folder")) return Vita3kCheck.VhdxFolder(asm, Arg(args, "--emu")) ? 0 : 1;
 
             if (Has(args, "--vita3k-install"))
             {

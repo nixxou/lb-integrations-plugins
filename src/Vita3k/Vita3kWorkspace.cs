@@ -86,6 +86,8 @@ namespace LbIntegrations.Vita3k
         public int? MarginMb;       // --ramdisk-margin=
         public int? Vita3kRamMb;    // --vita3k-ram=
         public string HostTitle;    // the game's title in LaunchBox
+        public bool UseVhdx;        // --use-vhdx
+        public string VhdxDir;      // --use-vhdx=<dir>, null for the emulator's own vhdx folder
     }
 
     internal static class Vita3kWorkspace
@@ -505,6 +507,20 @@ namespace LbIntegrations.Vita3k
                 // Cheap, and it costs one read of a small file: somebody can turn the dialog back
                 // on from the emulator's own settings between two launches.
                 QuietTheFirstRun(layout);
+
+                // --use-vhdx SUPPLANTS THE RAM DISK - when it can. Whatever stops it is logged and
+                // the session takes the usual path: a launch is never refused over it.
+                if (launch.UseVhdx)
+                {
+                    var vhdxDir = Vita3kVhdx.DirFor(layout, launch.VhdxDir);
+                    var whyNot = Vita3kVhdx.WhyNot(layout, vhdxDir);
+                    if (whyNot != null)
+                        Log.Warn(Vita3kPlugin.UseVhdxFlag + ": " + whyNot + " - this session takes the usual path");
+                    else
+                        // Lot 1 stops here: the folder is checked, the bases are not built on it yet.
+                        Log.Info(Vita3kPlugin.UseVhdxFlag + ": the VHDX would live in " + vhdxDir
+                                 + " - not built yet, this session takes the usual path");
+                }
 
                 // Self-healing: a complete firmware that was never put aside becomes the base
                 // here rather than requiring the install step to be run again.

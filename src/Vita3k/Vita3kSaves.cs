@@ -46,6 +46,9 @@ namespace LbIntegrations.Vita3k
         ///     --vita3k-ram=&lt;MB&gt;         RAM kept free for Vita3K itself beside the RAM disk, taken
         ///                                as it is - instead of the peak measured for this game plus
         ///                                15%, or 2048 before any measurement
+        ///     --use-vhdx[=&lt;dir&gt;]        the console lives in VHDX kept in &lt;dir&gt; - the emulator's
+        ///                                own vhdx folder when no dir is given - and the RAM disk
+        ///                                flags apply only when that falls back. See Vita3kVhdx.
         ///
         /// THE "=" SPELLING IS THE ONE WE WRITE (Mehdi's choice). "--vita3k-ram 3072" is read too and
         /// removed with its value, because left on the line "3072" would be taken by Vita3K for a
@@ -53,9 +56,47 @@ namespace LbIntegrations.Vita3k
         internal const string NoRamDiskFlag = "--no-ramdisk";
         internal const string RamDiskMarginFlag = "--ramdisk-margin";
         internal const string Vita3kRamFlag = "--vita3k-ram";
+        internal const string UseVhdxFlag = "--use-vhdx";
 
         private static readonly string[] OurFlags = { NoRamDiskFlag };
         private static readonly string[] OurFlagsWithValue = { RamDiskMarginFlag, Vita3kRamFlag };
+
+        /// <summary>Does the line carry --use-vhdx, and with which folder? Null with
+        /// <paramref name="asked"/> true: the flag alone, the default folder. "--use-vhdx=E:\VHDX" is
+        /// the spelling we write; "--use-vhdx E:\VHDX" is read too, when the next word is a full path
+        /// that is not a file - see TakesAsVhdxDir.</summary>
+        internal static string VhdxFrom(string line, string romPath, out bool asked)
+        {
+            asked = false;
+            var tokens = Tokenize(line ?? "");
+            for (int i = 0; i < tokens.Count; i++)
+            {
+                var t = tokens[i];
+                if (t.StartsWith(UseVhdxFlag + "=", StringComparison.OrdinalIgnoreCase))
+                {
+                    asked = true;
+                    var dir = t.Substring(UseVhdxFlag.Length + 1);
+                    return string.IsNullOrWhiteSpace(dir) ? null : dir;
+                }
+                if (string.Equals(t, UseVhdxFlag, StringComparison.OrdinalIgnoreCase))
+                {
+                    asked = true;
+                    return i + 1 < tokens.Count && TakesAsVhdxDir(tokens[i + 1], romPath) ? tokens[i + 1] : null;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>Is the word after a bare --use-vhdx its folder? Only a full path that is not the
+        /// game, not a switch and not an existing file: the flag has a meaning alone, so a word is
+        /// taken from the line only when it cannot be anything else. An unplugged drive's folder is
+        /// still taken - it is not a file either - and refused later with its reason.</summary>
+        private static bool TakesAsVhdxDir(string next, string romPath)
+        {
+            if (string.IsNullOrWhiteSpace(next) || next.StartsWith("-") || IsTheGame(next, romPath)) return false;
+            try { return Path.IsPathFullyQualified(next) && !File.Exists(next); }
+            catch { return false; }
+        }
 
         /// <summary>The largest value taken at face value: past this it is a typo, not a wish.</summary>
         private const int MaxMb = 65536;
@@ -132,6 +173,12 @@ namespace LbIntegrations.Vita3k
                 var t = tokens[i];
 
                 if (Array.Exists(OurFlags, f => string.Equals(f, t, StringComparison.OrdinalIgnoreCase))) continue;
+                if (t.StartsWith(UseVhdxFlag + "=", StringComparison.OrdinalIgnoreCase)) continue;
+                if (string.Equals(t, UseVhdxFlag, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (i + 1 < tokens.Count && TakesAsVhdxDir(tokens[i + 1], romPath)) i++;
+                    continue;
+                }
                 if (Array.Exists(OurFlagsWithValue, f => t.StartsWith(f + "=", StringComparison.OrdinalIgnoreCase))) continue;
                 if (Array.Exists(OurFlagsWithValue, f => string.Equals(f, t, StringComparison.OrdinalIgnoreCase)))
                 {
@@ -262,9 +309,12 @@ namespace LbIntegrations.Vita3k
                     int? vitaRam = Vita3kRamFrom(current, out var ramProblem);
                     if (ramProblem != null) Log.Warn(ramProblem + " - keeping the measured reserve");
                     else if (vitaRam != null) Log.Info(Vita3kRamFlag + "=" + vitaRam + " is on the command line");
+                    var vhdxDir = VhdxFrom(current, ResolveFullPath(rom), out bool useVhdx);
+                    if (useVhdx) Log.Info(UseVhdxFlag + (vhdxDir != null ? "=" + vhdxDir : "") + " is on the command line");
                     titleId = Vita3kWorkspace.Prepare(layout, ResolveFullPath(rom), out error,
                                                       (step, fraction) => window?.Report(step, fraction),
-                                                      new Vita3kLaunch { NoRamDisk = noRamDisk, MarginMb = margin, Vita3kRamMb = vitaRam, HostTitle = gameTitle });
+                                                      new Vita3kLaunch { NoRamDisk = noRamDisk, MarginMb = margin, Vita3kRamMb = vitaRam, HostTitle = gameTitle,
+                                                                          UseVhdx = useVhdx, VhdxDir = vhdxDir });
                 }
                 if (titleId == null)
                 {

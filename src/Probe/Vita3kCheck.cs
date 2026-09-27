@@ -307,6 +307,29 @@ namespace LbIntegrations.Probe
                 Check("and the two flags do not read each other's value",
                       Ram("--ramdisk-margin 256") == null && Margin("--vita3k-ram 3072", out _) == null);
 
+                // --use-vhdx: alone, or with its folder - and neither ever reaches the emulator.
+                Case("--use-vhdx alone never reaches the emulator", "-F --use-vhdx \"" + rom + "\"", "PCSE00965", "-F -r PCSE00965");
+                Case("nor with its folder", "-F --use-vhdx=E:\\VitaVhdx \"" + rom + "\"", "PCSE00965", "-F -r PCSE00965");
+                Case("nor a quoted folder with a space", "-F \"--use-vhdx=E:\\Mes VHDX\" \"" + rom + "\"", null, "-F \"" + rom + "\"");
+                Case("nor its folder in the space spelling", "-F --use-vhdx E:\\VitaVhdx \"" + rom + "\"", "PCSE00965", "-F -r PCSE00965");
+                Case("alone before the game, the game is not taken for its folder", "-F -r --use-vhdx \"" + rom + "\"", null, "-F \"" + rom + "\"");
+                var vhdx = type.GetMethod("VhdxFrom", BindingFlags.NonPublic | BindingFlags.Static);
+                string Vhdx(string line, out bool asked)
+                {
+                    var a = new object[] { line, rom, null };
+                    var got = (string)vhdx.Invoke(null, a);
+                    asked = (bool)a[2];
+                    return got;
+                }
+                Check("not asked: no folder, not asked", vhdx != null && Vhdx("-F --no-ramdisk", out var a0) == null && !a0);
+                Check("alone: asked, the default folder", Vhdx("-F --use-vhdx", out var a1) == null && a1);
+                Check("--use-vhdx=E:\\VitaVhdx", Vhdx("--use-vhdx=E:\\VitaVhdx", out var a2) == @"E:\VitaVhdx" && a2);
+                Check("\"--use-vhdx=E:\\Mes VHDX\"", Vhdx("\"--use-vhdx=E:\\Mes VHDX\" -F", out _) == @"E:\Mes VHDX");
+                Check("--use-vhdx E:\\VitaVhdx", Vhdx("--use-vhdx E:\\VitaVhdx -F", out _) == @"E:\VitaVhdx");
+                Check("--use-vhdx followed by the game: the default folder", Vhdx("--use-vhdx \"" + rom + "\"", out var a3) == null && a3);
+                Check("--use-vhdx followed by a switch: the default folder", Vhdx("--use-vhdx -F", out _) == null);
+                Check("--use-vhdx= with nothing: the default folder", Vhdx("--use-vhdx= -F", out var a4) == null && a4);
+
                 Console.WriteLine();
                 Console.WriteLine(_bad == 0 ? "  OK - the game path never reaches the emulator beside -r"
                                             : "  " + _bad + " FAILURE(S) - see above");
@@ -958,6 +981,60 @@ namespace LbIntegrations.Probe
                 }
                 Scrub(root);
             }
+        }
+
+        /// <summary>Where --use-vhdx may keep its disks, asked of the REAL volumes of this machine:
+        /// a missing drive, a CD, a relative path, a network share - each refused with its reason - and
+        /// a folder under %TEMP% accepted. Needs a real install for its helper: --emu &lt;Vita3K.exe&gt;.
+        /// Creates nothing but that %TEMP% folder, removed afterwards.</summary>
+        public static bool VhdxFolder(Assembly pluginAssembly, string emuPath)
+        {
+            Console.WriteLine();
+            Console.WriteLine("-- Vita3K, where the VHDX may live " + new string('-', 29));
+            _asm = pluginAssembly;
+            _bad = 0;
+            var temp = Path.Combine(Path.GetTempPath(), "lbip-vhdx-folder-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                if (string.IsNullOrWhiteSpace(emuPath) || !File.Exists(emuPath)) { Console.WriteLine("  pass --emu <Vita3K.exe of a real install>"); return false; }
+                var layout = Resolve(emuPath);
+                string Why(string dir)
+                {
+                    var why = (string)Call("Vita3kVhdx", "WhyNot", new object[] { layout, dir });
+                    Console.WriteLine("      " + dir + "  ->  " + (why ?? "usable"));
+                    return why;
+                }
+
+                var dflt = (string)Call("Vita3kVhdx", "DirFor", new object[] { layout, null });
+                Check("the flag alone: the emulator's own vhdx folder",
+                      string.Equals(dflt, Path.Combine((string)Field(layout, "InstallDir"), "vhdx"), StringComparison.OrdinalIgnoreCase));
+                Check("a folder given is taken as it is", (string)Call("Vita3kVhdx", "DirFor", new object[] { layout, @"E:\VitaVhdx" }) == @"E:\VitaVhdx");
+
+                Check("a folder under %TEMP% is usable, and created", Why(temp) == null && Directory.Exists(temp));
+                Check("a relative folder is refused", Why(@"vhdx") != null);
+                Check("a network share is refused", Why(@"\\server\share\vhdx") != null);
+
+                char missing = '\0';
+                for (char c = 'Z'; c >= 'I'; c--) if (!Directory.Exists(c + @":\")) { missing = c; break; }
+                if (missing != '\0')
+                {
+                    var why = Why(missing + @":\VitaVhdx");
+                    Check("a drive that is not there is refused, and says so", why != null && why.Contains("not there"));
+                }
+                foreach (var d in DriveInfo.GetDrives())
+                {
+                    if (d.DriveType != DriveType.CDRom || !d.IsReady) continue;
+                    var why = Why(d.RootDirectory.FullName + "VitaVhdx");
+                    Check("a " + d.DriveFormat + " drive (" + d.Name + ") is refused, by its file system", why != null && why.Contains(d.DriveFormat));
+                    break;
+                }
+
+                Console.WriteLine();
+                Console.WriteLine(_bad == 0 ? "  OK - a folder the VHDX cannot live in is refused with its reason" : "  " + _bad + " FAILURE(S) - see above");
+                return _bad == 0;
+            }
+            catch (Exception ex) { Console.WriteLine("  EXCEPTION: " + (ex.InnerException ?? ex)); return false; }
+            finally { Scrub(temp); }
         }
 
         // ── what Vita3K itself is given ──────────────────────────────────────
