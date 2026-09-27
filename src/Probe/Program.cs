@@ -531,6 +531,9 @@ namespace LbIntegrations.Probe
             }
 
             // A real launch preparation, timed: --vita3k-prepare --emu <Vita3K.exe> --rom <archive>.
+            // a real game with its update and DLC, on a forged console: --vita3k-extras-real --rom <game>
+            if (Has(args, "--vita3k-extras-real") && !Vita3kCheck.ExtrasReal(asm, Arg(args, "--rom"))) return 1;
+
             if (Has(args, "--vita3k-prepare"))
             {
                 if (!Vita3kCheck.Prepare(asm, emuPath, Arg(args, "--rom"))) return 1;

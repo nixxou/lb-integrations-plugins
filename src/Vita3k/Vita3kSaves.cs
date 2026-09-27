@@ -263,7 +263,8 @@ namespace LbIntegrations.Vita3k
                     if (ramProblem != null) Log.Warn(ramProblem + " - keeping the measured reserve");
                     else if (vitaRam != null) Log.Info(Vita3kRamFlag + "=" + vitaRam + " is on the command line");
                     titleId = Vita3kWorkspace.Prepare(layout, ResolveFullPath(rom), out error,
-                                                      (step, fraction) => window?.Report(step, fraction), noRamDisk, margin, vitaRam);
+                                                      (step, fraction) => window?.Report(step, fraction),
+                                                      new Vita3kLaunch { NoRamDisk = noRamDisk, MarginMb = margin, Vita3kRamMb = vitaRam, HostTitle = gameTitle });
                 }
                 if (titleId == null)
                 {

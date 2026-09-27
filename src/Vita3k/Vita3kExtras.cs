@@ -1,0 +1,235 @@
+// The updates and DLC of the game being launched: where they are looked for, how they are recognised,
+// which are kept. Installed right after the game and BEFORE the reference walk - anything installed
+// after it would come out of the session as a change, into the save.
+//
+// WHERE, four places, all around the game's own file (Mehdi's rules):
+//   1. beside the game, a file whose NAME carries the title id
+//   2. the same, in a DLC or UPDATE sub-folder (plural and PATCH too)
+//   3. a folder NAMED the title id, anywhere under the game's folder: every archive in it
+//   4. a folder named the game, anywhere under it: every archive in it. "Named the game" is by
+//      TitleKey - ExtendDB's add-time normalisation - against the param.sfo's title, its short
+//      title, and the title the host shows. The game's own folder counts too.
+// None of that decides anything: it only nominates. A candidate is KEPT only when its own
+// param.sfo says so - same TITLE_ID as the game, CATEGORY gp (an update) or ac (a DLC). File and
+// folder names are somebody's naming; the param.sfo is Sony's.
+//
+// WHICH: every DLC, one per CONTENT_ID; and ONE update, the highest APP_VER. Vita updates are
+// cumulative - Sony's server only ever serves the latest, and a patch replaces ux0/patch/<id> rather
+// than adding to it - so 1.22 alone is the game at 1.22.
+//
+// Everything found, kept and set aside is written to the log, with the reason: the one place
+// somebody can see why a DLC did not show up.
+
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
+
+namespace LbIntegrations.Vita3k
+{
+    internal sealed class VitaExtra
+    {
+        public string Path;
+        public VitaContent Content;
+        public long Bytes;          // uncompressed, for sizing the RAM disk
+        public string FoundBy;      // which rule nominated it
+    }
+
+    internal sealed class VitaExtras
+    {
+        public VitaExtra Update;
+        public List<VitaExtra> Addons = new List<VitaExtra>();
+
+        public IEnumerable<VitaExtra> All => (Update != null ? new[] { Update } : new VitaExtra[0]).Concat(Addons);
+        public long Bytes => All.Sum(e => Math.Max(0, e.Bytes));
+
+        /// <summary>What was chosen, as one string - part of the reuse marker, so that adding a DLC or
+        /// a newer update between two launches rebuilds the console instead of reusing one without it.</summary>
+        public string Key()
+        {
+            var parts = All.Select(e =>
+            {
+                long size = 0, ticks = 0;
+                try { var i = new FileInfo(e.Path); size = i.Length; ticks = i.LastWriteTimeUtc.Ticks; } catch { }
+                return System.IO.Path.GetFullPath(e.Path).ToLowerInvariant() + "|" + size + "|" + ticks;
+            }).OrderBy(s => s, StringComparer.Ordinal);
+            var text = string.Join("\n", parts);
+            if (text.Length == 0) return "";
+            return Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes(text))).Substring(0, 16);
+        }
+    }
+
+    internal static class Vita3kExtras
+    {
+        private static readonly string[] ExtraFolders = { "DLC", "DLCS", "UPDATE", "UPDATES", "PATCH", "PATCHES" };
+
+        /// <summary>How deep folders are looked into from the game's own. A ROM folder can be a whole
+        /// library; listing folders is cheap, but not without end.</summary>
+        private const int MaxDepth = 4;
+
+        /// <summary>A ceiling on archives evaluated, for a folder rule that turns out to match a folder
+        /// full of unrelated games.</summary>
+        private const int MaxCandidates = 400;
+
+        /// <summary>Find, evaluate and choose the updates and DLC of <paramref name="game"/>.</summary>
+        public static VitaExtras For(string romPath, VitaContent game, string hostTitle)
+        {
+            var chosen = new VitaExtras();
+            try
+            {
+                if (game?.TitleId == null || string.IsNullOrWhiteSpace(romPath)) return chosen;
+                var candidates = Candidates(romPath, game, hostTitle);
+                Log.Info("updates and DLC of " + game.TitleId + ": " + candidates.Count + " candidate archive(s) around "
+                         + System.IO.Path.GetDirectoryName(romPath));
+
+                var updates = new List<VitaExtra>();
+                var addons = new Dictionary<string, VitaExtra>(StringComparer.OrdinalIgnoreCase);
+                foreach (var (path, rule) in candidates)
+                {
+                    var name = System.IO.Path.GetFileName(path);
+                    var content = Vita3kContent.Describe(path, out var error);
+                    if (content == null) { Log.Info("  set aside " + name + " [" + rule + "] - " + error); continue; }
+                    if (!string.Equals(content.TitleId, game.TitleId, StringComparison.OrdinalIgnoreCase))
+                    { Log.Info("  set aside " + name + " [" + rule + "] - it is " + content.TitleId + "'s, not " + game.TitleId + "'s"); continue; }
+
+                    var extra = new VitaExtra
+                    {
+                        Path = path, Content = content, FoundBy = rule,
+                        Bytes = Math.Max(0, Vita3kContent.UncompressedSize(path)),
+                    };
+                    if (content.IsPatch)
+                    {
+                        updates.Add(extra);
+                        Log.Info("  update " + (content.AppVer ?? "?") + ": " + name + " [" + rule + "], " + Mb(extra.Bytes));
+                    }
+                    else if (content.IsAddon)
+                    {
+                        var id = content.ContentId ?? name;
+                        if (addons.TryGetValue(id, out var already))
+                        { Log.Info("  set aside " + name + " [" + rule + "] - the same DLC (" + id + ") as " + System.IO.Path.GetFileName(already.Path)); continue; }
+                        addons[id] = extra;
+                        Log.Info("  DLC " + (content.Title ?? id) + " (" + id + "): " + name + " [" + rule + "], " + Mb(extra.Bytes));
+                    }
+                    else Log.Info("  set aside " + name + " [" + rule + "] - category " + (content.Category ?? "?") + " is neither an update nor a DLC");
+                }
+
+                // ONE update: the highest APP_VER - they are cumulative.
+                chosen.Update = updates.OrderByDescending(u => VersionOf(u.Content.AppVer)).FirstOrDefault();
+                foreach (var u in updates)
+                    if (u != chosen.Update)
+                        Log.Info("  set aside update " + (u.Content.AppVer ?? "?") + " (" + System.IO.Path.GetFileName(u.Path)
+                                 + ") - " + (chosen.Update.Content.AppVer ?? "?") + " is higher, and updates are cumulative");
+                chosen.Addons = addons.Values.OrderBy(a => a.Content.ContentId, StringComparer.Ordinal).ToList();
+
+                Log.Info("  kept: " + (chosen.Update != null ? "update " + chosen.Update.Content.AppVer : "no update")
+                         + ", " + chosen.Addons.Count + " DLC" + (chosen.Addons.Count > 0 ? " - " + Mb(chosen.Bytes) + " in all" : ""));
+            }
+            catch (Exception ex) { Log.Warn("could not look for updates and DLC", ex); }
+            return chosen;
+        }
+
+        /// <summary>The archives the four rules nominate, each with the rule that did, in the order
+        /// found. The game itself is never one of them.</summary>
+        public static List<(string path, string rule)> Candidates(string romPath, VitaContent game, string hostTitle)
+        {
+            var found = new List<(string, string)>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Full(romPath) };
+            var dir = System.IO.Path.GetDirectoryName(Full(romPath));
+            if (dir == null || !Directory.Exists(dir)) return found;
+
+            var id = game.TitleId;
+            var keys = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var t in new[] { game.FullTitle, game.Title, hostTitle })
+            {
+                var k = TitleKey.Of(t);
+                if (k != null) keys.Add(k);
+            }
+            Log.Info("  looking by title id " + id + " and by title key" + (keys.Count == 1 ? " " : "s ")
+                     + (keys.Count > 0 ? string.Join(", ", keys) : "(none valid)"));
+
+            void Add(string path, string rule)
+            {
+                if (found.Count >= MaxCandidates) return;
+                if (!Vita3kContent.Installable(path)) return;
+                if (seen.Add(Full(path))) found.Add((path, rule));
+            }
+            bool NamesTheId(string path) => System.IO.Path.GetFileName(path).IndexOf(id, StringComparison.OrdinalIgnoreCase) >= 0;
+            bool NamedTheGame(string folder)
+            {
+                var name = System.IO.Path.GetFileName(folder.TrimEnd('\\', '/'));
+                if (string.Equals(name, id, StringComparison.OrdinalIgnoreCase)) return true;
+                var k = TitleKey.Of(name);
+                return k != null && keys.Contains(k);
+            }
+
+            // 1. beside the game, the title id in the name
+            foreach (var f in Files(dir, recursive: false))
+                if (NamesTheId(f)) Add(f, "beside the game, " + id + " in its name");
+
+            // 2. the same, in DLC / UPDATE folders
+            foreach (var sub in Folders(dir, 1))
+                if (ExtraFolders.Any(x => string.Equals(System.IO.Path.GetFileName(sub), x, StringComparison.OrdinalIgnoreCase)))
+                    foreach (var f in Files(sub, recursive: true))
+                        if (NamesTheId(f)) Add(f, System.IO.Path.GetFileName(sub) + "\\, " + id + " in its name");
+
+            // 3 and 4. folders named the title id or the game - the game's own folder included
+            var named = new List<string>();
+            if (NamedTheGame(dir)) named.Add(dir);
+            named.AddRange(Folders(dir, MaxDepth).Where(NamedTheGame));
+            foreach (var folder in named)
+            {
+                var rule = string.Equals(System.IO.Path.GetFileName(folder), id, StringComparison.OrdinalIgnoreCase)
+                    ? "in a folder named " + id : "in a folder named the game (" + System.IO.Path.GetFileName(folder) + ")";
+                foreach (var f in Files(folder, recursive: true)) Add(f, rule);
+            }
+            return found;
+        }
+
+        // ── helpers ──────────────────────────────────────────────────────────
+
+        private static IEnumerable<string> Files(string dir, bool recursive)
+        {
+            IEnumerable<string> list;
+            try
+            {
+                list = Directory.EnumerateFiles(dir, "*", new EnumerationOptions
+                {
+                    RecurseSubdirectories = recursive, MaxRecursionDepth = MaxDepth,
+                    IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint | FileAttributes.System,
+                }).ToList();
+            }
+            catch { return new string[0]; }
+            return list.OrderBy(p => p, StringComparer.OrdinalIgnoreCase);
+        }
+
+        private static IEnumerable<string> Folders(string dir, int depth)
+        {
+            try
+            {
+                return Directory.EnumerateDirectories(dir, "*", new EnumerationOptions
+                {
+                    RecurseSubdirectories = depth > 1, MaxRecursionDepth = Math.Max(0, depth - 1),
+                    IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint | FileAttributes.System,
+                }).OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToList();
+            }
+            catch { return new string[0]; }
+        }
+
+        private static string Full(string p) { try { return System.IO.Path.GetFullPath(p); } catch { return p; } }
+
+        /// <summary>"01.22" as a version; anything unreadable sorts lowest.</summary>
+        internal static Version VersionOf(string appVer)
+        {
+            if (string.IsNullOrWhiteSpace(appVer)) return new Version(0, 0);
+            var parts = appVer.Trim().Split('.');
+            int.TryParse(parts[0], out var major);
+            int minor = 0;
+            if (parts.Length > 1) int.TryParse(parts[1], out minor);
+            return new Version(Math.Max(0, major), Math.Max(0, minor));
+        }
+
+        internal static string Mb(long bytes) => (bytes / (1024.0 * 1024.0)).ToString("0.0") + " MB";
+    }
+}

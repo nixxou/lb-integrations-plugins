@@ -43,6 +43,17 @@ using LbIntegrations.Snapshot;
 
 namespace LbIntegrations.Vita3k
 {
+    /// <summary>What one launch asks for, beyond the game: our flags on the host's command line (see
+    /// Vita3kPlugin.CommandLineFor) and the title the host shows, which the search for the game's
+    /// update and DLC uses as one more name for its folder.</summary>
+    internal sealed class Vita3kLaunch
+    {
+        public bool NoRamDisk;      // --no-ramdisk
+        public int? MarginMb;       // --ramdisk-margin=
+        public int? Vita3kRamMb;    // --vita3k-ram=
+        public string HostTitle;    // the game's title in LaunchBox
+    }
+
     internal static class Vita3kWorkspace
     {
         public const string BaseName = "nand-initiale";
@@ -247,9 +258,10 @@ namespace LbIntegrations.Vita3k
 
         // ── the marker ───────────────────────────────────────────────────────
 
-        /// <summary>Five tab-separated fields: title id, the game's path, its length, its write time
-        /// and where the tree lives. The fingerprint is not a hash - this runs at every launch and a
-        /// .vpk is several hundred megabytes.</summary>
+        /// <summary>Tab-separated fields: title id, the game's path, its length, its write time, where
+        /// the tree lives - and, sixth, the key of the update and DLC installed with it (VitaExtras.Key;
+        /// absent from a marker written before they were, which reads as "none"). The fingerprint is
+        /// not a hash - this runs at every launch and a .vpk is several hundred megabytes.</summary>
         private static string[] MarkerParts(Vita3kLayout layout)
         {
             try
@@ -278,11 +290,11 @@ namespace LbIntegrations.Vita3k
             catch { return romPath + "\t0\t0"; }
         }
 
-        private static void Remember(Vita3kLayout layout, string titleId, string romPath, string root)
+        private static void Remember(Vita3kLayout layout, string titleId, string romPath, string root, string extrasKey = "")
         {
             try
             {
-                File.WriteAllText(MarkerPath(layout), titleId + "\t" + Fingerprint(romPath) + "\t" + root);
+                File.WriteAllText(MarkerPath(layout), titleId + "\t" + Fingerprint(romPath) + "\t" + root + "\t" + (extrasKey ?? ""));
             }
             catch (Exception ex) { Log.Warn("could not write " + TitleMarker, ex); }
         }
@@ -298,12 +310,22 @@ namespace LbIntegrations.Vita3k
         /// When it is, a launch does nothing at all: no mount, no copy, no reinstall. That is what
         /// makes a second run of the same game cheap, and it is also the rule you asked for - the
         /// working tree is NOT cleared when a game ends, only when a DIFFERENT one starts.</summary>
-        public static bool CanReuse(Vita3kLayout layout, string titleId, string romPath)
+        public static bool CanReuse(Vita3kLayout layout, string titleId, string romPath) => CanReuse(layout, titleId, romPath, "");
+
+        /// <summary>... and holding exactly the update and DLC found now: one added, removed or newer
+        /// since means a rebuild, not a console without it.</summary>
+        public static bool CanReuse(Vita3kLayout layout, string titleId, string romPath, string extrasKey)
         {
             try
             {
                 var parts = MarkerParts(layout);
                 if (parts == null) return false;
+                var had = parts.Length > 5 ? parts[5] : "";
+                if (!string.Equals(had, extrasKey ?? "", StringComparison.Ordinal))
+                {
+                    Log.Info("the updates and DLC are not the ones the working tree was built with - rebuilding");
+                    return false;
+                }
                 if (!string.Equals(parts[0], titleId, StringComparison.Ordinal)) return false;
                 if (!string.Equals(parts[1] + "\t" + parts[2] + "\t" + parts[3], Fingerprint(romPath),
                                    StringComparison.Ordinal)) return false;
@@ -410,30 +432,30 @@ namespace LbIntegrations.Vita3k
         /// <summary>The same preparation, saying what it is doing at each step - see
         /// Vita3kProgressWindow, which is what listens at launch.</summary>
         public static string Prepare(Vita3kLayout layout, string romPath, out string error,
-                                     Action<string, double?> report) => Prepare(layout, romPath, out error, report, false, null, null);
+                                     Action<string, double?> report) => Prepare(layout, romPath, out error, report, new Vita3kLaunch());
 
-        /// <summary>... and with <paramref name="noRamDisk"/>, on the disk whatever the RAM - what
-        /// --no-ramdisk on the command line asks for; <paramref name="marginMb"/>, when given, is the
-        /// headroom --ramdisk-margin asks for instead of MarginMb; <paramref name="vita3kRamMb"/>, when
-        /// given, the RAM --vita3k-ram keeps for the emulator instead of the measured reserve.</summary>
+        /// <summary>... with what this launch asked for - see Vita3kLaunch.</summary>
         public static string Prepare(Vita3kLayout layout, string romPath, out string error,
-                                     Action<string, double?> report, bool noRamDisk, int? marginMb, int? vita3kRamMb)
+                                     Action<string, double?> report, Vita3kLaunch launch)
         {
+            launch ??= new Vita3kLaunch();
             // Waits for an end-of-session release still in progress rather than racing it.
             if (!Monitor.TryEnter(SessionGate))
             {
                 report?.Invoke("Waiting for the previous session to be put away...", null);
                 Monitor.Enter(SessionGate);
             }
-            try { return PrepareLocked(layout, romPath, out error, report, noRamDisk, marginMb ?? MarginMb, vita3kRamMb); }
+            try { return PrepareLocked(layout, romPath, out error, report, launch); }
             finally { Monitor.Exit(SessionGate); }
         }
 
         private static string PrepareLocked(Vita3kLayout layout, string romPath, out string error,
-                                            Action<string, double?> report, bool noRamDisk = false, int marginMb = MarginMb,
-                                            int? vita3kRamMb = null)
+                                            Action<string, double?> report, Vita3kLaunch launch)
         {
             error = null;
+            bool noRamDisk = launch.NoRamDisk;
+            int marginMb = launch.MarginMb ?? MarginMb;
+            int? vita3kRamMb = launch.Vita3kRamMb;
             try
             {
                 // Cheap, and it costs one read of a small file: somebody can turn the dialog back
@@ -453,9 +475,15 @@ namespace LbIntegrations.Vita3k
                 if (!content.IsGame)
                 { error = content + " is not a game - updates and add-ons are not launched"; return null; }
 
+                // ITS UPDATE AND DLC, found before anything else: they decide whether the tree there
+                // is still the right one, and how big a new one has to be. See Vita3kExtras.
+                report?.Invoke("Looking for updates and DLC...", null);
+                var extras = Vita3kExtras.For(romPath, content, launch.HostTitle);
+                var extrasKey = extras.Key();
+
                 // Reused as it is - unless it is on a RAM disk and this launch asks for the disk: then
                 // it is saved and rebuilt where it was asked to be, like a different game.
-                if (CanReuse(layout, content.TitleId, romPath) && !(noRamDisk && OnRamDisk(layout)))
+                if (CanReuse(layout, content.TitleId, romPath, extrasKey) && !(noRamDisk && OnRamDisk(layout)))
                 {
                     Log.Info("the working tree already holds " + content.TitleId + " - reusing it");
                     // The link is remade every time: a release interrupted after it dropped the
@@ -472,9 +500,16 @@ namespace LbIntegrations.Vita3k
                 if (previous != null) SaveBeforeClearing(layout, previous);
                 Teardown(layout);
 
-                int sizeMb = BaseSizeMb(layout)
-                             + (int)(Math.Max(0, Vita3kContent.WorkingSizeBytes(romPath)) / (1024 * 1024))
-                             + marginMb;
+                // EVERYTHING THE DISK WILL HOLD: the firmware, the game, its update, its DLC, the save
+                // that goes back in - and the margin for what the session writes.
+                int baseMb = BaseSizeMb(layout);
+                int gameMb = CeilMb(Vita3kContent.WorkingSizeBytes(romPath));
+                int updateMb = CeilMb(extras.Update?.Bytes ?? 0);
+                int dlcMb = CeilMb(extras.Addons.Sum(a => Math.Max(0, a.Bytes)));
+                int saveMb = CeilMb(SaveBytes(layout, content.TitleId));
+                int sizeMb = baseMb + gameMb + updateMb + dlcMb + saveMb + marginMb;
+                Log.Info("the console needs " + sizeMb + " MB: firmware " + baseMb + " + game " + gameMb + " + update " + updateMb
+                         + " + DLC " + dlcMb + " + save " + saveMb + " + margin " + marginMb);
 
                 report?.Invoke("Preparing a fresh console...", null);
                 var root = OpenWorkingTree(layout, content.TitleId, sizeMb, report, noRamDisk, vita3kRamMb);
@@ -495,6 +530,12 @@ namespace LbIntegrations.Vita3k
 
                     var installed = Vita3kContent.Install(romPath, root, out error, report);
                     if (installed == null) return null;
+
+                    // THE UPDATE, THEN THE DLC - after the game (an update needs the app and its
+                    // licence) and BEFORE the reference, or they would come out of the session as a
+                    // change, into the save. One that fails is left out, said so, and the game runs
+                    // without it: better than no game.
+                    InstallExtras(extras, root, installed, report);
 
                     // THE REFERENCE, between the install and everything else. See the header.
                     // From the base's own manifest, hashing only what the install wrote - see
@@ -526,7 +567,7 @@ namespace LbIntegrations.Vita3k
                     else
                         Log.Warn("no stamps (" + stampError + ") - the capture will read the whole tree");
 
-                    Remember(layout, content.TitleId, romPath, root);
+                    Remember(layout, content.TitleId, romPath, root, extrasKey);
                     ready = true;
                     return content.TitleId;
                 }
@@ -621,6 +662,63 @@ namespace LbIntegrations.Vita3k
             var work = WorkDir(layout);
             Directory.CreateDirectory(work);
             return work;
+        }
+
+        /// <summary>Install the chosen update and DLC onto the tree the game was just installed on,
+        /// folding what each wrote into <paramref name="installed"/> - the reference walk hashes those
+        /// folders, or takes the hashes the install already has.</summary>
+        private static void InstallExtras(VitaExtras extras, string root, VitaContent installed, Action<string, double?> report)
+        {
+            // THE WINDOW SAYS WHICH (Mehdi's wording): the update by its version, with its own bar; the
+            // DLC under ONE bar for all of them, "1/3", "2/3"... The install's own step text ("Decrypting
+            // <game>...") would name the game for an update - the label here replaces it, the fraction
+            // is kept.
+            int dlcCount = extras.Addons.Count, dlcIndex = 0;
+            foreach (var extra in extras.All)
+            {
+                var c = extra.Content;
+                string step;
+                Action<string, double?> progress;
+                if (c.IsPatch)
+                {
+                    step = "Installing update " + (c.AppVer ?? "?") + "...";
+                    progress = (_, f) => report?.Invoke(step, f);
+                }
+                else
+                {
+                    int i = dlcIndex++;
+                    step = "Installing DLC " + (i + 1) + "/" + dlcCount + ": " + (c.Title ?? c.ContentId) + "...";
+                    progress = (_, f) => report?.Invoke(step, ((double)i + (f ?? 0)) / dlcCount);
+                }
+                var label = c.IsPatch ? "update " + (c.AppVer ?? "?") : "DLC " + (c.Title ?? c.ContentId);
+                progress(null, 0);
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                var done = Vita3kContent.Install(extra.Path, root, out var why, progress);
+                if (done == null)
+                {
+                    Log.Warn("the " + label + " was not installed (" + why + ") - the game runs without it");
+                    var dest = Vita3kContent.DestinationFor(c, out _);
+                    if (dest != null)
+                    {
+                        var half = Path.Combine(root, dest.Replace('/', Path.DirectorySeparatorChar));
+                        try { if (Directory.Exists(half)) Directory.Delete(half, recursive: true); }
+                        catch (Exception ex) { Log.Warn("could not clear the half-installed " + label, ex); }
+                    }
+                    continue;
+                }
+                installed.Written.AddRange(done.Written);
+                foreach (var kv in done.Hashed) installed.Hashed[kv.Key] = kv.Value;
+                Log.Info("installed the " + label + " (" + Path.GetFileName(extra.Path) + ") in " + watch.ElapsedMilliseconds + " ms");
+            }
+        }
+
+        private static int CeilMb(long bytes) => bytes <= 0 ? 0 : (int)((bytes + 1024L * 1024 - 1) / (1024L * 1024));
+
+        /// <summary>The size of the save that will go back in - it is stored uncompressed.</summary>
+        private static long SaveBytes(Vita3kLayout layout, string titleId)
+        {
+            try { var save = SavePathFor(layout, titleId); return save != null && File.Exists(save) ? new FileInfo(save).Length : 0; }
+            catch { return 0; }
         }
 
         /// <summary>Give back everything a HALF-BUILT session took.

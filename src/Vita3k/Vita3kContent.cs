@@ -41,6 +41,13 @@ namespace LbIntegrations.Vita3k
         public string ContentId;
         public string Title;
 
+        /// <summary>TITLE - the full title, where Title prefers STITLE, the short one.</summary>
+        public string FullTitle;
+
+        /// <summary>APP_VER - the version an update brings the game to ("01.22"). VERSION is not it:
+        /// that is the version of the param.sfo itself, 01.00 on every update measured.</summary>
+        public string AppVer;
+
         /// <summary>The path inside the archive that the content starts at - "" when param.sfo is at
         /// sce_sys/param.sfo, or "foo/" when the archive wraps everything in a folder.</summary>
         public string Root = "";
@@ -102,6 +109,8 @@ namespace LbIntegrations.Vita3k
                         Category = sfo.FirstString("CATEGORY"),
                         ContentId = sfo.FirstString("CONTENT_ID"),
                         Title = sfo.FirstString("STITLE", "TITLE"),
+                        FullTitle = sfo.FirstString("TITLE", "STITLE"),
+                        AppVer = sfo.FirstString("APP_VER"),
                     };
                     if (string.IsNullOrWhiteSpace(content.TitleId))
                     { error = "the param.sfo carries no TITLE_ID"; return null; }
@@ -206,7 +215,10 @@ namespace LbIntegrations.Vita3k
                     try
                     {
                         bool done = false;
-                        if (IsZip(archivePath) && ArchiveHas(archivePath, content.Root + "sce_sys/package/work.bin")
+                        // An update carries NO licence of its own (measured: no work.bin in it) - it
+                        // runs under the app's, installed just before it.
+                        if (IsZip(archivePath)
+                            && (ArchiveHas(archivePath, content.Root + "sce_sys/package/work.bin") || InstalledLicence(content, vitaFs) != null)
                             && Environment.GetEnvironmentVariable(NoZipVariable) != "1")
                         {
                             // The licence the stage WILL hold: the native side extracts the package

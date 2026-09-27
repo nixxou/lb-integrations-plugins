@@ -59,6 +59,7 @@ namespace LbIntegrations.Probe
                 AnotherGame(layout, portable, root);
                 NeverEnded(layout, portable, root, vpk);
                 TheEmulatorsShare(layout);
+                UpdatesAndDlc(layout, portable, root);
                 OrphanedJunction(layout, portable, root);
 
                 Console.WriteLine();
@@ -975,6 +976,180 @@ namespace LbIntegrations.Probe
             Check("a game never measured gets the largest peak seen (3450 MB)", Reserve("PCSG00001") == 3450);
             Call("Vita3kWorkspace", "RememberEmulatorPeak", new object[] { layout, TitleId, 800 });
             Check("the latest session of a game is the one kept (920 MB)", Reserve(TitleId) == 920);
+        }
+
+        /// <summary>A REAL game with its real update and DLC, found beside it, installed and decrypted
+        /// onto a forged console under %TEMP% - no RAM disk (a forged install has no helper), nothing of
+        /// the real install touched. What it proves: the update decrypts under the GAME's licence (it
+        /// carries none), the DLC under its own, and each lands where Vita3K looks.</summary>
+        public static bool ExtrasReal(Assembly pluginAssembly, string romPath)
+        {
+            Console.WriteLine();
+            Console.WriteLine("-- Vita3K, a real game with its update and DLC  [writes to %TEMP%] " + new string('-', 1));
+            _asm = pluginAssembly;
+            _bad = 0;
+            var root = Path.Combine(Path.GetTempPath(), "lbip-vita3k-extras-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                if (!File.Exists(romPath ?? "")) { Console.WriteLine("  pass --rom <game archive>"); return false; }
+                const string variable = "LBIP_VITA3K_NATIVE";
+                if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(variable)))
+                {
+                    var repo = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(pluginAssembly.Location), "..", "..", "..", "..", ".."));
+                    var built = Path.Combine(repo, "build", "vita3k", "vita3k-install.dll");
+                    if (File.Exists(built)) Environment.SetEnvironmentVariable(variable, built);
+                }
+
+                var install = Path.Combine(root, "Emulators", "Nixx-Vita3K");
+                var portable = Path.Combine(install, "portable");
+                Directory.CreateDirectory(portable);
+                File.WriteAllText(Path.Combine(install, "Vita3K.exe"), "not really an executable");
+                var layout = Resolve(Path.Combine(install, "Vita3K.exe"));
+                TheFirmware(layout, portable);
+
+                string lastStep = null;
+                var steps = new List<string>();
+                var stepWatch = System.Diagnostics.Stopwatch.StartNew();
+                Action<string, double?> report = (step, fraction) =>
+                {
+                    if (step == null || step == lastStep) return;
+                    if (lastStep != null) steps.Add(string.Format("  {0,7} ms  {1}", stepWatch.ElapsedMilliseconds, lastStep));
+                    lastStep = step;
+                    stepWatch.Restart();
+                };
+                var t = _asm.GetType("LbIntegrations.Vita3k.Vita3kWorkspace", throwOnError: true);
+                var prepare = t.GetMethod("Prepare", BindingFlags.Public | BindingFlags.Static, null,
+                    new[] { layout.GetType(), typeof(string), typeof(string).MakeByRefType(), typeof(Action<string, double?>) }, null);
+                var a = new object[] { layout, romPath, null, report };
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                var titleId = prepare.Invoke(null, a) as string;
+                if (lastStep != null) steps.Add(string.Format("  {0,7} ms  {1}", stepWatch.ElapsedMilliseconds, lastStep));
+                Console.WriteLine();
+                Console.WriteLine("  what the progress window said:");
+                foreach (var line in steps) Console.WriteLine(line);
+                Console.WriteLine(string.Format("  {0,7} ms  in all", watch.ElapsedMilliseconds));
+                if (!Check("a console is prepared", titleId != null, a[2] as string)) return false;
+
+                var work = Path.Combine(portable, "work");
+                string Head(string file)
+                {
+                    var h = new byte[4];
+                    using (var f = File.OpenRead(file)) f.Read(h, 0, 4);
+                    return BitConverter.ToString(h);
+                }
+                var patchDir = Path.Combine(work, "ux0", "patch", titleId);
+                var patchEboot = Path.Combine(patchDir, "eboot.bin");
+                Check("the update is installed in ux0/patch", Directory.Exists(patchDir));
+                if (File.Exists(patchEboot))
+                {
+                    Console.WriteLine("  patch eboot " + Head(patchEboot));
+                    Check("and decrypted under the game's licence (its eboot.bin starts SCE\\0)", Head(patchEboot) == "53-43-45-00");
+                }
+                Check("with no sce_pfs left in it", !Directory.Exists(Path.Combine(patchDir, "sce_pfs")));
+                var addcont = Path.Combine(work, "ux0", "addcont", titleId);
+                var dlcs = Directory.Exists(addcont) ? Directory.GetDirectories(addcont) : new string[0];
+                foreach (var d in dlcs) Console.WriteLine("  DLC folder " + Path.GetFileName(d) + " - " + Directory.GetFiles(d, "*", SearchOption.AllDirectories).Length + " file(s)");
+                Check("the DLC is installed in ux0/addcont", dlcs.Length > 0);
+                Check("with its own licence in ux0/license", dlcs.All(d => File.Exists(Path.Combine(work, "ux0", "license", titleId,
+                      "UP9000-" + titleId + "_00-" + Path.GetFileName(d) + ".rif"))));
+                Check("and no sce_pfs left in it", dlcs.All(d => !Directory.Exists(Path.Combine(d, "sce_pfs"))));
+                var reference = File.ReadAllText(Path.Combine(portable, "work.reference"));
+                Check("all of it in the reference", reference.Contains("ux0/patch/" + titleId + "/") && reference.Contains("ux0/addcont/" + titleId + "/"));
+
+                Call("Vita3kWorkspace", "Teardown", new object[] { layout });
+                Console.WriteLine();
+                Console.WriteLine(_bad == 0 ? "  OK - the game, its update and its DLC, decrypted and in place" : "  " + _bad + " FAILURE(S)");
+                return _bad == 0;
+            }
+            catch (Exception ex) { Console.WriteLine("  EXCEPTION: " + (ex.InnerException ?? ex)); return false; }
+            finally { Scrub(root); }
+        }
+
+        // ── updates and DLC ──────────────────────────────────────────────────
+
+        private static void UpdatesAndDlc(object layout, string portable, string root)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  updates and DLC");
+
+            // A library laid out the four ways, with a decoy for each rule.
+            var roms = Path.Combine(root, "roms");
+            Directory.CreateDirectory(roms);
+            var game = ForgeContent(roms, "A Forged Game [PCSE00965].vpk", TitleId, "gd", "UP0000-PCSE00965_00-FORGEDGAME000000", "01.00", "A Forged Game");
+            ForgeContent(roms, "A Forged Game [PCSE00965] [PATCH] [v1.10].vpk", TitleId, "gp", "UP0000-PCSE00965_00-FORGEDGAME000000", "01.10", "A Forged Game");
+            ForgeContent(Path.Combine(roms, "UPDATE"), "update PCSE00965 1.20.vpk", TitleId, "gp", "UP0000-PCSE00965_00-FORGEDGAME000000", "01.20", "A Forged Game");
+            ForgeContent(Path.Combine(roms, "PCSE00965"), "costume.vpk", TitleId, "ac", "UP0000-PCSE00965_00-DLCCOSTUME000001", null, "A Costume");
+            ForgeContent(Path.Combine(roms, "PCSE00965"), "costume again.vpk", TitleId, "ac", "UP0000-PCSE00965_00-DLCCOSTUME000001", null, "A Costume");
+            ForgeContent(Path.Combine(roms, "Forged Game, The - Extras"), "level pack.vpk", TitleId, "ac", "UP0000-PCSE00965_00-DLCLEVELPACK0002", null, "A Level Pack");
+            ForgeContent(roms, "not really PCSE00965.vpk", "PCSE99999", "gp", "UP0000-PCSE99999_00-SOMETHINGELSE000", "09.99", "Another Game");
+            ForgeContent(Path.Combine(roms, "Unrelated"), "unrelated.vpk", TitleId, "ac", "UP0000-PCSE00965_00-NEVERFOUND000003", null, "Never Found");
+
+            var described = Call("Vita3kContent", "Describe", new object[] { game, null });
+            var candidates = (System.Collections.IList)Call("Vita3kExtras", "Candidates", new object[] { game, described, "A Forged Game" });
+            var names = new List<string>();
+            foreach (var c in candidates) names.Add(Path.GetFileName((string)c.GetType().GetField("Item1").GetValue(c)));
+            Console.WriteLine("            candidates: " + string.Join(", ", names));
+            Check("the update beside the game, by its name, is a candidate", names.Contains("A Forged Game [PCSE00965] [PATCH] [v1.10].vpk"));
+            Check("the one in UPDATE is", names.Contains("update PCSE00965 1.20.vpk"));
+            Check("everything in the folder named the title id is", names.Contains("costume.vpk") && names.Contains("costume again.vpk"));
+            Check("everything in a folder named the game is (\"Forged Game, The - Extras\" has another key: not)", !names.Contains("level pack.vpk"));
+            Check("a zip naming the id in a folder with no reason to be looked at is not", !names.Contains("unrelated.vpk"));
+            Check("the game itself is never a candidate", !names.Contains("A Forged Game [PCSE00965].vpk"));
+
+            // The folder named the game: its key has to be the game's.
+            var named = Path.Combine(roms, "A Forged Game - Extras");
+            Directory.Move(Path.Combine(roms, "Forged Game, The - Extras"), Path.Combine(roms, "Forged Game"));
+            candidates = (System.Collections.IList)Call("Vita3kExtras", "Candidates", new object[] { game, described, "A Forged Game" });
+            names.Clear();
+            foreach (var c in candidates) names.Add(Path.GetFileName((string)c.GetType().GetField("Item1").GetValue(c)));
+            Check("a folder named the game by its key (\"Forged Game\" = FORGEDGAME) is looked into", names.Contains("level pack.vpk"));
+
+            var extras = Call("Vita3kExtras", "For", new object[] { game, described, "A Forged Game" });
+            var update = extras.GetType().GetField("Update").GetValue(extras);
+            var addons = (System.Collections.IList)extras.GetType().GetField("Addons").GetValue(extras);
+            string AppVer(object e) => e == null ? null : (string)Field(Field(e, "Content"), "AppVer");
+            Check("of the two updates, the highest is kept (01.20)", AppVer(update) == "01.20");
+            Check("two DLC kept - one per CONTENT_ID, the decoy of another game set aside", addons.Count == 2);
+
+            // A launch installs them, before the reference.
+            var args = new object[] { layout, game, null };
+            Check("the game launches", Call("Vita3kWorkspace", "Prepare", args) as string == TitleId, args[2] as string);
+            var work = Path.Combine(portable, "work");
+            Check("the update is installed in ux0/patch", File.Exists(Path.Combine(work, "ux0", "patch", TitleId, "eboot.bin")));
+            Check("and it is 1.20's", File.ReadAllText(Path.Combine(work, "ux0", "patch", TitleId, "eboot.bin")).Contains("01.20"));
+            Check("the first DLC in ux0/addcont", Directory.Exists(Path.Combine(work, "ux0", "addcont", TitleId, "DLCCOSTUME000001")));
+            Check("the second too", Directory.Exists(Path.Combine(work, "ux0", "addcont", TitleId, "DLCLEVELPACK0002")));
+            var reference = File.ReadAllText(Path.Combine(portable, "work.reference"));
+            Check("and all of it is in the reference - none of it will come out as a save",
+                  reference.Contains("ux0/patch/" + TitleId + "/eboot.bin") && reference.Contains("ux0/addcont/" + TitleId + "/DLCLEVELPACK0002/"));
+            var marker = File.ReadAllText(Path.Combine(portable, "work.title")).Split('\t');
+            Check("the marker remembers which were installed", marker.Length >= 6 && marker[5].Length > 0);
+
+            // Same game, same extras: reused. A new DLC: rebuilt, with it.
+            var before = File.GetLastWriteTimeUtc(Path.Combine(portable, "work.reference"));
+            args = new object[] { layout, game, null };
+            Call("Vita3kWorkspace", "Prepare", args);
+            Check("relaunched with the same extras: nothing rebuilt", File.GetLastWriteTimeUtc(Path.Combine(portable, "work.reference")) == before);
+            ForgeContent(Path.Combine(roms, "DLC"), "bonus PCSE00965.vpk", TitleId, "ac", "UP0000-PCSE00965_00-DLCBONUS00000003", null, "A Bonus");
+            args = new object[] { layout, game, null };
+            Check("a DLC added since: it launches", Call("Vita3kWorkspace", "Prepare", args) as string == TitleId, args[2] as string);
+            Check("and the console was rebuilt with it", Directory.Exists(Path.Combine(work, "ux0", "addcont", TitleId, "DLCBONUS00000003")));
+        }
+
+        private static string ForgeContent(string dir, string name, string titleId, string category, string contentId,
+                                           string appVer, string title)
+        {
+            Directory.CreateDirectory(dir);
+            var staging = Path.Combine(dir, ".staging-" + Guid.NewGuid().ToString("N"));
+            Write(staging, "eboot.bin", category + " " + titleId + " " + (appVer ?? contentId));
+            var pairs = new List<(string, string)> { ("CATEGORY", category), ("TITLE_ID", titleId), ("CONTENT_ID", contentId), ("TITLE", title), ("STITLE", title) };
+            if (appVer != null) pairs.Add(("APP_VER", appVer));
+            Directory.CreateDirectory(Path.Combine(staging, "sce_sys"));
+            File.WriteAllBytes(Path.Combine(staging, "sce_sys", "param.sfo"), Psf(pairs.ToArray()));
+            var file = Path.Combine(dir, name);
+            ZipFile.CreateFromDirectory(staging, file);
+            Directory.Delete(staging, recursive: true);
+            return file;
         }
 
         // ── a session that stopped without ending ────────────────────────────
