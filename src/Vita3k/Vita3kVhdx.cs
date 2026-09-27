@@ -251,7 +251,8 @@ namespace LbIntegrations.Vita3k
 
                 // Room for it on the drive holding the folder: the game, its update and DLC as they
                 // unpack, and a margin for the file system.
-                long need = Vita3kContent.WorkingSizeBytes(romPath) + (extras?.Bytes ?? 0) + 256L * 1024 * 1024;
+                long transient = new[] { romPath }.Concat((extras ?? new VitaExtras()).All.Select(e => e.Path)).Max(p => Vita3kContent.TransientBytes(p));
+                long need = Vita3kContent.WorkingSizeBytes(romPath) + (extras?.Bytes ?? 0) + Math.Max(256L * 1024 * 1024, transient);
                 long free = new DriveInfo(Path.GetPathRoot(dir)).AvailableFreeSpace;
                 if (free < need)
                 { error = "not enough room in " + dir + ": " + need / (1024 * 1024) + " MB needed, " + free / (1024 * 1024) + " free"; return null; }

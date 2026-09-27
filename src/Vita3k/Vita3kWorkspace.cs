@@ -92,6 +92,7 @@ namespace LbIntegrations.Vita3k
         public string HostTitle;    // the game's title in LaunchBox
         public bool UseVhdx;        // --use-vhdx
         public string VhdxDir;      // --use-vhdx=<dir>, null for the emulator's own vhdx folder
+        public string GameId;       // the game's LaunchBox ID - its choice of update and DLC
     }
 
     internal static class Vita3kWorkspace
@@ -543,7 +544,10 @@ namespace LbIntegrations.Vita3k
                 // ITS UPDATE AND DLC, found before anything else: they decide whether the tree there
                 // is still the right one, and how big a new one has to be. See Vita3kExtras.
                 report?.Invoke("Looking for updates and DLC...", null);
-                var extras = Vita3kExtras.For(romPath, content, launch.HostTitle);
+                // A .pkg's licence is looked for in this emulator's zrif folder - see Vita3kLicences.
+                Vita3kLicences.InstallDir = layout.InstallDir;
+                var extras = Vita3kExtras.For(romPath, content, launch.HostTitle, layout.InstallDir,
+                                              Vita3kExtrasChoice.Load(layout.InstallDir, launch.GameId));
                 var extrasKey = extras.Key();
 
                 // --use-vhdx SUPPLANTS THE RAM DISK - when it can. Whatever stops it is logged and
@@ -584,15 +588,19 @@ namespace LbIntegrations.Vita3k
                 Teardown(layout);
 
                 // EVERYTHING THE DISK WILL HOLD: the firmware, the game, its update, its DLC, the save
-                // that goes back in - and the margin for what the session writes.
+                // that goes back in - and the margin for what the session writes. What an install needs
+                // only WHILE it runs (a .pkg's largest item) is freed before the save and the session,
+                // so it shares their room: the larger of the two, not both.
                 int baseMb = BaseSizeMb(layout);
                 int gameMb = CeilMb(Vita3kContent.WorkingSizeBytes(romPath));
                 int updateMb = CeilMb(extras.Update?.Bytes ?? 0);
                 int dlcMb = CeilMb(extras.Addons.Sum(a => Math.Max(0, a.Bytes)));
                 int saveMb = CeilMb(SaveBytes(layout, content.TitleId));
-                int sizeMb = baseMb + gameMb + updateMb + dlcMb + saveMb + marginMb;
+                int transientMb = CeilMb(new[] { romPath }.Concat(extras.All.Select(e => e.Path)).Max(p => Vita3kContent.TransientBytes(p)));
+                int sizeMb = baseMb + gameMb + updateMb + dlcMb + Math.Max(saveMb + marginMb, transientMb);
                 Log.Info("the console needs " + sizeMb + " MB: firmware " + baseMb + " + game " + gameMb + " + update " + updateMb
-                         + " + DLC " + dlcMb + " + save " + saveMb + " + margin " + marginMb);
+                         + " + DLC " + dlcMb + " + the larger of save " + saveMb + " + margin " + marginMb
+                         + " and what an install needs while it runs (" + transientMb + ")");
 
                 report?.Invoke("Preparing a fresh console...", null);
                 var root = OpenWorkingTree(layout, content.TitleId, sizeMb, report, noRamDisk, vita3kRamMb);

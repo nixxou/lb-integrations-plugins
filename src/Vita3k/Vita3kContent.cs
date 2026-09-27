@@ -20,8 +20,12 @@
 // That is also exactly where updates and DLC will plug in later, which is the second reason to own
 // this step rather than borrow it.
 //
-// NOT HANDLED, and said rather than silently mishandled: themes (category ac with a theme.xml),
-// .pkg archives, which need a zRIF key, and .vci. Each is a different shape of install.
+// .PKG TOO - Sony's store package (VitaPkg: its outer layer; Vita3kLicences: the licence it never
+// carries, which the user provides). Measured 28/09 against Vita3K's own install of the same .pkg and
+// zRIF: 40 files of 40, byte for byte, and the same .rif.
+//
+// NOT HANDLED, and said rather than silently mishandled: themes (category ac with a theme.xml, or a
+// .pkg of type theme) and .vci. Each is a different shape of install.
 
 using System;
 using System.Collections.Generic;
@@ -85,6 +89,12 @@ namespace LbIntegrations.Vita3k
             {
                 if (string.IsNullOrWhiteSpace(archivePath) || !File.Exists(archivePath))
                 { error = "there is no archive at " + archivePath; return null; }
+
+                if (IsPkg(archivePath))
+                {
+                    var pkg = VitaPkg.Open(archivePath, out error);
+                    return pkg?.Describe(out error);
+                }
 
                 using var archive = ArchiveFactory.Open(archivePath);
                 foreach (var entry in archive.Entries)
@@ -181,7 +191,12 @@ namespace LbIntegrations.Vita3k
                 }
 
                 int files;
-                if (HasPfs(archivePath, content.Root))
+                if (IsPkg(archivePath))
+                {
+                    files = InstallPkg(archivePath, content, relative, destination, vitaFs, report, out error);
+                    if (files < 0) return null;
+                }
+                else if (HasPfs(archivePath, content.Root))
                 {
                     // ENCRYPTED: unpacked whole into a staging copy - sce_pfs/ and the licence are
                     // the decryptor's input - then decrypted INTO the destination, and the staging
@@ -278,7 +293,7 @@ namespace LbIntegrations.Vita3k
 
                 // Vita3K copies the licence for an app or an add-on, never for a patch: a patch runs
                 // under the licence of the app it patches.
-                if (!content.IsPatch && !PlaceLicence(archivePath, content, vitaFs, out error)) return null;
+                if (!content.IsPatch && !IsPkg(archivePath) && !PlaceLicence(archivePath, content, vitaFs, out error)) return null;
 
                 // AN UPDATE ENDS UP IN THE APP ITSELF. Vita3K has no patch overlay at run time: app0:
                 // is ux0/app/<id> and nothing else (io.cpp, translate_path), and its own install
@@ -631,6 +646,106 @@ namespace LbIntegrations.Vita3k
         /// happen.</summary>
         public static long WorkingSizeBytes(string archivePath) => UncompressedSize(archivePath);
 
+        /// <summary>What installing this archive needs ON TOP of <see cref="WorkingSizeBytes"/>, and only
+        /// WHILE it installs: nothing for a zip (decrypted straight from it), the largest item for a .pkg
+        /// - its outer layer goes into a staging copy spent as the decrypt goes, so at worst the whole
+        /// package plus the file being decrypted. Freed before the save goes back in and before the
+        /// session writes a thing, so it SHARES the room kept for those (Mehdi's point): the console is
+        /// sized with the larger of the two, not both. Read from the item table - a few KB, no file.</summary>
+        public static long TransientBytes(string archivePath)
+        {
+            if (!IsPkg(archivePath)) return 0;
+            try { return Math.Max(0, VitaPkg.Open(archivePath, out _)?.LargestItem() ?? 0); }
+            catch { return 0; }
+        }
+
+        /// <summary>The room a .pkg's install needs at its peak: the package plus its largest item.</summary>
+        private static long PkgWorkingSize(string pkgPath)
+        {
+            try
+            {
+                var pkg = VitaPkg.Open(pkgPath, out _);
+                return new FileInfo(pkgPath).Length + Math.Max(0, pkg?.LargestItem() ?? 0);
+            }
+            catch { return 0; }
+        }
+
+        public static bool IsPkg(string path) => string.Equals(Path.GetExtension(path ?? ""), ".pkg", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>A .pkg into the tree: its outer layer off into a staging copy beside the tree, the
+        /// licence found (the app's own for an update - an update carries none, as a zip's does not),
+        /// the PFS decrypted into <paramref name="destination"/> with every file hashed as it is written,
+        /// the copy spent as it goes, and the licence placed where Vita3K looks. The number of files, or
+        /// -1 with <paramref name="error"/>.</summary>
+        private static int InstallPkg(string pkgPath, VitaContent content, string relative, string destination, string vitaFs,
+                                      Action<string, double?> report, out string error)
+        {
+            var pkg = VitaPkg.Open(pkgPath, out error);
+            if (pkg == null) return -1;
+            var stagingRoot = Path.Combine(StagingParent(vitaFs), StagingPrefix + Guid.NewGuid().ToString("N"));
+            var staging = Path.Combine(stagingRoot, content.TitleId);
+            try
+            {
+                Directory.CreateDirectory(stagingRoot);
+                byte[] rif = null;
+                string licence;
+                if (content.IsPatch)
+                {
+                    licence = InstalledLicence(content, vitaFs);
+                    if (licence == null) { error = "the update of " + content.TitleId + " runs under its game's licence, and the game has none"; return -1; }
+                }
+                else
+                {
+                    rif = Vita3kLicences.Find(pkgPath, pkg.ContentId, out var foundBy, out error);
+                    if (rif == null) return -1;
+                    Log.Info("licence of " + pkg.ContentId + ": " + foundBy);
+                    licence = Path.Combine(stagingRoot, "licence.rif");
+                    File.WriteAllBytes(licence, rif);
+                }
+
+                long need = PkgWorkingSize(pkgPath);
+                long room = FreeBytes(stagingRoot);
+                if (room >= 0 && room < need + 64L * 1024 * 1024)
+                {
+                    error = "not enough room on the working disk for " + Name(content) + " (" + (need / (1024 * 1024)) + " MB needed, "
+                            + (room / (1024 * 1024)) + " MB free)";
+                    return -1;
+                }
+
+                report?.Invoke("Unpacking " + Name(content) + "...", 0);
+                if (!pkg.Extract(staging, f => report?.Invoke(null, f), out error)) return -1;
+
+                if (Directory.Exists(Path.Combine(staging, "sce_pfs")))
+                {
+                    var prefix = relative.Replace('\\', '/').TrimEnd('/') + "/";
+                    Action<string, long, string> onFile = (path, size, sha1) => content.Hashed[prefix + path] = Entry(size, sha1);
+                    report?.Invoke("Decrypting " + Name(content) + "...", 0);
+                    if (!Vita3kNative.DecryptApp(staging, licence, destination, f => report?.Invoke(null, f), onFile,
+                                                 consumeSource: true, out error)) return -1;
+                }
+                else
+                {
+                    // NO PFS: nothing to decrypt - the items are the content.
+                    Directory.CreateDirectory(Path.GetDirectoryName(destination));
+                    if (Directory.Exists(destination)) Directory.Delete(destination, recursive: true);
+                    Directory.Move(staging, destination);
+                }
+
+                if (rif != null)
+                {
+                    var licences = Path.Combine(vitaFs, "ux0", "license", content.TitleId);
+                    Directory.CreateDirectory(licences);
+                    File.WriteAllBytes(Path.Combine(licences, pkg.ContentId + ".rif"), rif);
+                    content.Written.Add("ux0/license/" + content.TitleId);
+                    content.Hashed["ux0/license/" + content.TitleId + "/" + pkg.ContentId + ".rif"]
+                        = Entry(rif.Length, Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(rif)));
+                }
+                return Directory.Exists(destination) ? Directory.GetFiles(destination, "*", SearchOption.AllDirectories).Length : 0;
+            }
+            catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; return -1; }
+            finally { TryDelete(stagingRoot); }
+        }
+
         /// <summary>Set to 1 by the probe to exercise the unpacking fallback. Nothing else sets it.</summary>
         public const string NoZipVariable = "LBIP_VITA3K_NO_ZIP";
 
@@ -652,6 +767,7 @@ namespace LbIntegrations.Vita3k
         {
             try
             {
+                if (IsPkg(archivePath)) return new FileInfo(archivePath).Length;   // not a zip: its size is its content
                 using var archive = ArchiveFactory.Open(archivePath);
                 long total = 0;
                 foreach (var entry in archive.Entries)
@@ -663,7 +779,7 @@ namespace LbIntegrations.Vita3k
 
         /// <summary>The extensions this plugin will install. Kept in one place because the catalogue
         /// row publishes them and the launch path checks them.</summary>
-        public static readonly string[] Extensions = { ".vpk", ".zip" };
+        public static readonly string[] Extensions = { ".vpk", ".zip", ".pkg" };
 
         public static bool Installable(string path)
         {

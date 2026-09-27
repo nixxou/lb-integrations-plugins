@@ -13,9 +13,13 @@
 // param.sfo says so - same TITLE_ID as the game, CATEGORY gp (an update) or ac (a DLC). File and
 // folder names are somebody's naming; the param.sfo is Sony's.
 //
+// And a fifth: what the import found in the same batch of files, recorded in the emulator's folder
+// (Vita3kExtrasIndex) - for extras kept nowhere the four rules look.
+//
 // WHICH: every DLC, one per CONTENT_ID; and ONE update, the highest APP_VER. Vita updates are
 // cumulative - Sony's server only ever serves the latest, and a patch replaces ux0/patch/<id> rather
-// than adding to it - so 1.22 alone is the game at 1.22.
+// than adding to it - so 1.22 alone is the game at 1.22. UNLESS the game's options say otherwise
+// (Vita3kExtrasChoice): another update, none, some DLC left out.
 //
 // Everything found, kept and set aside is written to the log, with the reason: the one place
 // somebody can see why a DLC did not show up.
@@ -35,6 +39,13 @@ namespace LbIntegrations.Vita3k
         public VitaContent Content;
         public long Bytes;          // uncompressed, for sizing the RAM disk
         public string FoundBy;      // which rule nominated it
+    }
+
+    /// <summary>Everything found for a game, nothing chosen: updates highest first, DLC one per CONTENT_ID.</summary>
+    internal sealed class FoundExtras
+    {
+        public List<VitaExtra> Updates = new List<VitaExtra>();
+        public List<VitaExtra> Addons = new List<VitaExtra>();
     }
 
     internal sealed class VitaExtras
@@ -73,18 +84,31 @@ namespace LbIntegrations.Vita3k
         /// full of unrelated games.</summary>
         private const int MaxCandidates = 400;
 
-        /// <summary>Find, evaluate and choose the updates and DLC of <paramref name="game"/>.</summary>
-        public static VitaExtras For(string romPath, VitaContent game, string hostTitle)
+        /// <summary>Find, evaluate and choose the updates and DLC of <paramref name="game"/>: every one
+        /// found, then the choice - <paramref name="choice"/>'s, or the automatic one.</summary>
+        public static VitaExtras For(string romPath, VitaContent game, string hostTitle, string installDir = null,
+                                     Vita3kExtrasChoice choice = null)
+            => Choose(Evaluate(romPath, game, hostTitle, installDir), choice);
+
+        /// <summary>Everything that belongs to the game: every valid update, every DLC (one per
+        /// CONTENT_ID) - nothing chosen yet.</summary>
+        public static FoundExtras Evaluate(string romPath, VitaContent game, string hostTitle, string installDir = null)
         {
-            var chosen = new VitaExtras();
+            var found = new FoundExtras();
             try
             {
-                if (game?.TitleId == null || string.IsNullOrWhiteSpace(romPath)) return chosen;
+                if (game?.TitleId == null || string.IsNullOrWhiteSpace(romPath)) return found;
                 var candidates = Candidates(romPath, game, hostTitle);
+
+                // THE IMPORT'S FINDINGS, after the four rules: a file they already nominated keeps its rule.
+                var nominated = new HashSet<string>(candidates.Select(c => Full(c.path)), StringComparer.OrdinalIgnoreCase) { Full(romPath) };
+                // Hints: each is read below and kept only when its param.sfo says it is the game's.
+                foreach (var path in Vita3kExtrasIndex.For(installDir, game.TitleId, romPath))
+                    if (nominated.Add(Full(path))) candidates.Add((path, "found with it at import"));
+
                 Log.Info("updates and DLC of " + game.TitleId + ": " + candidates.Count + " candidate archive(s) around "
                          + System.IO.Path.GetDirectoryName(romPath));
 
-                var updates = new List<VitaExtra>();
                 var addons = new Dictionary<string, VitaExtra>(StringComparer.OrdinalIgnoreCase);
                 foreach (var (path, rule) in candidates)
                 {
@@ -101,7 +125,7 @@ namespace LbIntegrations.Vita3k
                     };
                     if (content.IsPatch)
                     {
-                        updates.Add(extra);
+                        found.Updates.Add(extra);
                         Log.Info("  update " + (content.AppVer ?? "?") + ": " + name + " [" + rule + "], " + Mb(extra.Bytes));
                     }
                     else if (content.IsAddon)
@@ -114,19 +138,45 @@ namespace LbIntegrations.Vita3k
                     }
                     else Log.Info("  set aside " + name + " [" + rule + "] - category " + (content.Category ?? "?") + " is neither an update nor a DLC");
                 }
-
-                // ONE update: the highest APP_VER - they are cumulative.
-                chosen.Update = updates.OrderByDescending(u => VersionOf(u.Content.AppVer)).FirstOrDefault();
-                foreach (var u in updates)
-                    if (u != chosen.Update)
-                        Log.Info("  set aside update " + (u.Content.AppVer ?? "?") + " (" + System.IO.Path.GetFileName(u.Path)
-                                 + ") - " + (chosen.Update.Content.AppVer ?? "?") + " is higher, and updates are cumulative");
-                chosen.Addons = addons.Values.OrderBy(a => a.Content.ContentId, StringComparer.Ordinal).ToList();
-
-                Log.Info("  kept: " + (chosen.Update != null ? "update " + chosen.Update.Content.AppVer : "no update")
-                         + ", " + chosen.Addons.Count + " DLC" + (chosen.Addons.Count > 0 ? " - " + Mb(chosen.Bytes) + " in all" : ""));
+                found.Updates = found.Updates.OrderByDescending(u => VersionOf(u.Content.AppVer)).ToList();
+                found.Addons = addons.Values.OrderBy(a => a.Content.ContentId, StringComparer.Ordinal).ToList();
             }
             catch (Exception ex) { Log.Warn("could not look for updates and DLC", ex); }
+            return found;
+        }
+
+        /// <summary>What is installed with the game: <paramref name="choice"/>'s update and DLC when
+        /// there is one - an update it names that is not found falls back to the automatic choice, and
+        /// says so - otherwise the highest update and every DLC.</summary>
+        public static VitaExtras Choose(FoundExtras found, Vita3kExtrasChoice choice)
+        {
+            var chosen = new VitaExtras();
+            if (choice != null && choice.NoUpdate) chosen.Update = null;
+            else if (choice?.UpdatePath != null)
+            {
+                chosen.Update = found.Updates.FirstOrDefault(u => string.Equals(Full(u.Path), Full(choice.UpdatePath), StringComparison.OrdinalIgnoreCase));
+                if (chosen.Update == null)
+                {
+                    Log.Warn("  the update chosen in the game's options (" + System.IO.Path.GetFileName(choice.UpdatePath) + ") is not found - the highest one instead");
+                    chosen.Update = found.Updates.FirstOrDefault();
+                }
+            }
+            else chosen.Update = found.Updates.FirstOrDefault();   // the highest - they are cumulative
+
+            foreach (var u in found.Updates)
+                if (u != chosen.Update)
+                    Log.Info("  set aside update " + (u.Content.AppVer ?? "?") + " (" + System.IO.Path.GetFileName(u.Path) + ") - "
+                             + (choice != null && (choice.NoUpdate || choice.UpdatePath != null)
+                                ? "not the one chosen in the game's options"
+                                : (chosen.Update?.Content.AppVer ?? "?") + " is higher, and updates are cumulative"));
+
+            chosen.Addons = found.Addons.Where(a => choice == null || !choice.LeftOut.Contains(a.Content.ContentId ?? "")).ToList();
+            foreach (var a in found.Addons.Except(chosen.Addons))
+                Log.Info("  set aside DLC " + (a.Content.Title ?? a.Content.ContentId) + " - left out in the game's options");
+
+            Log.Info("  kept: " + (chosen.Update != null ? "update " + chosen.Update.Content.AppVer : "no update")
+                     + ", " + chosen.Addons.Count + " DLC" + (chosen.Addons.Count > 0 ? " - " + Mb(chosen.Bytes) + " in all" : "")
+                     + (choice != null ? " (the game's options)" : ""));
             return chosen;
         }
 

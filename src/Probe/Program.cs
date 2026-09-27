@@ -559,6 +559,8 @@ namespace LbIntegrations.Probe
             // where --use-vhdx may keep its disks: --vita3k-vhdx-folder --emu <Vita3K.exe of a real install>
             if (Has(args, "--vita3k-vhdx-folder")) return Vita3kCheck.VhdxFolder(asm, Arg(args, "--emu")) ? 0 : 1;
             // the bases --use-vhdx builds: --vita3k-vhdx-base --emu <Vita3K.exe> --rom <game>. ATTACHES DISKS.
+            // a .pkg against Vita3K's own install of it: --vita3k-pkg --pkg <file> --zrif <key> --oracle <fs folder>
+            if (Has(args, "--vita3k-pkg")) return Vita3kCheck.Pkg(asm, Arg(args, "--pkg"), Arg(args, "--zrif"), Arg(args, "--oracle")) ? 0 : 1;
             if (Has(args, "--vita3k-vhdx-base")) return Vita3kCheck.VhdxBase(asm, Arg(args, "--emu"), Arg(args, "--rom")) ? 0 : 1;
             // whole sessions on a VHDX: --vita3k-vhdx-session --lb <LaunchBox root> --rom <game>. ATTACHES DISKS.
             if (Has(args, "--vita3k-vhdx-session")) return Vita3kCheck.VhdxSession(asm, Arg(args, "--lb"), Arg(args, "--rom")) ? 0 : 1;

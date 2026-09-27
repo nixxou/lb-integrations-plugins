@@ -107,7 +107,7 @@ namespace LbIntegrations.Vita3k
 
         /// <summary>Our install folder, and every emulator entry carrying our name - an install moved
         /// somewhere else is still ours.</summary>
-        private static IEnumerable<string> KnownExecutables()
+        internal static IEnumerable<string> KnownExecutables()
         {
             var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             try
@@ -152,7 +152,7 @@ namespace LbIntegrations.Vita3k
         /// is a folder nobody asked for.</summary>
         private static IEnumerable<LbCatalogEmulator> MetadataRows()
         {
-            const string extensions = ".vpk; .zip";
+            const string extensions = ".vpk; .zip; .pkg";
 
             yield return new LbCatalogEmulator
             {
@@ -602,7 +602,7 @@ namespace LbIntegrations.Vita3k
             catch { return fullPath; }
         }
 
-        private static string ResolveFullPath(string maybeRelative)
+        internal static string ResolveFullPath(string maybeRelative)
         {
             try
             {

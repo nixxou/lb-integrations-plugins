@@ -335,7 +335,8 @@ namespace LbIntegrations.Vita3k
                     titleId = Vita3kWorkspace.Prepare(layout, ResolveFullPath(rom), out error,
                                                       (step, fraction) => window?.Report(step, fraction),
                                                       new Vita3kLaunch { NoRamDisk = noRamDisk, MarginMb = margin, Vita3kRamMb = vitaRam, HostTitle = gameTitle,
-                                                                          UseVhdx = useVhdx, VhdxDir = vhdxDir });
+                                                                          UseVhdx = useVhdx, VhdxDir = vhdxDir,
+                                                                          GameId = Safe(() => args?.GameBeingLaunched?.Id) });
                 }
                 if (titleId == null)
                 {

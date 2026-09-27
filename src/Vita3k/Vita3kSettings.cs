@@ -36,6 +36,17 @@ namespace LbIntegrations.Vita3k
             set => Write(BypassVitaImportKey, value ? "true" : "false");
         }
 
+        public const string CleanImportListKey = "CleanImportList";
+
+        /// <summary>In that same wizard, put the game list right after the scan: titles from the
+        /// param.sfo, updates and DLC recorded for their game and out of the list, non-games out - see
+        /// Vita3kImportCleanup. ON unless turned off.</summary>
+        public static bool CleanImportList
+        {
+            get => Bool(CleanImportListKey, true);
+            set => Write(CleanImportListKey, value ? "true" : "false");
+        }
+
         public static string SettingsPath
         {
             get

@@ -38,6 +38,11 @@
 // ON BY DEFAULT, and turned off in the pack's configuration window (Tools > Nixx Integration Plugins
 // Configuration..., the Vita3K tab): see Vita3kSettings.BypassVitaImport, read at each import.
 //
+// AND THE LIST IS PUT RIGHT once the scan has filled it (Vita3kImportCleanup): titles from the
+// param.sfo, updates and DLC out of the list and into the emulator's index, what is not a Vita game
+// out. The list fills AFTER its page appears (measured), so the cleanup waits until it has stopped
+// changing. Its own setting (Vita3kSettings.CleanImportList), on by default.
+//
 // Only inside LaunchBox: Big Box has no such wizard, LiteBox its own import. Lines are "[import] ..."
 // in vita3k.log - one for each swap and each restore.
 
@@ -68,6 +73,9 @@ namespace LbIntegrations.Vita3k
         private static string _swappedPlatform, _swappedScrapeAs;
 
         private static bool Swapped => _swappedPlatform != null || _swappedScrapeAs != null;
+
+        /// <summary>The game list already put right for the scan that filled it - a new scan clears it.</summary>
+        private static object _cleanedList;
 
         public static void Install()
         {
@@ -120,8 +128,9 @@ namespace LbIntegrations.Vita3k
                 if (!(sender is System.Windows.Window window) || !IsWizard(window.DataContext)) return;
                 _platformPage = null;
                 _swappedPlatform = _swappedScrapeAs = null;
+                _cleanedList = null;
                 if (window.DataContext is INotifyPropertyChanged notify)
-                    notify.PropertyChanged += (s, a) => PageShown(s);
+                    notify.PropertyChanged += (s, a) => PageShown(window, s);
             }
             catch (Exception ex) { Log.Warn("[import] wizard opened", ex); }
         }
@@ -129,16 +138,53 @@ namespace LbIntegrations.Vita3k
         /// <summary>A page change: the platform page is kept when it shows - and if the user came back
         /// to it mid-swap, the swap is undone there (no record exists yet; the next scan swaps again),
         /// so that it never shows the stand-in.</summary>
-        private static void PageShown(object wizard)
+        private static void PageShown(System.Windows.Window window, object wizard)
         {
             try
             {
                 var page = CurrentPage(wizard);
-                if (page?.GetType().Name != PlatformPage) return;
-                _platformPage = page;
-                if (Swapped) Undo(page, "back on the platform page");
+                var name = page?.GetType().Name;
+                if (name == PlatformPage)
+                {
+                    _platformPage = page;
+                    if (Swapped) Undo(page, "back on the platform page");
+                }
+                else if (name == GameListPage && Swapped && !ReferenceEquals(_cleanedList, page) && Vita3kSettings.CleanImportList)
+                {
+                    _cleanedList = page;
+                    WhenFilled(window, page);
+                }
             }
             catch (Exception ex) { Log.Warn("[import] page change", ex); }
+        }
+
+        /// <summary>The cleanup, once the list has stopped filling: 500 ms without a change. Not from
+        /// inside the list's own notification - WPF refuses a collection changed while it notifies.</summary>
+        private static void WhenFilled(System.Windows.Window window, object gameList)
+        {
+            object games = null;
+            try { games = gameList.GetType().GetProperty("Games")?.GetValue(gameList); } catch { }
+            if (!(games is System.Collections.Specialized.INotifyCollectionChanged changes)) return;
+
+            var timer = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background, window.Dispatcher)
+            { Interval = TimeSpan.FromMilliseconds(500) };
+            System.Collections.Specialized.NotifyCollectionChangedEventHandler restart = (_, _) => { timer.Stop(); timer.Start(); };
+            changes.CollectionChanged += restart;
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop();
+                changes.CollectionChanged -= restart;
+                try { Vita3kImportCleanup.Run(new WindowOwner(window), gameList); }
+                catch (Exception ex) { Log.Warn("[import] could not put the list right", ex); }
+            };
+            timer.Start();
+        }
+
+        /// <summary>A WPF window as the owner of a WinForms dialog.</summary>
+        private sealed class WindowOwner : System.Windows.Forms.IWin32Window
+        {
+            public WindowOwner(System.Windows.Window window) { Handle = new System.Windows.Interop.WindowInteropHelper(window).Handle; }
+            public IntPtr Handle { get; }
         }
 
         /// <summary>The wizard's page on show: ActivePageViewModel (measured), or failing that the first
@@ -188,6 +234,7 @@ namespace LbIntegrations.Vita3k
         /// platform or by the scrape-as.</summary>
         private static void BeforeScan()
         {
+            _cleanedList = null;                    // the scan fills the list again
             var page = _platformPage;
             if (page == null || Swapped) return;   // no platform page seen / still swapped from a scan before
             var platform = Get(page, "Platform");

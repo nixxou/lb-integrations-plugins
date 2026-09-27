@@ -29,6 +29,7 @@ namespace LbIntegrations.Vita3k
             try
             {
                 if (Vita3kSettings.BypassVitaImport != ours.Bypass) Vita3kSettings.BypassVitaImport = ours.Bypass;
+                if (Vita3kSettings.CleanImportList != ours.Clean) Vita3kSettings.CleanImportList = ours.Clean;
                 return null;
             }
             catch (Exception ex) { return "the settings could not be written: " + ex.Message; }
@@ -37,16 +38,17 @@ namespace LbIntegrations.Vita3k
 
     internal sealed class Vita3kSettingsPage : UserControl
     {
-        private readonly CheckBox _bypass;
+        private readonly CheckBox _bypass, _clean;
 
         public bool Bypass => _bypass.Checked;
+        public bool Clean => _clean.Checked;
 
         public Vita3kSettingsPage()
         {
             AutoScroll = true;
             Padding = new Padding(12);
 
-            var import = new GroupBox { Text = "LaunchBox's Import ROM Files wizard", Dock = DockStyle.Top, Height = 150, Padding = new Padding(10) };
+            var import = new GroupBox { Text = "LaunchBox's Import ROM Files wizard", Dock = DockStyle.Top, Height = 250, Padding = new Padding(10) };
             _bypass = new CheckBox
             {
                 Text = "Import Vita games as ROM files (bypass LaunchBox's own PS Vita import)",
@@ -60,8 +62,24 @@ namespace LbIntegrations.Vita3k
                      + "rebuilt for every session. When this is on, the wizard scans your .zip / .vpk files like any "
                      + "other ROMs; the platform, its metadata and its images stay \"Sony Playstation Vita\".",
             };
+            _clean = new CheckBox
+            {
+                Text = "Put the game list right before importing",
+                AutoSize = true, Location = new Point(32, 146), Checked = Vita3kSettings.CleanImportList,
+            };
+            var explainClean = new Label
+            {
+                AutoSize = false, Location = new Point(50, 170), Size = new Size(522, 70), ForeColor = SystemColors.GrayText,
+                Text = "Each file is read: games are named from their param.sfo (without the trademark signs), updates "
+                     + "and DLC are taken out of the list and recorded for their game, so a launch finds them, and "
+                     + "anything that is not a Vita game is taken out. You can still change the list before Finish.",
+            };
+            _clean.Enabled = _bypass.Checked;
+            _bypass.CheckedChanged += (_, _) => _clean.Enabled = _bypass.Checked;
             import.Controls.Add(_bypass);
             import.Controls.Add(explain);
+            import.Controls.Add(_clean);
+            import.Controls.Add(explainClean);
 
             var where = new Label
             {

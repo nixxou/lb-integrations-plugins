@@ -1,8 +1,9 @@
 // The options window, opened from the right-click entry on one game or a selection.
 //
-// TABS FROM THE START: "Session" now (where the console lives - RAM disk, disk, VHDX - and the sizes
-// that go with it), Vita3K's own settings later (resolution and the like). Each tab is built by its
-// own method and reads and writes its own part of the options.
+// TABS FROM THE START: "Session" (where the console lives - RAM disk, disk, VHDX - and the sizes that
+// go with it), "Updates & DLC" (Vita3kOptionsForm.Extras.cs: which of them the game is launched with),
+// Vita3K's own settings later (resolution and the like). Each tab is built by its own method and reads
+// and writes its own part of the options.
 //
 // A SELECTION THAT DOES NOT AGREE: the games are grouped by identical options; when there is more than
 // one group, a combo box names each ("KILLALLZOMBIES <and 3 others>") and the one chosen is what the
@@ -20,13 +21,14 @@ using Unbroken.LaunchBox.Plugins.Data;
 
 namespace LbIntegrations.Vita3k
 {
-    internal sealed class Vita3kOptionsForm : Form
+    internal sealed partial class Vita3kOptionsForm : Form
     {
         /// <summary>One selected game: its lines, and what they give.</summary>
         internal sealed class Entry
         {
             public IGame Game;
             public string Title, Rom, Own, Inherited;
+            public string RomFull, GameId, InstallDir;   // for the Updates & DLC tab
             public Vita3kOptions Options;
             public bool Inherits => string.IsNullOrWhiteSpace(Own);
             public string Effective => Inherits ? Inherited : Own;
@@ -84,6 +86,7 @@ namespace LbIntegrations.Vita3k
             // ── the tabs
             var tabs = new TabControl { Dock = DockStyle.Fill };
             tabs.TabPages.Add(SessionTab());
+            tabs.TabPages.Add(ExtrasTab(tabs));
 
             // ── the bottom: what OK will do, and the buttons
             var bottom = new Panel { Dock = DockStyle.Bottom, Height = 84, Padding = new Padding(12, 6, 12, 8) };
@@ -271,6 +274,7 @@ namespace LbIntegrations.Vita3k
         {
             var o = Read(out var problem);
             if (o == null) { MessageBox.Show(this, problem, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+            if (!ApplyExtras()) return;   // the Updates & DLC tab: backed out of its warning, nothing applied
 
             if (_games.Count > 1
                 && MessageBox.Show(this, "These options will be applied to all " + _games.Count + " selected games.\n\n"

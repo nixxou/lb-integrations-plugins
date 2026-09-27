@@ -1065,7 +1065,7 @@ namespace LbIntegrations.Probe
                 var described = new object[] { romPath, null };
                 var content = Call("Vita3kContent", "Describe", described);
                 if (!Check("the game is described", content != null, described[1] as string)) return false;
-                var extras = Call("Vita3kExtras", "For", new object[] { romPath, content, null });
+                var extras = Call("Vita3kExtras", "For", new object[] { romPath, content, null, null, null });
                 var id = (string)Field(content, "TitleId");
 
                 var watch = System.Diagnostics.Stopwatch.StartNew();
@@ -1580,6 +1580,156 @@ namespace LbIntegrations.Probe
             }
         }
 
+        /// <summary>A .pkg installed our way against the same .pkg installed by Vita3K itself - the oracle.
+        /// The zRIF is given on the command line and NEVER kept anywhere: this repository ships no licence.
+        /// --vita3k-pkg --pkg &lt;file.pkg&gt; --zrif &lt;zRIF&gt; --oracle &lt;a Vita3K fs folder it was installed into&gt;</summary>
+        public static bool Pkg(Assembly pluginAssembly, string pkgPath, string zrif, string oracle)
+        {
+            Console.WriteLine();
+            Console.WriteLine("-- Vita3K, a .pkg against Vita3K's own install of it " + new string('-', 11));
+            _asm = pluginAssembly;
+            _bad = 0;
+            if (!File.Exists(pkgPath ?? "") || string.IsNullOrWhiteSpace(zrif) || !Directory.Exists(oracle ?? ""))
+            { Console.WriteLine("  pass --pkg <file.pkg> --zrif <zRIF> --oracle <fs folder>"); return false; }
+            var temp = Path.Combine(Path.GetTempPath(), "lbip-pkg-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var pkgType = _asm.GetType("LbIntegrations.Vita3k.VitaPkg", throwOnError: true);
+                var open = new object[] { pkgPath, null };
+                var pkg = pkgType.GetMethod("Open", BindingFlags.Public | BindingFlags.Static).Invoke(null, open);
+                if (!Check("the .pkg opens", pkg != null, open[1] as string)) return false;
+                var contentId = (string)pkgType.GetField("ContentId").GetValue(pkg);
+                Console.WriteLine("            " + contentId + ", type 0x" + ((int)pkgType.GetField("ContentType").GetValue(pkg)).ToString("X")
+                                  + ", " + pkgType.GetField("FileCount").GetValue(pkg) + " item(s)");
+                var describe = new object[] { null };
+                var content = pkgType.GetMethod("Describe").Invoke(pkg, describe);
+                if (!Check("its param.sfo is read without any licence", content != null, describe[0] as string)) return false;
+                var titleId = (string)Field(content, "TitleId");
+                Console.WriteLine("            " + titleId + " [" + Field(content, "Category") + "] " + Field(content, "FullTitle") + " " + Field(content, "AppVer"));
+
+                // THE SIZE A CONSOLE IS GIVEN FOR IT: the package, and - only while it installs - its
+                // largest item, read from the item table alone.
+                var contentType = _asm.GetType("LbIntegrations.Vita3k.Vita3kContent", throwOnError: true);
+                var sizeWatch = System.Diagnostics.Stopwatch.StartNew();
+                long lasting = (long)contentType.GetMethod("WorkingSizeBytes").Invoke(null, new object[] { pkgPath });
+                long transient = (long)contentType.GetMethod("TransientBytes").Invoke(null, new object[] { pkgPath });
+                Console.WriteLine("            sized in " + sizeWatch.ElapsedMilliseconds + " ms: " + lasting / 1024 + " KB lasting, "
+                                  + transient / 1024 + " KB more while it installs (its largest item)");
+                Check("its lasting size is the package's", lasting == new FileInfo(pkgPath).Length);
+                Check("and its largest item is found, smaller than it", transient > 0 && transient < lasting);
+
+                // THE LICENCE: the zRIF turned into the RIF Vita3K wrote.
+                var toRif = new object[] { zrif, null };
+                var rif = (byte[])_asm.GetType("LbIntegrations.Vita3k.VitaZrif", throwOnError: true).GetMethod("ToRif").Invoke(null, toRif);
+                if (!Check("the zRIF gives a licence", rif != null && rif.Length == 512, toRif[1] as string)) return false;
+                var oracleRif = Path.Combine(oracle, "ux0", "license", titleId, contentId + ".rif");
+                Check("byte for byte the one Vita3K wrote (" + Path.GetFileName(oracleRif) + ")",
+                      File.Exists(oracleRif) && File.ReadAllBytes(oracleRif).AsSpan().SequenceEqual(rif));
+
+                // THE OUTER LAYER, then the PFS - into %TEMP%, the oracle only read.
+                var stage = Path.Combine(temp, "stage");
+                var extract = new object[] { stage, null, null };
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                if (!Check("the outer layer comes off", (bool)pkgType.GetMethod("Extract").Invoke(pkg, extract), extract[2] as string)) return false;
+                Console.WriteLine("            unpacked in " + watch.ElapsedMilliseconds + " ms: " + Directory.GetFiles(stage, "*", SearchOption.AllDirectories).Length + " file(s)");
+                Check("and what comes out is still PFS-encrypted (sce_pfs/ there)", Directory.Exists(Path.Combine(stage, "sce_pfs")));
+
+                var licence = Path.Combine(temp, "licence.rif");
+                File.WriteAllBytes(licence, rif);
+                var app = Path.Combine(temp, "app");
+                var native = _asm.GetType("LbIntegrations.Vita3k.Vita3kNative", throwOnError: true);
+                var decrypt = native.GetMethods(BindingFlags.Public | BindingFlags.Static).First(m => m.Name == "DecryptApp" && m.GetParameters().Length == 5);
+                var dargs = new object[] { stage, licence, app, null, null };
+                watch.Restart();
+                if (!Check("the PFS is decrypted with that licence", (bool)decrypt.Invoke(null, dargs), dargs[4] as string)) return false;
+                Console.WriteLine("            decrypted in " + watch.ElapsedMilliseconds + " ms");
+
+                // THE ORACLE: every file, by path and SHA-1.
+                var theirs = Path.Combine(oracle, "ux0", "app", titleId);
+                Dictionary<string, string> Tree(string dir) => Directory.GetFiles(dir, "*", SearchOption.AllDirectories)
+                    .ToDictionary(f => Path.GetRelativePath(dir, f).Replace('\\', '/'), f => Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(File.ReadAllBytes(f))), StringComparer.OrdinalIgnoreCase);
+                var ours = Tree(app);
+                var oracleTree = Tree(theirs);
+                var missing = oracleTree.Keys.Except(ours.Keys, StringComparer.OrdinalIgnoreCase).ToList();
+                var extra = ours.Keys.Except(oracleTree.Keys, StringComparer.OrdinalIgnoreCase).ToList();
+                var differ = ours.Keys.Intersect(oracleTree.Keys, StringComparer.OrdinalIgnoreCase).Where(k => ours[k] != oracleTree[k]).ToList();
+                Console.WriteLine("            ours " + ours.Count + " file(s), the oracle's " + oracleTree.Count);
+                foreach (var m in missing.Take(10)) Console.WriteLine("              missing: " + m);
+                foreach (var m in extra.Take(10)) Console.WriteLine("              extra:   " + m);
+                foreach (var m in differ.Take(10)) Console.WriteLine("              differs: " + m);
+                Check("the same files as Vita3K's own install", missing.Count == 0 && extra.Count == 0);
+                Check("byte for byte", differ.Count == 0);
+
+                // THE LAUNCH'S OWN PATH: Vita3kContent.Install, the licence from a zrif table.
+                Console.WriteLine();
+                Console.WriteLine("  through the launch's install, the licence in a zrif table");
+                var licences = _asm.GetType("LbIntegrations.Vita3k.Vita3kLicences", throwOnError: true);
+                var installDirField = licences.GetField("InstallDir", BindingFlags.NonPublic | BindingFlags.Static);
+                var emu = Path.Combine(temp, "emulator");
+                Directory.CreateDirectory(emu);
+                installDirField.SetValue(null, emu);
+                try
+                {
+                    var fs = Path.Combine(temp, "fs");
+                    Directory.CreateDirectory(fs);
+                    var install = _asm.GetType("LbIntegrations.Vita3k.Vita3kContent", throwOnError: true).GetMethods(BindingFlags.Public | BindingFlags.Static)
+                                      .First(m => m.Name == "Install" && m.GetParameters().Length == 3);
+                    var none = new object[] { pkgPath, fs, null };
+                    Check("with no licence anywhere: refused, and it says where to put one",
+                          install.Invoke(null, none) == null && (none[2] as string ?? "").Contains("my-licences.tsv"), none[2] as string);
+                    var template = Path.Combine(emu, "zrif", "my-licences.tsv");
+                    Check("and the zrif folder was made, with its template - no licence in it",
+                          File.Exists(template) && !File.ReadAllText(template).Contains(zrif));
+                    Check("nothing left of the refused install", !Directory.EnumerateDirectories(temp, "lbip-staging-*", SearchOption.AllDirectories).Any());
+
+                    File.Delete(template);
+                    File.WriteAllLines(Path.Combine(emu, "zrif", "mine.tsv"), new[] { "Title ID\tRegion\tName\tContent ID\tzRIF", titleId + "\tEU\tprobe\t" + contentId + "\t" + zrif });
+                    var ok = new object[] { pkgPath, fs, null };
+                    watch.Restart();
+                    var installed = install.Invoke(null, ok);
+                    if (!Check("with the licence in a table: installed", installed != null, ok[2] as string)) return false;
+                    Console.WriteLine("            in " + watch.ElapsedMilliseconds + " ms");
+                    var mine = Tree(Path.Combine(fs, "ux0", "app", titleId));
+                    Check("the app is Vita3K's, file for file and byte for byte",
+                          mine.Count == oracleTree.Count && mine.All(kv => oracleTree.TryGetValue(kv.Key, out var h) && h == kv.Value));
+                    var placed = Path.Combine(fs, "ux0", "license", titleId, contentId + ".rif");
+                    Check("the licence is where Vita3K put its own, the same bytes",
+                          File.Exists(placed) && File.ReadAllBytes(placed).AsSpan().SequenceEqual(File.ReadAllBytes(oracleRif)));
+                    var hashed = (System.Collections.IDictionary)Field(installed, "Hashed");
+                    Check("every file was hashed as it was written", hashed.Count >= mine.Count);
+                    Check("and no staging copy is left", !Directory.EnumerateDirectories(temp, "lbip-staging-*", SearchOption.AllDirectories).Any());
+
+                    // BESIDE THE PKG: <name>.bin, then a licence of another name in its folder. On a copy
+                    // of the .pkg under %TEMP%, the zrif table out of the way.
+                    File.Delete(Path.Combine(emu, "zrif", "mine.tsv"));
+                    var near = Path.Combine(temp, "near");
+                    Directory.CreateDirectory(near);
+                    var copy = Path.Combine(near, "a game.pkg");
+                    File.Copy(pkgPath, copy);
+                    var find = licences.GetMethod("Find", BindingFlags.Public | BindingFlags.Static);
+                    File.WriteAllBytes(Path.Combine(near, "a game.bin"), rif);
+                    var byName = new object[] { copy, contentId, null, null };
+                    Check("a licence beside it as <name>.bin is found", find.Invoke(null, byName) is byte[] b1 && b1.AsSpan().SequenceEqual(rif), byName[3] as string);
+                    Console.WriteLine("            " + byName[2]);
+                    File.Delete(Path.Combine(near, "a game.bin"));
+                    File.WriteAllBytes(Path.Combine(near, "whatever I called it.rif"), rif);
+                    File.WriteAllBytes(Path.Combine(near, "another licence.rif"), new byte[512]);
+                    File.WriteAllBytes(Path.Combine(near, "a game.bin"), new byte[1024 * 1024]);   // same name, not licence-sized
+                    var byContent = new object[] { copy, contentId, null, null };
+                    Check("and one under another name in its folder, by the content it names", find.Invoke(null, byContent) is byte[] b2 && b2.AsSpan().SequenceEqual(rif), byContent[3] as string);
+                    Console.WriteLine("            " + byContent[2]);
+                    Check("a 1 MB <name>.bin beside it is never read (its size says it is no licence)", (byContent[2] as string ?? "").StartsWith("whatever I called it.rif"));
+                }
+                finally { installDirField.SetValue(null, null); }
+
+                Console.WriteLine();
+                Console.WriteLine(_bad == 0 ? "  OK - the .pkg installs as Vita3K installs it" : "  " + _bad + " FAILURE(S) - see above");
+                return _bad == 0;
+            }
+            catch (Exception ex) { Console.WriteLine("  EXCEPTION: " + (ex.InnerException ?? ex)); return false; }
+            finally { Scrub(temp); }
+        }
+
         // ── what Vita3K itself is given ──────────────────────────────────────
 
         private static void TheEmulatorsShare(object layout)
@@ -1730,12 +1880,15 @@ namespace LbIntegrations.Probe
             foreach (var c in candidates) names.Add(Path.GetFileName((string)c.GetType().GetField("Item1").GetValue(c)));
             Check("a folder named the game by its key (\"Forged Game\" = FORGEDGAME) is looked into", names.Contains("level pack.vpk"));
 
-            var extras = Call("Vita3kExtras", "For", new object[] { game, described, "A Forged Game" });
+            var extras = Call("Vita3kExtras", "For", new object[] { game, described, "A Forged Game", null, null });
             var update = extras.GetType().GetField("Update").GetValue(extras);
             var addons = (System.Collections.IList)extras.GetType().GetField("Addons").GetValue(extras);
             string AppVer(object e) => e == null ? null : (string)Field(Field(e, "Content"), "AppVer");
             Check("of the two updates, the highest is kept (01.20)", AppVer(update) == "01.20");
             Check("two DLC kept - one per CONTENT_ID, the decoy of another game set aside", addons.Count == 2);
+
+            ImportIndexAndChoice(layout, root, game, described);
+            ImportCleanup(root);
 
             // A launch installs them, before the reference.
             var args = new object[] { layout, game, null };
@@ -1766,6 +1919,219 @@ namespace LbIntegrations.Probe
             Check("and the console was rebuilt with it", Directory.Exists(Path.Combine(work, "ux0", "addcont", TitleId, "DLCBONUS00000003")));
 
             SavesAcrossExtras(layout, portable, roms, game);
+        }
+
+        /// <summary>The import wizard's game list put right: titles from the param.sfo, cleaned; updates,
+        /// DLC and what is not a Vita game out. On a list of the wizard's shape. OPENS the progress
+        /// window for a moment.</summary>
+        private static void ImportCleanup(string root)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  the import wizard's list, put right  [opens a window]");
+            string Clean(string t) => (string)Call("Vita3kImportCleanup", "CleanTitle", new object[] { t });
+            Check("LittleBigPlanet™ PlayStation®Vita -> LittleBigPlanet PlayStation Vita (a sign is a space)",
+                  Clean("LittleBigPlanet™ PlayStation®Vita") == "LittleBigPlanet PlayStation Vita", Clean("LittleBigPlanet™ PlayStation®Vita"));
+            Check("Game™: The Sequel -> Game: The Sequel", Clean("Game™: The Sequel") == "Game: The Sequel");
+            Check("a title on two lines is one", Clean("Two\nLines") == "Two Lines");
+            Check("a plain title is left as it is", Clean("#KILLALLZOMBIES") == "#KILLALLZOMBIES");
+
+            var dir = Path.Combine(root, "import");
+            var game = ForgeContent(dir, "a forged game [PCSE00965].vpk", TitleId, "gd", "UP0000-PCSE00965_00-FORGEDGAME000000", "01.00", "A Forged Game™ Deluxe");
+            var patch = ForgeContent(dir, "a forged game [PCSE00965] [PATCH].vpk", TitleId, "gp", "UP0000-PCSE00965_00-FORGEDGAME000000", "01.40", "A Forged Game");
+            var dlc = ForgeContent(dir, "a forged game [PCSE00965] [DLC].vpk", TitleId, "ac", "UP0000-PCSE00965_00-DLCCLEANUP000001", null, "A Costume");
+            var notVita = Path.Combine(dir, "not a vita game.zip");
+            using (var z = System.IO.Compression.ZipFile.Open(notVita, System.IO.Compression.ZipArchiveMode.Create))
+                using (var w = new StreamWriter(z.CreateEntry("readme.txt").Open())) w.Write("hello");
+            var text = Path.Combine(dir, "notes.txt");
+            File.WriteAllText(text, "not an archive");
+
+            var list = new FakeGameList();
+            foreach (var f in new[] { game, patch, dlc, notVita, text })
+                list.Games.Add(new FakeListRecord(Path.GetFileNameWithoutExtension(f), f));
+            Call("Vita3kImportCleanup", "Run", new object[] { null, list });
+            Console.WriteLine("            left: " + string.Join(" | ", list.Games.Select(r => r.Title + " (" + Path.GetFileName(r.ApplicationPath) + ")")));
+            Check("one line left: the game", list.Games.Count == 1 && list.Games[0].ApplicationPath == game);
+            Check("titled from its param.sfo, cleaned", list.Games.Count == 1 && list.Games[0].Title == "A Forged Game Deluxe");
+        }
+
+        /// <summary>The shape of the wizard's game list: Games, a collection the grid shows.</summary>
+        public sealed class FakeGameList
+        {
+            public System.Collections.ObjectModel.ObservableCollection<FakeListRecord> Games { get; } = new System.Collections.ObjectModel.ObservableCollection<FakeListRecord>();
+        }
+
+        /// <summary>The shape of a record: Title with a setter, ApplicationPath without.</summary>
+        public sealed class FakeListRecord
+        {
+            public FakeListRecord(string title, string path) { Title = title; ApplicationPath = path; }
+            public string Title { get; set; }
+            public string ApplicationPath { get; }
+        }
+
+        /// <summary>The import's index (an extra the four rules never look at, found through it) and the
+        /// game's choice of update and DLC (none, another, a DLC left out). Leaves the forged library as
+        /// it found it: the launch checks after this expect 01.20 and two DLC.</summary>
+        private static void ImportIndexAndChoice(object layout, string root, string game, object described)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  the import's index, and the game's choice");
+            var install = (string)Field(layout, "InstallDir");
+            string AppVer(object e) => e == null ? null : (string)Field(Field(e, "Content"), "AppVer");
+
+            // AN UPDATE NOWHERE THE RULES LOOK: in another folder, under a name without the title id.
+            var elsewhere = Path.Combine(root, "elsewhere");
+            var hidden = ForgeContent(elsewhere, "the big patch.vpk", TitleId, "gp", "UP0000-PCSE00965_00-FORGEDGAME000000", "01.30", "A Forged Game");
+            var hiddenContent = Call("Vita3kContent", "Describe", new object[] { hidden, null });
+            var extras = Call("Vita3kExtras", "For", new object[] { game, described, "A Forged Game", install, null });
+            Check("without the index, an update elsewhere is not found", AppVer(extras.GetType().GetField("Update").GetValue(extras)) == "01.20");
+
+            var row = Call("Vita3kExtrasIndex", "From", new object[] { game, hidden, hiddenContent });
+            var rows = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(row.GetType()));
+            rows.Add(row);
+            Call("Vita3kExtrasIndex", "Record", new object[] { install, new[] { game }, rows });
+            var index = Path.Combine(install, "lbip-vita-extras.tsv");
+            Check("the import writes the index in the emulator's folder", File.Exists(index) && File.ReadAllText(index).Contains("the big patch.vpk"));
+            extras = Call("Vita3kExtras", "For", new object[] { game, described, "A Forged Game", install, null });
+            Check("with it, that update is found - and, the highest, kept (01.30)", AppVer(extras.GetType().GetField("Update").GetValue(extras)) == "01.30");
+
+            // Recorded again for the same game: replaced, not added.
+            Call("Vita3kExtrasIndex", "Record", new object[] { install, new[] { game }, rows });
+            Check("the same import twice: one line, not two",
+                  File.ReadAllLines(index).Count(l => l.Contains("the big patch.vpk")) == 1);
+            Check("the game is kept by its name and size, not its path",
+                  File.ReadAllLines(index).Any(l => l.StartsWith(Path.GetFileName(game) + "\t" + new FileInfo(game).Length + "\t")));
+            Check("an extra outside the game's folder keeps its full path", File.ReadAllText(index).Contains(hidden));
+
+            // BESIDE THE GAME, RELATIVE - and a library moved whole keeps its index.
+            var lib = Path.Combine(root, "library");
+            var libGame = ForgeContent(lib, "moved game [PCSE00965].vpk", TitleId, "gd", "UP0000-PCSE00965_00-FORGEDGAME000000", "01.00", "A Forged Game");
+            var libDlc = ForgeContent(Path.Combine(lib, "odd folder"), "extra thing.vpk", TitleId, "ac", "UP0000-PCSE00965_00-DLCMOVED00000001", null, "A Moved Costume");
+            var libRows = (System.Collections.IList)Activator.CreateInstance(rows.GetType());
+            libRows.Add(Call("Vita3kExtrasIndex", "From", new object[] { libGame, libDlc, Call("Vita3kContent", "Describe", new object[] { libDlc, null }) }));
+            Call("Vita3kExtrasIndex", "Record", new object[] { install, new[] { libGame }, libRows });
+            Check("an extra under the game's folder is kept relative to it",
+                  File.ReadAllLines(index).Any(l => l.Contains("\todd folder\\extra thing.vpk\t")));
+            var moved = Path.Combine(root, "library moved");
+            Directory.Move(lib, moved);
+            var proposed = (List<string>)Call("Vita3kExtrasIndex", "For", new object[] { install, TitleId, Path.Combine(moved, "moved game [PCSE00965].vpk") });
+            Check("the library moved whole: the extra is found where it is now",
+                  proposed.Contains(Path.Combine(moved, "odd folder", "extra thing.vpk")));
+
+            // THE SAME GAME SCANNED AGAIN FROM ITS NEW PLACE: its lines replaced, none added.
+            var movedGame = Path.Combine(moved, "moved game [PCSE00965].vpk");
+            var movedRows = (System.Collections.IList)Activator.CreateInstance(rows.GetType());
+            movedRows.Add(Call("Vita3kExtrasIndex", "From", new object[] { movedGame, Path.Combine(moved, "odd folder", "extra thing.vpk"),
+                                                                            Call("Vita3kContent", "Describe", new object[] { Path.Combine(moved, "odd folder", "extra thing.vpk"), null }) }));
+            movedRows.Add(movedRows[0]);   // and found twice in the one batch
+            Call("Vita3kExtrasIndex", "Record", new object[] { install, new[] { movedGame }, movedRows });
+            Check("scanned again from elsewhere, and twice in one batch: still one line",
+                  File.ReadAllLines(index).Count(l => l.Contains("extra thing.vpk")) == 1);
+            Scrub(moved);
+
+            // THE CHOICE: none, another update, a DLC left out.
+            var found = Call("Vita3kExtras", "Evaluate", new object[] { game, described, "A Forged Game", install });
+            var choiceType = _asm.GetType("LbIntegrations.Vita3k.Vita3kExtrasChoice", throwOnError: true);
+            object Choose(Action<object> set)
+            {
+                var c = Activator.CreateInstance(choiceType);
+                set(c);
+                return Call("Vita3kExtras", "Choose", new object[] { found, c });
+            }
+            var none = Choose(c => choiceType.GetField("NoUpdate").SetValue(c, true));
+            Check("choosing no update: none installed", none.GetType().GetField("Update").GetValue(none) == null);
+            var older = Choose(c => choiceType.GetField("UpdatePath").SetValue(c, Path.Combine(Path.GetDirectoryName(game), "A Forged Game [PCSE00965] [PATCH] [v1.10].vpk")));
+            Check("choosing 1.10: 1.10, not the highest", AppVer(older.GetType().GetField("Update").GetValue(older)) == "01.10");
+            var fewer = Choose(c => ((HashSet<string>)choiceType.GetField("LeftOut").GetValue(c)).Add("UP0000-PCSE00965_00-DLCCOSTUME000001"));
+            Check("leaving a DLC out: the other one only",
+                  ((System.Collections.IList)fewer.GetType().GetField("Addons").GetValue(fewer)).Count == 1);
+            var gone = Choose(c => choiceType.GetField("UpdatePath").SetValue(c, Path.Combine(root, "no such update.vpk")));
+            Check("an update chosen and gone since: the highest instead", AppVer(gone.GetType().GetField("Update").GetValue(gone)) == "01.30");
+
+            // Saved, read back; the automatic choice removes the line.
+            var saved = Activator.CreateInstance(choiceType);
+            choiceType.GetField("NoUpdate").SetValue(saved, true);
+            ((HashSet<string>)choiceType.GetField("LeftOut").GetValue(saved)).Add("UP0000-PCSE00965_00-DLCCOSTUME000001");
+            Call("Vita3kExtrasChoice", "Save", new object[] { install, "probe-game-id", saved });
+            var back = Call("Vita3kExtrasChoice", "Load", new object[] { install, "probe-game-id" });
+            Check("a choice is saved and read back", back != null && (bool)choiceType.GetField("NoUpdate").GetValue(back)
+                  && ((HashSet<string>)choiceType.GetField("LeftOut").GetValue(back)).Contains("UP0000-PCSE00965_00-DLCCOSTUME000001"));
+            Call("Vita3kExtrasChoice", "Save", new object[] { install, "probe-game-id", Activator.CreateInstance(choiceType) });
+            Check("choosing the automatic values again removes it", Call("Vita3kExtrasChoice", "Load", new object[] { install, "probe-game-id" }) == null);
+
+            // A line whose file is gone is not proposed - and the library is as it was.
+            File.Delete(hidden);
+            extras = Call("Vita3kExtras", "For", new object[] { game, described, "A Forged Game", install, null });
+            Check("its file gone, the indexed update is no longer proposed", AppVer(extras.GetType().GetField("Update").GetValue(extras)) == "01.20");
+
+            ExtrasTab(install, game);
+        }
+
+        /// <summary>The options window's Updates & DLC tab, built off screen on the forged library: what
+        /// it lists, what it starts from, the choice it gives. LBIP_PROBE_SHOT_EXTRAS=&lt;png&gt; draws it.</summary>
+        private static void ExtrasTab(string install, string game)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  the options window: Updates & DLC");
+            var formType = _asm.GetType("LbIntegrations.Vita3k.Vita3kOptionsForm", throwOnError: true);
+            var entryType = formType.GetNestedType("Entry", BindingFlags.NonPublic | BindingFlags.Public);
+            var optType = _asm.GetType("LbIntegrations.Vita3k.Vita3kOptions", throwOnError: true);
+            object Entry(string title)
+            {
+                var e = Activator.CreateInstance(entryType);
+                foreach (var (f, v) in new[] { ("Title", title), ("Rom", game), ("RomFull", game), ("Own", ""), ("Inherited", "-F"),
+                                               ("GameId", "probe-tab-game"), ("InstallDir", install) })
+                    entryType.GetField(f).SetValue(e, v);
+                entryType.GetField("Options").SetValue(e, optType.GetMethod("From", BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { "-F", game }));
+                return e;
+            }
+            System.Collections.IList Entries(int count)
+            {
+                var list = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(entryType));
+                for (int i = 0; i < count; i++) list.Add(Entry("A Forged Game " + i));
+                return list;
+            }
+            T F<T>(object form, string name) => (T)formType.GetField(name, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(form);
+
+            using (var several = (System.Windows.Forms.Form)Activator.CreateInstance(formType, Entries(2)))
+            {
+                var tab = F<System.Windows.Forms.TabPage>(several, "_extrasTab");
+                Check("for several games, the tab says to pick one", tab.Controls.Count == 1 && tab.Controls[0].Text.Contains("single game"));
+            }
+
+            using var form = (System.Windows.Forms.Form)Activator.CreateInstance(formType, Entries(1));
+            formType.GetMethod("LoadExtras", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(form, null);
+            var updates = F<System.Collections.IList>(form, "_updates");
+            var dlc = F<System.Collections.IList>(form, "_dlc");
+            var auto = F<System.Windows.Forms.RadioButton>(form, "_updateAuto");
+            var none = F<System.Windows.Forms.RadioButton>(form, "_updateNone");
+            Console.WriteLine("            " + auto?.Text + " | " + updates.Count + " update(s) | " + dlc.Count + " DLC");
+            Check("it lists the two updates and the two DLC found", updates.Count == 2 && dlc.Count == 2);
+            Check("with no choice made: Automatic, every DLC ticked", auto != null && auto.Checked
+                  && dlc.Cast<object>().All(d => ((System.Windows.Forms.CheckBox)d.GetType().GetField("Item1").GetValue(d)).Checked));
+
+            none.Checked = true;
+            ((System.Windows.Forms.CheckBox)dlc[0].GetType().GetField("Item1").GetValue(dlc[0])).Checked = false;
+            var choice = formType.GetMethod("ExtrasChoice", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(form, null);
+            var ct = choice.GetType();
+            Check("None and a DLC unticked give: no update, that DLC left out", (bool)ct.GetField("NoUpdate").GetValue(choice)
+                  && ((HashSet<string>)ct.GetField("LeftOut").GetValue(choice)).Count == 1);
+
+            var shot = Environment.GetEnvironmentVariable("LBIP_PROBE_SHOT_EXTRAS");
+            if (!string.IsNullOrEmpty(shot))
+            {
+                auto.Checked = true;
+                var tabs = form.Controls.OfType<System.Windows.Forms.TabControl>().First();
+                form.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
+                form.Location = new System.Drawing.Point(-4000, -4000);
+                form.Show();
+                tabs.SelectedTab = F<System.Windows.Forms.TabPage>(form, "_extrasTab");
+                System.Windows.Forms.Application.DoEvents();
+                using var bmp = new System.Drawing.Bitmap(form.Width, form.Height);
+                form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, form.Width, form.Height));
+                bmp.Save(shot);
+                Console.WriteLine("            drawn to " + shot);
+                form.Hide();
+            }
         }
 
         /// <summary>A save stays valid whatever the update and DLC; only a lower version or a missing

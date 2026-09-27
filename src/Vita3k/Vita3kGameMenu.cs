@@ -83,9 +83,17 @@ namespace LbIntegrations.Vita3k
                     var own = Safe(() => g.CommandLine);
                     var rom = Safe(() => g.ApplicationPath);
                     var inherited = InheritedLine(g);
+                    string install = null;
+                    try
+                    {
+                        var exe = Vita3kPlugin.ResolveFullPath(PluginHelper.DataManager?.GetEmulatorById(g.EmulatorId)?.ApplicationPath);
+                        install = string.IsNullOrEmpty(exe) ? null : Vita3kPaths.Resolve(exe)?.InstallDir;
+                    }
+                    catch { }
                     return new Vita3kOptionsForm.Entry
                     {
                         Game = g, Title = Safe(() => g.Title), Rom = rom, Own = own, Inherited = inherited,
+                        RomFull = Vita3kPlugin.ResolveFullPath(rom), GameId = Safe(() => g.Id), InstallDir = install,
                         Options = Vita3kOptions.From(string.IsNullOrWhiteSpace(own) ? inherited : own, rom),
                     };
                 }).ToList();
