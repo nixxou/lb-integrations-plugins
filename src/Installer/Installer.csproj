@@ -92,6 +92,10 @@
       <LogicalName>payload/Nixx-Xenia/manifest.json</LogicalName>
     </EmbeddedResource>
 
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-Menus\NixxMenus.dll">
+      <LogicalName>payload/Nixx-Menus/NixxMenus.dll</LogicalName>
+    </EmbeddedResource>
+
     <EmbeddedResource Include="$(PayloadDir)\LbIntegrations.Catalog.dll">
       <LogicalName>payload/LbIntegrations.Catalog.dll</LogicalName>
     </EmbeddedResource>

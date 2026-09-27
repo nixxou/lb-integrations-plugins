@@ -156,6 +156,21 @@ internal static class InstallerCore
                 WriteResource(file.Resource, dest);
             }
 
+            // THE MENU RELAY, into the classic root whatever the version - see Payload.Menus.
+            foreach (var file in Payload.LegacyFiles)
+            {
+                var dest = Path.Combine(l.LegacyRoot, file.Folder, file.Relative);
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                WriteResource(file.Resource, dest);
+            }
+            var misplaced = Path.Combine(l.LocalRoot, Payload.Menus);
+            if (!string.Equals(l.LocalRoot, l.LegacyRoot, StringComparison.OrdinalIgnoreCase)
+                && Directory.Exists(misplaced) && Payload.IsOurs(misplaced))
+            {
+                try { Directory.Delete(misplaced, recursive: true); notes.AppendLine("  removed " + misplaced + " - the relay is only heard from Plugins\\"); }
+                catch { }
+            }
+
             // What an older deploy put in the folder LaunchBox scans. Left there, LaunchBox tries to
             // load a native library as a .NET assembly and puts a dialog up at every start.
             foreach (var folder in Payload.Folders)
@@ -169,12 +184,13 @@ internal static class InstallerCore
 
             var moved = MigrateEnabledPlugins(l);
             if (moved > 0)
-                notes.AppendLine("  LiteBox.ini: " + moved + " plugin tick(s) carried over to the new names");
+                notes.AppendLine("  LiteBox.ini: " + moved + " plugin tick(s) updated (old names carried over, " + Payload.Menus + " ticked beside the plugins)");
 
             var where = l.PluginsRoot.StartsWith(l.LocalRoot, StringComparison.OrdinalIgnoreCase)
                         ? "Local\\Plugins" : "Plugins";
             var head = "Installed " + Payload.Folders.Length + " plugins into " + where
-                     + (l.LbMajor > 0 ? "  (LaunchBox " + l.LbMajor + ")" : "") + ".";
+                     + (l.LbMajor > 0 ? "  (LaunchBox " + l.LbMajor + ")" : "") + ", and their menus ("
+                     + Payload.Menus + ") into Plugins.";
 
             return (true, head
                         + (swept > 0 ? "\n\n" + swept + " older folder(s) from a previous name were removed." : "")
@@ -276,6 +292,16 @@ internal static class InstallerCore
                             changed++;
                         }
 
+                // THE RELAY GOES WITH THE PLUGINS: LiteBox loads only the folders ticked here, and a
+                // pack plugin ticked without Nixx-Menus is a plugin whose right-click entries never
+                // show. Added only to a line that already ticks one of ours.
+                if (names.Any(n => Payload.Folders.Contains(n, StringComparer.OrdinalIgnoreCase))
+                    && !names.Contains(Payload.Menus, StringComparer.OrdinalIgnoreCase))
+                {
+                    names.Add(Payload.Menus);
+                    changed++;
+                }
+
                 if (changed > 0)
                     lines[i] = "EnabledPlugins=" + string.Join(",", names.Distinct(StringComparer.OrdinalIgnoreCase));
             }
@@ -304,7 +330,7 @@ internal static class InstallerCore
 
         foreach (var root in Roots(l))
         {
-            foreach (var folder in Payload.Folders.Concat(Payload.StaleFolders))
+            foreach (var folder in Payload.Folders.Concat(Payload.StaleFolders).Append(Payload.Menus))
             {
                 var dir = Path.Combine(root, folder);
                 if (!Directory.Exists(dir) || !Payload.IsOurs(dir)) continue;

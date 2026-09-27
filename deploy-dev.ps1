@@ -259,6 +259,22 @@ if ($Plugin -eq 'Vita3k') {
     }
 }
 
+# THE MENU RELAY goes with every plugin: the pack's right-click entries are shown by it, from the
+# CLASSIC root - a plugin in Local\Plugins never has its own menu asked on LaunchBox 14. See
+# src\Installer\Payload.cs (Menus).
+Write-Host "Building the menu relay..." -ForegroundColor Cyan
+dotnet build (Join-Path $repo 'src\Menus\Menus.csproj') -c $Configuration --nologo -v quiet
+if ($LASTEXITCODE -ne 0) { throw "Build failed: Menus" }
+$relay = Join-Path $repo "src\Menus\bin\$Configuration\NixxMenus.dll"
+$relayDir = Join-Path $LbRoot 'Plugins\Nixx-Menus'
+New-Item -ItemType Directory -Force -Path $relayDir | Out-Null
+$relayTarget = Join-Path $relayDir 'NixxMenus.dll'
+try { Copy-Item $relay $relayTarget -Force } catch { throw "Could not write $relayTarget -- held open by a running host? $_" }
+if ((Get-FileHash $relay -Algorithm SHA256).Hash -ne (Get-FileHash $relayTarget -Algorithm SHA256).Hash) {
+    throw "The menu relay was not written: $relayTarget still holds different bytes."
+}
+Write-Host "           $relayTarget"
+
 Write-Host "Deployed -> $target" -ForegroundColor Green
 Write-Host "           $manifestTarget"
 Write-Host "  sha256 $($targetHash.Substring(0,16))...  $((Get-Item $target).Length) bytes"

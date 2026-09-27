@@ -76,6 +76,19 @@ foreach ($name in $Stage.Keys) {
     Write-Host ("  staged {0,-14} {1,8:N0} KB" -f $Stage[$name], ((Get-Item $merged).Length / 1KB))
 }
 
+# THE MENU RELAY: the pack's right-click entries, a classic plugin for Plugins\ - see
+# src\Installer\Payload.cs (Menus). One bare DLL, no manifest, nothing merged: it references only
+# the SDK, which the host provides.
+Write-Host "Building the menu relay..." -ForegroundColor Cyan
+dotnet build (Join-Path $repo 'src\Menus\Menus.csproj') -c $Configuration --nologo -v quiet
+if ($LASTEXITCODE -ne 0) { throw "Build failed: Menus" }
+$relay = Join-Path $repo "src\Menus\bin\$Configuration\NixxMenus.dll"
+if (-not (Test-Path $relay)) { throw "The menu relay is missing: $relay" }
+$relayDir = Join-Path $payload 'Nixx-Menus'
+New-Item -ItemType Directory -Force -Path $relayDir | Out-Null
+Copy-Item $relay (Join-Path $relayDir 'NixxMenus.dll') -Force
+Write-Host ("  staged {0,-14} {1,8:N0} KB" -f 'Nixx-Menus', ((Get-Item $relay).Length / 1KB))
+
 # The catalogue contract, staged ONCE and installed into every plugin folder. It is the one managed
 # file beside a plugin that is not the plugin: a host and a plugin must mean the same interface
 # type, and merging it in would make one private type per plugin, none of them nameable by a

@@ -54,7 +54,22 @@ internal static class Payload
     /// deleting it on the strength of its name alone is how an installer destroys something it was
     /// never told about.</summary>
     public static readonly string[] Assemblies =
-        { "Flycast.dll", "MelonDs.dll", "NoGba.dll", "Ppsspp.dll", "Vita3k.dll", "Xenia.dll" };
+        { "Flycast.dll", "MelonDs.dll", "NoGba.dll", "Ppsspp.dll", "Vita3k.dll", "Xenia.dll", "NixxMenus.dll" };
+
+    /// <summary>The menu relay: the pack's right-click entries on games, shown for the plugins.
+    ///
+    /// ALWAYS IN THE CLASSIC Plugins\ ROOT, whatever the version - and so NOT in Folders, whose
+    /// entries the install sweeps out of the root it is not using. Measured on LaunchBox 14: a
+    /// plugin in Local\Plugins gets its emulator role and nothing else, and its menu is never asked
+    /// a question; the same entry in a bare DLL under Plugins\ shows at once. No manifest: the
+    /// classic root takes a bare DLL, and this one declares nothing the managed root would read.
+    /// See src\Menus\Menus.cs.</summary>
+    public const string Menus = "Nixx-Menus";
+
+    public static readonly PayloadFile[] LegacyFiles =
+    {
+        new("payload/Nixx-Menus/NixxMenus.dll", Menus, "NixxMenus.dll"),
+    };
 
     // The DSi NAND library, and the command-line tool beside it. ONE copy is carried and TWO are
     // written: the DllImport resolver in Shared.Dsi only ever looks inside the plugin's own folder,

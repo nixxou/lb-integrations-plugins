@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Nixx-Menus: the pack's right-click entries on games, RELAYED. A CLASSIC plugin, installed into
+       <LaunchBox>\Plugins\Nixx-Menus\ - see Menus.cs for why it cannot live beside the plugins it
+       relays. It holds no feature code and references none of them: it finds them by name. -->
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>NixxMenus</AssemblyName>
+    <RootNamespace>LbIntegrations.Menus</RootNamespace>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <MSBuildWarningsAsMessages>MSB3277</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The SDK, referenced and not copied: the host provides it, and the IGame this relay hands on
+         has to be the host's IGame for the plugin receiving it. See vendor\README.md. -->
+    <Reference Include="Unbroken.LaunchBox.Plugins">
+      <HintPath>..\..\vendor\Unbroken.LaunchBox.Plugins.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>
