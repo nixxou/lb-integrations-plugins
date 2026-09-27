@@ -40,13 +40,16 @@ namespace LbIntegrations.Vita3k
         /// rejects an option it does not know and the emulator would not start. Put on the emulator's
         /// command line in LaunchBox, or on one game's custom command line.
         ///
-        ///     --no-ramdisk               this session is played on the disk (work@@), never on a RAM disk
-        ///     --ramdisk-margin &lt;MB&gt;     room left free on the RAM disk beyond the firmware and the
-        ///                                game, for saves, shader caches and logs - 512 when not given.
-        ///                                Also written --ramdisk-margin=&lt;MB&gt;.
-        ///     --vita3k-ram &lt;MB&gt;         RAM kept free for Vita3K itself beside the RAM disk, taken
+        ///     --no-ramdisk               this session is played on the disk (work\), never on a RAM disk
+        ///     --ramdisk-margin=&lt;MB&gt;     room left free on the RAM disk beyond the firmware and the
+        ///                                game, for saves, shader caches and logs - 512 when not given
+        ///     --vita3k-ram=&lt;MB&gt;         RAM kept free for Vita3K itself beside the RAM disk, taken
         ///                                as it is - instead of the peak measured for this game plus
-        ///                                15%, or 2048 before any measurement. Also =&lt;MB&gt;.</summary>
+        ///                                15%, or 2048 before any measurement
+        ///
+        /// THE "=" SPELLING IS THE ONE WE WRITE (Mehdi's choice). "--vita3k-ram 3072" is read too and
+        /// removed with its value, because left on the line "3072" would be taken by Vita3K for a
+        /// game to install - a typo must not stop a launch.</summary>
         internal const string NoRamDiskFlag = "--no-ramdisk";
         internal const string RamDiskMarginFlag = "--ramdisk-margin";
         internal const string Vita3kRamFlag = "--vita3k-ram";
@@ -87,7 +90,7 @@ namespace LbIntegrations.Vita3k
                 if (int.TryParse(value, System.Globalization.NumberStyles.None,
                                  System.Globalization.CultureInfo.InvariantCulture, out int mb) && mb <= MaxMb)
                     return mb;
-                problem = flag + " wants a whole number of MB up to " + MaxMb
+                problem = flag + "=<MB> wants a whole number of MB up to " + MaxMb
                           + ", not " + (value == null ? "nothing" : "\"" + value + "\"");
                 return null;
             }
@@ -255,10 +258,10 @@ namespace LbIntegrations.Vita3k
                     if (noRamDisk) Log.Info(NoRamDiskFlag + " is on the command line - this session stays on the disk");
                     int? margin = MarginFrom(current, out var marginProblem);
                     if (marginProblem != null) Log.Warn(marginProblem + " - keeping the default");
-                    else if (margin != null) Log.Info(RamDiskMarginFlag + " " + margin + " is on the command line");
+                    else if (margin != null) Log.Info(RamDiskMarginFlag + "=" + margin + " is on the command line");
                     int? vitaRam = Vita3kRamFrom(current, out var ramProblem);
                     if (ramProblem != null) Log.Warn(ramProblem + " - keeping the measured reserve");
-                    else if (vitaRam != null) Log.Info(Vita3kRamFlag + " " + vitaRam + " is on the command line");
+                    else if (vitaRam != null) Log.Info(Vita3kRamFlag + "=" + vitaRam + " is on the command line");
                     titleId = Vita3kWorkspace.Prepare(layout, ResolveFullPath(rom), out error,
                                                       (step, fraction) => window?.Report(step, fraction), noRamDisk, margin, vitaRam);
                 }
