@@ -378,6 +378,10 @@ namespace LbIntegrations.Vita3k
 
                 var firmware = InstallFirmware(args, layout);
 
+                // THE DOCUMENTATION, last: nothing when Vita3kDocs.Urls is empty, and never a reason to
+                // fail the install - a document that does not come is logged and skipped.
+                firmware += Vita3kDocs.Fetch(targetDir, (step, p) => Report(args, step, p), () => Cancelled(args));
+
                 if (reinstall)
                 {
                     try { args.ExistingEmulator.ApplicationPath = MakeRelativeToLaunchBox(exe); } catch { }

@@ -55,6 +55,7 @@ namespace LbIntegrations.Probe
                 TheOptions();
                 TheImportRecord();
                 TheSettings();
+                TheDocs(root);
                 var layout = Resolve(Path.Combine(install, "Vita3K.exe"));
                 TheFirmware(layout, portable);
                 var sessionRoot = TheSession(layout, portable, vpk);
@@ -1354,6 +1355,68 @@ namespace LbIntegrations.Probe
             Check("and it finds this plugin by name", names.Contains(_asm.GetName().Name));
             var instance = (Unbroken.LaunchBox.Plugins.IGameMultiMenuItemPlugin)Activator.CreateInstance(plugin);
             Check("and offers nothing for no game", !instance.GetMenuItems(new Unbroken.LaunchBox.Plugins.Data.IGame[0]).Any());
+        }
+
+        /// <summary>The documentation fetched after an install, from a local server: nothing at all for an
+        /// empty list; the doc folder made; a file that comes, one that answers 404, one too slow for the
+        /// timeout - the last two skipped, the install's message saying so.</summary>
+        private static void TheDocs(string root)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  the documentation fetched after an install  [a local HTTP server]");
+            var emu = Path.Combine(root, "docs-emulator");
+            Directory.CreateDirectory(emu);
+            var fetch = _asm.GetType("LbIntegrations.Vita3k.Vita3kDocs", throwOnError: true).GetMethods(BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static)
+                            .First(m => m.Name == "Fetch" && m.GetParameters().Length == 5);
+            string Fetch(string[] urls, int seconds) => (string)fetch.Invoke(null, new object[] { emu, urls, TimeSpan.FromSeconds(seconds), null, null });
+
+            Check("an empty list: nothing said, no doc folder", Fetch(new string[0], 5) == "" && !Directory.Exists(Path.Combine(emu, "doc")));
+
+            int port = 0;
+            var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+            probe.Start(); port = ((System.Net.IPEndPoint)probe.LocalEndpoint).Port; probe.Stop();
+            var prefix = "http://localhost:" + port + "/";
+            using var server = new System.Net.HttpListener();
+            server.Prefixes.Add(prefix);
+            server.Start();
+            var serving = new System.Threading.Thread(() =>
+            {
+                while (server.IsListening)
+                {
+                    System.Net.HttpListenerContext ctx;
+                    try { ctx = server.GetContext(); } catch { return; }
+                    try
+                    {
+                        var path = ctx.Request.Url.AbsolutePath;
+                        if (path.EndsWith("/guide%20one.pdf") || path.EndsWith("/guide one.pdf"))
+                        {
+                            var bytes = System.Text.Encoding.ASCII.GetBytes("the first document");
+                            ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
+                        }
+                        else if (path.EndsWith("/slow.txt")) { System.Threading.Thread.Sleep(3000); }
+                        else ctx.Response.StatusCode = 404;
+                        ctx.Response.Close();
+                    }
+                    catch { }
+                }
+            }) { IsBackground = true };
+            serving.Start();
+            try
+            {
+                var said = Fetch(new[] { prefix + "docs/guide%20one.pdf?x=1", prefix + "missing.pdf", prefix + "slow.txt" }, 1);
+                Console.WriteLine("            " + said.Trim());
+                var doc = Path.Combine(emu, "doc");
+                Check("the doc folder is made", Directory.Exists(doc));
+                Check("the document that came is there, under its URL's name", File.Exists(Path.Combine(doc, "guide one.pdf"))
+                      && File.ReadAllText(Path.Combine(doc, "guide one.pdf")) == "the first document");
+                Check("the 404 and the one too slow are skipped, no partial file left",
+                      Directory.GetFiles(doc).Length == 1);
+                Check("and the install's message says 1 of 3", said.Contains("1 of 3"));
+                File.WriteAllText(Path.Combine(doc, "guide one.pdf"), "an older copy");
+                Fetch(new[] { prefix + "docs/guide%20one.pdf" }, 5);
+                Check("fetched again: the previous copy replaced", File.ReadAllText(Path.Combine(doc, "guide one.pdf")) == "the first document");
+            }
+            finally { server.Stop(); }
         }
 
         /// <summary>The Vita3K tab of the pack's configuration window, and the relay hosting it: the
