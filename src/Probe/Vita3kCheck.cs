@@ -1037,15 +1037,16 @@ namespace LbIntegrations.Probe
                     using (var f = File.OpenRead(file)) f.Read(h, 0, 4);
                     return BitConverter.ToString(h);
                 }
-                var patchDir = Path.Combine(work, "ux0", "patch", titleId);
-                var patchEboot = Path.Combine(patchDir, "eboot.bin");
-                Check("the update is installed in ux0/patch", Directory.Exists(patchDir));
-                if (File.Exists(patchEboot))
-                {
-                    Console.WriteLine("  patch eboot " + Head(patchEboot));
-                    Check("and decrypted under the game's licence (its eboot.bin starts SCE\\0)", Head(patchEboot) == "53-43-45-00");
-                }
-                Check("with no sce_pfs left in it", !Directory.Exists(Path.Combine(patchDir, "sce_pfs")));
+                var appDir = Path.Combine(work, "ux0", "app", titleId);
+                var eboot = Path.Combine(appDir, "eboot.bin");
+                Check("the update is merged into the app, and ux0/patch gone", !Directory.Exists(Path.Combine(work, "ux0", "patch", titleId)));
+                Console.WriteLine("  app eboot " + Head(eboot));
+                Check("the app's eboot.bin is a SELF (the update's, decrypted under the game's licence)", Head(eboot) == "53-43-45-00");
+                var sfo = File.ReadAllBytes(Path.Combine(appDir, "sce_sys", "param.sfo"));
+                var ver = System.Text.Encoding.ASCII.GetString(sfo);
+                Console.WriteLine("  app param.sfo carries APP_VER " + (ver.Contains("01.22") ? "01.22" : ver.Contains("01.00") ? "01.00" : "?"));
+                Check("and its param.sfo is the update's: Vita3K will show 01.22", ver.Contains("01.22"));
+                Check("with no sce_pfs left in it", !Directory.Exists(Path.Combine(appDir, "sce_pfs")));
                 var addcont = Path.Combine(work, "ux0", "addcont", titleId);
                 var dlcs = Directory.Exists(addcont) ? Directory.GetDirectories(addcont) : new string[0];
                 foreach (var d in dlcs) Console.WriteLine("  DLC folder " + Path.GetFileName(d) + " - " + Directory.GetFiles(d, "*", SearchOption.AllDirectories).Length + " file(s)");
@@ -1054,7 +1055,7 @@ namespace LbIntegrations.Probe
                       "UP9000-" + titleId + "_00-" + Path.GetFileName(d) + ".rif"))));
                 Check("and no sce_pfs left in it", dlcs.All(d => !Directory.Exists(Path.Combine(d, "sce_pfs"))));
                 var reference = File.ReadAllText(Path.Combine(portable, "work.reference"));
-                Check("all of it in the reference", reference.Contains("ux0/patch/" + titleId + "/") && reference.Contains("ux0/addcont/" + titleId + "/"));
+                Check("all of it in the reference", reference.Contains("ux0/app/" + titleId + "/eboot.bin") && reference.Contains("ux0/addcont/" + titleId + "/"));
 
                 Call("Vita3kWorkspace", "Teardown", new object[] { layout });
                 Console.WriteLine();
@@ -1115,13 +1116,17 @@ namespace LbIntegrations.Probe
             var args = new object[] { layout, game, null };
             Check("the game launches", Call("Vita3kWorkspace", "Prepare", args) as string == TitleId, args[2] as string);
             var work = Path.Combine(portable, "work");
-            Check("the update is installed in ux0/patch", File.Exists(Path.Combine(work, "ux0", "patch", TitleId, "eboot.bin")));
-            Check("and it is 1.20's", File.ReadAllText(Path.Combine(work, "ux0", "patch", TitleId, "eboot.bin")).Contains("01.20"));
+            Check("the update is merged into the app, as Vita3K's own install does - its eboot.bin is 1.20's",
+                  File.ReadAllText(Path.Combine(work, "ux0", "app", TitleId, "eboot.bin")).Contains("01.20"));
+            Check("and ux0/patch is gone - Vita3K reads app0: from ux0/app alone", !Directory.Exists(Path.Combine(work, "ux0", "patch", TitleId)));
+            Check("the app's param.sfo is the update's now (what Vita3K shows as the version)",
+                  File.ReadAllBytes(Path.Combine(work, "ux0", "app", TitleId, "sce_sys", "param.sfo")).AsSpan().IndexOf(System.Text.Encoding.ASCII.GetBytes("01.20")) >= 0);
             Check("the first DLC in ux0/addcont", Directory.Exists(Path.Combine(work, "ux0", "addcont", TitleId, "DLCCOSTUME000001")));
             Check("the second too", Directory.Exists(Path.Combine(work, "ux0", "addcont", TitleId, "DLCLEVELPACK0002")));
             var reference = File.ReadAllText(Path.Combine(portable, "work.reference"));
             Check("and all of it is in the reference - none of it will come out as a save",
-                  reference.Contains("ux0/patch/" + TitleId + "/eboot.bin") && reference.Contains("ux0/addcont/" + TitleId + "/DLCLEVELPACK0002/"));
+                  reference.Contains("ux0/app/" + TitleId + "/eboot.bin") && !reference.Contains("ux0/patch/")
+                  && reference.Contains("ux0/addcont/" + TitleId + "/DLCLEVELPACK0002/"));
             var marker = File.ReadAllText(Path.Combine(portable, "work.title")).Split('\t');
             Check("the marker remembers which were installed", marker.Length >= 6 && marker[5].Length > 0);
 
@@ -1157,7 +1162,7 @@ namespace LbIntegrations.Probe
             {
                 // A session at 1.20 with three DLC: progress, and a file dropped into the update's folder.
                 Write(work, "ux0/user/00/savedata/" + TitleId + "/progress.bin", "made at 1.20");
-                Write(work, "ux0/patch/" + TitleId + "/written-by-the-session.bin", "should not survive a change of update");
+                Write(work, "ux0/app/" + TitleId + "/written-by-the-session.bin", "should not survive a change of update");
                 Check("the session is captured", (bool)Call("Vita3kWorkspace", "Capture", new object[] { layout, TitleId }));
                 string inside = null;
                 using (var z = ZipFile.OpenRead(save))
@@ -1188,7 +1193,7 @@ namespace LbIntegrations.Probe
                 Call("Vita3kWorkspace", "Prepare", args);
                 Check("answered yes: asked, and the save is restored", asked != null
                       && File.Exists(Path.Combine(work, "ux0", "user", "00", "savedata", TitleId, "progress.bin")));
-                Check("except what it held in the update's folder, which changed", !File.Exists(Path.Combine(work, "ux0", "patch", TitleId, "written-by-the-session.bin")));
+                Check("except what it held in the game's folder, which changed", !File.Exists(Path.Combine(work, "ux0", "app", TitleId, "written-by-the-session.bin")));
 
                 // Going UP asks nothing: a save made at 1.10, the game back at 1.20.
                 Check("a save made at 1.10 is captured", (bool)Call("Vita3kWorkspace", "Capture", new object[] { layout, TitleId }));

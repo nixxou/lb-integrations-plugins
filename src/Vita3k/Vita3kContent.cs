@@ -280,6 +280,17 @@ namespace LbIntegrations.Vita3k
                 // under the licence of the app it patches.
                 if (!content.IsPatch && !PlaceLicence(archivePath, content, vitaFs, out error)) return null;
 
+                // AN UPDATE ENDS UP IN THE APP ITSELF. Vita3K has no patch overlay at run time: app0:
+                // is ux0/app/<id> and nothing else (io.cpp, translate_path), and its own install
+                // decrypts an update into ux0/patch/<id>, then copies it over ux0/app/<id> and deletes
+                // ux0/patch/<id> (copy_path, io.cpp). Measured the other way: left in ux0/patch, the
+                // 1.22 update of LittleBigPlanet was ignored - the game ran at 1.00, and said so.
+                if (content.IsPatch)
+                {
+                    if (!MergeIntoApp(vitaFs, content, relative, out error)) return null;
+                    relative = "ux0/app/" + content.TitleId;
+                }
+
                 content.Written.Add(relative.Replace('\\', '/'));
                 Log.Info("installed " + content + " - " + files + " file(s) into " + relative);
                 return content;
@@ -378,6 +389,54 @@ namespace LbIntegrations.Vita3k
             catch (Exception ex)
             {
                 error = "could not place the licence: " + ex.GetType().Name + ": " + ex.Message;
+                Log.Warn(error, ex);
+                return false;
+            }
+        }
+
+        /// <summary>Move an installed update over its app, as Vita3K's copy_path does - MOVED, not copied:
+        /// on the same volume that is instant and needs no second copy of it. The fingerprints taken as
+        /// it was written follow the files to where they now are, replacing the app's own for the files
+        /// the update replaces.</summary>
+        private static bool MergeIntoApp(string vitaFs, VitaContent content, string patchRelative, out string error)
+        {
+            error = null;
+            try
+            {
+                var patchDir = Path.Combine(vitaFs, patchRelative.Replace('/', Path.DirectorySeparatorChar));
+                var appDir = Path.Combine(vitaFs, "ux0", "app", content.TitleId);
+                if (!Directory.Exists(patchDir)) return true;
+                if (!Directory.Exists(appDir)) { error = "the update has no app to go over (" + content.TitleId + ")"; return false; }
+
+                int moved = 0, replaced = 0;
+                var full = Path.GetFullPath(patchDir).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                foreach (var dir in Directory.GetDirectories(patchDir, "*", SearchOption.AllDirectories))
+                    Directory.CreateDirectory(Path.Combine(appDir, Path.GetFullPath(dir).Substring(full.Length)));
+                foreach (var file in Directory.GetFiles(patchDir, "*", SearchOption.AllDirectories))
+                {
+                    var rel = Path.GetFullPath(file).Substring(full.Length);
+                    var target = Path.Combine(appDir, rel);
+                    Directory.CreateDirectory(Path.GetDirectoryName(target));
+                    if (File.Exists(target)) replaced++;
+                    File.Move(file, target, overwrite: true);
+                    moved++;
+                }
+                Directory.Delete(patchDir, recursive: true);
+
+                var from = patchRelative.Replace('\\', '/').TrimEnd('/') + "/";
+                var to = "ux0/app/" + content.TitleId + "/";
+                foreach (var key in content.Hashed.Keys.Where(k => k.StartsWith(from, StringComparison.Ordinal)).ToList())
+                {
+                    content.Hashed[to + key.Substring(from.Length)] = content.Hashed[key];
+                    content.Hashed.Remove(key);
+                }
+                Log.Info("merged the update " + (content.AppVer ?? "") + " into ux0/app/" + content.TitleId + " - " + moved
+                         + " file(s), " + replaced + " of them replacing the game's, as Vita3K's own install does");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "could not merge the update into the app: " + ex.GetType().Name + ": " + ex.Message;
                 Log.Warn(error, ex);
                 return false;
             }
