@@ -56,8 +56,9 @@ namespace LbIntegrations.Vita3k
         public const string SaveFile = "state.vitasav";
 
         /// <summary>Headroom on top of the firmware and the game. A session writes saves, shader
-        /// caches and logs, and a disk that fills up mid-game is worse than one that was refused.</summary>
-        private const int MarginMb = 512;
+        /// caches and logs, and a disk that fills up mid-game is worse than one that was refused.
+        /// --ramdisk-margin on the command line replaces it.</summary>
+        public const int MarginMb = 512;
 
         /// <summary>What the capture waits for, in the DSi's terms and for the DSi's reasons: a floor
         /// always paid, then the emulator gone and the tree still, then a ceiling because this runs
@@ -409,12 +410,13 @@ namespace LbIntegrations.Vita3k
         /// <summary>The same preparation, saying what it is doing at each step - see
         /// Vita3kProgressWindow, which is what listens at launch.</summary>
         public static string Prepare(Vita3kLayout layout, string romPath, out string error,
-                                     Action<string, double?> report) => Prepare(layout, romPath, out error, report, false);
+                                     Action<string, double?> report) => Prepare(layout, romPath, out error, report, false, null);
 
         /// <summary>... and with <paramref name="noRamDisk"/>, on the disk whatever the RAM - what
-        /// --no-ramdisk on the command line asks for.</summary>
+        /// --no-ramdisk on the command line asks for; <paramref name="marginMb"/>, when given, is the
+        /// headroom --ramdisk-margin asks for instead of MarginMb.</summary>
         public static string Prepare(Vita3kLayout layout, string romPath, out string error,
-                                     Action<string, double?> report, bool noRamDisk)
+                                     Action<string, double?> report, bool noRamDisk, int? marginMb)
         {
             // Waits for an end-of-session release still in progress rather than racing it.
             if (!Monitor.TryEnter(SessionGate))
@@ -422,12 +424,12 @@ namespace LbIntegrations.Vita3k
                 report?.Invoke("Waiting for the previous session to be put away...", null);
                 Monitor.Enter(SessionGate);
             }
-            try { return PrepareLocked(layout, romPath, out error, report, noRamDisk); }
+            try { return PrepareLocked(layout, romPath, out error, report, noRamDisk, marginMb ?? MarginMb); }
             finally { Monitor.Exit(SessionGate); }
         }
 
         private static string PrepareLocked(Vita3kLayout layout, string romPath, out string error,
-                                            Action<string, double?> report, bool noRamDisk = false)
+                                            Action<string, double?> report, bool noRamDisk = false, int marginMb = MarginMb)
         {
             error = null;
             try
@@ -470,7 +472,7 @@ namespace LbIntegrations.Vita3k
 
                 int sizeMb = BaseSizeMb(layout)
                              + (int)(Math.Max(0, Vita3kContent.WorkingSizeBytes(romPath)) / (1024 * 1024))
-                             + MarginMb;
+                             + marginMb;
 
                 report?.Invoke("Preparing a fresh console...", null);
                 var root = OpenWorkingTree(layout, content.TitleId, sizeMb, report, noRamDisk);

@@ -271,6 +271,27 @@ namespace LbIntegrations.Probe
                       && (bool)carries.Invoke(null, new object[] { "-F --no-ramdisk \"" + rom + "\"", "--no-ramdisk" })
                       && !(bool)carries.Invoke(null, new object[] { "-F \"" + rom + "\"", "--no-ramdisk" }));
 
+                // --ramdisk-margin: its value goes with it, in either spelling.
+                Case("--ramdisk-margin and its value never reach the emulator",
+                     "-F --ramdisk-margin 1024 \"" + rom + "\"", "PCSE00965", "-F -r PCSE00965");
+                Case("nor the = spelling", "-F --ramdisk-margin=2048 \"" + rom + "\"", null, "-F \"" + rom + "\"");
+                Case("nor a refused negative value", "-F --ramdisk-margin -5 \"" + rom + "\"", "PCSE00965", "-F -r PCSE00965");
+                var margin = type.GetMethod("MarginFrom", BindingFlags.NonPublic | BindingFlags.Static);
+                int? Margin(string line, out string problem)
+                {
+                    var a = new object[] { line, null };
+                    var got = (int?)margin.Invoke(null, a);
+                    problem = a[1] as string;
+                    return got;
+                }
+                Check("the margin is read: --ramdisk-margin 1024", margin != null && Margin("-F --ramdisk-margin 1024", out _) == 1024);
+                Check("the margin is read: --ramdisk-margin=2048", Margin("-F --ramdisk-margin=2048", out _) == 2048);
+                Check("0 is a margin too", Margin("--ramdisk-margin 0", out var p0) == 0 && p0 == null);
+                Check("none asked: no margin, no complaint", Margin("-F", out var p1) == null && p1 == null);
+                Check("not a number: no margin, and it says why", Margin("--ramdisk-margin big", out var p2) == null && p2 != null);
+                Check("negative: refused", Margin("--ramdisk-margin -5", out var p3) == null && p3 != null);
+                Check("absurd: refused", Margin("--ramdisk-margin 999999", out var p4) == null && p4 != null);
+
                 Console.WriteLine();
                 Console.WriteLine(_bad == 0 ? "  OK - the game path never reaches the emulator beside -r"
                                             : "  " + _bad + " FAILURE(S) - see above");

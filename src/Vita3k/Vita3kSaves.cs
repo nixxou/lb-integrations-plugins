@@ -36,6 +36,54 @@ namespace LbIntegrations.Vita3k
 
         // ── the launch ───────────────────────────────────────────────────────
 
+        /// <summary>OUR OWN FLAGS, read from the host's line and never passed on - Vita3K's CLI11
+        /// rejects an option it does not know and the emulator would not start. Put on the emulator's
+        /// command line in LaunchBox, or on one game's custom command line.
+        ///
+        ///     --no-ramdisk               this session is played on the disk (work@@), never on a RAM disk
+        ///     --ramdisk-margin &lt;MB&gt;     room left free on the RAM disk beyond the firmware and the
+        ///                                game, for saves, shader caches and logs - 512 when not given.
+        ///                                Also written --ramdisk-margin=&lt;MB&gt;.</summary>
+        internal const string NoRamDiskFlag = "--no-ramdisk";
+        internal const string RamDiskMarginFlag = "--ramdisk-margin";
+
+        private static readonly string[] OurFlags = { NoRamDiskFlag };
+        private static readonly string[] OurFlagsWithValue = { RamDiskMarginFlag };
+
+        /// <summary>The largest margin taken at face value: past this it is a typo, not a wish.</summary>
+        private const int MaxMarginMb = 65536;
+
+        /// <summary>Does the host's line carry one of our flags?</summary>
+        internal static bool Carries(string line, string flag)
+            => Tokenize(line ?? "").Exists(t => string.Equals(t, flag, StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>The margin the line asks for, in MB - null when it asks for none, or for something
+        /// that is not a whole number of MB between 0 and 65536 (then <paramref name="problem"/> says
+        /// what was found, and the default applies).</summary>
+        internal static int? MarginFrom(string line, out string problem)
+        {
+            problem = null;
+            var tokens = Tokenize(line ?? "");
+            for (int i = 0; i < tokens.Count; i++)
+            {
+                var t = tokens[i];
+                string value;
+                if (string.Equals(t, RamDiskMarginFlag, StringComparison.OrdinalIgnoreCase))
+                    value = i + 1 < tokens.Count ? tokens[i + 1] : null;
+                else if (t.StartsWith(RamDiskMarginFlag + "=", StringComparison.OrdinalIgnoreCase))
+                    value = t.Substring(RamDiskMarginFlag.Length + 1);
+                else continue;
+
+                if (int.TryParse(value, System.Globalization.NumberStyles.None,
+                                 System.Globalization.CultureInfo.InvariantCulture, out int mb) && mb <= MaxMarginMb)
+                    return mb;
+                problem = RamDiskMarginFlag + " wants a whole number of MB up to " + MaxMarginMb
+                          + ", not " + (value == null ? "nothing" : "\"" + value + "\"");
+                return null;
+            }
+            return null;
+        }
+
         /// <summary>The command line that runs the app WE installed, rather than installing it again.
         ///
         /// MEASURED ON REAL LAUNCHES, three facts, and the third corrected an earlier reading of the
@@ -61,19 +109,6 @@ namespace LbIntegrations.Vita3k
         /// So the path is REMOVED, respecting quotes, and -r names the title id. With no title id -
         /// no console to build one on - the path is KEPT and only -r goes: Vita3K then installs and
         /// runs the game itself, which is the right fallback and what it would do without us.</summary>
-        /// <summary>OUR OWN FLAGS, read from the host's line and never passed on - Vita3K's CLI11
-        /// rejects an option it does not know and the emulator would not start. Put on the emulator's
-        /// command line in LaunchBox, or on one game's custom command line.
-        ///
-        ///     --no-ramdisk     this session is played on the disk (work\), never on a RAM disk</summary>
-        internal const string NoRamDiskFlag = "--no-ramdisk";
-
-        private static readonly string[] OurFlags = { NoRamDiskFlag };
-
-        /// <summary>Does the host's line carry one of our flags?</summary>
-        internal static bool Carries(string line, string flag)
-            => Tokenize(line ?? "").Exists(t => string.Equals(t, flag, StringComparison.OrdinalIgnoreCase));
-
         internal static string CommandLineFor(string current, string titleId, string romPath)
         {
             var tokens = Tokenize(current);
@@ -84,6 +119,16 @@ namespace LbIntegrations.Vita3k
                 var t = tokens[i];
 
                 if (Array.Exists(OurFlags, f => string.Equals(f, t, StringComparison.OrdinalIgnoreCase))) continue;
+                if (Array.Exists(OurFlagsWithValue, f => t.StartsWith(f + "=", StringComparison.OrdinalIgnoreCase))) continue;
+                if (Array.Exists(OurFlagsWithValue, f => string.Equals(f, t, StringComparison.OrdinalIgnoreCase)))
+                {
+                    // Its value goes with it - never the game path. A NEGATIVE number is a value too,
+                    // refused by MarginFrom but still ours: left on the line, Vita3K would take "-5"
+                    // for an option it does not know and not start.
+                    if (i + 1 < tokens.Count && !IsTheGame(tokens[i + 1], romPath)
+                        && (!tokens[i + 1].StartsWith("-") || long.TryParse(tokens[i + 1], out _))) i++;
+                    continue;
+                }
 
                 if (t == "-r" || t == "--installed-path" || t == "-Z" || t == "--app-args")
                 {
@@ -195,10 +240,14 @@ namespace LbIntegrations.Vita3k
                 var gameTitle = Safe(() => args?.GameBeingLaunched?.Title);
                 using (var window = Vita3kProgressWindow.Open("Vita3K - " + (string.IsNullOrWhiteSpace(gameTitle) ? "preparing the game" : gameTitle)))
                 {
-                    bool noRamDisk = Carries(CurrentLine(args), NoRamDiskFlag);
+                    var current = CurrentLine(args);
+                    bool noRamDisk = Carries(current, NoRamDiskFlag);
                     if (noRamDisk) Log.Info(NoRamDiskFlag + " is on the command line - this session stays on the disk");
+                    int? margin = MarginFrom(current, out var marginProblem);
+                    if (marginProblem != null) Log.Warn(marginProblem + " - keeping the default");
+                    else if (margin != null) Log.Info(RamDiskMarginFlag + " " + margin + " is on the command line");
                     titleId = Vita3kWorkspace.Prepare(layout, ResolveFullPath(rom), out error,
-                                                      (step, fraction) => window?.Report(step, fraction), noRamDisk);
+                                                      (step, fraction) => window?.Report(step, fraction), noRamDisk, margin);
                 }
                 if (titleId == null)
                 {
