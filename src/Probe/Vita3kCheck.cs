@@ -53,6 +53,8 @@ namespace LbIntegrations.Probe
                 TheArchive(vpk);
                 TheGameMenu();
                 TheOptions();
+                TheImportRecord();
+                TheSettings();
                 var layout = Resolve(Path.Combine(install, "Vita3K.exe"));
                 TheFirmware(layout, portable);
                 var sessionRoot = TheSession(layout, portable, vpk);
@@ -1352,6 +1354,120 @@ namespace LbIntegrations.Probe
             Check("and it finds this plugin by name", names.Contains(_asm.GetName().Name));
             var instance = (Unbroken.LaunchBox.Plugins.IGameMultiMenuItemPlugin)Activator.CreateInstance(plugin);
             Check("and offers nothing for no game", !instance.GetMenuItems(new Unbroken.LaunchBox.Plugins.Data.IGame[0]).Any());
+        }
+
+        /// <summary>The Vita3K tab of the pack's configuration window, and the relay hosting it: the
+        /// Settings contract by name, the bypass of LaunchBox's Vita import ON by default, a tab that
+        /// saves to its file and reads back - on a settings file under %TEMP%, never the install's.
+        /// LBIP_PROBE_SHOT_SETTINGS=&lt;png&gt; draws the window for a look at its layout.</summary>
+        private static void TheSettings()
+        {
+            Console.WriteLine();
+            Console.WriteLine("  the configuration window: the Vita3K tab");
+            var settingsType = _asm.GetType("LbIntegrations.Vita3k.Vita3kSettings", throwOnError: true);
+            var overrideField = settingsType.GetField("PathOverride", BindingFlags.NonPublic | BindingFlags.Static);
+            var file = Path.Combine(Path.GetTempPath(), "lbip-settings-" + Guid.NewGuid().ToString("N"), "settings.ini");
+            overrideField.SetValue(null, file);
+            try
+            {
+                bool Bypass() => (bool)settingsType.GetProperty("BypassVitaImport", BindingFlags.Public | BindingFlags.Static).GetValue(null);
+                Check("with no settings file, the bypass of LaunchBox's Vita import is ON", Bypass());
+
+                var contract = _asm.GetType("LbIntegrations.Vita3k.Settings");
+                if (!Check("LbIntegrations.Vita3k.Settings is there, public", contract != null && contract.IsPublic)) return;
+                var flags = BindingFlags.Public | BindingFlags.Static;
+                Check("its tab is called Vita3K", (string)contract.GetProperty("Title", flags).GetValue(null) == "Vita3K");
+                var page = (System.Windows.Forms.Control)contract.GetMethod("CreatePage", flags).Invoke(null, null);
+                var box = page.Controls.Cast<System.Windows.Forms.Control>().SelectMany(c => c.Controls.Cast<System.Windows.Forms.Control>())
+                              .OfType<System.Windows.Forms.CheckBox>().FirstOrDefault();
+                Check("its page builds, the bypass ticked", box != null && box.Checked);
+                box.Checked = false;
+                var save = contract.GetMethod("Save", flags);
+                Check("saved unticked: no complaint", save.Invoke(null, new object[] { page }) == null);
+                Check("the file says so", File.Exists(file) && File.ReadAllText(file).Contains("BypassLaunchBoxVitaImport=false"));
+                Check("and the setting reads it back", !Bypass());
+                Check("a page that is not its own is refused", save.Invoke(null, new object[] { new System.Windows.Forms.Panel() }) != null);
+
+                // THE RELAY, from this checkout's build.
+                var dir = Path.GetDirectoryName(_asm.Location);
+                string relay = null;
+                for (int up = 0; up < 6 && dir != null && relay == null; up++, dir = Path.GetDirectoryName(dir))
+                {
+                    var candidate = Path.Combine(dir, "Menus", "bin", "Release", "NixxMenus.dll");
+                    if (File.Exists(candidate)) relay = candidate;
+                }
+                if (!Check("the relay is built", relay != null)) return;
+                var menus = Assembly.LoadFrom(relay);
+                var menuType = menus.GetType("LbIntegrations.Menus.NixxSettingsMenu");
+                Check("the relay has a Tools menu entry", menuType != null && menuType.IsPublic
+                      && typeof(Unbroken.LaunchBox.Plugins.ISystemMenuItemPlugin).IsAssignableFrom(menuType));
+                var entry = (Unbroken.LaunchBox.Plugins.ISystemMenuItemPlugin)Activator.CreateInstance(menuType);
+                Console.WriteLine("            \"" + entry.Caption + "\"");
+                Check("in LaunchBox, not in Big Box", entry.ShowInLaunchBox && !entry.ShowInBigBox && entry.IconImage != null);
+                var providers = menus.GetType("LbIntegrations.Menus.SettingsProviders")
+                                     .GetMethod("All", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, null);
+                var names = ((System.Collections.IEnumerable)providers).Cast<object>().Select(o => (string)o.GetType().GetField("Name").GetValue(o)).ToList();
+                Console.WriteLine("            settings relayed: " + string.Join(", ", names));
+                Check("it finds this plugin's settings", names.Contains(_asm.GetName().Name));
+
+                var formType = menus.GetType("LbIntegrations.Menus.NixxSettingsForm");
+                using (var form = (System.Windows.Forms.Form)Activator.CreateInstance(formType, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { providers }, null))
+                {
+                    var tabs = form.Controls.OfType<System.Windows.Forms.TabControl>().First();
+                    var titles = tabs.TabPages.Cast<System.Windows.Forms.TabPage>().Select(t => t.Text).ToList();
+                    Console.WriteLine("            tabs: " + string.Join(" | ", titles));
+                    Check("the window has General, then the Vita3K tab", titles.Count >= 2 && titles[0] == "General" && titles.Contains("Vita3K"));
+
+                    var shot = Environment.GetEnvironmentVariable("LBIP_PROBE_SHOT_SETTINGS");
+                    if (!string.IsNullOrEmpty(shot))
+                    {
+                        form.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
+                        form.Location = new System.Drawing.Point(-4000, -4000);
+                        form.Show();
+                        foreach (var i in new[] { 0, titles.IndexOf("Vita3K") })
+                        {
+                            tabs.SelectedIndex = i;
+                            System.Windows.Forms.Application.DoEvents();
+                            using var bmp = new System.Drawing.Bitmap(form.Width, form.Height);
+                            form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, form.Width, form.Height));
+                            var png = Path.Combine(Path.GetDirectoryName(shot), Path.GetFileNameWithoutExtension(shot) + "-" + i + ".png");
+                            bmp.Save(png);
+                            Console.WriteLine("            drawn to " + png);
+                        }
+                        form.Hide();
+                    }
+                }
+            }
+            finally
+            {
+                overrideField.SetValue(null, null);
+                Scrub(Path.GetDirectoryName(file));
+            }
+        }
+
+        /// <summary>What the import wizard's restore does to a game record: LaunchBox's GameRecord keeps its
+        /// platform in a READONLY field under an obfuscated name, so every string field holding exactly
+        /// the stand-in is written. Tried on a record of the same shape.</summary>
+        private static void TheImportRecord()
+        {
+            Console.WriteLine();
+            Console.WriteLine("  the import wizard: a game record given its platform back");
+            var standIn = (string)_asm.GetType("LbIntegrations.Vita3k.Vita3kLbImport").GetField("StandIn", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
+            var record = new FakeGameRecord(standIn, standIn, @"C:\games\a.zip");
+            bool any = (bool)Call("Vita3kLbImport", "SetFields", new object[] { record, standIn, "Sony Playstation Vita" });
+            Check("a readonly platform field is written", any && record.Platform == "Sony Playstation Vita");
+            Check("and the scrape-as beside it", record.ScrapeAs == "Sony Playstation Vita");
+            Check("and nothing else", record.ApplicationPath == @"C:\games\a.zip");
+        }
+
+        /// <summary>The shape of LaunchBox's GameRecord: get-only properties over readonly fields.</summary>
+        private sealed class FakeGameRecord
+        {
+            private readonly string m_p, m_s, m_a;
+            public FakeGameRecord(string platform, string scrapeAs, string path) { m_p = platform; m_s = scrapeAs; m_a = path; }
+            public string Platform => m_p;
+            public string ScrapeAs => m_s;
+            public string ApplicationPath => m_a;
         }
 
         /// <summary>The options window's editing of a command line: our flags cut out and put back,

@@ -69,6 +69,9 @@ namespace LbIntegrations.Vita3k
             LbipRowInjection.Install("com.nixxou.lbip.vita3k", MetadataRows());
 
             StartUpCheck();
+
+            // LaunchBox's Import ROM Files wizard, made to import Vita games as ROM files - see Vita3kLbImport.
+            Vita3kLbImport.Install();
         }
 
         /// <summary>Look at every console this host knows, a few seconds after start: a session that
