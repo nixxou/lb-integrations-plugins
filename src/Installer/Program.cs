@@ -86,6 +86,9 @@ internal static class Program
             Console.WriteLine("  helper    " + (ram.Helper ? "in place" : "not deployed"));
             Console.WriteLine("  task      " + (ram.Task ?? "not registered"));
 
+            // VHDX: a property of the machine, reported part by part.
+            foreach (var line in VhdxSetup.Lines(VhdxSetup.Look())) Console.WriteLine(line);
+
             var busy = InstallerCore.RunningHost();
             if (busy != null) Console.WriteLine("running   " + busy);
             return 0;

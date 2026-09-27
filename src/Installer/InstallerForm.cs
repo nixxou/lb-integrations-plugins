@@ -15,7 +15,8 @@ internal sealed class InstallerForm : Form
     // grey paragraph below the buttons is TWO lines tall (30px from y=150), and the RAM disk heading
     // was first put at 166 - fourteen pixels inside it, invisible behind text that paints later.
     // Rows here, in order: 14 title, 46 root, 68 state, 104 buttons, 150 note, 192 RAM disk heading,
-    // 214 RAM disk state, 256 RAM disk button, 298 closing note. Leave a gap when adding one.
+    // 214 RAM disk state, 256 RAM disk button, 298 closing note (36 tall), 346 VHDX heading, 368 VHDX
+    // state, 406 VHDX note (30 tall). Leave a gap when adding one.
     private string? _root;
 
     private readonly Label _rootLabel  = new() { AutoSize = false, Location = new Point(16, 46), Size = new Size(520, 20) };
@@ -29,6 +30,9 @@ internal sealed class InstallerForm : Form
     // button rather than mixed into the sentence above.
     private readonly Label _ramState = new() { AutoSize = false, Location = new Point(16, 214), Size = new Size(520, 36) };
     private readonly Button _ram     = new() { Location = new Point(16, 256), Width = 160, Height = 34 };
+
+    // VHDX: reported only, for now - see VhdxSetup. A machine property, asked without a LaunchBox.
+    private readonly Label _vhdxState = new() { AutoSize = false, Location = new Point(16, 368), Size = new Size(520, 34) };
 
     /// <summary>ONE BUTTON, SAYING THE ONE NEXT THING TO DO - and gone when there is none. LiteBox
     /// row does exactly this (RomPanel.RefreshCaps), and matching it is worth more than an
@@ -51,7 +55,7 @@ internal sealed class InstallerForm : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(552, 346);
+        ClientSize = new Size(552, 452);
 
         Controls.Add(new Label
         {
@@ -88,6 +92,24 @@ internal sealed class InstallerForm : Form
                  + "scheduled task. Enabling it asks for administrator rights once, never again.",
         });
 
+        Controls.Add(new Label
+        {
+            AutoSize = false,
+            Location = new Point(16, 346),
+            Size = new Size(520, 20),
+            Font = new Font(Font, FontStyle.Bold),
+            Text = "Optional — VHDX",
+        });
+        Controls.Add(new Label
+        {
+            AutoSize = false,
+            Location = new Point(16, 406),
+            Size = new Size(520, 30),
+            ForeColor = SystemColors.GrayText,
+            Text = "For keeping the pristine Vita console in a virtual disk, each session on a "
+                 + "differencing disk of its own. Reported only - nothing uses it yet.",
+        });
+
         _install.Click   += (_, _) => Run(InstallerCore.Install,   "Install");
         _uninstall.Click += (_, _) => Run(InstallerCore.Uninstall, "Uninstall");
         _choose.Click    += (_, _) => Choose();
@@ -107,7 +129,8 @@ internal sealed class InstallerForm : Form
         };
 
         Controls.AddRange(new Control[] { _rootLabel, _stateLabel, _install, _uninstall, _choose,
-                                          _ramState, _ram });
+                                          _ramState, _ram, _vhdxState });
+        _vhdxState.Text = VhdxSetup.Describe(VhdxSetup.Look());
 
         // The exe dropped at the LaunchBox root, or inside Core, are both ordinary ways to run this.
         var here = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
