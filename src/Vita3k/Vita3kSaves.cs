@@ -43,24 +43,34 @@ namespace LbIntegrations.Vita3k
         ///     --no-ramdisk               this session is played on the disk (work@@), never on a RAM disk
         ///     --ramdisk-margin &lt;MB&gt;     room left free on the RAM disk beyond the firmware and the
         ///                                game, for saves, shader caches and logs - 512 when not given.
-        ///                                Also written --ramdisk-margin=&lt;MB&gt;.</summary>
+        ///                                Also written --ramdisk-margin=&lt;MB&gt;.
+        ///     --vita3k-ram &lt;MB&gt;         RAM kept free for Vita3K itself beside the RAM disk, taken
+        ///                                as it is - instead of the peak measured for this game plus
+        ///                                15%, or 2048 before any measurement. Also =&lt;MB&gt;.</summary>
         internal const string NoRamDiskFlag = "--no-ramdisk";
         internal const string RamDiskMarginFlag = "--ramdisk-margin";
+        internal const string Vita3kRamFlag = "--vita3k-ram";
 
         private static readonly string[] OurFlags = { NoRamDiskFlag };
-        private static readonly string[] OurFlagsWithValue = { RamDiskMarginFlag };
+        private static readonly string[] OurFlagsWithValue = { RamDiskMarginFlag, Vita3kRamFlag };
 
-        /// <summary>The largest margin taken at face value: past this it is a typo, not a wish.</summary>
-        private const int MaxMarginMb = 65536;
+        /// <summary>The largest value taken at face value: past this it is a typo, not a wish.</summary>
+        private const int MaxMb = 65536;
 
         /// <summary>Does the host's line carry one of our flags?</summary>
         internal static bool Carries(string line, string flag)
             => Tokenize(line ?? "").Exists(t => string.Equals(t, flag, StringComparison.OrdinalIgnoreCase));
 
-        /// <summary>The margin the line asks for, in MB - null when it asks for none, or for something
-        /// that is not a whole number of MB between 0 and 65536 (then <paramref name="problem"/> says
-        /// what was found, and the default applies).</summary>
-        internal static int? MarginFrom(string line, out string problem)
+        /// <summary>The margin the line asks for, in MB - see MbFrom.</summary>
+        internal static int? MarginFrom(string line, out string problem) => MbFrom(line, RamDiskMarginFlag, out problem);
+
+        /// <summary>The RAM the line asks to keep for Vita3K, in MB - see MbFrom.</summary>
+        internal static int? Vita3kRamFrom(string line, out string problem) => MbFrom(line, Vita3kRamFlag, out problem);
+
+        /// <summary>The MB one of our valued flags asks for - null when the line does not carry it, or
+        /// carries something that is not a whole number of MB between 0 and 65536 (then
+        /// <paramref name="problem"/> says what was found, and the default applies).</summary>
+        internal static int? MbFrom(string line, string flag, out string problem)
         {
             problem = null;
             var tokens = Tokenize(line ?? "");
@@ -68,16 +78,16 @@ namespace LbIntegrations.Vita3k
             {
                 var t = tokens[i];
                 string value;
-                if (string.Equals(t, RamDiskMarginFlag, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(t, flag, StringComparison.OrdinalIgnoreCase))
                     value = i + 1 < tokens.Count ? tokens[i + 1] : null;
-                else if (t.StartsWith(RamDiskMarginFlag + "=", StringComparison.OrdinalIgnoreCase))
-                    value = t.Substring(RamDiskMarginFlag.Length + 1);
+                else if (t.StartsWith(flag + "=", StringComparison.OrdinalIgnoreCase))
+                    value = t.Substring(flag.Length + 1);
                 else continue;
 
                 if (int.TryParse(value, System.Globalization.NumberStyles.None,
-                                 System.Globalization.CultureInfo.InvariantCulture, out int mb) && mb <= MaxMarginMb)
+                                 System.Globalization.CultureInfo.InvariantCulture, out int mb) && mb <= MaxMb)
                     return mb;
-                problem = RamDiskMarginFlag + " wants a whole number of MB up to " + MaxMarginMb
+                problem = flag + " wants a whole number of MB up to " + MaxMb
                           + ", not " + (value == null ? "nothing" : "\"" + value + "\"");
                 return null;
             }
@@ -246,8 +256,11 @@ namespace LbIntegrations.Vita3k
                     int? margin = MarginFrom(current, out var marginProblem);
                     if (marginProblem != null) Log.Warn(marginProblem + " - keeping the default");
                     else if (margin != null) Log.Info(RamDiskMarginFlag + " " + margin + " is on the command line");
+                    int? vitaRam = Vita3kRamFrom(current, out var ramProblem);
+                    if (ramProblem != null) Log.Warn(ramProblem + " - keeping the measured reserve");
+                    else if (vitaRam != null) Log.Info(Vita3kRamFlag + " " + vitaRam + " is on the command line");
                     titleId = Vita3kWorkspace.Prepare(layout, ResolveFullPath(rom), out error,
-                                                      (step, fraction) => window?.Report(step, fraction), noRamDisk, margin);
+                                                      (step, fraction) => window?.Report(step, fraction), noRamDisk, margin, vitaRam);
                 }
                 if (titleId == null)
                 {

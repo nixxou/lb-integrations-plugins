@@ -410,13 +410,14 @@ namespace LbIntegrations.Vita3k
         /// <summary>The same preparation, saying what it is doing at each step - see
         /// Vita3kProgressWindow, which is what listens at launch.</summary>
         public static string Prepare(Vita3kLayout layout, string romPath, out string error,
-                                     Action<string, double?> report) => Prepare(layout, romPath, out error, report, false, null);
+                                     Action<string, double?> report) => Prepare(layout, romPath, out error, report, false, null, null);
 
         /// <summary>... and with <paramref name="noRamDisk"/>, on the disk whatever the RAM - what
         /// --no-ramdisk on the command line asks for; <paramref name="marginMb"/>, when given, is the
-        /// headroom --ramdisk-margin asks for instead of MarginMb.</summary>
+        /// headroom --ramdisk-margin asks for instead of MarginMb; <paramref name="vita3kRamMb"/>, when
+        /// given, the RAM --vita3k-ram keeps for the emulator instead of the measured reserve.</summary>
         public static string Prepare(Vita3kLayout layout, string romPath, out string error,
-                                     Action<string, double?> report, bool noRamDisk, int? marginMb)
+                                     Action<string, double?> report, bool noRamDisk, int? marginMb, int? vita3kRamMb)
         {
             // Waits for an end-of-session release still in progress rather than racing it.
             if (!Monitor.TryEnter(SessionGate))
@@ -424,12 +425,13 @@ namespace LbIntegrations.Vita3k
                 report?.Invoke("Waiting for the previous session to be put away...", null);
                 Monitor.Enter(SessionGate);
             }
-            try { return PrepareLocked(layout, romPath, out error, report, noRamDisk, marginMb ?? MarginMb); }
+            try { return PrepareLocked(layout, romPath, out error, report, noRamDisk, marginMb ?? MarginMb, vita3kRamMb); }
             finally { Monitor.Exit(SessionGate); }
         }
 
         private static string PrepareLocked(Vita3kLayout layout, string romPath, out string error,
-                                            Action<string, double?> report, bool noRamDisk = false, int marginMb = MarginMb)
+                                            Action<string, double?> report, bool noRamDisk = false, int marginMb = MarginMb,
+                                            int? vita3kRamMb = null)
         {
             error = null;
             try
@@ -475,7 +477,7 @@ namespace LbIntegrations.Vita3k
                              + marginMb;
 
                 report?.Invoke("Preparing a fresh console...", null);
-                var root = OpenWorkingTree(layout, content.TitleId, sizeMb, report, noRamDisk);
+                var root = OpenWorkingTree(layout, content.TitleId, sizeMb, report, noRamDisk, vita3kRamMb);
                 if (root == null) { error = "could not make a working tree"; return null; }
 
                 // FROM HERE, A FAILURE OWES WHAT IT TOOK BACK. Measured: the junction was refused,
@@ -555,13 +557,15 @@ namespace LbIntegrations.Vita3k
         /// free does not fail, it PAGES to the system drive. We would be writing the SSD twice over
         /// while believing we were sparing it, and more slowly than a plain folder.</summary>
         private static string OpenWorkingTree(Vita3kLayout layout, string titleId, int sizeMb,
-                                              Action<string, double?> report = null, bool noRamDisk = false)
+                                              Action<string, double?> report = null, bool noRamDisk = false,
+                                              int? vita3kRamMb = null)
         {
             RamDiskHost.LaunchBoxRoot = () => Vita3kPaths.LaunchBoxRootOf(layout);
 
             // THE RAM THE EMULATOR NEEDS COMES FIRST. A RAM disk that fits only by leaving Vita3K
             // itself short would just move the paging from the disk image to the emulator.
-            int reserve = EmulatorReserveMb(layout, titleId);
+            // --vita3k-ram, when given, is taken as it is: whoever wrote it knows the game.
+            int reserve = vita3kRamMb ?? EmulatorReserveMb(layout, titleId);
             int need = sizeMb + reserve;
             int free = RamDrive.GetFreeRamMb();
 

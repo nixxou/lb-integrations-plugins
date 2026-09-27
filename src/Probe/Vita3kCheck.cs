@@ -292,6 +292,20 @@ namespace LbIntegrations.Probe
                 Check("negative: refused", Margin("--ramdisk-margin -5", out var p3) == null && p3 != null);
                 Check("absurd: refused", Margin("--ramdisk-margin 999999", out var p4) == null && p4 != null);
 
+                // --vita3k-ram: the same rules, its own value.
+                Case("--vita3k-ram and its value never reach the emulator",
+                     "-F --vita3k-ram 3072 --ramdisk-margin=256 \"" + rom + "\"", "PCSE00965", "-F -r PCSE00965");
+                var ram = type.GetMethod("Vita3kRamFrom", BindingFlags.NonPublic | BindingFlags.Static);
+                int? Ram(string line)
+                {
+                    var a = new object[] { line, null };
+                    return (int?)ram.Invoke(null, a);
+                }
+                Check("the RAM for Vita3K is read: --vita3k-ram 3072", ram != null && Ram("-F --vita3k-ram 3072 --ramdisk-margin 256") == 3072);
+                Check("the RAM for Vita3K is read: --vita3k-ram=1536", Ram("--vita3k-ram=1536") == 1536);
+                Check("and the two flags do not read each other's value",
+                      Ram("--ramdisk-margin 256") == null && Margin("--vita3k-ram 3072", out _) == null);
+
                 Console.WriteLine();
                 Console.WriteLine(_bad == 0 ? "  OK - the game path never reaches the emulator beside -r"
                                             : "  " + _bad + " FAILURE(S) - see above");
