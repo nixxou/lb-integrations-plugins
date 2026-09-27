@@ -1369,8 +1369,9 @@ namespace LbIntegrations.Probe
             var fetch = _asm.GetType("LbIntegrations.Vita3k.Vita3kDocs", throwOnError: true).GetMethods(BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static)
                             .First(m => m.Name == "Fetch" && m.GetParameters().Length == 5);
             string Fetch(string[] urls, int seconds) => (string)fetch.Invoke(null, new object[] { emu, urls, TimeSpan.FromSeconds(seconds), null, null });
+            var folderName = (string)_asm.GetType("LbIntegrations.Vita3k.Vita3kDocs").GetField("FolderName").GetValue(null);
 
-            Check("an empty list: nothing said, no doc folder", Fetch(new string[0], 5) == "" && !Directory.Exists(Path.Combine(emu, "doc")));
+            Check("an empty list: nothing said, no " + folderName + " folder", Fetch(new string[0], 5) == "" && !Directory.Exists(Path.Combine(emu, folderName)));
 
             int port = 0;
             var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
@@ -1405,8 +1406,8 @@ namespace LbIntegrations.Probe
             {
                 var said = Fetch(new[] { prefix + "docs/guide%20one.pdf?x=1", prefix + "missing.pdf", prefix + "slow.txt" }, 1);
                 Console.WriteLine("            " + said.Trim());
-                var doc = Path.Combine(emu, "doc");
-                Check("the doc folder is made", Directory.Exists(doc));
+                var doc = Path.Combine(emu, folderName);
+                Check("the " + folderName + " folder is made", Directory.Exists(doc));
                 Check("the document that came is there, under its URL's name", File.Exists(Path.Combine(doc, "guide one.pdf"))
                       && File.ReadAllText(Path.Combine(doc, "guide one.pdf")) == "the first document");
                 Check("the 404 and the one too slow are skipped, no partial file left",
@@ -1782,6 +1783,24 @@ namespace LbIntegrations.Probe
                     Check("and one under another name in its folder, by the content it names", find.Invoke(null, byContent) is byte[] b2 && b2.AsSpan().SequenceEqual(rif), byContent[3] as string);
                     Console.WriteLine("            " + byContent[2]);
                     Check("a 1 MB <name>.bin beside it is never read (its size says it is no licence)", (byContent[2] as string ?? "").StartsWith("whatever I called it.rif"));
+
+                    // THE IMPORT WIZARD'S LIST: a .pkg game named from its param.sfo - and taken out
+                    // when its licence is nowhere.
+                    var run = _asm.GetType("LbIntegrations.Vita3k.Vita3kImportCleanup", throwOnError: true).GetMethod("Run", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+                    var alone = Path.Combine(temp, "alone");
+                    Directory.CreateDirectory(alone);
+                    var lonely = Path.Combine(alone, "some pkg.pkg");
+                    File.Copy(pkgPath, lonely);
+                    var withoutList = new FakeGameList();
+                    withoutList.Games.Add(new FakeListRecord("some pkg", lonely));
+                    run.Invoke(null, new object[] { null, withoutList });
+                    Check("in the import list, a .pkg game with no licence anywhere is taken out", withoutList.Games.Count == 0);
+                    File.WriteAllBytes(Path.Combine(alone, "some pkg.rif"), rif);
+                    var withList = new FakeGameList();
+                    withList.Games.Add(new FakeListRecord("some pkg", lonely));
+                    run.Invoke(null, new object[] { null, withList });
+                    Check("with its licence beside it, kept - and named from its param.sfo",
+                          withList.Games.Count == 1 && withList.Games[0].Title == (string)Call("Vita3kImportCleanup", "CleanTitle", new object[] { (string)Field(content, "FullTitle") }), withList.Games.Count == 1 ? withList.Games[0].Title : null);
                 }
                 finally { installDirField.SetValue(null, null); }
 

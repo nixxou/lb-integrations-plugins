@@ -8,6 +8,10 @@
 //   - an UPDATE (gp) or a DLC (ac) goes: it is not a game, a launch installs it with its game. It is
 //     recorded in the emulator's index (Vita3kExtrasIndex), with the game archives of the same title
 //     id found in the same list - the next launch looks there too;
+//   - a GAME AS A .pkg WHOSE LICENCE IS NOWHERE goes: it would be imported, then refused at every
+//     launch (Vita3kLicences - beside it, or in the emulator's zrif folder). An update needs none (it
+//     runs under its game's); a DLC's is not looked for here - it leaves the list anyway, and its
+//     index line is a hint a launch checks.
 //   - anything else - unreadable, not Vita content - goes, and the log says why.
 //
 // ONLY IN THE VITA CASE (Vita3kLbImport swapped the platform: the wizard was on its way to its own
@@ -72,7 +76,8 @@ namespace LbIntegrations.Vita3k
 
             if (!Read(owner, findings)) { Log.Info("[import] the list was left as LaunchBox made it - reading cancelled"); return; }
 
-            int renamed = 0, extras = 0, invalid = 0;
+            int renamed = 0, extras = 0, invalid = 0, unlicensed = 0;
+            if (Vita3kLicences.InstallDir == null) Vita3kLicences.InstallDir = Installs().FirstOrDefault();
             var games = findings.Where(f => f.Content != null && f.Content.IsGame).ToList();
             var found = new List<IndexedExtra>();
             for (int i = list.Count - 1; i >= 0; i--)
@@ -102,6 +107,12 @@ namespace LbIntegrations.Vita3k
                     Log.Info("[import]   removed " + name + " - category " + (f.Content.Category ?? "?") + " is not a game");
                     continue;
                 }
+                if (Vita3kContent.IsPkg(f.Path) && Vita3kLicences.Find(f.Path, f.Content.ContentId, out _, out var noLicence) == null)
+                {
+                    list.RemoveAt(i); unlicensed++;
+                    Log.Info("[import]   removed " + name + " - " + noLicence);
+                    continue;
+                }
                 var title = CleanTitle(f.Content.FullTitle ?? f.Content.Title);
                 if (!string.IsNullOrWhiteSpace(title) && !string.Equals(title, GetProperty(f.Record, "Title") as string, StringComparison.Ordinal)
                     && SetProperty(f.Record, "Title", title))
@@ -119,7 +130,8 @@ namespace LbIntegrations.Vita3k
                     Vita3kExtrasIndex.Record(install, games.Select(g => g.Path), found);
 
             Log.Info("[import] the list put right: " + games.Count + " game(s), " + renamed + " renamed from their param.sfo, "
-                     + extras + " update(s)/DLC recorded for their game and removed, " + invalid + " file(s) that are not Vita games removed");
+                     + extras + " update(s)/DLC recorded for their game and removed, " + invalid + " file(s) that are not Vita games removed, "
+                     + unlicensed + " .pkg game(s) without a licence removed");
         }
 
         /// <summary>Every file read, off the UI thread, under a window saying which. False when cancelled.</summary>
