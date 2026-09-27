@@ -25,6 +25,13 @@
 //   label  = RomExtractorRAM       read and then ignored - LiteBox writes it, nothing uses it
 //
 //   action = clean                 (1.2) free physical memory, mount nothing - see below
+//   action = vhdx-create           (1.3) a new dynamic VHDX, formatted NTFS, left detached:
+//                                    image=<path.vhdx> size=<MB> [label=<name>]
+//   action = vhdx-child            (1.3) a new DIFFERENCING VHDX over a parent, left detached:
+//                                    image=<child.vhdx> parent=<parent.vhdx>
+//   action = vhdx-attach           (1.3) attach and give its volume a letter:
+//                                    image=<path.vhdx> drive=<letter> [readonly=1]
+//   action = vhdx-detach           (1.3) detach it:  image=<path.vhdx>
 //   id     = <letters, digits, ->  (1.2) echoed at the end of ramdisk.result as " id=<id>", so the
 //                                  caller can tell ITS answer from the answer of a run somebody
 //                                  else started: the task ignores a second instance while one is
@@ -72,6 +79,16 @@
 // AN OLDER HELPER READS "clean" AS A MOUNT: it only knows the unmount words and takes anything else
 // for the default. A caller therefore checks FileVersion >= 1.2 before ever sending it.
 //
+// THE vhdx-* ACTIONS (1.3), for a pristine image kept clean under a differencing disk per session.
+// Through diskpart: it is on every edition of Windows (the Hyper-V cmdlets are not), it creates
+// differencing disks ("create vdisk ... parent="), and this runs elevated already. And because this
+// runs elevated and the values go into a diskpart SCRIPT, every one is held to its shape first - an
+// absolute path ending .vhdx with no quote and no line break in it, one letter, a number, a plain
+// label - or nothing runs at all: a line break in a path would otherwise be a diskpart command.
+// Same caution as clean: an older helper reads these as a mount; check FileVersion >= 1.3.
+//
+//   OK|FAIL vhdx-<what> exit=<n>[ - <diskpart's last words>]
+//
 // THIS IS NOT A PRIVILEGE BOUNDARY, and never was: the cfg is writable by the user and this runs
 // elevated, which is inherent to every no-UAC elevation bridge - LiteBox says the same of its
 // admin-launch helper. 1.1 widens what the cfg can ask for, so the values are held to the shapes
@@ -108,6 +125,11 @@ namespace RamDiskHelper
 
                 id = Id(Get(kv, "id", ""));
                 string action = Get(kv, "action", "mount");
+                if (action.StartsWith("vhdx-", StringComparison.OrdinalIgnoreCase))
+                {
+                    File.WriteAllText(resultPath, Vhdx(action.ToLowerInvariant(), kv, dir) + id);
+                    return 0;
+                }
                 if (action.Equals("clean", StringComparison.OrdinalIgnoreCase))
                 {
                     File.WriteAllText(resultPath, Clean() + id);
@@ -187,6 +209,110 @@ namespace RamDiskHelper
 
         private static string Get(Dictionary<string, string> kv, string key, string def)
             => kv.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v) ? v : def;
+
+        // ── action = vhdx-* ──────────────────────────────────────────────────
+
+        private static string Vhdx(string action, Dictionary<string, string> kv, string dir)
+        {
+            string image = Get(kv, "image", "");
+            if (!SafeVhdx(image)) return "FAIL " + action + " exit=-1 - image is not an absolute .vhdx path of a plain shape";
+            var script = new System.Text.StringBuilder();
+            switch (action)
+            {
+                case "vhdx-create":
+                {
+                    if (File.Exists(image)) return "FAIL " + action + " exit=-1 - the image already exists";
+                    if (!int.TryParse(Get(kv, "size", ""), System.Globalization.NumberStyles.None,
+                                      System.Globalization.CultureInfo.InvariantCulture, out int mb) || mb < 16 || mb > 4 * 1024 * 1024)
+                        return "FAIL " + action + " exit=-1 - size is not a number of MB between 16 and 4194304";
+                    string label = Get(kv, "label", "VHDX");
+                    if (!SafeLabel(label)) return "FAIL " + action + " exit=-1 - label must be 1-32 letters, digits, - or _";
+                    Directory.CreateDirectory(Path.GetDirectoryName(image));
+                    script.Append("create vdisk file=\"").Append(image).Append("\" maximum=").Append(mb).Append(" type=expandable\r\n");
+                    script.Append("select vdisk file=\"").Append(image).Append("\"\r\n");
+                    script.Append("attach vdisk\r\n");
+                    script.Append("convert mbr\r\n");
+                    script.Append("create partition primary\r\n");
+                    script.Append("format fs=ntfs quick label=\"").Append(label).Append("\"\r\n");
+                    script.Append("detach vdisk\r\n");
+                    break;
+                }
+                case "vhdx-child":
+                {
+                    string parent = Get(kv, "parent", "");
+                    if (!SafeVhdx(parent) || !File.Exists(parent)) return "FAIL " + action + " exit=-1 - parent is not an existing .vhdx";
+                    if (File.Exists(image)) return "FAIL " + action + " exit=-1 - the image already exists";
+                    Directory.CreateDirectory(Path.GetDirectoryName(image));
+                    script.Append("create vdisk file=\"").Append(image).Append("\" parent=\"").Append(parent).Append("\"\r\n");
+                    break;
+                }
+                case "vhdx-attach":
+                {
+                    if (!File.Exists(image)) return "FAIL " + action + " exit=-1 - there is no such image";
+                    string drive = Get(kv, "drive", "").TrimEnd(':').ToUpperInvariant();
+                    if (drive.Length != 1 || drive[0] < 'D' || drive[0] > 'Z') return "FAIL " + action + " exit=-1 - drive must be one letter D-Z";
+                    bool readOnly = Get(kv, "readonly", "") == "1";
+                    script.Append("select vdisk file=\"").Append(image).Append("\"\r\n");
+                    script.Append("attach vdisk").Append(readOnly ? " readonly" : "").Append("\r\n");
+                    script.Append("select partition 1\r\n");
+                    script.Append("remove all noerr\r\n");        // whatever letter automount gave it
+                    script.Append("assign letter=").Append(drive).Append("\r\n");
+                    break;
+                }
+                case "vhdx-detach":
+                {
+                    if (!File.Exists(image)) return "FAIL " + action + " exit=-1 - there is no such image";
+                    script.Append("select vdisk file=\"").Append(image).Append("\"\r\n");
+                    script.Append("detach vdisk\r\n");
+                    break;
+                }
+                default:
+                    return "FAIL " + action + " exit=-1 - no such action";
+            }
+
+            var scriptPath = Path.Combine(dir, "vhdx-" + Guid.NewGuid().ToString("N") + ".diskpart");
+            try
+            {
+                File.WriteAllText(scriptPath, script.ToString());
+                var psi = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory ?? @"C:\Windows\System32", "diskpart.exe"))
+                {
+                    UseShellExecute = false, CreateNoWindow = true,
+                    RedirectStandardOutput = true, RedirectStandardError = true,
+                };
+                psi.ArgumentList.Add("/s");
+                psi.ArgumentList.Add(scriptPath);
+                using var p = Process.Start(psi);
+                string said = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
+                p.WaitForExit();
+                if (p.ExitCode == 0) return "OK " + action + " exit=0";
+                return "FAIL " + action + " exit=" + p.ExitCode + " - " + LastWords(said);
+            }
+            finally { try { File.Delete(scriptPath); } catch { } }
+        }
+
+        /// <summary>An absolute path to a .vhdx, and nothing a diskpart script could read as more.</summary>
+        private static bool SafeVhdx(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || path.Length > 400) return false;
+            if (!path.EndsWith(".vhdx", StringComparison.OrdinalIgnoreCase)) return false;
+            foreach (var c in path) if (c < ' ' || c == '"') return false;
+            try { return Path.IsPathFullyQualified(path) && Path.GetFullPath(path) == path; } catch { return false; }
+        }
+
+        private static bool SafeLabel(string label)
+        {
+            if (label.Length < 1 || label.Length > 32) return false;
+            foreach (var c in label) if (!(char.IsLetterOrDigit(c) || c == '-' || c == '_')) return false;
+            return true;
+        }
+
+        /// <summary>Diskpart's last non-empty line, cut to fit a result line.</summary>
+        private static string LastWords(string output)
+        {
+            var lines = (output ?? "").Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            var last = lines.Length > 0 ? lines[lines.Length - 1].Trim() : "no output";
+            return last.Length > 200 ? last.Substring(0, 200) : last;
+        }
 
         // ── action = clean ───────────────────────────────────────────────────
 

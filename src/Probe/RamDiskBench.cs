@@ -81,6 +81,95 @@ namespace LbIntegrations.Probe
             return said != null && said.StartsWith("OK clean", StringComparison.Ordinal);
         }
 
+        /// <summary>--vhdx --lb &lt;root&gt;: a base VHDX, a differencing child over it, a change in the
+        /// child - and the base untouched. And the helper refusing values that could smuggle a diskpart
+        /// command. Creates and attaches REAL virtual disks, under %TEMP%, removed afterwards.</summary>
+        public static bool Vhdx(string launchBoxRoot)
+        {
+            Console.WriteLine();
+            Console.WriteLine("-- VHDX through the helper: base + differencing  [ATTACHES DISKS] " + new string('-', 1));
+            if (string.IsNullOrWhiteSpace(launchBoxRoot) || !Directory.Exists(launchBoxRoot))
+            { Console.WriteLine("  pass --lb <LaunchBox root>"); return false; }
+            RamDiskLog.Use(m => Console.WriteLine("    [log] " + m), (m, ex) => Console.WriteLine("    [log] " + m + (ex != null ? " - " + ex.Message : "")));
+            RamDiskHost.UseRoot(launchBoxRoot);
+            Console.WriteLine("  helper    " + (RamDrive.HelperVersion?.ToString() ?? "absent") + " - can do VHDX: " + RamDrive.CanUseVhdx);
+            if (!RamDrive.CanUseVhdx) return false;
+
+            int bad = 0;
+            bool Check(string what, bool ok, string why = null)
+            {
+                Console.WriteLine("    " + (ok ? "ok  " : "BAD ") + what + (!ok && why != null ? "  (" + why + ")" : ""));
+                if (!ok) bad++;
+                return ok;
+            }
+            var dir = Path.Combine(Path.GetTempPath(), "lbip-vhdx-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            var parent = Path.Combine(dir, "base.vhdx");
+            var child = Path.Combine(dir, "session.vhdx");
+            var attached = new System.Collections.Generic.List<string>();
+            string err;
+            var watch = Stopwatch.StartNew();
+            string Ms() { var t = watch.ElapsedMilliseconds; watch.Restart(); return t + " ms"; }
+            try
+            {
+                if (!Check("a base VHDX is created, formatted", RamDrive.CreateVhdx(parent, 64, "NANDBASE", out err), err)) return false;
+                Console.WriteLine("            " + Ms() + ", " + new FileInfo(parent).Length / 1024 + " KB on disk");
+
+                var root = RamDrive.AttachVhdx(parent, false, out err);
+                if (!Check("it attaches writable", root != null, err)) return false;
+                attached.Add(parent);
+                Console.WriteLine("            " + Ms() + " as " + root);
+                File.WriteAllText(Path.Combine(root, "keep.txt"), "pristine");
+                Directory.CreateDirectory(Path.Combine(root, "vs0"));
+                Check("it detaches", RamDrive.DetachVhdx(parent, out err), err); attached.Remove(parent);
+                Console.WriteLine("            " + Ms());
+
+                Check("a differencing child is created over it", RamDrive.CreateDifferencingVhdx(child, parent, out err), err);
+                Console.WriteLine("            " + Ms() + ", " + new FileInfo(child).Length / 1024 + " KB on disk");
+                root = RamDrive.AttachVhdx(child, false, out err);
+                if (!Check("the child attaches writable", root != null, err)) return false;
+                attached.Add(child);
+                Console.WriteLine("            " + Ms() + " as " + root);
+                Check("the child sees the base's file", File.ReadAllText(Path.Combine(root, "keep.txt")) == "pristine");
+                File.WriteAllText(Path.Combine(root, "keep.txt"), "changed in the session");
+                File.WriteAllText(Path.Combine(root, "new.txt"), "written in the session");
+                Check("the child detaches", RamDrive.DetachVhdx(child, out err), err); attached.Remove(child);
+
+                root = RamDrive.AttachVhdx(parent, true, out err);
+                if (!Check("the base attaches read-only", root != null, err)) return false;
+                attached.Add(parent);
+                Check("and its file is still pristine", File.ReadAllText(Path.Combine(root, "keep.txt")) == "pristine");
+                Check("and the session's new file is not in it", !File.Exists(Path.Combine(root, "new.txt")));
+                bool refused;
+                try { File.WriteAllText(Path.Combine(root, "try.txt"), "x"); refused = false; } catch { refused = true; }
+                Check("and it cannot be written", refused);
+                Check("the base detaches", RamDrive.DetachVhdx(parent, out err), err); attached.Remove(parent);
+
+                root = RamDrive.AttachVhdx(child, true, out err);
+                if (Check("the child again, read-only", root != null, err))
+                {
+                    attached.Add(child);
+                    Check("holds the session's change", File.ReadAllText(Path.Combine(root, "keep.txt")) == "changed in the session");
+                    RamDrive.DetachVhdx(child, out err); attached.Remove(child);
+                }
+
+                // What must never reach diskpart.
+                Check("a path with a line break is refused", !RamDrive.CreateVhdx(Path.Combine(dir, "x.vhdx\nselect disk 0"), 64, "X", out err) && err != null && err.Contains("one line"), err);
+                Check("a path with a quote is refused", !RamDrive.CreateVhdx(Path.Combine(dir, "a\"b.vhdx"), 64, "X", out err) && err != null, err);
+                Check("a label with a space is refused", !RamDrive.CreateVhdx(Path.Combine(dir, "l.vhdx"), 64, "two words", out err) && err != null, err);
+                Check("a relative path is refused", !RamDrive.CreateVhdx("relative.vhdx", 64, "X", out err) && err != null, err);
+                Check("nothing was created by them", Directory.GetFiles(dir).Length == 2);
+            }
+            finally
+            {
+                foreach (var a in attached.ToArray()) RamDrive.DetachVhdx(a, out _);
+                try { Directory.Delete(dir, recursive: true); } catch (Exception ex) { Console.WriteLine("  could not remove " + dir + ": " + ex.Message); }
+            }
+            Console.WriteLine();
+            Console.WriteLine(bad == 0 ? "  OK - the base stays clean under a differencing disk" : "  " + bad + " FAILURE(S)");
+            return bad == 0;
+        }
+
         private static string Trial(string name, Func<string, bool> unmount, bool waitForHelperFirst)
         {
             Console.WriteLine();

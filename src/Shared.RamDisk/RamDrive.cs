@@ -178,6 +178,86 @@ namespace LbIntegrations.RamDisk
             catch (Exception ex) { RamDiskLog.Warn("freeing memory threw", ex); return null; }
         }
 
+        // ── VHDX (helper 1.3) ────────────────────────────────────────────────
+        //
+        // A pristine image kept clean: the base VHDX is never attached writable during a session - a
+        // DIFFERENCING child is created over it, attached instead, and thrown away afterwards. Four
+        // helper actions, all through the elevated task: vhdx-create, vhdx-child, vhdx-attach,
+        // vhdx-detach. See the helper's header for what each does and how its values are guarded.
+
+        /// <summary>The helper version that knows the vhdx-* actions. AN OLDER ONE READS THEM AS A
+        /// MOUNT, so nothing is sent below it.</summary>
+        public static readonly Version VhdxProtocol = new Version(1, 3, 0, 0);
+
+        /// <summary>Can the deployed helper create and attach VHDX files?</summary>
+        public static bool CanUseVhdx
+        {
+            get { var v = HelperVersion; return v != null && v >= VhdxProtocol && InstalledTaskName() != null; }
+        }
+
+        /// <summary>Create a dynamic VHDX of <paramref name="sizeMb"/>, formatted NTFS, detached.</summary>
+        public static bool CreateVhdx(string path, int sizeMb, string label, out string error)
+            => Vhdx("vhdx-create", path, out error, new Dictionary<string, string>
+               { { "size", sizeMb.ToString(System.Globalization.CultureInfo.InvariantCulture) }, { "label", label ?? "VHDX" } });
+
+        /// <summary>Create a DIFFERENCING VHDX over <paramref name="parent"/>, detached. Everything
+        /// written to the child stays in the child; the parent is only ever read.</summary>
+        public static bool CreateDifferencingVhdx(string child, string parent, out string error)
+            => Vhdx("vhdx-child", child, out error, new Dictionary<string, string> { { "parent", parent ?? "" } });
+
+        /// <summary>Attach a VHDX and give it a free letter. Returns its root ("X:\") or null.</summary>
+        public static string AttachVhdx(string path, bool readOnly, out string error)
+        {
+            char letter = FreeDriveLetter();
+            if (letter == '\0') { error = "no free drive letter"; return null; }
+            var extra = new Dictionary<string, string>();
+            if (readOnly) extra["readonly"] = "1";
+            if (!Vhdx("vhdx-attach", path, out error, extra, letter)) return null;
+            var root = letter + ":\\";
+            if (!WaitFor(() => Directory.Exists(root), MountSeconds, default(CancellationToken)))
+            { error = "attached, but " + root + " did not appear"; return null; }
+            RamDiskLog.Info("attached " + Path.GetFileName(path) + " as " + root + (readOnly ? " (read-only)" : ""));
+            return root;
+        }
+
+        /// <summary>Detach a VHDX.</summary>
+        public static bool DetachVhdx(string path, out string error) => Vhdx("vhdx-detach", path, out error, null);
+
+        /// <summary>One vhdx-* run, waited for - every one of them is followed by something that
+        /// needs its result. Asked twice at most, for the run somebody else had going.</summary>
+        private static bool Vhdx(string action, string path, out string error, IDictionary<string, string> extra, char drive = 'Z')
+        {
+            error = null;
+            try
+            {
+                if (!CanUseVhdx)
+                {
+                    error = "the helper cannot do VHDX (it is " + (HelperVersion?.ToString() ?? "absent") + ", " + VhdxProtocol + " is needed)";
+                    return false;
+                }
+                // FULLY QUALIFIED, as given. Resolving a relative one would create it wherever this
+                // process happens to be running - measured: in the repository the probe ran from.
+                if (string.IsNullOrWhiteSpace(path) || !OneLine(path) || !Path.IsPathFullyQualified(path))
+                { error = "a VHDX path must be absolute and on one line: " + (path ?? "(none)").Replace("\n", "\\n"); return false; }
+                var task = InstalledTaskName();
+                string said = null;
+                for (int attempt = 1; attempt <= 2; attempt++)
+                {
+                    if (!StartRun(task, action, drive, 0, default(CancellationToken), path, extra: extra)) { error = "the task could not be started (or a value was refused)"; return false; }
+                    said = WaitForResult(default(CancellationToken));
+                    _runInFlight = said == null;
+                    if (said != null && IsOurs(said)) break;
+                    said = null;
+                }
+                if (said == null) { error = "the helper never answered"; return false; }
+                if (said.StartsWith("OK " + action, StringComparison.Ordinal)) return true;
+                error = said;
+                RamDiskLog.Warn(action + " " + Path.GetFileName(path) + ": " + said);
+                return false;
+            }
+            catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; return false; }
+        }
+
         /// <summary>Can the deployed helper be asked to back a drive with an image?</summary>
         public static bool CanMountImages
         {
@@ -981,13 +1061,31 @@ namespace LbIntegrations.RamDisk
             return said.EndsWith(" id=" + _runId, StringComparison.Ordinal);
         }
 
-        private static void WriteCfg(string action, char drive, int sizeMb,
-                                    string image = null, string type = null, bool sparse = false)
+        /// <summary>Is this a value ramdisk.cfg can carry? The file is one key=value per LINE, read by
+        /// an elevated helper: a value holding a line break would become a second key of the caller's
+        /// choosing. Measured, the way it matters: a VHDX path with "\n..." in it was cut at the break,
+        /// and the helper created the file named by the first half.</summary>
+        private static bool OneLine(string value)
         {
+            if (value == null) return true;
+            foreach (var c in value) if (c < ' ') return false;
+            return true;
+        }
+
+        private static bool WriteCfg(string action, char drive, int sizeMb,
+                                    string image = null, string type = null, bool sparse = false,
+                                    IDictionary<string, string> extra = null)
+        {
+            if (!OneLine(action) || !OneLine(image) || !OneLine(type)
+                || (extra != null && extra.Any(kv => !OneLine(kv.Key) || !OneLine(kv.Value) || kv.Key.Contains('='))))
+            {
+                RamDiskLog.Warn("refused to write ramdisk.cfg: a value holds a line break or a control character");
+                return false;
+            }
             try
             {
                 var dir = HelperDir;
-                if (dir == null) return;
+                if (dir == null) return false;
                 Directory.CreateDirectory(dir);
 
                 // The four 1.0 keys, byte for byte what LiteBox writes - label included, which the
@@ -1005,13 +1103,19 @@ namespace LbIntegrations.RamDisk
                 if (!string.IsNullOrEmpty(type)) cfg.Append("type=").Append(type).Append("\r\n");
                 if (sparse) cfg.Append("sparse=1\r\n");
 
+                // Keys of later protocols, written last: the helper keeps the LAST value of a key, so
+                // an extra "label" replaces LiteBox's constant one above.
+                if (extra != null)
+                    foreach (var kv in extra) cfg.Append(kv.Key).Append('=').Append(kv.Value).Append("\r\n");
+
                 // Harmless to an older helper, which reads only the keys it knows.
                 _runId = Guid.NewGuid().ToString("N");
                 cfg.Append("id=").Append(_runId).Append("\r\n");
 
                 File.WriteAllText(CfgPath, cfg.ToString());
+                return true;
             }
-            catch (Exception ex) { RamDiskLog.Warn("could not write ramdisk.cfg", ex); }
+            catch (Exception ex) { RamDiskLog.Warn("could not write ramdisk.cfg", ex); return false; }
         }
 
         private static void RunTask(string taskName, CancellationToken ct)
@@ -1025,7 +1129,7 @@ namespace LbIntegrations.RamDisk
         /// minute and a half that the caller would otherwise have paid on every single mount.</summary>
         private static bool StartRun(string task, string action, char drive, int sizeMb,
                                     CancellationToken ct, string image = null, string type = null,
-                                    bool sparse = false)
+                                    bool sparse = false, IDictionary<string, string> extra = null)
         {
             if (_runInFlight)
             {
@@ -1041,7 +1145,7 @@ namespace LbIntegrations.RamDisk
                 RamDiskLog.Info("the previous run ended: " + previous);
             }
 
-            WriteCfg(action, drive, sizeMb, image, type, sparse);
+            if (!WriteCfg(action, drive, sizeMb, image, type, sparse, extra)) return false;
             ClearResult();
             RunTask(task, ct);
             _runInFlight = true;
