@@ -129,6 +129,31 @@ namespace LbIntegrations.Vita3k
         /// Prefix and not equality, because a build can be published under a decorated name, and
         /// because this is the only signal that a session is over - measured next door, LaunchBox 14
         /// never calls OnGameExited.</summary>
+        /// <summary>The largest peak working set among the running Vita3K processes, in bytes - 0
+        /// when none runs. Windows keeps the peak itself, so a sample every few hundred milliseconds
+        /// misses nothing.</summary>
+        public static long EmulatorPeakBytes()
+        {
+            long peak = 0;
+            try
+            {
+                foreach (var p in System.Diagnostics.Process.GetProcesses())
+                {
+                    using (p)
+                    {
+                        try
+                        {
+                            if (p.ProcessName != null && p.ProcessName.StartsWith("Vita3K", StringComparison.OrdinalIgnoreCase))
+                                peak = Math.Max(peak, p.PeakWorkingSet64);
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch { }
+            return peak;
+        }
+
         public static bool EmulatorRunning()
         {
             try

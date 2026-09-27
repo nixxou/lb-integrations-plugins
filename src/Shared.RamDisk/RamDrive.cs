@@ -130,6 +130,54 @@ namespace LbIntegrations.RamDisk
             }
         }
 
+        /// <summary>The helper version that understands action=clean. AN OLDER ONE READS "clean" AS A
+        /// MOUNT - it only knows the unmount words and takes anything else for its default - so this is
+        /// checked before the word is ever written.</summary>
+        public static readonly Version CleanProtocol = new Version(1, 2, 0, 0);
+
+        /// <summary>Can the deployed helper be asked to free memory?</summary>
+        public static bool CanCleanMemory
+        {
+            get { var v = HelperVersion; return v != null && v >= CleanProtocol && InstalledTaskName() != null; }
+        }
+
+        /// <summary>Ask the elevated helper to free physical memory - trim the working sets of the
+        /// processes holding more than 100 MB and flush the modified list to the page file (see the
+        /// helper's header for what it does and deliberately does not). Waits for it to finish, since
+        /// the point is to measure afterwards. Returns what it said, or null.</summary>
+        public static string CleanMemory(CancellationToken ct = default(CancellationToken))
+        {
+            try
+            {
+                if (!CanCleanMemory)
+                {
+                    RamDiskLog.Info("the helper cannot free memory (it is " + (HelperVersion?.ToString() ?? "absent")
+                                    + ", " + CleanProtocol + " is needed)");
+                    return null;
+                }
+                var task = InstalledTaskName();
+                string said = null;
+                // TWICE AT MOST. A run started by somebody else - LiteBox, another process of ours -
+                // may still be going: the task ignores a second instance, and the answer that then
+                // comes back is THAT run's. Measured: "OK mount Z exit=0" in reply to a clean, and
+                // nothing freed. An answer that is not a clean's is recognised as such and asked again,
+                // now that the other run has finished.
+                for (int attempt = 1; attempt <= 2; attempt++)
+                {
+                    if (!StartRun(task, "clean", 'Z', 0, ct)) return null;
+                    said = WaitForResult(ct);
+                    _runInFlight = said == null;
+                    if (said != null && said.StartsWith("OK clean", StringComparison.Ordinal) && IsOurs(said)) break;
+                    RamDiskLog.Info("the helper answered \"" + (said ?? "nothing") + "\" - another run's, not this clean"
+                                    + (attempt == 1 ? " - asking again" : ""));
+                    said = null;
+                }
+                RamDiskLog.Info("asked the helper to free memory - it said: " + (said ?? "nothing that was a clean"));
+                return said;
+            }
+            catch (Exception ex) { RamDiskLog.Warn("freeing memory threw", ex); return null; }
+        }
+
         /// <summary>Can the deployed helper be asked to back a drive with an image?</summary>
         public static bool CanMountImages
         {
@@ -449,23 +497,44 @@ namespace LbIntegrations.RamDisk
                 var task = InstalledTaskName();
                 if (task != null)
                 {
-                    if (!StartRun(task, "mount", letter, sizeMb, ct)) return null;
-
-                    // The drive, not the helper - measured at a third of a second, against a minute
-                    // and a half for the helper to finish afterwards. See the header for why the
-                    // waiting happens before the NEXT run instead.
-                    if (WaitFor(() => Directory.Exists(root), MountSeconds, ct))
+                    // TWICE AT MOST, for the one way a good request comes to nothing: another run -
+                    // LiteBox's, another process of ours - was still going, and the task (IgnoreNew)
+                    // dropped ours without a word. Measured between two processes launched back to
+                    // back. That run's answer then lands in ramdisk.result WITHOUT our id: watched for
+                    // while waiting for the drive, so the second asking comes as soon as the other run
+                    // is over rather than after the full ceiling.
+                    string said = null;
+                    for (int attempt = 1; attempt <= 2; attempt++)
                     {
-                        RamDiskLog.Info("mounted " + root + " (" + sizeMb + " MB) through the elevated task");
-                        return root;
-                    }
+                        if (!StartRun(task, "mount", letter, sizeMb, ct)) return null;
 
-                    // No drive: now the helper's own words are worth waiting for, because something
-                    // went wrong and that file is the only place it says what.
-                    RamDiskLog.Warn("no drive appeared within " + MountSeconds + "s - waiting for the"
-                                    + " helper to say why");
-                    var said = WaitForResult(ct);
-                    _runInFlight = said == null;
+                        // The drive, not the helper - measured at a third of a second, against
+                        // seconds or minutes for the helper to finish afterwards. See the header for
+                        // why the waiting happens before the NEXT run instead.
+                        bool foreign = false;
+                        WaitFor(() => Directory.Exists(root) || (foreign = ForeignAnswer()), MountSeconds, ct);
+                        if (Directory.Exists(root))
+                        {
+                            RamDiskLog.Info("mounted " + root + " (" + sizeMb + " MB) through the elevated task"
+                                            + (attempt > 1 ? ", second asking" : ""));
+                            return root;
+                        }
+                        if (foreign)
+                        {
+                            RamDiskLog.Info("the task ignored the mount: another run was going (" + ReadResult() + ")"
+                                            + (attempt == 1 ? " - asking again" : ""));
+                            _runInFlight = false;
+                            continue;
+                        }
+
+                        // No drive and no other run: now the helper's own words are worth waiting
+                        // for, because something went wrong and that file is where it says what.
+                        RamDiskLog.Warn("no drive appeared within " + MountSeconds + "s - waiting for the helper to say why");
+                        said = WaitForResult(ct);
+                        _runInFlight = said == null;
+                        if (said != null && !IsOurs(said)) continue;   // the other run, late
+                        break;
+                    }
                     RamDiskLog.Warn("the task produced no drive - the helper said: "
                                     + (said ?? "nothing at all, which means it is still running or was"
                                                + " refused because another run is in flight"));
@@ -891,6 +960,27 @@ namespace LbIntegrations.RamDisk
 
         // ── helpers ──────────────────────────────────────────────────────────
 
+        /// <summary>The id of the run we started last (helper 1.2 echoes it in its answer).</summary>
+        private static string _runId;
+
+        /// <summary>Has an answer landed that is NOT ours - a run somebody else started, finishing? Only
+        /// a 1.2 helper can say; with an older one nothing is ever foreign.</summary>
+        private static bool ForeignAnswer()
+        {
+            var said = ReadResult();
+            return said != "<nothing>" && said != "<unreadable>" && !string.IsNullOrWhiteSpace(said) && !IsOurs(said);
+        }
+
+        /// <summary>Is this answer the one to the run we started last? Only a 1.2 helper can say;
+        /// with an older one every answer is taken as ours, which is how it always was.</summary>
+        private static bool IsOurs(string said)
+        {
+            if (said == null) return false;
+            var v = HelperVersion;
+            if (v == null || v < CleanProtocol || string.IsNullOrEmpty(_runId)) return true;
+            return said.EndsWith(" id=" + _runId, StringComparison.Ordinal);
+        }
+
         private static void WriteCfg(string action, char drive, int sizeMb,
                                     string image = null, string type = null, bool sparse = false)
         {
@@ -914,6 +1004,10 @@ namespace LbIntegrations.RamDisk
                 if (!string.IsNullOrEmpty(image)) cfg.Append("image=").Append(image).Append("\r\n");
                 if (!string.IsNullOrEmpty(type)) cfg.Append("type=").Append(type).Append("\r\n");
                 if (sparse) cfg.Append("sparse=1\r\n");
+
+                // Harmless to an older helper, which reads only the keys it knows.
+                _runId = Guid.NewGuid().ToString("N");
+                cfg.Append("id=").Append(_runId).Append("\r\n");
 
                 File.WriteAllText(CfgPath, cfg.ToString());
             }

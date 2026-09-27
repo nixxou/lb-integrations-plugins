@@ -24,6 +24,12 @@
 //   size   = <MB>                  mount only
 //   label  = RomExtractorRAM       read and then ignored - LiteBox writes it, nothing uses it
 //
+//   action = clean                 (1.2) free physical memory, mount nothing - see below
+//   id     = <letters, digits, ->  (1.2) echoed at the end of ramdisk.result as " id=<id>", so the
+//                                  caller can tell ITS answer from the answer of a run somebody
+//                                  else started: the task ignores a second instance while one is
+//                                  going, and the file it then reads back belongs to that one
+//
 //   -- added in 1.1, all optional; leaving them all out reproduces 1.0 exactly ------------------
 //   image  = <path>                a disk image to back the drive with, or to preload it from
 //   type   = vm | file | awe       where the bytes live (below); absent means imdisk's own default
@@ -48,7 +54,23 @@
 //
 // ramdisk.result
 //   OK|FAIL <action> <drive> exit=<n>     the imdisk run, whatever it did
+//   OK clean trimmed=<n> flushed=<0|1>    a clean run (1.2)
 //   ERROR <message>                       we never got as far as imdisk
+//
+// action = clean (1.2): WHAT FREES MEMORY BEFORE A RAM DISK IS ASKED FOR, and only that. Two steps,
+// both needing the privileges only this elevated run has:
+//   - EmptyWorkingSet on every process holding more than 100 MB: their pages leave RAM, the clean
+//     ones straight to the standby list (which counts as available), the dirty ones to the
+//     modified list
+//   - flush the modified list, which writes those dirty pages to the page file so they become
+//     available too. THAT IS A WRITE TO DISK, of other programs' memory, once - the price of
+//     keeping a session in RAM when RAM is short, instead of playing it on the disk entirely
+// What it deliberately does NOT do: purge the standby list. The standby list already counts as
+// available memory, so purging it gains nothing on the number a caller checks, and it throws away
+// the file cache - the front end would then reload every image from disk.
+//
+// AN OLDER HELPER READS "clean" AS A MOUNT: it only knows the unmount words and takes anything else
+// for the default. A caller therefore checks FileVersion >= 1.2 before ever sending it.
 //
 // THIS IS NOT A PRIVILEGE BOUNDARY, and never was: the cfg is writable by the user and this runs
 // elevated, which is inherent to every no-UAC elevation bridge - LiteBox says the same of its
@@ -60,6 +82,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 
 namespace RamDiskHelper
 {
@@ -70,6 +93,7 @@ namespace RamDiskHelper
             string dir = AppContext.BaseDirectory;
             string cfgPath = Path.Combine(dir, "ramdisk.cfg");
             string resultPath = Path.Combine(dir, "ramdisk.result");
+            string id = "";
             try
             {
                 var kv = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -82,7 +106,13 @@ namespace RamDiskHelper
                     kv[l.Substring(0, i).Trim()] = l.Substring(i + 1).Trim();
                 }
 
+                id = Id(Get(kv, "id", ""));
                 string action = Get(kv, "action", "mount");
+                if (action.Equals("clean", StringComparison.OrdinalIgnoreCase))
+                {
+                    File.WriteAllText(resultPath, Clean() + id);
+                    return 0;
+                }
                 string drive = Get(kv, "drive", "R").TrimEnd(':');
                 string size = Get(kv, "size", "1024");
                 bool umount = action.Equals("umount", StringComparison.OrdinalIgnoreCase)
@@ -136,17 +166,108 @@ namespace RamDiskHelper
 
                 using var p = Process.Start(psi);
                 p.WaitForExit();
-                File.WriteAllText(resultPath, (p.ExitCode == 0 ? "OK" : "FAIL") + " " + (umount ? "umount" : "mount") + " " + drive + " exit=" + p.ExitCode);
+                File.WriteAllText(resultPath, (p.ExitCode == 0 ? "OK" : "FAIL") + " " + (umount ? "umount" : "mount") + " " + drive + " exit=" + p.ExitCode + id);
                 return p.ExitCode;
             }
             catch (Exception ex)
             {
-                try { File.WriteAllText(resultPath, "ERROR " + ex.Message); } catch { }
+                try { File.WriteAllText(resultPath, "ERROR " + ex.Message + id); } catch { }
                 return 1;
             }
         }
 
+        /// <summary>" id=&lt;id&gt;" for an id made of letters, digits and dashes - "" for anything
+        /// else, since this is written into a file somebody else parses.</summary>
+        private static string Id(string raw)
+        {
+            if (raw.Length == 0 || raw.Length > 64) return "";
+            foreach (var c in raw) if (!(char.IsLetterOrDigit(c) || c == '-')) return "";
+            return " id=" + raw;
+        }
+
         private static string Get(Dictionary<string, string> kv, string key, string def)
             => kv.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v) ? v : def;
+
+        // ── action = clean ───────────────────────────────────────────────────
+
+        private const long TrimAbove = 100L * 1024 * 1024;
+
+        private static string Clean()
+        {
+            // SeDebug to open other users' processes, SeProfileSingleProcess for the memory lists.
+            Enable("SeDebugPrivilege");
+            Enable("SeProfileSingleProcessPrivilege");
+
+            int trimmed = 0;
+            foreach (var process in Process.GetProcesses())
+            {
+                using (process)
+                {
+                    try
+                    {
+                        if (process.Id == Environment.ProcessId || process.WorkingSet64 <= TrimAbove) continue;
+                        IntPtr h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SET_QUOTA, false, process.Id);
+                        if (h == IntPtr.Zero) continue;
+                        try { if (K32EmptyWorkingSet(h)) trimmed++; }
+                        finally { CloseHandle(h); }
+                    }
+                    catch { }   // gone, or protected: the others still count
+                }
+            }
+
+            int command = MemoryFlushModifiedList;
+            int status = NtSetSystemInformation(SystemMemoryListInformation, ref command, sizeof(int));
+            return "OK clean trimmed=" + trimmed + " flushed=" + (status == 0 ? "1" : "0 status=0x" + status.ToString("X8"));
+        }
+
+        private static void Enable(string privilege)
+        {
+            if (!OpenProcessToken(Process.GetCurrentProcess().Handle, TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, out var token)) return;
+            try
+            {
+                if (!LookupPrivilegeValue(null, privilege, out var luid)) return;
+                var tp = new TOKEN_PRIVILEGES { PrivilegeCount = 1, Luid = luid, Attributes = SE_PRIVILEGE_ENABLED };
+                AdjustTokenPrivileges(token, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero);
+            }
+            finally { CloseHandle(token); }
+        }
+
+        private const int SystemMemoryListInformation = 80;
+        private const int MemoryFlushModifiedList = 3;
+        private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000, PROCESS_SET_QUOTA = 0x0100;
+        private const uint TOKEN_ADJUST_PRIVILEGES = 0x20, TOKEN_QUERY = 0x8, SE_PRIVILEGE_ENABLED = 0x2;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct LUID { public uint Low; public int High; }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct TOKEN_PRIVILEGES { public uint PrivilegeCount; public LUID Luid; public uint Attributes; }
+
+        [DllImport("ntdll.dll")]
+        private static extern int NtSetSystemInformation(int infoClass, ref int info, int length);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool K32EmptyWorkingSet(IntPtr process);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CloseHandle(IntPtr handle);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool LookupPrivilegeValue(string system, string name, out LUID luid);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool AdjustTokenPrivileges(IntPtr token, bool disableAll, ref TOKEN_PRIVILEGES state,
+                                                         uint bufferLength, IntPtr previous, IntPtr returnLength);
     }
 }

@@ -269,9 +269,18 @@ namespace LbIntegrations.Vita3k
                     Log.Info("watcher: Vita3K is running");
 
                     var started = DateTime.UtcNow;
-                    while (Vita3kPaths.EmulatorRunning()) System.Threading.Thread.Sleep(500);
+                    long peak = 0;
+                    while (Vita3kPaths.EmulatorRunning())
+                    {
+                        peak = Math.Max(peak, Vita3kPaths.EmulatorPeakBytes());
+                        System.Threading.Thread.Sleep(500);
+                    }
                     Log.Info("watcher: Vita3K is gone after " + (int)(DateTime.UtcNow - started).TotalSeconds
                              + "s - this is the end of the program, whatever the host does or does not say");
+
+                    // WHAT THE EMULATOR ITSELF NEEDED, so the next launch of this game reserves it
+                    // next to the RAM disk instead of guessing.
+                    if (peak > 0) Vita3kWorkspace.RememberEmulatorPeak(layout, titleId, (int)(peak / (1024 * 1024)));
 
                     if (Vita3kWorkspace.CaptureOnExit(layout, titleId))
                         Log.Info("watcher: the session of " + titleId + " came out of the tree");

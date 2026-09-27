@@ -58,6 +58,29 @@ namespace LbIntegrations.Probe
             return true;
         }
 
+        /// <summary>--ramdisk-clean --lb &lt;root&gt;: ask the helper to free memory, and measure what it
+        /// gave back. Trims other programs' working sets - they page back in when next used.</summary>
+        public static bool Clean(string launchBoxRoot)
+        {
+            Console.WriteLine();
+            Console.WriteLine("-- freeing memory through the helper  [TRIMS OTHER PROGRAMS] " + new string('-', 4));
+            if (string.IsNullOrWhiteSpace(launchBoxRoot) || !Directory.Exists(launchBoxRoot))
+            { Console.WriteLine("  pass --lb <LaunchBox root>"); return false; }
+            RamDiskLog.Use(m => Console.WriteLine("    [log] " + m), (m, ex) => Console.WriteLine("    [log] " + m + (ex != null ? " - " + ex.Message : "")));
+            RamDiskHost.UseRoot(launchBoxRoot);
+
+            Console.WriteLine("  helper    " + (RamDrive.HelperVersion?.ToString() ?? "absent") + " - can clean: " + RamDrive.CanCleanMemory);
+            if (!RamDrive.CanCleanMemory) return false;
+
+            int before = RamDrive.GetFreeRamMb();
+            var watch = Stopwatch.StartNew();
+            var said = RamDrive.CleanMemory();
+            int after = RamDrive.GetFreeRamMb();
+            Console.WriteLine("  answer    " + (said ?? "(none)") + "  in " + watch.ElapsedMilliseconds + " ms");
+            Console.WriteLine("  free RAM  " + before + " MB -> " + after + " MB  (" + (after - before >= 0 ? "+" : "") + (after - before) + " MB)");
+            return said != null && said.StartsWith("OK clean", StringComparison.Ordinal);
+        }
+
         private static string Trial(string name, Func<string, bool> unmount, bool waitForHelperFirst)
         {
             Console.WriteLine();

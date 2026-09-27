@@ -466,7 +466,7 @@ namespace LbIntegrations.Vita3k
                              + MarginMb;
 
                 report?.Invoke("Preparing a fresh console...", null);
-                var root = OpenWorkingTree(layout, content.TitleId, sizeMb);
+                var root = OpenWorkingTree(layout, content.TitleId, sizeMb, report);
                 if (root == null) { error = "could not make a working tree"; return null; }
 
                 // FROM HERE, A FAILURE OWES WHAT IT TOOK BACK. Measured: the junction was refused,
@@ -545,12 +545,37 @@ namespace LbIntegrations.Vita3k
         /// behind it is a `vm` disk, backed by virtual memory - so one bigger than the RAM actually
         /// free does not fail, it PAGES to the system drive. We would be writing the SSD twice over
         /// while believing we were sparing it, and more slowly than a plain folder.</summary>
-        private static string OpenWorkingTree(Vita3kLayout layout, string titleId, int sizeMb)
+        private static string OpenWorkingTree(Vita3kLayout layout, string titleId, int sizeMb,
+                                              Action<string, double?> report = null)
         {
             RamDiskHost.LaunchBoxRoot = () => Vita3kPaths.LaunchBoxRootOf(layout);
 
+            // THE RAM THE EMULATOR NEEDS COMES FIRST. A RAM disk that fits only by leaving Vita3K
+            // itself short would just move the paging from the disk image to the emulator.
+            int reserve = EmulatorReserveMb(layout, titleId);
+            int need = sizeMb + reserve;
             int free = RamDrive.GetFreeRamMb();
-            if (RamDrive.IsReady() && free > 0 && sizeMb < free)
+
+            bool ready = RamDrive.IsReady();
+            if (Log.IsSet(NoRamDiskSwitch))
+            {
+                Log.Info("working on disk: " + NoRamDiskSwitch + " is set beside the log");
+                ready = false;
+            }
+            else if (ready && free > 0 && free < need && RamDrive.CanCleanMemory)
+            {
+                // SHORT, BUT MAYBE NOT FOR LONG: other programs' idle memory can be handed back.
+                // It costs a write of their dirty pages to the page file, once - against a whole
+                // session played on the disk.
+                report?.Invoke("Freeing memory for the console...", null);
+                var said = RamDrive.CleanMemory();
+                int after = RamDrive.GetFreeRamMb();
+                Log.Info("freeing memory: " + free + " MB free before, " + after + " MB after, " + need
+                         + " MB needed (" + sizeMb + " for the disk, " + reserve + " for Vita3K) - " + (said ?? "no answer"));
+                free = after;
+            }
+
+            if (ready && free > 0 && need < free)
             {
                 var drive = RamDrive.MountFor(titleId, sizeMb);
                 if (drive != null)
@@ -567,14 +592,16 @@ namespace LbIntegrations.Vita3k
                     var root = Path.Combine(drive, FsName);
                     Directory.CreateDirectory(root);
                     Claim(layout, drive);
-                    Log.Info("working on a RAM disk at " + root + " (" + sizeMb + " MB of " + free + " free)");
+                    Log.Info("working on a RAM disk at " + root + " (" + sizeMb + " MB, and " + reserve
+                             + " MB kept for Vita3K, of " + free + " free)");
                     return root;
                 }
                 Log.Warn("the RAM disk did not mount - falling back to a folder");
             }
             else
             {
-                Log.Info("working on disk: " + sizeMb + " MB needed, " + free + " MB of physical RAM free"
+                Log.Info("working on disk: " + sizeMb + " MB for the disk and " + reserve + " MB for Vita3K needed, "
+                         + free + " MB of physical RAM free"
                          + (RamDrive.IsReady() ? "" : ", and no RAM disk is available"));
             }
 
@@ -956,6 +983,66 @@ namespace LbIntegrations.Vita3k
         //   - staging copies and half-built temporaries nothing will ever delete
         // Three things answer it: a proof of ownership on the drive, a capture before anything is
         // cleared, and a look around when the plugin starts.
+
+        // ── what the emulator itself needs ───────────────────────────────────
+        //
+        // The RAM disk is not the only thing a session holds in memory: Vita3K does too - the guest's
+        // memory, textures, shaders - and how much depends on the game. So it is MEASURED: the watcher
+        // records the emulator's peak working set at the end of every session, per game, and the
+        // next launch keeps that much free beside the disk, with a margin. A game never measured
+        // gets the largest peak seen so far, or a default until there is one.
+
+        /// <summary>The marker file, beside the log, that sends every session to the disk.</summary>
+        public const string NoRamDiskSwitch = "no-ramdisk";
+
+        public const string MemoryName = "lbip-vita3k.memory";
+        private const int DefaultReserveMb = 2048;
+        private const int ReserveMarginPercent = 115;   // integers: 3000 * 1.15 is 3449.99... in floating point
+
+        /// <summary>What to keep free for Vita3K itself when it runs <paramref name="titleId"/>.</summary>
+        public static int EmulatorReserveMb(Vita3kLayout layout, string titleId)
+        {
+            var peaks = ReadPeaks(layout);
+            int measured;
+            if (titleId != null && peaks.TryGetValue(titleId, out measured)) return measured * ReserveMarginPercent / 100;
+            if (peaks.Count > 0) return peaks.Values.Max() * ReserveMarginPercent / 100;
+            return DefaultReserveMb;
+        }
+
+        /// <summary>Record what Vita3K peaked at running <paramref name="titleId"/>. The latest session
+        /// is the one kept: a game's needs are what its current build and settings ask for.</summary>
+        public static void RememberEmulatorPeak(Vita3kLayout layout, string titleId, int peakMb)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(titleId) || peakMb <= 0) return;
+                var path = Under(layout, MemoryName);
+                if (path == null) return;
+                var peaks = ReadPeaks(layout);
+                peaks[titleId] = peakMb;
+                File.WriteAllLines(path, peaks.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => p.Key + "\t" + p.Value));
+                Log.Info("Vita3K peaked at " + peakMb + " MB running " + titleId + " - the next launch keeps "
+                         + peakMb * ReserveMarginPercent / 100 + " MB free for it");
+            }
+            catch (Exception ex) { Log.Warn("could not record the emulator's memory", ex); }
+        }
+
+        private static Dictionary<string, int> ReadPeaks(Vita3kLayout layout)
+        {
+            var peaks = new Dictionary<string, int>(StringComparer.Ordinal);
+            try
+            {
+                var path = Under(layout, MemoryName);
+                if (path == null || !File.Exists(path)) return peaks;
+                foreach (var line in File.ReadAllLines(path))
+                {
+                    var parts = line.Split('\t');
+                    if (parts.Length == 2 && int.TryParse(parts[1], out var mb) && mb > 0) peaks[parts[0]] = mb;
+                }
+            }
+            catch { }
+            return peaks;
+        }
 
         /// <summary>The file at the root of a session's RAM disk that says whose it is.</summary>
         public const string OwnerName = "lbip-vita3k.owner";

@@ -58,6 +58,7 @@ namespace LbIntegrations.Probe
                 TheSecondLaunch(layout, portable, vpk);
                 AnotherGame(layout, portable, root);
                 NeverEnded(layout, portable, root, vpk);
+                TheEmulatorsShare(layout);
                 OrphanedJunction(layout, portable, root);
 
                 Console.WriteLine();
@@ -394,6 +395,8 @@ namespace LbIntegrations.Probe
                 string fs, drive = null;
                 if (!string.IsNullOrWhiteSpace(ramdiskRoot))
                 {
+                    LbIntegrations.RamDisk.RamDiskLog.Use(m => Console.WriteLine("  [ramdisk] " + m),
+                                                          (m, ex) => Console.WriteLine("  [ramdisk] " + m + (ex != null ? " - " + ex.Message : "")));
                     LbIntegrations.RamDisk.RamDiskHost.UseRoot(ramdiskRoot);
                     long need = new FileInfo(romPath).Length * 3 / (1024 * 1024) + 256;
                     drive = LbIntegrations.RamDisk.RamDrive.MountFor("probe-vita3k", (int)need);
@@ -912,6 +915,24 @@ namespace LbIntegrations.Probe
                 }
                 Scrub(root);
             }
+        }
+
+        // ── what Vita3K itself is given ──────────────────────────────────────
+
+        private static void TheEmulatorsShare(object layout)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  the memory kept for Vita3K itself");
+            int Reserve(string id) => (int)Call("Vita3kWorkspace", "EmulatorReserveMb", new object[] { layout, id });
+
+            Check("a game never measured, on an install that measured nothing, gets the default (2048 MB)", Reserve(TitleId) == 2048);
+            Call("Vita3kWorkspace", "RememberEmulatorPeak", new object[] { layout, TitleId, 1000 });
+            Check("a measured game gets its peak plus 15% (1150 MB)", Reserve(TitleId) == 1150);
+            Call("Vita3kWorkspace", "RememberEmulatorPeak", new object[] { layout, "PCSE99999", 3000 });
+            Check("each game keeps its own", Reserve(TitleId) == 1150 && Reserve("PCSE99999") == 3450);
+            Check("a game never measured gets the largest peak seen (3450 MB)", Reserve("PCSG00001") == 3450);
+            Call("Vita3kWorkspace", "RememberEmulatorPeak", new object[] { layout, TitleId, 800 });
+            Check("the latest session of a game is the one kept (920 MB)", Reserve(TitleId) == 920);
         }
 
         // ── a session that stopped without ending ────────────────────────────
