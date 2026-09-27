@@ -508,20 +508,6 @@ namespace LbIntegrations.Vita3k
                 // on from the emulator's own settings between two launches.
                 QuietTheFirstRun(layout);
 
-                // --use-vhdx SUPPLANTS THE RAM DISK - when it can. Whatever stops it is logged and
-                // the session takes the usual path: a launch is never refused over it.
-                if (launch.UseVhdx)
-                {
-                    var vhdxDir = Vita3kVhdx.DirFor(layout, launch.VhdxDir);
-                    var whyNot = Vita3kVhdx.WhyNot(layout, vhdxDir);
-                    if (whyNot != null)
-                        Log.Warn(Vita3kPlugin.UseVhdxFlag + ": " + whyNot + " - this session takes the usual path");
-                    else
-                        // Lot 1 stops here: the folder is checked, the bases are not built on it yet.
-                        Log.Info(Vita3kPlugin.UseVhdxFlag + ": the VHDX would live in " + vhdxDir
-                                 + " - not built yet, this session takes the usual path");
-                }
-
                 // Self-healing: a complete firmware that was never put aside becomes the base
                 // here rather than requiring the install step to be run again.
                 if (!EnsureBase(layout, out error))
@@ -540,6 +526,26 @@ namespace LbIntegrations.Vita3k
                 report?.Invoke("Looking for updates and DLC...", null);
                 var extras = Vita3kExtras.For(romPath, content, launch.HostTitle);
                 var extrasKey = extras.Key();
+
+                // --use-vhdx SUPPLANTS THE RAM DISK - when it can. Whatever stops it is logged and
+                // the session takes the usual path: a launch is never refused over it.
+                if (launch.UseVhdx)
+                {
+                    var vhdxDir = Vita3kVhdx.DirFor(layout, launch.VhdxDir);
+                    var whyNot = Vita3kVhdx.WhyNot(layout, vhdxDir);
+                    if (whyNot != null)
+                        Log.Warn(Vita3kPlugin.UseVhdxFlag + ": " + whyNot + " - this session takes the usual path");
+                    else
+                    {
+                        var gameDisk = Vita3kVhdx.EnsureGameBase(layout, vhdxDir, romPath, content, extras, report, out var vhdxError);
+                        if (gameDisk == null)
+                            Log.Warn(Vita3kPlugin.UseVhdxFlag + ": " + vhdxError + " - this session takes the usual path");
+                        else
+                            // Lot 2 stops here: the base is built, sessions do not run on it yet.
+                            Log.Info(Vita3kPlugin.UseVhdxFlag + ": the disk of " + content.TitleId + " is ready ("
+                                     + gameDisk + ") - sessions on it are not wired yet, this one takes the usual path");
+                    }
+                }
 
                 // Reused as it is - unless it is on a RAM disk and this launch asks for the disk: then
                 // it is saved and rebuilt where it was asked to be, like a different game.
@@ -732,7 +738,7 @@ namespace LbIntegrations.Vita3k
         /// <summary>Install the chosen update and DLC onto the tree the game was just installed on,
         /// folding what each wrote into <paramref name="installed"/> - the reference walk hashes those
         /// folders, or takes the hashes the install already has.</summary>
-        private static void InstallExtras(VitaExtras extras, string root, VitaContent installed, Action<string, double?> report)
+        internal static void InstallExtras(VitaExtras extras, string root, VitaContent installed, Action<string, double?> report)
         {
             // THE WINDOW SAYS WHICH (Mehdi's wording): the update by its version, with its own bar; the
             // DLC under ONE bar for all of them, "1/3", "2/3"... The install's own step text ("Decrypting
@@ -1211,7 +1217,7 @@ namespace LbIntegrations.Vita3k
             return newest;
         }
 
-        private static void CopyTree(string from, string to, Action<double> progress = null)
+        internal static void CopyTree(string from, string to, Action<double> progress = null)
         {
             foreach (var dir in Directory.EnumerateDirectories(from, "*", SearchOption.AllDirectories))
                 Directory.CreateDirectory(Path.Combine(to, dir.Substring(from.Length).TrimStart('\\', '/')));

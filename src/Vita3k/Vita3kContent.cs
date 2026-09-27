@@ -289,6 +289,11 @@ namespace LbIntegrations.Vita3k
                 {
                     if (!MergeIntoApp(vitaFs, content, relative, out error)) return null;
                     relative = "ux0/app/" + content.TitleId;
+
+                    // ux0/patch ITSELF STAYS, empty - as in Vita3K's own tree - and the install made it:
+                    // said so, or the reference walk finds a folder the base does not have and reads
+                    // the whole tree again (measured: all of LittleBigPlanet, 1.4 GB, for one empty folder).
+                    if (Directory.Exists(Path.Combine(vitaFs, "ux0", "patch"))) content.Written.Add("ux0/patch");
                 }
 
                 content.Written.Add(relative.Replace('\\', '/'));

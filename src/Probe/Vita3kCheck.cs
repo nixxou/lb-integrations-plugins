@@ -1037,6 +1037,117 @@ namespace LbIntegrations.Probe
             finally { Scrub(temp); }
         }
 
+        /// <summary>The bases --use-vhdx builds, on REAL virtual disks under %TEMP%: firmware.vhdx and
+        /// the game's differencing disk over it, built once, reused, and rebuilt for each reason an
+        /// identity can give - the game, the firmware, an identity missing - and not built while the
+        /// folder's lock is held. Needs a real install (its helper and pristine firmware, only READ):
+        /// --vita3k-vhdx-base --emu &lt;Vita3K.exe&gt; --rom &lt;game archive&gt;. LBIP_PROBE_KEEP=1 leaves the folder.</summary>
+        public static bool VhdxBase(Assembly pluginAssembly, string emuPath, string romPath)
+        {
+            Console.WriteLine();
+            Console.WriteLine("-- Vita3K, the VHDX bases  [ATTACHES DISKS] " + new string('-', 19));
+            _asm = pluginAssembly;
+            _bad = 0;
+            var dir = Path.Combine(Path.GetTempPath(), "lbip-vhdx-base-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                if (string.IsNullOrWhiteSpace(emuPath) || !File.Exists(emuPath)) { Console.WriteLine("  pass --emu <Vita3K.exe of a real install>"); return false; }
+                if (string.IsNullOrWhiteSpace(romPath) || !File.Exists(romPath)) { Console.WriteLine("  pass --rom <game archive>"); return false; }
+                var layout = Resolve(emuPath);
+                var lbRoot = (string)Call("Vita3kPaths", "LaunchBoxRootOf", new object[] { layout });
+                LbIntegrations.RamDisk.RamDiskHost.UseRoot(lbRoot);
+                if (!Check("the folder is usable", Call("Vita3kVhdx", "WhyNot", new object[] { layout, dir }) == null)) return false;
+
+                var described = new object[] { romPath, null };
+                var content = Call("Vita3kContent", "Describe", described);
+                if (!Check("the game is described", content != null, described[1] as string)) return false;
+                var extras = Call("Vita3kExtras", "For", new object[] { romPath, content, null });
+                var id = (string)Field(content, "TitleId");
+
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                string Build(out string error)
+                {
+                    watch.Restart();
+                    var a = new object[] { layout, dir, romPath, content, extras, null, null };
+                    var got = (string)Call("Vita3kVhdx", "EnsureGameBase", a);
+                    error = a[6] as string;
+                    Console.WriteLine("            " + watch.ElapsedMilliseconds + " ms" + (error != null ? " - " + error : ""));
+                    return got;
+                }
+                string fw = Path.Combine(dir, "firmware.vhdx"), fwId = Path.Combine(dir, "firmware.identity");
+                string game = Path.Combine(dir, id + ".vhdx"), gameId = Path.Combine(dir, id + ".identity"), gameRef = Path.Combine(dir, id + ".reference");
+                string Build_() => (File.ReadAllLines(fwId).FirstOrDefault(l => l.StartsWith("build=")) ?? "");
+
+                Console.WriteLine("  first launch: both disks built");
+                var disk = Build(out var err);
+                if (!Check("the game's disk is built", disk != null && File.Exists(disk), err)) return false;
+                Check("the firmware disk and its identity are there", File.Exists(fw) && File.Exists(fwId));
+                Check("the game's identity and reference are there", File.Exists(gameId) && File.Exists(gameRef));
+                foreach (var l in File.ReadAllLines(gameId)) Console.WriteLine("            | " + l);
+                Check("the identity names the game by name, size and time, not by path",
+                      File.ReadAllLines(gameId).Any(l => l == "game=" + Path.GetFileName(romPath) + "|" + new FileInfo(romPath).Length + "|"
+                                                           + new FileInfo(romPath).LastWriteTimeUtc.Ticks + "|" + (Field(content, "AppVer") ?? "")));
+                Check("and the firmware build it sits on", File.ReadAllLines(gameId).Contains("firmware=" + Build_().Substring(6)));
+                Console.WriteLine("            firmware " + new FileInfo(fw).Length / (1024 * 1024) + " MB, game " + new FileInfo(disk).Length / (1024 * 1024) + " MB on disk");
+
+                var root = LbIntegrations.RamDisk.RamDrive.AttachVhdx(game, true, out err);
+                if (Check("the game's disk attaches read-only", root != null, err))
+                {
+                    Check("it holds the game", File.Exists(Path.Combine(root, "fs", "ux0", "app", id, "sce_sys", "param.sfo")));
+                    Check("over the firmware", Directory.Exists(Path.Combine(root, "fs", "vs0")) && Directory.Exists(Path.Combine(root, "fs", "os0")));
+                    Check("and no update left in ux0/patch", !Directory.Exists(Path.Combine(root, "fs", "ux0", "patch", id)));
+                    LbIntegrations.RamDisk.RamDrive.DetachVhdx(game, out _);
+                }
+
+                Console.WriteLine("  second launch: nothing built");
+                var stamp = File.GetLastWriteTimeUtc(game);
+                var build = Build_();
+                disk = Build(out err);
+                Check("the same disk comes back, untouched", disk != null && File.GetLastWriteTimeUtc(game) == stamp && Build_() == build, err);
+                Check("in under two seconds", watch.ElapsedMilliseconds < 2000);
+
+                Console.WriteLine("  the game is not the one it was built from: the game's disk is rebuilt");
+                File.WriteAllLines(gameId, File.ReadAllLines(gameId).Select(l => l.StartsWith("game=") ? "game=other.zip|1|1|" : l));
+                disk = Build(out err);
+                Check("rebuilt, on the same firmware", disk != null && Build_() == build
+                      && File.ReadAllLines(gameId).Any(l => l.StartsWith("game=" + Path.GetFileName(romPath))), err);
+
+                Console.WriteLine("  its identity is missing (a build cut short): rebuilt");
+                File.Delete(gameId);
+                disk = Build(out err);
+                Check("rebuilt", disk != null && File.Exists(gameId), err);
+
+                Console.WriteLine("  another firmware: both rebuilt");
+                File.WriteAllLines(fwId, File.ReadAllLines(fwId).Select(l => l.StartsWith("nand=") ? "nand=0000" : l));
+                disk = Build(out err);
+                Check("the firmware disk is a new build", disk != null && Build_() != build && Build_().Length > 6, err);
+                Check("and the game's disk sits on it", File.ReadAllLines(gameId).Contains("firmware=" + Build_().Substring(6)));
+                root = LbIntegrations.RamDisk.RamDrive.AttachVhdx(game, true, out err);
+                if (Check("and attaches", root != null, err))
+                    LbIntegrations.RamDisk.RamDrive.DetachVhdx(game, out _);
+
+                Console.WriteLine("  the folder's lock is held by somebody else: nothing is built");
+                File.Delete(gameId);
+                using (new FileStream(Path.Combine(dir, "lbip-vhdx.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
+                {
+                    disk = Build(out err);
+                    Check("refused, and says why", disk == null && err != null && err.Contains("another install"));
+                }
+                disk = Build(out err);
+                Check("and built once it is released", disk != null && File.Exists(gameId), err);
+
+                Console.WriteLine();
+                Console.WriteLine(_bad == 0 ? "  OK - a base is built once, reused, and rebuilt exactly when its identity says so" : "  " + _bad + " FAILURE(S) - see above");
+                return _bad == 0;
+            }
+            catch (Exception ex) { Console.WriteLine("  EXCEPTION: " + (ex.InnerException ?? ex)); return false; }
+            finally
+            {
+                if (Environment.GetEnvironmentVariable("LBIP_PROBE_KEEP") == "1") Console.WriteLine("  kept: " + dir);
+                else Scrub(dir);
+            }
+        }
+
         // ── what Vita3K itself is given ──────────────────────────────────────
 
         private static void TheEmulatorsShare(object layout)

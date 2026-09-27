@@ -558,6 +558,8 @@ namespace LbIntegrations.Probe
             if (Has(args, "--vita3k-ownership")) return Vita3kCheck.Ownership(asm, Arg(args, "--lb")) ? 0 : 1;
             // where --use-vhdx may keep its disks: --vita3k-vhdx-folder --emu <Vita3K.exe of a real install>
             if (Has(args, "--vita3k-vhdx-folder")) return Vita3kCheck.VhdxFolder(asm, Arg(args, "--emu")) ? 0 : 1;
+            // the bases --use-vhdx builds: --vita3k-vhdx-base --emu <Vita3K.exe> --rom <game>. ATTACHES DISKS.
+            if (Has(args, "--vita3k-vhdx-base")) return Vita3kCheck.VhdxBase(asm, Arg(args, "--emu"), Arg(args, "--rom")) ? 0 : 1;
 
             if (Has(args, "--vita3k-install"))
             {
