@@ -989,6 +989,7 @@ namespace LbIntegrations.Probe
             _asm = pluginAssembly;
             _bad = 0;
             var root = Path.Combine(Path.GetTempPath(), "lbip-vita3k-extras-" + Guid.NewGuid().ToString("N"));
+            bool keep = Environment.GetEnvironmentVariable("LBIP_PROBE_KEEP") == "1";
             try
             {
                 if (!File.Exists(romPath ?? "")) { Console.WriteLine("  pass --rom <game archive>"); return false; }
@@ -1057,13 +1058,15 @@ namespace LbIntegrations.Probe
                 var reference = File.ReadAllText(Path.Combine(portable, "work.reference"));
                 Check("all of it in the reference", reference.Contains("ux0/app/" + titleId + "/eboot.bin") && reference.Contains("ux0/addcont/" + titleId + "/"));
 
-                Call("Vita3kWorkspace", "Teardown", new object[] { layout });
+                // LBIP_PROBE_KEEP=1 keeps the tree, for a comparison with an install made by Vita3K itself.
+                if (keep) Console.WriteLine("  kept      " + work + "  (LBIP_PROBE_KEEP=1 - delete it after)");
+                else Call("Vita3kWorkspace", "Teardown", new object[] { layout });
                 Console.WriteLine();
                 Console.WriteLine(_bad == 0 ? "  OK - the game, its update and its DLC, decrypted and in place" : "  " + _bad + " FAILURE(S)");
                 return _bad == 0;
             }
             catch (Exception ex) { Console.WriteLine("  EXCEPTION: " + (ex.InnerException ?? ex)); return false; }
-            finally { Scrub(root); }
+            finally { if (!keep) Scrub(root); }
         }
 
         // ── updates and DLC ──────────────────────────────────────────────────
