@@ -61,6 +61,19 @@ namespace LbIntegrations.Vita3k
         /// So the path is REMOVED, respecting quotes, and -r names the title id. With no title id -
         /// no console to build one on - the path is KEPT and only -r goes: Vita3K then installs and
         /// runs the game itself, which is the right fallback and what it would do without us.</summary>
+        /// <summary>OUR OWN FLAGS, read from the host's line and never passed on - Vita3K's CLI11
+        /// rejects an option it does not know and the emulator would not start. Put on the emulator's
+        /// command line in LaunchBox, or on one game's custom command line.
+        ///
+        ///     --no-ramdisk     this session is played on the disk (work\), never on a RAM disk</summary>
+        internal const string NoRamDiskFlag = "--no-ramdisk";
+
+        private static readonly string[] OurFlags = { NoRamDiskFlag };
+
+        /// <summary>Does the host's line carry one of our flags?</summary>
+        internal static bool Carries(string line, string flag)
+            => Tokenize(line ?? "").Exists(t => string.Equals(t, flag, StringComparison.OrdinalIgnoreCase));
+
         internal static string CommandLineFor(string current, string titleId, string romPath)
         {
             var tokens = Tokenize(current);
@@ -69,6 +82,8 @@ namespace LbIntegrations.Vita3k
             for (int i = 0; i < tokens.Count; i++)
             {
                 var t = tokens[i];
+
+                if (Array.Exists(OurFlags, f => string.Equals(f, t, StringComparison.OrdinalIgnoreCase))) continue;
 
                 if (t == "-r" || t == "--installed-path" || t == "-Z" || t == "--app-args")
                 {
@@ -180,8 +195,10 @@ namespace LbIntegrations.Vita3k
                 var gameTitle = Safe(() => args?.GameBeingLaunched?.Title);
                 using (var window = Vita3kProgressWindow.Open("Vita3K - " + (string.IsNullOrWhiteSpace(gameTitle) ? "preparing the game" : gameTitle)))
                 {
+                    bool noRamDisk = Carries(CurrentLine(args), NoRamDiskFlag);
+                    if (noRamDisk) Log.Info(NoRamDiskFlag + " is on the command line - this session stays on the disk");
                     titleId = Vita3kWorkspace.Prepare(layout, ResolveFullPath(rom), out error,
-                                                      (step, fraction) => window?.Report(step, fraction));
+                                                      (step, fraction) => window?.Report(step, fraction), noRamDisk);
                 }
                 if (titleId == null)
                 {

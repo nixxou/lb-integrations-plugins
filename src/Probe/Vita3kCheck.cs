@@ -263,6 +263,13 @@ namespace LbIntegrations.Probe
                 Case("a line an earlier build rewrote", "-F -r PCSE00965 -Z \"" + rom + "\"", "PCSE00965", "-F -r PCSE00965");
                 Case("no console to build on: the game stays, -r goes", "-F -r \"" + rom + "\"", null, "-F \"" + rom + "\"");
                 Case("a user's own switch is kept", "-F --log-level 2 \"" + rom + "\"", "PCSE00965", "-F --log-level 2 -r PCSE00965");
+                // OUR flag is read and never passed on: Vita3K's CLI11 refuses an option it does not know.
+                Case("--no-ramdisk never reaches the emulator", "-F --no-ramdisk \"" + rom + "\"", "PCSE00965", "-F -r PCSE00965");
+                Case("in any case, anywhere on the line", "--NO-RAMDISK -F \"" + rom + "\"", null, "-F \"" + rom + "\"");
+                var carries = type.GetMethod("Carries", BindingFlags.NonPublic | BindingFlags.Static);
+                Check("and it is seen on the line", carries != null
+                      && (bool)carries.Invoke(null, new object[] { "-F --no-ramdisk \"" + rom + "\"", "--no-ramdisk" })
+                      && !(bool)carries.Invoke(null, new object[] { "-F \"" + rom + "\"", "--no-ramdisk" }));
 
                 Console.WriteLine();
                 Console.WriteLine(_bad == 0 ? "  OK - the game path never reaches the emulator beside -r"

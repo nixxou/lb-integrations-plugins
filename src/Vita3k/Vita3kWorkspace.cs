@@ -409,7 +409,12 @@ namespace LbIntegrations.Vita3k
         /// <summary>The same preparation, saying what it is doing at each step - see
         /// Vita3kProgressWindow, which is what listens at launch.</summary>
         public static string Prepare(Vita3kLayout layout, string romPath, out string error,
-                                     Action<string, double?> report)
+                                     Action<string, double?> report) => Prepare(layout, romPath, out error, report, false);
+
+        /// <summary>... and with <paramref name="noRamDisk"/>, on the disk whatever the RAM - what
+        /// --no-ramdisk on the command line asks for.</summary>
+        public static string Prepare(Vita3kLayout layout, string romPath, out string error,
+                                     Action<string, double?> report, bool noRamDisk)
         {
             // Waits for an end-of-session release still in progress rather than racing it.
             if (!Monitor.TryEnter(SessionGate))
@@ -417,12 +422,12 @@ namespace LbIntegrations.Vita3k
                 report?.Invoke("Waiting for the previous session to be put away...", null);
                 Monitor.Enter(SessionGate);
             }
-            try { return PrepareLocked(layout, romPath, out error, report); }
+            try { return PrepareLocked(layout, romPath, out error, report, noRamDisk); }
             finally { Monitor.Exit(SessionGate); }
         }
 
         private static string PrepareLocked(Vita3kLayout layout, string romPath, out string error,
-                                            Action<string, double?> report)
+                                            Action<string, double?> report, bool noRamDisk = false)
         {
             error = null;
             try
@@ -444,7 +449,9 @@ namespace LbIntegrations.Vita3k
                 if (!content.IsGame)
                 { error = content + " is not a game - updates and add-ons are not launched"; return null; }
 
-                if (CanReuse(layout, content.TitleId, romPath))
+                // Reused as it is - unless it is on a RAM disk and this launch asks for the disk: then
+                // it is saved and rebuilt where it was asked to be, like a different game.
+                if (CanReuse(layout, content.TitleId, romPath) && !(noRamDisk && OnRamDisk(layout)))
                 {
                     Log.Info("the working tree already holds " + content.TitleId + " - reusing it");
                     // The link is remade every time: a release interrupted after it dropped the
@@ -466,7 +473,7 @@ namespace LbIntegrations.Vita3k
                              + MarginMb;
 
                 report?.Invoke("Preparing a fresh console...", null);
-                var root = OpenWorkingTree(layout, content.TitleId, sizeMb, report);
+                var root = OpenWorkingTree(layout, content.TitleId, sizeMb, report, noRamDisk);
                 if (root == null) { error = "could not make a working tree"; return null; }
 
                 // FROM HERE, A FAILURE OWES WHAT IT TOOK BACK. Measured: the junction was refused,
@@ -546,7 +553,7 @@ namespace LbIntegrations.Vita3k
         /// free does not fail, it PAGES to the system drive. We would be writing the SSD twice over
         /// while believing we were sparing it, and more slowly than a plain folder.</summary>
         private static string OpenWorkingTree(Vita3kLayout layout, string titleId, int sizeMb,
-                                              Action<string, double?> report = null)
+                                              Action<string, double?> report = null, bool noRamDisk = false)
         {
             RamDiskHost.LaunchBoxRoot = () => Vita3kPaths.LaunchBoxRootOf(layout);
 
@@ -557,9 +564,9 @@ namespace LbIntegrations.Vita3k
             int free = RamDrive.GetFreeRamMb();
 
             bool ready = RamDrive.IsReady();
-            if (Log.IsSet(NoRamDiskSwitch))
+            if (noRamDisk)
             {
-                Log.Info("working on disk: " + NoRamDiskSwitch + " is set beside the log");
+                Log.Info("working on disk: " + Vita3kPlugin.NoRamDiskFlag + " is on the command line");
                 ready = false;
             }
             else if (ready && free > 0 && free < need && RamDrive.CanCleanMemory)
@@ -991,9 +998,6 @@ namespace LbIntegrations.Vita3k
         // records the emulator's peak working set at the end of every session, per game, and the
         // next launch keeps that much free beside the disk, with a margin. A game never measured
         // gets the largest peak seen so far, or a default until there is one.
-
-        /// <summary>The marker file, beside the log, that sends every session to the disk.</summary>
-        public const string NoRamDiskSwitch = "no-ramdisk";
 
         public const string MemoryName = "lbip-vita3k.memory";
         private const int DefaultReserveMb = 2048;

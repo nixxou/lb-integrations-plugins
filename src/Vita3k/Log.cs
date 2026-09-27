@@ -61,10 +61,6 @@ namespace LbIntegrations.Vita3k
             }
         }
 
-        /// <summary>Is a marker file beside the log there RIGHT NOW? For a setting somebody toggles
-        /// between two launches, which a switch read once per process could not follow.</summary>
-        public static bool IsSet(string marker) => MarkerExists(marker);
-
         private static readonly System.Collections.Generic.Dictionary<string, bool> _switches =
             new System.Collections.Generic.Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 
