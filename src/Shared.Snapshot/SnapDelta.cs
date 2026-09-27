@@ -196,8 +196,15 @@ namespace LbIntegrations.Snapshot
         /// written, or -1. A missing index is 0 and not a failure: a session that changed nothing is
         /// a perfectly ordinary session.</summary>
         public static int Apply(string root, string stateDir, out string error)
+            => Apply(root, stateDir, out error, null, out _);
+
+        /// <summary>The same, leaving alone every entry <paramref name="leaveAlone"/> says to - written
+        /// back or deleted, it is not touched - and listing them in <paramref name="left"/>.</summary>
+        public static int Apply(string root, string stateDir, out string error, Func<string, bool> leaveAlone,
+                                out List<string> left)
         {
             error = null;
+            left = new List<string>();
             try
             {
                 var index = Path.Combine(stateDir ?? "", IndexName);
@@ -218,6 +225,7 @@ namespace LbIntegrations.Snapshot
                     var target = Path.GetFullPath(Path.Combine(full, path.Replace('/', Path.DirectorySeparatorChar)));
                     if (!target.StartsWith(full, StringComparison.OrdinalIgnoreCase))
                     { SnapLog.Warn("refused an entry that escapes the tree: " + path); continue; }
+                    if (parts[0] != "D" && leaveAlone != null && leaveAlone(path)) { left.Add(path); continue; }
 
                     switch (parts[0])
                     {

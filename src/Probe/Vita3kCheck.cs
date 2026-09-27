@@ -1134,6 +1134,83 @@ namespace LbIntegrations.Probe
             args = new object[] { layout, game, null };
             Check("a DLC added since: it launches", Call("Vita3kWorkspace", "Prepare", args) as string == TitleId, args[2] as string);
             Check("and the console was rebuilt with it", Directory.Exists(Path.Combine(work, "ux0", "addcont", TitleId, "DLCBONUS00000003")));
+
+            SavesAcrossExtras(layout, portable, roms, game);
+        }
+
+        /// <summary>A save stays valid whatever the update and DLC; only a lower version or a missing
+        /// DLC asks first, and "no" keeps the save aside rather than losing it.</summary>
+        private static void SavesAcrossExtras(object layout, string portable, string roms, string game)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  a save across updates and DLC");
+            var work = Path.Combine(portable, "work");
+            var saveDir = Path.Combine(portable, "saves", TitleId);
+            var save = Path.Combine(saveDir, "state.vitasav");
+            var ws = _asm.GetType("LbIntegrations.Vita3k.Vita3kWorkspace", throwOnError: true);
+            var askField = ws.GetField("Ask", BindingFlags.NonPublic | BindingFlags.Static);
+            var original = askField.GetValue(null);
+            string asked = null;
+            bool answer = true;
+            askField.SetValue(null, new Func<string, string, bool>((title, text) => { asked = text; return answer; }));
+            try
+            {
+                // A session at 1.20 with three DLC: progress, and a file dropped into the update's folder.
+                Write(work, "ux0/user/00/savedata/" + TitleId + "/progress.bin", "made at 1.20");
+                Write(work, "ux0/patch/" + TitleId + "/written-by-the-session.bin", "should not survive a change of update");
+                Check("the session is captured", (bool)Call("Vita3kWorkspace", "Capture", new object[] { layout, TitleId }));
+                string inside = null;
+                using (var z = ZipFile.OpenRead(save))
+                {
+                    var e = z.GetEntry("-lbip-context.txt");
+                    if (e != null) using (var r = new StreamReader(e.Open())) inside = r.ReadToEnd();
+                }
+                Console.WriteLine("            the save says: " + (inside ?? "(nothing)").Replace("\n", " | "));
+                Check("the save knows what it was made with (app_ver=01.20, 3 DLC)",
+                      inside != null && inside.Contains("app_ver=01.20") && inside.Split('\n').Count(l => l.StartsWith("dlc=")) == 3);
+
+                // The 1.20 update goes away: the game will run at 1.10. Answered NO.
+                var gone = Path.Combine(roms, "UPDATE", "update PCSE00965 1.20.vpk");
+                var parked = Path.Combine(roms, "..", "parked-1.20.vpk");
+                File.Move(gone, parked);
+                answer = false; asked = null;
+                var args = new object[] { layout, game, null };
+                Check("launching at 1.10 still works", Call("Vita3kWorkspace", "Prepare", args) as string == TitleId, args[2] as string);
+                Check("but it asked first, naming 1.20", asked != null && asked.Contains("01.20"));
+                Check("answered no: the save is not restored", !File.Exists(Path.Combine(work, "ux0", "user", "00", "savedata", TitleId, "progress.bin")));
+                Check("and it is kept aside as state.v01.20.vitasav", File.Exists(Path.Combine(saveDir, "state.v01.20.vitasav")) && !File.Exists(save));
+
+                // The same, answered YES.
+                File.Move(Path.Combine(saveDir, "state.v01.20.vitasav"), save);
+                Call("Vita3kWorkspace", "Teardown", new object[] { layout });
+                answer = true; asked = null;
+                args = new object[] { layout, game, null };
+                Call("Vita3kWorkspace", "Prepare", args);
+                Check("answered yes: asked, and the save is restored", asked != null
+                      && File.Exists(Path.Combine(work, "ux0", "user", "00", "savedata", TitleId, "progress.bin")));
+                Check("except what it held in the update's folder, which changed", !File.Exists(Path.Combine(work, "ux0", "patch", TitleId, "written-by-the-session.bin")));
+
+                // Going UP asks nothing: a save made at 1.10, the game back at 1.20.
+                Check("a save made at 1.10 is captured", (bool)Call("Vita3kWorkspace", "Capture", new object[] { layout, TitleId }));
+                File.Move(parked, gone);
+                Call("Vita3kWorkspace", "Teardown", new object[] { layout });
+                asked = null;
+                args = new object[] { layout, game, null };
+                Call("Vita3kWorkspace", "Prepare", args);
+                Check("going up to 1.20 asks nothing", asked == null);
+                Check("and restores it", File.Exists(Path.Combine(work, "ux0", "user", "00", "savedata", TitleId, "progress.bin")));
+
+                // A DLC that is gone asks, even at the same version.
+                var bonus = Path.Combine(roms, "DLC", "bonus PCSE00965.vpk");
+                Check("a save made with the bonus DLC is captured", (bool)Call("Vita3kWorkspace", "Capture", new object[] { layout, TitleId }));
+                File.Delete(bonus);
+                Call("Vita3kWorkspace", "Teardown", new object[] { layout });
+                asked = null; answer = true;
+                args = new object[] { layout, game, null };
+                Call("Vita3kWorkspace", "Prepare", args);
+                Check("a missing DLC asks, naming it", asked != null && asked.Contains("DLCBONUS00000003"));
+            }
+            finally { askField.SetValue(null, original); }
         }
 
         private static string ForgeContent(string dir, string name, string titleId, string category, string contentId,

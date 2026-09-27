@@ -46,6 +46,40 @@ namespace LbIntegrations.Vita3k
     /// <summary>What one launch asks for, beyond the game: our flags on the host's command line (see
     /// Vita3kPlugin.CommandLineFor) and the title the host shows, which the search for the game's
     /// update and DLC uses as one more name for its folder.</summary>
+    /// <summary>What a console was built with, as far as a save cares: the version the game runs at
+    /// (its update's APP_VER, or its own) and the DLC installed, by CONTENT_ID. Written beside the
+    /// session while it runs, and packed INTO the save it produces, so the save knows what it was
+    /// made with. Text, one key per line, sorted - the save stays deterministic.</summary>
+    internal sealed class SaveContext
+    {
+        public string AppVer;
+        public SortedSet<string> Dlc = new SortedSet<string>(StringComparer.Ordinal);
+
+        public string Text()
+        {
+            var text = new System.Text.StringBuilder();
+            text.Append("app_ver=").Append(AppVer ?? "").Append('\n');
+            foreach (var d in Dlc) text.Append("dlc=").Append(d).Append('\n');
+            return text.ToString();
+        }
+
+        public static SaveContext Parse(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return null;
+            var c = new SaveContext();
+            foreach (var line in text.Split('\n'))
+            {
+                var l = line.Trim();
+                if (l.StartsWith("app_ver=", StringComparison.Ordinal)) c.AppVer = l.Substring(8);
+                else if (l.StartsWith("dlc=", StringComparison.Ordinal) && l.Length > 4) c.Dlc.Add(l.Substring(4));
+            }
+            return c;
+        }
+
+        public bool SameAs(SaveContext other)
+            => other != null && string.Equals(AppVer ?? "", other.AppVer ?? "", StringComparison.Ordinal) && Dlc.SetEquals(other.Dlc);
+    }
+
     internal sealed class Vita3kLaunch
     {
         public bool NoRamDisk;      // --no-ramdisk
@@ -64,6 +98,15 @@ namespace LbIntegrations.Vita3k
         public const string ReferenceName = "work.reference";
         public const string PendingName = "work.pending";
         public const string SavesName = "saves";
+
+        /// <summary>The running session's SaveContext, beside the marker; and its name inside a save.
+        /// The latter cannot be a flattened path: FlatName never produces a dash-led name.</summary>
+        public const string ContextName = "work.context";
+        public const string SaveContextName = "-lbip-context.txt";
+
+        /// <summary>Who answers the question a risky save raises. The dialog by default; the probe
+        /// puts its own answer here.</summary>
+        internal static Func<string, string, bool> Ask = (title, text) => Vita3kQuestion.Ask(title, text, fallback: true);
         public const string SaveFile = "state.vitasav";
 
         /// <summary>Headroom on top of the firmware and the game. A session writes saves, shader
@@ -303,6 +346,7 @@ namespace LbIntegrations.Vita3k
         {
             try { var p = MarkerPath(layout); if (p != null && File.Exists(p)) File.Delete(p); }
             catch (Exception ex) { Log.Warn("could not clear " + TitleMarker, ex); }
+            try { var c = Under(layout, ContextName); if (c != null && File.Exists(c)) File.Delete(c); } catch { }
         }
 
         /// <summary>Is the working tree already this exact game, still there, and still walked?
@@ -553,7 +597,12 @@ namespace LbIntegrations.Vita3k
                                             : " - full walk"));
 
 
-                    var restored = RestoreSave(layout, content.TitleId, root);
+                    var context = new SaveContext { AppVer = extras.Update?.Content.AppVer ?? content.AppVer };
+                    foreach (var a in extras.Addons)
+                        if (!string.IsNullOrEmpty(a.Content.ContentId)) context.Dlc.Add(a.Content.ContentId);
+                    var restored = RestoreSave(layout, content, root, context);
+                    try { File.WriteAllText(Under(layout, ContextName), context.Text()); }
+                    catch (Exception ex) { Log.Warn("could not write " + ContextName + " - the next save will not know what it was made with", ex); }
 
                     // And what every file looks like from outside, so the capture at the end reads only
                     // what the session touched. AFTER the restore and WITHOUT what it wrote: a restored
@@ -944,6 +993,10 @@ namespace LbIntegrations.Vita3k
                 Log.Info("capture walk in " + watch.ElapsedMilliseconds + " ms - " + hashed + " file(s) read"
                          + (SnapStamps.Read(reference) == null ? " (no stamps: the whole tree)" : ", the rest untouched since the reference"));
 
+                // WHAT IT WAS MADE WITH, into the save itself - see SaveContext.
+                var context = Under(layout, ContextName);
+                if (context != null && File.Exists(context)) File.Copy(context, Path.Combine(building, SaveContextName), overwrite: true);
+
                 report?.Invoke("Packing the save...", null);
                 watch.Restart();
                 if (!SnapFile.Pack(building, save, out error))
@@ -969,10 +1022,22 @@ namespace LbIntegrations.Vita3k
         /// ordinary case of a game nobody has played yet.
         ///
         /// Returns the paths the save names as files, written or not - never null.</summary>
-        private static List<string> RestoreSave(Vita3kLayout layout, string titleId, string root)
+        ///
+        /// A SAVE STAYS VALID WHATEVER THE UPDATE AND DLC (Mehdi's rule): it holds what a session wrote,
+        /// and goes back onto any console of the same game. Two cases can still trouble the GAME, and
+        /// only those ask first - a save made at a HIGHER version than the game will now run (its
+        /// update is gone), and a save made with a DLC that is no longer here. Answered no, the game
+        /// starts without it, and the save is set aside as a copy the session's capture cannot
+        /// overwrite. A save made before saves knew their context asks nothing.
+        ///
+        /// And when the update or DLC changed at all, an entry of the save inside the game's, the
+        /// update's or a DLC's folder is left alone: written back, it would put the old version's file
+        /// over the new one's. Those folders are read-only to a game, so this is rare - and logged.</summary>
+        private static List<string> RestoreSave(Vita3kLayout layout, VitaContent game, string root, SaveContext current)
         {
             string folder = null;
             var named = new List<string>();
+            var titleId = game.TitleId;
             try
             {
                 var save = SavePathFor(layout, titleId);
@@ -982,8 +1047,52 @@ namespace LbIntegrations.Vita3k
                 if (!SnapFile.Unpack(save, folder, out var error))
                 { Log.Warn("could not open the save: " + error); return named; }
 
-                named = SnapDelta.FilesIn(folder);
-                int written = SnapDelta.Apply(root, folder, out error);
+                SaveContext made = null;
+                var contextFile = Path.Combine(folder, SaveContextName);
+                if (File.Exists(contextFile)) made = SaveContext.Parse(File.ReadAllText(contextFile));
+                Log.Info("the save of " + titleId + " was made " + (made == null ? "before saves recorded their context"
+                         : "at version " + (made.AppVer ?? "?") + " with " + made.Dlc.Count + " DLC")
+                         + "; the game now runs " + (current.AppVer ?? "?") + " with " + current.Dlc.Count + " DLC");
+
+                if (made != null)
+                {
+                    var worries = new List<string>();
+                    if (Vita3kExtras.VersionOf(made.AppVer) > Vita3kExtras.VersionOf(current.AppVer))
+                        worries.Add("It was made with the game at version " + made.AppVer + ", and the game will now run at "
+                                    + (current.AppVer ?? "?") + " - the update " + made.AppVer + " was not found.");
+                    var missing = made.Dlc.Where(d => !current.Dlc.Contains(d)).ToList();
+                    if (missing.Count > 0)
+                        worries.Add("It was made with " + (missing.Count == 1 ? "a DLC that is" : missing.Count + " DLC that are")
+                                    + " no longer here: " + string.Join(", ", missing.Select(ShortId)) + ".");
+                    if (worries.Count > 0)
+                    {
+                        var name = game.FullTitle ?? game.Title ?? titleId;
+                        var text = "The save of " + name + " may not load in the game as it is now.\n\n" + string.Join("\n\n", worries)
+                                   + "\n\nLoad the save anyway?\n\nNo: the game starts without it, and the save is kept aside as a copy.";
+                        Log.Info("asking before restoring: " + string.Join(" ", worries));
+                        bool load = Ask("Vita3K - " + name, text);
+                        if (!load)
+                        {
+                            var aside = SetAside(save, made.AppVer);
+                            Log.Info("not restored, as answered - the save is kept aside as " + (aside != null ? Path.GetFileName(aside) : "(could not)"));
+                            return named;
+                        }
+                        Log.Info("restoring anyway, as answered");
+                    }
+                }
+
+                // Update or DLC changed: their folders are not the save's to write.
+                Func<string, bool> leaveAlone = null;
+                if (made != null && !made.SameAs(current))
+                    leaveAlone = path => path.StartsWith("ux0/app/", StringComparison.OrdinalIgnoreCase)
+                                         || path.StartsWith("ux0/patch/", StringComparison.OrdinalIgnoreCase)
+                                         || path.StartsWith("ux0/addcont/", StringComparison.OrdinalIgnoreCase);
+
+                int written = SnapDelta.Apply(root, folder, out error, leaveAlone, out var left);
+                named = SnapDelta.FilesIn(folder).Where(p => !left.Contains(p)).ToList();
+                if (left.Count > 0)
+                    Log.Warn("left " + left.Count + " entry(ies) of the save alone - inside the game's, the update's or a DLC's folder,"
+                             + " which changed since: " + string.Join(", ", left.Take(5)) + (left.Count > 5 ? ", ..." : ""));
                 Log.Info("restored " + written + " file(s) of " + titleId + "'s save");
             }
             catch (Exception ex) { Log.Warn("could not restore the save of " + titleId, ex); }
@@ -994,6 +1103,24 @@ namespace LbIntegrations.Vita3k
             }
             return named;
         }
+
+        /// <summary>Move a save out of the session's way, as state.v&lt;version&gt;.vitasav beside it -
+        /// dated when that name is taken. Null when it could not be moved.</summary>
+        private static string SetAside(string save, string version)
+        {
+            try
+            {
+                var dir = Path.GetDirectoryName(save);
+                var tag = string.IsNullOrWhiteSpace(version) ? "old" : "v" + version.Trim();
+                var aside = Path.Combine(dir, "state." + tag + ".vitasav");
+                if (File.Exists(aside)) aside = Path.Combine(dir, "state." + tag + "." + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".vitasav");
+                File.Move(save, aside);
+                return aside;
+            }
+            catch (Exception ex) { Log.Warn("could not set the save aside", ex); return null; }
+        }
+
+        private static string ShortId(string contentId) => contentId != null && contentId.Length > 20 ? contentId.Substring(20) : contentId;
 
         /// <summary>The lazy net, for whatever the watcher missed: capture only when this game is the
         /// one in the tree and the tree is newer than its save. In the settled case that is two

@@ -146,8 +146,13 @@ namespace LbIntegrations.Vita3k
 
         /// <summary>Back to the top of the topmost band, without activating - the focus is taken once,
         /// when shown, and never fought over afterwards.</summary>
+        /// <summary>Set while a question (Vita3kQuestion) is on screen: pushed back on top every tick,
+        /// this window would cover the very box somebody has to answer.</summary>
+        public static volatile bool Suspended;
+
         private static void KeepOnTop(IntPtr handle)
         {
+            if (Suspended) return;
             try { SetWindowPos(handle, HwndTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate | SwpShowWindow); }
             catch { }
         }
