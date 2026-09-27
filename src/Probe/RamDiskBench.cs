@@ -159,6 +159,51 @@ namespace LbIntegrations.Probe
                 Check("a label with a space is refused", !RamDrive.CreateVhdx(Path.Combine(dir, "l.vhdx"), 64, "two words", out err) && err != null, err);
                 Check("a relative path is refused", !RamDrive.CreateVhdx("relative.vhdx", 64, "X", out err) && err != null, err);
                 Check("nothing was created by them", Directory.GetFiles(dir).Length == 2);
+
+                // THREE LEVELS - firmware <- game <- session, the chain a per-game base would make.
+                Console.WriteLine();
+                Console.WriteLine("  a chain of three: firmware <- game <- session");
+                var game = Path.Combine(dir, "game.vhdx");
+                var session = Path.Combine(dir, "session-of-game.vhdx");
+                watch.Restart();
+                Check("a game level is created over the firmware", RamDrive.CreateDifferencingVhdx(game, parent, out err), err);
+                root = RamDrive.AttachVhdx(game, false, out err);
+                if (!Check("it attaches writable", root != null, err)) return false;
+                attached.Add(game);
+                File.WriteAllText(Path.Combine(root, "game.txt"), "the installed game");
+                Check("it detaches", RamDrive.DetachVhdx(game, out err), err); attached.Remove(game);
+                Console.WriteLine("            game level built in " + Ms() + ", " + new FileInfo(game).Length / 1024 + " KB on disk");
+
+                Check("a session level is created over the game level", RamDrive.CreateDifferencingVhdx(session, game, out err), err);
+                Console.WriteLine("            created in " + Ms());
+                root = RamDrive.AttachVhdx(session, false, out err);
+                if (!Check("the third level attaches writable", root != null, err)) return false;
+                attached.Add(session);
+                Console.WriteLine("            attached in " + Ms());
+                Check("it sees the firmware's file, two levels down", File.ReadAllText(Path.Combine(root, "keep.txt")) == "pristine");
+                Check("and the game's, one level down", File.ReadAllText(Path.Combine(root, "game.txt")) == "the installed game");
+                File.WriteAllText(Path.Combine(root, "game.txt"), "played");
+                File.WriteAllText(Path.Combine(root, "save.bin"), "a save");
+                Check("the session level detaches", RamDrive.DetachVhdx(session, out err), err); attached.Remove(session);
+
+                root = RamDrive.AttachVhdx(game, true, out err);
+                if (Check("the game level, read-only afterwards", root != null, err))
+                {
+                    attached.Add(game);
+                    Check("is untouched by the session", File.ReadAllText(Path.Combine(root, "game.txt")) == "the installed game"
+                          && !File.Exists(Path.Combine(root, "save.bin")));
+                    RamDrive.DetachVhdx(game, out err); attached.Remove(game);
+                }
+                root = RamDrive.AttachVhdx(parent, true, out err);
+                if (Check("the firmware level, read-only", root != null, err))
+                {
+                    attached.Add(parent);
+                    Check("knows nothing of the game or the session", !File.Exists(Path.Combine(root, "game.txt")) && File.ReadAllText(Path.Combine(root, "keep.txt")) == "pristine");
+                    RamDrive.DetachVhdx(parent, out err); attached.Remove(parent);
+                }
+                File.Delete(session);
+                Check("the session level is thrown away, the game level stays usable", !File.Exists(session)
+                      && RamDrive.CreateDifferencingVhdx(session, game, out err), err);
             }
             finally
             {
