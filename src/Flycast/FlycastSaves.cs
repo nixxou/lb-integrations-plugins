@@ -31,9 +31,17 @@
 //    game saves. IsSecondarySaveFile keeps them out.
 //
 // THE ARCHIVE NAME IS FLYCAST'S OWN. A vault copy keeps the name the emulator uses, so what we
-// restore is bit for bit what we backed up and there is no translation table to maintain. Argosy
-// names the same Dreamcast save <gameId>.A1.bin, so a future RomM exchange will need a rename - a
-// known, declared cost, and RomM is out of scope here.
+// restore is bit for bit what we backed up and there is no translation table to maintain.
+//
+// ARGOSY'S NAME FOR THE SAME CARD is <product>.A1.bin - the libretro Flycast core's, with
+// reicast_per_content_vmus on VMU A1 (Argosy's DreamcastSaveHandler). Same bytes, another name, and
+// the rename is only ever needed ONE way:
+//   - down, nothing to do: Argosy names the file it writes from the disc's save id
+//     (SavePathResolver.constructSavePath), never from the name the server sends;
+//   - up, a card pushed from Argosy reaches us as "<product>.A1.bin". Restored under that name it
+//     would sit beside the one Flycast reads and never be seen - so a VMU is always restored under
+//     Flycast's own name (VmuTargetName): from the group's product id when the save carries one,
+//     otherwise translated from Argosy's form.
 
 using System;
 using System.Collections.Generic;
@@ -487,6 +495,15 @@ namespace LbIntegrations.Flycast
                     return new AddSaveResponse("Could not locate the Flycast installation for this game.");
 
                 string name = FirstNonBlank(save.OriginalFileName, Path.GetFileName(source));
+                // A VMU goes back under the name Flycast reads, whatever name it came under (Argosy's
+                // "<product>.A1.bin" - see the header).
+                if (!(save is GameSaveState) && !StartsWith(save.SaveGroupId, ArcadePrefix))
+                {
+                    var flycastName = VmuTargetName(save.SaveGroupId, name);
+                    if (!string.Equals(flycastName, name, StringComparison.Ordinal))
+                        Log.Info("the card came as " + name + " - restored as " + flycastName + ", the name Flycast reads");
+                    name = flycastName;
+                }
                 var dirs = save is GameSaveState ? layout.StateDirs
                          : StartsWith(save.SaveGroupId, ArcadePrefix) ? layout.ArcadeDirs
                          : layout.VmuDirs;
@@ -566,6 +583,23 @@ namespace LbIntegrations.Flycast
         private static bool Exists(string path)
         {
             try { return File.Exists(path) || Directory.Exists(path); } catch { return false; }
+        }
+
+        /// <summary>Argosy's suffix for the same card: "&lt;product&gt;.A1.bin".</summary>
+        private const string ArgosyVmuSuffix = ".A1.bin";
+
+        /// <summary>The name a VMU is restored under: Flycast's, "&lt;product&gt;_vmu_save_A1.bin" -
+        /// from the group's product id when there is one (the name Flycast builds, sanitised the same
+        /// way), else from Argosy's "&lt;product&gt;.A1.bin", else the name as it came.</summary>
+        internal static string VmuTargetName(string saveGroupId, string incoming)
+        {
+            if (StartsWith(saveGroupId, VmuPrefix) && saveGroupId.Length > VmuPrefix.Length)
+                return Ipbin.SanitizeForFileName(saveGroupId.Substring(VmuPrefix.Length)) + VmuSuffix;
+            if (incoming != null && incoming.EndsWith(ArgosyVmuSuffix, StringComparison.OrdinalIgnoreCase)
+                && !incoming.EndsWith(VmuSuffix, StringComparison.OrdinalIgnoreCase)
+                && incoming.Length > ArgosyVmuSuffix.Length)
+                return incoming.Substring(0, incoming.Length - ArgosyVmuSuffix.Length) + VmuSuffix;
+            return incoming;
         }
 
         private static bool IsOurs(GameSaveBase save)

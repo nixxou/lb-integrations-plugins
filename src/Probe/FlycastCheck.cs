@@ -320,7 +320,36 @@ namespace LbIntegrations.Probe
                                  && File.ReadAllBytes(landed).AsSpan().SequenceEqual(File.ReadAllBytes(copy));
                 Console.WriteLine("  the file name is Flycast's own, unchanged   " + (sameName ? "OK" : "FAIL"));
                 Console.WriteLine("  identical byte for byte                     " + (sameBytes ? "OK" : "FAIL"));
-                return sameName && sameBytes;
+
+                // THE SAME CARD, PUSHED FROM ARGOSY: named "<product>.A1.bin" (the libretro core's
+                // name). It must land under Flycast's, over the card Flycast reads.
+                string product = (vmu.SaveGroupId ?? "").Substring("flycast-vmu:".Length);
+                string argosyName = product + ".A1.bin";
+                string argosyCopy = Path.Combine(vault, argosyName);
+                File.WriteAllBytes(argosyCopy, Enumerable.Reverse(File.ReadAllBytes(copy)).ToArray());   // other bytes, to see them land
+                var fromArgosy = plugin.AddSaveFile(new AddSaveArgs
+                {
+                    SaveToAdd = new GameSaveGame { FileLocation = argosyCopy, OriginalFileName = argosyName, SaveGroupId = vmu.SaveGroupId, GameId = vmu.GameId },
+                    ShouldOverwriteFunc = () => true,
+                });
+                var landedArgosy = fromArgosy?.SaveAdded?.FileLocation;
+                bool argosyRenamed = fromArgosy is { WasSuccess: true } && string.Equals(Path.GetFileName(landedArgosy), name, StringComparison.Ordinal)
+                                     && File.ReadAllBytes(landedArgosy).AsSpan().SequenceEqual(File.ReadAllBytes(argosyCopy))
+                                     && !File.Exists(Path.Combine(Path.GetDirectoryName(landedArgosy) ?? "", argosyName));
+                Console.WriteLine("  Argosy's " + argosyName + " lands as " + Path.GetFileName(landedArgosy ?? "?"));
+                Console.WriteLine("  a card from Argosy lands under Flycast's name  " + (argosyRenamed ? "OK" : "FAIL"));
+
+                // And without a group id to go by: translated from Argosy's name alone.
+                var byName = plugin.GetType().Assembly.GetType("LbIntegrations.Flycast.FlycastPlugin")
+                    ?.GetMethod("VmuTargetName", BindingFlags.NonPublic | BindingFlags.Static);
+                bool translated = byName != null
+                                  && (string)byName.Invoke(null, new object[] { null, "T44102N.A1.bin" }) == "T44102N_vmu_save_A1.bin"
+                                  && (string)byName.Invoke(null, new object[] { null, "T44102N_vmu_save_A1.bin" }) == "T44102N_vmu_save_A1.bin";
+                Console.WriteLine("  without a group id, Argosy's name translated   " + (translated ? "OK" : "FAIL"));
+
+                // Put the original back, for the checks that follow.
+                File.Copy(copy, landed, overwrite: true);
+                return sameName && sameBytes && argosyRenamed && translated;
             }
             finally { try { Directory.Delete(vault, true); } catch { } }
         }
