@@ -71,6 +71,8 @@ namespace LbIntegrations.Vita3k
             StartUpCheck();
 
             // LaunchBox's Import ROM Files wizard, made to import Vita games as ROM files - see Vita3kLbImport.
+            // It does nothing at all outside LaunchBox.exe. LiteBox's own import, when it comes, will call
+            // this plugin rather than be watched by it - see the note at the end of src\Catalog\LbCatalog.cs.
             Vita3kLbImport.Install();
         }
 
@@ -381,6 +383,16 @@ namespace LbIntegrations.Vita3k
                 // THE DOCUMENTATION, last: nothing when Vita3kDocs.Urls is empty, and never a reason to
                 // fail the install - a document that does not come is logged and skipped.
                 firmware += Vita3kDocs.Fetch(targetDir, (step, p) => Report(args, step, p), () => Cancelled(args));
+
+                // THE EMULATOR'S OWN SETTINGS: full screen on, its own update check off - each only where
+                // config.yml does not say yet, so an update keeps the user's. See Vita3kConfig.
+                Vita3kConfig.ApplyInstallDefaults(layout);
+
+                // AND WHAT THE GAMES WILL BE TOLD - language, date, time, enter button - said once, on a
+                // fresh install: they are Vita3K's settings, not ours, and the moment to change them is now.
+                if (!reinstall)
+                    Vita3kNotify.Info("Vita3K installed. Games will run with " + Vita3kConfig.SystemSettings(layout)
+                                      + " - change them in Vita3K itself: Settings, System tab.", 20);
 
                 if (reinstall)
                 {

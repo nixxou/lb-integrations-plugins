@@ -13,6 +13,9 @@
 // param.sfo says so - same TITLE_ID as the game, CATEGORY gp (an update) or ac (a DLC). File and
 // folder names are somebody's naming; the param.sfo is Sony's.
 //
+// And the game's OWN ARCHIVE, first: a zip that holds the game with its update and DLC (see
+// Vita3kContent). Any archive nominated may hold several contents too - each is read and weighed.
+//
 // And a fifth: what the import found in the same batch of files, recorded in the emulator's folder
 // (Vita3kExtrasIndex) - for extras kept nowhere the four rules look.
 //
@@ -39,6 +42,23 @@ namespace LbIntegrations.Vita3k
         public VitaContent Content;
         public long Bytes;          // uncompressed, for sizing the RAM disk
         public string FoundBy;      // which rule nominated it
+
+        /// <summary>Which extra, as the game's options record it: the archive, and where in it when it
+        /// holds several - "path|root". A path alone for a content at the top of its archive.</summary>
+        public string Ref => Content?.Root is { Length: > 0 } root ? Path + "|" + root : Path;
+
+        /// <summary>Its name in the log: the file, and where in it.</summary>
+        public string Name => System.IO.Path.GetFileName(Path) + (Content?.Root is { Length: > 0 } root ? " > " + root : "");
+
+        /// <summary>Two Refs naming the same extra - the path by its full form, the root as written.</summary>
+        public static bool SameRef(string a, string b)
+        {
+            if (a == null || b == null) return false;
+            static (string, string) Split(string r) { var i = r.IndexOf('|'); return i < 0 ? (r, "") : (r.Substring(0, i), r.Substring(i + 1)); }
+            var (pa, ra) = Split(a); var (pb, rb) = Split(b);
+            string Full(string p) { try { return System.IO.Path.GetFullPath(p); } catch { return p; } }
+            return string.Equals(Full(pa), Full(pb), StringComparison.OrdinalIgnoreCase) && string.Equals(ra, rb, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     /// <summary>Everything found for a game, nothing chosen: updates highest first, DLC one per CONTENT_ID.</summary>
@@ -64,7 +84,7 @@ namespace LbIntegrations.Vita3k
             {
                 long size = 0, ticks = 0;
                 try { var i = new FileInfo(e.Path); size = i.Length; ticks = i.LastWriteTimeUtc.Ticks; } catch { }
-                return System.IO.Path.GetFullPath(e.Path).ToLowerInvariant() + "|" + size + "|" + ticks;
+                return System.IO.Path.GetFullPath(e.Path).ToLowerInvariant() + "|" + (e.Content?.Root ?? "").ToLowerInvariant() + "|" + size + "|" + ticks;
             }).OrderBy(s => s, StringComparer.Ordinal);
             var text = string.Join("\n", parts);
             if (text.Length == 0) return "";
@@ -109,19 +129,29 @@ namespace LbIntegrations.Vita3k
                 Log.Info("updates and DLC of " + game.TitleId + ": " + candidates.Count + " candidate archive(s) around "
                          + System.IO.Path.GetDirectoryName(romPath));
 
-                var addons = new Dictionary<string, VitaExtra>(StringComparer.OrdinalIgnoreCase);
+                // Every content of every archive: the game's own first (what it holds beside the game),
+                // then each one nominated.
+                var contents = new List<(string path, string rule, VitaContent content)>();
+                foreach (var c in Vita3kContent.DescribeAll(romPath, out _) ?? new List<VitaContent>())
+                    if (!c.IsGame) contents.Add((romPath, "in the game's own archive", c));
                 foreach (var (path, rule) in candidates)
                 {
-                    var name = System.IO.Path.GetFileName(path);
-                    var content = Vita3kContent.Describe(path, out var error);
-                    if (content == null) { Log.Info("  set aside " + name + " [" + rule + "] - " + error); continue; }
+                    var all = Vita3kContent.DescribeAll(path, out var error);
+                    if (all == null) { Log.Info("  set aside " + System.IO.Path.GetFileName(path) + " [" + rule + "] - " + error); continue; }
+                    foreach (var c in all) contents.Add((path, rule, c));
+                }
+
+                var addons = new Dictionary<string, VitaExtra>(StringComparer.OrdinalIgnoreCase);
+                foreach (var (path, rule, content) in contents)
+                {
+                    var name = System.IO.Path.GetFileName(path) + (content.Root.Length > 0 ? " > " + content.Root : "");
                     if (!string.Equals(content.TitleId, game.TitleId, StringComparison.OrdinalIgnoreCase))
                     { Log.Info("  set aside " + name + " [" + rule + "] - it is " + content.TitleId + "'s, not " + game.TitleId + "'s"); continue; }
 
                     var extra = new VitaExtra
                     {
                         Path = path, Content = content, FoundBy = rule,
-                        Bytes = Math.Max(0, Vita3kContent.UncompressedSize(path)),
+                        Bytes = Math.Max(0, content.Bytes),
                     };
                     if (content.IsPatch)
                     {
@@ -132,7 +162,7 @@ namespace LbIntegrations.Vita3k
                     {
                         var id = content.ContentId ?? name;
                         if (addons.TryGetValue(id, out var already))
-                        { Log.Info("  set aside " + name + " [" + rule + "] - the same DLC (" + id + ") as " + System.IO.Path.GetFileName(already.Path)); continue; }
+                        { Log.Info("  set aside " + name + " [" + rule + "] - the same DLC (" + id + ") as " + already.Name); continue; }
                         addons[id] = extra;
                         Log.Info("  DLC " + (content.Title ?? id) + " (" + id + "): " + name + " [" + rule + "], " + Mb(extra.Bytes));
                     }
@@ -154,10 +184,10 @@ namespace LbIntegrations.Vita3k
             if (choice != null && choice.NoUpdate) chosen.Update = null;
             else if (choice?.UpdatePath != null)
             {
-                chosen.Update = found.Updates.FirstOrDefault(u => string.Equals(Full(u.Path), Full(choice.UpdatePath), StringComparison.OrdinalIgnoreCase));
+                chosen.Update = found.Updates.FirstOrDefault(u => VitaExtra.SameRef(u.Ref, choice.UpdatePath));
                 if (chosen.Update == null)
                 {
-                    Log.Warn("  the update chosen in the game's options (" + System.IO.Path.GetFileName(choice.UpdatePath) + ") is not found - the highest one instead");
+                    Log.Warn("  the update chosen in the game's options (" + choice.UpdatePath + ") is not found - the highest one instead");
                     chosen.Update = found.Updates.FirstOrDefault();
                 }
             }
@@ -165,7 +195,7 @@ namespace LbIntegrations.Vita3k
 
             foreach (var u in found.Updates)
                 if (u != chosen.Update)
-                    Log.Info("  set aside update " + (u.Content.AppVer ?? "?") + " (" + System.IO.Path.GetFileName(u.Path) + ") - "
+                    Log.Info("  set aside update " + (u.Content.AppVer ?? "?") + " (" + u.Name + ") - "
                              + (choice != null && (choice.NoUpdate || choice.UpdatePath != null)
                                 ? "not the one chosen in the game's options"
                                 : (chosen.Update?.Content.AppVer ?? "?") + " is higher, and updates are cumulative"));

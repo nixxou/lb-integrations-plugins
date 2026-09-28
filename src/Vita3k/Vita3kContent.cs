@@ -24,6 +24,20 @@
 // carries, which the user provides). Measured 28/09 against Vita3K's own install of the same .pkg and
 // zRIF: 40 files of 40, byte for byte, and the same .rif.
 //
+// SEVERAL CONTENTS IN ONE ZIP - a game with its update and DLC in one file, the usual shape of such
+// packs. Vita3K's rule, and ours (interface.cpp, get_archive_contents_path): every path holding a
+// sce_sys/param.sfo is a content, whatever the folders around it are called - app/, patch/,
+// addcont/ are a habit of dumps, not a rule, and nothing here asks for them. The param.sfo alone
+// says what each one is. Where we part from Vita3K, on purpose:
+//   - a content is what is UNDER its root, by prefix - Vita3K takes every path that CONTAINS it,
+//     so a game at the top of the zip swallows the others, and "X/" swallows "dlc/X/". A file here
+//     belongs to the LONGEST root it starts with.
+//   - ONE game per archive (Mehdi's rule): the biggest. Any other is set aside, and the log says so.
+//   - the order is ours - the game, then the update, then the DLC - never the zip's: Vita3K refuses
+//     an update stored before its game ("Install app before patch").
+// The update and DLC of the zip are candidates like those found beside it (Vita3kExtras): the same
+// choice, the same highest-update rule.
+//
 // NOT HANDLED, and said rather than silently mishandled: themes (category ac with a theme.xml, or a
 // .pkg of type theme) and .vci. Each is a different shape of install.
 
@@ -56,6 +70,14 @@ namespace LbIntegrations.Vita3k
         /// sce_sys/param.sfo, or "foo/" when the archive wraps everything in a folder.</summary>
         public string Root = "";
 
+        /// <summary>The roots of the other contents of the same archive that sit INSIDE this one's -
+        /// their files are theirs, not this content's.</summary>
+        public List<string> Nested = new List<string>();
+
+        /// <summary>Its size once installed, uncompressed: the files under its root that no nested
+        /// content owns. A .pkg's is the package's.</summary>
+        public long Bytes;
+
         /// <summary>The folders the install wrote into, relative to the virtual filesystem - what the
         /// reference walk has to hash, everything else being the pristine base. See
         /// SnapWalk.WriteFrom.</summary>
@@ -80,9 +102,46 @@ namespace LbIntegrations.Vita3k
     {
         private const string SfoPath = "sce_sys/param.sfo";
 
-        /// <summary>Read what an archive holds, WITHOUT unpacking it. Null when it is not something we
-        /// know how to install.</summary>
+        /// <summary>Read what an archive holds, WITHOUT unpacking it: its MAIN content - the biggest game
+        /// when it holds one or more, otherwise its highest update, otherwise its first content. Null
+        /// when it is not something we know how to install. See DescribeAll for all of them.</summary>
         public static VitaContent Describe(string archivePath, out string error)
+        {
+            var all = DescribeAll(archivePath, out error);
+            return all == null ? null : Primary(all, archivePath);
+        }
+
+        /// <summary>THE TITLE AS A CONSOLE IN US ENGLISH SHOWS IT - whatever language the emulator is set to.
+        /// Vita3K's rule (sfo.cpp, get_param_info): TITLE_&lt;language, two digits&gt;, else TITLE; US
+        /// English is language 01 (SceSystemParamLang). Mehdi's point, 28/09: what this names is the game
+        /// in the LIBRARY - the import renames by it, and the metadata databases know a game by its
+        /// English title; the plain TITLE is the one of the region it was made for, Japanese for a
+        /// Japanese game.</summary>
+        internal static string TitleOf(ParamSfo sfo) => sfo.FirstString("TITLE_" + UsEnglish, "TITLE", "STITLE_" + UsEnglish, "STITLE");
+
+        /// <summary>The same for the short title, STITLE.</summary>
+        internal static string ShortTitleOf(ParamSfo sfo) => sfo.FirstString("STITLE_" + UsEnglish, "STITLE", "TITLE_" + UsEnglish, "TITLE");
+
+        /// <summary>SCE_SYSTEM_PARAM_LANG_ENGLISH_US, as a param.sfo key suffix.</summary>
+        private const string UsEnglish = "01";
+
+        /// <summary>The main content among an archive's - see Describe.</summary>
+        internal static VitaContent Primary(List<VitaContent> all, string archivePath)
+        {
+            if (all == null || all.Count == 0) return null;
+            var games = all.Where(c => c.IsGame).OrderByDescending(c => c.Bytes).ToList();
+            foreach (var other in games.Skip(1))
+                Log.Info("  " + Path.GetFileName(archivePath) + ": another game in it, set aside - " + other
+                         + " at " + (other.Root.Length > 0 ? other.Root : "its top") + "; only the biggest is kept, " + games[0]);
+            return games.FirstOrDefault()
+                   ?? all.Where(c => c.IsPatch).OrderByDescending(c => Vita3kExtras.VersionOf(c.AppVer)).FirstOrDefault()
+                   ?? all[0];
+        }
+
+        /// <summary>EVERY content an archive holds, WITHOUT unpacking it: one per path holding a
+        /// sce_sys/param.sfo, whatever the folders are called - see the header. A .pkg holds one.
+        /// Null, with the reason, when it holds none we can read.</summary>
+        public static List<VitaContent> DescribeAll(string archivePath, out string error)
         {
             error = null;
             try
@@ -93,24 +152,38 @@ namespace LbIntegrations.Vita3k
                 if (IsPkg(archivePath))
                 {
                     var pkg = VitaPkg.Open(archivePath, out error);
-                    return pkg?.Describe(out error);
+                    var one = pkg?.Describe(out error);
+                    if (one == null) return null;
+                    one.Bytes = new FileInfo(archivePath).Length;
+                    return new List<VitaContent> { one };
                 }
 
                 using var archive = ArchiveFactory.Open(archivePath);
-                foreach (var entry in archive.Entries)
+                var files = archive.Entries.Where(e => !e.IsDirectory).ToList();
+                string KeyOf(IArchiveEntry e) => (e.Key ?? "").Replace('\\', '/');
+
+                // Vita3K refuses a Vitamin dump outright (get_archive_contents_path) - so do we.
+                if (files.Any(e => KeyOf(e).EndsWith("sce_module/steroid.suprx", StringComparison.OrdinalIgnoreCase)))
+                { error = Path.GetFileName(archivePath) + " is a Vitamin dump - Vita3K does not run those"; return null; }
+
+                // Every content starts where its sce_sys/ does, whatever wraps it.
+                var sfos = files.Where(e => KeyOf(e).EndsWith(SfoPath, StringComparison.OrdinalIgnoreCase)).ToList();
+                if (sfos.Count == 0)
+                { error = Path.GetFileName(archivePath) + " has no " + SfoPath + " in it - not a .vpk"; return null; }
+
+                var contents = new List<VitaContent>();
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var entry in sfos)
                 {
-                    if (entry.IsDirectory) continue;
-                    var key = (entry.Key ?? "").Replace('\\', '/');
-                    if (!key.EndsWith(SfoPath, StringComparison.OrdinalIgnoreCase)) continue;
-
-                    // The content starts where sce_sys/ does, whatever wraps it.
+                    var key = KeyOf(entry);
                     var root = key.Substring(0, key.Length - SfoPath.Length);
+                    if (!seen.Add(root)) continue;
 
-                    using var stream = entry.OpenEntryStream();
-                    using var memory = new MemoryStream();
-                    stream.CopyTo(memory);
-                    var sfo = ParamSfo.Parse(memory.ToArray());
-                    if (sfo == null) { error = "the param.sfo in " + Path.GetFileName(archivePath) + " is malformed"; return null; }
+                    byte[] bytes;
+                    using (var stream = entry.OpenEntryStream())
+                    using (var memory = new MemoryStream()) { stream.CopyTo(memory); bytes = memory.ToArray(); }
+                    var sfo = ParamSfo.Parse(bytes);
+                    if (sfo == null) { error = "the param.sfo at " + key + " in " + Path.GetFileName(archivePath) + " is malformed"; continue; }
 
                     var content = new VitaContent
                     {
@@ -118,17 +191,30 @@ namespace LbIntegrations.Vita3k
                         TitleId = sfo.FirstString("TITLE_ID"),
                         Category = sfo.FirstString("CATEGORY"),
                         ContentId = sfo.FirstString("CONTENT_ID"),
-                        Title = sfo.FirstString("STITLE", "TITLE"),
-                        FullTitle = sfo.FirstString("TITLE", "STITLE"),
+                        Title = ShortTitleOf(sfo),
+                        FullTitle = TitleOf(sfo),
                         AppVer = sfo.FirstString("APP_VER"),
                     };
                     if (string.IsNullOrWhiteSpace(content.TitleId))
-                    { error = "the param.sfo carries no TITLE_ID"; return null; }
-                    return content;
+                    { error = "the param.sfo at " + key + " carries no TITLE_ID"; continue; }
+                    contents.Add(content);
                 }
+                if (contents.Count == 0) return null;
+                error = null;
 
-                error = Path.GetFileName(archivePath) + " has no " + SfoPath + " in it - not a .vpk";
-                return null;
+                // Each file to the LONGEST root it starts with: a content nested in another is its own.
+                foreach (var c in contents)
+                    c.Nested = contents.Where(o => o.Root.Length > c.Root.Length && o.Root.StartsWith(c.Root, StringComparison.OrdinalIgnoreCase))
+                                       .Select(o => o.Root).ToList();
+                foreach (var e in files)
+                {
+                    var key = KeyOf(e);
+                    VitaContent owner = null;
+                    foreach (var c in contents)
+                        if (key.StartsWith(c.Root, StringComparison.OrdinalIgnoreCase) && (owner == null || c.Root.Length > owner.Root.Length)) owner = c;
+                    if (owner != null) owner.Bytes += Math.Max(0, e.Size);
+                }
+                return contents;
             }
             catch (Exception ex)
             {
@@ -172,11 +258,19 @@ namespace LbIntegrations.Vita3k
         public static VitaContent Install(string archivePath, string vitaFs, out string error,
                                           Action<string, double?> report)
         {
+            var content = Describe(archivePath, out error);
+            return content == null ? null : Install(archivePath, content, vitaFs, out error, report);
+        }
+
+        /// <summary>Install ONE content of an archive - one of DescribeAll's, which says where in it
+        /// it is. What any other content of the archive holds is not touched.</summary>
+        public static VitaContent Install(string archivePath, VitaContent content, string vitaFs, out string error,
+                                          Action<string, double?> report)
+        {
             error = null;
             try
             {
-                var content = Describe(archivePath, out error);
-                if (content == null) return null;
+                if (content == null) { error = "nothing to install"; return null; }
 
                 var relative = DestinationFor(content, out var why);
                 if (relative == null) { error = why; return null; }
@@ -232,7 +326,9 @@ namespace LbIntegrations.Vita3k
                         bool done = false;
                         // An update carries NO licence of its own (measured: no work.bin in it) - it
                         // runs under the app's, installed just before it.
-                        if (IsZip(archivePath)
+                        // Not with a content nested in this one's root: the native reader stages
+                        // everything under the root, the nested content's files with it.
+                        if (IsZip(archivePath) && content.Nested.Count == 0
                             && (ArchiveHas(archivePath, content.Root + "sce_sys/package/work.bin") || InstalledLicence(content, vitaFs) != null)
                             && Environment.GetEnvironmentVariable(NoZipVariable) != "1")
                         {
@@ -255,7 +351,7 @@ namespace LbIntegrations.Vita3k
 
                         if (!done)
                         {
-                            long need = Math.Max(0, UncompressedSize(archivePath));
+                            long need = Math.Max(0, content.Bytes);
                             long room = FreeBytes(stagingRoot);
                             if (room >= 0 && room < need + 64L * 1024 * 1024)
                             {
@@ -265,7 +361,7 @@ namespace LbIntegrations.Vita3k
                             }
                             report?.Invoke("Unpacking " + Name(content) + "...", 0);
                             Unpack(archivePath, content.Root, staging, everything: true,
-                                   progress: f => report?.Invoke(null, f));
+                                   progress: f => report?.Invoke(null, f), nested: content.Nested);
 
                             var licence = LicenceFor(content, staging, vitaFs);
                             if (licence == null)
@@ -288,7 +384,8 @@ namespace LbIntegrations.Vita3k
                     report?.Invoke("Unpacking " + Name(content) + "...", 0);
                     files = Unpack(archivePath, content.Root, destination,
                                    progress: f => report?.Invoke(null, f),
-                                   hashed: content.Hashed, prefix: relative.Replace('\\', '/').TrimEnd('/') + "/");
+                                   hashed: content.Hashed, prefix: relative.Replace('\\', '/').TrimEnd('/') + "/",
+                                   nested: content.Nested);
                 }
 
                 // Vita3K copies the licence for an app or an add-on, never for a patch: a patch runs
@@ -488,7 +585,8 @@ namespace LbIntegrations.Vita3k
         /// under <paramref name="prefix"/> + its path.</summary>
         private static int Unpack(string archivePath, string root, string destination, bool everything = false,
                                   Action<double> progress = null,
-                                  Dictionary<string, SnapEntry> hashed = null, string prefix = null)
+                                  Dictionary<string, SnapEntry> hashed = null, string prefix = null,
+                                  IReadOnlyList<string> nested = null)
         {
             var full = Path.GetFullPath(destination);
             int files = 0;
@@ -504,6 +602,8 @@ namespace LbIntegrations.Vita3k
             foreach (var entry in archive.Entries)
             {
                 var key = (entry.Key ?? "").Replace('\\', '/');
+                // Another content's, nested under this root: not this one's to unpack.
+                if (nested != null && nested.Any(n => key.StartsWith(n, StringComparison.OrdinalIgnoreCase))) continue;
                 if (root.Length > 0)
                 {
                     if (!key.StartsWith(root, StringComparison.OrdinalIgnoreCase)) continue;
@@ -644,7 +744,14 @@ namespace LbIntegrations.Vita3k
         /// The unpacking fallback needs the game plus its largest file; it checks the room it has and
         /// says so plainly when it is short, rather than every launch paying for a case that should not
         /// happen.</summary>
-        public static long WorkingSizeBytes(string archivePath) => UncompressedSize(archivePath);
+        /// For an archive of several contents, the main one's: what else it holds is sized as an extra
+        /// when it is kept (Vita3kExtras), and not at all when it is not.
+        public static long WorkingSizeBytes(string archivePath)
+        {
+            if (IsPkg(archivePath)) return UncompressedSize(archivePath);
+            var content = Describe(archivePath, out _);
+            return content != null ? content.Bytes : UncompressedSize(archivePath);
+        }
 
         /// <summary>What installing this archive needs ON TOP of <see cref="WorkingSizeBytes"/>, and only
         /// WHILE it installs: nothing for a zip (decrypted straight from it), the largest item for a .pkg

@@ -115,8 +115,8 @@ namespace LbIntegrations.Vita3k
                 TitleId = sfo.FirstString("TITLE_ID"),
                 Category = sfo.FirstString("CATEGORY"),
                 ContentId = sfo.FirstString("CONTENT_ID") ?? ContentId,
-                Title = sfo.FirstString("STITLE", "TITLE"),
-                FullTitle = sfo.FirstString("TITLE", "STITLE"),
+                Title = Vita3kContent.ShortTitleOf(sfo),
+                FullTitle = Vita3kContent.TitleOf(sfo),
                 AppVer = sfo.FirstString("APP_VER"),
             };
             if (string.IsNullOrWhiteSpace(content.TitleId) && ContentId?.Length >= 16) content.TitleId = ContentId.Substring(7, 9);

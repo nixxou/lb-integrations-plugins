@@ -972,7 +972,7 @@ namespace LbIntegrations.Vita3k
                 var label = c.IsPatch ? "update " + (c.AppVer ?? "?") : "DLC " + (c.Title ?? c.ContentId);
                 progress(null, 0);
                 var watch = System.Diagnostics.Stopwatch.StartNew();
-                var done = Vita3kContent.Install(extra.Path, root, out var why, progress);
+                var done = Vita3kContent.Install(extra.Path, c, root, out var why, progress);
                 if (done == null)
                 {
                     Log.Warn("the " + label + " was not installed (" + why + ") - the game runs without it");
@@ -987,7 +987,7 @@ namespace LbIntegrations.Vita3k
                 }
                 installed.Written.AddRange(done.Written);
                 foreach (var kv in done.Hashed) installed.Hashed[kv.Key] = kv.Value;
-                Log.Info("installed the " + label + " (" + Path.GetFileName(extra.Path) + ") in " + watch.ElapsedMilliseconds + " ms");
+                Log.Info("installed the " + label + " (" + extra.Name + ") in " + watch.ElapsedMilliseconds + " ms");
             }
         }
 

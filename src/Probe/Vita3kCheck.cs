@@ -1971,6 +1971,8 @@ namespace LbIntegrations.Probe
 
             ImportIndexAndChoice(layout, root, game, described);
             ImportCleanup(root);
+            MultiContent(root);
+            TheConfig(layout);
 
             // A launch installs them, before the reference.
             var args = new object[] { layout, game, null };
@@ -2034,6 +2036,126 @@ namespace LbIntegrations.Probe
             Console.WriteLine("            left: " + string.Join(" | ", list.Games.Select(r => r.Title + " (" + Path.GetFileName(r.ApplicationPath) + ")")));
             Check("one line left: the game", list.Games.Count == 1 && list.Games[0].ApplicationPath == game);
             Check("titled from its param.sfo, cleaned", list.Games.Count == 1 && list.Games[0].Title == "A Forged Game Deluxe");
+        }
+
+        /// <summary>A zip of SEVERAL contents, stored the wrong way round: the update first, a second and
+        /// smaller game, then the game with a DLC nested inside its own folder - and no folder named
+        /// app/, patch/ or addcont/. The biggest game is the one, the update and DLC of the zip are
+        /// found with it, and each content gets what is its own, in the order that works.</summary>
+        private static void MultiContent(string root)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  a zip holding several contents");
+            var dir = Path.Combine(root, "multi");
+            Directory.CreateDirectory(dir);
+            var zip = Path.Combine(dir, "a bundle.zip");
+            const string DlcId = "UP0000-PCSE00965_00-MULTICOSTUME0001";
+            using (var z = ZipFile.Open(zip, ZipArchiveMode.Create))
+            {
+                void Put(string key, byte[] bytes) { using var s = z.CreateEntry(key).Open(); s.Write(bytes, 0, bytes.Length); }
+                void Text(string key, string text) => Put(key, System.Text.Encoding.ASCII.GetBytes(text));
+                Put("the update/sce_sys/param.sfo", Psf(("CATEGORY", "gp"), ("TITLE_ID", TitleId), ("CONTENT_ID", "UP0000-PCSE00965_00-FORGEDGAME000000"), ("TITLE", "A Forged Game"), ("APP_VER", "01.40")));
+                Text("the update/eboot.bin", "patched to 01.40");
+                Put("a demo/sce_sys/param.sfo", Psf(("CATEGORY", "gd"), ("TITLE_ID", "PCSE11111"), ("CONTENT_ID", "UP0000-PCSE11111_00-FORGEDDEMO000000"), ("TITLE", "A Small Demo")));
+                Text("a demo/eboot.bin", "small");
+                Put("stuff/game/sce_sys/param.sfo", Psf(("CATEGORY", "gd"), ("TITLE_ID", TitleId), ("CONTENT_ID", "UP0000-PCSE00965_00-FORGEDGAME000000"), ("TITLE", "A Forged Game"), ("APP_VER", "01.00")));
+                Text("stuff/game/eboot.bin", new string('g', 4000));
+                Put("stuff/game/dlc/costume/sce_sys/param.sfo", Psf(("CATEGORY", "ac"), ("TITLE_ID", TitleId), ("CONTENT_ID", DlcId), ("TITLE", "A Nested Costume")));
+                Text("stuff/game/dlc/costume/costume.bin", new string('c', 3000));
+            }
+
+            var allArgs = new object[] { zip, null };
+            var all = ((System.Collections.IList)Call("Vita3kContent", "DescribeAll", allArgs)).Cast<object>().ToList();
+            Console.WriteLine("            contents: " + string.Join(" | ", all.Select(c => Field(c, "Root") + " " + c)));
+            Check("four contents read, whatever their folders are called", all.Count == 4);
+            var game = Call("Vita3kContent", "Describe", new object[] { zip, null });
+            Check("the game is the biggest one, not the first stored", (string)Field(game, "TitleId") == TitleId && (string)Field(game, "Root") == "stuff/game/");
+            Check("its size leaves out the DLC nested in its folder", (long)Field(game, "Bytes") < 5000 && (long)Field(game, "Bytes") > 4000, Field(game, "Bytes").ToString());
+
+            var found = Call("Vita3kExtras", "Evaluate", new object[] { zip, game, "A Forged Game", null });
+            var updates = ((System.Collections.IList)Field(found, "Updates")).Cast<object>().ToList();
+            var addons = ((System.Collections.IList)Field(found, "Addons")).Cast<object>().ToList();
+            Check("the zip's own update is found with it", updates.Count == 1 && (string)Field(Field(updates[0], "Content"), "AppVer") == "01.40"
+                  && ((string)Field(updates[0], "FoundBy")).Contains("own archive"));
+            Check("and its nested DLC", addons.Count == 1 && (string)Field(Field(addons[0], "Content"), "ContentId") == DlcId);
+            var updateRef = (string)updates[0].GetType().GetProperty("Ref").GetValue(updates[0]);
+            Check("the update is named by its archive and its place in it", updateRef == zip + "|the update/", updateRef);
+
+            // CHOSEN BY THAT NAME in the game's options - and nothing else.
+            var choiceType = _asm.GetType("LbIntegrations.Vita3k.Vita3kExtrasChoice", throwOnError: true);
+            var choice = Activator.CreateInstance(choiceType);
+            choiceType.GetField("UpdatePath").SetValue(choice, updateRef);
+            var chosen = Call("Vita3kExtras", "Choose", new object[] { found, choice });
+            Check("the game's options name it by that, and find it", Field(chosen, "Update") != null);
+
+            // INSTALLED: the game alone, then what was chosen - the update first stored, installed second.
+            var fs = Path.Combine(dir, "fs");
+            Directory.CreateDirectory(fs);
+            var installArgs = new object[] { zip, game, fs, null, null };
+            var installed = Call("Vita3kContent", "Install", installArgs);
+            Check("the game installs", installed != null, installArgs[3] as string);
+            var app = Path.Combine(fs, "ux0", "app", TitleId);
+            Check("with its own files only - not the nested DLC's, not the demo's, not the update's",
+                  File.Exists(Path.Combine(app, "eboot.bin")) && !Directory.Exists(Path.Combine(app, "dlc"))
+                  && !Directory.Exists(Path.Combine(fs, "ux0", "app", "PCSE11111")) && File.ReadAllText(Path.Combine(app, "eboot.bin")).StartsWith("gggg"));
+            Call("Vita3kWorkspace", "InstallExtras", new object[] { Call("Vita3kExtras", "Choose", new object[] { found, null }), fs, installed, null });
+            Check("then the update, over it", File.ReadAllText(Path.Combine(app, "eboot.bin")) == "patched to 01.40");
+            Check("and the DLC where Vita3K puts it", File.Exists(Path.Combine(fs, "ux0", "addcont", TitleId, "MULTICOSTUME0001", "costume.bin"))
+                  && !File.Exists(Path.Combine(fs, "ux0", "addcont", TitleId, "MULTICOSTUME0001", "eboot.bin")));
+
+            // THE IMPORT: a bundle holding a game is a game - kept, not taken for its update.
+            var list = new FakeGameList();
+            list.Games.Add(new FakeListRecord("a bundle", zip));
+            Call("Vita3kImportCleanup", "Run", new object[] { null, list });
+            Check("at import, the bundle stays - as its game", list.Games.Count == 1 && list.Games[0].Title == "A Forged Game", list.Games.Count == 1 ? list.Games[0].Title : null);
+
+            // THE US ENGLISH TITLE, as the library names it: TITLE_01 before the region's own TITLE.
+            var jp = Path.Combine(dir, "a japanese game.zip");
+            using (var z = ZipFile.Open(jp, ZipArchiveMode.Create))
+            {
+                var sfo = Psf(("CATEGORY", "gd"), ("TITLE_ID", "PCSG00001"), ("CONTENT_ID", "JP0000-PCSG00001_00-FORGEDJAPAN00000"),
+                              ("TITLE", "ゲーム"), ("STITLE", "ゲ"), ("TITLE_01", "A Japanese Game"), ("STITLE_01", "Japanese Game"));
+                using var s = z.CreateEntry("sce_sys/param.sfo").Open(); s.Write(sfo, 0, sfo.Length);
+            }
+            var jpContent = Call("Vita3kContent", "Describe", new object[] { jp, null });
+            Check("a title in several languages: the US English one", (string)Field(jpContent, "FullTitle") == "A Japanese Game"
+                  && (string)Field(jpContent, "Title") == "Japanese Game", (string)Field(jpContent, "FullTitle"));
+        }
+
+        /// <summary>What an install puts in config.yml - full screen on, the update check off - only where
+        /// the file does not say yet; and the system settings read back for the notification.</summary>
+        private static void TheConfig(object layout)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  the emulator's own settings, at install");
+            var portable = Path.Combine((string)Field(layout, "InstallDir"), "portable");
+            var config = Path.Combine(portable, "config.yml");
+            var before = File.Exists(config) ? File.ReadAllText(config) : null;
+            try
+            {
+                if (File.Exists(config)) File.Delete(config);
+                Call("Vita3kConfig", "ApplyInstallDefaults", new object[] { layout });
+                var fresh = File.ReadAllText(config);
+                Check("a fresh install: full screen on, the update check off",
+                      fresh.Contains("boot-apps-full-screen: true") && fresh.Contains("check-for-updates: false"), fresh.Trim());
+                Check("and the settings said are Vita3K's defaults",
+                      (string)Call("Vita3kConfig", "SystemSettings", new object[] { layout }) == "language English (US), date MM/DD/YYYY, time 12-hour, enter button cross");
+
+                File.WriteAllText(config, "show-welcome: false\ncheck-for-updates: true\nsys-lang: 2\nsys-date-format: 1\nsys-time-format: 1\n");
+                Call("Vita3kConfig", "ApplyInstallDefaults", new object[] { layout });
+                var updated = File.ReadAllText(config);
+                Check("an update keeps what the user set - the update check they turned on stays on",
+                      updated.Contains("check-for-updates: true") && !updated.Contains("check-for-updates: false"));
+                Check("and adds only the key the file did not hold", updated.Contains("boot-apps-full-screen: true"));
+                var said = (string)Call("Vita3kConfig", "SystemSettings", new object[] { layout });
+                Console.WriteLine("            " + said);
+                Check("the settings are read back from it", said == "language French, date DD/MM/YYYY, time 24-hour, enter button cross");
+            }
+            finally
+            {
+                if (before != null) File.WriteAllText(config, before);
+                else if (File.Exists(config)) File.Delete(config);
+            }
         }
 
         /// <summary>The shape of the wizard's game list: Games, a collection the grid shows.</summary>

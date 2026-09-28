@@ -87,7 +87,7 @@ namespace LbIntegrations.Vita3k
             Add(_updateAuto, 18); y += 24;
             foreach (var u in _found.Updates)
             {
-                var b = new RadioButton { AutoSize = true, Text = (u.Content.AppVer ?? "?") + "  -  " + Path.GetFileName(u.Path) };
+                var b = new RadioButton { AutoSize = true, Text = (u.Content.AppVer ?? "?") + "  -  " + u.Name };
                 Add(b, 18); y += 20;
                 Add(Grey(u.FoundBy + ", " + Vita3kExtras.Mb(u.Bytes)), 36); y += 22;
                 _updates.Add((b, u));
@@ -101,7 +101,7 @@ namespace LbIntegrations.Vita3k
             {
                 var id = d.Content.ContentId ?? "";
                 var box = new CheckBox { AutoSize = true, Checked = _choiceWas == null || !_choiceWas.LeftOut.Contains(id),
-                                         Text = (d.Content.Title ?? id) + "  -  " + Path.GetFileName(d.Path) };
+                                         Text = (d.Content.Title ?? id) + "  -  " + d.Name };
                 Add(box, 18); y += 20;
                 Add(Grey(id + ", " + d.FoundBy + ", " + Vita3kExtras.Mb(d.Bytes)), 36); y += 22;
                 _dlc.Add((box, d));
@@ -112,7 +112,7 @@ namespace LbIntegrations.Vita3k
             else if (_choiceWas.NoUpdate) _updateNone.Checked = true;
             else
             {
-                var chosen = _updates.FirstOrDefault(u => string.Equals(Path.GetFullPath(u.Update.Path), Path.GetFullPath(_choiceWas.UpdatePath ?? ""), StringComparison.OrdinalIgnoreCase));
+                var chosen = _updates.FirstOrDefault(u => VitaExtra.SameRef(u.Update.Ref, _choiceWas.UpdatePath));
                 if (chosen.Button != null) chosen.Button.Checked = true; else _updateAuto.Checked = true;
             }
         }
@@ -123,7 +123,7 @@ namespace LbIntegrations.Vita3k
             if (_found == null) return null;
             var c = new Vita3kExtrasChoice();
             if (_updateNone.Checked) c.NoUpdate = true;
-            else foreach (var (button, update) in _updates) if (button.Checked) c.UpdatePath = update.Path;
+            else foreach (var (button, update) in _updates) if (button.Checked) c.UpdatePath = update.Ref;
             foreach (var (box, dlc) in _dlc) if (!box.Checked) c.LeftOut.Add(dlc.Content.ContentId ?? "");
             return c;
         }
