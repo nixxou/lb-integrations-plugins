@@ -95,4 +95,23 @@ namespace LbIntegrations.Catalog
         /// plugins have been constructed does nothing useful - they have already decided.</summary>
         public static bool HostWillAsk;
     }
+
+    // ── TO COME: A HOST'S OWN IMPORT, ASKING THE EMULATOR'S PLUGIN ─────────────────────────────
+    //
+    // Not written yet - noted here because this is where it will go (Mehdi, 28/09). LiteBox has no
+    // import wizard today; when it has one, at the END of it, over the listing it is about to import,
+    // it calls the plugin of the emulator chosen. Same door as the catalogue: a host asks, a plugin
+    // answers, nothing is patched or watched.
+    //
+    // What LaunchBox's side does today by reflection on its wizard (Vita3kLbImport, then
+    // Vita3kImportCleanup) is exactly what that call will return in a typed answer, per file:
+    //   - keep it, under this title (the Vita plugin reads it from the param.sfo);
+    //   - or leave it out, and why (an update or a DLC - installed with its game, not imported as one;
+    //     a .pkg without its licence; not content this emulator runs).
+    // The plugin records what it learns on the way (the Vita plugin: its extras index). A plugin that
+    // has nothing to say about a file keeps it as the host has it. The shape to settle when it is
+    // written: an interface next to ILbCatalogSource (say ILbImportReview), one method over the
+    // listing - paths, the platform and the emulator chosen - on the host's thread, allowed to take
+    // time (it reads every file). ADDED, NEVER CHANGED: this assembly is one copy for the whole process,
+    // and every version of it must stay interchangeable (see the header).
 }

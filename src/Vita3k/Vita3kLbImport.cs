@@ -43,8 +43,20 @@
 // out. The list fills AFTER its page appears (measured), so the cleanup waits until it has stopped
 // changing. Its own setting (Vita3kSettings.CleanImportList), on by default.
 //
-// Only inside LaunchBox: Big Box has no such wizard, LiteBox its own import. Lines are "[import] ..."
-// in vita3k.log - one for each swap and each restore.
+// ONLY INSIDE LAUNCHBOX - AND NOTHING AT ALL ANYWHERE ELSE. Install() looks at the process first and
+// returns before touching anything unless it is LaunchBox.exe: in LiteBox and in Big Box no class
+// handler is registered, no WPF type is looked at, no view model is read by reflection, and
+// Vita3kImportCleanup - reached only from here - never runs. Everything below knows LaunchBox's
+// wizard by its obfuscated-core names (WizardViewModel, RomImportGameListViewModel...) and must stay
+// behind that one check: a host that merely shares the WPF runtime is no reason to go looking.
+//
+// LITEBOX, WHEN IT HAS ITS OWN IMPORT, IS NOT TO BE SERVED FROM HERE. It will ASK - a method call on
+// the plugin of the emulator chosen, over the list it is about to import (see the note at the end of
+// src\Catalog\LbCatalog.cs) - so nothing of this file is needed there: no swap (LiteBox has no Vita
+// import of its own to get around), no capture, no reflection. What it will want is the part of the
+// cleanup that decides what each file is - see Vita3kImportCleanup's header.
+//
+// Lines are "[import] ..." in vita3k.log - one for each swap and each restore.
 
 using System;
 using System.Collections;
@@ -83,6 +95,7 @@ namespace LbIntegrations.Vita3k
             _installed = true;
             try
             {
+                // THE ONE GATE: nothing of the wizard's machinery exists outside LaunchBox - see the header.
                 if (!string.Equals(System.Diagnostics.Process.GetCurrentProcess().ProcessName, "LaunchBox", StringComparison.OrdinalIgnoreCase))
                     return;
 

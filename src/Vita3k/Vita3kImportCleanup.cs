@@ -21,6 +21,20 @@
 // from the grid and from the import. A record's Title has a setter (the grid edits it); a renamed
 // record is taken out and put back at its place, so the grid redraws it - the record itself says
 // nothing when it changes.
+//
+// TWO HALVES, AND ONLY ONE IS LAUNCHBOX'S. Reached only from Vita3kLbImport, so only inside LaunchBox.
+//   - LAUNCHBOX'S: the list itself - Games, ApplicationPath, the Title setter, the out-and-back to
+//     redraw a line, NotifyOfPropertyChange("GameCount"), the progress window over the wizard. All
+//     by reflection on a host we do not own.
+//   - THE HOST'S BUSINESS, NOBODY'S IN PARTICULAR: what each FILE is - Read (the param.sfo, through
+//     Vita3kContent.Describe), then the verdict in Run (a game, and its title by CleanTitle; an update
+//     or a DLC, and the index line it leaves; a .pkg game without a licence; not Vita content), and
+//     Vita3kExtrasIndex.Record at the end.
+// FOR LITEBOX'S FUTURE IMPORT (Mehdi, 28/09: it will call the chosen emulator's plugin on the final
+// listing - the contract to come is noted at the end of src\Catalog\LbCatalog.cs), the second half
+// comes out of Run into a method over PATHS that returns a verdict per file - keep as <title>, or
+// drop with a reason - and records the index itself. Run then becomes LaunchBox's adapter: the list
+// in, the verdicts applied to its records. Not done yet: nothing calls it but this file.
 
 using System;
 using System.Collections;
