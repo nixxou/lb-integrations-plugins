@@ -2138,8 +2138,23 @@ namespace LbIntegrations.Probe
                 var fresh = File.ReadAllText(config);
                 Check("a fresh install: full screen on, the update check off",
                       fresh.Contains("boot-apps-full-screen: true") && fresh.Contains("check-for-updates: false"), fresh.Trim());
-                Check("and the settings said are Vita3K's defaults",
-                      (string)Call("Vita3kConfig", "SystemSettings", new object[] { layout }) == "language English (US), date MM/DD/YYYY, time 12-hour, enter button cross");
+                var windows = Call("Vita3kConfig", "FromWindows", new object[0]).ToString();
+                Console.WriteLine("            from this Windows: " + windows);
+                Check("and the system settings are Windows' - read back as they were written",
+                      fresh.Contains("sys-lang: ") && fresh.Contains("sys-button: ")
+                      && (string)Call("Vita3kConfig", "SystemSettings", new object[] { layout }) == windows);
+
+                // THE CULTURES, one by one: the language from the display language, the formats from the
+                // regional settings, circle for Japanese only.
+                string From(string ui, string regional) => Call("Vita3kConfig", "FromCultures", new object[]
+                    { new System.Globalization.CultureInfo(ui), new System.Globalization.CultureInfo(regional) }).ToString();
+                Check("fr-FR: French, DD/MM/YYYY, 24-hour, cross", From("fr-FR", "fr-FR") == "language French, date DD/MM/YYYY, time 24-hour, enter button cross", From("fr-FR", "fr-FR"));
+                Check("ja-JP: Japanese, YYYY/MM/DD, 24-hour, circle", From("ja-JP", "ja-JP") == "language Japanese, date YYYY/MM/DD, time 24-hour, enter button circle", From("ja-JP", "ja-JP"));
+                Check("en-US: English (US), MM/DD/YYYY, 12-hour", From("en-US", "en-US") == "language English (US), date MM/DD/YYYY, time 12-hour, enter button cross", From("en-US", "en-US"));
+                Check("en-GB: English (UK), DD/MM/YYYY, 24-hour", From("en-GB", "en-GB") == "language English (UK), date DD/MM/YYYY, time 24-hour, enter button cross", From("en-GB", "en-GB"));
+                Check("an English Windows with French regional settings: English (US), and the French formats",
+                      From("en-US", "fr-FR") == "language English (US), date DD/MM/YYYY, time 24-hour, enter button cross", From("en-US", "fr-FR"));
+                Check("pt-BR and zh-TW: their own variant", From("pt-BR", "pt-BR").StartsWith("language Portuguese (Brazil)") && From("zh-TW", "zh-TW").StartsWith("language Chinese (traditional)"));
 
                 File.WriteAllText(config, "show-welcome: false\ncheck-for-updates: true\nsys-lang: 2\nsys-date-format: 1\nsys-time-format: 1\n");
                 Call("Vita3kConfig", "ApplyInstallDefaults", new object[] { layout });
@@ -2150,6 +2165,19 @@ namespace LbIntegrations.Probe
                 var said = (string)Call("Vita3kConfig", "SystemSettings", new object[] { layout });
                 Console.WriteLine("            " + said);
                 Check("the settings are read back from it", said == "language French, date DD/MM/YYYY, time 24-hour, enter button cross");
+
+                // WHAT THE WINDOW SAVES: the four keys replaced where they are, everything else kept.
+                var settingsType = _asm.GetType("LbIntegrations.Vita3k.VitaSystemSettings", throwOnError: true);
+                var chosen = Activator.CreateInstance(settingsType);
+                settingsType.GetField("Language").SetValue(chosen, 0);
+                settingsType.GetField("EnterButton").SetValue(chosen, 0);
+                settingsType.GetField("DateFormat").SetValue(chosen, 0);
+                settingsType.GetField("TimeFormat").SetValue(chosen, 1);
+                Check("the window's choice is saved", (bool)Call("Vita3kConfig", "Write", new object[] { layout, chosen }));
+                var saved = File.ReadAllText(config);
+                Check("over the keys that were there, once each", saved.Split('\n').Count(l => l.StartsWith("sys-lang:")) == 1 && saved.Contains("sys-lang: 0") && saved.Contains("sys-button: 0"));
+                Check("and the rest of the file kept", saved.Contains("show-welcome: false") && saved.Contains("check-for-updates: true") && saved.Contains("boot-apps-full-screen: true"));
+                Check("read back: Japanese, circle", (string)Call("Vita3kConfig", "SystemSettings", new object[] { layout }) == "language Japanese, date YYYY/MM/DD, time 24-hour, enter button circle");
             }
             finally
             {

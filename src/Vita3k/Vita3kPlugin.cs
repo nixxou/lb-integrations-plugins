@@ -384,15 +384,20 @@ namespace LbIntegrations.Vita3k
                 // fail the install - a document that does not come is logged and skipped.
                 firmware += Vita3kDocs.Fetch(targetDir, (step, p) => Report(args, step, p), () => Cancelled(args));
 
-                // THE EMULATOR'S OWN SETTINGS: full screen on, its own update check off - each only where
-                // config.yml does not say yet, so an update keeps the user's. See Vita3kConfig.
+                // THE EMULATOR'S OWN SETTINGS: full screen on, its own update check off, and the language,
+                // date, time and enter button from Windows - each only where config.yml does not say yet, so
+                // an update keeps the user's. See Vita3kConfig.
                 Vita3kConfig.ApplyInstallDefaults(layout);
 
-                // AND WHAT THE GAMES WILL BE TOLD - language, date, time, enter button - said once, on a
-                // fresh install: they are Vita3K's settings, not ours, and the moment to change them is now.
+                // AND ASKED, once, on a fresh install (Mehdi's wording): is that what the games should be
+                // told? No opens the window to change it. An update asks nothing - it changed nothing.
                 if (!reinstall)
-                    Vita3kNotify.Info("Vita3K installed. Games will run with " + Vita3kConfig.SystemSettings(layout)
-                                      + " - change them in Vita3K itself: Settings, System tab.", 20);
+                {
+                    var settingsLayout = layout;
+                    Vita3kNotify.Ask("Vita3K installed. Games will run with " + Vita3kConfig.SystemSettings(layout) + ", is it OK?", 60,
+                                     ("Yes", null),
+                                     ("No", () => Vita3kSystemSettingsForm.Edit(settingsLayout)));
+                }
 
                 if (reinstall)
                 {
