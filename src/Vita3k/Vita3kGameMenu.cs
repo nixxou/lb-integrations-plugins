@@ -64,8 +64,8 @@ namespace LbIntegrations.Vita3k
 
         /// <summary>NEVER NULL: the host turns it into its own menu image, and a null there can cost the
         /// whole entry without a word - ExtendDB's entry, which shows, always returns one.</summary>
-        public static Image Icon => _icon ??= SystemIcons.Application.ToBitmap();
-        private static Image _icon;
+        /// <summary>The emulator's own icon, taken from its executable - see LbipMenuIcon.</summary>
+        public static Image Icon => LbIntegrations.Lbip.LbipMenuIcon.Of(Vita3kPaths.IsVita3kExecutable, Vita3kPlugin.ResolveFullPath);
 
         /// <summary>Does this game run through our emulator? Asked at every right-click, for every
         /// selected game: one lookup by id and a file-name comparison, nothing read from disk.</summary>
@@ -163,6 +163,9 @@ namespace LbIntegrations.Vita3k
                         System = Vita3kGameConfig.Load(layout, Safe(() => g.Id)),
                         Graphics = Vita3kGameConfig.LoadSection(layout, Safe(() => g.Id), Vita3kGameConfig.GpuSection),
                         GraphicsBase = Vita3kGameConfig.DefaultsOf(layout, titleId, Vita3kGameConfig.GpuSection),
+                        GraphicsFromGame = layout == null ? null : Vita3kGameConfig.SetByGame(layout, titleId, Vita3kGameConfig.GpuSection),
+                        CompatFromGame = CompatSetByGame(layout, titleId),
+                        SystemFromGame = layout != null && titleId != null && Vita3kGameConfig.SetByGame(layout, titleId, Vita3kGameConfig.SystemSection).Count > 0,
                         Compat = CompatOf(layout, Safe(() => g.Id)),
                         CompatBase = CompatBaseOf(layout, titleId),
                         CompatState = layout == null ? null : Vita3kCompat.Lookup(layout, titleId),
@@ -200,6 +203,16 @@ namespace LbIntegrations.Vita3k
             foreach (var s in CompatSections)
                 foreach (var kv in Vita3kGameConfig.DefaultsOf(layout, titleId, s))
                     all[s + "/" + kv.Key] = kv.Value;
+            return all;
+        }
+
+        /// <summary>What the game's own custom config sets of the Compatibility tab, section/attribute.</summary>
+        private static HashSet<string> CompatSetByGame(Vita3kLayout layout, string titleId)
+        {
+            var all = new HashSet<string>(StringComparer.Ordinal);
+            if (layout == null) return all;
+            foreach (var s in CompatSections)
+                foreach (var a in Vita3kGameConfig.SetByGame(layout, titleId, s)) all.Add(s + "/" + a);
             return all;
         }
 

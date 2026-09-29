@@ -370,6 +370,8 @@ namespace LbIntegrations.Probe
                 form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, bmp.Width, bmp.Height));
                 shots.Add(bmp);
             }
+            // LBIP_SHOT_RESET=1: "Reset to defaults" pressed once the pictures are taken - see PpssppCheck.CheckReset.
+            if (Environment.GetEnvironmentVariable("LBIP_SHOT_RESET") == "1") PpssppCheck.CheckReset(form, "_handText");
             form.Close();
             using var all = new System.Drawing.Bitmap(shots.Count * shots[0].Width, shots[0].Height);
             using (var g = System.Drawing.Graphics.FromImage(all))

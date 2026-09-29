@@ -122,6 +122,9 @@
     <EmbeddedResource Include="$(PayloadDir)\native\vita3k-install.dll">
       <LogicalName>payload/native/vita3k-install.dll</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\native\flycast-id.exe">
+      <LogicalName>payload/native/flycast-id.exe</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <!-- FAIL LOUDLY RATHER THAN SHIP AN EMPTY INSTALLER. An exe with no payload builds perfectly

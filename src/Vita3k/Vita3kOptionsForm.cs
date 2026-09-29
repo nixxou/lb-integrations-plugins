@@ -21,6 +21,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Windows.Forms;
+using LbIntegrations.Lbip;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 
@@ -45,6 +46,8 @@ namespace LbIntegrations.Vita3k
             public Dictionary<string, string> GraphicsBase;   // what it runs on without them
             public Dictionary<string, string> Compat;         // the Compatibility tab's, section/attribute, null for none
             public Dictionary<string, string> CompatBase;     // what it runs on without them
+            public HashSet<string> GraphicsFromGame, CompatFromGame;   // what the game's own custom config sets
+            public bool SystemFromGame;                        // and whether it sets the system settings
             public VitaCompat CompatState;                     // where it stands in Vita3K's list, null when not in it
             public string Advanced;                            // the text set by hand, null for none
             public bool AdvancedOn;                            // and whether it is the one in use
@@ -77,6 +80,7 @@ namespace LbIntegrations.Vita3k
         private Label _handStatus, _sysHandNote, _gfxHandNote, _gfxIntro;
         private string _keptHand;
         private bool _handLoading;
+        private readonly OptionMarks _marks = new OptionMarks();
 
 
         /// <summary>The games that were changed, once OK has run.</summary>
@@ -95,7 +99,7 @@ namespace LbIntegrations.Vita3k
             ShowInTaskbar = false;
             AutoScaleMode = AutoScaleMode.Dpi;
             Font = new Font("Segoe UI", 9f);
-            ClientSize = new Size(680, 642);
+            ClientSize = new Size(680, 672);
 
             // ── the top: which games, and where to start from
             var top = new Panel { Dock = DockStyle.Top, Height = _groups.Count > 1 ? 86 : 56, Padding = new Padding(12, 10, 12, 0) };
@@ -136,7 +140,7 @@ namespace LbIntegrations.Vita3k
             tabs.SelectedIndexChanged += (_, _) => { if (tabs.SelectedTab == advanced && !_handOn.Checked) ShowGenerated(); };
 
             // ── the bottom: what OK will do, and the buttons
-            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 84, Padding = new Padding(12, 6, 12, 8) };
+            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 114, Padding = new Padding(12, 6, 12, 8) };
             _notice = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 34, ForeColor = SystemColors.GrayText };
             var ok = new Button { Text = "OK", Width = 90, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
             var cancel = new Button { Text = "Cancel", Width = 90, DialogResult = DialogResult.Cancel, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
@@ -158,11 +162,14 @@ namespace LbIntegrations.Vita3k
             bottom.Controls.Add(own);
             bottom.Controls.Add(ok);
             bottom.Controls.Add(cancel);
+            // Where each value comes from, said by colour - see OptionMarks.
+            var legend = OptionMarks.Legend("Vita3K", gameConfig: true, hereLoses: false);
+            var reset = OptionMarks.ResetButton(ResetDefaults);
+            bottom.Controls.Add(legend);
+            bottom.Controls.Add(reset);
             bottom.Layout += (_, _) =>
             {
-                cancel.Location = new Point(bottom.ClientSize.Width - bottom.Padding.Right - cancel.Width, bottom.ClientSize.Height - bottom.Padding.Bottom - cancel.Height);
-                ok.Location = new Point(cancel.Left - 8 - ok.Width, cancel.Top);
-                own.Location = new Point(bottom.Padding.Left, cancel.Top + (cancel.Height - own.Height) / 2);
+                OptionMarks.PlaceBottom(bottom, legend, reset, ok, cancel, own, bottom.Padding.Left);
             };
             AcceptButton = ok;
             CancelButton = cancel;
@@ -295,6 +302,7 @@ namespace LbIntegrations.Vita3k
             _compat.SetEditable(!on);
             _compatHandNote.Visible = on;
             _gfxIntro.Visible = !on;
+            RefreshMarks();
 
             if (!on) { _handStatus.ForeColor = SystemColors.GrayText; _handStatus.Text = "Generated from the System, Graphics and Compatibility tabs."; return; }
             var g = SourceGame();
@@ -319,6 +327,7 @@ namespace LbIntegrations.Vita3k
                      + "leaves it as the game has it without this plugin: its custom config, else Vita3K's settings.",
             });
             _compat = new Vita3kCompatFields { Location = new Point(12, 76) };
+            _compat.Changed += (_, _) => RefreshMarks();
             page.Controls.Add(_compat);
             _compatHandNote = new Label { AutoSize = false, Location = new Point(12, 332), Size = new Size(636, 34), ForeColor = Color.Firebrick, Visible = false,
                                           Text = "Set by hand in the Advanced tab - untick \"Edit by hand\" there to use this tab again." };
@@ -355,6 +364,7 @@ namespace LbIntegrations.Vita3k
                                        Text = "Set by hand in the Advanced tab - untick \"Edit by hand\" there to use this tab again." };
             page.Controls.Add(_gfxHandNote);
             _graphics = new Vita3kGraphicsFields(perGame: true) { Location = new Point(12, 46) };
+            _graphics.Changed += (_, _) => RefreshMarks();
             page.Controls.Add(_graphics);
             return page;
         }
@@ -386,6 +396,7 @@ namespace LbIntegrations.Vita3k
             {
                 if (!_sysOverwrite.Checked) _system.ShowValues(SourceGame().Base);
                 _system.SetEditable(_sysOverwrite.Checked);
+                RefreshMarks();
             };
             return page;
         }
@@ -524,6 +535,7 @@ namespace LbIntegrations.Vita3k
         private void Refresh_()
         {
             if (_loading || _preview == null) return;
+            RefreshMarks();
             _vhdxDir.Enabled = _browse.Enabled = _vhdxHint.Enabled = _useVhdx.Checked;
             // The sizes are the RAM disk's: nothing reads them on the disk, a VHDX reads them if it falls back.
             _margin.Enabled = _vitaRam.Enabled = !_diskOnly.Checked;
@@ -547,6 +559,61 @@ namespace LbIntegrations.Vita3k
         }
 
         private Entry SourceGame() => _source != null ? _groups[_source.SelectedIndex][0] : _games[0];
+
+        /// <summary>Each setting's bar: set here, from the game's own custom config, or none - see OptionMarks.
+        /// A text set by hand in use: System, Graphics and Compatibility are not used, so not marked.</summary>
+        private void RefreshMarks()
+        {
+            if (_handOn == null || _graphics == null || _compat == null || _sysOverwrite == null || _ramDisk == null) return;
+            var g = SourceGame();
+            bool on = !_handOn.Checked;
+            OptionLevel Here(bool here) => here ? OptionLevel.Here : OptionLevel.Emulator;
+            OptionLevel Chosen(bool isDefault, bool chosen) => !chosen ? OptionLevel.Unused : isDefault ? OptionLevel.Emulator : OptionLevel.Here;
+            _graphics.Mark(_marks, g.GraphicsFromGame, on);
+            _compat.Mark(_marks, g.CompatFromGame, on);
+            var sys = !on ? OptionLevel.Unused : _sysOverwrite.Checked ? OptionLevel.Here : g.SystemFromGame ? OptionLevel.GameConfig : OptionLevel.Emulator;
+            _marks.Set(_sysOverwrite, sys == OptionLevel.Here ? sys : OptionLevel.Unused);
+            _marks.Set(_system, sys);
+            // The session: the RAM disk and empty sizes are the defaults.
+            _marks.Set(_ramDisk, Chosen(true, _ramDisk.Checked));
+            _marks.Set(_diskOnly, Chosen(false, _diskOnly.Checked));
+            _marks.Set(_useVhdx, Chosen(false, _useVhdx.Checked));
+            _marks.Set(_vhdxDir, !_useVhdx.Checked ? OptionLevel.Unused : Here(_vhdxDir.Text.Trim().Length > 0));
+            _marks.Set(_margin, Here(_margin.Text.Trim().Length > 0));
+            _marks.Set(_vitaRam, Here(_vitaRam.Text.Trim().Length > 0));
+            // Updates & DLC, once looked at: the highest update and every DLC are the defaults.
+            if (_found != null)
+            {
+                _marks.Set(_updateAuto, Chosen(true, _updateAuto.Checked));
+                foreach (var (button, _) in _updates) _marks.Set(button, Chosen(false, button.Checked));
+                _marks.Set(_updateNone, Chosen(false, _updateNone.Checked));
+                foreach (var (box, _) in _dlc) _marks.Set(box, Here(!box.Checked));
+            }
+        }
+
+        /// <summary>"Reset to defaults": every tab on its default - the RAM disk, the highest update and every
+        /// DLC, the game's custom config else Vita3K's settings - and the text set by hand off and forgotten;
+        /// nothing saved before OK.</summary>
+        private void ResetDefaults()
+        {
+            var g = SourceGame();
+            LoadOptions(new Vita3kOptions());
+            _sysOverwrite.Checked = false;
+            _system.ShowValues(g.Base);
+            _system.SetEditable(false);
+            _graphics.ShowValues(g.GraphicsBase, null);
+            _compat.ShowValues(g.CompatBase, null);
+            if (_found != null)
+            {
+                _updateAuto.Checked = true;
+                foreach (var (box, _) in _dlc) box.Checked = true;
+            }
+            _handLoading = true;
+            _handOn.Checked = false;
+            _keptHand = null;
+            _handLoading = false;
+            ShowGenerated();
+        }
 
         // ── OK ───────────────────────────────────────────────────────────────
 

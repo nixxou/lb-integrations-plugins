@@ -149,7 +149,7 @@ namespace LbIntegrations.Ppsspp
 
         /// <summary>The name of a running PPSSPP process, or null. Matching is on the process name so
         /// it catches every shipped variant (PPSSPPWindows64, PPSSPPWindowsARM64, PPSSPPGold...).</summary>
-        private static string RunningEmulatorProcess()
+        internal static string RunningEmulatorProcess()
         {
             try
             {

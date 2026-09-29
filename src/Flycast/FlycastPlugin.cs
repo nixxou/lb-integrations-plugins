@@ -65,6 +65,57 @@ namespace LbIntegrations.Flycast
             // As early as possible: the patch only sees connections opened AFTER it is installed, and
             // LaunchBox reads its metadata the moment a window asks for it.
             LbipRowInjection.Install("com.nixxou.lbip.flycast", MetadataRows());
+
+            // A game's keys a session took out of its section go back first thing - see FlycastGameConfigSession.
+            StartUpCheck();
+
+            // Flycast opened without a game: told, so a session left behind is put right first. One
+            // Process.Start patch for the whole pack - see LbipEmulatorOpened.
+            try { ListenForOpening(); }
+            catch (Exception ex) { Log.Info("an emulator opened without a game is not seen here (" + ex.GetType().Name + ": " + ex.Message + ")"); }
+        }
+
+        /// <summary>In a method of its own, NOT INLINED, and called under a try: LbEmulatorOpened is newer
+        /// than the LbIntegrations.Catalog a host may already have loaded (LiteBox carries its own copy in
+        /// Core) - named in the constructor, a type that copy lacks would fail the constructor itself.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static void ListenForOpening()
+        {
+            LbIntegrations.Catalog.LbEmulatorOpened.Register(new FlycastEmulatorOpened());
+            if (!LbIntegrations.Catalog.LbCatalog.HostWillAsk) LbipEmulatorOpened.Install("com.nixxou.lbip.flycast");
+        }
+
+        /// <summary>A few seconds after start, inside a host only: every Flycast of this library whose game
+        /// config still misses a session's keys - the host or the machine went mid-session - gets them back.
+        /// The probe loads this plugin too, and must never tidy the real install.</summary>
+        private static void StartUpCheck()
+        {
+            try
+            {
+                var process = Process.GetCurrentProcess().ProcessName;
+                if (!new[] { "LaunchBox", "BigBox", "LiteBox" }.Any(h => string.Equals(h, process, StringComparison.OrdinalIgnoreCase)))
+                    return;
+                var thread = new System.Threading.Thread(() =>
+                {
+                    try
+                    {
+                        System.Threading.Thread.Sleep(3000);   // the data manager is not there at construction
+                        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var emu in PluginHelper.DataManager?.GetAllEmulators() ?? new IEmulator[0])
+                        {
+                            string app = null;
+                            try { app = emu?.ApplicationPath; } catch { }
+                            var exe = ResolveFullPath(app);
+                            if (string.IsNullOrEmpty(exe) || !FlycastPaths.IsFlycastExecutable(exe) || !seen.Add(exe)) continue;
+                            FlycastGameConfigSession.Restore(FlycastPaths.Resolve(exe), "left behind by a session that did not end");
+                        }
+                    }
+                    catch (Exception ex) { Log.Warn("start-up check", ex); }
+                })
+                { IsBackground = true, Name = "Flycast start-up check" };
+                thread.Start();
+            }
+            catch (Exception ex) { Log.Warn("could not start the start-up check", ex); }
         }
 
         /// <summary>What LaunchBox's emulator metadata should say about Flycast, published through a
@@ -621,6 +672,7 @@ namespace LbIntegrations.Flycast
         /// construction and does not need rewriting.</summary>
         public override PrepareForLaunchResponse PrepareEmulatorForLaunch(PrepareForLaunchArgs args)
         {
+            string newLine = null;
             try
             {
                 if (args?.RetroAchievementCredentials != null)
@@ -650,10 +702,59 @@ namespace LbIntegrations.Flycast
                                               mayEditExisting: false);
                 }
                 catch { }
+
+                // THE GAME'S OWN SETTINGS (the Options window): given on the command line, -config, for this
+                // session only - nothing of Flycast's is written. See FlycastGameSettings.
+                try
+                {
+                    var exePath = Safe(() => args?.EmulatorBeingLaunched?.ApplicationPath);
+                    if (!string.IsNullOrWhiteSpace(exePath))
+                    {
+                        var layout = FlycastPaths.Resolve(ResolveFullPath(exePath));
+                        // A session left behind put back first - see FlycastGameConfigSession.
+                        FlycastGameConfigSession.Restore(layout, "left behind by a session that did not end");
+                        var games = FlycastGameMenu.KindOf(Safe(() => args?.GameBeingLaunched?.Platform));
+                        var keys = FlycastGameSettings.KeysOf(layout, Safe(() => args?.GameBeingLaunched?.Id), games, out var why);
+                        if (why != null) Log.Warn("game settings: " + why + " - this game runs without its own settings this time");
+                        var current = Safe(() => args?.CurrentCommandLine);
+                        if (string.IsNullOrWhiteSpace(current)) current = Safe(() => args?.EmulatorBeingLaunched?.CommandLine) ?? "";
+
+                        // OVER THE GAME'S OWN FLYCAST CONFIG TOO (this plugin's > the game's own > Flycast's): its id -
+                        // a Dreamcast disc's read here, an arcade game's asked of flycast-id.exe - and, when there is
+                        // none, learned from Flycast's log this once. Only for a game with settings of its own here.
+                        string product = null, logArgument = null;
+                        FlycastGameIdentity.Learning learning = null;
+                        bool restore = false;
+                        if (keys != null)
+                        {
+                            var rom = ResolveFullPath(Safe(() => args?.GameBeingLaunched?.ApplicationPath));
+                            // flycast-id.exe first - Flycast's own reading, disc or cartridge; a Dreamcast disc's
+                            // IP.BIN read here when it has no answer.
+                            product = FlycastGameIdentity.Of(layout, rom, 15000, out var idWhy);
+                            if (product == null && games == FlycastGameSettings.Games.Dreamcast)
+                                try { product = FlycastGameId.Of(rom); } catch { }
+                            if (product == null) Log.Info("game id of " + Path.GetFileName(rom) + ": none read (" + idWhy + ") - learned from Flycast's log this time");
+                            if (product == null) learning = FlycastGameIdentity.BeforeLaunch(layout, rom, out logArgument);
+
+                            var overGame = FlycastGameSettings.SetByGame(layout, product, keys);
+                            // An id the command line cannot name: the section's own keys taken out for the session.
+                            if (overGame.Count > 0 && !FlycastGameSettings.CanTarget(product))
+                                restore = FlycastGameConfigSession.Apply(layout, product, overGame);
+                            newLine = FlycastGameSettings.WithSettings(current, keys, product, overGame);
+                        }
+                        if (logArgument != null) newLine = "-config " + logArgument + " " + (newLine ?? current).Trim();
+                        FlycastGameConfigSession.WhenDone(layout, restore, learning);
+                        if (newLine != null) Log.Info("this game's own settings, for its session - command line: " + newLine);
+                    }
+                }
+                catch (Exception ex) { Log.Warn("the game's own settings", ex); }
             }
             catch (Exception ex) { Log.Warn("PrepareEmulatorForLaunch", ex); }
 
-            return new PrepareForLaunchResponse(success: true);
+            // The command line is left as the host made it but for the game's own settings, in front of it.
+            return newLine == null
+                ? new PrepareForLaunchResponse(success: true)
+                : new PrepareForLaunchResponse(success: true) { NewCommandLine = newLine };
         }
 
         // ── paths ────────────────────────────────────────────────────────────

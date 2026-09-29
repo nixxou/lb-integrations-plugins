@@ -82,6 +82,10 @@ internal static class Payload
     // src\Vita3k\Vita3kNative.cs and tools\vita3k-install.
     private const string V3kLib = "payload/native/vita3k-install.dll";
 
+    // Flycast's game-id tool - a process the Flycast plugin runs, and puts beside the emulator. See
+    // src\Flycast\FlycastGameIdentity.cs and github.com/nixxou/flycast-id.
+    private const string FlycastId = "payload/native/flycast-id.exe";
+
     // THE CATALOGUE CONTRACT, the one managed file that is not the plugin itself. It cannot be
     // merged in: a host and a plugin have to mean the SAME interface type, and type identity in
     // .NET is per-assembly - internalized into each plugin it would become as many private types as
@@ -100,6 +104,7 @@ internal static class Payload
         new("payload/Nixx-Flycast/Flycast.dll",     Flycast, "Flycast.dll"),
         new("payload/Nixx-Flycast/manifest.json",   Flycast, "manifest.json"),
         new(Contract,                               Flycast, "LbIntegrations.Catalog.dll"),
+        new(FlycastId,                              Flycast, @"native\flycast-id.exe"),
 
         new("payload/Nixx-melonDS/MelonDs.dll",     MelonDs, "MelonDs.dll"),
         new("payload/Nixx-melonDS/manifest.json",   MelonDs, "manifest.json"),

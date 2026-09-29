@@ -115,6 +115,13 @@ namespace LbIntegrations.Vita3k
                 var chosen = _updates.FirstOrDefault(u => VitaExtra.SameRef(u.Update.Ref, _choiceWas.UpdatePath));
                 if (chosen.Button != null) chosen.Button.Checked = true; else _updateAuto.Checked = true;
             }
+
+            // Their bars (OptionMarks): what is not the default - the highest update, every DLC.
+            foreach (var (button, _) in _updates) button.CheckedChanged += (_, _) => RefreshMarks();
+            _updateNone.CheckedChanged += (_, _) => RefreshMarks();
+            _updateAuto.CheckedChanged += (_, _) => RefreshMarks();
+            foreach (var (box, _) in _dlc) box.CheckedChanged += (_, _) => RefreshMarks();
+            RefreshMarks();
         }
 
         /// <summary>The choice the tab shows - null when it was never opened (nothing to change).</summary>

@@ -234,6 +234,29 @@ if ($Plugin -eq 'MelonDs' -or $Plugin -eq 'NoGba') {
 # Optional here, as the NAND library is: without it the plugin installs homebrew, refuses a PFS dump
 # with a sentence saying why, and falls back to the emulator for the firmware. build-release.ps1
 # requires it.
+# FLYCAST'S GAME-ID TOOL: Flycast's own disc and cartridge code, the id a game's per-game config is named by -
+# its own repository, github.com/nixxou/flycast-id, checked out beside this one and built into build\flycast-id:
+#   cmake -S ..\flycast-id -B build\flycast-id -G Ninja -DCMAKE_BUILD_TYPE=Release -DFLYCAST_SOURCE_DIR=../flycast
+#   cmake --build build\flycast-id
+# (FLYCAST_SOURCE_DIR relative to ..\flycast-id: the Flycast checkout beside it; left out, its submodule.) A PROCESS the plugin runs, never loads - an .exe, so it keeps its name in
+# native\; the plugin puts it beside the emulator itself. Optional here: without it an arcade game's id is
+# learned from Flycast's log. build-release.ps1 requires it.
+if ($Plugin -eq 'Flycast') {
+    $fid = Join-Path $repo "build\flycast-id\flycast-id.exe"
+    $nativeDir = Join-Path $targetDir "native"
+    if (Test-Path $fid) {
+        New-Item -ItemType Directory -Force -Path $nativeDir | Out-Null
+        $fidTarget = Join-Path $nativeDir "flycast-id.exe"
+        Copy-Item $fid $fidTarget -Force
+        if ((Get-FileHash $fid -Algorithm SHA256).Hash -ne (Get-FileHash $fidTarget -Algorithm SHA256).Hash) {
+            throw "Flycast's game-id tool was not written: $fidTarget."
+        }
+        Write-Host "           $fidTarget"
+    } else {
+        Write-Host "  ! no build\flycast-id\flycast-id.exe - build ..\flycast-id (see above), or arcade ids are learned from Flycast's log" -ForegroundColor Yellow
+    }
+}
+
 if ($Plugin -eq 'Vita3k') {
     $v3k = Join-Path $repo "build\vita3k\vita3k-install.dll"
     $nativeDir = Join-Path $targetDir "native"

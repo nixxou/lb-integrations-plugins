@@ -125,6 +125,16 @@ if (-not (Test-Path $v3k)) {
 Copy-Item $v3k (Join-Path $nativeDir 'vita3k-install.dll') -Force
 Write-Host ("  staged native\{0,-22} {1,8:N0} KB" -f 'vita3k-install.dll', ((Get-Item $v3k).Length / 1KB))
 
+# Flycast's game-id tool. REQUIRED: a release without it is a Flycast plugin that cannot put a game's own
+# settings over an arcade game's own Flycast config before a first session has named it in the log. Built
+# from github.com/nixxou/flycast-id (a checkout beside this repository) into build\flycast-id - see deploy-dev.ps1.
+$fid = Join-Path $repo "build\flycast-id\flycast-id.exe"
+if (-not (Test-Path $fid)) {
+    throw "Flycast's game-id tool is missing: $fid. Build ..\flycast-id into build\flycast-id first (see deploy-dev.ps1)."
+}
+Copy-Item $fid (Join-Path $nativeDir 'flycast-id.exe') -Force
+Write-Host ("  staged native\{0,-22} {1,8:N0} KB" -f 'flycast-id.exe', ((Get-Item $fid).Length / 1KB))
+
 # The RAM disk helper. Built here rather than taken from a checkout, because its source is in this
 # repository (tools\ramdisk-helper) - unlike the NAND library, which needs a melonDS checkout.
 #

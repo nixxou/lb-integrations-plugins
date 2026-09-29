@@ -306,6 +306,24 @@ namespace LbIntegrations.Vita3k
             return values;
         }
 
+        /// <summary>The attributes of one section the game's OWN custom config sets (its set-aside copy
+        /// mid-session) - for the options window's amber bars (OptionMarks). Empty when it has none.</summary>
+        public static HashSet<string> SetByGame(Vita3kLayout layout, string titleId, string section)
+        {
+            var set = new HashSet<string>(StringComparer.Ordinal);
+            try
+            {
+                var xml = PathOf(layout, titleId);
+                if (xml == null) return set;
+                var bak = BakOf(xml);
+                var source = File.Exists(bak) ? (new FileInfo(bak).Length == 0 ? null : bak) : (File.Exists(xml) ? xml : null);
+                var own = source == null ? null : XDocument.Load(source).Root?.Element(section);
+                foreach (var a in own?.Attributes() ?? Enumerable.Empty<XAttribute>()) set.Add(a.Name.LocalName);
+            }
+            catch (Exception ex) { Log.Warn("could not read the custom config of " + titleId, ex); }
+            return set;
+        }
+
         /// <summary>The same for the System tab.</summary>
         public static VitaSystemSettings WithoutOurs(Vita3kLayout layout, string titleId)
             => ToSystem(DefaultsOf(layout, titleId, SystemSection));

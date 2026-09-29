@@ -17,6 +17,7 @@ using System.Drawing;
 using System.Globalization;
 using System.Linq;
 using System.Windows.Forms;
+using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Vita3k
 {
@@ -109,6 +110,21 @@ namespace LbIntegrations.Vita3k
 
         public void SetEditable(bool value) { _enabled = value; Refresh_(); }
 
+        /// <summary>Something shown changed - the window's bars follow it (OptionMarks).</summary>
+        public event EventHandler Changed;
+
+        /// <summary>Each field's bar: set here, from the game's own custom config (<paramref name="fromGame"/>,
+        /// section/attribute), or none. <paramref name="used"/> false: a text set by hand is in use.</summary>
+        public void Mark(OptionMarks marks, HashSet<string> fromGame, bool used)
+        {
+            OptionLevel Of(bool here, string key)
+                => !used ? OptionLevel.Unused : here ? OptionLevel.Here
+                 : fromGame != null && fromGame.Contains(key) ? OptionLevel.GameConfig : OptionLevel.Emulator;
+            marks.Set(_cpuOpt, Of(OfBox(_cpuOpt) != null, CpuKey));
+            marks.Set(_ngs, Of(OfBox(_ngs) != null, NgsKey));
+            marks.Set(_delay, Of(_delayOverride.Checked, DelayKey));
+        }
+
         private void Refresh_()
         {
             foreach (var (cb, key) in new[] { (_cpuOpt, CpuKey), (_ngs, NgsKey) })
@@ -123,6 +139,7 @@ namespace LbIntegrations.Vita3k
                              : _delay.Value + (_delay.Value == 0 ? " (no delay)" : "") + (isDefault ? "   - default" : "");
             _delayOverride.Enabled = _enabled;
             _delay.Enabled = _enabled && _delayOverride.Checked;
+            if (!_showing) Changed?.Invoke(this, EventArgs.Empty);
         }
 
         internal static string Key(Dictionary<string, string> v)

@@ -613,7 +613,9 @@ namespace LbIntegrations.Probe
                     form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, bmp.Width, bmp.Height));
                     shots.Add(bmp);
                 }
-                form.Close();
+                // LBIP_SHOT_RESET=1: "Reset to defaults" pressed once the pictures are taken - see PpssppCheck.CheckReset.
+            if (Environment.GetEnvironmentVariable("LBIP_SHOT_RESET") == "1") PpssppCheck.CheckReset(form, "_handText");
+            form.Close();
             }
             int cols = 3, w = shots[0].Width, h = shots[0].Height, rows = (shots.Count + cols - 1) / cols;
             using var all = new System.Drawing.Bitmap(cols * w, rows * h);

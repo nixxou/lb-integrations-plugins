@@ -28,8 +28,8 @@ namespace LbIntegrations.NoGba
     {
         public const string Caption = "Nixx-no$gba : Options...";
 
-        public static Image Icon => _icon ??= SystemIcons.Application.ToBitmap();
-        private static Image _icon;
+        /// <summary>The emulator's own icon, taken from its executable - see LbipMenuIcon.</summary>
+        public static Image Icon => LbIntegrations.Lbip.LbipMenuIcon.Of(NoGbaPaths.IsNoGbaExecutable, NoGbaPlugin.ResolveFullPath);
 
         internal static bool IsOurs(IGame game) => EmulatorFor(game) != null;
 

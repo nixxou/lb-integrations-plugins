@@ -65,7 +65,61 @@ namespace LbIntegrations.Ppsspp
             // As early as possible: the patch only sees connections opened AFTER it is installed,
             // and LaunchBox reads its metadata the moment a window asks for it.
             LbipRowInjection.Install("com.nixxou.lbip.ppsspp", MetadataRows());
+
+            // A game config a session left over the game's own goes back first thing - see PpssppGameSettings.
+            StartUpCheck();
+
+            // PPSSPP opened without a game: told, so a session left behind is put right first. One
+            // Process.Start patch for the whole pack - see LbipEmulatorOpened.
+            try { ListenForOpening(); }
+            catch (Exception ex) { Log.Info("an emulator opened without a game is not seen here (" + ex.GetType().Name + ": " + ex.Message + ")"); }
         }
+
+        /// <summary>In a method of its own, NOT INLINED, and called under a try: LbEmulatorOpened is newer
+        /// than the LbIntegrations.Catalog a host may already have loaded (LiteBox carries its own copy in
+        /// Core) - named in the constructor, a type that copy lacks would fail the constructor itself.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static void ListenForOpening()
+        {
+            LbIntegrations.Catalog.LbEmulatorOpened.Register(new PpssppEmulatorOpened());
+            if (!LbIntegrations.Catalog.LbCatalog.HostWillAsk) LbipEmulatorOpened.Install("com.nixxou.lbip.ppsspp");
+        }
+
+        /// <summary>A few seconds after start, inside a host only: every PPSSPP of this library whose game
+        /// configs still hold a session's - the host or the machine went mid-session - gets them back. The
+        /// probe loads this plugin too, and must never tidy the real install.</summary>
+        private static void StartUpCheck()
+        {
+            try
+            {
+                var process = Process.GetCurrentProcess().ProcessName;
+                if (!new[] { "LaunchBox", "BigBox", "LiteBox" }.Any(h => string.Equals(h, process, StringComparison.OrdinalIgnoreCase)))
+                    return;
+                var thread = new System.Threading.Thread(() =>
+                {
+                    try
+                    {
+                        System.Threading.Thread.Sleep(3000);   // the data manager is not there at construction
+                        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var emu in PluginHelper.DataManager?.GetAllEmulators() ?? new IEmulator[0])
+                        {
+                            string app = null;
+                            try { app = emu?.ApplicationPath; } catch { }
+                            var exe = ResolveFullPath(app);
+                            if (string.IsNullOrEmpty(exe) || !PpssppPaths.IsPpssppExecutable(exe) || !seen.Add(exe)) continue;
+                            PpssppGameSettings.Restore(PpssppPaths.Resolve(exe), "left behind by a session that did not end");
+                        }
+                    }
+                    catch (Exception ex) { Log.Warn("start-up check", ex); }
+                })
+                { IsBackground = true, Name = "PPSSPP start-up check" };
+                thread.Start();
+            }
+            catch (Exception ex) { Log.Warn("could not start the start-up check", ex); }
+        }
+
+        /// <summary>For the options window: a path of the library, made full.</summary>
+        internal static string ResolveFullPathOf(string maybeRelative) => ResolveFullPath(maybeRelative);
 
         /// <summary>The name this pack publishes under, in one place so its four uses cannot
         /// disagree: the row in LaunchBox's emulator catalogue, the entry Add Emulator offers, the
@@ -634,6 +688,7 @@ namespace LbIntegrations.Ppsspp
         /// a user who cannot log in to RetroAchievements still wants to play the game.</summary>
         public override PrepareForLaunchResponse PrepareEmulatorForLaunch(PrepareForLaunchArgs args)
         {
+            string newLine = null;
             try
             {
                 if (args?.RetroAchievementCredentials != null)
@@ -666,12 +721,35 @@ namespace LbIntegrations.Ppsspp
                 }
                 catch { }
 
+                // THE GAME'S OWN SETTINGS (the Options window): a session left behind put back first, then this
+                // game's laid over its PPSSPP config, taken back once PPSSPP has quit - see PpssppGameSettings.
+                try
+                {
+                    var exe = Safe(() => args?.EmulatorBeingLaunched?.ApplicationPath);
+                    if (!string.IsNullOrWhiteSpace(exe))
+                    {
+                        var layout = PpssppPaths.Resolve(ResolveFullPath(exe));
+                        PpssppGameSettings.Restore(layout, "left behind by a session that did not end");
+                        var gameId = Safe(() => args?.GameBeingLaunched?.Id);
+                        var discId = PspDiscId.Of(ResolveFullPath(Safe(() => args?.GameBeingLaunched?.ApplicationPath)));
+                        if (PpssppGameSettings.Apply(layout, gameId, discId)) PpssppGameSettings.RestoreWhenDone(layout);
+                        // The renderer is not a per-game setting of PPSSPP's: given on its command line, not saved.
+                        PpssppGameSettings.KeysOf(layout, gameId, out var backend, out _);
+                        var current = Safe(() => args?.CurrentCommandLine);
+                        if (string.IsNullOrWhiteSpace(current)) current = Safe(() => args?.EmulatorBeingLaunched?.CommandLine) ?? "";
+                        newLine = PpssppGameSettings.WithBackend(current, backend);
+                        if (newLine != null) Log.Info("this game's renderer: " + backend + " - command line: " + newLine);
+                    }
+                }
+                catch (Exception ex) { Log.Warn("the game's own settings", ex); }
             }
             catch (Exception ex) { Log.Warn("PrepareEmulatorForLaunch", ex); }
 
-            // Command line untouched: LaunchBox's own default for PPSSPP is right, and it survives the
-            // command-line rewrite upstream has queued for 1.21.
-            return new PrepareForLaunchResponse(success: true);
+            // The command line is left as the host made it - LaunchBox's own default for PPSSPP is right, and
+            // it survives the command-line rewrite upstream has queued for 1.21 - but for a game's renderer.
+            return newLine == null
+                ? new PrepareForLaunchResponse(success: true)
+                : new PrepareForLaunchResponse(success: true) { NewCommandLine = newLine };
         }
 
         // ── paths ────────────────────────────────────────────────────────────

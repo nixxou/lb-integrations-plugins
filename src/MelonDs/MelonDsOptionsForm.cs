@@ -30,6 +30,7 @@ using System.Drawing;
 using System.Globalization;
 using System.Linq;
 using System.Windows.Forms;
+using LbIntegrations.Lbip;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 
@@ -74,6 +75,7 @@ namespace LbIntegrations.MelonDs
         private ComboBox _scale;
         private NumericUpDown _interval;
         private bool _loading;
+        private readonly OptionMarks _marks = new OptionMarks();
 
         public MelonDsOptionsForm(List<Entry> games)
         {
@@ -89,7 +91,7 @@ namespace LbIntegrations.MelonDs
             StartPosition = FormStartPosition.CenterParent;
             ShowInTaskbar = false;
             Font = new Font("Segoe UI", 9f);
-            ClientSize = new Size(560, 560);
+            ClientSize = new Size(560, 588);
 
             // ── the top: which games, and where to start from
             var top = new Panel { Dock = DockStyle.Top, Height = _groups.Count > 1 ? 58 : 32, Padding = new Padding(12, 10, 12, 0) };
@@ -119,17 +121,12 @@ namespace LbIntegrations.MelonDs
             // What the two tabs above override, shown as it is when the tab is looked at.
             tabs.SelectedIndexChanged += (_, _) => { if (tabs.SelectedTab == advanced && !_handOn.Checked) ShowGenerated(); };
 
-            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 46 };
             var ok = new Button { Text = "OK", Width = 90 };
             var cancel = new Button { Text = "Cancel", Width = 90, DialogResult = DialogResult.Cancel };
             ok.Click += (_, _) => Apply();
-            bottom.Controls.Add(ok);
-            bottom.Controls.Add(cancel);
-            bottom.Layout += (_, _) =>
-            {
-                cancel.Location = new Point(bottom.ClientSize.Width - 12 - cancel.Width, 10);
-                ok.Location = new Point(cancel.Left - 8 - ok.Width, 10);
-            };
+            // Where each value comes from, said by colour - see OptionMarks.
+            var bottom = OptionMarks.Bottom(OptionMarks.Legend("melonDS", gameConfig: false, hereLoses: false),
+                                            OptionMarks.ResetButton(ResetDefaults), ok, cancel);
             AcceptButton = ok;
             CancelButton = cancel;
 
@@ -179,6 +176,7 @@ namespace LbIntegrations.MelonDs
             y += 28;
             _disk = new RadioButton { AutoSize = true, Text = "Disk - survives a crash of the machine mid-game" };
             Add(_disk, 18); y += 34;
+            _disk.CheckedChanged += (_, _) => { if (!_loading) RefreshMarks(); };
             // KEPT BY THIS PLUGIN, NOT IN THE GAME'S COMMAND LINE (Mehdi, 29/09): that line is the game's
             // default emulator's - kept here, the choice holds whichever emulator of ours runs it.
             Add(new Label
@@ -240,6 +238,7 @@ namespace LbIntegrations.MelonDs
             EventHandler refresh = (_, _) => { if (!_loading) RefreshEnabled(); };
             foreach (var cb in new[] { _useGl, _vsync, _threaded, _better, _hires }) cb.CheckStateChanged += refresh;
             _renderer.SelectedIndexChanged += refresh;
+            _scale.SelectedIndexChanged += refresh;
             _intervalOverride.CheckedChanged += (_, _) =>
             {
                 if (_loading) return;
@@ -318,6 +317,7 @@ namespace LbIntegrations.MelonDs
                 if (_loading) return;
                 if (!_fwOverwrite.Checked) _firmware.ShowValues(_global);
                 _firmware.SetEditable(_fwOverwrite.Checked);
+                RefreshMarks();
             };
             return page;
         }
@@ -348,6 +348,46 @@ namespace LbIntegrations.MelonDs
                 cb.Text = cb.CheckState != CheckState.Indeterminate ? (string)cb.Tag
                         : (string)cb.Tag + "   (default: " + (d == "true" ? "on" : d == "false" ? "off" : "not set") + ")";
             }
+            RefreshMarks();
+        }
+
+        /// <summary>Each setting's bar: set here, else melonDS's - it has no per-game config of its own. A text set
+        /// by hand in use: Video and Firmware are not used, so not marked. See OptionMarks.</summary>
+        private void RefreshMarks()
+        {
+            if (_fwOverwrite == null) return;
+            bool on = !(_handOn?.Checked ?? false);
+            OptionLevel Of(bool here) => !on ? OptionLevel.Unused : here ? OptionLevel.Here : OptionLevel.Emulator;
+            _marks.Set(_renderer, Of(Chosen(_renderer) != null));
+            _marks.Set(_scale, Of(Chosen(_scale) != null));
+            foreach (var cb in new[] { _useGl, _vsync, _threaded, _better, _hires }) _marks.Set(cb, Of(OfBox(cb) != null));
+            _marks.Set(_interval, Of(_intervalOverride.Checked));
+            _marks.Set(_fwOverwrite, Of(_fwOverwrite.Checked));
+            _marks.Set(_firmware, Of(_fwOverwrite.Checked));
+            // The session: the disk when the RAM disk could be had - the default is the RAM disk.
+            if (_disk != null)
+            {
+                _marks.Set(_ram, _disk.Checked ? OptionLevel.Unused : OptionLevel.Emulator);
+                _marks.Set(_disk, !_disk.Checked ? OptionLevel.Unused : _ram.Enabled ? OptionLevel.Here : OptionLevel.Emulator);
+            }
+        }
+
+        /// <summary>"Reset to defaults": every setting on default - the RAM disk, melonDS's video and firmware -
+        /// and the text set by hand off and forgotten; nothing saved before OK.</summary>
+        private void ResetDefaults()
+        {
+            _loading = true;
+            if (_ram != null && _ram.Enabled) _ram.Checked = true;
+            _fwOverwrite.Checked = false;
+            _loading = false;
+            ShowVideo(null);
+            _firmware.ShowValues(_global);
+            _firmware.SetEditable(false);
+            _handLoading = true;
+            _handOn.Checked = false;
+            _keptHand = null;
+            _handLoading = false;
+            ShowGenerated();
         }
 
         /// <summary>melonDS's values as the defaults, and the game's own over them.</summary>
@@ -501,6 +541,7 @@ namespace LbIntegrations.MelonDs
             _fwOverwrite.Enabled = !on;
             _firmware.SetEditable(!on && _fwOverwrite.Checked);
             _videoHandNote.Visible = _fwHandNote.Visible = on;
+            RefreshMarks();
 
             if (!on) { _handStatus.ForeColor = SystemColors.GrayText; _handStatus.Text = "Generated from the Video and Firmware tabs."; return; }
             var warnings = MelonDsGameSettings.CheckHand(Layout0(), _handText.Text, out var error);

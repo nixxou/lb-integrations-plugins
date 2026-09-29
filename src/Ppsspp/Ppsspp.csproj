@@ -9,6 +9,8 @@
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
+    <!-- The options window (right-click > Nixx-PPSSPP : Options...) is WinForms. -->
+    <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>Ppsspp</AssemblyName>
     <RootNamespace>LbIntegrations.Ppsspp</RootNamespace>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
@@ -49,6 +51,8 @@
          folder is how they cannot drift. ILRepack still folds it into one DLL per plugin. See
          src\Shared.Lbip\LbipLog.cs for how it reaches this plugin's logger without naming it. -->
     <Compile Include="..\Shared.Lbip\**\*.cs" />
+    <!-- The game menu's icon, taken from the emulator's executable: needs System.Drawing, so not in Shared.Lbip. -->
+    <Compile Include="..\Shared.Menu\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>

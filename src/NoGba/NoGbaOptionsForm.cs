@@ -18,6 +18,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
+using LbIntegrations.Lbip;
 using Unbroken.LaunchBox.Plugins.Data;
 
 namespace LbIntegrations.NoGba
@@ -59,6 +60,7 @@ namespace LbIntegrations.NoGba
         }
 
         private readonly List<TabState> _tabs = new List<TabState>();
+        private readonly OptionMarks _marks = new OptionMarks();
         private CheckBox _handOn;
         private TextBox _handText;
         private Label _handStatus;
@@ -78,7 +80,7 @@ namespace LbIntegrations.NoGba
             StartPosition = FormStartPosition.CenterParent;
             ShowInTaskbar = false;
             Font = new Font("Segoe UI", 9f);
-            ClientSize = new Size(580, 520);
+            ClientSize = new Size(580, 548);
 
             var top = new Panel { Dock = DockStyle.Top, Height = _groups.Count > 1 ? 80 : 52, Padding = new Padding(12, 10, 12, 0) };
             top.Controls.Add(new Label
@@ -114,17 +116,12 @@ namespace LbIntegrations.NoGba
             tabs.TabPages.Add(advanced);
             tabs.SelectedIndexChanged += (_, _) => { if (tabs.SelectedTab == advanced && !_handOn.Checked) ShowGenerated(); };
 
-            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 46 };
             var ok = new Button { Text = "OK", Width = 90 };
             var cancel = new Button { Text = "Cancel", Width = 90, DialogResult = DialogResult.Cancel };
             ok.Click += (_, _) => Apply();
-            bottom.Controls.Add(ok);
-            bottom.Controls.Add(cancel);
-            bottom.Layout += (_, _) =>
-            {
-                cancel.Location = new Point(bottom.ClientSize.Width - 12 - cancel.Width, 10);
-                ok.Location = new Point(cancel.Left - 8 - ok.Width, 10);
-            };
+            // Where each value comes from, said by colour - see OptionMarks.
+            var bottom = OptionMarks.Bottom(OptionMarks.Legend("no$gba", gameConfig: false, hereLoses: false),
+                                            OptionMarks.ResetButton(ResetDefaults), ok, cancel);
             AcceptButton = ok;
             CancelButton = cancel;
 
@@ -178,12 +175,14 @@ namespace LbIntegrations.NoGba
                         if (_loading) return;
                         if (!state.SizingOverride.Checked) ShowSizing(state, null);
                         RefreshEnabled();
+                        RefreshMarks();
                     };
                     y += 30;
                     continue;
                 }
                 y += 20;
                 var combo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(24, y), Width = 330 };
+                combo.SelectedIndexChanged += (_, _) => { if (!_loading) RefreshMarks(); };
                 page.Controls.Add(combo);
                 state.Combos[s.Key] = combo;
                 y += 34;
@@ -246,6 +245,31 @@ namespace LbIntegrations.NoGba
             if (t.Step50 != null && t.SizingOverride.Checked)
                 v[SizingKey] = t.Step50.Checked && t.Aspect.Checked ? "Strict" : t.Step50.Checked ? "Force 50% step" : t.Aspect.Checked ? "Force Aspect Ratio" : "Free";
             return v;
+        }
+
+        /// <summary>Each setting's bar: set here, else no$gba's - it has no per-game config of its own. A text set
+        /// by hand in use: the tabs are not used, so not marked. See OptionMarks.</summary>
+        private void RefreshMarks()
+        {
+            bool hand = _handOn != null && _handOn.Checked;
+            foreach (var t in _tabs)
+            {
+                foreach (var kv in t.Combos)
+                    _marks.Set(kv.Value, hand ? OptionLevel.Unused : kv.Value.SelectedItem is Choice c && c.Raw != null ? OptionLevel.Here : OptionLevel.Emulator);
+                if (t.Step50 != null) _marks.Set(t.Step50, hand ? OptionLevel.Unused : t.SizingOverride.Checked ? OptionLevel.Here : OptionLevel.Emulator);
+            }
+        }
+
+        /// <summary>"Reset to defaults": every setting on default, the text set by hand off and forgotten -
+        /// nothing saved before OK.</summary>
+        private void ResetDefaults()
+        {
+            _loading = true;
+            foreach (var t in _tabs) ShowTab(t, null);
+            _handOn.Checked = false;
+            _keptHand = null;
+            _loading = false;
+            ShowGenerated();
         }
 
         private void RefreshEnabled()
@@ -337,6 +361,7 @@ namespace LbIntegrations.NoGba
             _handText.ReadOnly = !on;
             _handText.BackColor = on ? SystemColors.Window : SystemColors.Control;
             RefreshEnabled();
+            RefreshMarks();
             if (!on) { _handStatus.ForeColor = SystemColors.GrayText; _handStatus.Text = "Generated from the other tabs."; return; }
             var warnings = NoGbaGameSettings.CheckHand(SourceGame().Layout, _handText.Text, out var error);
             _handStatus.ForeColor = error != null ? Color.Firebrick : warnings.Count > 0 ? Color.DarkGoldenrod : Color.DarkGreen;

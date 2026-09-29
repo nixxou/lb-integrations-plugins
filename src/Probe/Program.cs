@@ -546,6 +546,10 @@ namespace LbIntegrations.Probe
             if (Has(args, "--vita3k-graphics-shot")) return Vita3kCheck.GraphicsShot(asm, Arg(args, "--vita3k-graphics-shot")) ? 0 : 1;
             // The options window, a fake game, one picture per tab: --vita3k-options-shot <out.png>. Nothing on screen.
             // melonDS's options window, a fake game, one picture per tab: --melonds-options-shot <out.png>.
+            // PPSSPP's options window, a fake game, one picture per tab: --ppsspp-options-shot <out.png>.
+            // Flycast's options window, two fake games, one picture per tab: --flycast-options-shot <out.png>.
+            if (Has(args, "--flycast-options-shot")) return FlycastSettingsCheck.OptionsShot(asm, Arg(args, "--flycast-options-shot")) ? 0 : 1;
+            if (Has(args, "--ppsspp-options-shot")) return PpssppCheck.OptionsShot(asm, Arg(args, "--ppsspp-options-shot")) ? 0 : 1;
             if (Has(args, "--nogba-options-shot")) return NoGbaCheck.OptionsShot(asm, Arg(args, "--nogba-options-shot")) ? 0 : 1;
             if (Has(args, "--melonds-options-shot")) return MelonDsCheck.OptionsShot(asm, Arg(args, "--melonds-options-shot")) ? 0 : 1;
             // Vita3K's compatibility list against a copy of a real one, labels asked of GitHub:
@@ -592,6 +596,18 @@ namespace LbIntegrations.Probe
                 if (!Vita3kCheck.Real(asm, emuPath)) return 1;
             }
 
+            bool flycastSettings = Has(args, "--flycast-settings");
+            if (flycastSettings)
+            {
+                if (!FlycastSettingsCheck.Settings(asm)) return 1;
+            }
+
+            bool ppsspp = Has(args, "--ppsspp-settings");
+            if (ppsspp)
+            {
+                if (!PpssppCheck.Settings(asm)) return 1;
+            }
+
             bool nogba = Has(args, "--nogba");
             if (nogba)
             {
@@ -631,6 +647,8 @@ namespace LbIntegrations.Probe
             if (flycast) wroteTo.Add("a forged Flycast in the temp folder");
             if (melonds) wroteTo.Add("a forged melonDS in the temp folder");
             if (nogba) wroteTo.Add("a forged no$gba in the temp folder");
+            if (flycastSettings) wroteTo.Add("a forged Flycast in the temp folder (a game's settings)");
+            if (ppsspp) wroteTo.Add("a forged PPSSPP in the temp folder (a game's settings)");
             if (Has(args, "--melonds-real")) wroteTo.Add("COPIES of the NANDs given, in the temp folder");
             if (hotkeys) wroteTo.Add("a forged Flycast in the temp folder (keyboard mapping)");
             if (Has(args, "--vita3k")) wroteTo.Add("a forged Vita3K in the temp folder, junction included");

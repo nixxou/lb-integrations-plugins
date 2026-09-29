@@ -16,6 +16,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text;
 
 namespace LbIntegrations.Flycast
@@ -34,14 +35,10 @@ namespace LbIntegrations.Flycast
                 bool inSection = false;
                 foreach (var raw in File.ReadLines(iniPath))
                 {
+                    var name = SectionName(raw);
+                    if (name != null) { inSection = name == section; continue; }
                     var line = raw.Trim();
                     if (line.Length == 0 || line[0] == ';' || line[0] == '#') continue;
-                    if (line[0] == '[' && line[line.Length - 1] == ']')
-                    {
-                        inSection = string.Equals(line.Substring(1, line.Length - 2).Trim(), section,
-                                                  StringComparison.OrdinalIgnoreCase);
-                        continue;
-                    }
                     if (!inSection) continue;
                     int eq = line.IndexOf('=');
                     if (eq <= 0) continue;
@@ -72,18 +69,7 @@ namespace LbIntegrations.Flycast
 
                 var pending = new Dictionary<string, string>(values, StringComparer.OrdinalIgnoreCase);
 
-                int sectionStart = -1, sectionEnd = lines.Count;
-                for (int i = 0; i < lines.Count; i++)
-                {
-                    var t = lines[i].Trim();
-                    if (t.Length < 2 || t[0] != '[' || t[t.Length - 1] != ']') continue;
-                    if (sectionStart < 0)
-                    {
-                        if (string.Equals(t.Substring(1, t.Length - 2).Trim(), section, StringComparison.OrdinalIgnoreCase))
-                            sectionStart = i;
-                    }
-                    else { sectionEnd = i; break; }      // the next section closes ours
-                }
+                Bounds(lines, section, out int sectionStart, out int sectionEnd);
 
                 if (sectionStart < 0)
                 {
@@ -122,6 +108,71 @@ namespace LbIntegrations.Flycast
             }
         }
 
+        /// <summary>A section header's name as Flycast reads it (cfg/ini.cpp, IniFile::load): the spaces
+        /// before the '[' skipped, then everything up to the first ']' AS IT IS - a game's section can start
+        /// with spaces ("[  18WHEELER]"), and names are told apart case by case. Null for any other line.</summary>
+        internal static string SectionName(string line)
+        {
+            if (line == null) return null;
+            int pos = 0;
+            while (pos < line.Length && char.IsWhiteSpace(line[pos])) pos++;
+            if (pos == line.Length || line[pos] != '[') return null;
+            int end = line.IndexOf(']', pos + 1);
+            return end < 0 ? null : line.Substring(pos + 1, end - pos - 1);
+        }
+
+        /// <summary>Where a section's lines are: its header's index (-1 when it is not there), and the index
+        /// of the next header (or the end).</summary>
+        private static void Bounds(List<string> lines, string section, out int start, out int end)
+        {
+            start = -1; end = lines.Count;
+            for (int i = 0; i < lines.Count; i++)
+            {
+                var name = SectionName(lines[i]);
+                if (name == null) continue;
+                if (start < 0) { if (name == section) start = i; }
+                else { end = i; break; }      // the next section closes ours
+            }
+        }
+
+        /// <summary>Is there such a section, header included?</summary>
+        public static bool HasSection(string iniPath, string section)
+        {
+            try { return File.Exists(iniPath) && File.ReadLines(iniPath).Any(l => SectionName(l) == section); }
+            catch (Exception ex) { Log.Warn("reading " + iniPath, ex); return false; }
+        }
+
+        /// <summary>Take keys out of one section - its header and its other keys kept. Returns null on success
+        /// (nothing to take is a success), or why nothing was written. Never while Flycast runs.</summary>
+        public static string Remove(string iniPath, string section, IEnumerable<string> keys)
+        {
+            var gone = new HashSet<string>(keys ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+            if (gone.Count == 0 || !File.Exists(iniPath)) return null;
+            string running = RunningEmulatorProcess();
+            if (running != null) return "Flycast is running (" + running + ") - it rewrites emu.cfg when it exits";
+            try
+            {
+                var lines = new List<string>(File.ReadAllLines(iniPath));
+                Bounds(lines, section, out int start, out int end);
+                if (start < 0) return null;
+                int removed = 0;
+                for (int i = end - 1; i > start; i--)
+                {
+                    var t = lines[i].Trim();
+                    int eq = t.IndexOf('=');
+                    if (eq <= 0 || t[0] == ';' || t[0] == '#') continue;
+                    if (gone.Contains(t.Substring(0, eq).Trim())) { lines.RemoveAt(i); removed++; }
+                }
+                if (removed > 0) WriteAtomic(iniPath, lines);
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("writing " + iniPath, ex);
+                return "Could not write " + iniPath + ": " + ex.Message;
+            }
+        }
+
         /// <summary>Write bytes to a path without ever leaving it missing or half-written: temp file
         /// beside the target, then File.Replace (atomic on NTFS). Used for the config and for the
         /// RetroAchievements token.</summary>
@@ -149,7 +200,7 @@ namespace LbIntegrations.Flycast
 
         /// <summary>The name of a running Flycast process, or null. Matching is on the process name,
         /// which is "flycast" for every Windows build upstream ships.</summary>
-        private static string RunningEmulatorProcess()
+        internal static string RunningEmulatorProcess()
         {
             try
             {

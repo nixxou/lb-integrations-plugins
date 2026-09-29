@@ -31,6 +31,7 @@ using System.Drawing;
 using System.Globalization;
 using System.Linq;
 using System.Windows.Forms;
+using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Vita3k
 {
@@ -252,6 +253,24 @@ namespace LbIntegrations.Vita3k
 
         public void SetEditable(bool value) { _enabled = value; Refresh_(); }
 
+        /// <summary>Something shown changed - the window's bars follow it (OptionMarks).</summary>
+        public event EventHandler Changed;
+
+        /// <summary>Each field's bar: set here, from the game's own custom config (<paramref name="fromGame"/>,
+        /// attribute names), or none. <paramref name="used"/> false: a text set by hand is in use, nothing marked.</summary>
+        public void Mark(OptionMarks marks, HashSet<string> fromGame, bool used)
+        {
+            OptionLevel Of(bool here, string name)
+                => !used ? OptionLevel.Unused : here ? OptionLevel.Here
+                 : fromGame != null && fromGame.Contains(name) ? OptionLevel.GameConfig : OptionLevel.Emulator;
+            marks.Set(_backend, Of(Chosen(_backend) != null, "backend-renderer"));
+            marks.Set(_filter, Of(Chosen(_filter) != null, "screen-filter"));
+            marks.Set(_accuracy, Of(Chosen(_accuracy) != null, "high-accuracy"));
+            foreach (var cb in new[] { _surfaceSync, _vsync, _async, _fpsHack, _texCache }) marks.Set(cb, Of(OfBox(cb) != null, NameOf(cb)));
+            marks.Set(_resolution, Of(_resOverride.Checked, "resolution-multiplier"));
+            marks.Set(_aniso, Of(_anisoOverride.Checked, "anisotropic-filtering"));
+        }
+
         private void Refresh_()
         {
             var renderer = EffectiveBackend();
@@ -288,6 +307,7 @@ namespace LbIntegrations.Vita3k
                 c.Enabled = _enabled;
             _resolution.Enabled = _enabled && (!_perGame || _resOverride.Checked);
             _aniso.Enabled = _enabled && (!_perGame || _anisoOverride.Checked);
+            if (!_showing) Changed?.Invoke(this, EventArgs.Empty);
         }
 
         private string NameOf(CheckBox cb)
