@@ -96,6 +96,72 @@ namespace LbIntegrations.Catalog
         public static bool HostWillAsk;
     }
 
+    // ── AN EMULATOR OPENED WITHOUT A GAME ───────────────────────────────────────────────────────
+    //
+    // Added 29/09, never to be changed (see the header). When the host opens an emulator on its own -
+    // LaunchBox's "Open emulator" menu, measured: Process.Start of the emulator's executable, no
+    // arguments, from OpenEmulatorMenuAction.OnSelect - the plugins that care are told before it
+    // starts and after it has quit. What for: a game's settings still in the emulator's files after a
+    // session that never ended, a RAM disk left behind - put right before somebody edits the
+    // emulator's own settings over them.
+    //
+    // ONE TELLER, ANY NUMBER OF LISTENERS. A plugin registers its listener here. Under LaunchBox the
+    // first plugin to start installs ONE Harmony patch on Process.Start and says so (Patched); the
+    // others see it and only register - the same shape as the catalogue rows. A host that opens
+    // emulators itself (LiteBox) calls Opening/Exited directly and needs no patch at all.
+
+    /// <summary>A plugin that wants to know when its emulator is opened without a game.</summary>
+    public interface ILbEmulatorOpened
+    {
+        /// <summary>Before the emulator at <paramref name="exePath"/> (full path) starts. On the host's
+        /// thread: quick, and never throwing - a failure here must not stop the emulator.</summary>
+        void BeforeOpen(string exePath);
+
+        /// <summary>After it has quit. On a background thread.</summary>
+        void AfterExit(string exePath);
+    }
+
+    /// <summary>The listeners, and the one patch that feeds them.</summary>
+    public static class LbEmulatorOpened
+    {
+        private static readonly object Gate = new object();
+        private static readonly List<ILbEmulatorOpened> Listeners = new List<ILbEmulatorOpened>();
+
+        /// <summary>Set by the plugin that installed the Process.Start patch. The others read it and do
+        /// not patch again.</summary>
+        public static bool Patched;
+
+        /// <summary>Register a listener - once per type: the host builds a plugin more than once.</summary>
+        public static void Register(ILbEmulatorOpened listener)
+        {
+            if (listener == null) return;
+            lock (Gate)
+            {
+                if (Listeners.Exists(l => l.GetType().FullName == listener.GetType().FullName)) return;
+                Listeners.Add(listener);
+            }
+        }
+
+        /// <summary>The emulator at <paramref name="exePath"/> is about to be opened without a game.</summary>
+        public static void Opening(string exePath)
+        {
+            foreach (var l in Snapshot())
+                try { l.BeforeOpen(exePath); } catch { }
+        }
+
+        /// <summary>It has quit.</summary>
+        public static void Exited(string exePath)
+        {
+            foreach (var l in Snapshot())
+                try { l.AfterExit(exePath); } catch { }
+        }
+
+        private static List<ILbEmulatorOpened> Snapshot()
+        {
+            lock (Gate) return new List<ILbEmulatorOpened>(Listeners);
+        }
+    }
+
     // ── TO COME: A HOST'S OWN IMPORT, ASKING THE EMULATOR'S PLUGIN ─────────────────────────────
     //
     // Not written yet - noted here because this is where it will go (Mehdi, 28/09). LiteBox has no
