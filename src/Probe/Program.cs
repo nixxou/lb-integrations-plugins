@@ -32,6 +32,7 @@ namespace LbIntegrations.Probe
             // naming a plugin that has nothing to do with the question.
             // How long unmounting takes by each method: --ramdisk-bench --lb <root> [--only-api | --shipped].
             if (Has(args, "--vhdx")) return RamDiskBench.Vhdx(Arg(args, "--lb")) ? 0 : 1;
+            if (Has(args, "--ramdisk-leak")) return RamDiskLeak.Run(Arg(args, "--lb"), int.TryParse(Arg(args, "--size"), out var leakMb) ? leakMb : 1024, Has(args, "--dismount")) ? 0 : 1;
             if (Has(args, "--ramdisk-clean")) return RamDiskBench.Clean(Arg(args, "--lb")) ? 0 : 1;
             if (Has(args, "--ramdisk-bench")) return RamDiskBench.Run(Arg(args, "--lb"), Has(args, "--only-api"), Has(args, "--shipped")) ? 0 : 1;
             if (Has(args, "--ramdisk")) return RamDiskCheck.Run(Arg(args, "--lb")) ? 0 : 1;
