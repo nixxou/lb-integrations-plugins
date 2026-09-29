@@ -546,6 +546,7 @@ namespace LbIntegrations.Probe
             if (Has(args, "--vita3k-graphics-shot")) return Vita3kCheck.GraphicsShot(asm, Arg(args, "--vita3k-graphics-shot")) ? 0 : 1;
             // The options window, a fake game, one picture per tab: --vita3k-options-shot <out.png>. Nothing on screen.
             // melonDS's options window, a fake game, one picture per tab: --melonds-options-shot <out.png>.
+            if (Has(args, "--nogba-options-shot")) return NoGbaCheck.OptionsShot(asm, Arg(args, "--nogba-options-shot")) ? 0 : 1;
             if (Has(args, "--melonds-options-shot")) return MelonDsCheck.OptionsShot(asm, Arg(args, "--melonds-options-shot")) ? 0 : 1;
             // Vita3K's compatibility list against a copy of a real one, labels asked of GitHub:
             // --vita3k-compat-real --emu <Vita3K.exe> [--title ID,ID]

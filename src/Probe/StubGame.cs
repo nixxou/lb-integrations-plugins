@@ -32,6 +32,13 @@ namespace LbIntegrations.Probe
             return game;
         }
 
+        /// <summary>Give a stub game one more value - its Platform, say.</summary>
+        public static IGame With(IGame game, string name, object value)
+        {
+            ((StubGame)(object)game)._values[name] = value;
+            return game;
+        }
+
         protected override object Invoke(MethodInfo targetMethod, object[] args)
         {
             if (targetMethod == null) return null;

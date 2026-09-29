@@ -122,6 +122,26 @@ namespace LbIntegrations.NoGba
             catch (Exception ex) { return ex.GetType().Name + ": " + ex.Message; }
         }
 
+        /// <summary>Take keys out - what a session added goes when it is over. Every other line exactly as
+        /// it was. Null, or why not.</summary>
+        public static string Remove(string iniPath, ICollection<string> keys)
+        {
+            try
+            {
+                if (keys == null || keys.Count == 0 || string.IsNullOrWhiteSpace(iniPath) || !File.Exists(iniPath)) return null;
+                var text = File.ReadAllText(iniPath);
+                var newline = text.IndexOf("\r\n", StringComparison.Ordinal) >= 0 ? "\r\n" : "\n";
+                bool trailing = text.EndsWith("\n", StringComparison.Ordinal);
+                var lines = new List<string>(text.Replace("\r\n", "\n").TrimEnd('\n').Split('\n'));
+                var gone = new HashSet<string>(keys, StringComparer.OrdinalIgnoreCase);
+                int removed = lines.RemoveAll(l => Split(l, out var key, out _) && gone.Contains(key));
+                if (removed == 0) return null;
+                WriteAtomicBytes(iniPath, new UTF8Encoding(false).GetBytes(string.Join(newline, lines) + (trailing ? newline : "")));
+                return null;
+            }
+            catch (Exception ex) { return ex.GetType().Name + ": " + ex.Message; }
+        }
+
         /// <summary>One line into a key and a value, or false for a comment, a blank, or anything
         /// that does not carry the separator.</summary>
         private static bool Split(string line, out string key, out string value)

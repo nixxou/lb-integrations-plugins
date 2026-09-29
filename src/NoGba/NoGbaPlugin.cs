@@ -71,6 +71,55 @@ namespace LbIntegrations.NoGba
             // As early as possible: the patch only sees connections opened AFTER it is installed,
             // and LaunchBox reads its metadata the moment a window asks for it.
             LbipRowInjection.Install(PluginId, MetadataRows());
+
+            // A game's settings a session left in NO$GBA.INI go back first thing - see NoGbaGameSettings.
+            StartUpCheck();
+
+            // no$gba opened without a game: told, so a session left behind is put right first. One
+            // Process.Start patch for the whole pack - see LbipEmulatorOpened.
+            try { ListenForOpening(); }
+            catch (Exception ex) { Log.Info("an emulator opened without a game is not seen here (" + ex.GetType().Name + ": " + ex.Message + ")"); }
+        }
+
+        /// <summary>In a method of its own, NOT INLINED, and called under a try: LbEmulatorOpened is newer
+        /// than the LbIntegrations.Catalog a host may already have loaded (LiteBox carries its own copy in
+        /// Core) - named in the constructor, a type that copy lacks would fail the constructor itself.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static void ListenForOpening()
+        {
+            LbIntegrations.Catalog.LbEmulatorOpened.Register(new NoGbaEmulatorOpened());
+            if (!LbIntegrations.Catalog.LbCatalog.HostWillAsk) LbipEmulatorOpened.Install(PluginId);
+        }
+
+        /// <summary>A few seconds after start, inside a host only: every no$gba of this library whose
+        /// NO$GBA.INI still holds a game's settings - the host or the machine went mid-session - gets
+        /// its own back. The probe loads this plugin too, and must never tidy the real install.</summary>
+        private static void StartUpCheck()
+        {
+            try
+            {
+                var process = System.Diagnostics.Process.GetCurrentProcess().ProcessName;
+                if (!new[] { "LaunchBox", "BigBox", "LiteBox" }.Any(h => string.Equals(h, process, StringComparison.OrdinalIgnoreCase)))
+                    return;
+                var thread = new System.Threading.Thread(() =>
+                {
+                    try
+                    {
+                        System.Threading.Thread.Sleep(3000);   // the data manager is not there at construction
+                        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var emu in PluginHelper.DataManager?.GetAllEmulators() ?? new IEmulator[0])
+                        {
+                            var exe = ResolveFullPath(Safe(() => emu?.ApplicationPath));
+                            if (string.IsNullOrEmpty(exe) || !NoGbaPaths.IsNoGbaExecutable(exe) || !seen.Add(exe)) continue;
+                            NoGbaGameSettings.Restore(NoGbaPaths.Resolve(exe), "left behind by a session that did not end");
+                        }
+                    }
+                    catch (Exception ex) { Log.Warn("start-up check", ex); }
+                })
+                { IsBackground = true, Name = "no$gba start-up check" };
+                thread.Start();
+            }
+            catch (Exception ex) { Log.Warn("could not start the start-up check", ex); }
         }
 
         /// <summary>The name this pack publishes under, in one place so its four uses cannot
@@ -554,6 +603,9 @@ namespace LbIntegrations.NoGba
                 {
                     var layout = NoGbaPaths.Resolve(ResolveFullPath(exe));
 
+                    // A session that never ended left a game's settings in NO$GBA.INI: back first.
+                    NoGbaGameSettings.Restore(layout, "left behind by a session that did not end");
+
                     // Checked every launch, not written every launch: Options > Save Options rewrites
                     // the whole INI from the running configuration, so a user who opens that dialog
                     // for an unrelated reason silently reverts this.
@@ -582,6 +634,10 @@ namespace LbIntegrations.NoGba
                         NoGbaDsi.SetMode(layout, dsi: false);
                         NotPlaying();
                     }
+
+                    // Then this game's own, for its session, taken back once no$gba has quit.
+                    if (NoGbaGameSettings.Apply(layout, Safe(() => args?.GameBeingLaunched?.Id)))
+                        NoGbaGameSettings.RestoreWhenDone(layout);
                 }
 
                 // An archive the host is NOT going to unpack, which is a launch that hangs with no

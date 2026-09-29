@@ -57,6 +57,8 @@ namespace LbIntegrations.Probe
                 ok &= Listing(plugin, exe, romDir);
                 ok &= TheDsiSwitches(exe);
                 ok &= TheirOwnImage(exe);
+                ok &= GameSettings(exe);
+                ok &= TheMenu(exe);
 
                 Console.WriteLine();
                 Console.WriteLine("  " + (ok ? "OK - the plugin matches what no$gba was measured to do"
@@ -465,6 +467,166 @@ namespace LbIntegrations.Probe
 
         /// <summary>A type from the plugin's own assembly, by simple name. The plugin is loaded from
         /// a path the harness was given, so its types cannot be named at compile time.</summary>
+        /// <summary>The right-click entry: for a game whose default emulator is ANOTHER one but whose
+        /// platform one of ours runs; not for a platform none of ours runs.</summary>
+        private static bool TheMenu(string exe)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- the Options entry, for every emulator of ours that runs the platform");
+            bool ok = true;
+            var previous = PluginHelper.DataManager;
+            try
+            {
+                var ours = new StubEmulator { Title = "Nixx-nogba", ApplicationPath = exe };
+                ours.AddNewEmulatorPlatform().Platform = "Nintendo Game Boy Advance";
+                var other = new StubEmulator { Title = "RetroArch", ApplicationPath = @"C:\nowhere\retroarch.exe" };
+                PluginHelper.DataManager = new StubDataManager(other, ours);
+                var entries = TypeIn("GameMenu").GetMethod("Entries");
+                var gba = StubGame.With(StubGame.Create("g1", "A GBA game", @"C:\roms\a.gba", other.Id), "Platform", "Nintendo Game Boy Advance");
+                var psp = StubGame.With(StubGame.Create("g2", "A PSP game", @"C:\roms\a.iso", other.Id), "Platform", "Sony PSP");
+                var mine = StubGame.With(StubGame.Create("g3", "Its own", @"C:\roms\b.gba", ours.Id), "Platform", "Nintendo Game Boy Advance");
+                string[] E(params Unbroken.LaunchBox.Plugins.Data.IGame[] g) => (string[])entries.Invoke(null, new object[] { g });
+                ok &= Check("a GBA game whose default is RetroArch: offered - no$gba runs its platform", E(gba).Length == 1);
+                ok &= Check("a PSP game: not offered", E(psp).Length == 0);
+                ok &= Check("a game whose own emulator is ours: offered", E(mine).Length == 1);
+            }
+            finally { PluginHelper.DataManager = previous; }
+            return ok;
+        }
+
+        /// <summary>A game's own settings: kept, written for its session with the lines they replace written
+        /// down first, put back after - a line the session added taken out; the lines a launch sets itself
+        /// left out; set by hand, in use or not; the checks (a value no$gba does not know); the preview is
+        /// what the launch writes.</summary>
+        private static bool GameSettings(string exe)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- a game's own settings");
+            bool ok = true;
+            var gs = TypeIn("NoGbaGameSettings");
+            MethodInfo M(string n) => gs.GetMethod(n, BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic);
+            var layout = TypeIn("NoGbaPaths").GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { exe });
+            var install = Path.GetDirectoryName(exe);
+            var ini = Path.Combine(install, "NO$GBA.INI");
+            var note = Path.Combine(install, "lbip-settings.restore");
+            var original = ";no$gba 3.0 generated config file - do not edit\r\n\r\nGBA Mode/Colors == GBA SP (backlight)\r\n"
+                         + "Emulation Speed, LCD Refresh == -Realtime, Auto\r\nNDS Mode/Colors == DSi (retail/16MB)\r\nKEYB_1 == 101E\r\n";
+            File.WriteAllText(ini, original);
+            try
+            {
+                var own = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["Solar Sensor Level"] = "Bright Sunlight",
+                    ["Emulation Speed, LCD Refresh"] = "Realtime*2, Auto",
+                    ["NDS Mode/Colors"] = "-Nintendo DS (retail/4MB)",
+                };
+                M("Save").Invoke(null, new object[] { layout, "game-b", own });
+                var loaded = (Dictionary<string, string>)M("Load").Invoke(null, new object[] { layout, "game-b" });
+                ok &= Check("kept, and read back - a value with a comma and a star included", loaded != null && loaded["Emulation Speed, LCD Refresh"] == "Realtime*2, Auto");
+
+                var keys = M("KeysOf").Invoke(null, new object[] { layout, "game-b", null });
+                var pv = new object[] { layout, keys, null, null };
+                var preview = (string)M("Preview").Invoke(null, pv);
+                ok &= Check("the preview writes nothing", File.ReadAllText(ini) == original && !File.Exists(note));
+
+                ok &= Check("its session applied", (bool)M("Apply").Invoke(null, new object[] { layout, "game-b" }));
+                var text = File.ReadAllText(ini);
+                ok &= Check("its speed and its sun, a line that was not there added", text.Contains("Emulation Speed, LCD Refresh == Realtime*2, Auto") && text.Contains("Solar Sensor Level == Bright Sunlight"), text);
+                ok &= Check("the console a launch sets: left out", text.Contains("NDS Mode/Colors == DSi (retail/16MB)"));
+                ok &= Check("the preview is exactly what the launch wrote", preview == text, preview);
+                M("Restore").Invoke(null, new object[] { layout, "the session is over" });
+                ok &= Check("once over, the file byte for byte - the added line taken out", File.ReadAllText(ini) == original && !File.Exists(note), File.ReadAllText(ini));
+
+                var hand = "; mine\r\nGame Screen Filter == Scale2x\r\nDSi RSA signatures == Insist on RSA\r\n";
+                M("SaveAdvanced").Invoke(null, new object[] { layout, "game-b", hand, true });
+                M("Apply").Invoke(null, new object[] { layout, "game-b" });
+                text = File.ReadAllText(ini);
+                ok &= Check("set by hand, in use: its lines, not the tabs'", text.Contains("Game Screen Filter == Scale2x") && !text.Contains("Bright Sunlight"), text);
+                M("Restore").Invoke(null, new object[] { layout, "the session is over" });
+                M("SaveAdvanced").Invoke(null, new object[] { layout, "game-b", hand, false });
+                M("Apply").Invoke(null, new object[] { layout, "game-b" });
+                ok &= Check("not in use: the tabs' again", File.ReadAllText(ini).Contains("Bright Sunlight") && !File.ReadAllText(ini).Contains("Scale2x"));
+                M("Restore").Invoke(null, new object[] { layout, "the session is over" });
+
+                List<string> Warn(string t, out string err)
+                {
+                    var a = new object[] { layout, t, null };
+                    var w = (List<string>)M("CheckHand").Invoke(null, a);
+                    err = (string)a[2];
+                    return w;
+                }
+                Warn("Game Screen Filter = Scale2x", out var e1);
+                ok &= Check("a line without == : refused, with its line", e1 != null && e1.StartsWith("line 1"), e1);
+                var w2 = Warn("Emulation Speed, LCD Refresh == Realtime, Auto\r\nSolar Sensor Level == Bright Sunlight\r\nNDS Mode/Colors == DSi (retail/16MB)\r\nNo Such Key == 1", out var e2);
+                Console.WriteLine("            " + string.Join(" | ", w2));
+                ok &= Check("valid, and said: a value no$gba does not know (the \"-\" missing), a line a launch sets, an unknown key",
+                            e2 == null && w2.Any(w => w.StartsWith("Emulation Speed") && w.Contains("in silence"))
+                            && w2.Any(w => w.StartsWith("NDS Mode/Colors") && w.Contains("left out")) && w2.Any(w => w.StartsWith("No Such Key"))
+                            && !w2.Any(w => w.StartsWith("Solar Sensor")), string.Join(" | ", w2));
+            }
+            finally
+            {
+                File.WriteAllText(ini, original);
+                try { File.Delete(note); File.Delete(Path.Combine(install, "lbip-settings.tsv")); File.Delete(Path.Combine(install, "lbip-settings-advanced.tsv")); } catch { }
+            }
+            return ok;
+        }
+
+        /// <summary>The options window, fed fake games - a GBA one, then a GBA and a DSiWare together -
+        /// one picture per tab. --nogba-options-shot out.png. Nothing written.</summary>
+        public static bool OptionsShot(Assembly pluginAssembly, string outPath)
+        {
+            _anchor = pluginAssembly;
+            System.Windows.Forms.Application.EnableVisualStyles();
+            var formType = TypeIn("NoGbaOptionsForm");
+            var entryType = formType.GetNestedType("Entry", BindingFlags.NonPublic | BindingFlags.Public);
+            var kindType = TypeIn("NoGbaKind");
+            object Entry(string title, string kind, Dictionary<string, string> own)
+            {
+                var e = Activator.CreateInstance(entryType);
+                entryType.GetField("Title").SetValue(e, title);
+                entryType.GetField("GameId").SetValue(e, title);
+                entryType.GetField("Kind").SetValue(e, Enum.Parse(kindType, kind));
+                entryType.GetField("Own").SetValue(e, own);
+                return e;
+            }
+            var shots = new List<System.Drawing.Bitmap>();
+            foreach (var set in new[]
+            {
+                new[] { Entry("Boktai (GBA)", "Gba", new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Solar Sensor Level"] = "Bright Sunlight" }) },
+                new[] { Entry("Boktai (GBA)", "Gba", null), Entry("A DSiWare title", "DsiWare", null) },
+            })
+            {
+                var list = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(entryType));
+                foreach (var e in set) list.Add(e);
+                using var form = (System.Windows.Forms.Form)Activator.CreateInstance(formType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new object[] { list }, null);
+                form.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
+                form.Location = new System.Drawing.Point(-3000, -3000);
+                form.Show();
+                var tabs = form.Controls.OfType<System.Windows.Forms.TabControl>().First();
+                foreach (System.Windows.Forms.TabPage page in tabs.TabPages)
+                {
+                    if (set.Length > 1 && page.Text != "Emulation" && page.Text != "Cartridge") continue;
+                    tabs.SelectedTab = page;
+                    System.Windows.Forms.Application.DoEvents();
+                    var bmp = new System.Drawing.Bitmap(form.Width, form.Height);
+                    form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, bmp.Width, bmp.Height));
+                    shots.Add(bmp);
+                }
+                form.Close();
+            }
+            int cols = 3, w = shots[0].Width, h = shots[0].Height, rows = (shots.Count + cols - 1) / cols;
+            using var all = new System.Drawing.Bitmap(cols * w, rows * h);
+            using (var g = System.Drawing.Graphics.FromImage(all))
+            {
+                g.Clear(System.Drawing.Color.White);
+                for (int i = 0; i < shots.Count; i++) { g.DrawImage(shots[i], (i % cols) * w, (i / cols) * h); shots[i].Dispose(); }
+            }
+            all.Save(outPath, System.Drawing.Imaging.ImageFormat.Png);
+            Console.WriteLine("  " + outPath);
+            return true;
+        }
+
         private static Type TypeIn(string simpleName)
         {
             _anchor ??= AppDomain.CurrentDomain.GetAssemblies()
@@ -510,6 +672,13 @@ namespace LbIntegrations.Probe
                 if (t.IndexOf("==", StringComparison.Ordinal) > 0) n++;
             }
             return n;
+        }
+
+        private static bool Check(string what, bool ok, string detail)
+        {
+            bool r = Check(what, ok);
+            if (!ok && detail != null) Console.WriteLine("          got: " + detail);
+            return r;
         }
 
         private static bool Check(string what, bool ok)
