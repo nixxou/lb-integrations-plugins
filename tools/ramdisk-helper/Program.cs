@@ -32,6 +32,7 @@
 //   action = vhdx-attach           (1.3) attach and give its volume a letter:
 //                                    image=<path.vhdx> drive=<letter> [readonly=1]
 //   action = vhdx-detach           (1.3) detach it:  image=<path.vhdx>
+//   action = dismount              (1.4) unmount drive=<letter> CLEANLY, without imdisk.exe - below
 //   id     = <letters, digits, ->  (1.2) echoed at the end of ramdisk.result as " id=<id>", so the
 //                                  caller can tell ITS answer from the answer of a run somebody
 //                                  else started: the task ignores a second instance while one is
@@ -61,6 +62,7 @@
 //
 // ramdisk.result
 //   OK|FAIL <action> <drive> exit=<n>     the imdisk run, whatever it did
+//   OK|FAIL dismount <drive> locked=<0|1> dismounted=<0|1> exit=<n>   a dismount run (1.4)
 //   OK clean trimmed=<n> flushed=<0|1>    a clean run (1.2)
 //   ERROR <message>                       we never got as far as imdisk
 //
@@ -88,6 +90,25 @@
 // Same caution as clean: an older helper reads these as a mount; check FileVersion >= 1.3.
 //
 //   OK|FAIL vhdx-<what> exit=<n>[ - <diskpart's last words>]
+//
+// action = dismount (1.4): AN UNMOUNT THAT LEAVES NOTHING BEHIND. Measured 28/09: a drive removed by
+// force while its NTFS volume is still mounted - the unelevated direct removal, or "imdisk -D" when the
+// lock is refused - stays listed by the driver as "\Device\ImDisk<n>: the device has been removed"
+// until Windows restarts, one more at every session (56 of them in a day). The volume keeps the device
+// alive. Dismounted first, then removed, the device is gone for good - measured 29/09, three sessions
+// in a row, not one device left. Only an elevated process may open a volume to lock it (a standard
+// user is refused, error 5), which is why this is here.
+//   - the letter must point at \Device\ImDisk<n>, or nothing is done;
+//   - the volume is flushed, then LOCKED if it can be, retried for a second - measured 29/09 on real
+//     sessions it never was: the shell or a scanner keeps a handle on a live drive;
+//   - then DISMOUNTED, locked or not: without the lock the dismount still takes the file system off
+//     and invalidates the handles still open (what kept the lock refused - a shell or a scanner watching
+//     the new drive; imdisk -D gets the lock only by broadcasting to every window first). The result
+//     says locked= and dismounted= so the caller can tell;
+//   - then the device is removed through imdisk.cpl, and the letter dropped quietly. No imdisk.exe, so
+//     no broadcast to every window on the machine - which is what made an unmount take 88 s with one
+//     hung window somewhere.
+// Same caution as clean: an older helper reads "dismount" as a mount; check FileVersion >= 1.4.
 //
 // THIS IS NOT A PRIVILEGE BOUNDARY, and never was: the cfg is writable by the user and this runs
 // elevated, which is inherent to every no-UAC elevation bridge - LiteBox says the same of its
@@ -134,6 +155,12 @@ namespace RamDiskHelper
                 {
                     File.WriteAllText(resultPath, Clean() + id);
                     return 0;
+                }
+                if (action.Equals("dismount", StringComparison.OrdinalIgnoreCase))
+                {
+                    var said = Dismount(Get(kv, "drive", "").TrimEnd(':'));
+                    File.WriteAllText(resultPath, said + id);
+                    return said.StartsWith("OK", StringComparison.Ordinal) ? 0 : 1;
                 }
                 string drive = Get(kv, "drive", "R").TrimEnd(':');
                 string size = Get(kv, "size", "1024");
@@ -313,6 +340,107 @@ namespace RamDiskHelper
             var last = lines.Length > 0 ? lines[lines.Length - 1].Trim() : "no output";
             return last.Length > 200 ? last.Substring(0, 200) : last;
         }
+
+        // ── action = dismount ────────────────────────────────────────────────
+
+        private static string Dismount(string drive)
+        {
+            drive = (drive ?? "").ToUpperInvariant();
+            if (drive.Length != 1 || drive[0] < 'A' || drive[0] > 'Z') return "FAIL dismount ? locked=0 dismounted=0 exit=-1 - drive must be one letter";
+            string letter = drive + ":";
+            string head = "dismount " + drive;
+
+            var target = new System.Text.StringBuilder(1024);
+            if (QueryDosDevice(letter, target, target.Capacity) == 0) return "FAIL " + head + " locked=0 dismounted=0 exit=-1 - no such drive";
+            const string prefix = @"\Device\ImDisk";
+            string device = target.ToString();
+            if (!device.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) || !uint.TryParse(device.Substring(prefix.Length), out uint number))
+                return "FAIL " + head + " locked=0 dismounted=0 exit=-1 - " + letter + " is " + device + ", not an ImDisk drive";
+
+            bool locked = false, dismounted = false;
+            IntPtr volume = CreateFile(@"\\.\" + letter, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                       IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
+            int openError = volume == InvalidHandle ? Marshal.GetLastWin32Error() : 0;
+            int dismountError = 0;
+            try
+            {
+                if (volume != InvalidHandle)
+                {
+                    FlushFileBuffers(volume);
+                    for (int i = 0; i < 4 && !locked; i++)
+                    {
+                        locked = DeviceIoControl(volume, FSCTL_LOCK_VOLUME, IntPtr.Zero, 0, IntPtr.Zero, 0, out _, IntPtr.Zero);
+                        if (!locked) System.Threading.Thread.Sleep(250);
+                    }
+                    // DISMOUNTED LOCKED OR NOT. Without the lock, FSCTL_DISMOUNT_VOLUME still takes the file
+                    // system off the volume and invalidates whatever handles are open on it - measured
+                    // 29/09: a shell or scanner watching the new drive kept the lock refused for five
+                    // seconds, and imdisk -D only gets it by first broadcasting to every window, which
+                    // is the slowness this action exists to avoid. The session is saved before anything
+                    // asks for this; nothing on the drive is still wanted.
+                    dismounted = DeviceIoControl(volume, FSCTL_DISMOUNT_VOLUME, IntPtr.Zero, 0, IntPtr.Zero, 0, out _, IntPtr.Zero);
+                    if (!dismounted) dismountError = Marshal.GetLastWin32Error();
+                }
+
+                // The removal, with the volume still held locked: nothing can remount it in between.
+                IntPtr handle = ImDiskOpenDeviceByNumber(number, 0);
+                if (handle == IntPtr.Zero || handle == InvalidHandle)
+                    return "FAIL " + head + " locked=" + B(locked) + " dismounted=" + B(dismounted) + " exit=" + Marshal.GetLastWin32Error() + " - could not open the device";
+                bool removed;
+                try { removed = ImDiskForceRemoveDevice(handle, 0); }
+                finally { CloseHandle(handle); }
+                if (!removed)
+                    return "FAIL " + head + " locked=" + B(locked) + " dismounted=" + B(dismounted) + " exit=" + Marshal.GetLastWin32Error() + " - the device was not removed";
+            }
+            finally { if (volume != InvalidHandle) CloseHandle(volume); }
+
+            // The driver takes the letter with the device; when it is still there and still this device,
+            // it goes quietly - no broadcast.
+            var now = new System.Text.StringBuilder(1024);
+            if (QueryDosDevice(letter, now, now.Capacity) != 0 && string.Equals(now.ToString(), device, StringComparison.OrdinalIgnoreCase))
+                DefineDosDevice(DDD_REMOVE_DEFINITION | DDD_NO_BROADCAST_SYSTEM, letter, null);
+            SHChangeNotify(SHCNE_DRIVEREMOVED, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, letter + "\\", IntPtr.Zero);
+            return "OK " + head + " locked=" + B(locked) + " dismounted=" + B(dismounted) + " exit=0"
+                   + (openError != 0 ? " - the volume could not be opened (error " + openError + ")" : "")
+                   + (dismountError != 0 ? " - the dismount was refused (error " + dismountError + ")" : "");
+        }
+
+        private static string B(bool value) => value ? "1" : "0";
+
+        private static readonly IntPtr InvalidHandle = new IntPtr(-1);
+        private const uint GENERIC_READ = 0x80000000, GENERIC_WRITE = 0x40000000, FILE_SHARE_READ = 1, FILE_SHARE_WRITE = 2, OPEN_EXISTING = 3;
+        private const uint FSCTL_LOCK_VOLUME = 0x00090018, FSCTL_DISMOUNT_VOLUME = 0x00090020;
+        private const uint DDD_REMOVE_DEFINITION = 0x2, DDD_NO_BROADCAST_SYSTEM = 0x8;
+        private const int SHCNE_DRIVEREMOVED = 0x80;
+        private const uint SHCNF_PATHW = 0x5, SHCNF_FLUSHNOWAIT = 0x3000;
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr CreateFile(string name, uint access, uint share, IntPtr sa, uint disposition, uint flags, IntPtr template);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool DeviceIoControl(IntPtr device, uint code, IntPtr inBuf, uint inSize, IntPtr outBuf, uint outSize, out uint returned, IntPtr overlapped);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool FlushFileBuffers(IntPtr handle);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern uint QueryDosDevice(string deviceName, System.Text.StringBuilder targetPath, int max);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool DefineDosDevice(uint flags, string deviceName, string targetPath);
+
+        [DllImport("imdisk.cpl", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr ImDiskOpenDeviceByNumber(uint deviceNumber, uint accessMode);
+
+        [DllImport("imdisk.cpl", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool ImDiskForceRemoveDevice(IntPtr device, uint deviceNumber);
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        private static extern void SHChangeNotify(int eventId, uint flags, string item1, IntPtr item2);
 
         // ── action = clean ───────────────────────────────────────────────────
 

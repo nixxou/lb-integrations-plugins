@@ -189,6 +189,22 @@ namespace LbIntegrations.RamDisk
         /// MOUNT, so nothing is sent below it.</summary>
         public static readonly Version VhdxProtocol = new Version(1, 3, 0, 0);
 
+        /// <summary>The helper version that knows action=dismount - an unmount that locks and dismounts the
+        /// volume before removing the device, and so leaves no "removed" device behind (see the helper's
+        /// header). AN OLDER ONE READS IT AS A MOUNT, so nothing is sent below it.</summary>
+        public static readonly Version DismountProtocol = new Version(1, 4, 0, 0);
+
+        /// <summary>Can the deployed helper unmount cleanly?</summary>
+        public static bool CanDismountCleanly
+        {
+            get { var v = HelperVersion; return v != null && v >= DismountProtocol && InstalledTaskName() != null; }
+        }
+
+        /// <summary>How long a clean dismount waits for the helper to be free - the mount's own run,
+        /// still announcing the drive to every window when a session is short - before the unelevated
+        /// removal is used instead. Bounded, because the end of a session waits on it.</summary>
+        private const int DismountWaitSeconds = 20;
+
         /// <summary>Can the deployed helper create and attach VHDX files?</summary>
         public static bool CanUseVhdx
         {
@@ -647,6 +663,11 @@ namespace LbIntegrations.RamDisk
                 if (string.IsNullOrEmpty(driveRoot)) return false;
                 char letter = driveRoot[0];
 
+                // CLEANLY FIRST, when the helper can (1.4): locked, dismounted, removed - nothing left
+                // behind. The unelevated removal below leaves the device "removed" until Windows restarts
+                // (measured 28/09, one per session), so it is what a helper too old, busy or absent gets.
+                if (CanDismountCleanly && IsImDiskDrive(driveRoot) && Dismount(driveRoot, ct)) return true;
+
                 if (DropDirect(driveRoot)) return true;
 
                 var task = InstalledTaskName();
@@ -666,6 +687,32 @@ namespace LbIntegrations.RamDisk
                 return exit == 0 && !Directory.Exists(driveRoot);
             }
             catch (Exception ex) { RamDiskLog.Warn("unmount threw", ex); return false; }
+        }
+
+        /// <summary>Ask the helper for action=dismount, waiting only so long for it to be free. True when
+        /// the drive is gone and the helper says the volume was dismounted before the removal.</summary>
+        private static bool Dismount(string driveRoot, CancellationToken ct)
+        {
+            try
+            {
+                var task = InstalledTaskName();
+                if (task == null) return false;
+                if (!StartRun(task, "dismount", driveRoot[0], 0, ct, previousSeconds: DismountWaitSeconds)) return false;
+                var said = WaitForResult(ct, DismountWaitSeconds);
+                _runInFlight = said == null;
+                bool gone = WaitFor(() => !Directory.Exists(driveRoot), 5, ct);
+                if (said == null || !IsOurs(said))
+                {
+                    RamDiskLog.Info("the helper did not answer this dismount (" + (said ?? "nothing") + ") - "
+                                    + (gone ? "the drive is gone all the same" : "removing it directly"));
+                    return gone;
+                }
+                RamDiskLog.Info("unmounted " + driveRoot + " cleanly through the helper - " + said);
+                if (said.Contains("dismounted=0"))
+                    RamDiskLog.Warn("the volume could not be dismounted - the device may be left behind as \"removed\" until a restart");
+                return gone;
+            }
+            catch (Exception ex) { RamDiskLog.Warn("the clean dismount threw", ex); return false; }
         }
 
         // ── the direct unmount ───────────────────────────────────────────────
@@ -997,8 +1044,11 @@ namespace LbIntegrations.RamDisk
                 var dir = HelperDir;
                 if (dir == null) return "The LaunchBox root is not known.";
 
+                // ABSENT OR OLDER THAN THE ONE BUNDLED - the rule both products follow. It used to be
+                // "older than ImageProtocol", which froze a 1.3 in place once 1.4 existed.
                 var installed = HelperVersion;
-                if (installed != null && installed >= ImageProtocol)
+                var bundled = BundledVersion(fileByName);
+                if (installed != null && (bundled == null || installed >= bundled))
                 {
                     ok = true;
                     return "The RAM disk helper " + installed + " was already in place - left alone."
@@ -1027,6 +1077,24 @@ namespace LbIntegrations.RamDisk
                 RamDiskLog.Warn("could not deploy the helper", ex);
                 return "The RAM disk helper could not be installed: " + ex.Message;
             }
+        }
+
+        /// <summary>The version of the helper this build carries, read off its bytes. Null when it
+        /// carries none or it cannot be read - and then an installed helper is left alone.</summary>
+        private static Version BundledVersion(Func<string, byte[]> fileByName)
+        {
+            string temp = null;
+            try
+            {
+                var bytes = fileByName("RamDiskHelper.dll") ?? fileByName("RamDiskHelper.exe");
+                if (bytes == null) return null;
+                temp = Path.Combine(Path.GetTempPath(), "lbip-helper-" + Guid.NewGuid().ToString("N") + ".dll");
+                File.WriteAllBytes(temp, bytes);
+                var v = FileVersionInfo.GetVersionInfo(temp);
+                return v?.FileVersion == null ? null : new Version(v.FileMajorPart, v.FileMinorPart, v.FileBuildPart, v.FilePrivatePart);
+            }
+            catch { return null; }
+            finally { try { if (temp != null) File.Delete(temp); } catch { } }
         }
 
         /// <summary>The four files a framework-dependent .NET executable needs beside it.</summary>
@@ -1129,16 +1197,17 @@ namespace LbIntegrations.RamDisk
         /// minute and a half that the caller would otherwise have paid on every single mount.</summary>
         private static bool StartRun(string task, string action, char drive, int sizeMb,
                                     CancellationToken ct, string image = null, string type = null,
-                                    bool sparse = false, IDictionary<string, string> extra = null)
+                                    bool sparse = false, IDictionary<string, string> extra = null,
+                                    int previousSeconds = HelperSeconds)
         {
             if (_runInFlight)
             {
                 RamDiskLog.Info("waiting for the previous helper run to finish before asking again");
-                var previous = WaitForResult(ct);
+                var previous = WaitForResult(ct, previousSeconds);
                 _runInFlight = false;
                 if (previous == null)
                 {
-                    RamDiskLog.Warn("the previous run never reported within " + HelperSeconds
+                    RamDiskLog.Warn("the previous run never reported within " + previousSeconds
                                     + "s - not asking for another, it would be refused");
                     return false;
                 }
@@ -1181,11 +1250,13 @@ namespace LbIntegrations.RamDisk
         ///
         /// Polled rather than watched: a FileSystemWatcher on a folder an elevated task writes to is
         /// more machinery than a quarter-second poll deserves.</summary>
-        private static string WaitForResult(CancellationToken ct)
+        private static string WaitForResult(CancellationToken ct) => WaitForResult(ct, HelperSeconds);
+
+        private static string WaitForResult(CancellationToken ct, int seconds)
         {
             var path = ResultPath;
             if (path == null) return null;
-            for (int i = 0; i < HelperSeconds * 4; i++)
+            for (int i = 0; i < seconds * 4; i++)
             {
                 if (ct.IsCancellationRequested) return null;
                 if (File.Exists(path))
