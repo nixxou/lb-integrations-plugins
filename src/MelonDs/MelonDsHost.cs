@@ -31,10 +31,17 @@ namespace LbIntegrations.MelonDs
             DsiNand.EmulatorProcessPrefix = "melonDS";
         }
 
+        private static string RamImage(string installDir)
+        {
+            var dir = MelonDsRamDisk.RamDir(new DsiHost { InstallDir = installDir });
+            return dir == null ? null : Path.Combine(dir, DsiWorkspace.WorkName);
+        }
+
         /// <summary>The four things that differ, for this installation.</summary>
         public static DsiHost For(MelonDsLayout layout)
         {
             if (layout?.InstallDir == null) return new DsiHost();
+            var ram = RamImage(layout.InstallDir);
 
             return new DsiHost
             {
@@ -44,8 +51,13 @@ namespace LbIntegrations.MelonDs
                 // takes any path, so the working image lives in the folder this plugin owns. no$gba
                 // has no such setting and reads a fixed name beside its executable instead - which
                 // is the whole of the difference between the two hosts.
-                WorkImagePath = Path.Combine(layout.InstallDir, DsiWorkspace.DirName,
-                                             DsiWorkspace.WorkName),
+                //
+                // ON A RAM DISK while a DSiWare session's image is there - dsi\work.where says so, and
+                // every part of the engine then works on that image. See MelonDsRamDisk.
+                WorkImagePath = ram ?? Path.Combine(layout.InstallDir, DsiWorkspace.DirName, DsiWorkspace.WorkName),
+
+                // The RAM disk is sized for the image already: no disk rule on top of it.
+                RebuildFreeMargin = ram != null ? 0 : (long?)null,
 
                 DumpFolders = () => MelonDsBios.SearchFolders(layout),
                 EmulatorRunning = DsiNand.EmulatorRunning,

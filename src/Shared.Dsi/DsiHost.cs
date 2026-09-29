@@ -30,6 +30,11 @@ namespace LbIntegrations.Dsi
         /// console at every launch, and nothing is expected to survive in it past a capture.</summary>
         public string WorkImagePath;
 
+        /// <summary>The free space a rebuild wants beyond the image where WorkImagePath is - null for the
+        /// engine's own 256 MB, a disk rule. A host whose image is on a volume made to its measure (melonDS's
+        /// RAM disk, sized for it) says so here: the margin is already in the size.</summary>
+        public long? RebuildFreeMargin;
+
         /// <summary>Where the user keeps NAND dumps, best first. Both plugins happen to read the
         /// same folder today - ..\RetroArch\system - which is what lets two emulators share one set
         /// of dumps while each keeps its own consoles.</summary>

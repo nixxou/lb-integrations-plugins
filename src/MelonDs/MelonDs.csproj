@@ -38,6 +38,7 @@
          everything into one MelonDs.dll. See src\Shared.Dsi\DsiLog.cs for how it reaches this
          plugin's logger without naming it. -->
     <Compile Include="..\Shared.Dsi\**\*.cs" />
+    <Compile Include="..\Shared.RamDisk\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>

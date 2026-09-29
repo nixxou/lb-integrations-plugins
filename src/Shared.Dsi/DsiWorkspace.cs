@@ -651,6 +651,15 @@ namespace LbIntegrations.Dsi
             catch { }
         }
 
+        /// <summary>Forget the working image altogether - which title it holds, its receipt, a pending
+        /// capture - for a host whose image has just gone with the drive it was on (melonDS's RAM disk,
+        /// released once its session is captured). The image file itself is not touched.</summary>
+        public static void ForgetWork(DsiHost layout)
+        {
+            Forget(layout);
+            ClearPending(layout);
+        }
+
         /// <summary>Forget which title the image holds - and the receipt with it, which describes
         /// an agreement that no longer has two parties.</summary>
         private static void Forget(DsiHost layout)
@@ -749,7 +758,7 @@ namespace LbIntegrations.Dsi
 
                 var length = new FileInfo(source).Length;
                 var room = FreeSpaceOn(work);
-                if (room >= 0 && !File.Exists(work) && room < length + FreeSpaceMargin)
+                if (room >= 0 && !File.Exists(work) && room < length + (layout.RebuildFreeMargin ?? FreeSpaceMargin))
                 {
                     result.Reason = "not enough free space for a " + Megabytes(length)
                                   + " working NAND (" + Megabytes(room) + " free)";
@@ -1253,7 +1262,7 @@ namespace LbIntegrations.Dsi
 
                 var length = new FileInfo(current).Length;
                 var room = FreeSpaceOn(work);
-                if (room >= 0 && !File.Exists(work) && room < length + FreeSpaceMargin)
+                if (room >= 0 && !File.Exists(work) && room < length + (layout.RebuildFreeMargin ?? FreeSpaceMargin))
                 {
                     error = "not enough free space for a " + Megabytes(length) + " working NAND ("
                           + Megabytes(room) + " free)";

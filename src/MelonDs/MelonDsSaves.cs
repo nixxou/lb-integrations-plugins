@@ -548,7 +548,7 @@ namespace LbIntegrations.MelonDs
             => IsDsiWare(save) ? save.SaveGroupId.Substring(DsiWarePrefix.Length) : null;
 
         /// <summary>DSi.BIOS7Path, resolved, or null. Without it a NAND cannot be opened at all.</summary>
-        private static string Bios7Of(MelonDsLayout layout)
+        internal static string Bios7Of(MelonDsLayout layout)
         {
             try
             {

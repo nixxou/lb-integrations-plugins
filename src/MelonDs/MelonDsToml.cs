@@ -34,19 +34,43 @@ namespace LbIntegrations.MelonDs
 {
     internal static class MelonDsToml
     {
-        /// <summary>Read the given keys from one table. Missing file, missing table or missing key all
-        /// come back as an absent dictionary entry rather than an exception. String values are
-        /// returned decoded; anything else comes back as the raw token, which is what the callers
-        /// that read integers want.</summary>
+        // ONE FILE, SEVERAL OF OUR OWN THREADS - AND OTHERS. Measured 29/09: the video settings going back
+        // after a session (a write, by replacing the file) and LaunchBox asking for the saves (a read)
+        // met at the same instant, and the read failed with "being used by another process". A failed
+        // read used to come back as an EMPTY table - every key "not set" - which is a wrong answer
+        // wearing a right one: a caller could decide a setting is missing, or write down defaults as
+        // somebody's own. So:
+        //   - every read and write of ours goes through ONE lock: our threads can no longer meet;
+        //   - a read that finds the file held by somebody else (melonDS writing it as it quits, a
+        //     scanner) tries again - 50, 100, 200, 400, 800 ms, about 1.5 s in all, paid only then;
+        //   - a read that still cannot get in SAYS SO (TryRead), rather than answering empty.
+        private static readonly object FileGate = new object();
+        private static readonly int[] RetryMs = { 50, 100, 200, 400, 800 };
+
+        /// <summary>Read the given keys from one table - see TryRead. A file that cannot be read comes
+        /// back empty, as missing keys do, and says so in the log: for callers for whom "unknown" and
+        /// "not set" lead to the same, harmless, thing.</summary>
         public static Dictionary<string, string> Read(string tomlPath, string table, params string[] keys)
         {
+            TryRead(tomlPath, table, out var found, keys);
+            return found;
+        }
+
+        /// <summary>Read the given keys from one table. Missing file, missing table or missing key all
+        /// come back as an absent dictionary entry. String values are returned decoded; anything else
+        /// comes back as the raw token, which is what the callers that read integers want. FALSE when the
+        /// file is there but could not be read: its keys are then UNKNOWN, not absent.</summary>
+        public static bool TryRead(string tomlPath, string table, out Dictionary<string, string> found, params string[] keys)
+        {
             var wanted = new HashSet<string>(keys, StringComparer.Ordinal);
-            var found = new Dictionary<string, string>(StringComparer.Ordinal);
+            found = new Dictionary<string, string>(StringComparer.Ordinal);
             try
             {
-                if (!File.Exists(tomlPath)) return found;
+                if (!File.Exists(tomlPath)) return true;
+                var lines = ReadLines(tomlPath);
+                if (lines == null) return false;
                 bool inTable = table.Length == 0;          // "" means the root table
-                foreach (var raw in File.ReadLines(tomlPath))
+                foreach (var raw in lines)
                 {
                     var line = raw.Trim();
                     if (line.Length == 0 || line[0] == '#') continue;
@@ -63,9 +87,34 @@ namespace LbIntegrations.MelonDs
                     var key = line.Substring(0, eq).Trim();
                     if (wanted.Contains(key)) found[key] = Decode(line.Substring(eq + 1).Trim());
                 }
+                return true;
             }
-            catch (Exception ex) { Log.Warn("reading " + tomlPath, ex); }
-            return found;
+            catch (Exception ex) { Log.Warn("reading " + tomlPath, ex); return false; }
+        }
+
+        /// <summary>The file's lines, under the lock, tried again while somebody else holds it. Null when
+        /// it could not be read at all - and the log says so.</summary>
+        private static string[] ReadLines(string tomlPath)
+        {
+            lock (FileGate)
+            {
+                for (int attempt = 0; ; attempt++)
+                {
+                    try { return File.ReadAllLines(tomlPath); }
+                    catch (FileNotFoundException) { return new string[0]; }
+                    catch (DirectoryNotFoundException) { return new string[0]; }
+                    catch (IOException ex)
+                    {
+                        if (attempt >= RetryMs.Length)
+                        {
+                            Log.Warn("could not read " + Path.GetFileName(tomlPath) + " - still held by another process after "
+                                     + "about 1.5 s; its values are unknown this time (" + ex.Message + ")");
+                            return null;
+                        }
+                        System.Threading.Thread.Sleep(RetryMs[attempt]);
+                    }
+                }
+            }
         }
 
         /// <summary>Set keys inside a table, creating the table - and the file - if needed. Values must
@@ -96,11 +145,14 @@ namespace LbIntegrations.MelonDs
                          + ") is open - the instance starting now will read it, but that older one will "
                          + "rewrite this file when it closes");
 
+            // The whole read-change-write under the lock: nothing of ours reads a half-way state, and
+            // two writes of ours cannot each start from the file before the other's change.
+            lock (FileGate)
             try
             {
-                var lines = File.Exists(tomlPath)
-                    ? new List<string>(File.ReadAllLines(tomlPath))
-                    : new List<string>();
+                var read = File.Exists(tomlPath) ? ReadLines(tomlPath) : new string[0];
+                if (read == null) return "melonDS's configuration is held by another process - nothing was written";
+                var lines = new List<string>(read);
 
                 var pending = new Dictionary<string, string>(values, StringComparer.Ordinal);
 

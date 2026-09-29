@@ -93,6 +93,10 @@ namespace LbIntegrations.Probe
                 ok &= CarriedIndex(exe, romDir);
                 ok &= Scripts(plugin, exe);
                 ok &= Slots(plugin);
+                ok &= OurFlagsAndTheMenu();
+                ok &= GameVideo(exe);
+                ok &= OpenedWithoutAGame();
+                ok &= TomlUnderContention(root);
 
                 Console.WriteLine();
                 Console.WriteLine("  " + (ok ? "OK - the plugin matches our reading of melonDS" : "NOT OK - see above"));
@@ -102,6 +106,201 @@ namespace LbIntegrations.Probe
             {
                 try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { }
             }
+        }
+
+        /// <summary>--no-ramdisk read and cut out, the rest of the line as written; a game's own line
+        /// given and taken back; and the right-click entry where Nixx-Menus looks for it.</summary>
+        private static bool OurFlagsAndTheMenu()
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- our flags, and the Options entry");
+            bool ok = true;
+            var cl = TypeIn("MelonDsCommandLine");
+            string Strip(string line) => (string)cl.GetMethod("Strip", BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { line });
+            bool Carries(string line) => (bool)cl.GetMethod("Carries", BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { line, "--no-ramdisk" });
+            var optType = TypeIn("MelonDsOptions");
+            object Opt(bool noRam) { var o = Activator.CreateInstance(optType); optType.GetField("NoRamDisk").SetValue(o, noRam); return o; }
+            string Own(string own, string inherited, bool noRam)
+                => (string)cl.GetMethod("NewOwnLine", BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { own, inherited, Opt(noRam) });
+
+            var line = "-f --no-ramdisk \"C:\\roms\\a game.nds\"";
+            ok &= Check("the flag is read off the line", Carries(line) && !Carries("-f \"C:\\roms\\a game.nds\""));
+            ok &= Check("and cut out, the rest exactly as written", Strip(line) == "-f \"C:\\roms\\a game.nds\"", Strip(line));
+            ok &= Check("at the start of the line too", Strip("--no-ramdisk -f") == "-f", Strip("--no-ramdisk -f"));
+            ok &= Check("a game that inherits gets the inherited line plus the flag", Own("", "-f", true) == "-f --no-ramdisk", Own("", "-f", true));
+            ok &= Check("and back to inheriting once the flag goes", Own("-f --no-ramdisk", "-f", false) == "", Own("-f --no-ramdisk", "-f", false));
+            ok &= Check("a line of its own keeps what else it says", Own("-f -x --no-ramdisk", "-f", false) == "-f -x", Own("-f -x --no-ramdisk", "-f", false));
+
+            var menu = TypeIn("GameMenu");
+            ok &= Check("the entry is where Nixx-Menus looks: LbIntegrations.MelonDs.GameMenu",
+                        menu != null && menu.FullName == "LbIntegrations.MelonDs.GameMenu"
+                        && menu.GetMethod("Entries", new[] { typeof(IGame[]) })?.ReturnType == typeof(string[])
+                        && menu.GetMethod("Selected", new[] { typeof(string), typeof(IGame[]) }) != null);
+            return ok;
+        }
+
+        /// <summary>A game's own video settings: kept per game, written for its session with melonDS's own
+        /// written down first, put back once it is over - and after a session that never ended; a game
+        /// without its own leaves melonDS's file alone.</summary>
+        private static bool GameVideo(string exe)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- a game's own video settings");
+            bool ok = true;
+            var video = TypeIn("MelonDsVideo");
+            var layout = Call(TypeIn("MelonDsPaths").GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static), new object[] { exe });
+            var install = Path.GetDirectoryName(exe);
+            var toml = ConfigPath(exe);
+            var before = File.ReadAllText(toml);
+            string Val(string table, string key) => TomlValues(toml, table).TryGetValue(key, out var v) ? v : null;
+            var note = Path.Combine(install, "lbip-video.restore");
+            try
+            {
+                File.WriteAllText(toml, "[3D]\r\nRenderer = 0\r\n\r\n[3D.GL]\r\nScaleFactor = 1\r\nBetterPolygons = false\r\n\r\n[Screen]\r\nVSync = false\r\n");
+                var own = new Dictionary<string, string> { ["Renderer"] = "1", ["ScaleFactor"] = "4", ["VSync"] = "true" };
+                video.GetMethod("Save", BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { install, "game-1", own });
+                var loaded = (Dictionary<string, string>)video.GetMethod("Load", BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { install, "game-1" });
+                ok &= Check("a game's own settings are kept, and read back", loaded != null && loaded["ScaleFactor"] == "4" && loaded.Count == 3);
+                ok &= Check("another game has none", video.GetMethod("Load").Invoke(null, new object[] { install, "game-2" }) == null);
+
+                var apply = video.GetMethod("Apply", BindingFlags.Public | BindingFlags.Static);
+                var restore = video.GetMethod("Restore", BindingFlags.Public | BindingFlags.Static);
+                ok &= Check("a game without its own: nothing written", !(bool)apply.Invoke(null, new object[] { layout, "game-2" }) && !File.Exists(note));
+
+                ok &= Check("its session: the game's settings written", (bool)apply.Invoke(null, new object[] { layout, "game-1" })
+                            && Val("3D", "Renderer") == "1" && Val("3D.GL", "ScaleFactor") == "4" && Val("Screen", "VSync") == "true");
+                ok &= Check("melonDS's own written down first", File.Exists(note));
+                ok &= Check("and a key the game does not set left alone", Val("3D.GL", "BetterPolygons") == "false");
+
+                restore.Invoke(null, new object[] { layout, "the session is over" });
+                ok &= Check("once it is over, melonDS's own are back", Val("3D", "Renderer") == "0" && Val("3D.GL", "ScaleFactor") == "1" && Val("Screen", "VSync") == "false" && !File.Exists(note));
+
+                // A session that never ended: the next launch puts them back before anything else.
+                apply.Invoke(null, new object[] { layout, "game-1" });
+                restore.Invoke(null, new object[] { layout, "left behind by a session that did not end" });
+                ok &= Check("after a session that never ended, the next one puts them back", Val("3D", "Renderer") == "0" && !File.Exists(note));
+
+                video.GetMethod("Save").Invoke(null, new object[] { install, "game-1", null });
+                ok &= Check("and a game given back melonDS's settings has none of its own", video.GetMethod("Load").Invoke(null, new object[] { install, "game-1" }) == null);
+            }
+            finally
+            {
+                File.WriteAllText(toml, before);
+                try { File.Delete(note); File.Delete(Path.Combine(install, "lbip-video.tsv")); } catch { }
+            }
+            return ok;
+        }
+
+        /// <summary>The Process.Start patch: an emulator started with no arguments from LaunchBox's "Open
+        /// emulator" menu action is told to the listeners, before and after; a start with arguments, or
+        /// from anywhere else, is not.</summary>
+        private static bool OpenedWithoutAGame()
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- an emulator opened without a game");
+            bool ok = true;
+            // The plugin was constructed by the probe: its constructor installed the patch.
+            ok &= Check("the patch is in, installed once for the pack", LbIntegrations.Catalog.LbEmulatorOpened.Patched);
+            var heard = new Listener();
+            LbIntegrations.Catalog.LbEmulatorOpened.Register(heard);
+            var exe = Path.Combine(Environment.SystemDirectory, "hostname.exe");
+
+            FakeOpenEmulatorMenuAction.OnSelect(exe, "");
+            for (int i = 0; i < 40 && heard.Exited == null; i++) System.Threading.Thread.Sleep(100);
+            ok &= Check("from the menu action, no arguments: told before it starts", string.Equals(heard.Opened, exe, StringComparison.OrdinalIgnoreCase), heard.Opened);
+            ok &= Check("and after it has quit", string.Equals(heard.Exited, exe, StringComparison.OrdinalIgnoreCase), heard.Exited);
+
+            heard.Opened = heard.Exited = null;
+            FakeOpenEmulatorMenuAction.OnSelect(exe, "/?");
+            using (var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true }))
+                p.WaitForExit();
+            System.Threading.Thread.Sleep(300);
+            ok &= Check("with arguments, or from anywhere else: nothing", heard.Opened == null && heard.Exited == null, heard.Opened);
+            return ok;
+        }
+
+        private sealed class Listener : LbIntegrations.Catalog.ILbEmulatorOpened
+        {
+            public string Opened, Exited;
+            public void BeforeOpen(string exePath) => Opened = exePath;
+            public void AfterExit(string exePath) => Exited = exePath;
+        }
+
+        /// <summary>Named like LaunchBox's own, which is what the patch recognises on the stack.</summary>
+        private static class FakeOpenEmulatorMenuAction
+        {
+            [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+            public static void OnSelect(string exe, string args)
+            {
+                using var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe, args)
+                { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true });
+                p.WaitForExit();
+            }
+        }
+
+        /// <summary>melonDS.toml read while it is written, by our own threads (the lock: never a failed
+        /// read), and while another process holds it (tried again for a moment; beyond that, a read that
+        /// SAYS it could not read rather than answering empty).</summary>
+        private static bool TomlUnderContention(string root)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- melonDS.toml read while it is written");
+            bool ok = true;
+            var toml = TypeIn("MelonDsToml");
+            var tryRead = toml.GetMethod("TryRead", BindingFlags.Public | BindingFlags.Static);
+            var write = toml.GetMethod("Write", BindingFlags.Public | BindingFlags.Static);
+            var path = Path.Combine(root, "contention.toml");
+            File.WriteAllText(path, "[3D]\r\nRenderer = 0\r\n");
+            (bool ok, string value) Read()
+            {
+                var args = new object[] { path, "3D", null, new[] { "Renderer" } };
+                bool done = (bool)tryRead.Invoke(null, args);
+                var found = (Dictionary<string, string>)args[2];
+                return (done, found != null && found.TryGetValue("Renderer", out var v) ? v : null);
+            }
+
+            // Our own threads: one writing, one reading, as fast as they can.
+            int failed = 0, empty = 0, reads = 0;
+            var writer = new System.Threading.Thread(() =>
+            {
+                for (int i = 0; i < 150; i++)
+                    write.Invoke(null, new object[] { path, "3D", new Dictionary<string, string> { ["Renderer"] = (i % 3).ToString() }, true });
+            });
+            writer.Start();
+            while (writer.IsAlive)
+            {
+                var (done, value) = Read();
+                reads++;
+                if (!done) failed++;
+                else if (value == null) empty++;
+            }
+            writer.Join();
+            Console.WriteLine("    " + reads + " reads during 150 writes: " + failed + " failed, " + empty + " came back empty");
+            ok &= Check("our own reads never fail or come back empty while we write", reads > 0 && failed == 0 && empty == 0);
+
+            // Another process holding the file a moment: read once it lets go.
+            void Hold(int ms)
+            {
+                var ready = new System.Threading.ManualResetEventSlim();
+                new System.Threading.Thread(() =>
+                {
+                    using var f = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+                    ready.Set();
+                    System.Threading.Thread.Sleep(ms);
+                }) { IsBackground = true }.Start();
+                ready.Wait();
+            }
+            Hold(300);
+            var brief = Read();
+            ok &= Check("held 0.3 s by somebody else: read once it lets go", brief.ok && brief.value != null);
+
+            Hold(3000);
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var held = Read();
+            Console.WriteLine("    held 3 s: gave up after " + watch.ElapsedMilliseconds + " ms");
+            ok &= Check("held 3 s: the read SAYS it could not read, in about 1.5 s", !held.ok && watch.ElapsedMilliseconds < 2500);
+            System.Threading.Thread.Sleep(1700);
+            return ok;
         }
 
         // ── the fixture ──────────────────────────────────────────────────────
@@ -2255,6 +2454,73 @@ namespace LbIntegrations.Probe
             return value;
         }
 
+        /// <summary>The DSiWare session on a RAM disk, for real: the image built there, the one on the disk
+        /// removed, melonDS pointed at the drive; the session captured and the drive released with
+        /// NOTHING left behind - no device, no marker; then a --no-ramdisk launch rebuilt on the disk,
+        /// never an old image reused; and back to RAM, the disk image removed again.</summary>
+        private static bool OnRamDisk(object layout, MethodInfo choose, string romPath, string titleId, string bios7,
+                                      string dsi, string work, string state)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- on a RAM disk  [MOUNTS A REAL DRIVE]");
+            bool ok = true;
+            var ram = TypeIn("MelonDsRamDisk");
+            string where = Path.Combine(dsi, "work.where");
+            int devicesBefore = ImDiskDevices();
+            var host = HostFor(layout);
+            var capture = TypeIn("DsiWorkspace").GetMethod("CaptureOnExit", BindingFlags.Public | BindingFlags.Static);
+            var after = ram.GetMethod("AfterCapture", BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic);
+            string RamDir() => (string)ram.GetMethod("RamDir", BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { HostFor(layout) });
+
+            // 1. A launch: on the RAM disk.
+            Call(choose, new object[] { layout, romPath, false });
+            var dir = RamDir();
+            Console.WriteLine("    RAM image : " + (dir ?? "none"));
+            ok &= Check("the session is on a RAM disk", dir != null && File.Exists(where));
+            ok &= Check("its image is there, and melonDS pointed at it",
+                        dir != null && File.Exists(Path.Combine(dir, "work.bin")) && NandPathIn(ConfigPath(Path.Combine(Path.GetDirectoryName(dsi), "melonDS.exe"))) == Path.Combine(dir, "work.bin"));
+            ok &= Check("the image on the disk is gone", !File.Exists(work));
+            ok &= Check("the marker says what it holds", File.Exists(Path.Combine(dsi, "work.title")));
+
+            // 2. The game closes: captured, then the drive released - nothing left behind.
+            var stateBefore = File.Exists(state) ? File.GetLastWriteTimeUtc(state) : DateTime.MinValue;
+            bool captured = (bool)capture.Invoke(null, new object[] { HostFor(layout), titleId, bios7 });
+            after.Invoke(null, new object[] { host });
+            ok &= Check("the session is captured", captured && File.Exists(state));
+            ok &= Check("and the RAM disk released, its marker forgotten",
+                        RamDir() == null && !File.Exists(where) && !File.Exists(Path.Combine(dsi, "work.title")));
+
+            // 3. --no-ramdisk: on the disk, rebuilt - never an old image.
+            Call(choose, new object[] { layout, romPath, true });
+            ok &= Check("--no-ramdisk: the image is built on the disk", File.Exists(work) && !File.Exists(where));
+            ok &= Check("and melonDS pointed at it", NandPathIn(ConfigPath(Path.Combine(Path.GetDirectoryName(dsi), "melonDS.exe"))) == work);
+
+            // 4. Back to RAM: the disk image captured, then removed.
+            Call(choose, new object[] { layout, romPath, false });
+            ok &= Check("back on a RAM disk, the disk image removed again", RamDir() != null && !File.Exists(work));
+            capture.Invoke(null, new object[] { HostFor(layout), titleId, bios7 });
+            after.Invoke(null, new object[] { HostFor(layout) });
+            ok &= Check("released again", RamDir() == null && !File.Exists(where));
+
+            int devicesAfter = ImDiskDevices();
+            Console.WriteLine("    ImDisk devices: " + devicesBefore + " before, " + devicesAfter + " after two sessions");
+            ok &= Check("no device left behind (helper 1.4's clean dismount)", devicesAfter == devicesBefore);
+            return ok;
+        }
+
+        private static int ImDiskDevices()
+        {
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "imdisk.exe"), "-l")
+                { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
+                using var p = System.Diagnostics.Process.Start(psi);
+                var o = p.StandardOutput.ReadToEnd(); p.WaitForExit(10000);
+                return o.Split('\n').Count(l => l.Trim().StartsWith(@"\Device\ImDisk", StringComparison.OrdinalIgnoreCase));
+            }
+            catch { return -1; }
+        }
+
         // ── the same path, against a REAL NAND ───────────────────────────────
 
         /// <summary>The DSiWare launch path run for real: a genuine dump, a genuine DSiWare ROM, and
@@ -2458,6 +2724,19 @@ namespace LbIntegrations.Probe
                     ok &= Check("a file that is not a melonDS save is refused",
                                 !(bool)Call(restore, bad));
                 }
+
+                // ── ON A RAM DISK, with LBIP_PROBE_RAMDISK_ROOT naming a LaunchBox whose helper and task
+                //    can mount one (the forged install has none above it). Everything above ran on the
+                //    disk, as a launch does wherever no RAM disk can be had. ──────────────────────────
+                var ramRoot = Environment.GetEnvironmentVariable("LBIP_PROBE_RAMDISK_ROOT");
+                if (!string.IsNullOrWhiteSpace(ramRoot))
+                {
+                    Environment.SetEnvironmentVariable("LBIP_RAMDISK_ROOT", ramRoot);
+                    try { ok &= OnRamDisk(layout, choose, romPath, titleId, bios7, dsi, work, state); }
+                    finally { Environment.SetEnvironmentVariable("LBIP_RAMDISK_ROOT", null); }
+                }
+                else
+                    Console.WriteLine("\n  the RAM disk path: skipped (set LBIP_PROBE_RAMDISK_ROOT to a LaunchBox root whose helper can mount one)");
 
                 Console.WriteLine();
                 Console.WriteLine("  " + (ok ? "OK - the DSiWare path works on a real NAND" : "NOT OK - see above"));
@@ -2807,6 +3086,10 @@ namespace LbIntegrations.Probe
         private static object Call(MethodInfo method, object[] args)
         {
             var parameters = method.GetParameters();
+            // Parameters added since with a default value are given it, so a call written before them
+            // still reaches the method.
+            if (args.Length < parameters.Length && parameters.Skip(args.Length).All(p => p.HasDefaultValue))
+                args = args.Concat(parameters.Skip(args.Length).Select(p => p.DefaultValue)).ToArray();
             for (int i = 0; i < parameters.Length && i < args.Length; i++)
             {
                 if (args[i] == null) continue;
@@ -2834,6 +3117,13 @@ namespace LbIntegrations.Probe
         private static string Dir(GameSaveBase save)
         {
             try { return Path.GetDirectoryName(save.FileLocation) ?? ""; } catch { return ""; }
+        }
+
+        private static bool Check(string what, bool ok, string detail)
+        {
+            bool r = Check(what, ok);
+            if (!ok && detail != null) Console.WriteLine("          got: " + detail);
+            return r;
         }
 
         private static bool Check(string what, bool ok)
