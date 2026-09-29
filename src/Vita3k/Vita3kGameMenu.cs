@@ -6,9 +6,10 @@
 // to GameMenu below; src\Menus\Menus.cs has the contract. And none may be declared here: LiteBox
 // loads both roots and would show the entry twice.
 //
-// WHOSE GAME IS IT: the game's OWN emulator (IGame.EmulatorId), the one Play uses - not whatever
-// emulator its platform happens to have. Ours when that emulator's executable is Vita3K's, the same
-// test GetApplicableEmulators claims an emulator by.
+// WHOSE GAME IS IT: any game one of our Vita3K can run (Mehdi, 29/09) - its OWN emulator when that is
+// ours, else an emulator of ours whose platforms name the game's (EmulatorFor): "Launch With" can pick
+// it. The Session options live in the game's command line, which is its own emulator's: they are only
+// set for games whose own emulator is ours.
 //
 // A SELECTION THAT MIXES: the entry shows when at least one selected game is ours, and acts on those
 // only - the others are counted, not silently dropped.
@@ -74,19 +75,11 @@ namespace LbIntegrations.Vita3k
             bool ours = false;
             try
             {
-                var id = game?.EmulatorId;
-                if (game == null) why = "no game";
-                else if (string.IsNullOrWhiteSpace(id)) why = "no emulator of its own";
-                else
-                {
-                    var emulator = PluginHelper.DataManager?.GetEmulatorById(id);
-                    if (emulator == null) why = "emulator " + id + " not found" + (PluginHelper.DataManager == null ? " (no data manager)" : "");
-                    else
-                    {
-                        ours = Vita3kPaths.IsVita3kExecutable(emulator.ApplicationPath);
-                        why = "emulator " + emulator.Title + " (" + emulator.ApplicationPath + ")";
-                    }
-                }
+                var emulator = EmulatorFor(game);
+                ours = emulator != null;
+                why = game == null ? "no game"
+                    : emulator == null ? "no emulator of ours runs " + (game.Platform ?? "its platform")
+                    : "emulator " + emulator.Title + " (" + emulator.ApplicationPath + ")" + (IsOwnEmulator(game, emulator) ? "" : ", not its own");
             }
             catch (Exception ex) { why = ex.GetType().Name + ": " + ex.Message; }
 
@@ -98,6 +91,37 @@ namespace LbIntegrations.Vita3k
         }
 
         private static readonly HashSet<string> Said = new HashSet<string>(StringComparer.Ordinal);
+
+        /// <summary>The emulator of ours this game can run on (Mehdi, 29/09): its OWN emulator when that one
+        /// is ours - else any emulator of ours whose platforms name the game's. Null when none: the entry is
+        /// not offered. Asked at every right-click: lookups in memory, nothing read from disk.</summary>
+        internal static IEmulator EmulatorFor(IGame game)
+        {
+            try
+            {
+                var dm = PluginHelper.DataManager;
+                if (dm == null || game == null) return null;
+                var own = string.IsNullOrWhiteSpace(game.EmulatorId) ? null : dm.GetEmulatorById(game.EmulatorId);
+                if (own != null && Vita3kPaths.IsVita3kExecutable(own.ApplicationPath)) return own;
+                var platform = game.Platform ?? "";
+                foreach (var e in dm.GetAllEmulators() ?? new IEmulator[0])
+                {
+                    if (e == null || !Vita3kPaths.IsVita3kExecutable(e.ApplicationPath)) continue;
+                    if ((e.GetAllEmulatorPlatforms() ?? new IEmulatorPlatform[0]).Any(p => string.Equals(p?.Platform, platform, StringComparison.OrdinalIgnoreCase)))
+                        return e;
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        /// <summary>Is <paramref name="emulator"/> the game's OWN emulator - the one its command line is for?</summary>
+        internal static bool IsOwnEmulator(IGame game, IEmulator emulator)
+        {
+            try { return emulator != null && string.Equals(game?.EmulatorId, emulator.Id, StringComparison.OrdinalIgnoreCase); }
+            catch { return false; }
+        }
+
         private static string SafeId(IGame g) { try { return g.Id; } catch { return "?"; } }
         private static string SafeTitle(IGame g) { try { return g.Title; } catch { return "?"; } }
 
@@ -114,11 +138,12 @@ namespace LbIntegrations.Vita3k
                 {
                     var own = Safe(() => g.CommandLine);
                     var rom = Safe(() => g.ApplicationPath);
-                    var inherited = InheritedLine(g);
+                    var emulator = EmulatorFor(g);
+                    var inherited = InheritedLine(g, emulator);
                     Vita3kLayout layout = null;
                     try
                     {
-                        var exe = Vita3kPlugin.ResolveFullPath(PluginHelper.DataManager?.GetEmulatorById(g.EmulatorId)?.ApplicationPath);
+                        var exe = Vita3kPlugin.ResolveFullPath(emulator?.ApplicationPath);
                         layout = string.IsNullOrEmpty(exe) ? null : Vita3kPaths.Resolve(exe);
                     }
                     catch { }
@@ -131,8 +156,10 @@ namespace LbIntegrations.Vita3k
                     {
                         Game = g, Title = Safe(() => g.Title), Rom = rom, Own = own, Inherited = inherited,
                         RomFull = romFull, GameId = Safe(() => g.Id), InstallDir = layout?.InstallDir,
-                        Options = Vita3kOptions.From(string.IsNullOrWhiteSpace(own) ? inherited : own, rom),
+                        // What the game runs with: the options kept for it, else its line's flags.
+                        Options = Vita3kOptions.From(Vita3kSessionStore.Load(layout?.InstallDir, Safe(() => g.Id)) ?? (string.IsNullOrWhiteSpace(own) ? inherited : own), rom),
                         Layout = layout, TitleId = titleId,
+                        LineIsOurs = IsOwnEmulator(g, emulator), EmulatorTitle = Safe(() => PluginHelper.DataManager?.GetEmulatorById(g.EmulatorId)?.Title),
                         System = Vita3kGameConfig.Load(layout, Safe(() => g.Id)),
                         Graphics = Vita3kGameConfig.LoadSection(layout, Safe(() => g.Id), Vita3kGameConfig.GpuSection),
                         GraphicsBase = Vita3kGameConfig.DefaultsOf(layout, titleId, Vita3kGameConfig.GpuSection),
@@ -179,11 +206,10 @@ namespace LbIntegrations.Vita3k
         /// <summary>The line a game runs with when it has none of its own: its emulator's line for the
         /// game's platform, else the emulator's own - LaunchBox's GetEffectiveCommandLine without the
         /// game's part, which is exactly the part the window edits.</summary>
-        internal static string InheritedLine(IGame game)
+        internal static string InheritedLine(IGame game, IEmulator emulator)
         {
             try
             {
-                var emulator = PluginHelper.DataManager?.GetEmulatorById(game?.EmulatorId);
                 if (emulator == null) return "";
                 var platform = Safe(() => game.Platform);
                 var forPlatform = (emulator.GetAllEmulatorPlatforms() ?? new IEmulatorPlatform[0])

@@ -1686,12 +1686,12 @@ namespace LbIntegrations.Probe
                 Check("the window builds on three games in two groups, with a combo box of two", source != null && source.Items.Count == 2);
                 Console.WriteLine("            " + string.Join(" | ", source.Items.Cast<object>()));
                 Check("the first group names its games", source.Items[0].ToString().StartsWith("Game A <and 1 other>"));
-                Check("it starts from the first group: inherited, nothing of ours", !vhdx.Checked && preview.Text.Contains("inherited"));
+                Check("it starts from the first group: nothing of ours", !vhdx.Checked && preview.Text.StartsWith("(none"), preview.Text);
                 source.SelectedIndex = 1;
-                Check("choosing the other group loads its options", vhdx.Checked && preview.Text == "-F --use-vhdx");
+                Check("choosing the other group loads its options - what the launch applies, kept by the plugin", vhdx.Checked && preview.Text == "--use-vhdx", preview.Text);
                 Check("three exclusive choices: VHDX alone is checked", vhdx.Checked && !disk.Checked && !ram.Checked);
                 disk.Checked = true;
-                Check("choosing disk only takes VHDX off the line", !vhdx.Checked && preview.Text == "-F --no-ramdisk");
+                Check("choosing disk only takes VHDX off", !vhdx.Checked && preview.Text == "--no-ramdisk", preview.Text);
                 vhdx.Checked = true;
                 Console.WriteLine("            preview: " + preview.Text);
 
@@ -2046,6 +2046,7 @@ namespace LbIntegrations.Probe
             TheGameGraphics(layout);
             TheGameSetByHand(layout);
             TheCompatList(layout);
+            TheSessionStore(layout);
             StrayFs(layout, root);
             GameClosedLine(layout);
             QuietAndFull(layout);
@@ -2481,6 +2482,31 @@ namespace LbIntegrations.Probe
                 Check("a game not in the list: none", Call("Vita3kCompat", "Lookup", new object[] { layout, "PCSB99999" }) == null);
             }
             finally { try { File.Delete(db); File.Delete(labels); } catch { } }
+        }
+
+        /// <summary>A game's session options kept by the plugin (lbip-session.tsv): a line of flags, "" a choice
+        /// of none - not the same as nothing kept -, forgotten with null; one game's line never another's.</summary>
+        private static void TheSessionStore(object layout)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  a game's session options, kept by the plugin");
+            var install = (string)Field(layout, "InstallDir");
+            var file = Path.Combine(install, "lbip-session.tsv");
+            try
+            {
+                Check("nothing kept: null", Call("Vita3kSessionStore", "Load", new object[] { install, "g-a" }) == null);
+                Call("Vita3kSessionStore", "Save", new object[] { install, "g-a", "--use-vhdx=\"E:\\Vita VHDX\" --ramdisk-margin=512" });
+                Call("Vita3kSessionStore", "Save", new object[] { install, "g-b", "" });
+                Check("kept, read back as a line of flags", (string)Call("Vita3kSessionStore", "Load", new object[] { install, "g-a" }) == "--use-vhdx=\"E:\\Vita VHDX\" --ramdisk-margin=512");
+                Check("\"none of them\" is kept as such - not as nothing kept", (string)Call("Vita3kSessionStore", "Load", new object[] { install, "g-b" }) == "");
+                var o = Call("Vita3kOptions", "From", new object[] { (string)Call("Vita3kSessionStore", "Load", new object[] { install, "g-a" }), "x.zip" });
+                Check("read as the launch reads them: VHDX in that folder, a 512 MB margin",
+                      (bool)Field(o, "UseVhdx") && (string)Field(o, "VhdxDir") == "E:\\Vita VHDX" && (int?)Field(o, "MarginMb") == 512);
+                Call("Vita3kSessionStore", "Save", new object[] { install, "g-a", null });
+                Check("forgotten, and the other game's kept", Call("Vita3kSessionStore", "Load", new object[] { install, "g-a" }) == null
+                      && (string)Call("Vita3kSessionStore", "Load", new object[] { install, "g-b" }) == "");
+            }
+            finally { try { File.Delete(file); } catch { } }
         }
 
         /// <summary>Against the real thing: a COPY of an install's list, and the labels asked of GitHub.

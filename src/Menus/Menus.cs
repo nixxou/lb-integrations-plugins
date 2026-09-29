@@ -22,6 +22,9 @@
 // selection that holds none of its games; which games are its own is for it to say.
 //
 // It never throws into the host: a plugin that fails is left out of the menu, and logged.
+//
+// NOTHING IN BIGBOX (Mehdi, 29/09): these entries open settings windows, for a mouse and a desk -
+// not for a TV and a controller.
 
 using System;
 using System.Collections.Generic;
@@ -40,7 +43,7 @@ namespace LbIntegrations.Menus
         {
             var games = selectedGames ?? new IGame[0];
             var items = new List<IGameMenuItem>();
-            if (games.Length == 0) return items;
+            if (games.Length == 0 || InBigBox) return items;
 
             foreach (var provider in Providers.All())
             {
@@ -51,6 +54,14 @@ namespace LbIntegrations.Menus
                     items.Add(new Item(provider, entry));
             }
             return items;
+        }
+
+        private static readonly bool InBigBox = IsBigBox();
+
+        private static bool IsBigBox()
+        {
+            try { return string.Equals(System.Diagnostics.Process.GetCurrentProcess().ProcessName, "BigBox", StringComparison.OrdinalIgnoreCase); }
+            catch { return false; }
         }
 
         private sealed class Item : IGameMenuItem

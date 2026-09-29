@@ -325,7 +325,11 @@ namespace LbIntegrations.Vita3k
                 try { compat = Vita3kCompat.Lookup(layout, TitleIdOf(romFull)); } catch { }
                 using (var window = Vita3kProgressWindow.Open("Vita3K - " + (string.IsNullOrWhiteSpace(gameTitle) ? "preparing the game" : gameTitle), compat: compat))
                 {
-                    var current = CurrentLine(args);
+                    // The game's session options: kept by this plugin for the game (Vita3kSessionStore) - whichever
+                    // emulator of ours runs it - else the flags of the line.
+                    var kept = Vita3kSessionStore.Load(layout?.InstallDir, Safe(() => args?.GameBeingLaunched?.Id));
+                    if (kept != null) Log.Info("session options kept for this game: " + (kept.Length == 0 ? "none" : kept));
+                    var current = kept ?? CurrentLine(args);
                     bool noRamDisk = Carries(current, NoRamDiskFlag);
                     if (noRamDisk) Log.Info(NoRamDiskFlag + " is on the command line - this session stays on the disk");
                     int? margin = MarginFrom(current, out var marginProblem);

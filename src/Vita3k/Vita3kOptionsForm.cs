@@ -36,6 +36,8 @@ namespace LbIntegrations.Vita3k
             public string RomFull, GameId, InstallDir;   // for the Updates & DLC tab
             public Vita3kOptions Options;
             public Vita3kLayout Layout;          // the game's Vita3K, for the System tab
+            public bool LineIsOurs;              // the game's OWN emulator is this Vita3K: its command line is ours to change
+            public string EmulatorTitle;         // the game's own emulator, to say whose line it is otherwise
             public string TitleId;               // null when the archive could not be read
             public VitaSystemSettings System;    // the game's own here, null for none
             public VitaSystemSettings Base;      // what it runs on without: its custom config, else config.yml
@@ -435,9 +437,19 @@ namespace LbIntegrations.Vita3k
             Hint("empty: this game's last peak + 15%, at least " + Vita3kWorkspace.MinReserveMb + " MB (2048 before any measure)", 280, 380);
             y += 38;
 
-            Add(new Label { Text = "Command line", AutoSize = true, Font = new Font(Font, FontStyle.Bold) }, 8);
+            Add(new Label { Text = "Applied at launch", AutoSize = true, Font = new Font(Font, FontStyle.Bold) }, 8);
             y += 24;
             _preview = (TextBox)Add(new TextBox { ReadOnly = true, Multiline = true, ScrollBars = ScrollBars.Vertical }, 18, 610, 52);
+
+            // KEPT BY THIS PLUGIN, NOT IN THE GAME'S COMMAND LINE (Mehdi, 29/09): that line is the game's default
+            // emulator's - kept here, the choice holds whichever emulator of ours runs it.
+            y += 58;
+            Add(new Label
+            {
+                AutoSize = false, Size = new Size(610, 34), ForeColor = SystemColors.GrayText,
+                Text = "Kept by this plugin for the game and applied at launch - whichever emulator of ours runs it; the game's "
+                     + "command line is not changed (flags of ours left on it are moved here).",
+            }, 8);
 
             EventHandler changed = (_, _) => Refresh_();
             _ramDisk.CheckedChanged += changed;
@@ -520,20 +532,13 @@ namespace LbIntegrations.Vita3k
             var shown = SourceGame();
             if (o == null) { _preview.Text = problem; _preview.ForeColor = Color.Firebrick; return; }
             _preview.ForeColor = SystemColors.WindowText;
-            var own = Vita3kCommandLines.NewOwnLine(shown.Own, shown.Inherited, o, shown.Rom);
-            _preview.Text = own.Length == 0
-                ? "(the emulator's own line, inherited)   " + shown.Inherited
-                : own;
+            _preview.Text = o.None ? "(none - the defaults)" : o.Key;
 
             // WHAT OK WILL DO, said before it is done.
-            int willOwn = _games.Count(g => g.Inherits && Vita3kCommandLines.NewOwnLine(g.Own, g.Inherited, o, g.Rom).Length > 0);
-            int willInherit = _games.Count(g => !g.Inherits && Vita3kCommandLines.NewOwnLine(g.Own, g.Inherited, o, g.Rom).Length == 0);
             var notes = new List<string>();
-            if (willOwn > 0)
-                notes.Add((_games.Count == 1 ? "This game" : willOwn + " game(s)") + " will get a command line of its own, based on the emulator's:"
-                          + " a later change to the emulator's line will no longer reach " + (willOwn == 1 ? "it." : "them."));
-            if (willInherit > 0)
-                notes.Add((_games.Count == 1 ? "This game" : willInherit + " game(s)") + " will go back to the emulator's line.");
+            int moved = _games.Count(g => g.LineIsOurs && !string.IsNullOrWhiteSpace(g.Own) && Vita3kCommandLines.Strip(g.Own, g.Rom) != g.Own);
+            if (moved > 0)
+                notes.Add((_games.Count == 1 ? "This game's" : moved + " game(s)'") + " command line carries options of ours: they move out of it, kept here.");
             int both = _games.Count(g => g.Options.UseVhdx && g.Options.NoRamDisk);
             if (both > 0 && o.UseVhdx)
                 notes.Add((_games.Count == 1 ? "Its" : both + " game(s) have a") + " " + Vita3kPlugin.NoRamDiskFlag + " beside "
@@ -618,13 +623,20 @@ namespace LbIntegrations.Vita3k
             int changed = 0;
             foreach (var g in _games)
             {
-                var line = Vita3kCommandLines.NewOwnLine(g.Own, g.Inherited, o, g.Rom);
-                if (string.Equals(line, g.Own ?? "", StringComparison.Ordinal)) continue;
+                // Kept for the game when it differs from what it runs with now - or when its line still carries them.
+                var ownLine = !string.IsNullOrWhiteSpace(g.Own) ? Vita3kCommandLines.Strip(g.Own, g.Rom) : g.Own;
+                bool carries = g.LineIsOurs && !string.IsNullOrWhiteSpace(g.Own) && ownLine != g.Own;
+                if (g.Options.Key != o.Key || carries || Vita3kSessionStore.Load(g.InstallDir, g.GameId) == null && !o.None)
+                {
+                    Vita3kSessionStore.Save(g.InstallDir, g.GameId, o.Key);
+                    changed++;
+                }
+                // Options of ours still on the game's OWN line move here: taken off the line.
+                if (!carries) continue;
                 try
                 {
-                    g.Game.CommandLine = line;
-                    changed++;
-                    Log.Info("options of " + g.Title + ": \"" + (g.Own ?? "") + "\" -> \"" + line + "\"" + (line.Length == 0 ? " (inherits again)" : ""));
+                    g.Game.CommandLine = ownLine;
+                    Log.Info("options of " + g.Title + ": moved off the line - \"" + g.Own + "\" -> \"" + ownLine + "\"");
                 }
                 catch (Exception ex) { Log.Warn("could not set the command line of " + g.Title, ex); }
             }
