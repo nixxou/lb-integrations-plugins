@@ -7,8 +7,14 @@
 //               no working NAND. With no RAM disk available the RAM choice is greyed, and says why.
 //   "Video"   - the game's OWN video settings, the ones of melonDS's Video settings window, for every DS
 //               game - cartridge or DSiWare - written for its session and taken back after
-//               (MelonDsVideo). NOTHING IS OVERWRITTEN unless its box is ticked: showing the window
-//               changes no game.
+//               (MelonDsGameSettings). NOTHING IS OVERWRITTEN unless its box is ticked: showing the
+//               window changes no game.
+//   "Firmware" - the same for the ones of melonDS's Firmware settings window: name, language,
+//               birthday, colour, message, MAC. A DSiWare title's save keeps the console's own
+//               settings through it - see DsiWorkspace.MarkForced.
+//   "Advanced" - what the two tabs above override, as the TOML fragment written into melonDS.toml for the
+//               session - and, "Edit by hand" ticked, the user's own text instead: any table, any key
+//               (MelonDsGameSettings, "set by hand"). Video and Firmware are then greyed.
 //
 // A SELECTION THAT DOES NOT AGREE (Mehdi's rule, as in the Vita3K window): the games are grouped by
 // identical options, a combo box names each group ("Mario Kart DS <and 3 others>") and the one chosen is
@@ -34,13 +40,15 @@ namespace LbIntegrations.MelonDs
             public string Title, Own, Inherited, Exe, InstallDir, GameId;
             public bool IsDSiWare;
             public MelonDsOptions Options;
-            public Dictionary<string, string> Video;   // the game's own video settings, null for melonDS's
+            public Dictionary<string, string> Settings;   // the game's own settings, null for melonDS's
+            public string Advanced;                        // the text set by hand, null for none
+            public bool AdvancedOn;                        // and whether it is the one in use
 
-            public string Key => (IsDSiWare ? (Options.NoRamDisk ? "disk" : "ram") : "-") + "|" + VideoKey(Video);
+            public string Key => (IsDSiWare ? (Options.NoRamDisk ? "disk" : "ram") : "-") + "|" + SettingsKey(Settings)
+                                 + "|" + (AdvancedOn ? "hand:" : "") + (Advanced ?? "");
         }
 
-        internal static string VideoKey(Dictionary<string, string> video)
-            => video == null ? "" : string.Join(";", MelonDsVideo.Settings.Where(s => video.ContainsKey(s.Id)).Select(s => s.Id + "=" + video[s.Id]));
+        internal static string SettingsKey(Dictionary<string, string> settings) => MelonDsGameSettings.Format(settings);
 
         private readonly List<Entry> _games;
         private readonly List<Entry> _ware;
@@ -50,6 +58,13 @@ namespace LbIntegrations.MelonDs
 
         private RadioButton _ram, _disk;
         private CheckBox _overwrite, _threaded, _useGl, _vsync, _better, _hires;
+        private CheckBox _fwOverwrite;
+        private MelonDsFirmwareFields _firmware;
+        private CheckBox _handOn;
+        private TextBox _handText;
+        private Label _handStatus, _videoHandNote, _fwHandNote;
+        private string _keptHand;
+        private bool _handLoading;
         private RadioButton _soft, _glClassic, _glCompute;
         private ComboBox _scale;
         private NumericUpDown _interval;
@@ -61,7 +76,7 @@ namespace LbIntegrations.MelonDs
             _ware = games.Where(g => g.IsDSiWare).ToList();
             _groups = games.GroupBy(g => g.Key).Select(g => g.ToList()).ToList();
             var exe = games.Select(g => g.Exe).FirstOrDefault(e => !string.IsNullOrEmpty(e));
-            _global = MelonDsVideo.Current(exe == null ? null : MelonDsPaths.Resolve(exe)?.ConfigFile);
+            _global = MelonDsGameSettings.Current(exe == null ? null : MelonDsPaths.Resolve(exe)?.ConfigFile);
 
             Text = "Nixx-melonDS - Options" + (games.Count > 1 ? " (" + games.Count + " games)" : " - " + games[0].Title);
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -69,7 +84,7 @@ namespace LbIntegrations.MelonDs
             StartPosition = FormStartPosition.CenterParent;
             ShowInTaskbar = false;
             Font = new Font("Segoe UI", 9f);
-            ClientSize = new Size(560, 440);
+            ClientSize = new Size(560, 560);
 
             // ── the top: which games, and where to start from
             var top = new Panel { Dock = DockStyle.Top, Height = _groups.Count > 1 ? 58 : 32, Padding = new Padding(12, 10, 12, 0) };
@@ -93,6 +108,11 @@ namespace LbIntegrations.MelonDs
             var tabs = new TabControl { Dock = DockStyle.Fill };
             if (_ware.Count > 0) tabs.TabPages.Add(SessionTab());
             tabs.TabPages.Add(VideoTab());
+            tabs.TabPages.Add(FirmwareTab());
+            var advanced = AdvancedTab();
+            tabs.TabPages.Add(advanced);
+            // What the two tabs above override, shown as it is when the tab is looked at.
+            tabs.SelectedIndexChanged += (_, _) => { if (tabs.SelectedTab == advanced && !_handOn.Checked) ShowGenerated(); };
 
             var bottom = new Panel { Dock = DockStyle.Bottom, Height = 46 };
             var ok = new Button { Text = "OK", Width = 90 };
@@ -118,7 +138,8 @@ namespace LbIntegrations.MelonDs
 
         private static string Describe(Entry e)
             => (e.IsDSiWare ? (e.Options.NoRamDisk ? "disk" : "RAM disk") + ", " : "")
-               + (e.Video == null ? "melonDS's video settings" : "its own video settings");
+               + (MelonDsGameSettings.Has(e.Settings, MelonDsGameSettings.Video) ? "its own video" : "melonDS's video")
+               + (MelonDsGameSettings.Has(e.Settings, MelonDsGameSettings.Firmware) ? ", its own firmware" : ", melonDS's firmware");
 
         // ── Session ──────────────────────────────────────────────────────────
 
@@ -201,6 +222,9 @@ namespace LbIntegrations.MelonDs
             glBox.Controls.AddRange(new Control[] { _scale, _better, _hires });
 
             page.Controls.AddRange(new Control[] { display, softBox, glBox });
+            _videoHandNote = new Label { AutoSize = false, Location = new Point(12, 300), Size = new Size(520, 34), ForeColor = Color.Firebrick, Visible = false,
+                                         Text = "Set by hand in the Advanced tab - untick \"Edit by hand\" there to use this tab again." };
+            page.Controls.Add(_videoHandNote);
 
             EventHandler refresh = (_, _) => { if (!_loading) RefreshEnabled(); };
             foreach (var cb in new[] { _overwrite, _useGl, _vsync }) cb.CheckedChanged += refresh;
@@ -210,12 +234,44 @@ namespace LbIntegrations.MelonDs
             return page;
         }
 
+        // ── Firmware ─────────────────────────────────────────────────────────
+
+        private TabPage FirmwareTab()
+        {
+            var page = new TabPage("Firmware") { UseVisualStyleBackColor = true };
+            _fwOverwrite = new CheckBox
+            {
+                AutoSize = true, Location = new Point(12, 12),
+                Text = "Overwrite melonDS's firmware settings for " + (_games.Count == 1 ? "this game" : "these games"),
+            };
+            page.Controls.Add(_fwOverwrite);
+            page.Controls.Add(new Label
+            {
+                AutoSize = false, Location = new Point(30, 34), Size = new Size(500, 46), ForeColor = SystemColors.GrayText,
+                Text = "melonDS then overrides the console's own settings with these, for the game's session only. "
+                       + (_ware.Count > 0 ? "A DSiWare title's save keeps the console's own: the game sees these only while this is ticked. " : "")
+                       + "Unticked, the game runs on melonDS's settings, shown below.",
+            });
+            _firmware = new MelonDsFirmwareFields { Location = new Point(12, 84) };
+            page.Controls.Add(_firmware);
+            _fwHandNote = new Label { AutoSize = false, Location = new Point(12, 354), Size = new Size(520, 34), ForeColor = Color.Firebrick, Visible = false,
+                                      Text = "Set by hand in the Advanced tab - untick \"Edit by hand\" there to use this tab again." };
+            page.Controls.Add(_fwHandNote);
+            _fwOverwrite.CheckedChanged += (_, _) =>
+            {
+                if (_loading) return;
+                if (!_fwOverwrite.Checked) _firmware.ShowValues(_global);
+                _firmware.SetEditable(_fwOverwrite.Checked);
+            };
+            return page;
+        }
+
         /// <summary>What melonDS's own window does: the GL options only for a GL renderer, the thread only
         /// for the software one, a GL renderer always on a GL display, VSync only on a GL display - and
         /// nothing at all while the box is unticked.</summary>
         private void RefreshEnabled()
         {
-            bool on = _overwrite.Checked;
+            bool on = _overwrite.Checked && !(_handOn?.Checked ?? false);
             bool gl = !_soft.Checked;
             foreach (var c in new Control[] { _soft, _glClassic, _glCompute }) c.Enabled = on;
             if (gl && !_useGl.Checked) { _loading = true; _useGl.Checked = true; _loading = false; }
@@ -269,22 +325,163 @@ namespace LbIntegrations.MelonDs
                 bool wantDisk = e.IsDSiWare ? e.Options.NoRamDisk : _ware[0].Options.NoRamDisk;
                 if (!_ram.Enabled || wantDisk) _disk.Checked = true; else _ram.Checked = true;
             }
-            _overwrite.Checked = e.Video != null;
+            bool video = MelonDsGameSettings.Has(e.Settings, MelonDsGameSettings.Video);
+            bool firmware = MelonDsGameSettings.Has(e.Settings, MelonDsGameSettings.Firmware);
+            _overwrite.Checked = video;
+            _fwOverwrite.Checked = firmware;
             _loading = false;
-            ShowVideo(e.Video ?? _global);
+            ShowVideo(video ? e.Settings : _global);
+            _firmware.ShowValues(firmware ? e.Settings : _global);
+            _firmware.SetEditable(firmware);
+            _handLoading = true;
+            _keptHand = e.Advanced;
+            _handOn.Checked = e.AdvancedOn && e.Advanced != null;
+            _handText.Text = Lines(_handOn.Checked ? e.Advanced : Generated());
+            _handLoading = false;
+            HandChanged();
+        }
+
+        // ── Advanced ─────────────────────────────────────────────────────────
+
+        private TabPage AdvancedTab()
+        {
+            var page = new TabPage("Advanced") { UseVisualStyleBackColor = true };
+            page.Controls.Add(new Label
+            {
+                AutoSize = false, Location = new Point(12, 6), Size = new Size(524, 116), ForeColor = SystemColors.GrayText,
+                Text = "Write ONLY the keys you want to change: [table], then key = value - true/false, a number, 'text' or [a, b]. "
+                     + "Any key of melonDS.toml, in any table.\n"
+                     + "- Only these keys are written into melonDS.toml, for this game's sessions; the rest of the file is not touched.\n"
+                     + "- melonDS's own values come back when it quits, and a key that was not there is taken out again.\n"
+                     + "- Left out: the keys this plugin sets for every launch (console, boot, NAND, BIOS, save folders).",
+            });
+            _handOn = new CheckBox { AutoSize = true, Location = new Point(12, 126), Text = "Edit by hand (Video and Firmware are then not used)" };
+            page.Controls.Add(_handOn);
+            var preview = new Button { Text = "Preview result...", AutoSize = true, Location = new Point(418, 122) };
+            preview.Click += (_, _) => PreviewResult();
+            page.Controls.Add(preview);
+            _handText = new TextBox
+            {
+                Location = new Point(12, 152), Size = new Size(524, 196), Multiline = true, ScrollBars = ScrollBars.Both, WordWrap = false,
+                AcceptsReturn = true, AcceptsTab = true, Font = new Font("Consolas", 9f), ReadOnly = true,
+            };
+            page.Controls.Add(_handText);
+            _handStatus = new Label { AutoSize = false, Location = new Point(12, 352), Size = new Size(524, 70) };
+            page.Controls.Add(_handStatus);
+
+            _handOn.CheckedChanged += (_, _) =>
+            {
+                if (_handLoading) return;
+                _handLoading = true;
+                if (_handOn.Checked) _handText.Text = Lines(_keptHand ?? Generated());
+                else { _keptHand = _handText.Text; _handText.Text = Lines(Generated()); }
+                _handLoading = false;
+                HandChanged();
+            };
+            _handText.TextChanged += (_, _) => { if (!_handLoading) HandChanged(); };
+            return page;
+        }
+
+        /// <summary>melonDS.toml as this game's next session will have it - what is shown, set by hand or
+        /// not - in a window; nothing is written.</summary>
+        private void PreviewResult()
+        {
+            List<MelonDsGameSettings.Raw> keys;
+            if (_handOn.Checked)
+            {
+                keys = MelonDsGameSettings.ParseHand(_handText.Text, out var error);
+                if (keys == null) { MessageBox.Show(this, "Not valid: " + error, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+            }
+            else keys = MelonDsGameSettings.ToRaw(TabValues());
+            var result = MelonDsGameSettings.Preview(Layout0(), keys, out var before, out var why);
+            if (result == null) { MessageBox.Show(this, why, Text, MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+            var left = keys.Where(k => MelonDsGameSettings.IsManaged(k.Table, k.Key)).Select(k => "[" + k.Table + "] " + k.Key).ToList();
+            ConfigPreviewWindow.Show(this, "melonDS.toml - for a session of " + (_games.Count == 1 ? _games[0].Title : _games.Count + " games"),
+                "melonDS.toml as melonDS will read it for the session; it comes back as it is now when melonDS quits."
+                + (left.Count > 0 ? " Left out: " + string.Join(", ", left) + "." : ""),
+                before, result);
+        }
+
+        /// <summary>A TextBox shows a line break only as CR LF.</summary>
+        private static string Lines(string text) => (text ?? "").Replace("\r\n", "\n").Replace("\n", "\r\n");
+
+        /// <summary>The fragment of what the Video and Firmware tabs set now.</summary>
+        private string Generated() => MelonDsGameSettings.Fragment(MelonDsGameSettings.ToRaw(TabValues()));
+
+        private void ShowGenerated()
+        {
+            _handLoading = true;
+            _handText.Text = Lines(Generated());
+            _handLoading = false;
+            HandChanged();
+        }
+
+        private MelonDsLayout Layout0()
+        {
+            var exe = _games.Select(g => g.Exe).FirstOrDefault(x => !string.IsNullOrEmpty(x));
+            return exe == null ? null : MelonDsPaths.Resolve(exe);
+        }
+
+        /// <summary>The text's state said under it, and the two tabs greyed while it is the one in use.</summary>
+        private void HandChanged()
+        {
+            bool on = _handOn.Checked;
+            _handText.ReadOnly = !on;
+            _handText.BackColor = on ? SystemColors.Window : SystemColors.Control;
+            _overwrite.Enabled = !on;
+            RefreshEnabled();
+            _fwOverwrite.Enabled = !on;
+            _firmware.SetEditable(!on && _fwOverwrite.Checked);
+            _videoHandNote.Visible = _fwHandNote.Visible = on;
+
+            if (!on) { _handStatus.ForeColor = SystemColors.GrayText; _handStatus.Text = "Generated from the Video and Firmware tabs."; return; }
+            var warnings = MelonDsGameSettings.CheckHand(Layout0(), _handText.Text, out var error);
+            _handStatus.ForeColor = error != null ? Color.Firebrick : warnings.Count > 0 ? Color.DarkGoldenrod : Color.DarkGreen;
+            _handStatus.Text = error != null ? "Not valid: " + error
+                             : warnings.Count > 0 ? string.Join("\n", warnings.Take(3)) + (warnings.Count > 3 ? "\n(and " + (warnings.Count - 3) + " more)" : "")
+                             : "Valid.";
+        }
+
+        /// <summary>The game's own set from the tabs: the families whose box is ticked, nothing of the others.</summary>
+        private Dictionary<string, string> TabValues()
+        {
+            var own = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (_overwrite.Checked) foreach (var kv in ReadVideo()) own[kv.Key] = kv.Value;
+            if (_fwOverwrite.Checked)
+            {
+                foreach (var kv in _firmware.Read())
+                {
+                    var s = MelonDsGameSettings.Settings.First(x => x.Id == kv.Key);
+                    own[kv.Key] = MelonDsGameSettings.Normal(s, kv.Value) ?? s.Default;
+                }
+                own[MelonDsGameSettings.OverrideId] = "true";
+            }
+            return own;
         }
 
         // ── OK ───────────────────────────────────────────────────────────────
 
         private void Apply()
         {
+            var problem = _fwOverwrite.Checked && !_handOn.Checked ? _firmware.Problem() : null;
+            if (problem != null) { MessageBox.Show(this, problem, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+            // The Advanced tab: a text in use must be usable; what it will not do is said, and asked.
+            if (_handOn.Checked)
+            {
+                var warnings = MelonDsGameSettings.CheckHand(Layout0(), _handText.Text, out var handError);
+                if (handError != null) { MessageBox.Show(this, "The settings set by hand are not valid: " + handError, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+                if (warnings.Count > 0
+                    && MessageBox.Show(this, "The settings set by hand:\n\n- " + string.Join("\n- ", warnings) + "\n\nUse them anyway?",
+                                       Text, MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) != DialogResult.OK)
+                    return;
+            }
             if (_games.Count > 1
                 && MessageBox.Show(this, "These options will be applied to all " + _games.Count + " selected games"
                                          + (_ware.Count > 0 && _ware.Count < _games.Count ? " (the session option to the " + _ware.Count + " DSiWare ones)" : "") + ".",
                                    Text, MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) != DialogResult.OK)
                 return;
 
-            int lines = 0, videos = 0;
+            int lines = 0, settings = 0;
             if (_ram != null)
             {
                 var options = new MelonDsOptions { NoRamDisk = _disk.Checked };
@@ -297,20 +494,31 @@ namespace LbIntegrations.MelonDs
                 }
             }
 
-            var video = _overwrite.Checked ? ReadVideo() : null;
+            var own = TabValues();
+            var chosen = own.Count > 0 ? own : null;
             foreach (var g in _games)
             {
-                if (VideoKey(g.Video) == VideoKey(video)) continue;
-                MelonDsVideo.Save(g.InstallDir, g.GameId, video);
-                videos++;
-                Log.Info("options of " + g.Title + ": " + (video == null ? "melonDS's video settings" : "its own video settings - " + VideoKey(video)));
+                if (SettingsKey(g.Settings) == SettingsKey(chosen)) continue;
+                MelonDsGameSettings.Save(g.InstallDir, g.GameId, chosen);
+                settings++;
+                Log.Info("options of " + g.Title + ": " + (chosen == null ? "melonDS's settings" : "its own settings - " + SettingsKey(chosen)));
+            }
+
+            // The text set by hand: kept even when not in use, so ticking the box again finds it.
+            var handText = _handOn.Checked ? _handText.Text.Trim() : _keptHand?.Trim();
+            foreach (var g in _games)
+            {
+                if (g.AdvancedOn == (_handOn.Checked && !string.IsNullOrEmpty(handText))
+                    && string.Equals((g.Advanced ?? "").Trim(), handText ?? "", StringComparison.Ordinal)) continue;
+                MelonDsGameSettings.SaveAdvanced(g.InstallDir, g.GameId, handText, _handOn.Checked);
+                settings++;
             }
 
             if (lines > 0)
             {
                 try { PluginHelper.DataManager?.Save(true); } catch (Exception ex) { Log.Warn("options: could not save the games", ex); }
             }
-            Log.Info("options window: " + lines + " command line(s), " + videos + " video setting(s) changed, of " + _games.Count + " game(s)");
+            Log.Info("options window: " + lines + " command line(s), " + settings + " game setting(s) changed, of " + _games.Count + " game(s)");
             DialogResult = DialogResult.OK;
             Close();
         }

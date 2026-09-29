@@ -129,7 +129,7 @@ namespace LbIntegrations.MelonDs
                             if (string.IsNullOrEmpty(exe) || !MelonDsPaths.IsMelonDsExecutable(exe) || !seen.Add(exe)) continue;
                             var layout = MelonDsPaths.Resolve(exe);
                             MelonDsRamDisk.StartUp(layout, Bios7Of(layout));
-                            MelonDsVideo.Restore(layout, "left behind by a session that did not end");
+                            MelonDsGameSettings.Restore(layout, "left behind by a session that did not end");
                         }
                     }
                     catch (Exception ex) { Log.Warn("start-up check", ex); }
@@ -794,12 +794,16 @@ namespace LbIntegrations.MelonDs
                 if (!string.IsNullOrWhiteSpace(exe))
                 {
                     var layout = MelonDsPaths.Resolve(ResolveFullPath(exe));
-                    // A session that never ended properly left the game's video settings in melonDS: back first.
-                    MelonDsVideo.Restore(layout, "left behind by a session that did not end");
-                    go = ChooseConsoleMode(layout, ResolveFullPath(rom), noRamDisk);
+                    // A session that never ended properly left a game's settings in melonDS: back first.
+                    MelonDsGameSettings.Restore(layout, "left behind by a session that did not end");
+                    var gameId = Safe(() => args?.GameBeingLaunched?.Id);
+                    // Known before the session is prepared: a DSiWare image started with the console's
+                    // settings forced holds them - see DsiWorkspace.MarkForced.
+                    bool forced = MelonDsGameSettings.ForcesFirmware(layout, gameId);
+                    go = ChooseConsoleMode(layout, ResolveFullPath(rom), noRamDisk, forced);
                     // Then this game's own, for its session, taken back once melonDS has quit.
-                    if (go && MelonDsVideo.Apply(layout, Safe(() => args?.GameBeingLaunched?.Id)))
-                        MelonDsVideo.RestoreWhenDone(layout);
+                    if (go && MelonDsGameSettings.Apply(layout, gameId))
+                        MelonDsGameSettings.RestoreWhenDone(layout);
                 }
             }
             catch (Exception ex) { Log.Warn("PrepareEmulatorForLaunch", ex); }
@@ -815,7 +819,7 @@ namespace LbIntegrations.MelonDs
         /// dump being set up for the first time, which opens melonDS itself and must not be raced by
         /// the game. Every other outcome, including every failure, answers true: not being able to
         /// prepare something is not a reason to refuse somebody their game.</summary>
-        internal static bool ChooseConsoleMode(MelonDsLayout layout, string romPath, bool noRamDisk = false)
+        internal static bool ChooseConsoleMode(MelonDsLayout layout, string romPath, bool noRamDisk = false, bool forced = false)
         {
             if (layout?.ConfigFile == null) return true;
 
@@ -832,7 +836,7 @@ namespace LbIntegrations.MelonDs
             // launch to write down something already on disk.
             if (rom.IsDSiWare)
             {
-                if (!PrepareDsiWare(layout, rom, romPath, noRamDisk)) { NotPlaying(); return false; }
+                if (!PrepareDsiWare(layout, rom, romPath, noRamDisk, forced)) { NotPlaying(); return false; }
                 // Arms the watcher, and remembers what ran for a host that bothers to say
                 // the game has ended. LaunchBox does not - measured.
                 Playing(MelonDsHost.For(layout), rom.TitleId, Bios7Of(layout));
@@ -894,7 +898,7 @@ namespace LbIntegrations.MelonDs
         /// captured - and a scratch image rebuilt every launch would then be worse than useless,
         /// because it would wipe the manual import that is the only thing left to do. So that case
         /// keeps a NAND of its own per title, which is where a manual import survives.</summary>
-        private static bool PrepareDsiWare(MelonDsLayout layout, NdsRom rom, string romPath, bool noRamDisk = false)
+        private static bool PrepareDsiWare(MelonDsLayout layout, NdsRom rom, string romPath, bool noRamDisk = false, bool forced = false)
         {
             // WHICH CONSOLE CAN RUN IT. A DSi NAND is region locked, so this decides which dump
             // the image is built on - see DsiRegions for the three sources and their order.
@@ -1023,7 +1027,10 @@ namespace LbIntegrations.MelonDs
             // NOT WHEN THE SESSION IS TO BE ON A RAM DISK: the image there is always built fresh, and the
             // one on the disk is never reused once a RAM session exists - see MelonDsRamDisk.
             bool toRam = automatic && MelonDsRamDisk.WillTry(layout, noRamDisk);
-            bool reused = automatic && !toRam && DsiWorkspace.CanReuseWork(layout, rom, romPath, source);
+            // Nor when the console's settings are forced this time and were not last time, or the other
+            // way round: the image holds the last session's settings files - see DsiWorkspace.MarkForced.
+            bool reused = automatic && !toRam && DsiWorkspace.WasForced(layout) == forced
+                          && DsiWorkspace.CanReuseWork(layout, rom, romPath, source);
 
             // Now that the answer is known: a rebuild is about to overwrite whatever the image
             // holds, so whoever ran last has to be written down first.
@@ -1105,6 +1112,7 @@ namespace LbIntegrations.MelonDs
 
             // Last, once everything above has worked: a marker naming a title whose state never went
             // back in would make the next capture overwrite a good state with a blank one.
+            DsiWorkspace.MarkForced(layout, forced);
             DsiWorkspace.RememberWork(layout, rom.TitleId, romPath, source);
             return true;
         }
@@ -1708,6 +1716,30 @@ namespace LbIntegrations.MelonDs
         }
 
         // ── paths ────────────────────────────────────────────────────────────
+
+        /// <summary>The melonDS this pack installed - Emulators\Nixx-melonDS, else an emulator entry
+        /// carrying our name (an install moved elsewhere). Null when there is none. The one the pack's
+        /// configuration window speaks of (Mehdi, 29/09: only ours, never a melonDS of the user's own).</summary>
+        internal static string OurExecutable()
+        {
+            try
+            {
+                var exe = MelonDsPaths.FindExecutable(Path.Combine(LaunchBoxRoot(), "Emulators", PackName));
+                if (exe != null) return Path.GetFullPath(exe);
+            }
+            catch { }
+            try
+            {
+                foreach (var emu in PluginHelper.DataManager?.GetAllEmulators() ?? new IEmulator[0])
+                {
+                    if (!string.Equals(Safe(() => emu?.Title), PackName, StringComparison.OrdinalIgnoreCase)) continue;
+                    var exe = ResolveFullPath(Safe(() => emu.ApplicationPath));
+                    if (!string.IsNullOrEmpty(exe) && File.Exists(exe) && MelonDsPaths.IsMelonDsExecutable(exe)) return exe;
+                }
+            }
+            catch { }
+            return null;
+        }
 
         private static string LaunchBoxRoot()
         {

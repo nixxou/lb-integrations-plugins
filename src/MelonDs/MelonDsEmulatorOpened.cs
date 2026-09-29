@@ -2,7 +2,7 @@
 // see LbEmulatorOpened in src\Catalog\LbCatalog.cs.
 //
 // BEFORE IT STARTS, what a session that never ended left behind is put right: a game's own video
-// settings still in melonDS.toml go back to melonDS's own (MelonDsVideo), and a DSiWare session's RAM
+// and firmware settings still in melonDS.toml go back to melonDS's own (MelonDsGameSettings), and a DSiWare session's RAM
 // disk is saved and released (MelonDsRamDisk). Otherwise the user would open melonDS to change its own
 // settings and find, and edit, a game's instead - the case Mehdi pointed out on 29/09.
 
@@ -19,7 +19,7 @@ namespace LbIntegrations.MelonDs
             {
                 if (!MelonDsPaths.IsMelonDsExecutable(exePath)) return;
                 var layout = MelonDsPaths.Resolve(exePath);
-                MelonDsVideo.Restore(layout, "melonDS is opened on its own");
+                MelonDsGameSettings.Restore(layout, "melonDS is opened on its own");
                 MelonDsRamDisk.StartUp(layout, MelonDsPlugin.Bios7Of(layout));
             }
             catch (Exception ex) { Log.Warn("melonDS opened on its own: could not put things right first", ex); }

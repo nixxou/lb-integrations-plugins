@@ -61,6 +61,13 @@ namespace LbIntegrations.MelonDs
         /// comes back as the raw token, which is what the callers that read integers want. FALSE when the
         /// file is there but could not be read: its keys are then UNKNOWN, not absent.</summary>
         public static bool TryRead(string tomlPath, string table, out Dictionary<string, string> found, params string[] keys)
+            => TryReadAny(tomlPath, table, decode: true, out found, keys);
+
+        /// <summary>The same, each value AS WRITTEN - quotes and all - so it can be written back exactly.</summary>
+        public static bool TryReadRaw(string tomlPath, string table, out Dictionary<string, string> found, params string[] keys)
+            => TryReadAny(tomlPath, table, decode: false, out found, keys);
+
+        private static bool TryReadAny(string tomlPath, string table, bool decode, out Dictionary<string, string> found, string[] keys)
         {
             var wanted = new HashSet<string>(keys, StringComparer.Ordinal);
             found = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -85,7 +92,7 @@ namespace LbIntegrations.MelonDs
                     int eq = line.IndexOf('=');
                     if (eq <= 0) continue;
                     var key = line.Substring(0, eq).Trim();
-                    if (wanted.Contains(key)) found[key] = Decode(line.Substring(eq + 1).Trim());
+                    if (wanted.Contains(key)) found[key] = decode ? Decode(line.Substring(eq + 1).Trim()) : line.Substring(eq + 1).Trim();
                 }
                 return true;
             }
@@ -203,6 +210,73 @@ namespace LbIntegrations.MelonDs
                 Log.Warn("writing " + tomlPath, ex);
                 return "Could not write " + tomlPath + ": " + ex.Message;
             }
+        }
+
+        /// <summary>Every table of the file and the keys it holds - "" for the root table. Empty when the file
+        /// is not there or cannot be read.</summary>
+        public static Dictionary<string, HashSet<string>> Keys(string tomlPath)
+        {
+            var all = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+            try
+            {
+                if (!File.Exists(tomlPath)) return all;
+                var lines = ReadLines(tomlPath);
+                if (lines == null) return all;
+                var table = "";
+                all[table] = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var raw in lines)
+                {
+                    var line = raw.Trim();
+                    if (line.Length == 0 || line[0] == '#') continue;
+                    if (line[0] == '[')
+                    {
+                        int close = line.IndexOf(']');
+                        if (close < 0) continue;
+                        table = line.Substring(1, close - 1).Trim();
+                        if (!all.ContainsKey(table)) all[table] = new HashSet<string>(StringComparer.Ordinal);
+                        continue;
+                    }
+                    int eq = line.IndexOf('=');
+                    if (eq > 0) all[table].Add(line.Substring(0, eq).Trim());
+                }
+            }
+            catch (Exception ex) { Log.Warn("reading " + tomlPath, ex); }
+            return all;
+        }
+
+        /// <summary>Take keys out of a table - what a session had added goes when it is over. Null on
+        /// success (nothing to take out included), or why not. Refused while melonDS runs.</summary>
+        public static string Remove(string tomlPath, string table, ICollection<string> keys)
+        {
+            if (keys == null || keys.Count == 0 || !File.Exists(tomlPath)) return null;
+            string running = RunningEmulatorProcess();
+            if (running != null) return "melonDS is running (" + running + ")";
+            lock (FileGate)
+            try
+            {
+                var read = ReadLines(tomlPath);
+                if (read == null) return "melonDS's configuration is held by another process - nothing was taken out";
+                var lines = new List<string>(read);
+                bool inTable = table.Length == 0, changed = false;
+                for (int i = 0; i < lines.Count; i++)
+                {
+                    var t = lines[i].Trim();
+                    if (t.Length > 0 && t[0] == '[')
+                    {
+                        int close = t.IndexOf(']');
+                        if (close > 0) inTable = string.Equals(t.Substring(1, close - 1).Trim(), table, StringComparison.Ordinal);
+                        continue;
+                    }
+                    if (!inTable || t.Length == 0 || t[0] == '#') continue;
+                    int eq = t.IndexOf('=');
+                    if (eq <= 0 || !keys.Contains(t.Substring(0, eq).Trim())) continue;
+                    lines.RemoveAt(i--);
+                    changed = true;
+                }
+                if (changed) WriteAtomic(tomlPath, lines);
+                return null;
+            }
+            catch (Exception ex) { Log.Warn("writing " + tomlPath, ex); return "Could not write " + tomlPath + ": " + ex.Message; }
         }
 
         /// <summary>A string, encoded for TOML. Literal (single-quoted) so a Windows path needs no

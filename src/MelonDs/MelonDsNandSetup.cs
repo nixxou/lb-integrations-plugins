@@ -192,6 +192,14 @@ namespace LbIntegrations.MelonDs
                 }, force: true);
             if (error != null) { Log.Warn("boot mode not set for setup: " + error); return; }
 
+            // NOT WITH THE CONSOLE'S SETTINGS FORCED. melonDS's firmware override writes its values
+            // into the NAND at every boot (EmuInstance.cpp, loadNAND): set up that way, the console
+            // would be the override's, not the user's - and the user's is what every session without
+            // it starts from. Off for this session, put back as it was once melonDS has quit.
+            bool suspended = MelonDsGameSettings.ApplyValues(layout,
+                new Dictionary<string, string>(StringComparer.Ordinal) { [MelonDsGameSettings.OverrideId] = "false" },
+                "no firmware override while the console is set up");
+
             try
             {
                 Log.Info("opening melonDS on the DSi menu to set up " + Path.GetFileName(imagePath));
@@ -212,6 +220,16 @@ namespace LbIntegrations.MelonDs
                 Log.Info("melonDS closed");
             }
             catch (Exception ex) { Log.Warn("could not start melonDS for the setup", ex); }
+            finally
+            {
+                if (suspended)
+                {
+                    // melonDS writes its file as it quits: a moment for that to land.
+                    for (int i = 0; i < 20 && DsiNand.EmulatorRunning(); i++) System.Threading.Thread.Sleep(250);
+                    System.Threading.Thread.Sleep(1000);
+                    MelonDsGameSettings.Restore(layout, "the console is set up");
+                }
+            }
         }
 
         // ── what the windows say ─────────────────────────────────────────────

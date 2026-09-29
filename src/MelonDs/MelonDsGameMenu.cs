@@ -64,7 +64,9 @@ namespace LbIntegrations.MelonDs
                         Game = g, Title = Safe(() => g.Title), Own = own, Inherited = inherited, IsDSiWare = ware, Exe = exe,
                         InstallDir = install, GameId = gameId,
                         Options = MelonDsOptions.From(string.IsNullOrWhiteSpace(own) ? inherited : own),
-                        Video = MelonDsVideo.Load(install, gameId),
+                        Settings = MelonDsGameSettings.Load(install, gameId),
+                        Advanced = MelonDsGameSettings.LoadAdvanced(install, gameId, out var handOn),
+                        AdvancedOn = handOn,
                     };
                 }).ToList();
 

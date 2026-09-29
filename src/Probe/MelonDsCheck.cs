@@ -95,6 +95,9 @@ namespace LbIntegrations.Probe
                 ok &= Slots(plugin);
                 ok &= OurFlagsAndTheMenu();
                 ok &= GameVideo(exe);
+                ok &= GameFirmware(exe);
+                ok &= GameSetByHand(exe);
+                ok &= ForcedSessionKeepsTheConsole(root);
                 ok &= OpenedWithoutAGame();
                 ok &= TomlUnderContention(root);
 
@@ -147,13 +150,13 @@ namespace LbIntegrations.Probe
             Console.WriteLine();
             Console.WriteLine("  -- a game's own video settings");
             bool ok = true;
-            var video = TypeIn("MelonDsVideo");
+            var video = TypeIn("MelonDsGameSettings");
             var layout = Call(TypeIn("MelonDsPaths").GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static), new object[] { exe });
             var install = Path.GetDirectoryName(exe);
             var toml = ConfigPath(exe);
             var before = File.ReadAllText(toml);
             string Val(string table, string key) => TomlValues(toml, table).TryGetValue(key, out var v) ? v : null;
-            var note = Path.Combine(install, "lbip-video.restore");
+            var note = Path.Combine(install, "lbip-settings.restore");
             try
             {
                 File.WriteAllText(toml, "[3D]\r\nRenderer = 0\r\n\r\n[3D.GL]\r\nScaleFactor = 1\r\nBetterPolygons = false\r\n\r\n[Screen]\r\nVSync = false\r\n");
@@ -186,8 +189,253 @@ namespace LbIntegrations.Probe
             finally
             {
                 File.WriteAllText(toml, before);
-                try { File.Delete(note); File.Delete(Path.Combine(install, "lbip-video.tsv")); } catch { }
+                try { File.Delete(note); File.Delete(Path.Combine(install, "lbip-settings.tsv")); } catch { }
             }
+            return ok;
+        }
+
+        /// <summary>A game's own firmware: written with the override on, texts quoted, a message that says
+        /// anything read back as it was; melonDS's own put back; the first version's store picked up; and
+        /// whether a session will force the console's settings.</summary>
+        private static bool GameFirmware(string exe)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- a game's own firmware settings");
+            bool ok = true;
+            var gs = TypeIn("MelonDsGameSettings");
+            var layout = Call(TypeIn("MelonDsPaths").GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static), new object[] { exe });
+            var install = Path.GetDirectoryName(exe);
+            var toml = ConfigPath(exe);
+            var before = File.ReadAllText(toml);
+            string Val(string key) => TomlValues(toml, "Instance0.Firmware").TryGetValue(key, out var v) ? v : null;
+            MethodInfo M(string name) => gs.GetMethod(name, BindingFlags.Public | BindingFlags.Static);
+            var note = Path.Combine(install, "lbip-settings.restore");
+            var store = Path.Combine(install, "lbip-settings.tsv");
+            try
+            {
+                File.WriteAllText(toml, "[Instance0.Firmware]\r\nOverrideSettings = false\r\nUsername = 'Mehdi'\r\nLanguage = 2\r\n");
+                var own = new Dictionary<string, string> { ["FwUsername"] = "Nixx", ["FwLanguage"] = "3", ["FwMessage"] = "a;b=c %20 d" };
+                M("Save").Invoke(null, new object[] { install, "game-fw", own });
+                var loaded = (Dictionary<string, string>)M("Load").Invoke(null, new object[] { install, "game-fw" });
+                ok &= Check("kept with the override on, and a message with ; = and % read back as it was",
+                            loaded != null && loaded["FwOverride"] == "true" && loaded["FwMessage"] == "a;b=c %20 d", loaded == null ? null : string.Join(",", loaded));
+                ok &= Check("the game will force the console's settings", (bool)Call(M("ForcesFirmware"), new object[] { layout, "game-fw" }));
+                ok &= Check("another game will not - melonDS's override is off", !(bool)Call(M("ForcesFirmware"), new object[] { layout, "game-2" }));
+
+                ok &= Check("its session: override on, its name and language, quoted", (bool)Call(M("Apply"), new object[] { layout, "game-fw" })
+                            && Val("OverrideSettings") == "true" && Val("Username") == "Nixx" && Val("Language") == "3"
+                            && File.ReadAllText(toml).Contains("Username = 'Nixx'"), File.ReadAllText(toml));
+                ok &= Check("the message as melonDS reads it", Val("Message") == "a;b=c %20 d", Val("Message"));
+                Call(M("Restore"), new object[] { layout, "the session is over" });
+                ok &= Check("once over, melonDS's own are back", Val("OverrideSettings") == "false" && Val("Username") == "Mehdi" && Val("Language") == "2" && !File.Exists(note),
+                            File.ReadAllText(toml));
+
+                // melonDS's own, changed by the configuration window.
+                var err = (string)Call(M("WriteOwn"), new object[] { layout, new Dictionary<string, string> { ["FwOverride"] = "true", ["FwColour"] = "11" } });
+                ok &= Check("melonDS's own written by the configuration window", err == null && Val("OverrideSettings") == "true" && Val("FavouriteColour") == "11", err);
+                ok &= Check("now every game without its own forces them", (bool)Call(M("ForcesFirmware"), new object[] { layout, "game-2" }));
+
+                // The first version's store, under its old name.
+                File.Delete(store);
+                File.WriteAllText(Path.Combine(install, "lbip-video.tsv"), "game-old\tRenderer=1;ScaleFactor=3\r\n");
+                var old = (Dictionary<string, string>)M("Load").Invoke(null, new object[] { install, "game-old" });
+                ok &= Check("the first version's lbip-video.tsv is picked up, renamed",
+                            old != null && old["ScaleFactor"] == "3" && File.Exists(store) && !File.Exists(Path.Combine(install, "lbip-video.tsv")));
+            }
+            finally
+            {
+                File.WriteAllText(toml, before);
+                try { File.Delete(note); File.Delete(store); File.Delete(Path.Combine(install, "lbip-video.tsv")); } catch { }
+            }
+            return ok;
+        }
+
+        /// <summary>A game's settings set by hand: in use, its keys go in - the tabs' set aside -, any table;
+        /// the keys a launch sets itself left out; once over, every value back AS IT WAS WRITTEN and a key
+        /// the session added taken out; a note of the first form still read. And the checks.</summary>
+        private static bool GameSetByHand(string exe)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- a game's settings set by hand");
+            bool ok = true;
+            var gs = TypeIn("MelonDsGameSettings");
+            MethodInfo M(string name) => gs.GetMethod(name, BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic);
+            var layout = Call(TypeIn("MelonDsPaths").GetMethod("Resolve", BindingFlags.Public | BindingFlags.Static), new object[] { exe });
+            var install = Path.GetDirectoryName(exe);
+            var toml = ConfigPath(exe);
+            var before = File.ReadAllText(toml);
+            var note = Path.Combine(install, "lbip-settings.restore");
+            try
+            {
+                var original = "[3D.GL]\r\nScaleFactor = 1\r\n\r\n[DSi]\r\nNANDPath = 'C:\\nand.bin'\r\n\r\n[Instance0.Firmware]\r\nOverrideSettings = false\r\nUsername = \"Me\"\r\n";
+                File.WriteAllText(toml, original);
+                M("Save").Invoke(null, new object[] { install, "game-t", new Dictionary<string, string> { ["ScaleFactor"] = "2" } });
+                var hand = "# mine\r\n[3D.GL]\r\nScaleFactor = 5\r\n\r\n[Screen]\r\nNewKey = 3\r\n\r\n[DSi]\r\nNANDPath = 'D:\\other.bin'\r\n\r\n"
+                         + "[Instance0.Firmware]\r\nOverrideSettings = true\r\nUsername = 'Nixx'\r\n";
+                M("SaveAdvanced").Invoke(null, new object[] { install, "game-t", hand, true });
+                var args = new object[] { install, "game-t", false };
+                var back = (string)M("LoadAdvanced").Invoke(null, args);
+                ok &= Check("the text kept, and in use", back == hand.Trim() && (bool)args[2]);
+                ok &= Check("it forces the console's settings (its OverrideSettings)", (bool)Call(M("ForcesFirmware"), new object[] { layout, "game-t" }));
+
+                var parsed = M("ParseHand").Invoke(null, new object[] { hand, null });
+                var pv = new object[] { layout, parsed, null, null };
+                var preview = (string)Call(M("Preview"), pv);
+                ok &= Check("the preview writes nothing", File.ReadAllText(toml) == original && !File.Exists(note), (string)pv[3]);
+                ok &= Check("its session applied", (bool)Call(M("Apply"), new object[] { layout, "game-t" }));
+                var text = File.ReadAllText(toml);
+                ok &= Check("the preview is exactly what the launch wrote", preview == text, preview);
+                ok &= Check("the text's, not the tab's: 5", TomlValues(toml, "3D.GL")["ScaleFactor"] == "5", text);
+                ok &= Check("a key of any table: [Screen] NewKey", TomlValues(toml, "Screen").TryGetValue("NewKey", out var nk) && nk == "3", text);
+                ok &= Check("the NAND path a launch sets: left out", text.Contains("NANDPath = 'C:\\nand.bin'") && !text.Contains("other.bin"), text);
+                ok &= Check("the firmware name, and the override", text.Contains("Username = 'Nixx'") && TomlValues(toml, "Instance0.Firmware")["OverrideSettings"] == "true");
+
+                Call(M("Restore"), new object[] { layout, "the session is over" });
+                text = File.ReadAllText(toml);
+                ok &= Check("once over: every value back as it was written, the added key taken out",
+                            text.Contains("Username = \"Me\"") && text.Contains("ScaleFactor = 1") && text.Contains("OverrideSettings = false")
+                            && !text.Contains("NewKey") && !File.Exists(note), text);
+
+                M("SaveAdvanced").Invoke(null, new object[] { install, "game-t", hand, false });
+                Call(M("Apply"), new object[] { layout, "game-t" });
+                ok &= Check("not in use: the tab's values again (2)", TomlValues(toml, "3D.GL")["ScaleFactor"] == "2" && !File.ReadAllText(toml).Contains("NewKey"));
+                Call(M("Restore"), new object[] { layout, "the session is over" });
+
+                // A note of the first form (Id=value;...), left by the previous version.
+                File.WriteAllText(toml, "[3D.GL]\r\nScaleFactor = 7\r\n");
+                File.WriteAllText(note, "ScaleFactor=1");
+                Call(M("Restore"), new object[] { layout, "left behind" });
+                ok &= Check("a note of the first form still read", TomlValues(toml, "3D.GL")["ScaleFactor"] == "1" && !File.Exists(note));
+
+                File.WriteAllText(toml, original);
+                List<string> Warn(string t, out string err)
+                {
+                    var a = new object[] { layout, t, null };
+                    var w = (List<string>)M("CheckHand").Invoke(null, a);
+                    err = (string)a[2];
+                    return w;
+                }
+                Warn("[3D.GL\r\nScaleFactor = 2", out var e1);
+                ok &= Check("a broken header: refused, with its line", e1 != null && e1.StartsWith("line 1"), e1);
+                Warn("[3D.GL]\r\nScaleFactor = two", out var e2);
+                ok &= Check("a value that is not one: refused", e2 != null && e2.StartsWith("line 2"), e2);
+                var w3 = Warn("[3D.GL]\r\nScaleFactor = 3\r\nNotAKey = 1\r\n[DSi]\r\nNANDPath = 'x'\r\n[Instance0.Firmware]\r\nUsername = 'A'", out var e3);
+                Console.WriteLine("            " + string.Join(" | ", w3));
+                ok &= Check("valid, and said: an unknown key, a key the launch sets, firmware without its override",
+                            e3 == null && w3.Any(w => w.Contains("NotAKey")) && w3.Any(w => w.Contains("NANDPath") && w.Contains("left out"))
+                            && w3.Any(w => w.Contains("OverrideSettings")) && !w3.Any(w => w.Contains("ScaleFactor")), string.Join(" | ", w3));
+            }
+            finally
+            {
+                File.WriteAllText(toml, before);
+                try
+                {
+                    File.Delete(note);
+                    File.Delete(Path.Combine(install, "lbip-settings.tsv"));
+                    File.Delete(Path.Combine(install, "lbip-settings-advanced.tsv"));
+                }
+                catch { }
+            }
+            return ok;
+        }
+
+        /// <summary>The options window itself, one picture per tab - fed a fake game, nothing written.</summary>
+        public static bool OptionsShot(Assembly pluginAssembly, string outPath)
+        {
+            _assemblyAnchor = pluginAssembly.GetTypes().First();
+            System.Windows.Forms.Application.EnableVisualStyles();
+            var formType = TypeIn("MelonDsOptionsForm");
+            var entryType = formType.GetNestedType("Entry", BindingFlags.NonPublic | BindingFlags.Public);
+            var entry = Activator.CreateInstance(entryType);
+            void Set(string f, object v) => entryType.GetField(f).SetValue(entry, v);
+            Set("Title", "Mario Kart DS"); Set("Own", ""); Set("Inherited", "-f"); Set("GameId", "probe-game");
+            Set("Exe", Path.Combine(Path.GetTempPath(), "no-melonds", "melonDS.exe"));
+            Set("Options", Activator.CreateInstance(TypeIn("MelonDsOptions")));
+            Set("Settings", new Dictionary<string, string> { ["ScaleFactor"] = "4", ["Renderer"] = "1" });
+            Set("Advanced", "[3D.GL]\nScaleFactor = 4\n\n[Instance0.Audio]\nVolume = 128\n");
+            Set("AdvancedOn", true);
+            var list = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(entryType));
+            list.Add(entry);
+            using var form = (System.Windows.Forms.Form)Activator.CreateInstance(formType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new object[] { list }, null);
+            form.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
+            form.Location = new System.Drawing.Point(-3000, -3000);
+            form.Show();
+            var tabs = form.Controls.OfType<System.Windows.Forms.TabControl>().First();
+            var shots = new List<System.Drawing.Bitmap>();
+            foreach (System.Windows.Forms.TabPage page in tabs.TabPages)
+            {
+                tabs.SelectedTab = page;
+                System.Windows.Forms.Application.DoEvents();
+                var bmp = new System.Drawing.Bitmap(form.Width, form.Height);
+                form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, bmp.Width, bmp.Height));
+                shots.Add(bmp);
+            }
+            form.Close();
+            using var all = new System.Drawing.Bitmap(shots.Count * shots[0].Width, shots[0].Height);
+            using (var g = System.Drawing.Graphics.FromImage(all))
+            {
+                int x = 0;
+                foreach (var s in shots) { g.DrawImage(s, x, 0); x += s.Width; s.Dispose(); }
+            }
+            all.Save(outPath, System.Drawing.Imaging.ImageFormat.Png);
+            Console.WriteLine("  " + outPath);
+            return true;
+        }
+
+        /// <summary>The rule for a session that ran with the console's settings forced (Mehdi, 29/09): the
+        /// settings files the emulator wrote over go back to what the previous save had, the rest of the
+        /// session is kept - and nothing of the kind without the marker.</summary>
+        private static bool ForcedSessionKeepsTheConsole(string root)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- a DSiWare session with the console's settings forced");
+            bool ok = true;
+            var hostType = TypeIn("DsiHost");
+            var ws = TypeIn("DsiWorkspace");
+            var saveFile = TypeIn("DsiSaveFile");
+            var install = Path.Combine(root, "forced-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Path.Combine(install, "dsi"));
+            var host = Activator.CreateInstance(hostType);
+            hostType.GetField("InstallDir").SetValue(host, install);
+            hostType.GetField("HeldWhenForced").SetValue(host, new[] { "0:/shared1/TWLCFG0.dat", "0:/shared1/TWLCFG1.dat" });
+            const string title = "00030004484e4141";
+            var keep = ws.GetMethod("KeepHeldFromPrevious", BindingFlags.NonPublic | BindingFlags.Static);
+            var savePath = (string)ws.GetMethod("SavePathFor", BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { host, title });
+            Directory.CreateDirectory(Path.GetDirectoryName(savePath));
+
+            string Folder(params (string flat, string path, string content)[] files)
+            {
+                var dir = Path.Combine(install, "state-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(dir);
+                foreach (var f in files) File.WriteAllText(Path.Combine(dir, f.flat), f.content);
+                File.WriteAllLines(Path.Combine(dir, "files.txt"), files.Select(f => "F\t" + f.flat + "\t" + f.path));
+                return dir;
+            }
+            string In(string dir, string flat) { var p = Path.Combine(dir, flat); return File.Exists(p) ? File.ReadAllText(p) : null; }
+
+            // The previous save: the console's own TWLCFG0 (the name typed at its setup) and the game's data.
+            var previous = Folder(("0__shared1_TWLCFG0.dat", "0:/shared1/TWLCFG0.dat", "the user's own"),
+                                  ("0__title_private.sav", "0:/title/00030004/484e4141/data/private.sav", "old progress"));
+            var args = new object[] { previous, savePath, null };
+            saveFile.GetMethod("Pack", BindingFlags.Public | BindingFlags.Static).Invoke(null, args);
+            ok &= Check("a previous save to keep them from", File.Exists(savePath), args[2] as string);
+
+            // The session that just ran forced: both TWLCFG written by melonDS, and new progress.
+            var building = Folder(("0__shared1_TWLCFG0.dat", "0:/shared1/TWLCFG0.dat", "the override's"),
+                                  ("0__shared1_TWLCFG1.dat", "0:/shared1/TWLCFG1.dat", "the override's"),
+                                  ("0__title_private.sav", "0:/title/00030004/484e4141/data/private.sav", "new progress"));
+            var unforced = Folder(("0__shared1_TWLCFG0.dat", "0:/shared1/TWLCFG0.dat", "the user's, changed"));
+            keep.Invoke(null, new object[] { host, title, unforced });
+            ok &= Check("without the marker: nothing held back", In(unforced, "0__shared1_TWLCFG0.dat") == "the user's, changed");
+
+            ws.GetMethod("MarkForced", BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { host, true });
+            keep.Invoke(null, new object[] { host, title, building });
+            var index = File.ReadAllText(Path.Combine(building, "files.txt"));
+            ok &= Check("TWLCFG0: the previous save's, not the override's", In(building, "0__shared1_TWLCFG0.dat") == "the user's own", In(building, "0__shared1_TWLCFG0.dat"));
+            ok &= Check("TWLCFG1, which the previous save did not have: out of the save (the fresh install's)",
+                        In(building, "0__shared1_TWLCFG1.dat") == null && !index.Contains("TWLCFG1"), index);
+            ok &= Check("the game's own progress kept from the session", In(building, "0__title_private.sav") == "new progress" && index.Contains("private.sav"));
+            ok &= Check("and the index names each file once", index.Split('\n').Count(l => l.Contains("TWLCFG0")) == 1, index);
             return ok;
         }
 
