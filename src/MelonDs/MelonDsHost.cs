@@ -59,6 +59,10 @@ namespace LbIntegrations.MelonDs
                 // The RAM disk is sized for the image already: no disk rule on top of it.
                 RebuildFreeMargin = ram != null ? 0 : (long?)null,
 
+                // melonDS's firmware override writes the DSi's own settings at every boot
+                // (EmuInstance.cpp, loadNAND): a forced session keeps the save's.
+                HeldWhenForced = new[] { "0:/shared1/TWLCFG0.dat", "0:/shared1/TWLCFG1.dat" },
+
                 DumpFolders = () => MelonDsBios.SearchFolders(layout),
                 EmulatorRunning = DsiNand.EmulatorRunning,
             };

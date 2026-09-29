@@ -305,6 +305,32 @@ namespace LbIntegrations.Dsi
             catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; return false; }
         }
 
+        /// <summary>Take one NAND path out of a state being built - its file and its index line,
+        /// whether that line said F or X. Nothing when the state does not name it.</summary>
+        public static void Drop(string stateDir, string nandPath)
+        {
+            try
+            {
+                var index = Path.Combine(stateDir ?? "", IndexName);
+                if (!File.Exists(index)) return;
+                var lines = new List<string>();
+                bool dropped = false;
+                foreach (var line in File.ReadAllLines(index))
+                {
+                    var parts = line.Split(new[] { '\t' }, 3);
+                    if (parts.Length == 3 && string.Equals(parts[2], nandPath, StringComparison.Ordinal))
+                    {
+                        dropped = true;
+                        if (parts[0] == "F") { try { File.Delete(Path.Combine(stateDir, parts[1])); } catch { } }
+                        continue;
+                    }
+                    lines.Add(line);
+                }
+                if (dropped) File.WriteAllLines(index, lines);
+            }
+            catch (Exception ex) { DsiLog.Verbose("could not take " + nandPath + " out of a state - " + ex.Message); }
+        }
+
         /// <summary>The state file holding one NAND path, or null. Used to hand the host a save it can
         /// list and restore without knowing any of the above.</summary>
         public static string FileFor(string stateDir, string nandPath)

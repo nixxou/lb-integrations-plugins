@@ -35,6 +35,13 @@ namespace LbIntegrations.Dsi
         /// RAM disk, sized for it) says so here: the margin is already in the size.</summary>
         public long? RebuildFreeMargin;
 
+        /// <summary>NAND paths the emulator itself writes over at boot when it is told to FORCE the
+        /// console's settings - melonDS's "Override settings from external firmware" rewrites the DSi's
+        /// own settings files (shared1/TWLCFG0.dat and TWLCFG1.dat) at every start. A session that ran
+        /// forced does not get to put those into the title's save: the save keeps the copy it had
+        /// before (see DsiWorkspace.MarkForced). Null for a host with nothing of the kind.</summary>
+        public string[] HeldWhenForced;
+
         /// <summary>Where the user keeps NAND dumps, best first. Both plugins happen to read the
         /// same folder today - ..\RetroArch\system - which is what lets two emulators share one set
         /// of dumps while each keeps its own consoles.</summary>

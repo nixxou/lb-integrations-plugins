@@ -74,6 +74,11 @@ namespace LbIntegrations.Dsi
         public const string WorkName = "work.bin";
         public const string WorkTitleName = "work.title";
 
+        /// <summary>Beside work.title when the image was last started with the console's settings
+        /// FORCED by the emulator (DsiHost.HeldWhenForced): the settings files in it are then the
+        /// emulator's, not the console's.</summary>
+        public const string WorkForcedName = "work.forced";
+
         /// <summary>Left beside the working image when a session could not be taken out of it in
         /// time. It says which title is still in there and since when, so a save that has not
         /// appeared yet is a stated fact rather than a silence.</summary>
@@ -309,6 +314,80 @@ namespace LbIntegrations.Dsi
             return dir == null ? null : Path.Combine(dir, WorkTitleName);
         }
 
+        private static string ForcedPath(DsiHost layout)
+        {
+            var dir = DsiDir(layout);
+            return dir == null ? null : Path.Combine(dir, WorkForcedName);
+        }
+
+        /// <summary>Was the image last started with the console's settings forced? See WorkForcedName.</summary>
+        public static bool WasForced(DsiHost layout)
+        {
+            try { var p = ForcedPath(layout); return p != null && File.Exists(p); }
+            catch { return false; }
+        }
+
+        /// <summary>Say whether the session about to start forces the console's settings (Mehdi, 29/09).
+        ///
+        /// WHY IT MATTERS TO A SAVE. melonDS, told to override the firmware settings, writes them into
+        /// the DSi's own settings files at every boot - and those files are part of what a session
+        /// changes, so they would land in the title's save. The name typed at the console's first
+        /// start would then be lost to whatever the override said, for good: unticking the override
+        /// later would bring back the override's name, kept in the save, not the user's. So a forced
+        /// session keeps, for those files, what the save held BEFORE it (CaptureWork): the override is
+        /// what the game sees while it is on, and nothing more.
+        ///
+        /// Written or removed at every launch that builds or reuses the image - and an image reused
+        /// the other way round would carry the other session's files, which is why the launch rebuilds
+        /// when this changes.</summary>
+        public static void MarkForced(DsiHost layout, bool forced)
+        {
+            try
+            {
+                var p = ForcedPath(layout);
+                if (p == null) return;
+                if (forced) File.WriteAllText(p, DateTime.UtcNow.ToString("o"));
+                else if (File.Exists(p)) File.Delete(p);
+            }
+            catch (Exception ex) { DsiLog.Verbose("could not write the forced-settings marker - " + ex.Message); }
+        }
+
+        /// <summary>In a state being built from a FORCED session, the host's held paths go back to what
+        /// the previous save of the title had - or to the fresh install's (nothing in the state) when
+        /// it had none. See MarkForced.</summary>
+        private static void KeepHeldFromPrevious(DsiHost layout, string titleId, string building)
+        {
+            var held = layout?.HeldWhenForced;
+            if (held == null || held.Length == 0 || !WasForced(layout)) return;
+            var previous = SavePathFor(layout, titleId);
+            var index = previous != null && File.Exists(previous) ? DsiSaveFile.Bytes(previous, DsiDelta.IndexName) : null;
+            var flatOf = new System.Collections.Generic.Dictionary<string, string>(StringComparer.Ordinal);
+            if (index != null)
+                foreach (var line in System.Text.Encoding.UTF8.GetString(index).Replace("\r\n", "\n").Split('\n'))
+                {
+                    var parts = line.Split(new[] { '\t' }, 3);
+                    if (parts.Length == 3 && parts[0] == "F") flatOf[parts[2]] = parts[1];
+                }
+            int carried = 0;
+            foreach (var path in held)
+            {
+                DsiDelta.Drop(building, path);
+                if (!flatOf.TryGetValue(path, out var flat)) continue;
+                var bytes = DsiSaveFile.Bytes(previous, flat);
+                if (bytes == null) continue;
+                var tmp = Path.Combine(building, "." + Guid.NewGuid().ToString("N") + ".held");
+                try
+                {
+                    File.WriteAllBytes(tmp, bytes);
+                    if (DsiDelta.Put(building, path, tmp, out _)) carried++;
+                }
+                finally { try { File.Delete(tmp); } catch { } }
+            }
+            DsiLog.Info("the session of " + titleId + " ran with the console's settings forced: "
+                     + string.Join(", ", held) + " kept from the previous save (" + carried + " carried"
+                     + (carried < held.Length ? ", the rest from the fresh install" : "") + ")");
+        }
+
         /// <summary>Take whatever work.bin is holding and write it down as that title's state. Safe
         /// to call at any time and on every launch: with no marker it does nothing.
         ///
@@ -367,6 +446,9 @@ namespace LbIntegrations.Dsi
                     int kept = DsiDelta.Capture(session, reference, building,
                                                     TitleDir(layout, titleId), out var why);
                     if (kept < 0) { DsiLog.Verbose("could not capture " + titleId + " - " + why); return; }
+
+                    // A session that ran with the console's settings forced keeps the save's own.
+                    KeepHeldFromPrevious(layout, titleId, building);
 
                     // The save takes a copy of the recipe for the base it was made on, so it can
                     // rebuild that base later from the user's pristine dump. Two small files; the
@@ -665,6 +747,7 @@ namespace LbIntegrations.Dsi
         private static void Forget(DsiHost layout)
         {
             try { var m = MarkerPath(layout); if (m != null && File.Exists(m)) File.Delete(m); } catch { }
+            try { var f = ForcedPath(layout); if (f != null && File.Exists(f)) File.Delete(f); } catch { }
             DsiWorkSum.Forget(layout);
         }
 
