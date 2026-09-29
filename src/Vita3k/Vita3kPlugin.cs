@@ -70,10 +70,25 @@ namespace LbIntegrations.Vita3k
 
             StartUpCheck();
 
+            // Vita3K opened without a game: told, so a session left behind is put right first. One
+            // Process.Start patch for the whole pack - see LbipEmulatorOpened.
+            try { ListenForOpening(); }
+            catch (Exception ex) { Log.Info("an emulator opened without a game is not seen here (" + ex.GetType().Name + ": " + ex.Message + ")"); }
+
             // LaunchBox's Import ROM Files wizard, made to import Vita games as ROM files - see Vita3kLbImport.
             // It does nothing at all outside LaunchBox.exe. LiteBox's own import, when it comes, will call
             // this plugin rather than be watched by it - see the note at the end of src\Catalog\LbCatalog.cs.
             Vita3kLbImport.Install();
+        }
+
+        /// <summary>In a method of its own, NOT INLINED, and called under a try: LbEmulatorOpened is newer
+        /// than the LbIntegrations.Catalog a host may already have loaded (LiteBox carries its own copy in
+        /// Core) - named in the constructor, a type that copy lacks would fail the constructor itself.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static void ListenForOpening()
+        {
+            LbIntegrations.Catalog.LbEmulatorOpened.Register(new Vita3kEmulatorOpened());
+            if (!LbIntegrations.Catalog.LbCatalog.HostWillAsk) LbipEmulatorOpened.Install("com.nixxou.lbip.vita3k");
         }
 
         /// <summary>Look at every console this host knows, a few seconds after start: a session that
@@ -97,7 +112,11 @@ namespace LbIntegrations.Vita3k
                         // Let the host finish starting: the data manager is not there at construction.
                         System.Threading.Thread.Sleep(3000);
                         foreach (var exe in KnownExecutables())
+                        {
                             Vita3kWorkspace.CleanUpAtStart(Vita3kPaths.Resolve(exe));
+                            // The compatibility list's labels, asked of GitHub when Vita3K's list is newer.
+                            Vita3kCompat.RefreshIfStale(Vita3kPaths.Resolve(exe));
+                        }
                     }
                     catch (Exception ex) { Log.Warn("start-up check", ex); }
                 })

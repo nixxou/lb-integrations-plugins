@@ -1714,6 +1714,7 @@ namespace LbIntegrations.Vita3k
 
                     SweepLeftovers(layout);
                     Vita3kSettingsSession.Sweep(layout);
+                    Vita3kGameConfig.Restore(layout, null, "left behind by a session that did not end");
                 }
                 finally { Monitor.Exit(SessionGate); }
             }

@@ -542,6 +542,17 @@ namespace LbIntegrations.Probe
                 if (!Vita3kCheck.Prepare(asm, emuPath, Arg(args, "--rom"))) return 1;
             }
 
+            // The Graphics fields, drawn into a picture: --vita3k-graphics-shot <out.png>. Nothing on screen.
+            if (Has(args, "--vita3k-graphics-shot")) return Vita3kCheck.GraphicsShot(asm, Arg(args, "--vita3k-graphics-shot")) ? 0 : 1;
+            // The options window, a fake game, one picture per tab: --vita3k-options-shot <out.png>. Nothing on screen.
+            // melonDS's options window, a fake game, one picture per tab: --melonds-options-shot <out.png>.
+            if (Has(args, "--melonds-options-shot")) return MelonDsCheck.OptionsShot(asm, Arg(args, "--melonds-options-shot")) ? 0 : 1;
+            // Vita3K's compatibility list against a copy of a real one, labels asked of GitHub:
+            // --vita3k-compat-real --emu <Vita3K.exe> [--title ID,ID]
+            if (Has(args, "--vita3k-compat-shot")) return Vita3kCheck.CompatShot(asm, Arg(args, "--vita3k-compat-shot"), Arg(args, "--emu"), Arg(args, "--title")) ? 0 : 1;
+            if (Has(args, "--vita3k-compat-real")) return Vita3kCheck.CompatReal(asm, Arg(args, "--emu"), Arg(args, "--title")) ? 0 : 1;
+            if (Has(args, "--vita3k-options-shot")) return Vita3kCheck.OptionsShot(asm, Arg(args, "--vita3k-options-shot")) ? 0 : 1;
+
             // The launch-time progress window: --vita3k-window. It opens on screen for three seconds.
             if (Has(args, "--vita3k-window"))
             {

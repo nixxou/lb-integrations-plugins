@@ -29,34 +29,36 @@ namespace LbIntegrations.Vita3k
     {
         public const string Caption = "Nixx-Vita3K : Options...";
 
-        /// <summary>One game at a time: Vita3K opened on it, not started - see Vita3kSettingsSession.</summary>
-        public const string SettingsCaption = "Nixx-Vita3K : Game settings in Vita3K...";
 
-        internal static void OpenSettings(IGame game)
+        /// <summary>Vita3K opened on these games, not started, to edit their own Custom Config in Vita3K
+        /// itself - from the Options window (Mehdi, 29/09: out of the right-click menu). One Vita3K: the
+        /// games of another install are left out, and said.</summary>
+        internal static void OpenSettings(IWin32Window owner, Vita3kLayout layout, List<(string Title, string Rom)> games)
         {
             try
             {
-                var exe = Vita3kPlugin.ResolveFullPath(PluginHelper.DataManager?.GetEmulatorById(game?.EmulatorId)?.ApplicationPath);
-                var rom = Vita3kPlugin.ResolveFullPath(Safe(() => game.ApplicationPath));
+                if (layout?.Executable == null || games.Count == 0) { MessageBox.Show(owner, "This game's Vita3K was not found.", "Nixx-Vita3K"); return; }
+                bool one = games.Count == 1;
+                var name = one ? (string.IsNullOrWhiteSpace(games[0].Title) ? "this game" : "\"" + games[0].Title + "\"") : games.Count + " games";
 
                 // SAID FIRST, AND ASKED (Mehdi, 29/09): what opens is not the game, and it plays nothing.
-                var title = Safe(() => game.Title);
-                var answer = MessageBox.Show(OwnerWindow(),
-                    "Vita3K will open on a FAKE installation of " + (string.IsNullOrWhiteSpace(title) ? "this game" : "\"" + title + "\"") + ".\n\n"
-                    + "It is there only so you can save custom settings for this game in Vita3K: right-click the game in "
-                    + "Vita3K's list, open its \"Custom Config\" menu, change what you want and save.\n\n"
-                    + "The game is NOT installed and cannot be played from there - starting it would fail. Nothing else "
-                    + "is touched: no save, no console - only the game's own settings file "
-                    + "(portable\\config\\config_<TITLE_ID>.xml), which every real launch of this game then uses.\n\n"
+                var answer = MessageBox.Show(owner,
+                    "Vita3K will open on a FAKE installation of " + name + ".\n\n"
+                    + "It is there only so you can save " + (one ? "this game's" : "each game's") + " OWN custom settings in Vita3K: right-click "
+                    + (one ? "the game" : "a game") + " in Vita3K's list, open its \"Custom Config\" menu, change what you want and save.\n\n"
+                    + "The game" + (one ? " is" : "s are") + " NOT installed and cannot be played from there - starting one would fail. Nothing else "
+                    + "is touched: no save, no console - only each game's own settings file (portable\\config\\config_<TITLE_ID>.xml), "
+                    + "which every real launch of the game then uses.\n\n"
+                    + "What the options window sets is NOT written there: it is this plugin's own, laid over that file only while the game runs.\n\n"
                     + "Close Vita3K when you are done: the fake installation is then removed.",
-                    "Nixx-Vita3K - custom settings for this game", MessageBoxButtons.OKCancel, MessageBoxIcon.Information);
-                if (answer != DialogResult.OK) { Log.Info("game menu: settings - cancelled at the explanation"); return; }
+                    "Nixx-Vita3K - Vita3K's own custom settings", MessageBoxButtons.OKCancel, MessageBoxIcon.Information);
+                if (answer != DialogResult.OK) { Log.Info("options: Vita3K's own settings - cancelled at the explanation"); return; }
 
-                var why = string.IsNullOrEmpty(exe) ? "This game's emulator was not found." : Vita3kSettingsSession.Open(exe, rom);
+                var why = Vita3kSettingsSession.Open(layout.Executable, games.Select(g => g.Rom));
                 if (why != null)
-                    MessageBox.Show(OwnerWindow(), why, "Nixx-Vita3K", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show(owner, why, "Nixx-Vita3K", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
-            catch (Exception ex) { Log.Warn("game menu: settings", ex); }
+            catch (Exception ex) { Log.Warn("options: Vita3K's own settings", ex); }
         }
 
         /// <summary>NEVER NULL: the host turns it into its own menu image, and a null there can cost the
@@ -113,18 +115,34 @@ namespace LbIntegrations.Vita3k
                     var own = Safe(() => g.CommandLine);
                     var rom = Safe(() => g.ApplicationPath);
                     var inherited = InheritedLine(g);
-                    string install = null;
+                    Vita3kLayout layout = null;
                     try
                     {
                         var exe = Vita3kPlugin.ResolveFullPath(PluginHelper.DataManager?.GetEmulatorById(g.EmulatorId)?.ApplicationPath);
-                        install = string.IsNullOrEmpty(exe) ? null : Vita3kPaths.Resolve(exe)?.InstallDir;
+                        layout = string.IsNullOrEmpty(exe) ? null : Vita3kPaths.Resolve(exe);
                     }
+                    catch { }
+                    var romFull = Vita3kPlugin.ResolveFullPath(rom);
+                    // The title id names the game's own settings file: read from the archive's param.sfo.
+                    string titleId = null;
+                    try { var content = Vita3kContent.Describe(romFull, out _); if (content != null && content.IsGame) titleId = content.TitleId; }
                     catch { }
                     return new Vita3kOptionsForm.Entry
                     {
                         Game = g, Title = Safe(() => g.Title), Rom = rom, Own = own, Inherited = inherited,
-                        RomFull = Vita3kPlugin.ResolveFullPath(rom), GameId = Safe(() => g.Id), InstallDir = install,
+                        RomFull = romFull, GameId = Safe(() => g.Id), InstallDir = layout?.InstallDir,
                         Options = Vita3kOptions.From(string.IsNullOrWhiteSpace(own) ? inherited : own, rom),
+                        Layout = layout, TitleId = titleId,
+                        System = Vita3kGameConfig.Load(layout, Safe(() => g.Id)),
+                        Graphics = Vita3kGameConfig.LoadSection(layout, Safe(() => g.Id), Vita3kGameConfig.GpuSection),
+                        GraphicsBase = Vita3kGameConfig.DefaultsOf(layout, titleId, Vita3kGameConfig.GpuSection),
+                        Compat = CompatOf(layout, Safe(() => g.Id)),
+                        CompatBase = CompatBaseOf(layout, titleId),
+                        CompatState = layout == null ? null : Vita3kCompat.Lookup(layout, titleId),
+                        Advanced = Vita3kGameConfig.LoadAdvanced(layout, Safe(() => g.Id), out var handOn),
+                        AdvancedOn = handOn,
+                        Base = layout == null ? new VitaSystemSettings()
+                             : titleId == null ? Vita3kConfig.Read(layout) : Vita3kGameConfig.WithoutOurs(layout, titleId),
                     };
                 }).ToList();
 
@@ -132,6 +150,30 @@ namespace LbIntegrations.Vita3k
                 form.ShowDialog(OwnerWindow());
             }
             catch (Exception ex) { Log.Warn("game menu", ex); }
+        }
+
+        private static readonly string[] CompatSections = { Vita3kGameConfig.CpuSection, Vita3kGameConfig.AudioSection, Vita3kGameConfig.EmulatorSection };
+
+        /// <summary>The Compatibility tab's own values of a game, section/attribute; null for none.</summary>
+        private static Dictionary<string, string> CompatOf(Vita3kLayout layout, string gameId)
+        {
+            if (layout == null) return null;
+            var all = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var s in CompatSections)
+                foreach (var kv in Vita3kGameConfig.LoadSection(layout, gameId, s) ?? new Dictionary<string, string>())
+                    all[s + "/" + kv.Key] = kv.Value;
+            return all.Count > 0 ? all : null;
+        }
+
+        /// <summary>What the game runs on for those without them, section/attribute.</summary>
+        private static Dictionary<string, string> CompatBaseOf(Vita3kLayout layout, string titleId)
+        {
+            var all = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (layout == null) return all;
+            foreach (var s in CompatSections)
+                foreach (var kv in Vita3kGameConfig.DefaultsOf(layout, titleId, s))
+                    all[s + "/" + kv.Key] = kv.Value;
+            return all;
         }
 
         /// <summary>The line a game runs with when it has none of its own: its emulator's line for the
@@ -182,15 +224,13 @@ namespace LbIntegrations.Vita3k
         public static string[] Entries(IGame[] games)
         {
             if (games == null || !games.Any(Vita3kGameMenu.IsOurs)) return new string[0];
-            return games.Length == 1
-                ? new[] { Vita3kGameMenu.Caption, Vita3kGameMenu.SettingsCaption }
-                : new[] { Vita3kGameMenu.Caption };
+            // One entry: Vita3K's own per-game settings are opened from the Options window (Mehdi, 29/09).
+            return new[] { Vita3kGameMenu.Caption };
         }
 
         public static void Selected(string entry, IGame[] games)
         {
             if (entry == Vita3kGameMenu.Caption) Vita3kGameMenu.Open(games ?? new IGame[0]);
-            else if (entry == Vita3kGameMenu.SettingsCaption && games?.Length == 1) Vita3kGameMenu.OpenSettings(games[0]);
         }
 
         public static Image Icon => Vita3kGameMenu.Icon;

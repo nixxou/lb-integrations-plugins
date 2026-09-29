@@ -40,6 +40,11 @@ namespace LbIntegrations.Vita3k
         public int TimeFormat = Vita3kConfig.DefaultTime;
         public int EnterButton = Vita3kConfig.DefaultEnter;
 
+        /// <summary>pstv-mode - Vita3K answers the games as a PlayStation TV: each controller on its own
+        /// port (local multiplayer), no camera, the TV's model and resolution. Null when not asked: the
+        /// install's window has no such box, and must not write it.</summary>
+        public bool? Pstv;
+
         public override string ToString()
             => "language " + Vita3kConfig.Name(Vita3kConfig.Languages, Language)
                + ", date " + Vita3kConfig.Name(Vita3kConfig.DateFormats, DateFormat)
@@ -57,6 +62,7 @@ namespace LbIntegrations.Vita3k
         };
 
         internal const string LanguageKey = "sys-lang", DateKey = "sys-date-format", TimeKey = "sys-time-format", EnterKey = "sys-button";
+        internal const string PstvKey = "pstv-mode";
 
         // SceSystemParamLang, SceSystemParamDateFormat, SceSystemParamTimeFormat,
         // SceSystemParamEnterButtonAssign - util/system.h, in that order.
@@ -220,6 +226,7 @@ namespace LbIntegrations.Vita3k
             {
                 Language = Of(LanguageKey, DefaultLanguage), DateFormat = Of(DateKey, DefaultDate),
                 TimeFormat = Of(TimeKey, DefaultTime), EnterButton = Of(EnterKey, DefaultEnter),
+                Pstv = keys.TryGetValue(PstvKey, out var p) && p.Equals("true", StringComparison.OrdinalIgnoreCase),
             };
         }
 
@@ -230,13 +237,18 @@ namespace LbIntegrations.Vita3k
         /// <summary>The system settings the emulator will run games with, as a sentence.</summary>
         public static string SystemSettings(Vita3kLayout layout) => Read(layout).ToString();
 
-        private static (string, string)[] Pairs(VitaSystemSettings s) => new[]
+        private static (string, string)[] Pairs(VitaSystemSettings s)
         {
-            (LanguageKey, s.Language.ToString(CultureInfo.InvariantCulture)),
-            (DateKey, s.DateFormat.ToString(CultureInfo.InvariantCulture)),
-            (TimeKey, s.TimeFormat.ToString(CultureInfo.InvariantCulture)),
-            (EnterKey, s.EnterButton.ToString(CultureInfo.InvariantCulture)),
-        };
+            var pairs = new List<(string, string)>
+            {
+                (LanguageKey, s.Language.ToString(CultureInfo.InvariantCulture)),
+                (DateKey, s.DateFormat.ToString(CultureInfo.InvariantCulture)),
+                (TimeKey, s.TimeFormat.ToString(CultureInfo.InvariantCulture)),
+                (EnterKey, s.EnterButton.ToString(CultureInfo.InvariantCulture)),
+            };
+            if (s.Pstv != null) pairs.Add((PstvKey, s.Pstv.Value ? "true" : "false"));
+            return pairs.ToArray();
+        }
 
         /// <summary>Set top-level keys of config.yml: a line that holds the key is replaced (unless
         /// <paramref name="onlyMissing"/>), a key it does not hold is added at the end. Everything else
@@ -258,7 +270,13 @@ namespace LbIntegrations.Vita3k
                         if (onlyMissing || lines[at] == key + ": " + value) continue;
                         lines[at] = key + ": " + value;
                     }
-                    else lines.Add(key + ": " + value);
+                    else
+                    {
+                        // Before the document's end marker ("..."), never after it: yaml-cpp reads the
+                        // first document only, so a key past it is not read at all.
+                        int end = lines.FindIndex(l => l.TrimEnd('\r') == "...");
+                        if (end >= 0) lines.Insert(end, key + ": " + value); else lines.Add(key + ": " + value);
+                    }
                     done.Add(key + " " + value);
                 }
                 if (done.Count == 0) return true;
@@ -269,6 +287,18 @@ namespace LbIntegrations.Vita3k
             catch (Exception ex) { Log.Warn("could not write config.yml", ex); return false; }
         }
 
+        /// <summary>Every top-level "key: value" of config.yml, quotes taken off - empty when there is none.</summary>
+        internal static Dictionary<string, string> ReadKeys(Vita3kLayout layout)
+        {
+            try { var config = PathOf(layout); if (config != null && File.Exists(config)) return Keys(File.ReadAllText(config)); }
+            catch (Exception ex) { Log.Warn("could not read config.yml", ex); }
+            return new Dictionary<string, string>(StringComparer.Ordinal);
+        }
+
+        /// <summary>Write top-level keys of config.yml, over what it says - the configuration window.</summary>
+        internal static bool WriteKeys(Vita3kLayout layout, Dictionary<string, string> values)
+            => Put(layout, values.Select(kv => (kv.Key, kv.Value)).ToArray(), onlyMissing: false);
+
         /// <summary>The key of a top-level "key: value" line, or null.</summary>
         private static string KeyOf(string line)
         {
@@ -276,6 +306,35 @@ namespace LbIntegrations.Vita3k
             if (line.Length == 0 || char.IsWhiteSpace(line[0]) || line[0] == '#' || line[0] == '-') return null;
             var colon = line.IndexOf(':');
             return colon <= 0 ? null : line.Substring(0, colon).Trim();
+        }
+
+        /// <summary>pstv-mode and the input languages (ime-langs, a list) as config.yml has them - what a
+        /// game's own settings file must carry over (Vita3kGameConfig). Vita3K's defaults, false and
+        /// none, for what it does not hold.</summary>
+        internal static (bool Pstv, List<string> InputLanguages) PstvAndInputLanguages(Vita3kLayout layout)
+        {
+            bool pstv = false;
+            var ime = new List<string>();
+            try
+            {
+                var config = PathOf(layout);
+                if (config == null || !File.Exists(config)) return (pstv, ime);
+                var lines = File.ReadAllText(config).Replace("\r\n", "\n").Split('\n');
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    var key = KeyOf(lines[i]);
+                    if (key == "pstv-mode") pstv = lines[i].Substring(lines[i].IndexOf(':') + 1).Trim().Equals("true", StringComparison.OrdinalIgnoreCase);
+                    if (key != "ime-langs") continue;
+                    var inline = lines[i].Substring(lines[i].IndexOf(':') + 1).Trim();
+                    if (inline.StartsWith("[")) ime.AddRange(inline.Trim('[', ']').Split(',').Select(x => x.Trim()).Where(x => x.Length > 0));
+                    else
+                        for (int j = i + 1; j < lines.Length && lines[j].TrimStart().StartsWith("-"); j++)
+                            ime.Add(lines[j].TrimStart().Substring(1).Trim());
+                }
+                ime.RemoveAll(x => !ulong.TryParse(x, NumberStyles.None, CultureInfo.InvariantCulture, out _));
+            }
+            catch (Exception ex) { Log.Warn("could not read config.yml", ex); }
+            return (pstv, ime);
         }
 
         /// <summary>The top-level "key: value" lines of a config.yml - all this needs of YAML.</summary>

@@ -1,4 +1,4 @@
-// What the disposable Vita has to get right, on a forged install and a forged game.
+﻿// What the disposable Vita has to get right, on a forged install and a forged game.
 //
 // It drives the SHIPPED assembly rather than a recompilation of its sources: the probe already loads
 // the merged DLL, and reaching an internal static class inside it by name costs a few lines of
@@ -350,6 +350,53 @@ namespace LbIntegrations.Probe
         /// <summary>The progress window a game install shows at launch, looked for by its title among
         /// the desktop's windows: absent during its delay, present after it, gone once disposed. It
         /// does open on screen for about three seconds - that is the point of it.</summary>
+        /// <summary>The Graphics fields - a game's (on default, then with its own) and config.yml's -
+        /// drawn into one picture, to be looked at.</summary>
+        public static bool GraphicsShot(Assembly pluginAssembly, string outPath)
+        {
+            _asm = pluginAssembly;
+            System.Windows.Forms.Application.EnableVisualStyles();
+            var t = _asm.GetType("LbIntegrations.Vita3k.Vita3kGraphicsFields", throwOnError: true);
+            var defaults = new Dictionary<string, string>
+            {
+                ["backend-renderer"] = "", ["screen-filter"] = "Nearest", ["disable-surface-sync"] = "false", ["v-sync"] = "false",
+                ["resolution-multiplier"] = "3", ["anisotropic-filtering"] = "1", ["fps-hack"] = "false", ["high-accuracy"] = "false",
+                ["async-pipeline-compilation"] = "true",
+            };
+            var own = new Dictionary<string, string> { ["backend-renderer"] = "Vulkan", ["screen-filter"] = "FSR", ["fps-hack"] = "true", ["resolution-multiplier"] = "2" };
+            var shots = new List<System.Drawing.Bitmap>();
+            foreach (var (perGame, ours) in new[] { (true, (Dictionary<string, string>)null), (true, own), (false, (Dictionary<string, string>)null) })
+            {
+                using var form = new System.Windows.Forms.Form { ClientSize = new System.Drawing.Size(640, 400), FormBorderStyle = System.Windows.Forms.FormBorderStyle.None, Font = new System.Drawing.Font("Segoe UI", 9f),
+                                                                  StartPosition = System.Windows.Forms.FormStartPosition.Manual, Location = new System.Drawing.Point(-3000, -3000), ShowInTaskbar = false };
+                var fields = (System.Windows.Forms.Control)Activator.CreateInstance(t, new object[] { perGame });
+                fields.Location = new System.Drawing.Point(10, 10);
+                form.Controls.Add(fields);
+                form.Show();
+                t.GetMethod("ShowValues").Invoke(fields, new object[] { defaults, ours });
+                System.Windows.Forms.Application.DoEvents();
+                var bmp = new System.Drawing.Bitmap(form.ClientSize.Width, form.ClientSize.Height);
+                form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, bmp.Width, bmp.Height));
+                shots.Add(bmp);
+                form.Close();
+            }
+            using var all = new System.Drawing.Bitmap(shots[0].Width, shots.Sum(s => s.Height));
+            using (var g = System.Drawing.Graphics.FromImage(all))
+            {
+                int y = 0;
+                foreach (var s in shots) { g.DrawImage(s, 0, y); y += s.Height; s.Dispose(); }
+            }
+            all.Save(outPath, System.Drawing.Imaging.ImageFormat.Png);
+            Console.WriteLine("  " + outPath);
+            return true;
+        }
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct WinRect { public int Left, Top, Right, Bottom; }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool GetWindowRect(IntPtr hWnd, out WinRect rect);
+
         public static bool Window(Assembly pluginAssembly)
         {
             Console.WriteLine();
@@ -361,7 +408,14 @@ namespace LbIntegrations.Probe
             {
                 var type = _asm.GetType("LbIntegrations.Vita3k.Vita3kProgressWindow", throwOnError: true);
                 var title = "Vita3K - probe " + Guid.NewGuid().ToString("N").Substring(0, 8);
-                var window = type.GetMethod("Open", BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { title });
+                // With a game's state in Vita3K's list, as a launch opens it.
+                var state = Activator.CreateInstance(_asm.GetType("LbIntegrations.Vita3k.VitaCompat"));
+                state.GetType().GetField("IssueId").SetValue(state, 495);
+                state.GetType().GetField("State").SetValue(state, "Ingame +");
+                state.GetType().GetField("StateColor").SetValue(state, "FBCA04");
+                state.GetType().GetField("StateDescription").SetValue(state, "Games that go far ingame but have glitches or have non-playable performance.");
+                ((List<string>)state.GetType().GetField("Problems").GetValue(state)).Add("graphics bug");
+                var window = type.GetMethod("Open", BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { title, false, state });
                 if (!Check("it opens", window != null)) return false;
                 var report = type.GetMethod("Report");
 
@@ -375,6 +429,20 @@ namespace LbIntegrations.Probe
                     System.Threading.Thread.Sleep(100);
                 }
                 Check("it is on screen for a longer wait", FindWindow(null, title) != IntPtr.Zero);
+                // A picture of it as it is on screen, to be looked at.
+                try
+                {
+                    var hwnd = FindWindow(null, title);
+                    if (hwnd != IntPtr.Zero && GetWindowRect(hwnd, out var r))
+                    {
+                        using var bmp = new System.Drawing.Bitmap(r.Right - r.Left, r.Bottom - r.Top);
+                        using (var g = System.Drawing.Graphics.FromImage(bmp)) g.CopyFromScreen(r.Left, r.Top, 0, 0, bmp.Size);
+                        var shot = Path.Combine(Path.GetTempPath(), "lbip-progress.png");
+                        bmp.Save(shot, System.Drawing.Imaging.ImageFormat.Png);
+                        Console.WriteLine("    picture: " + shot);
+                    }
+                }
+                catch (Exception ex) { Console.WriteLine("    no picture: " + ex.Message); }
 
                 report.Invoke(window, new object[] { "Taking the console's fingerprint...", null });
                 System.Threading.Thread.Sleep(400);
@@ -1974,6 +2042,10 @@ namespace LbIntegrations.Probe
             ImportCleanup(root);
             MultiContent(root);
             TheConfig(layout);
+            TheGameConfig(layout);
+            TheGameGraphics(layout);
+            TheGameSetByHand(layout);
+            TheCompatList(layout);
             StrayFs(layout, root);
             GameClosedLine(layout);
             QuietAndFull(layout);
@@ -2125,6 +2197,443 @@ namespace LbIntegrations.Probe
             Check("a title in several languages: the US English one", (string)Field(jpContent, "FullTitle") == "A Japanese Game"
                   && (string)Field(jpContent, "Title") == "Japanese Game", (string)Field(jpContent, "FullTitle"));
         }
+
+        /// <summary>A game's own system settings, for ONE SESSION: kept in our store; at launch the user's
+        /// custom config is set aside as config_<id>.bak (an empty one when there was none) and the xml
+        /// rebuilt - its system section whole, ours first, then the .bak's, then config.yml; at the end the
+        /// .bak goes back, byte for byte, or the xml goes when there was none; a .bak left by a crash is
+        /// put back by the next sweep; a game without its own touches nothing.</summary>
+        private static void TheGameConfig(object layout)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  a game's own system settings, for one session");
+            var install = (string)Field(layout, "InstallDir");
+            var portable = Path.Combine(install, "portable");
+            var config = Path.Combine(portable, "config.yml");
+            var before = File.Exists(config) ? File.ReadAllText(config) : null;
+            var xml = Path.Combine(portable, "config", "config_" + TitleId + ".xml");
+            var bak = Path.ChangeExtension(xml, ".bak");
+            var store = Path.Combine(install, "lbip-settings.tsv");
+            try
+            {
+                File.WriteAllText(config, "pstv-mode: true\nime-langs:\n  - 4\n  - 8\nsys-lang: 1\n");
+                var settingsType = _asm.GetType("LbIntegrations.Vita3k.VitaSystemSettings", throwOnError: true);
+                var chosen = Activator.CreateInstance(settingsType);
+                settingsType.GetField("Language").SetValue(chosen, 2);
+                settingsType.GetField("DateFormat").SetValue(chosen, 1);
+                settingsType.GetField("TimeFormat").SetValue(chosen, 1);
+                settingsType.GetField("EnterButton").SetValue(chosen, 1);
+                settingsType.GetField("Pstv").SetValue(chosen, (bool?)true);
+
+                Check("none before", Call("Vita3kGameConfig", "Load", new object[] { layout, "game-v" }) == null);
+                Call("Vita3kGameConfig", "Save", new object[] { layout, "game-v", chosen });
+                var loaded = Call("Vita3kGameConfig", "Load", new object[] { layout, "game-v" });
+                Check("kept in our store, read back", loaded?.ToString() == chosen.ToString(), loaded?.ToString());
+                Check("the xml is not touched by saving", !File.Exists(xml));
+                Check("a game without its own: nothing written",
+                      !(bool)Call("Vita3kGameConfig", "Apply", new object[] { layout, TitleId, "game-other" }) && !File.Exists(xml) && !File.Exists(bak));
+
+                // 1. No custom config of the user's.
+                Check("its session applied", (bool)Call("Vita3kGameConfig", "Apply", new object[] { layout, TitleId, "game-v" }));
+                var text = File.Exists(xml) ? File.ReadAllText(xml) : "";
+                Console.WriteLine("            " + text.Replace("\r", "").Replace("\n", " "));
+                Check("an EMPTY .bak: there was none", File.Exists(bak) && new FileInfo(bak).Length == 0);
+                Check("the system section whole: ours - PSTV on included - and the input languages from config.yml",
+                      text.Contains("sys-lang=\"2\"") && text.Contains("sys-date-format=\"1\"") && text.Contains("pstv-mode=\"true\"")
+                      && text.Contains("<lang>4</lang>") && text.Contains("<lang>8</lang>"));
+                Call("Vita3kGameConfig", "Restore", new object[] { layout, TitleId, "the session is over" });
+                Check("once over: the xml is gone again, and the .bak", !File.Exists(xml) && !File.Exists(bak));
+
+                // 2. A custom config of the user's, byte for byte.
+                Directory.CreateDirectory(Path.GetDirectoryName(xml));
+                var own = "<?xml version=\"1.0\"?>\n<!-- by hand -->\n<config>\n  <gpu resolution-multiplier=\"3\" />\n"
+                        + "  <system pstv-mode=\"false\" sys-button=\"0\" sys-lang=\"5\" sys-date-format=\"0\" sys-time-format=\"0\"><ime-langs><lang>9</lang></ime-langs></system>\n</config>\n";
+                File.WriteAllText(xml, own);
+                var seen = Call("Vita3kGameConfig", "WithoutOurs", new object[] { layout, TitleId });
+                Check("without ours, the game runs on its custom config", seen?.ToString().StartsWith("language Italian") == true, seen?.ToString());
+                Call("Vita3kGameConfig", "Apply", new object[] { layout, TitleId, "game-v" });
+                text = File.ReadAllText(xml);
+                Check("the .bak is the user's file, byte for byte", File.Exists(bak) && File.ReadAllText(bak) == own);
+                Check("its gpu section kept", text.Contains("resolution-multiplier=\"3\""));
+                Check("ours over the user's: language, date", text.Contains("sys-lang=\"2\"") && text.Contains("sys-date-format=\"1\""));
+                Check("PSTV is ours (on), the input language the user's (9), not config.yml's",
+                      text.Contains("pstv-mode=\"true\"") && text.Contains("<lang>9</lang>") && !text.Contains("<lang>8</lang>"));
+                var mid = Call("Vita3kGameConfig", "WithoutOurs", new object[] { layout, TitleId });
+                Check("mid-session, 'without ours' reads the .bak", mid?.ToString().StartsWith("language Italian") == true, mid?.ToString());
+
+                // 3. The host went mid-session: the next sweep puts it back.
+                Call("Vita3kGameConfig", "Restore", new object[] { layout, null, "left behind by a session that did not end" });
+                Check("a .bak left behind: the user's file is back, byte for byte", File.ReadAllText(xml) == own && !File.Exists(bak));
+
+                Call("Vita3kGameConfig", "Save", new object[] { layout, "game-v", null });
+                Check("taken away from our store", Call("Vita3kGameConfig", "Load", new object[] { layout, "game-v" }) == null);
+            }
+            finally
+            {
+                try { if (File.Exists(xml)) File.Delete(xml); if (File.Exists(bak)) File.Delete(bak); if (File.Exists(store)) File.Delete(store); } catch { }
+                if (before != null) File.WriteAllText(config, before);
+                else if (File.Exists(config)) File.Delete(config);
+            }
+        }
+
+        /// <summary>A game's own graphics: only what is off default kept; the gpu section rebuilt from the
+        /// user's own - an attribute we do not know kept, each known one ours, else the user's, else
+        /// config.yml's; the system section left alone. The fields: opened and closed untouched they set
+        /// nothing, for a game or for config.yml. And a key config.yml lacks goes before its "..." end.</summary>
+        private static void TheGameGraphics(object layout)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  a game's own graphics, for one session");
+            var install = (string)Field(layout, "InstallDir");
+            var portable = Path.Combine(install, "portable");
+            var config = Path.Combine(portable, "config.yml");
+            var before = File.Exists(config) ? File.ReadAllText(config) : null;
+            var xml = Path.Combine(portable, "config", "config_" + TitleId + ".xml");
+            var bak = Path.ChangeExtension(xml, ".bak");
+            var store = Path.Combine(install, "lbip-settings.tsv");
+            try
+            {
+                File.WriteAllText(config, "---\nbackend-renderer: \"\"\nresolution-multiplier: 3\nv-sync: false\nscreen-filter: Nearest\nfps-hack: false\n...\n");
+                var ours = new Dictionary<string, string> { ["resolution-multiplier"] = "2", ["fps-hack"] = "true" };
+                Call("Vita3kGameConfig", "SaveSection", new object[] { layout, "game-g", "gpu", ours });
+
+                // No custom config: the section from config.yml and Vita3K's defaults.
+                Call("Vita3kGameConfig", "Apply", new object[] { layout, TitleId, "game-g" });
+                var text = File.Exists(xml) ? File.ReadAllText(xml) : "";
+                Console.WriteLine("            " + text.Replace("\r", "").Replace("\n", " "));
+                Check("ours: 2x and the FPS hack", text.Contains("resolution-multiplier=\"2\"") && text.Contains("fps-hack=\"true\""));
+                Check("the rest from config.yml: V-Sync off, Nearest, the renderer as it says (\"\")",
+                      text.Contains("v-sync=\"false\"") && text.Contains("screen-filter=\"Nearest\"") && text.Contains("backend-renderer=\"\""));
+                Check("and from Vita3K's defaults what config.yml lacks: surface sync disabled, shader cache on",
+                      text.Contains("disable-surface-sync=\"true\"") && text.Contains("shader-cache=\"true\""));
+                Check("no system section - the game set none", !text.Contains("<system"));
+                Call("Vita3kGameConfig", "Restore", new object[] { layout, TitleId, "the session is over" });
+                Check("once over, nothing left", !File.Exists(xml) && !File.Exists(bak));
+
+                // A custom config of the user's, with an attribute a newer Vita3K would write.
+                Directory.CreateDirectory(Path.GetDirectoryName(xml));
+                var own = "<?xml version=\"1.0\"?>\n<config>\n  <gpu backend-renderer=\"OpenGL\" v-sync=\"true\" resolution-multiplier=\"4\" future-thing=\"7\" />\n"
+                        + "  <system pstv-mode=\"false\" sys-button=\"1\" sys-lang=\"5\" sys-date-format=\"0\" sys-time-format=\"0\" />\n</config>\n";
+                File.WriteAllText(xml, own);
+                var defaults = (Dictionary<string, string>)Call("Vita3kGameConfig", "DefaultsOf", new object[] { layout, TitleId, "gpu" });
+                Check("'default' is the user's own: OpenGL, V-Sync on, 4x", defaults["backend-renderer"] == "OpenGL" && defaults["v-sync"] == "true" && defaults["resolution-multiplier"] == "4");
+                Call("Vita3kGameConfig", "Apply", new object[] { layout, TitleId, "game-g" });
+                text = File.ReadAllText(xml);
+                Check("ours over the user's: 2x", text.Contains("resolution-multiplier=\"2\"") && !text.Contains("resolution-multiplier=\"4\""));
+                Check("the user's kept where we set nothing: OpenGL, V-Sync on", text.Contains("backend-renderer=\"OpenGL\"") && text.Contains("v-sync=\"true\""));
+                Check("an attribute we do not know, kept", text.Contains("future-thing=\"7\""));
+                Check("the user's system section untouched", text.Contains("sys-lang=\"5\"") && !text.Contains("<ime-langs"));
+                Call("Vita3kGameConfig", "Restore", new object[] { layout, TitleId, "the session is over" });
+                Check("once over, the user's file byte for byte", File.ReadAllText(xml) == own && !File.Exists(bak));
+
+                // The fields themselves.
+                var fieldsType = _asm.GetType("LbIntegrations.Vita3k.Vita3kGraphicsFields", throwOnError: true);
+                var game = Activator.CreateInstance(fieldsType, new object[] { true });
+                fieldsType.GetMethod("ShowValues").Invoke(game, new object[] { defaults, null });
+                var read = (Dictionary<string, string>)fieldsType.GetMethod("Read").Invoke(game, null);
+                Check("a game's fields shown on default and left alone: nothing set", read.Count == 0, string.Join(",", read));
+                fieldsType.GetMethod("ShowValues").Invoke(game, new object[] { defaults, ours });
+                read = (Dictionary<string, string>)fieldsType.GetMethod("Read").Invoke(game, null);
+                Check("shown with its own and left alone: exactly its own", Vita3kKey(read) == Vita3kKey(ours), string.Join(",", read));
+
+                var yml = (Dictionary<string, string>)Call("Vita3kGameConfig", "DefaultsOf", new object[] { layout, null, "gpu" });
+                var global = Activator.CreateInstance(fieldsType, new object[] { false });
+                fieldsType.GetMethod("ShowValues").Invoke(global, new object[] { yml, null });
+                var first = (Dictionary<string, string>)fieldsType.GetMethod("Read").Invoke(global, null);
+                fieldsType.GetMethod("ShowValues").Invoke(global, new object[] { yml, null });
+                var again = (Dictionary<string, string>)fieldsType.GetMethod("Read").Invoke(global, null);
+                Check("config.yml's fields read twice the same (nothing written when nothing changed)", Vita3kKey(first) == Vita3kKey(again));
+                Check("a renderer of \"\" is Vulkan, as for Vita3K - and nothing is written for it", first["backend-renderer"] == "Vulkan" && Vita3kKey(first) == Vita3kKey(again));
+
+                // The "..." of config.yml.
+                Call("Vita3kConfig", "WriteKeys", new object[] { layout, new Dictionary<string, string> { ["new-key"] = "1", ["fps-hack"] = "true" } });
+                var lines = File.ReadAllText(config).Replace("\r", "").Split('\n').ToList();
+                Check("a key config.yml lacks goes before its \"...\"", lines.IndexOf("new-key: 1") >= 0 && lines.IndexOf("new-key: 1") < lines.IndexOf("..."));
+                Check("a key it holds is replaced in place", lines.Contains("fps-hack: true") && lines.Count(l => l.StartsWith("fps-hack:")) == 1);
+            }
+            finally
+            {
+                try { if (File.Exists(xml)) File.Delete(xml); if (File.Exists(bak)) File.Delete(bak); if (File.Exists(store)) File.Delete(store); } catch { }
+                if (before != null) File.WriteAllText(config, before);
+                else if (File.Exists(config)) File.Delete(config);
+            }
+        }
+
+        /// <summary>The Advanced tab's text: in use, it is what goes in - the tabs' values set aside -, any
+        /// section, over the user's own; a list it names replaces the user's; not in use, the tabs' values
+        /// again. And the checks: bad xml refused, an unknown key and a section with nothing to fill it said.</summary>
+        private static void TheGameSetByHand(object layout)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  a game's settings set by hand");
+            var install = (string)Field(layout, "InstallDir");
+            var portable = Path.Combine(install, "portable");
+            var config = Path.Combine(portable, "config.yml");
+            var before = File.Exists(config) ? File.ReadAllText(config) : null;
+            var xml = Path.Combine(portable, "config", "config_" + TitleId + ".xml");
+            var bak = Path.ChangeExtension(xml, ".bak");
+            var store = Path.Combine(install, "lbip-settings.tsv");
+            try
+            {
+                File.WriteAllText(config, "---\nresolution-multiplier: 3\nv-sync: false\naudio-volume: 100\n...\n");
+                Directory.CreateDirectory(Path.GetDirectoryName(xml));
+                var own = "<?xml version=\"1.0\"?>\n<config>\n  <audio audio-backend=\"SDL\" audio-volume=\"100\" enable-ngs=\"true\" />\n"
+                        + "  <core modules-mode=\"0\"><lle-modules><module>libfoo</module></lle-modules></core>\n</config>\n";
+                File.WriteAllText(xml, own);
+                Call("Vita3kGameConfig", "SaveSection", new object[] { layout, "game-h", "gpu", new Dictionary<string, string> { ["resolution-multiplier"] = "2" } });
+                var hand = "<config>\n  <gpu resolution-multiplier=\"5\" />\n  <audio audio-volume=\"40\" />\n"
+                         + "  <core modules-mode=\"1\"><lle-modules><module>libbar</module></lle-modules></core>\n  <emulator file-loading-delay=\"3\" />\n</config>";
+                Call("Vita3kGameConfig", "SaveAdvanced", new object[] { layout, "game-h", hand, true });
+                var outOn = new object[] { layout, "game-h", false };
+                var back = (string)Call("Vita3kGameConfig", "LoadAdvanced", outOn);
+                Check("the text kept, and in use", back == hand.Trim() && (bool)outOn[2]);
+
+                var pv = new object[] { layout, TitleId, hand, null, null };
+                var preview = (string)Call("Vita3kGameConfig", "Preview", pv);
+                Check("the preview writes nothing", File.ReadAllText(xml) == own && !File.Exists(bak), (string)pv[4]);
+                Check("and 'before' is the user's file", (string)pv[3] == own);
+                Call("Vita3kGameConfig", "Apply", new object[] { layout, TitleId, "game-h" });
+                var text = File.ReadAllText(xml);
+                Console.WriteLine("            " + text.Replace("\r", "").Replace("\n", " "));
+                string Flat(string x) => System.Xml.Linq.XDocument.Parse(x).ToString(System.Xml.Linq.SaveOptions.DisableFormatting);
+                Check("the preview is exactly what the launch wrote", preview != null && Flat(preview) == Flat(text), preview);
+                Check("the text's, not the tab's: 5x", text.Contains("resolution-multiplier=\"5\"") && !text.Contains("resolution-multiplier=\"2\""));
+                Check("gpu whole: what the text lacks from config.yml", text.Contains("v-sync=\"false\"") && text.Contains("fps-hack=\"false\""));
+                Check("audio: the text's volume over the user's section, the rest of it kept",
+                      text.Contains("audio-volume=\"40\"") && text.Contains("enable-ngs=\"true\"") && text.Contains("audio-backend=\"SDL\""));
+                Check("a list named by the text replaces the user's", text.Contains("libbar") && !text.Contains("libfoo") && text.Contains("modules-mode=\"1\""));
+                Check("a section the user's file lacks: what the text names", text.Contains("file-loading-delay=\"3\""));
+                Call("Vita3kGameConfig", "Restore", new object[] { layout, TitleId, "the session is over" });
+                Check("once over, the user's file byte for byte", File.ReadAllText(xml) == own && !File.Exists(bak));
+
+                Call("Vita3kGameConfig", "SaveAdvanced", new object[] { layout, "game-h", hand, false });
+                Call("Vita3kGameConfig", "Apply", new object[] { layout, TitleId, "game-h" });
+                text = File.ReadAllText(xml);
+                Check("not in use: the tab's values again (2x), nothing of the text", text.Contains("resolution-multiplier=\"2\"") && !text.Contains("libbar"));
+                Call("Vita3kGameConfig", "Restore", new object[] { layout, TitleId, "the session is over" });
+
+                List<string> Warn(string t, out string err)
+                {
+                    var args = new object[] { layout, TitleId, t, null };
+                    var w = (List<string>)Call("Vita3kGameConfig", "CheckHand", args);
+                    err = (string)args[3];
+                    return w;
+                }
+                Warn("<config><gpu fps-hack=\"true\"", out var e1);
+                Check("bad xml: refused, with where", e1 != null && e1.StartsWith("line "), e1);
+                Warn("<settings />", out var e2);
+                Check("a root that is not <config>: refused", e2 != null);
+                var w3 = Warn("<config><gpu fps-hack=\"true\" not-a-key=\"1\" /><audio audio-volume=\"40\" /><network psn-signed-in=\"false\" /></config>", out var e3);
+                Console.WriteLine("            " + string.Join(" | ", w3));
+                Check("valid, and what it may not do said: an unknown key", e3 == null && w3.Any(w => w.Contains("not-a-key")));
+                Check("a section the user's file cannot fill (network), not one it can (audio)",
+                      w3.Any(w => w.StartsWith("<network>:")) && !w3.Any(w => w.StartsWith("<audio>:")));
+                Check("a known section, gpu, is never said so", !w3.Any(w => w.StartsWith("<gpu>:")));
+            }
+            finally
+            {
+                try { if (File.Exists(xml)) File.Delete(xml); if (File.Exists(bak)) File.Delete(bak); if (File.Exists(store)) File.Delete(store); } catch { }
+                if (before != null) File.WriteAllText(config, before);
+                else if (File.Exists(config)) File.Delete(config);
+            }
+        }
+
+        /// <summary>Vita3K's compatibility list read for one game: the state by its label's "State label",
+        /// its colour, the other labels as problems, the report's number; a game not in it, none.</summary>
+        private static void TheCompatList(object layout)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  the compatibility list");
+            var cache = Path.Combine((string)Field(layout, "InstallDir"), "portable", "cache");
+            Directory.CreateDirectory(cache);
+            var db = Path.Combine(cache, "app_compat_db.xml");
+            var labels = Path.Combine(cache, "lbip-compat-labels.tsv");
+            try
+            {
+                _asm.GetType("LbIntegrations.Vita3k.Vita3kCompat").GetField("NoNetwork", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, true);
+                // Vita3K's ids: 1260231985 Ingame+, 920344019 Playable; 920343647 and 1371536201 two problems.
+                File.WriteAllText(db, "<?xml version=\"1.0\"?>\n<compatibility version=\"1\">\n"
+                    + "  <app title_id=\"PCSA00001\"><issue_id>12</issue_id><labels><label>1260231569</label></labels></app>\n"
+                    + "  <app title_id=\"" + TitleId + "\"><issue_id>510</issue_id><labels><label>920343647</label><label>1260231985</label>"
+                    + "<label>1371536201</label><label>920344019</label></labels><updated_at>1</updated_at></app>\n"
+                    + "  <app title_id=\"PCSA00003\"><issue_id>13</issue_id><labels><label>77</label><label>1344750319</label></labels></app>\n</compatibility>\n");
+                if (File.Exists(labels)) File.Delete(labels);
+                var c = Call("Vita3kCompat", "Lookup", new object[] { layout, TitleId });
+                Check("OFFLINE, no label names at all: the game's entry found", c != null && (int)Field(c, "IssueId") == 510);
+                Check("its state as Vita3K reads it - the last state label - in Vita3K's word and colour",
+                      (string)Field(c, "State") == "Playable" && (string)Field(c, "StateColor") == "0E8A16", (string)Field(c, "State"));
+                Check("and no problems without their names", ((List<string>)Field(c, "Problems")).Count == 0);
+
+                File.WriteAllLines(labels, new[]
+                {
+                    "920343647\t000000\tgraphics bug\t",
+                    "1371536201\t000000\tslow\t",
+                    "920344019\t0E8A16\tPlayable\tGames that can be played from start to finish. State label",
+                    "55\tABCDEF\tBrand new state\tA state Vita3K does not know yet. State label",
+                });
+                c = Call("Vita3kCompat", "Lookup", new object[] { layout, TitleId });
+                var problems = (List<string>)Field(c, "Problems");
+                Check("with the names: the other labels as problems, in order", string.Join(",", problems) == "graphics bug,slow", string.Join(",", problems));
+                Check("and the state's description from them", ((string)Field(c, "StateDescription") ?? "").StartsWith("Games that can be played"));
+                var boots = Call("Vita3kCompat", "Lookup", new object[] { layout, "PCSA00003" });
+                Check("Vita3K's word for a state: Boots, purple", (string)Field(boots, "State") == "Boots" && (string)Field(boots, "StateColor") == "621FA5");
+                Check("the report's link", c.GetType().GetProperty("Url").GetValue(c) as string == "https://github.com/Vita3K/compatibility/issues/510");
+                Check("a game not in the list: none", Call("Vita3kCompat", "Lookup", new object[] { layout, "PCSB99999" }) == null);
+            }
+            finally { try { File.Delete(db); File.Delete(labels); } catch { } }
+        }
+
+        /// <summary>Against the real thing: a COPY of an install's list, and the labels asked of GitHub.
+        /// --vita3k-compat-real --emu Vita3K.exe [--title ID,ID]. Writes only in %TEMP%.</summary>
+        public static bool CompatReal(Assembly pluginAssembly, string emuPath, string titles)
+        {
+            _asm = pluginAssembly;
+            Console.WriteLine();
+            Console.WriteLine("-- Vita3K's compatibility list, real  [asks GitHub, writes in %TEMP%] ---");
+            var real = Path.Combine(Path.GetDirectoryName(emuPath), "portable", "cache", "app_compat_db.xml");
+            if (!File.Exists(real)) { Console.WriteLine("  no list at " + real); return false; }
+            var root = Path.Combine(Path.GetTempPath(), "lbip-compat-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var install = Path.Combine(root, "Nixx-Vita3K");
+                Directory.CreateDirectory(Path.Combine(install, "portable", "cache"));
+                File.WriteAllText(Path.Combine(install, "Vita3K.exe"), "");
+                File.Copy(real, Path.Combine(install, "portable", "cache", "app_compat_db.xml"));
+                var layout = Resolve(Path.Combine(install, "Vita3K.exe"));
+                var refresh = _asm.GetType("LbIntegrations.Vita3k.Vita3kCompat").GetMethod("RefreshLabels", BindingFlags.NonPublic | BindingFlags.Static);
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                refresh.Invoke(null, new object[] { layout, "the probe" });
+                var tsv = Path.Combine(install, "portable", "cache", "lbip-compat-labels.tsv");
+                Console.WriteLine("  labels: " + (File.Exists(tsv) ? File.ReadAllLines(tsv).Length : 0) + " in " + watch.ElapsedMilliseconds + " ms");
+                foreach (var id in (titles ?? "PCSE00965,PCSA00017,PCSF00021").Split(','))
+                {
+                    watch.Restart();
+                    var c = Call("Vita3kCompat", "Lookup", new object[] { layout, id.Trim() });
+                    Console.WriteLine("  " + id.Trim() + ": " + (c == null ? "not in the list"
+                        : (Field(c, "State") ?? "(no state)") + " #" + Field(c, "StateColor") + " - " + string.Join(", ", (List<string>)Field(c, "Problems"))
+                          + " - " + c.GetType().GetProperty("Url").GetValue(c)) + "  (" + watch.ElapsedMilliseconds + " ms)");
+                }
+                return File.Exists(tsv);
+            }
+            finally { try { Directory.Delete(root, true); } catch { } }
+        }
+
+        /// <summary>The compatibility line of some games of a REAL list (a copy), drawn: offline first (the
+        /// state only, as Vita3K reads it), then with the labels' names asked of GitHub.
+        /// --vita3k-compat-shot <out.png> --emu Vita3K.exe [--title ID,ID]. Writes only in %TEMP%.</summary>
+        public static bool CompatShot(Assembly pluginAssembly, string outPath, string emuPath, string titles)
+        {
+            _asm = pluginAssembly;
+            System.Windows.Forms.Application.EnableVisualStyles();
+            var real = Path.Combine(Path.GetDirectoryName(emuPath), "portable", "cache", "app_compat_db.xml");
+            if (!File.Exists(real)) { Console.WriteLine("  no list at " + real); return false; }
+            var root = Path.Combine(Path.GetTempPath(), "lbip-compatshot-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var install = Path.Combine(root, "Nixx-Vita3K");
+                Directory.CreateDirectory(Path.Combine(install, "portable", "cache"));
+                File.WriteAllText(Path.Combine(install, "Vita3K.exe"), "");
+                File.Copy(real, Path.Combine(install, "portable", "cache", "app_compat_db.xml"));
+                var layout = Resolve(Path.Combine(install, "Vita3K.exe"));
+                var compat = _asm.GetType("LbIntegrations.Vita3k.Vita3kCompat");
+                compat.GetField("NoNetwork", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, true);
+                var ids = (titles ?? "PCSE00965,PCSA00017,PCSF00021,PCSB00204,PCSE00491,PCSG00001,PCSA00126,PCSB00394").Split(',').Select(x => x.Trim()).ToList();
+                var rowType = _asm.GetType("LbIntegrations.Vita3k.Vita3kCompatRow");
+
+                using var form = new System.Windows.Forms.Form { FormBorderStyle = System.Windows.Forms.FormBorderStyle.None, ShowInTaskbar = false,
+                                                                  StartPosition = System.Windows.Forms.FormStartPosition.Manual, Location = new System.Drawing.Point(-4000, -4000),
+                                                                  Font = new System.Drawing.Font("Segoe UI", 9f), BackColor = System.Drawing.SystemColors.Control };
+                int y = 8;
+                void Heading(string text)
+                {
+                    form.Controls.Add(new System.Windows.Forms.Label { Text = text, AutoSize = true, Location = new System.Drawing.Point(10, y), Font = new System.Drawing.Font("Segoe UI", 9f, System.Drawing.FontStyle.Bold) });
+                    y += 24;
+                }
+                void Rows()
+                {
+                    foreach (var id in ids)
+                    {
+                        var c = Call("Vita3kCompat", "Lookup", new object[] { layout, id });
+                        form.Controls.Add(new System.Windows.Forms.Label { Text = id, AutoSize = true, Location = new System.Drawing.Point(16, y + 3), ForeColor = System.Drawing.SystemColors.GrayText });
+                        var row = (System.Windows.Forms.Control)rowType.GetMethod("Build").Invoke(null, new object[] { c, 560 });
+                        if (row != null) { row.Location = new System.Drawing.Point(100, y); form.Controls.Add(row); }
+                        else form.Controls.Add(new System.Windows.Forms.Label { Text = "(not in Vita3K's list)", AutoSize = true, Location = new System.Drawing.Point(100, y + 3) });
+                        y += 26;
+                    }
+                    y += 10;
+                }
+                Heading("Offline - no label names: the state only, as Vita3K reads it");
+                Rows();
+                compat.GetMethod("RefreshLabels", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, new object[] { layout, "the probe" });
+                Heading("With the labels' names asked of GitHub: the report's problems too");
+                Rows();
+                form.ClientSize = new System.Drawing.Size(680, y);
+                form.Show();
+                System.Windows.Forms.Application.DoEvents();
+                using var bmp = new System.Drawing.Bitmap(form.Width, form.Height);
+                form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, bmp.Width, bmp.Height));
+                bmp.Save(outPath, System.Drawing.Imaging.ImageFormat.Png);
+                form.Close();
+                Console.WriteLine("  " + outPath);
+                return true;
+            }
+            finally { try { Directory.Delete(root, true); } catch { } }
+        }
+
+        /// <summary>The options window itself, one picture per tab - fed a fake game, nothing written.</summary>
+        public static bool OptionsShot(Assembly pluginAssembly, string outPath)
+        {
+            _asm = pluginAssembly;
+            System.Windows.Forms.Application.EnableVisualStyles();
+            var formType = _asm.GetType("LbIntegrations.Vita3k.Vita3kOptionsForm", throwOnError: true);
+            var entryType = formType.GetNestedType("Entry", BindingFlags.NonPublic | BindingFlags.Public);
+            var entry = Activator.CreateInstance(entryType);
+            void Set(string f, object v) => entryType.GetField(f).SetValue(entry, v);
+            Set("Title", "KILLALLZOMBIES"); Set("Rom", "x.zip"); Set("Own", ""); Set("Inherited", "-F");
+            Set("RomFull", "C:\\nowhere\\x.zip"); Set("GameId", "probe-game");
+            Set("Options", Call("Vita3kOptions", "From", new object[] { "-F", "x.zip" }));
+            Set("GraphicsBase", new Dictionary<string, string> { ["backend-renderer"] = "", ["resolution-multiplier"] = "3", ["v-sync"] = "false" });
+            Set("Graphics", new Dictionary<string, string> { ["fps-hack"] = "true" });
+            Set("Advanced", "<config>\n  <gpu fps-hack=\"true\" />\n  <audio audio-volume=\"40\" />\n</config>");
+            Set("AdvancedOn", false);
+            Set("CompatBase", new Dictionary<string, string> { ["cpu/cpu-opt"] = "true", ["audio/enable-ngs"] = "true", ["emulator/file-loading-delay"] = "0" });
+            Set("Compat", new Dictionary<string, string> { ["emulator/file-loading-delay"] = "3" });
+            var state = Activator.CreateInstance(_asm.GetType("LbIntegrations.Vita3k.VitaCompat"));
+            state.GetType().GetField("IssueId").SetValue(state, 510);
+            state.GetType().GetField("State").SetValue(state, "Ingame +");
+            state.GetType().GetField("StateColor").SetValue(state, "FBCA04");
+            ((List<string>)state.GetType().GetField("Problems").GetValue(state)).AddRange(new[] { "graphics bug", "slow" });
+            Set("CompatState", state);
+            var list = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(entryType));
+            list.Add(entry);
+            using var form = (System.Windows.Forms.Form)Activator.CreateInstance(formType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new object[] { list }, null);
+            form.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
+            form.Location = new System.Drawing.Point(-3000, -3000);
+            form.Show();
+            var tabs = form.Controls.OfType<System.Windows.Forms.TabControl>().First();
+            var shots = new List<System.Drawing.Bitmap>();
+            foreach (var name in new[] { "Graphics", "Compatibility", "Advanced" })
+            {
+                tabs.SelectedTab = tabs.TabPages.Cast<System.Windows.Forms.TabPage>().First(p => p.Text == name);
+                System.Windows.Forms.Application.DoEvents();
+                var bmp = new System.Drawing.Bitmap(form.Width, form.Height);
+                form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, bmp.Width, bmp.Height));
+                shots.Add(bmp);
+            }
+            form.Close();
+            using var all = new System.Drawing.Bitmap(shots[0].Width, shots.Sum(s => s.Height));
+            using (var g = System.Drawing.Graphics.FromImage(all))
+            {
+                int y = 0;
+                foreach (var s in shots) { g.DrawImage(s, 0, y); y += s.Height; s.Dispose(); }
+            }
+            all.Save(outPath, System.Drawing.Imaging.ImageFormat.Png);
+            Console.WriteLine("  " + outPath);
+            return true;
+        }
+
+        private static string Vita3kKey(Dictionary<string, string> v)
+            => string.Join(";", v.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => kv.Key + "=" + kv.Value));
 
         /// <summary>What an install puts in config.yml - full screen on, the update check off - only where
         /// the file does not say yet; and the system settings read back for the notification.</summary>
@@ -2313,12 +2822,22 @@ namespace LbIntegrations.Probe
             var install = (string)Field(layout, "InstallDir");
             var baseDir = (string)Call("Vita3kWorkspace", "BaseDir", new object[] { layout });
             int baseFiles = Directory.GetFiles(baseDir, "*", SearchOption.AllDirectories).Length;
-            var why = (string)type.GetMethod("Open").Invoke(null, new object[] { Path.Combine(install, "Vita3K.exe"), game });
+            var why = (string)type.GetMethod("Open", new[] { typeof(string), typeof(string) }).Invoke(null, new object[] { Path.Combine(install, "Vita3K.exe"), game });
             Console.WriteLine("            " + why);
             Check("a Vita3K that will not start is said so", why != null && why.StartsWith("Vita3K could not be started"), why);
             var portable = Path.Combine(install, "portable");
             Check("and nothing is left: no fake console, no link", !Directory.Exists(Path.Combine(portable, "settings-fs")) && !Directory.Exists(Path.Combine(portable, "fs")));
             Check("the pristine firmware untouched", Directory.GetFiles(baseDir, "*", SearchOption.AllDirectories).Length == baseFiles);
+
+            // SEVERAL GAMES AT ONCE (the Options window's selection): one not readable is left out, the rest
+            // go on - here as far as the forged Vita3K, which cannot start; none readable, nothing is prepared.
+            var many = type.GetMethod("Open", new[] { typeof(string), typeof(IEnumerable<string>) });
+            var bogus = Path.Combine(root, "not-a-game.zip");
+            File.WriteAllText(bogus, "not a zip");
+            var both = (string)many.Invoke(null, new object[] { Path.Combine(install, "Vita3K.exe"), new[] { game, bogus } });
+            Check("several games, one not readable: the others go on", both != null && both.StartsWith("Vita3K could not be started"), both);
+            var none = (string)many.Invoke(null, new object[] { Path.Combine(install, "Vita3K.exe"), new[] { bogus } });
+            Check("none readable: said, and nothing prepared", none != null && none.StartsWith("Could not read") && !Directory.Exists(Path.Combine(portable, "settings-fs")), none);
 
             // THE MACHINE DIED WHILE IT WAS OPEN: portable\fs a junction into the fake console, the fake
             // console with its firmware junctions. The next launch drops the one and sweeps the other.

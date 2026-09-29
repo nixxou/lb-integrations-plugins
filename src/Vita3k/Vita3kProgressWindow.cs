@@ -55,19 +55,23 @@ namespace LbIntegrations.Vita3k
 
         private readonly bool _modal;
 
+        /// <summary>Where the game stands in Vita3K's compatibility list, shown under the bar - null for none.</summary>
+        private readonly VitaCompat _compat;
+
         /// <summary>Open one, or answer null - a failure to show a window must never stop a game.
         /// <paramref name="always"/>: shown at once, for at least MinimumShownMs, modal to the host - the
         /// closing window (see the header).</summary>
-        public static Vita3kProgressWindow Open(string title, bool always = false)
+        public static Vita3kProgressWindow Open(string title, bool always = false, VitaCompat compat = null)
         {
-            try { return new Vita3kProgressWindow(title, always); }
+            try { return new Vita3kProgressWindow(title, always, compat); }
             catch (Exception ex) { Log.Warn("no progress window (" + ex.GetType().Name + ": " + ex.Message + ")"); return null; }
         }
 
-        private Vita3kProgressWindow(string title, bool always)
+        private Vita3kProgressWindow(string title, bool always, VitaCompat compat)
         {
             _title = title;
             _modal = always;
+            _compat = compat;
             var thread = new Thread(() =>
             {
                 try
@@ -125,6 +129,15 @@ namespace LbIntegrations.Vita3k
             };
             form.Controls.Add(label);
             form.Controls.Add(bar);
+
+            // The game's state in Vita3K's own list, under the bar (Mehdi, 29/09) - see Vita3kCompat.
+            var compat = Vita3kCompatRow.Build(_compat, 448);
+            if (compat != null)
+            {
+                form.ClientSize = new Size(480, 122);
+                compat.Location = new Point(16, 84);
+                form.Controls.Add(compat);
+            }
 
             // MODAL TO THE HOST: owned by its main window, which is disabled while this is up.
             IntPtr host = IntPtr.Zero;

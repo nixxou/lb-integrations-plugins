@@ -291,6 +291,8 @@ namespace LbIntegrations.Vita3k
 
                 var layout = Vita3kPaths.Resolve(ResolveFullPath(exe));
                 NotPlaying();
+                // A session that never ended left a game's settings in its custom config: back first.
+                Vita3kGameConfig.Restore(layout, null, "left behind by a session that did not end");
 
                 if (!Vita3kWorkspace.HasBase(layout))
                 {
@@ -319,7 +321,9 @@ namespace LbIntegrations.Vita3k
                 // it. The window stays invisible for a quick relaunch - see Vita3kProgressWindow.
                 string titleId, error;
                 var gameTitle = Safe(() => args?.GameBeingLaunched?.Title);
-                using (var window = Vita3kProgressWindow.Open("Vita3K - " + (string.IsNullOrWhiteSpace(gameTitle) ? "preparing the game" : gameTitle)))
+                VitaCompat compat = null;
+                try { compat = Vita3kCompat.Lookup(layout, TitleIdOf(romFull)); } catch { }
+                using (var window = Vita3kProgressWindow.Open("Vita3K - " + (string.IsNullOrWhiteSpace(gameTitle) ? "preparing the game" : gameTitle), compat: compat))
                 {
                     var current = CurrentLine(args);
                     bool noRamDisk = Carries(current, NoRamDiskFlag);
@@ -346,6 +350,10 @@ namespace LbIntegrations.Vita3k
                     Log.Warn("not launching: " + error);
                     return new PrepareForLaunchResponse(success: false);
                 }
+
+                // This game's own settings, in its custom config for the session - taken back once
+                // Vita3K has quit (the watcher, OnGameExited).
+                Vita3kGameConfig.Apply(layout, titleId, Safe(() => args?.GameBeingLaunched?.Id));
 
                 Playing(layout, titleId);
                 go = true;
@@ -394,6 +402,8 @@ namespace LbIntegrations.Vita3k
                 {
                     if (Vita3kWorkspace.CaptureOnExit(layout, titleId))
                         Log.Info("the session of " + titleId + " came out as the game closed");
+                    // Not while Vita3K is still there: the watcher does it once it has gone.
+                    Vita3kGameConfig.Restore(layout, titleId, "the session is over");
                 }
                 catch (Exception ex) { Log.Warn("capture on exit", ex); }
             });
@@ -422,6 +432,7 @@ namespace LbIntegrations.Vita3k
                     if (!appeared)
                     {
                         Log.Info("watcher: Vita3K never appeared within two minutes of the launch");
+                        Vita3kGameConfig.Restore(layout, titleId, "Vita3K never started");
                         return;
                     }
                     Log.Info("watcher: Vita3K is running");
@@ -482,6 +493,9 @@ namespace LbIntegrations.Vita3k
                     // WHAT THE EMULATOR ITSELF NEEDED, so the next launch of this game reserves it
                     // next to the RAM disk instead of guessing.
                     if (peak > 0) Vita3kWorkspace.RememberEmulatorPeak(layout, titleId, (int)(peak / (1024 * 1024)));
+
+                    // Vita3K writes nothing of a game's custom config as it quits: put back at once.
+                    Vita3kGameConfig.Restore(layout, titleId, "the session is over");
 
                     if (Vita3kWorkspace.CaptureOnExit(layout, titleId))
                         Log.Info("watcher: the session of " + titleId + " came out of the tree");

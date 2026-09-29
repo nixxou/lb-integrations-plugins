@@ -25,6 +25,7 @@
 // running is ours and nobody's in use, and goes - its junctions first.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -40,7 +41,12 @@ namespace LbIntegrations.Vita3k
 
         /// <summary>Open Vita3K on <paramref name="romPath"/>'s game, not started. Null when it opened,
         /// otherwise why not - for a message box.</summary>
-        public static string Open(string exePath, string romPath)
+        public static string Open(string exePath, string romPath) => Open(exePath, new[] { romPath });
+
+        /// <summary>The same for several games at once (the Options window's selection, Mehdi 29/09): each
+        /// one listed in Vita3K, each one's Custom Config its own. A game that cannot be read is left out
+        /// and said; none readable, nothing opens.</summary>
+        public static string Open(string exePath, IEnumerable<string> romPaths)
         {
             try
             {
@@ -51,9 +57,23 @@ namespace LbIntegrations.Vita3k
                 var baseDir = Vita3kWorkspace.BaseDir(layout);
                 if (baseDir == null || !Directory.Exists(baseDir)) return "This Vita3K has no firmware put aside yet - install it again.";
 
-                var content = Vita3kContent.Describe(romPath, out var error);
-                if (content == null) return "Could not read the game: " + error;
-                if (!content.IsGame) return "This is not a game (" + content + ").";
+                // What is edited there must be the user's own custom config, never a session's.
+                Vita3kGameConfig.Restore(layout, null, "Vita3K is opened to edit a game's settings");
+
+                // Every game first read: a console is only prepared for games there are.
+                string error = null;
+                var games = new List<(string Rom, VitaContent Content)>();
+                var skipped = new List<string>();
+                foreach (var romPath in (romPaths ?? new string[0]).Where(r => !string.IsNullOrWhiteSpace(r)).Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    var c = Vita3kContent.Describe(romPath, out var why);
+                    if (c == null || !c.IsGame) { skipped.Add(Path.GetFileName(romPath) + " (" + (c == null ? why : "not a game") + ")"); continue; }
+                    if (games.Any(g => g.Content.TitleId == c.TitleId)) continue;
+                    games.Add((romPath, c));
+                }
+                if (games.Count == 0)
+                    return skipped.Count == 1 ? "Could not read the game: " + skipped[0] : "None of these games could be read: " + string.Join(", ", skipped);
+                if (skipped.Count > 0) Log.Info("settings: left out, not readable - " + string.Join(", ", skipped));
 
                 var fake = Path.Combine(portable, FakeName);
                 Remove(fake);
@@ -64,10 +84,17 @@ namespace LbIntegrations.Vita3k
                     if (Directory.Exists(target) && !Junction(Path.Combine(fake, part), target, out error))
                     { Remove(fake); return "Could not prepare the console: " + error; }
                 }
-                var sys = Path.Combine(fake, "ux0", "app", content.TitleId, "sce_sys");
-                Directory.CreateDirectory(sys);
-                int written = WriteSysFiles(romPath, content, sys);
-                if (!File.Exists(Path.Combine(sys, "param.sfo"))) { Remove(fake); return "The game's param.sfo could not be read."; }
+                int written = 0, listed = 0;
+                foreach (var (romPath, content) in games)
+                {
+                    var sys = Path.Combine(fake, "ux0", "app", content.TitleId, "sce_sys");
+                    Directory.CreateDirectory(sys);
+                    written += WriteSysFiles(romPath, content, sys);
+                    if (File.Exists(Path.Combine(sys, "param.sfo"))) listed++;
+                    else { Directory.Delete(Path.Combine(fake, "ux0", "app", content.TitleId), true); skipped.Add(content.TitleId + " (no param.sfo)"); }
+                }
+                if (listed == 0) { Remove(fake); return "The games' param.sfo could not be read."; }
+                var titles = string.Join(", ", games.Select(g => g.Content.TitleId));
 
                 if (!Vita3kWorkspace.PointFsAt(layout, fake, out error)) { Remove(fake); return "Could not point Vita3K at the console: " + error; }
                 Vita3kWorkspace.QuietTheFirstRun(layout);
@@ -81,8 +108,8 @@ namespace LbIntegrations.Vita3k
                     Remove(fake);
                     return "Vita3K could not be started: " + ex.Message;
                 }
-                Log.Info("settings: Vita3K opened on " + content + " without running it (" + written + " file(s) of sce_sys) - "
-                         + "its per-game settings go to portable\\config\\config_" + content.TitleId + ".xml");
+                Log.Info("settings: Vita3K opened on " + listed + " game(s) without running them (" + titles + ", " + written + " file(s) of sce_sys) - "
+                         + "their per-game settings go to portable\\config\\config_<TITLE_ID>.xml");
 
                 Task.Run(() =>
                 {
@@ -95,8 +122,8 @@ namespace LbIntegrations.Vita3k
                     Vita3kWorkspace.DropFs(layout);
                     Remove(fake);
                     Log.Info("settings: Vita3K closed - the settings console is gone"
-                             + (File.Exists(Path.Combine(portable, "config", "config_" + content.TitleId + ".xml"))
-                                ? ", " + content.TitleId + " has settings of its own" : ""));
+                             + string.Concat(games.Where(g => File.Exists(Path.Combine(portable, "config", "config_" + g.Content.TitleId + ".xml")))
+                                                   .Select(g => ", " + g.Content.TitleId + " has settings of its own")));
                 });
                 return null;
             }

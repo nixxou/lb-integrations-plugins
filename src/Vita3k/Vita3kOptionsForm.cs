@@ -2,8 +2,13 @@
 //
 // TABS FROM THE START: "Session" (where the console lives - RAM disk, disk, VHDX - and the sizes that
 // go with it), "Updates & DLC" (Vita3kOptionsForm.Extras.cs: which of them the game is launched with),
-// Vita3K's own settings later (resolution and the like). Each tab is built by its own method and reads
-// and writes its own part of the options.
+// "System" (the language, date, time and enter button the game is told - its own, kept by this plugin
+// and put into Vita3K's per-game settings file for the length of a session, Vita3kGameConfig; NOTHING IS
+// OVERWRITTEN unless its box is ticked), "Graphics" (Vita3K's Renderer and Image Quality groups and its FPS
+// Hack, each on "default" unless set - Vita3kGraphicsFields; kept and applied the same way), "Advanced" (what
+// the two tabs above override, as the partial xml our fork reads - and, "Edit by hand" ticked, the user's
+// own text instead, any section and attribute; the System and Graphics tabs are then greyed). Each tab is built by
+// its own method and reads and writes its own part of the options.
 //
 // A SELECTION THAT DOES NOT AGREE: the games are grouped by identical options; when there is more than
 // one group, a combo box names each ("KILLALLZOMBIES <and 3 others>") and the one chosen is what the
@@ -30,6 +35,19 @@ namespace LbIntegrations.Vita3k
             public string Title, Rom, Own, Inherited;
             public string RomFull, GameId, InstallDir;   // for the Updates & DLC tab
             public Vita3kOptions Options;
+            public Vita3kLayout Layout;          // the game's Vita3K, for the System tab
+            public string TitleId;               // null when the archive could not be read
+            public VitaSystemSettings System;    // the game's own here, null for none
+            public VitaSystemSettings Base;      // what it runs on without: its custom config, else config.yml
+            public Dictionary<string, string> Graphics;       // the game's own, null for none
+            public Dictionary<string, string> GraphicsBase;   // what it runs on without them
+            public Dictionary<string, string> Compat;         // the Compatibility tab's, section/attribute, null for none
+            public Dictionary<string, string> CompatBase;     // what it runs on without them
+            public VitaCompat CompatState;                     // where it stands in Vita3K's list, null when not in it
+            public string Advanced;                            // the text set by hand, null for none
+            public bool AdvancedOn;                            // and whether it is the one in use
+            public string Key => Options.Key + "|" + Vita3kSystemFields.Key(System) + "|" + Vita3kGraphicsFields.Key(Graphics)
+                                 + "|" + Vita3kCompatFields.Key(Compat) + "|" + (AdvancedOn ? "hand:" : "") + (Advanced ?? "");
             public bool Inherits => string.IsNullOrWhiteSpace(Own);
             public string Effective => Inherits ? Inherited : Own;
         }
@@ -46,6 +64,18 @@ namespace LbIntegrations.Vita3k
         private Button _browse;
         private Label _vhdxHint, _notice;
         private bool _loading;
+        private CheckBox _sysOverwrite;
+        private Vita3kSystemFields _system;
+        private Vita3kGraphicsFields _graphics;
+        private Vita3kCompatFields _compat;
+        private Panel _compatState;
+        private Label _compatHandNote;
+        private CheckBox _handOn;
+        private TextBox _handText;
+        private Label _handStatus, _sysHandNote, _gfxHandNote, _gfxIntro;
+        private string _keptHand;
+        private bool _handLoading;
+
 
         /// <summary>The games that were changed, once OK has run.</summary>
         public int Changed { get; private set; }
@@ -53,7 +83,8 @@ namespace LbIntegrations.Vita3k
         public Vita3kOptionsForm(List<Entry> games)
         {
             _games = games;
-            _groups = games.GroupBy(g => g.Options.Key).Select(g => g.ToList()).ToList();
+            _groups = games.GroupBy(g => g.Key).Select(g => g.ToList()).ToList();
+
 
             Text = "Nixx-Vita3K - Options" + (games.Count > 1 ? " (" + games.Count + " games)" : " - " + games[0].Title);
             StartPosition = FormStartPosition.CenterParent;
@@ -62,10 +93,16 @@ namespace LbIntegrations.Vita3k
             ShowInTaskbar = false;
             AutoScaleMode = AutoScaleMode.Dpi;
             Font = new Font("Segoe UI", 9f);
-            ClientSize = new Size(680, 560);
+            ClientSize = new Size(680, 642);
 
             // ── the top: which games, and where to start from
-            var top = new Panel { Dock = DockStyle.Top, Height = _groups.Count > 1 ? 64 : 34, Padding = new Padding(12, 10, 12, 0) };
+            var top = new Panel { Dock = DockStyle.Top, Height = _groups.Count > 1 ? 86 : 56, Padding = new Padding(12, 10, 12, 0) };
+            // WHAT THIS WINDOW IS (Mehdi, 29/09): a layer of this plugin's own, over the game's Custom Config.
+            top.Controls.Add(new Label
+            {
+                AutoSize = false, Dock = DockStyle.Top, Height = 20, ForeColor = SystemColors.GrayText,
+                Text = "These are this plugin's settings: laid over the game's own Custom Config while it runs - that file itself is never changed here.",
+            });
             top.Controls.Add(new Label
             {
                 AutoSize = false, Dock = DockStyle.Top, Height = 20,
@@ -77,8 +114,9 @@ namespace LbIntegrations.Vita3k
                 _source = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Top };
                 foreach (var g in _groups)
                     _source.Items.Add(g[0].Title + (g.Count > 1 ? " <and " + (g.Count - 1) + " other" + (g.Count > 2 ? "s" : "") + ">" : "")
-                                      + "   -   " + (g[0].Options.None ? "defaults" : g[0].Options.Key));
-                _source.SelectedIndexChanged += (_, _) => LoadOptions(_groups[_source.SelectedIndex][0].Options);
+                                      + "   -   " + (g[0].Options.None ? "defaults" : g[0].Options.Key)
+                                      + (g[0].System != null ? ", its own system settings" : ""));
+                _source.SelectedIndexChanged += (_, _) => LoadFrom(_groups[_source.SelectedIndex][0]);
                 top.Controls.Add(_source);
                 _source.BringToFront();
             }
@@ -87,6 +125,13 @@ namespace LbIntegrations.Vita3k
             var tabs = new TabControl { Dock = DockStyle.Fill };
             tabs.TabPages.Add(SessionTab());
             tabs.TabPages.Add(ExtrasTab(tabs));
+            tabs.TabPages.Add(SystemTab());
+            tabs.TabPages.Add(GraphicsTab());
+            tabs.TabPages.Add(CompatibilityTab());
+            var advanced = AdvancedTab();
+            tabs.TabPages.Add(advanced);
+            // What the two tabs above override, shown as it is when the tab is looked at.
+            tabs.SelectedIndexChanged += (_, _) => { if (tabs.SelectedTab == advanced && !_handOn.Checked) ShowGenerated(); };
 
             // ── the bottom: what OK will do, and the buttons
             var bottom = new Panel { Dock = DockStyle.Bottom, Height = 84, Padding = new Padding(12, 6, 12, 8) };
@@ -94,13 +139,28 @@ namespace LbIntegrations.Vita3k
             var ok = new Button { Text = "OK", Width = 90, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
             var cancel = new Button { Text = "Cancel", Width = 90, DialogResult = DialogResult.Cancel, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
             ok.Click += (_, _) => Apply();
+            // Vita3K's OWN per-game settings - its Custom Config - edited in Vita3K itself, for the selection.
+            var own = new Button { Text = (games.Count == 1 ? "Game settings" : "Games' settings") + " in Vita3K...", AutoSize = true, Anchor = AnchorStyles.Left | AnchorStyles.Bottom };
+            new ToolTip().SetToolTip(own, "Opens Vita3K on " + (games.Count == 1 ? "this game" : "these games") + ", not started, to edit "
+                                          + (games.Count == 1 ? "its" : "each one's") + " own Custom Config in Vita3K.\n"
+                                          + "What this window sets is not written there: it is laid over it while the game runs.");
+            own.Click += (_, _) =>
+            {
+                var layout = games.Select(g => g.Layout).FirstOrDefault(l => l != null);
+                var same = games.Where(g => g.Layout != null && string.Equals(g.Layout.Executable, layout?.Executable, StringComparison.OrdinalIgnoreCase)).ToList();
+                if (same.Count < games.Count)
+                    Log.Info("options: " + (games.Count - same.Count) + " game(s) of another Vita3K left out of its settings window");
+                Vita3kGameMenu.OpenSettings(this, layout, same.Select(g => (g.Title, g.RomFull)).ToList());
+            };
             bottom.Controls.Add(_notice);
+            bottom.Controls.Add(own);
             bottom.Controls.Add(ok);
             bottom.Controls.Add(cancel);
             bottom.Layout += (_, _) =>
             {
                 cancel.Location = new Point(bottom.ClientSize.Width - bottom.Padding.Right - cancel.Width, bottom.ClientSize.Height - bottom.Padding.Bottom - cancel.Height);
                 ok.Location = new Point(cancel.Left - 8 - ok.Width, cancel.Top);
+                own.Location = new Point(bottom.Padding.Left, cancel.Top + (cancel.Height - own.Height) / 2);
             };
             AcceptButton = ok;
             CancelButton = cancel;
@@ -110,7 +170,222 @@ namespace LbIntegrations.Vita3k
             Controls.Add(top);
 
             if (_source != null) _source.SelectedIndex = 0;
-            else LoadOptions(_groups[0][0].Options);
+            else LoadFrom(_groups[0][0]);
+        }
+
+        private void LoadFrom(Entry e)
+        {
+            LoadOptions(e.Options);
+            _sysOverwrite.Checked = e.System != null;
+            _system.ShowValues(e.System ?? e.Base);
+            _system.SetEditable(e.System != null);
+            _graphics.ShowValues(e.GraphicsBase, e.Graphics);
+            _compat.ShowValues(e.CompatBase, e.Compat);
+            ShowCompatState(e);
+            _handLoading = true;
+            _keptHand = e.Advanced;
+            _handOn.Checked = e.AdvancedOn && e.Advanced != null;
+            _handText.Text = Lines(_handOn.Checked ? e.Advanced : Generated());
+            _handLoading = false;
+            HandChanged();
+        }
+
+        // ── the Advanced tab ─────────────────────────────────────────────────
+
+        private TabPage AdvancedTab()
+        {
+            var page = new TabPage("Advanced") { Padding = new Padding(12), UseVisualStyleBackColor = true };
+            page.Controls.Add(new Label
+            {
+                AutoSize = false, Location = new Point(12, 6), Size = new Size(636, 112), ForeColor = SystemColors.GrayText,
+                Text = "Write ONLY what you want to change, inside <config>: <section attribute=\"value\" />, e.g. <gpu fps-hack=\"true\" />. "
+                     + "Any section Vita3K reads per game.\n"
+                     + "- For this game's sessions only: its custom config is set aside as it starts and comes back when Vita3K quits.\n"
+                     + "- A section you name keeps what the game's custom config has in it; what you write goes over. The rest of it is "
+                     + "filled in for you (the official Vita3K reads a section only whole): from Vita3K's settings for system, gpu, cpu, audio and emulator.\n"
+                     + "- A list you write (<ime-langs>, <lle-modules>) replaces the game's. Sections you do not name stay as they are.",
+            });
+            _handOn = new CheckBox { AutoSize = true, Location = new Point(12, 122), Text = "Edit by hand (System, Graphics and Compatibility are then not used)" };
+            page.Controls.Add(_handOn);
+            var preview = new Button { Text = "Preview result...", AutoSize = true, Location = new Point(530, 118) };
+            preview.Click += (_, _) => PreviewResult();
+            page.Controls.Add(preview);
+            _handText = new TextBox
+            {
+                Location = new Point(12, 148), Size = new Size(636, 214), Multiline = true, ScrollBars = ScrollBars.Both, WordWrap = false,
+                AcceptsReturn = true, AcceptsTab = true, Font = new Font("Consolas", 9f), ReadOnly = true,
+            };
+            page.Controls.Add(_handText);
+            _handStatus = new Label { AutoSize = false, Location = new Point(12, 364), Size = new Size(636, 80) };
+            page.Controls.Add(_handStatus);
+
+            _handOn.CheckedChanged += (_, _) =>
+            {
+                if (_handLoading) return;
+                _handLoading = true;
+                if (_handOn.Checked) _handText.Text = Lines(_keptHand ?? Generated());
+                else { _keptHand = _handText.Text; _handText.Text = Lines(Generated()); }
+                _handLoading = false;
+                HandChanged();
+            };
+            _handText.TextChanged += (_, _) => { if (!_handLoading) HandChanged(); };
+            return page;
+        }
+
+        /// <summary>The game's custom config as its next session will have it - what is shown, set by hand
+        /// or not - in a window; nothing is written.</summary>
+        private void PreviewResult()
+        {
+            var g = SourceGame();
+            if (g.Layout == null || g.TitleId == null)
+            { MessageBox.Show(this, "This game's title id or its Vita3K could not be found: there is nothing to preview.", Text); return; }
+            var result = Vita3kGameConfig.Preview(g.Layout, g.TitleId, _handOn.Checked ? _handText.Text : Generated(), out var before, out var error);
+            if (result == null) { MessageBox.Show(this, error, Text, MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+            ConfigPreviewWindow.Show(this, "config_" + g.TitleId + ".xml - for a session of " + g.Title,
+                "What Vita3K will read for this game's session" + (before.Length == 0 ? " (it has no custom config of its own)." : ", over its own custom config."),
+                before, result);
+        }
+
+        /// <summary>The partial xml of what the System and Graphics tabs set now.</summary>
+        private string Generated()
+        {
+            var sections = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
+            if (_sysOverwrite.Checked)
+            {
+                var s = _system.Read();
+                sections[Vita3kGameConfig.SystemSection] = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [Vita3kConfig.EnterKey] = s.EnterButton.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    [Vita3kConfig.LanguageKey] = s.Language.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    [Vita3kConfig.DateKey] = s.DateFormat.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    [Vita3kConfig.TimeKey] = s.TimeFormat.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    [Vita3kConfig.PstvKey] = s.Pstv == true ? "true" : "false",
+                };
+            }
+            sections[Vita3kGameConfig.GpuSection] = _graphics.Read();
+            foreach (var g in _compat.Read().GroupBy(kv => kv.Key.Split('/')[0]))
+                sections[g.Key] = g.ToDictionary(kv => kv.Key.Substring(g.Key.Length + 1), kv => kv.Value, StringComparer.Ordinal);
+            return Vita3kGameConfig.Partial(sections);
+        }
+
+        private void ShowGenerated()
+        {
+            _handLoading = true;
+            _handText.Text = Lines(Generated());
+            _handLoading = false;
+            HandChanged();
+        }
+
+        /// <summary>A TextBox shows a line break only as CR LF.</summary>
+        private static string Lines(string text) => (text ?? "").Replace("\r\n", "\n").Replace("\n", "\r\n");
+
+        /// <summary>The text's state said under it, and the two tabs greyed while it is the one in use.</summary>
+        private void HandChanged()
+        {
+            bool on = _handOn.Checked;
+            _handText.ReadOnly = !on;
+            _handText.BackColor = on ? SystemColors.Window : SystemColors.Control;
+            _sysOverwrite.Enabled = !on;
+            _system.SetEditable(!on && _sysOverwrite.Checked);
+            _sysHandNote.Visible = on;
+            _graphics.SetEditable(!on);
+            _gfxHandNote.Visible = on;
+            _compat.SetEditable(!on);
+            _compatHandNote.Visible = on;
+            _gfxIntro.Visible = !on;
+
+            if (!on) { _handStatus.ForeColor = SystemColors.GrayText; _handStatus.Text = "Generated from the System, Graphics and Compatibility tabs."; return; }
+            var g = SourceGame();
+            var warnings = Vita3kGameConfig.CheckHand(g.Layout, g.TitleId, _handText.Text, out var error);
+            _handStatus.ForeColor = error != null ? Color.Firebrick : warnings.Count > 0 ? Color.DarkGoldenrod : Color.DarkGreen;
+            _handStatus.Text = error != null ? "Not valid: " + error
+                             : warnings.Count > 0 ? string.Join("\n", warnings.Take(3)) + (warnings.Count > 3 ? "\n(and " + (warnings.Count - 3) + " more)" : "")
+                             : "Valid.";
+        }
+
+        // ── the Compatibility tab ────────────────────────────────────────────
+
+        private TabPage CompatibilityTab()
+        {
+            var page = new TabPage("Compatibility") { Padding = new Padding(12), UseVisualStyleBackColor = true };
+            _compatState = new Panel { Location = new Point(12, 8), Size = new Size(636, 26) };
+            page.Controls.Add(_compatState);
+            page.Controls.Add(new Label
+            {
+                AutoSize = false, Location = new Point(12, 38), Size = new Size(636, 34), ForeColor = SystemColors.GrayText,
+                Text = "What Vita3K never sets for a game by itself, and some games need. A filled box or an untouched \"Override default\" "
+                     + "leaves it as the game has it without this plugin: its custom config, else Vita3K's settings.",
+            });
+            _compat = new Vita3kCompatFields { Location = new Point(12, 76) };
+            page.Controls.Add(_compat);
+            _compatHandNote = new Label { AutoSize = false, Location = new Point(12, 332), Size = new Size(636, 34), ForeColor = Color.Firebrick, Visible = false,
+                                          Text = "Set by hand in the Advanced tab - untick \"Edit by hand\" there to use this tab again." };
+            page.Controls.Add(_compatHandNote);
+            return page;
+        }
+
+        /// <summary>Where the game shown stands in Vita3K's own list - see Vita3kCompat.</summary>
+        private void ShowCompatState(Entry e)
+        {
+            _compatState.Controls.Clear();
+            var row = Vita3kCompatRow.Build(e.CompatState, _compatState.Width);
+            _compatState.Controls.Add(row ?? new Label
+            {
+                AutoSize = true, ForeColor = SystemColors.GrayText, Location = new Point(0, 4),
+                Text = e.TitleId == null ? "Vita3K compatibility: the game's title id could not be read."
+                     : "Vita3K compatibility: " + e.TitleId + " is not in Vita3K's list (or Vita3K has not downloaded it yet).",
+            });
+        }
+
+        // ── the Graphics tab ─────────────────────────────────────────────────
+
+        private TabPage GraphicsTab()
+        {
+            var page = new TabPage("Graphics") { Padding = new Padding(12), UseVisualStyleBackColor = true, AutoScroll = true };
+            page.Controls.Add(new Label
+            {
+                AutoSize = false, Location = new Point(12, 8), Size = new Size(620, 34), ForeColor = SystemColors.GrayText,
+                Text = "A filled box, a <Default> entry or an untouched \"Override default\" leaves the setting as the game has it "
+                     + "without this plugin: its custom config, else Vita3K's settings. What is set here is used for its sessions only.",
+            });
+            _gfxIntro = (Label)page.Controls[page.Controls.Count - 1];
+            _gfxHandNote = new Label { AutoSize = false, Location = new Point(12, 8), Size = new Size(620, 34), ForeColor = Color.Firebrick, Visible = false,
+                                       Text = "Set by hand in the Advanced tab - untick \"Edit by hand\" there to use this tab again." };
+            page.Controls.Add(_gfxHandNote);
+            _graphics = new Vita3kGraphicsFields(perGame: true) { Location = new Point(12, 46) };
+            page.Controls.Add(_graphics);
+            return page;
+        }
+
+        // ── the System tab ───────────────────────────────────────────────────
+
+        private TabPage SystemTab()
+        {
+            var page = new TabPage("System") { Padding = new Padding(12), UseVisualStyleBackColor = true };
+            _sysOverwrite = new CheckBox
+            {
+                AutoSize = true, Location = new Point(12, 12),
+                Text = "Overwrite Vita3K's system settings for " + (_games.Count == 1 ? "this game" : "these games"),
+            };
+            page.Controls.Add(_sysOverwrite);
+            page.Controls.Add(new Label
+            {
+                AutoSize = false, Location = new Point(30, 34), Size = new Size(610, 46), ForeColor = SystemColors.GrayText,
+                Text = "What Vita3K tells the game, for its session only: put into its custom config (portable\\config\\config_<TITLE_ID>.xml) "
+                     + "as it starts, and the custom config as it was comes back when Vita3K quits. Unticked, the game runs on "
+                     + "its custom config, else Vita3K's settings - shown below.",
+            });
+            _system = new Vita3kSystemFields { Location = new Point(30, 90) };
+            page.Controls.Add(_system);
+            _sysHandNote = new Label { AutoSize = false, Location = new Point(12, 262), Size = new Size(620, 34), ForeColor = Color.Firebrick, Visible = false,
+                                       Text = "Set by hand in the Advanced tab - untick \"Edit by hand\" there to use this tab again." };
+            page.Controls.Add(_sysHandNote);
+            _sysOverwrite.CheckedChanged += (_, _) =>
+            {
+                if (!_sysOverwrite.Checked) _system.ShowValues(SourceGame().Base);
+                _system.SetEditable(_sysOverwrite.Checked);
+            };
+            return page;
         }
 
         // ── the Session tab ──────────────────────────────────────────────────
@@ -282,6 +557,64 @@ namespace LbIntegrations.Vita3k
                                    Text, MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) != DialogResult.OK)
                 return;
 
+            // The System tab: each game's own settings file, only where the choice differs from what it has.
+            // The Advanced tab: a text in use must be usable; what it may not do is said, and asked.
+            if (_handOn.Checked)
+            {
+                var g0 = SourceGame();
+                var warnings = Vita3kGameConfig.CheckHand(g0.Layout, g0.TitleId, _handText.Text, out var handError);
+                if (handError != null) { MessageBox.Show(this, "The settings set by hand are not valid xml: " + handError, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+                if (warnings.Count > 0
+                    && MessageBox.Show(this, "The settings set by hand:\n\n- " + string.Join("\n- ", warnings) + "\n\nUse them anyway?",
+                                       Text, MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) != DialogResult.OK)
+                    return;
+            }
+            var handText = _handOn.Checked ? _handText.Text.Trim() : _keptHand;
+            bool handOn = _handOn.Checked;
+
+            var system = _sysOverwrite.Checked ? _system.Read() : null;
+            int systems = 0;
+            foreach (var g in _games)
+            {
+                if (g.Layout == null || Vita3kSystemFields.Key(g.System) == Vita3kSystemFields.Key(system)) continue;
+                Vita3kGameConfig.Save(g.Layout, g.GameId, system);
+                systems++;
+            }
+
+            // The Compatibility tab: what is not on default, by section.
+            var compat = _compat.Read();
+            if (compat.Count == 0) compat = null;
+            foreach (var g in _games)
+            {
+                if (g.Layout == null || Vita3kCompatFields.Key(g.Compat) == Vita3kCompatFields.Key(compat)) continue;
+                foreach (var section in new[] { Vita3kGameConfig.CpuSection, Vita3kGameConfig.AudioSection, Vita3kGameConfig.EmulatorSection })
+                {
+                    var mine = compat?.Where(kv => kv.Key.StartsWith(section + "/", StringComparison.Ordinal))
+                                      .ToDictionary(kv => kv.Key.Substring(section.Length + 1), kv => kv.Value, StringComparer.Ordinal);
+                    Vita3kGameConfig.SaveSection(g.Layout, g.GameId, section, mine != null && mine.Count > 0 ? mine : null);
+                }
+                systems++;
+            }
+
+            // The Graphics tab: what is not on default.
+            var graphics = _graphics.Read();
+            if (graphics.Count == 0) graphics = null;
+            foreach (var g in _games)
+            {
+                if (g.Layout == null || Vita3kGraphicsFields.Key(g.Graphics) == Vita3kGraphicsFields.Key(graphics)) continue;
+                Vita3kGameConfig.SaveSection(g.Layout, g.GameId, Vita3kGameConfig.GpuSection, graphics);
+                systems++;
+            }
+
+            foreach (var g in _games)
+            {
+                if (g.Layout == null) continue;
+                bool same = g.AdvancedOn == (handOn && handText != null) && string.Equals((g.Advanced ?? "").Trim(), (handText ?? "").Trim(), StringComparison.Ordinal);
+                if (same) continue;
+                Vita3kGameConfig.SaveAdvanced(g.Layout, g.GameId, handText, handOn);
+                systems++;
+            }
+
             int changed = 0;
             foreach (var g in _games)
             {
@@ -300,8 +633,8 @@ namespace LbIntegrations.Vita3k
                 try { PluginHelper.DataManager?.Save(true); }
                 catch (Exception ex) { Log.Warn("could not save the games", ex); }
             }
-            Log.Info("options window: " + changed + " of " + _games.Count + " game(s) changed");
-            Changed = changed;
+            Log.Info("options window: " + changed + " of " + _games.Count + " game(s) changed, " + systems + " system setting(s) written");
+            Changed = changed + systems;
             DialogResult = DialogResult.OK;
             Close();
         }
