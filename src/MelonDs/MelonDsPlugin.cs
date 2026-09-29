@@ -787,7 +787,17 @@ namespace LbIntegrations.MelonDs
                 // something was cut.
                 var current = Safe(() => args?.CurrentCommandLine);
                 if (string.IsNullOrWhiteSpace(current)) current = Safe(() => args?.EmulatorBeingLaunched?.CommandLine) ?? "";
-                bool noRamDisk = MelonDsCommandLine.Carries(current, MelonDsCommandLine.NoRamDiskFlag);
+                // The game's session options: kept by this plugin for the game (MelonDsSessionStore) - whichever
+                // emulator of ours runs it - else the flags of the line.
+                string kept = null;
+                try
+                {
+                    var install = string.IsNullOrWhiteSpace(exe) ? null : MelonDsPaths.Resolve(ResolveFullPath(exe))?.InstallDir;
+                    kept = MelonDsSessionStore.Load(install, Safe(() => args?.GameBeingLaunched?.Id));
+                }
+                catch { }
+                bool noRamDisk = MelonDsCommandLine.Carries(kept ?? current, MelonDsCommandLine.NoRamDiskFlag);
+                if (kept != null) Log.Info("session options kept for this game: " + (kept.Length == 0 ? "none" : kept));
                 var stripped = MelonDsCommandLine.Strip(current);
                 if (!string.Equals(stripped, current, StringComparison.Ordinal)) newLine = stripped;
 

@@ -7,8 +7,11 @@
 //               no working NAND. With no RAM disk available the RAM choice is greyed, and says why.
 //   "Video"   - the game's OWN video settings, the ones of melonDS's Video settings window, for every DS
 //               game - cartridge or DSiWare - written for its session and taken back after
-//               (MelonDsGameSettings). NOTHING IS OVERWRITTEN unless its box is ticked: showing the
-//               window changes no game.
+//               (MelonDsGameSettings). EACH SETTING ON ITS OWN (Mehdi, 29/09 - as Vita3K's Graphics): a
+//               list starts with "<Default : melonDS's value>", a box has three states (the filled one:
+//               default), the VSync interval an "Override default" beside it - and only what is not on
+//               default is written: the fewer keys written, the less a newer melonDS can trip on them.
+//               Showing the window changes no game.
 //   "Firmware" - the same for the ones of melonDS's Firmware settings window: name, language,
 //               birthday, colour, message, MAC. A DSiWare title's save keeps the console's own
 //               settings through it - see DsiWorkspace.MarkForced.
@@ -39,6 +42,8 @@ namespace LbIntegrations.MelonDs
             public IGame Game;
             public string Title, Own, Inherited, Exe, InstallDir, GameId;
             public bool IsDSiWare;
+            public bool LineIsOurs;          // the game's OWN emulator is this melonDS: its command line is ours to change
+            public string EmulatorTitle;     // the game's own emulator, to say whose line it is otherwise
             public MelonDsOptions Options;
             public Dictionary<string, string> Settings;   // the game's own settings, null for melonDS's
             public string Advanced;                        // the text set by hand, null for none
@@ -57,7 +62,8 @@ namespace LbIntegrations.MelonDs
         private ComboBox _source;
 
         private RadioButton _ram, _disk;
-        private CheckBox _overwrite, _threaded, _useGl, _vsync, _better, _hires;
+        private CheckBox _threaded, _useGl, _vsync, _better, _hires, _intervalOverride;
+        private ComboBox _renderer;
         private CheckBox _fwOverwrite;
         private MelonDsFirmwareFields _firmware;
         private CheckBox _handOn;
@@ -65,7 +71,6 @@ namespace LbIntegrations.MelonDs
         private Label _handStatus, _videoHandNote, _fwHandNote;
         private string _keptHand;
         private bool _handLoading;
-        private RadioButton _soft, _glClassic, _glCompute;
         private ComboBox _scale;
         private NumericUpDown _interval;
         private bool _loading;
@@ -172,8 +177,17 @@ namespace LbIntegrations.MelonDs
                 ? new Label { AutoSize = true, ForeColor = Color.Firebrick, Text = "Not available: " + why + ". These titles play on the disk." }
                 : new Label { AutoSize = true, ForeColor = SystemColors.GrayText, Text = "Needs about 300 MB of free memory; without it, the disk is used." }, 36);
             y += 28;
-            _disk = new RadioButton { AutoSize = true, Text = "Disk (" + MelonDsCommandLine.NoRamDiskFlag + ") - survives a crash of the machine mid-game" };
+            _disk = new RadioButton { AutoSize = true, Text = "Disk - survives a crash of the machine mid-game" };
             Add(_disk, 18); y += 34;
+            // KEPT BY THIS PLUGIN, NOT IN THE GAME'S COMMAND LINE (Mehdi, 29/09): that line is the game's
+            // default emulator's - kept here, the choice holds whichever emulator of ours runs it.
+            Add(new Label
+            {
+                AutoSize = false, Size = new Size(510, 34), ForeColor = SystemColors.GrayText,
+                Text = "Kept by this plugin for the game and applied at launch - whichever emulator of ours runs it; "
+                       + "the game's command line is not changed (a " + MelonDsCommandLine.NoRamDiskFlag + " left on it is moved here).",
+            }, 12);
+            y += 40;
             if (_games.Count > _ware.Count)
                 Add(new Label { AutoSize = true, ForeColor = SystemColors.GrayText,
                                 Text = (_games.Count - _ware.Count) + " cartridge game(s) of the selection have no session option and keep theirs." }, 12);
@@ -182,57 +196,99 @@ namespace LbIntegrations.MelonDs
 
         // ── Video ────────────────────────────────────────────────────────────
 
+        private static readonly string[] Renderers = { "Software", "OpenGL (Classic)", "OpenGL (Compute shader)" };
+
         private TabPage VideoTab()
         {
             var page = new TabPage("Video") { UseVisualStyleBackColor = true };
-            _overwrite = new CheckBox
-            {
-                AutoSize = true, Location = new Point(12, 12),
-                Text = "Overwrite melonDS's video settings for " + (_games.Count == 1 ? "this game" : "these games"),
-            };
-            page.Controls.Add(_overwrite);
             page.Controls.Add(new Label
             {
-                AutoSize = false, Location = new Point(30, 34), Size = new Size(500, 32), ForeColor = SystemColors.GrayText,
-                Text = "Written into melonDS for the game's session only; melonDS's own settings come back when it quits. "
-                       + "Unticked, the game runs on melonDS's settings, shown below.",
+                AutoSize = false, Location = new Point(12, 8), Size = new Size(520, 52), ForeColor = SystemColors.GrayText,
+                Text = "A <Default> entry, a filled box or an untouched \"Override default\" leaves the setting as melonDS has it; only "
+                     + "what is set here is written, for the game's session only - melonDS's own come back when it quits.",
             });
 
-            var display = new GroupBox { Text = "Display settings", Location = new Point(12, 72), Size = new Size(250, 220) };
+            var display = new GroupBox { Text = "Display settings", Location = new Point(12, 64), Size = new Size(250, 232) };
             display.Controls.Add(new Label { Text = "3D renderer:", AutoSize = true, Location = new Point(12, 24) });
-            _soft = new RadioButton { Text = "Software", AutoSize = true, Location = new Point(18, 46) };
-            _glClassic = new RadioButton { Text = "OpenGL (Classic)", AutoSize = true, Location = new Point(18, 70) };
-            _glCompute = new RadioButton { Text = "OpenGL (Compute shader)", AutoSize = true, Location = new Point(18, 94) };
-            _useGl = new CheckBox { Text = "OpenGL display", AutoSize = true, Location = new Point(12, 128) };
-            _vsync = new CheckBox { Text = "VSync", AutoSize = true, Location = new Point(12, 152) };
-            display.Controls.Add(new Label { Text = "VSync interval:", AutoSize = true, Location = new Point(12, 184) });
-            _interval = new NumericUpDown { Minimum = 1, Maximum = 20, Width = 50, Location = new Point(120, 182) };
-            display.Controls.AddRange(new Control[] { _soft, _glClassic, _glCompute, _useGl, _vsync, _interval });
+            _renderer = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(12, 44), Width = 226 };
+            _useGl = Box("OpenGL display", new Point(12, 80));
+            _vsync = Box("VSync", new Point(12, 106));
+            display.Controls.Add(new Label { Text = "VSync interval:", AutoSize = true, Location = new Point(12, 140) });
+            _intervalOverride = new CheckBox { Text = "Override default", AutoSize = true, Location = new Point(120, 138) };
+            _interval = new NumericUpDown { Minimum = 1, Maximum = 20, Width = 50, Location = new Point(14, 164) };
+            display.Controls.AddRange(new Control[] { _renderer, _useGl, _vsync, _intervalOverride, _interval });
 
-            var softBox = new GroupBox { Text = "Software renderer", Location = new Point(276, 72), Size = new Size(250, 56) };
-            _threaded = new CheckBox { Text = "Use separate thread", AutoSize = true, Location = new Point(12, 24) };
+            var softBox = new GroupBox { Text = "Software renderer", Location = new Point(276, 64), Size = new Size(250, 56) };
+            _threaded = Box("Use separate thread", new Point(12, 24));
             softBox.Controls.Add(_threaded);
 
-            var glBox = new GroupBox { Text = "OpenGL renderer", Location = new Point(276, 136), Size = new Size(250, 156) };
+            var glBox = new GroupBox { Text = "OpenGL renderer", Location = new Point(276, 128), Size = new Size(250, 168) };
             glBox.Controls.Add(new Label { Text = "Internal resolution:", AutoSize = true, Location = new Point(12, 24) });
             _scale = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(12, 46), Width = 224 };
-            for (int i = 1; i <= 16; i++) _scale.Items.Add(i + "x" + (i == 1 ? " native" : "") + " (" + (256 * i) + "x" + (192 * i) + ")");
-            _better = new CheckBox { Text = "Improved polygon splitting", AutoSize = true, Location = new Point(12, 82) };
-            _hires = new CheckBox { Text = "Use high resolution coordinates", AutoSize = true, Location = new Point(12, 108) };
+            // Two lines each: "(default: ...)" would not fit beside the name.
+            _better = Box("Improved polygon splitting", new Point(12, 80));
+            _better.AutoSize = false; _better.Size = new Size(230, 36);
+            _hires = Box("Use high resolution coordinates", new Point(12, 118));
+            _hires.AutoSize = false; _hires.Size = new Size(230, 36);
             glBox.Controls.AddRange(new Control[] { _scale, _better, _hires });
 
             page.Controls.AddRange(new Control[] { display, softBox, glBox });
-            _videoHandNote = new Label { AutoSize = false, Location = new Point(12, 300), Size = new Size(520, 34), ForeColor = Color.Firebrick, Visible = false,
+            _videoHandNote = new Label { AutoSize = false, Location = new Point(12, 304), Size = new Size(520, 34), ForeColor = Color.Firebrick, Visible = false,
                                          Text = "Set by hand in the Advanced tab - untick \"Edit by hand\" there to use this tab again." };
             page.Controls.Add(_videoHandNote);
 
             EventHandler refresh = (_, _) => { if (!_loading) RefreshEnabled(); };
-            foreach (var cb in new[] { _overwrite, _useGl, _vsync }) cb.CheckedChanged += refresh;
-            foreach (var rb in new[] { _soft, _glClassic, _glCompute }) rb.CheckedChanged += refresh;
-            // Unticked, the values shown go back to melonDS's own: what the game will run on.
-            _overwrite.CheckedChanged += (_, _) => { if (!_loading && !_overwrite.Checked) ShowVideo(_global); };
+            foreach (var cb in new[] { _useGl, _vsync, _threaded, _better, _hires }) cb.CheckStateChanged += refresh;
+            _renderer.SelectedIndexChanged += refresh;
+            _intervalOverride.CheckedChanged += (_, _) =>
+            {
+                if (_loading) return;
+                if (!_intervalOverride.Checked) _interval.Value = Interval(Default("VSyncInterval"));
+                RefreshEnabled();
+            };
             return page;
         }
+
+        private static CheckBox Box(string text, Point at) => new CheckBox { Text = text, Tag = text, AutoSize = true, Location = at, ThreeState = true };
+
+        private string Default(string id) => _global.TryGetValue(id, out var v) ? v : null;
+
+        private static decimal Interval(string v)
+            => int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? Math.Max(1, Math.Min(20, n)) : 1;
+
+        /// <summary>A list's entry: the value written, the words shown; a null value is the default.</summary>
+        private sealed class Item
+        {
+            public string Value, Text;
+            public override string ToString() => Text;
+        }
+
+        private static string RendererName(string v)
+            => int.TryParse(v, out var n) && n >= 0 && n < Renderers.Length ? Renderers[n] : v;
+
+        private static string ScaleName(string v)
+            => int.TryParse(v, out var n) && n >= 1 && n <= 16 ? n + "x" + (n == 1 ? " native" : "") + " (" + (256 * n) + "x" + (192 * n) + ")" : v;
+
+        private static void FillList(ComboBox box, IEnumerable<(string Value, string Text)> choices, string defaultText, string own)
+        {
+            box.Items.Clear();
+            box.Items.Add(new Item { Value = null, Text = string.IsNullOrEmpty(defaultText) ? "<Default>" : "<Default : " + defaultText + ">" });
+            foreach (var c in choices) box.Items.Add(new Item { Value = c.Value, Text = c.Text });
+            if (own == null) { box.SelectedIndex = 0; return; }
+            var at = box.Items.Cast<Item>().ToList().FindIndex(i => i.Value == own);
+            if (at < 0) { box.Items.Add(new Item { Value = own, Text = own }); at = box.Items.Count - 1; }
+            box.SelectedIndex = at;
+        }
+
+        private static string Chosen(ComboBox box) => (box.SelectedItem as Item)?.Value;
+
+        private static string OfBox(CheckBox box) => box.CheckState == CheckState.Indeterminate ? null : box.Checked ? "true" : "false";
+
+        private static void SetBox(CheckBox box, string own)
+            => box.CheckState = own == null ? CheckState.Indeterminate : own == "true" ? CheckState.Checked : CheckState.Unchecked;
+
+        /// <summary>A setting's value for the game: its own, else melonDS's.</summary>
+        private string Effective(string id, string own) => own ?? Default(id);
 
         // ── Firmware ─────────────────────────────────────────────────────────
 
@@ -266,54 +322,69 @@ namespace LbIntegrations.MelonDs
             return page;
         }
 
-        /// <summary>What melonDS's own window does: the GL options only for a GL renderer, the thread only
-        /// for the software one, a GL renderer always on a GL display, VSync only on a GL display - and
-        /// nothing at all while the box is unticked.</summary>
+        /// <summary>What melonDS's own window does, by the values the game will RUN on (its own, else
+        /// melonDS's): the GL options only for a GL renderer, the thread only for the software one, a GL
+        /// renderer always on a GL display, VSync only on a GL display - and nothing at all while the
+        /// Advanced tab's text is in use. A box on default says which: "VSync   (default: off)".</summary>
         private void RefreshEnabled()
         {
-            bool on = _overwrite.Checked && !(_handOn?.Checked ?? false);
-            bool gl = !_soft.Checked;
-            foreach (var c in new Control[] { _soft, _glClassic, _glCompute }) c.Enabled = on;
-            if (gl && !_useGl.Checked) { _loading = true; _useGl.Checked = true; _loading = false; }
+            bool on = !(_handOn?.Checked ?? false);
+            bool gl = Effective("Renderer", Chosen(_renderer)) is string r && r != "0";
+            // melonDS runs a GL renderer on a GL display, whatever the box says: set so, it is said so.
+            if (on && gl && Chosen(_renderer) != null && Effective("UseGL", OfBox(_useGl)) != "true")
+            { _loading = true; _useGl.CheckState = CheckState.Checked; _loading = false; }
+            bool glDisplay = gl || Effective("UseGL", OfBox(_useGl)) == "true";
+            _renderer.Enabled = on;
             _useGl.Enabled = on && !gl;
-            bool glDisplay = gl || _useGl.Checked;
             _vsync.Enabled = on && glDisplay;
-            _interval.Enabled = on && glDisplay && _vsync.Checked;
+            _intervalOverride.Enabled = on && glDisplay && Effective("VSync", OfBox(_vsync)) == "true";
+            _interval.Enabled = _intervalOverride.Enabled && _intervalOverride.Checked;
             _threaded.Enabled = on && !gl;
             _scale.Enabled = _better.Enabled = _hires.Enabled = on && gl;
+
+            foreach (var (cb, id) in new[] { (_useGl, "UseGL"), (_vsync, "VSync"), (_threaded, "Threaded"), (_better, "BetterPolygons"), (_hires, "HiresCoordinates") })
+            {
+                var d = Default(id);
+                cb.Text = cb.CheckState != CheckState.Indeterminate ? (string)cb.Tag
+                        : (string)cb.Tag + "   (default: " + (d == "true" ? "on" : d == "false" ? "off" : "not set") + ")";
+            }
         }
 
-        private void ShowVideo(Dictionary<string, string> v)
+        /// <summary>melonDS's values as the defaults, and the game's own over them.</summary>
+        private void ShowVideo(Dictionary<string, string> own)
         {
             bool was = _loading;
             _loading = true;
-            string Get(string id) => v != null && v.TryGetValue(id, out var x) ? x : (_global.TryGetValue(id, out var g) ? g : null);
-            bool B(string id) => Get(id) == "true";
-            int I(string id, int d) => int.TryParse(Get(id), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n : d;
-            int r = I("Renderer", 0);
-            _soft.Checked = r == 0; _glClassic.Checked = r == 1; _glCompute.Checked = r == 2;
-            _threaded.Checked = B("Threaded");
-            _scale.SelectedIndex = Math.Max(0, Math.Min(15, I("ScaleFactor", 1) - 1));
-            _better.Checked = B("BetterPolygons");
-            _hires.Checked = B("HiresCoordinates");
-            _useGl.Checked = B("UseGL");
-            _vsync.Checked = B("VSync");
-            _interval.Value = Math.Max(1, Math.Min(20, I("VSyncInterval", 1)));
+            string Own(string id) => own != null && own.TryGetValue(id, out var x) ? x : null;
+            FillList(_renderer, Renderers.Select((n, i) => (i.ToString(CultureInfo.InvariantCulture), n)), RendererName(Default("Renderer")), Own("Renderer"));
+            FillList(_scale, Enumerable.Range(1, 16).Select(i => (i.ToString(CultureInfo.InvariantCulture), ScaleName(i.ToString(CultureInfo.InvariantCulture)))),
+                     ScaleName(Default("ScaleFactor")), Own("ScaleFactor"));
+            SetBox(_threaded, Own("Threaded"));
+            SetBox(_better, Own("BetterPolygons"));
+            SetBox(_hires, Own("HiresCoordinates"));
+            SetBox(_useGl, Own("UseGL"));
+            SetBox(_vsync, Own("VSync"));
+            _intervalOverride.Checked = Own("VSyncInterval") != null;
+            _interval.Value = Interval(Own("VSyncInterval") ?? Default("VSyncInterval"));
             _loading = was;
             RefreshEnabled();
         }
 
-        private Dictionary<string, string> ReadVideo() => new Dictionary<string, string>(StringComparer.Ordinal)
+        /// <summary>Only what is not on default.</summary>
+        private Dictionary<string, string> ReadVideo()
         {
-            ["Renderer"] = _soft.Checked ? "0" : _glClassic.Checked ? "1" : "2",
-            ["Threaded"] = _threaded.Checked ? "true" : "false",
-            ["ScaleFactor"] = (_scale.SelectedIndex + 1).ToString(CultureInfo.InvariantCulture),
-            ["BetterPolygons"] = _better.Checked ? "true" : "false",
-            ["HiresCoordinates"] = _hires.Checked ? "true" : "false",
-            ["UseGL"] = _useGl.Checked ? "true" : "false",
-            ["VSync"] = _vsync.Checked ? "true" : "false",
-            ["VSyncInterval"] = ((int)_interval.Value).ToString(CultureInfo.InvariantCulture),
-        };
+            var v = new Dictionary<string, string>(StringComparer.Ordinal);
+            void Put(string id, string value) { if (value != null) v[id] = value; }
+            Put("Renderer", Chosen(_renderer));
+            Put("ScaleFactor", Chosen(_scale));
+            Put("Threaded", OfBox(_threaded));
+            Put("BetterPolygons", OfBox(_better));
+            Put("HiresCoordinates", OfBox(_hires));
+            Put("UseGL", OfBox(_useGl));
+            Put("VSync", OfBox(_vsync));
+            if (_intervalOverride.Checked) v["VSyncInterval"] = ((int)_interval.Value).ToString(CultureInfo.InvariantCulture);
+            return v;
+        }
 
         // ── the source ───────────────────────────────────────────────────────
 
@@ -325,12 +396,10 @@ namespace LbIntegrations.MelonDs
                 bool wantDisk = e.IsDSiWare ? e.Options.NoRamDisk : _ware[0].Options.NoRamDisk;
                 if (!_ram.Enabled || wantDisk) _disk.Checked = true; else _ram.Checked = true;
             }
-            bool video = MelonDsGameSettings.Has(e.Settings, MelonDsGameSettings.Video);
             bool firmware = MelonDsGameSettings.Has(e.Settings, MelonDsGameSettings.Firmware);
-            _overwrite.Checked = video;
             _fwOverwrite.Checked = firmware;
             _loading = false;
-            ShowVideo(video ? e.Settings : _global);
+            ShowVideo(e.Settings);
             _firmware.ShowValues(firmware ? e.Settings : _global);
             _firmware.SetEditable(firmware);
             _handLoading = true;
@@ -428,7 +497,6 @@ namespace LbIntegrations.MelonDs
             bool on = _handOn.Checked;
             _handText.ReadOnly = !on;
             _handText.BackColor = on ? SystemColors.Window : SystemColors.Control;
-            _overwrite.Enabled = !on;
             RefreshEnabled();
             _fwOverwrite.Enabled = !on;
             _firmware.SetEditable(!on && _fwOverwrite.Checked);
@@ -446,7 +514,7 @@ namespace LbIntegrations.MelonDs
         private Dictionary<string, string> TabValues()
         {
             var own = new Dictionary<string, string>(StringComparer.Ordinal);
-            if (_overwrite.Checked) foreach (var kv in ReadVideo()) own[kv.Key] = kv.Value;
+            foreach (var kv in ReadVideo()) own[kv.Key] = kv.Value;
             if (_fwOverwrite.Checked)
             {
                 foreach (var kv in _firmware.Read())
@@ -485,11 +553,17 @@ namespace LbIntegrations.MelonDs
             if (_ram != null)
             {
                 var options = new MelonDsOptions { NoRamDisk = _disk.Checked };
+                var flags = string.Join(" ", options.Words());
                 foreach (var g in _ware)
                 {
-                    var line = MelonDsCommandLine.NewOwnLine(g.Own, g.Inherited, options);
-                    if (string.Equals(line ?? "", g.Own ?? "", StringComparison.Ordinal)) continue;
-                    try { g.Game.CommandLine = line; lines++; Log.Info("options of " + g.Title + ": \"" + (g.Own ?? "") + "\" -> \"" + line + "\""); }
+                    // Kept for the game when it differs from what it runs with now.
+                    if (MelonDsSessionStore.Load(g.InstallDir, g.GameId) != flags && g.Options.NoRamDisk != options.NoRamDisk
+                        || MelonDsSessionStore.Load(g.InstallDir, g.GameId) == null && MelonDsCommandLine.Carries(g.Own, MelonDsCommandLine.NoRamDiskFlag))
+                        MelonDsSessionStore.Save(g.InstallDir, g.GameId, flags);
+                    // A flag of ours still on the game's OWN line moves here: taken off the line.
+                    if (!g.LineIsOurs || string.IsNullOrWhiteSpace(g.Own) || !MelonDsCommandLine.Carries(g.Own, MelonDsCommandLine.NoRamDiskFlag)) continue;
+                    var line = MelonDsCommandLine.Strip(g.Own);
+                    try { g.Game.CommandLine = line; lines++; Log.Info("options of " + g.Title + ": " + MelonDsCommandLine.NoRamDiskFlag + " moved off the line - \"" + g.Own + "\" -> \"" + line + "\""); }
                     catch (Exception ex) { Log.Warn("options: could not write the line of " + g.Title, ex); }
                 }
             }

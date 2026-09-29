@@ -6,9 +6,10 @@
 // Plugins\ that relays to the GameMenu class below by its name - src\Menus\Menus.cs has the contract.
 // None may be declared here: LiteBox loads both roots and would show the entry twice.
 //
-// WHOSE GAME IS IT: the game's OWN emulator (IGame.EmulatorId), the one Play uses - ours when that
-// emulator's executable is melonDS's. Shown for EVERY DS game of ours (Mehdi, 29/09): the window's
-// options grow by tabs, and the RAM disk one is only there for DSiWare.
+// WHOSE GAME IS IT: any game one of our melonDS can run (Mehdi, 29/09) - its own emulator when that is
+// ours, else an emulator of ours whose platforms name the game's (EmulatorFor): "Launch With" can pick it.
+// The session option lives in the game's command line, which is its OWN emulator's: it is only offered
+// when that emulator is ours. The window's options grow by tabs; the RAM disk one is only for DSiWare.
 
 using System;
 using System.Collections.Generic;
@@ -28,17 +29,38 @@ namespace LbIntegrations.MelonDs
         public static Image Icon => _icon ??= SystemIcons.Application.ToBitmap();
         private static Image _icon;
 
-        internal static bool IsOurs(IGame game)
+        internal static bool IsOurs(IGame game) => EmulatorFor(game) != null;
+
+        /// <summary>The emulator of ours this game can run on (Mehdi, 29/09): its OWN emulator when that one
+        /// is ours - else any emulator of ours whose platforms name the game's. Null when none: the entry is
+        /// not offered. Asked at every right-click: lookups in memory, nothing read from disk.</summary>
+        internal static IEmulator EmulatorFor(IGame game)
         {
             try
             {
-                var id = game?.EmulatorId;
-                if (string.IsNullOrWhiteSpace(id)) return false;
-                var emulator = PluginHelper.DataManager?.GetEmulatorById(id);
-                return emulator != null && MelonDsPaths.IsMelonDsExecutable(emulator.ApplicationPath);
+                var dm = PluginHelper.DataManager;
+                if (dm == null || game == null) return null;
+                var own = string.IsNullOrWhiteSpace(game.EmulatorId) ? null : dm.GetEmulatorById(game.EmulatorId);
+                if (own != null && MelonDsPaths.IsMelonDsExecutable(own.ApplicationPath)) return own;
+                var platform = game.Platform ?? "";
+                foreach (var e in dm.GetAllEmulators() ?? new IEmulator[0])
+                {
+                    if (e == null || !MelonDsPaths.IsMelonDsExecutable(e.ApplicationPath)) continue;
+                    if ((e.GetAllEmulatorPlatforms() ?? new IEmulatorPlatform[0]).Any(p => string.Equals(p?.Platform, platform, StringComparison.OrdinalIgnoreCase)))
+                        return e;
+                }
             }
+            catch { }
+            return null;
+        }
+
+        /// <summary>Is <paramref name="emulator"/> the game's OWN emulator - the one its command line is for?</summary>
+        internal static bool IsOwnEmulator(IGame game, IEmulator emulator)
+        {
+            try { return emulator != null && string.Equals(game?.EmulatorId, emulator.Id, StringComparison.OrdinalIgnoreCase); }
             catch { return false; }
         }
+
 
         internal static void Open(IGame[] games)
         {
@@ -50,20 +72,23 @@ namespace LbIntegrations.MelonDs
 
                 var entries = ours.Select(g =>
                 {
+                    var emulator = EmulatorFor(g);
                     var own = Safe(() => g.CommandLine);
-                    var inherited = InheritedLine(g);
+                    var inherited = InheritedLine(g, emulator);
                     var rom = MelonDsPlugin.ResolveFullPath(Safe(() => g.ApplicationPath));
                     bool ware = false;
                     try { ware = NdsHeader.Describe(rom).IsDSiWare; } catch { }
                     string exe = null;
-                    try { exe = MelonDsPlugin.ResolveFullPath(PluginHelper.DataManager?.GetEmulatorById(g.EmulatorId)?.ApplicationPath); } catch { }
+                    try { exe = MelonDsPlugin.ResolveFullPath(emulator?.ApplicationPath); } catch { }
                     var install = exe == null ? null : MelonDsPaths.Resolve(exe)?.InstallDir;
                     var gameId = Safe(() => g.Id);
                     return new MelonDsOptionsForm.Entry
                     {
                         Game = g, Title = Safe(() => g.Title), Own = own, Inherited = inherited, IsDSiWare = ware, Exe = exe,
+                        LineIsOurs = IsOwnEmulator(g, emulator), EmulatorTitle = Safe(() => PluginHelper.DataManager?.GetEmulatorById(g.EmulatorId)?.Title),
                         InstallDir = install, GameId = gameId,
-                        Options = MelonDsOptions.From(string.IsNullOrWhiteSpace(own) ? inherited : own),
+                        // What the game runs with: the options kept for it, else its line's flags.
+                        Options = MelonDsOptions.From(MelonDsSessionStore.Load(install, gameId) ?? (string.IsNullOrWhiteSpace(own) ? inherited : own)),
                         Settings = MelonDsGameSettings.Load(install, gameId),
                         Advanced = MelonDsGameSettings.LoadAdvanced(install, gameId, out var handOn),
                         AdvancedOn = handOn,
@@ -78,11 +103,10 @@ namespace LbIntegrations.MelonDs
 
         /// <summary>The line a game runs with when it has none of its own: its emulator's line for the
         /// game's platform, else the emulator's own.</summary>
-        internal static string InheritedLine(IGame game)
+        internal static string InheritedLine(IGame game, IEmulator emulator)
         {
             try
             {
-                var emulator = PluginHelper.DataManager?.GetEmulatorById(game?.EmulatorId);
                 if (emulator == null) return "";
                 var platform = Safe(() => game.Platform);
                 var forPlatform = (emulator.GetAllEmulatorPlatforms() ?? new IEmulatorPlatform[0])

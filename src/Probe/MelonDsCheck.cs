@@ -353,7 +353,7 @@ namespace LbIntegrations.Probe
             Set("Options", Activator.CreateInstance(TypeIn("MelonDsOptions")));
             Set("Settings", new Dictionary<string, string> { ["ScaleFactor"] = "4", ["Renderer"] = "1" });
             Set("Advanced", "[3D.GL]\nScaleFactor = 4\n\n[Instance0.Audio]\nVolume = 128\n");
-            Set("AdvancedOn", true);
+            Set("AdvancedOn", false);
             var list = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(entryType));
             list.Add(entry);
             using var form = (System.Windows.Forms.Form)Activator.CreateInstance(formType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new object[] { list }, null);
