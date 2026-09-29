@@ -1970,9 +1970,13 @@ namespace LbIntegrations.Probe
             Check("two DLC kept - one per CONTENT_ID, the decoy of another game set aside", addons.Count == 2);
 
             ImportIndexAndChoice(layout, root, game, described);
+            SettingsConsole(layout, root, game, described);
             ImportCleanup(root);
             MultiContent(root);
             TheConfig(layout);
+            StrayFs(layout, root);
+            GameClosedLine(layout);
+            QuietAndFull(layout);
 
             // A launch installs them, before the reference.
             var args = new object[] { layout, game, null };
@@ -2134,7 +2138,7 @@ namespace LbIntegrations.Probe
             try
             {
                 if (File.Exists(config)) File.Delete(config);
-                Call("Vita3kConfig", "ApplyInstallDefaults", new object[] { layout });
+                Call("Vita3kConfig", "ApplyInstallDefaults", new object[] { layout, false });
                 var fresh = File.ReadAllText(config);
                 Check("a fresh install: full screen on, the update check off",
                       fresh.Contains("boot-apps-full-screen: true") && fresh.Contains("check-for-updates: false"), fresh.Trim());
@@ -2157,7 +2161,7 @@ namespace LbIntegrations.Probe
                 Check("pt-BR and zh-TW: their own variant", From("pt-BR", "pt-BR").StartsWith("language Portuguese (Brazil)") && From("zh-TW", "zh-TW").StartsWith("language Chinese (traditional)"));
 
                 File.WriteAllText(config, "show-welcome: false\ncheck-for-updates: true\nsys-lang: 2\nsys-date-format: 1\nsys-time-format: 1\n");
-                Call("Vita3kConfig", "ApplyInstallDefaults", new object[] { layout });
+                Call("Vita3kConfig", "ApplyInstallDefaults", new object[] { layout, false });
                 var updated = File.ReadAllText(config);
                 Check("an update keeps what the user set - the update check they turned on stays on",
                       updated.Contains("check-for-updates: true") && !updated.Contains("check-for-updates: false"));
@@ -2184,6 +2188,157 @@ namespace LbIntegrations.Probe
                 if (before != null) File.WriteAllText(config, before);
                 else if (File.Exists(config)) File.Delete(config);
             }
+        }
+
+        /// <summary>A REAL portable\fs where the link goes - what Vita3K run on its own leaves (measured
+        /// 28/09): its first-run tree is removed, anything more moved aside, and in both cases the link
+        /// that follows IS a link - a link that could not be made is never reported as made.</summary>
+        private static void StrayFs(object layout, string root)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  a real portable\\fs in the link's place");
+            var fs = (string)Call("Vita3kWorkspace", "FsLink", new object[] { layout });
+            var portable = Path.GetDirectoryName(fs);
+            var target = Path.Combine(root, "stray-target");
+            Directory.CreateDirectory(target);
+            bool IsLink() { try { return File.GetAttributes(fs).HasFlag(FileAttributes.ReparsePoint); } catch { return false; } }
+            void Forge(bool withMore)
+            {
+                foreach (var d in new[] { "grw0", "os0", "vd0/registry", "ux0/app", "ux0/user/00" })
+                    Directory.CreateDirectory(Path.Combine(fs, d.Replace('/', Path.DirectorySeparatorChar)));
+                File.WriteAllText(Path.Combine(fs, "ux0", "user", "00", "user.xml"), "<user id=\"00\" name=\"Vita3K\"/>");
+                if (withMore) File.WriteAllText(Path.Combine(fs, "ux0", "user", "00", "somebody's.dat"), "not Vita3K's");
+            }
+            Check("(the console has its base)", (bool)Call("Vita3kWorkspace", "HasBase", new object[] { layout }));
+
+            Forge(withMore: false);
+            var first = new object[] { layout, target, null };
+            Check("Vita3K's first-run tree: removed, and the link made", (bool)Call("Vita3kWorkspace", "Link", first) && IsLink(), first[2] as string);
+            Check("nothing set aside for it", !Directory.EnumerateDirectories(portable, "fs.stray-*").Any());
+            Call("Vita3kWorkspace", "DropLink", new object[] { layout });
+
+            Forge(withMore: true);
+            var second = new object[] { layout, target, null };
+            Check("a tree holding more: the link made all the same", (bool)Call("Vita3kWorkspace", "Link", second) && IsLink(), second[2] as string);
+            var aside = Directory.EnumerateDirectories(portable, "fs.stray-*").ToList();
+            Check("and the tree moved aside whole, never deleted",
+                  aside.Count == 1 && File.Exists(Path.Combine(aside[0], "ux0", "user", "00", "somebody's.dat")));
+            Call("Vita3kWorkspace", "DropLink", new object[] { layout });
+            foreach (var d in aside) Directory.Delete(d, recursive: true);
+            Check("(and the link dropped, nothing left behind)", !Directory.Exists(fs) && !File.Exists(fs));
+        }
+
+        /// <summary>Vita3K's log read as it is written, for "Game closed": not seen before it is there,
+        /// seen once it is - even split across two reads - and seen again in a log rewritten by a new run.</summary>
+        private static void GameClosedLine(object layout)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  Vita3K's log saying the game closed");
+            var log = Path.Combine((string)Field(layout, "InstallDir"), "portable", "vita3k.log");
+            var before = File.Exists(log) ? File.ReadAllBytes(log) : null;
+            try
+            {
+                File.WriteAllText(log, "[16:21:21.038] |I| [main]: Vita3K v0.2.1\n[16:21:35.739] |T| [close_file]: sceIoClose\n");
+                var watch = Activator.CreateInstance(_asm.GetType("LbIntegrations.Vita3k.Vita3kGameClosed", throwOnError: true), layout);
+                var seen = watch.GetType().GetMethod("Seen");
+                bool Seen() => (bool)seen.Invoke(watch, null);
+                Check("a log without the line: nothing", !Seen());
+                File.AppendAllText(log, "[16:21:40.612] |I| [MainWindow::on_game_cl");
+                Check("half of the line: not yet", !Seen());
+                File.AppendAllText(log, "osed]: Game closed: LittleBigPlanet\n[16:21:40.612] |D| [app::AppSessionController::set_phase]: Running -> Stopping\n");
+                Check("the rest of it: seen, across the two reads", Seen());
+                Check("and not seen twice", !Seen());
+                File.WriteAllText(log, "[x] |I| [MainWindow::on_game_closed]: Game closed: again\n");
+                Check("a log rewritten by a new run: read from its start", Seen());
+            }
+            finally
+            {
+                if (before != null) File.WriteAllBytes(log, before);
+                else if (File.Exists(log)) File.Delete(log);
+            }
+        }
+
+        /// <summary>A fresh install sets full screen over Vita3K's own false; an update does not. The exit
+        /// confirmation is turned off in the GUI settings, the rest of that file kept.</summary>
+        private static void QuietAndFull(object layout)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  full screen and the exit confirmation");
+            var portable = Path.Combine((string)Field(layout, "InstallDir"), "portable");
+            var config = Path.Combine(portable, "config.yml");
+            var ini = Path.Combine(portable, "gui-configs", "CurrentSettings.ini");
+            var cfgBefore = File.Exists(config) ? File.ReadAllText(config) : null;
+            var iniBefore = File.Exists(ini) ? File.ReadAllText(ini) : null;
+            var apply = _asm.GetType("LbIntegrations.Vita3k.Vita3kConfig", throwOnError: true).GetMethod("ApplyInstallDefaults", BindingFlags.Public | BindingFlags.Static);
+            try
+            {
+                File.WriteAllText(config, "boot-apps-full-screen: false\nshow-welcome: false\n");
+                Directory.CreateDirectory(Path.GetDirectoryName(ini));
+                File.WriteAllText(ini, "[Meta]\ncurrentStylesheet=light\n\n[MainWindow]\nloggerVisible=true\nconfirmExitApp=true\n\n[GameList]\nsortCol=1\n");
+                apply.Invoke(null, new object[] { layout, false });
+                Check("an update keeps Vita3K's own full-screen setting", File.ReadAllText(config).Contains("boot-apps-full-screen: false"));
+                apply.Invoke(null, new object[] { layout, true });
+                var cfg = File.ReadAllText(config);
+                Check("a fresh install sets full screen over it, once", cfg.Contains("boot-apps-full-screen: true") && !cfg.Contains("boot-apps-full-screen: false"));
+                var text = File.ReadAllText(ini);
+                Check("the exit confirmation is off, in its section", text.Contains("[MainWindow]\nloggerVisible=true\nconfirmExitApp=false\n"), text);
+                Check("and the rest of the GUI settings kept", text.Contains("currentStylesheet=light") && text.Contains("[GameList]\nsortCol=1"));
+                File.Delete(ini);
+                Call("Vita3kConfig", "QuietExitConfirm", new object[] { layout });
+                Check("with no GUI settings yet, they are written with it", File.ReadAllText(ini).Contains("[MainWindow]\nconfirmExitApp=false"));
+                var ahk = _asm.GetType("LbIntegrations.Vita3k.Vita3kAhk", throwOnError: true);
+                Check("the Exit script closes Vita3K's window", ((string)ahk.GetField("Exit").GetValue(null)).Contains("WinClose, ahk_exe Vita3K.exe"));
+            }
+            finally
+            {
+                if (cfgBefore != null) File.WriteAllText(config, cfgBefore); else if (File.Exists(config)) File.Delete(config);
+                if (iniBefore != null) File.WriteAllText(ini, iniBefore); else if (File.Exists(ini)) File.Delete(ini);
+            }
+        }
+
+        /// <summary>The console Vita3K is opened on to edit a game's settings: the game's sce_sys out of its
+        /// archive; and when Vita3K cannot start (the forged one is a text file), nothing left behind -
+        /// no link, no fake console, the pristine firmware untouched.</summary>
+        private static void SettingsConsole(object layout, string root, string game, object described)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  Vita3K opened on a game, not started");
+            var type = _asm.GetType("LbIntegrations.Vita3k.Vita3kSettingsSession", throwOnError: true);
+            var sys = Path.Combine(root, "settings-sys");
+            Directory.CreateDirectory(sys);
+            var write = type.GetMethod("WriteSysFiles", BindingFlags.NonPublic | BindingFlags.Static);
+            int n = (int)write.Invoke(null, new object[] { game, described, sys });
+            Check("the game's param.sfo comes out of its archive", n >= 1 && File.Exists(Path.Combine(sys, "param.sfo")), n + " file(s)");
+
+            var install = (string)Field(layout, "InstallDir");
+            var baseDir = (string)Call("Vita3kWorkspace", "BaseDir", new object[] { layout });
+            int baseFiles = Directory.GetFiles(baseDir, "*", SearchOption.AllDirectories).Length;
+            var why = (string)type.GetMethod("Open").Invoke(null, new object[] { Path.Combine(install, "Vita3K.exe"), game });
+            Console.WriteLine("            " + why);
+            Check("a Vita3K that will not start is said so", why != null && why.StartsWith("Vita3K could not be started"), why);
+            var portable = Path.Combine(install, "portable");
+            Check("and nothing is left: no fake console, no link", !Directory.Exists(Path.Combine(portable, "settings-fs")) && !Directory.Exists(Path.Combine(portable, "fs")));
+            Check("the pristine firmware untouched", Directory.GetFiles(baseDir, "*", SearchOption.AllDirectories).Length == baseFiles);
+
+            // THE MACHINE DIED WHILE IT WAS OPEN: portable\fs a junction into the fake console, the fake
+            // console with its firmware junctions. The next launch drops the one and sweeps the other.
+            var fake = Path.Combine(portable, "settings-fs");
+            Directory.CreateDirectory(Path.Combine(fake, "ux0", "app", TitleId, "sce_sys"));
+            foreach (var part in Directory.GetDirectories(baseDir))
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo("cmd.exe") { UseShellExecute = false, CreateNoWindow = true };
+                psi.ArgumentList.Add("/c"); psi.ArgumentList.Add("mklink"); psi.ArgumentList.Add("/J");
+                psi.ArgumentList.Add(Path.Combine(fake, Path.GetFileName(part))); psi.ArgumentList.Add(part);
+                using var mk = System.Diagnostics.Process.Start(psi); mk.WaitForExit(30000);
+            }
+            var point = new object[] { layout, fake, null };
+            Call("Vita3kWorkspace", "PointFsAt", point);
+            var launch = new object[] { layout, game, null };
+            Check("a launch after it works", Call("Vita3kWorkspace", "Prepare", launch) as string == TitleId, launch[2] as string);
+            Check("the fake console is swept", !Directory.Exists(fake));
+            Check("the pristine firmware still whole", Directory.GetFiles(baseDir, "*", SearchOption.AllDirectories).Length == baseFiles);
+            Check("nothing moved aside for it", !Directory.EnumerateDirectories(portable, "fs.stray-*").Any());
+            Call("Vita3kWorkspace", "Teardown", new object[] { layout });
         }
 
         /// <summary>The shape of the wizard's game list: Games, a collection the grid shows.</summary>

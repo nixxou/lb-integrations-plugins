@@ -399,6 +399,9 @@ namespace LbIntegrations.Vita3k
             });
         }
 
+        /// <summary>How long Vita3K has, once its log says the game closed, to be gone on its own.</summary>
+        internal const int GameClosedGraceSeconds = 5;
+
         /// <summary>Watch the emulator ourselves. THIS IS THE SIGNAL THAT DEPENDS ON NOBODY.
         ///
         /// Two minutes for it to appear, so a launch the host refuses does not leave a thread polling
@@ -425,9 +428,52 @@ namespace LbIntegrations.Vita3k
 
                     var started = DateTime.UtcNow;
                     long peak = 0;
+                    var closed = new Vita3kGameClosed(layout);
+                    DateTime? closedAt = null;
+                    bool windowSeen = false;
+                    DateTime lastOpen = DateTime.UtcNow;
+                    bool ended = false;
                     while (Vita3kPaths.EmulatorRunning())
                     {
                         peak = Math.Max(peak, Vita3kPaths.EmulatorPeakBytes());
+
+                        // THE GAME WINDOW CLOSED, THE PROGRAM DID NOT (measured 28/09): Vita3K 0.2.1
+                        // goes back to its own list of games when a game closes - it never quits - and
+                        // it may never even get there: closing LittleBigPlanet, it hung for 2 h 49 in
+                        // its "Stopping" phase, full screen, with LaunchBox hung behind it. Five seconds
+                        // after "Game closed" in its log (Mehdi's figure), a Vita3K still there is ended
+                        // here: the game has stopped, what it wrote is on the disk, and the capture
+                        // below runs as for any exit.
+                        //
+                        // TWO SIGNALS, the first one wins. THE GAME'S WINDOW: Vita3K titles it
+                        // "<title> (<TITLE_ID>) | <renderer> | ..." (gui-qt game_window.cpp) - seen, then
+                        // gone, the game has closed. The log line alone was not enough (measured 28/09):
+                        // on Windows Vita3K's log file is buffered (no flush_on outside Android,
+                        // util/logging.cpp), and once a game stops the program writes too little to push
+                        // "Game closed" out - Escape closed the game at 20:09:11, the line reached the
+                        // disk only when Vita3K quit two minutes later.
+                        //
+                        // GONE FOR THE WHOLE GRACE, NOT FOR ONE LOOK (measured 28/09): F11, leaving full
+                        // screen, takes the game's window away for a moment and brings it back - taken at
+                        // its first absence, that ended a game somebody was playing. So the window counts
+                        // only once it has been absent GameClosedGraceSeconds in a row; back in between,
+                        // nothing happened. The grace is then already spent: Vita3K is ended at once.
+                        bool windowOpen = Vita3kPaths.GameWindowOpen(titleId);
+                        if (windowOpen) { windowSeen = true; lastOpen = DateTime.UtcNow; }
+                        if (closedAt == null && windowSeen && !windowOpen && Vita3kPaths.EmulatorRunning()
+                            && (DateTime.UtcNow - lastOpen).TotalSeconds >= GameClosedGraceSeconds)
+                        {
+                            closedAt = DateTime.UtcNow.AddSeconds(-GameClosedGraceSeconds);
+                            Log.Info("watcher: the game's window has been gone " + GameClosedGraceSeconds + " s");
+                        }
+                        if (closedAt == null && closed.Seen()) { closedAt = DateTime.UtcNow; Log.Info("watcher: Vita3K says the game closed"); }
+                        if (closedAt != null && !ended && (DateTime.UtcNow - closedAt.Value).TotalSeconds >= GameClosedGraceSeconds)
+                        {
+                            ended = true;
+                            int killed = Vita3kPaths.EndEmulator(layout);
+                            Log.Info("watcher: Vita3K was still there " + GameClosedGraceSeconds + " s after the game closed - ended ("
+                                     + killed + " process(es))");
+                        }
                         System.Threading.Thread.Sleep(500);
                     }
                     Log.Info("watcher: Vita3K is gone after " + (int)(DateTime.UtcNow - started).TotalSeconds

@@ -29,6 +29,36 @@ namespace LbIntegrations.Vita3k
     {
         public const string Caption = "Nixx-Vita3K : Options...";
 
+        /// <summary>One game at a time: Vita3K opened on it, not started - see Vita3kSettingsSession.</summary>
+        public const string SettingsCaption = "Nixx-Vita3K : Game settings in Vita3K...";
+
+        internal static void OpenSettings(IGame game)
+        {
+            try
+            {
+                var exe = Vita3kPlugin.ResolveFullPath(PluginHelper.DataManager?.GetEmulatorById(game?.EmulatorId)?.ApplicationPath);
+                var rom = Vita3kPlugin.ResolveFullPath(Safe(() => game.ApplicationPath));
+
+                // SAID FIRST, AND ASKED (Mehdi, 29/09): what opens is not the game, and it plays nothing.
+                var title = Safe(() => game.Title);
+                var answer = MessageBox.Show(OwnerWindow(),
+                    "Vita3K will open on a FAKE installation of " + (string.IsNullOrWhiteSpace(title) ? "this game" : "\"" + title + "\"") + ".\n\n"
+                    + "It is there only so you can save custom settings for this game in Vita3K: right-click the game in "
+                    + "Vita3K's list, open its \"Custom Config\" menu, change what you want and save.\n\n"
+                    + "The game is NOT installed and cannot be played from there - starting it would fail. Nothing else "
+                    + "is touched: no save, no console - only the game's own settings file "
+                    + "(portable\\config\\config_<TITLE_ID>.xml), which every real launch of this game then uses.\n\n"
+                    + "Close Vita3K when you are done: the fake installation is then removed.",
+                    "Nixx-Vita3K - custom settings for this game", MessageBoxButtons.OKCancel, MessageBoxIcon.Information);
+                if (answer != DialogResult.OK) { Log.Info("game menu: settings - cancelled at the explanation"); return; }
+
+                var why = string.IsNullOrEmpty(exe) ? "This game's emulator was not found." : Vita3kSettingsSession.Open(exe, rom);
+                if (why != null)
+                    MessageBox.Show(OwnerWindow(), why, "Nixx-Vita3K", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            catch (Exception ex) { Log.Warn("game menu: settings", ex); }
+        }
+
         /// <summary>NEVER NULL: the host turns it into its own menu image, and a null there can cost the
         /// whole entry without a word - ExtendDB's entry, which shows, always returns one.</summary>
         public static Image Icon => _icon ??= SystemIcons.Application.ToBitmap();
@@ -150,11 +180,17 @@ namespace LbIntegrations.Vita3k
     {
         /// <summary>The entries offered for this selection: ours when at least one game is.</summary>
         public static string[] Entries(IGame[] games)
-            => games != null && games.Any(Vita3kGameMenu.IsOurs) ? new[] { Vita3kGameMenu.Caption } : new string[0];
+        {
+            if (games == null || !games.Any(Vita3kGameMenu.IsOurs)) return new string[0];
+            return games.Length == 1
+                ? new[] { Vita3kGameMenu.Caption, Vita3kGameMenu.SettingsCaption }
+                : new[] { Vita3kGameMenu.Caption };
+        }
 
         public static void Selected(string entry, IGame[] games)
         {
             if (entry == Vita3kGameMenu.Caption) Vita3kGameMenu.Open(games ?? new IGame[0]);
+            else if (entry == Vita3kGameMenu.SettingsCaption && games?.Length == 1) Vita3kGameMenu.OpenSettings(games[0]);
         }
 
         public static Image Icon => Vita3kGameMenu.Icon;

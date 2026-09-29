@@ -251,6 +251,9 @@ namespace LbIntegrations.Vita3k
         /// user's, including anything they changed in the emulator's own settings.</summary>
         public static void QuietTheFirstRun(Vita3kLayout layout)
         {
+            // And the exit confirmation, at every launch: a Vita3K run on its own, or reinstalled,
+            // must not bring it back between two sessions.
+            Vita3kConfig.QuietExitConfirm(layout);
             try
             {
                 var portable = Vita3kPaths.PortableDirOf(layout?.InstallDir);
@@ -415,6 +418,13 @@ namespace LbIntegrations.Vita3k
         /// mklink /J and not Directory.CreateSymbolicLink: a junction needs no administrator and no
         /// developer mode, a symbolic link needs one or the other. This runs on somebody's ordinary
         /// account, at every launch.</summary>
+        /// <summary>Point portable\fs at <paramref name="target"/> - for a console that is not a session's
+        /// (Vita3kSettingsSession). The same link, the same checks.</summary>
+        internal static bool PointFsAt(Vita3kLayout layout, string target, out string error) => Link(layout, target, out error);
+
+        /// <summary>Drop portable\fs's link - see PointFsAt.</summary>
+        internal static void DropFs(Vita3kLayout layout) => DropLink(layout);
+
         private static bool Link(Vita3kLayout layout, string target, out string error)
         {
             error = null;
@@ -440,7 +450,13 @@ namespace LbIntegrations.Vita3k
                 var said = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
                 p.WaitForExit(30000);
 
-                if (Directory.Exists(link)) { Log.Info("portable\\fs -> " + target); return true; }
+                // A LINK, OR NOTHING. "A folder is there" is not the question: measured 28/09, a real
+                // portable\fs made by Vita3K run on its own kept the name, mklink was refused, and this
+                // said success - the game was installed on the RAM disk and Vita3K opened the empty
+                // folder instead, then quit at once.
+                bool linked = false;
+                try { linked = File.GetAttributes(link).HasFlag(FileAttributes.ReparsePoint); } catch { }
+                if (linked) { Log.Info("portable\\fs -> " + target); return true; }
                 error = "could not link portable\\fs to " + target + ": " + said.Trim();
                 Log.Warn(error);
                 return false;
@@ -475,9 +491,36 @@ namespace LbIntegrations.Vita3k
 
                 if (!attributes.HasFlag(FileAttributes.ReparsePoint))
                 {
-                    // A REAL folder, not a link. That is somebody's filesystem, or a firmware that was
-                    // never put aside. It is not ours to delete.
-                    Log.Warn("portable\\fs is a real folder, not a junction - leaving it alone");
+                    // A REAL folder, not a link. Without a pristine console put aside, it may be the
+                    // firmware itself, not yet adopted: not ours to touch.
+                    if (!HasBase(layout))
+                    {
+                        Log.Warn("portable\\fs is a real folder, not a junction - leaving it alone");
+                        return;
+                    }
+                    // With one, portable\fs is only ever our link - a real folder there is what Vita3K
+                    // makes when it runs WITHOUT us (its first-run tree: empty devices and a user.xml,
+                    // measured 28/09), and it would take the link's place at every launch.
+                    //
+                    // NOTHING BUT THAT TREE - empty folders, at most the default profile Vita3K writes
+                    // for itself (ux0/user/00/user.xml, which the pristine console has its own of): it
+                    // holds nothing of anybody's, and it goes (Mehdi's point). Anything more is MOVED
+                    // ASIDE, never deleted: whatever it holds is still there for anyone who wants it.
+                    List<string> files;
+                    try { files = Directory.EnumerateFiles(link, "*", SearchOption.AllDirectories).ToList(); }
+                    catch { files = null; }
+                    var profile = Path.Combine(link, "ux0", "user", "00", "user.xml");
+                    if (files != null && files.All(f => string.Equals(Path.GetFullPath(f), Path.GetFullPath(profile), StringComparison.OrdinalIgnoreCase)))
+                    {
+                        Directory.Delete(link, recursive: true);
+                        Log.Warn("portable\\fs was Vita3K's own first-run tree (empty folders" + (files.Count > 0 ? " and its default user.xml" : "")
+                                 + ") - removed, so the session's link can take its place");
+                        return;
+                    }
+                    var aside = link + ".stray-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
+                    Directory.Move(link, aside);
+                    Log.Warn("portable\\fs was a real folder (Vita3K run on its own?) - moved aside to "
+                             + Path.GetFileName(aside) + " so the session's link can take its place");
                     return;
                 }
 
@@ -519,6 +562,8 @@ namespace LbIntegrations.Vita3k
                                             Action<string, double?> report, Vita3kLaunch launch)
         {
             error = null;
+            // A fake settings console a crash left behind goes before anything is built - see Vita3kSettingsSession.
+            Vita3kSettingsSession.Sweep(layout);
             bool noRamDisk = launch.NoRamDisk;
             int marginMb = launch.MarginMb ?? MarginMb;
             int? vita3kRamMb = launch.Vita3kRamMb;
@@ -1088,6 +1133,9 @@ namespace LbIntegrations.Vita3k
             lock (SessionGate) return CaptureOnExitLocked(layout, titleId);
         }
 
+        private static string _closingShownFor;
+        private static DateTime _closingShownAt;
+
         private static bool CaptureOnExitLocked(Vita3kLayout layout, string titleId)
         {
             try
@@ -1096,9 +1144,13 @@ namespace LbIntegrations.Vita3k
                 if (root == null || !Directory.Exists(root)) return false;
                 if (!string.Equals(WorkTitle(layout), titleId, StringComparison.Ordinal)) return false;
 
-                // THE CLOSING WINDOW, as the launch has one. It stays invisible for a quick save -
-                // see Vita3kProgressWindow.
-                using var window = Vita3kProgressWindow.Open("Vita3K - saving " + NameOf(titleId));
+                // THE CLOSING WINDOW, as the launch has one - ALWAYS shown, and modal to the host (see
+                // Vita3kProgressWindow). Once per session end: the second of the two end signals, a few
+                // seconds behind the first, finds the work done and shows nothing unless it takes time.
+                bool first = !(string.Equals(_closingShownFor, titleId, StringComparison.Ordinal)
+                               && (DateTime.UtcNow - _closingShownAt).TotalSeconds < 30);
+                _closingShownFor = titleId; _closingShownAt = DateTime.UtcNow;
+                using var window = Vita3kProgressWindow.Open("Vita3K - saving " + NameOf(titleId), always: first);
                 Action<string, double?> report = (step, fraction) => window?.Report(step, fraction);
 
                 // ALREADY CAPTURED - by the other end-of-session signal, or by the lazy path GetSaves
@@ -1661,6 +1713,7 @@ namespace LbIntegrations.Vita3k
                         ClearPending(layout);
 
                     SweepLeftovers(layout);
+                    Vita3kSettingsSession.Sweep(layout);
                 }
                 finally { Monitor.Exit(SessionGate); }
             }

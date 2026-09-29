@@ -154,6 +154,83 @@ namespace LbIntegrations.Vita3k
             return peak;
         }
 
+        /// <summary>End the Vita3K processes of this install - the executable under its folder; a Vita3K
+        /// whose path cannot be read is taken by name, as EmulatorRunning takes it. The count ended.</summary>
+        public static int EndEmulator(Vita3kLayout layout)
+        {
+            int ended = 0;
+            var dir = layout?.InstallDir;
+            string full = null;
+            try { if (!string.IsNullOrEmpty(dir)) full = Path.GetFullPath(dir).TrimEnd('\\') + "\\"; } catch { }
+            try
+            {
+                foreach (var p in System.Diagnostics.Process.GetProcesses())
+                {
+                    using (p)
+                    {
+                        try
+                        {
+                            if (p.ProcessName == null || !p.ProcessName.StartsWith("Vita3K", StringComparison.OrdinalIgnoreCase)) continue;
+                            string exe = null;
+                            try { exe = p.MainModule?.FileName; } catch { }
+                            if (exe != null && full != null && !exe.StartsWith(full, StringComparison.OrdinalIgnoreCase)) continue;   // another install's
+                            p.Kill();
+                            p.WaitForExit(5000);
+                            ended++;
+                        }
+                        catch (Exception ex) { Log.Warn("could not end Vita3K (" + p.Id + ")", ex); }
+                    }
+                }
+            }
+            catch (Exception ex) { Log.Warn("could not look at the process list", ex); }
+            return ended;
+        }
+
+        /// <summary>Is a visible window of a Vita3K process titled for <paramref name="titleId"/>'s game -
+        /// "(PCSA00017)" in its title, as Vita3K's game window has it?</summary>
+        public static bool GameWindowOpen(string titleId)
+        {
+            if (string.IsNullOrWhiteSpace(titleId)) return false;
+            var pids = new System.Collections.Generic.HashSet<int>();
+            try
+            {
+                foreach (var p in System.Diagnostics.Process.GetProcesses())
+                    using (p)
+                    {
+                        try { if (p.ProcessName != null && p.ProcessName.StartsWith("Vita3K", StringComparison.OrdinalIgnoreCase)) pids.Add(p.Id); }
+                        catch { }
+                    }
+            }
+            catch { return false; }
+            if (pids.Count == 0) return false;
+            bool found = false;
+            var needle = "(" + titleId + ")";
+            EnumWindows((h, _) =>
+            {
+                GetWindowThreadProcessId(h, out var pid);
+                if (!pids.Contains((int)pid) || !IsWindowVisible(h)) return true;
+                var text = new System.Text.StringBuilder(512);
+                GetWindowText(h, text, text.Capacity);
+                if (text.ToString().IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0) { found = true; return false; }
+                return true;
+            }, IntPtr.Zero);
+            return found;
+        }
+
+        private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(IntPtr hwnd);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private static extern int GetWindowText(IntPtr hwnd, System.Text.StringBuilder text, int max);
+
         public static bool EmulatorRunning()
         {
             try

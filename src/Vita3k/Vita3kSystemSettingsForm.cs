@@ -2,6 +2,12 @@
 // opened when the user answers No to the install's notification (Vita3kPlugin, Vita3kNotify.Ask). What it
 // saves goes straight into portable\config.yml (Vita3kConfig.Write): the emulator reads it at its next
 // start, and nothing of the console has to be rebuilt for it (see Vita3kConfig's header).
+//
+// MODAL TO THE HOST'S MAIN WINDOW, and never to whatever is in front. Measured 28/09 in LaunchBox: shown
+// with no owner, Windows made the notification toast - the active window at the click - its owner, and
+// when the toast faded Windows destroyed the windows it owned: ours closed by itself seconds later,
+// answering "Cancel". So the owner is the host's main window (LaunchBox's WPF MainWindow, or the
+// process's main window - LiteBox), and the window opens once the notification's click has returned.
 
 using System;
 using System.Drawing;
@@ -65,19 +71,55 @@ namespace LbIntegrations.Vita3k
             TimeFormat = _time.SelectedIndex, EnterButton = _enter.SelectedIndex,
         };
 
+        /// <summary>Open it from a notification's button: once the click has returned, modal to the
+        /// host's main window - see the header.</summary>
+        public static void EditLater(Vita3kLayout layout)
+        {
+            try
+            {
+                var app = System.Windows.Application.Current;
+                if (app != null) { app.Dispatcher.BeginInvoke(new Action(() => Edit(layout))); return; }
+            }
+            catch { }
+            Edit(layout);
+        }
+
         /// <summary>Show it over the settings in config.yml, and save what is chosen. True when saved.</summary>
         public static bool Edit(Vita3kLayout layout)
         {
             try
             {
                 using var form = new Vita3kSystemSettingsForm(Vita3kConfig.Read(layout));
-                if (form.ShowDialog() != DialogResult.OK) { Log.Info("system settings: left as they were"); return false; }
+                var owner = HostWindow();
+                if (owner != null) form.StartPosition = FormStartPosition.CenterParent;
+                if (form.ShowDialog(owner) != DialogResult.OK) { Log.Info("system settings: left as they were"); return false; }
                 var chosen = form.Chosen;
                 bool saved = Vita3kConfig.Write(layout, chosen);
                 Log.Info("system settings: " + (saved ? "saved - " + chosen : "could not be saved"));
                 return saved;
             }
             catch (Exception ex) { Log.Warn("system settings: the window failed", ex); return false; }
+        }
+
+        /// <summary>The host's main window: LaunchBox's WPF MainWindow, else the process's main window.</summary>
+        private static IWin32Window HostWindow()
+        {
+            IntPtr handle = IntPtr.Zero;
+            try
+            {
+                var main = System.Windows.Application.Current?.MainWindow;
+                if (main != null) handle = new System.Windows.Interop.WindowInteropHelper(main).Handle;
+            }
+            catch { }
+            if (handle == IntPtr.Zero)
+                try { handle = System.Diagnostics.Process.GetCurrentProcess().MainWindowHandle; } catch { }
+            return handle == IntPtr.Zero ? null : new Owner(handle);
+        }
+
+        private sealed class Owner : IWin32Window
+        {
+            public Owner(IntPtr handle) { Handle = handle; }
+            public IntPtr Handle { get; }
         }
     }
 }

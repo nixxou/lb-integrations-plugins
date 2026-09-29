@@ -82,9 +82,55 @@ namespace LbIntegrations.Vita3k
         }
 
         /// <summary>Put down the install's defaults and Windows' system settings - each only when the file
-        /// does not hold its key yet.</summary>
-        public static void ApplyInstallDefaults(Vita3kLayout layout)
-            => Put(layout, InstallDefaults.Concat(Pairs(FromWindows())).ToArray(), onlyMissing: true);
+        /// does not hold its key yet. On a FRESH install (not an update), full screen is set whatever the
+        /// file says (Mehdi, 28/09): a config.yml is there before any install of ours as soon as Vita3K has
+        /// run once on its own, and it wrote its own default, false - measured on a delete and re-add.</summary>
+        public static void ApplyInstallDefaults(Vita3kLayout layout, bool fresh = false)
+        {
+            Put(layout, InstallDefaults.Concat(Pairs(FromWindows())).ToArray(), onlyMissing: true);
+            if (fresh) Put(layout, new[] { ("boot-apps-full-screen", "true") }, onlyMissing: false);
+            QuietExitConfirm(layout);
+        }
+
+        /// <summary>Turn off Vita3K's "An app is still running. Do you really want to exit?" box
+        /// (gui-qt main_window.cpp, closeEvent): with it, a frontend's Exit - or the Exit script - stops at
+        /// a question nobody in front of a TV can answer. It is a GUI setting, not a config.yml one:
+        /// confirmExitApp in the [MainWindow] section of portable\gui-configs\CurrentSettings.ini (Qt's
+        /// QSettings, gui_settings.h). Written when absent or true; the rest of the file is left as it is.</summary>
+        public static void QuietExitConfirm(Vita3kLayout layout)
+        {
+            try
+            {
+                var portable = Vita3kPaths.PortableDirOf(layout?.InstallDir);
+                if (string.IsNullOrEmpty(portable) || !Directory.Exists(portable)) return;
+                var dir = Path.Combine(portable, "gui-configs");
+                var ini = Path.Combine(dir, "CurrentSettings.ini");
+                var lines = File.Exists(ini) ? File.ReadAllText(ini).Replace("\r\n", "\n").TrimEnd('\n').Split('\n').ToList() : new List<string>();
+                int section = lines.FindIndex(l => l.Trim().Equals("[MainWindow]", StringComparison.OrdinalIgnoreCase));
+                if (section < 0)
+                {
+                    if (lines.Count > 0) lines.Add("");
+                    lines.Add("[MainWindow]");
+                    lines.Add("confirmExitApp=false");
+                }
+                else
+                {
+                    int end = lines.FindIndex(section + 1, l => l.TrimStart().StartsWith("["));
+                    if (end < 0) end = lines.Count;
+                    int at = lines.FindIndex(section + 1, end - section - 1, l => l.TrimStart().StartsWith("confirmExitApp=", StringComparison.OrdinalIgnoreCase));
+                    if (at >= 0)
+                    {
+                        if (lines[at].Trim().Equals("confirmExitApp=false", StringComparison.OrdinalIgnoreCase)) return;
+                        lines[at] = "confirmExitApp=false";
+                    }
+                    else lines.Insert(section + 1, "confirmExitApp=false");
+                }
+                Directory.CreateDirectory(dir);
+                File.WriteAllText(ini, string.Join("\n", lines) + "\n");
+                Log.Info("turned off Vita3K's exit confirmation (gui-configs\\CurrentSettings.ini)");
+            }
+            catch (Exception ex) { Log.Warn("could not turn off Vita3K's exit confirmation", ex); }
+        }
 
         /// <summary>The four settings from Windows - see the header.
         ///

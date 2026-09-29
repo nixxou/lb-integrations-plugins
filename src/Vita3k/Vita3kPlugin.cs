@@ -218,6 +218,7 @@ namespace LbIntegrations.Vita3k
                 try { path = emu.ApplicationPath; } catch { continue; }
                 if (!Vita3kPaths.IsVita3kExecutable(path)) continue;
                 claimed.Add(emu);
+                EnsureHotkeyScripts(emu);
             }
 
             // The host asks this constantly - twenty-three times in one second, measured on another
@@ -387,7 +388,7 @@ namespace LbIntegrations.Vita3k
                 // THE EMULATOR'S OWN SETTINGS: full screen on, its own update check off, and the language,
                 // date, time and enter button from Windows - each only where config.yml does not say yet, so
                 // an update keeps the user's. See Vita3kConfig.
-                Vita3kConfig.ApplyInstallDefaults(layout);
+                Vita3kConfig.ApplyInstallDefaults(layout, fresh: !reinstall);
 
                 // AND ASKED, once, on a fresh install (Mehdi's wording): is that what the games should be
                 // told? No opens the window to change it. An update asks nothing - it changed nothing.
@@ -396,7 +397,7 @@ namespace LbIntegrations.Vita3k
                     var settingsLayout = layout;
                     Vita3kNotify.Ask("Vita3K installed. Games will run with " + Vita3kConfig.SystemSettings(layout) + ", is it OK?", 60,
                                      ("Yes", null),
-                                     ("No", () => Vita3kSystemSettingsForm.Edit(settingsLayout)));
+                                     ("No", () => Vita3kSystemSettingsForm.EditLater(settingsLayout)));
                 }
 
                 if (reinstall)
@@ -534,6 +535,21 @@ namespace LbIntegrations.Vita3k
             }
         }
 
+        /// <summary>Fill the emulator's AutoHotkey fields - see Vita3kAhk. Only a blank field: a script the
+        /// user wrote is his answer. On the OBJECT each time, never "this executable is done" - the host
+        /// hands the same emulator under a new object every time a window asks (the Flycast lesson).</summary>
+        private static void EnsureHotkeyScripts(IEmulator emu)
+        {
+            try
+            {
+                var set = new List<string>();
+                if (string.IsNullOrWhiteSpace(emu.AutoHotkeyScript)) { emu.AutoHotkeyScript = Vita3kAhk.Running; set.Add("running"); }
+                if (string.IsNullOrWhiteSpace(emu.ExitAutoHotkeyScript)) { emu.ExitAutoHotkeyScript = Vita3kAhk.Exit; set.Add("exit"); }
+                if (set.Count > 0) Log.Info("hotkey scripts set: " + string.Join(", ", set));
+            }
+            catch (Exception ex) { Log.Warn("could not describe the hotkeys on the emulator entry", ex); }
+        }
+
         private static IEmulator CreateEmulator(string exePath, string versionLabel)
         {
             var dm = PluginHelper.DataManager;
@@ -543,6 +559,7 @@ namespace LbIntegrations.Vita3k
             emu.Title = PackName;
             emu.ApplicationPath = MakeRelativeToLaunchBox(exePath);
             emu.CommandLine = DefaultCommandLine;
+            EnsureHotkeyScripts(emu);
 
             // DefaultPlatform IS NOT SET, and that is the point. Measured on a real library: the Edit
             // Emulator window adds a platform row for whatever this field names ON TOP of the
