@@ -7,7 +7,7 @@
 # It never stops a running process. If the target is locked, it says so and leaves it alone.
 #
 #   .\deploy-dev.ps1                       # Ppsspp -> G:\LB1326
-#   .\deploy-dev.ps1 -All                  # all six, same root
+#   .\deploy-dev.ps1 -All                  # all seven, same root
 #   .\deploy-dev.ps1 -LbRoot 'G:\LB'       # somewhere else
 #   .\deploy-dev.ps1 -Configuration Debug
 
@@ -28,7 +28,12 @@ param(
     [string] $FolderName,
 
     [ValidateSet('Debug', 'Release')]
-    [string] $Configuration = 'Release'
+    [string] $Configuration = 'Release',
+
+    # For SuperZsnes only: a SUPER ZSNES folder launched once with BepInEx in it, so that
+    # tools\superzsnes-bepinex can be built and embedded. Optional here (build-release.ps1 requires
+    # it): without it the plugin deploys BepInEx and the docs and carries no in-process plugin.
+    [string] $SuperZsnesDir = $env:SUPERZSNES_DIR
 )
 
 $ErrorActionPreference = 'Stop'
@@ -47,13 +52,14 @@ $Pack = @{
     'Ppsspp'  = @{ Folder = 'Nixx-PPSSPP';  Old = @('Ppsspp Integration', 'PPSSPP Integration') }
     'Xenia'   = @{ Folder = 'Nixx-Xenia';   Old = @('Xenia Integration') }
     'Vita3k'  = @{ Folder = 'Nixx-Vita3K';  Old = @() }
+    'SuperZsnes' = @{ Folder = 'Nixx-SuperZSNES'; Old = @() }
 }
 
 if ($All) {
-    foreach ($name in @('Flycast', 'MelonDs', 'NoGba', 'Ppsspp', 'Vita3k', 'Xenia')) {
+    foreach ($name in @('Flycast', 'MelonDs', 'NoGba', 'Ppsspp', 'SuperZsnes', 'Vita3k', 'Xenia')) {
         Write-Host ""
         Write-Host ("=== " + $name) -ForegroundColor Magenta
-        & $MyInvocation.MyCommand.Path -Plugin $name -LbRoot $LbRoot -Configuration $Configuration
+        & $MyInvocation.MyCommand.Path -Plugin $name -LbRoot $LbRoot -Configuration $Configuration -SuperZsnesDir $SuperZsnesDir
     }
     return
 }
@@ -64,6 +70,20 @@ if (-not $FolderName) { $FolderName = $Pack[$Plugin].Folder }
 $projectDir = Join-Path $repo "src\$Plugin"
 if (-not (Test-Path $projectDir)) { throw "No such plugin: $projectDir" }
 if (-not (Test-Path $LbRoot)) { throw "No such LaunchBox root: $LbRoot" }
+
+# The SUPER ZSNES in-process plugin first, when a game folder with interop is at hand: SuperZsnes.csproj
+# embeds build\bepinex\SuperZsnes.BepInEx.dll when it is there. See build-release.ps1, step 0.
+if ($Plugin -eq 'SuperZsnes') {
+    if ($SuperZsnesDir -and (Test-Path (Join-Path $SuperZsnesDir 'BepInEx\interop\Assembly-CSharp.dll'))) {
+        Write-Host "Building the SUPER ZSNES in-process plugin..." -ForegroundColor Cyan
+        $modOut = Join-Path $repo 'build\bepinex'
+        New-Item -ItemType Directory -Force -Path $modOut | Out-Null
+        dotnet build (Join-Path $repo 'tools\superzsnes-bepinex\SuperZsnes.BepInEx.csproj') -c $Configuration --nologo -v quiet "-p:SuperZsnesDir=$SuperZsnesDir" "-p:OutDir=$modOut\"
+        if ($LASTEXITCODE -ne 0) { throw "Build failed: SuperZsnes.BepInEx" }
+    } else {
+        Write-Host "  ! no -SuperZsnesDir with BepInEx\interop - the in-process plugin is not built; SuperZsnes.dll will deploy BepInEx and the docs only" -ForegroundColor Yellow
+    }
+}
 
 Write-Host "Building $Plugin ($Configuration)..." -ForegroundColor Cyan
 dotnet build (Join-Path $projectDir "$Plugin.csproj") -c $Configuration --nologo

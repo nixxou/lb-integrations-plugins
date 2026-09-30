@@ -78,6 +78,13 @@
       <LogicalName>payload/Nixx-PPSSPP/manifest.json</LogicalName>
     </EmbeddedResource>
 
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-SuperZSNES\SuperZsnes.dll">
+      <LogicalName>payload/Nixx-SuperZSNES/SuperZsnes.dll</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-SuperZSNES\manifest.json">
+      <LogicalName>payload/Nixx-SuperZSNES/manifest.json</LogicalName>
+    </EmbeddedResource>
+
     <EmbeddedResource Include="$(PayloadDir)\Nixx-Vita3K\Vita3k.dll">
       <LogicalName>payload/Nixx-Vita3K/Vita3k.dll</LogicalName>
     </EmbeddedResource>

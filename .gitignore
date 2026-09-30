@@ -17,3 +17,6 @@ release/
 # whether a copy belongs in a published repository is a decision to take on purpose rather than by
 # forgetting to look. Remove this line if that decision is yes.
 src/MelonDs/tmd-library.bin
+
+# Il2CppInspector writes a C++ scaffold folder in the current directory; never ours to commit.
+cpp/

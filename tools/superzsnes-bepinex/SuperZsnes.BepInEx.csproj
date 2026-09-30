@@ -1,0 +1,63 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The BepInEx plugin that runs INSIDE SUPER ZSNES.
+
+       SUPER ZSNES is IL2CPP, so Harmony cannot patch it directly: there is no IL left. BepInEx 6's
+       IL2CPP flavour puts a .NET runtime into the game's process, generates interop assemblies
+       from the IL2CPP metadata on the first launch (BepInEx\interop\Assembly-CSharp.dll and friends),
+       and lets HarmonyX detour the native methods behind them - resolved BY NAME through the il2cpp
+       runtime API, which is what survives an emulator update where a byte offset would not.
+
+       This project references those generated assemblies, so it can only build against a game
+       folder that has been launched once with BepInEx in it. Point SuperZsnesDir at that folder:
+
+           dotnet build tools\superzsnes-bepinex -c Release -p:SuperZsnesDir=D:\Emulators\Nixx-SuperZSNES
+
+       and the output lands in <SuperZsnesDir>\BepInEx\plugins\SuperZsnes.BepInEx.dll, where the
+       chainloader picks it up at the next start. -->
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>SuperZsnes.BepInEx</AssemblyName>
+    <RootNamespace>LbIntegrations.SuperZsnes.Mod</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- The game folder, with BepInEx installed and launched once. -->
+    <SuperZsnesDir Condition="'$(SuperZsnesDir)' == ''">$(SUPERZSNES_DIR)</SuperZsnesDir>
+    <BepInExCore>$(SuperZsnesDir)\BepInEx\core</BepInExCore>
+    <BepInExInterop>$(SuperZsnesDir)\BepInEx\interop</BepInExInterop>
+    <!-- Straight into the plugins folder, so a build is a deploy. -->
+    <OutDir Condition="'$(SuperZsnesDir)' != ''">$(SuperZsnesDir)\BepInEx\plugins\</OutDir>
+    <!-- The game folder provides every reference at run time; nothing is copied beside the plugin. -->
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <Target Name="NeedGameDir" BeforeTargets="BeforeBuild">
+    <Error Condition="'$(SuperZsnesDir)' == ''"
+           Text="SuperZsnesDir is not set. Pass -p:SuperZsnesDir=&lt;the emulator folder with BepInEx in it&gt; or set SUPERZSNES_DIR." />
+    <Error Condition="!Exists('$(BepInExInterop)\Assembly-CSharp.dll')"
+           Text="No $(BepInExInterop)\Assembly-CSharp.dll. Launch SUPER ZSNES once with BepInEx installed: the interop assemblies are generated on the first start." />
+  </Target>
+
+  <ItemGroup>
+    <Reference Include="BepInEx.Core"><HintPath>$(BepInExCore)\BepInEx.Core.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="BepInEx.Unity.IL2CPP"><HintPath>$(BepInExCore)\BepInEx.Unity.IL2CPP.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="BepInEx.Unity.Common"><HintPath>$(BepInExCore)\BepInEx.Unity.Common.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(BepInExCore)\0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Il2CppInterop.Runtime"><HintPath>$(BepInExCore)\Il2CppInterop.Runtime.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Il2CppInterop.Common"><HintPath>$(BepInExCore)\Il2CppInterop.Common.dll</HintPath><Private>false</Private></Reference>
+
+    <!-- The game and the engine, as Il2CppInterop generated them. -->
+    <Reference Include="Assembly-CSharp"><HintPath>$(BepInExInterop)\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Il2Cppmscorlib"><HintPath>$(BepInExInterop)\Il2Cppmscorlib.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>$(BepInExInterop)\UnityEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(BepInExInterop)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <!-- KeyCode lives in the legacy input module, which the emulator itself still calls
+         (Input.GetKeyDown in MasterExecutor.Update); BepInEx's UnityInput goes through it. -->
+    <Reference Include="UnityEngine.InputLegacyModule"><HintPath>$(BepInExInterop)\UnityEngine.InputLegacyModule.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+</Project>

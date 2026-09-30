@@ -1,0 +1,93 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <!-- net9 and not net10: a net9 assembly loads on the .NET 9 runtime (LaunchBox 13.27)
+         AND on .NET 10 (13.28+, 14), so one build covers every host. -->
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Platforms>AnyCPU;x64</Platforms>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>SuperZsnes</AssemblyName>
+    <RootNamespace>LbIntegrations.SuperZsnes</RootNamespace>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <!-- true so the dependencies land in bin\ for the merge step below. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- MSB3277: the vendored 13.27 SDK and a host's newer one differ in version; that is the
+         point of Private=false, so the warning is noise. -->
+    <MSBuildWarningsAsMessages>MSB3277</MSBuildWarningsAsMessages>
+    <!-- For the tab this plugin builds in the pack's configuration window (Nixx-Menus hosts the
+         window, this plugin fills its tab). See SuperZsnesSettingsPage.cs. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- And WPF: LaunchBox's Import ROM Files wizard is WPF, watched from its windows - see Shared.Lbip\LbipImportWatch.cs. -->
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- THE CATALOGUE CONTRACT, referenced and SHIPPED rather than merged - see
+         src\Catalog\LbCatalog.cs and the same note in Xenia.csproj. -->
+    <ProjectReference Include="..\Catalog\Catalog.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- THE SHARED ROW INJECTION, compiled in rather than referenced - see src\Shared.Lbip. -->
+    <Compile Include="..\Shared.Lbip\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- LaunchBox's metadata has no row for SUPER ZSNES (it has one for the ZSNES of 2007), so this
+         pack publishes its own - see src\Shared.Lbip. Same version as the other plugins, so
+         HarmonySharedState is shared and they coordinate. -->
+    <PackageReference Include="Lib.Harmony" Version="2.4.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Reference the SDK but DON'T copy it: the host loads the plugin into ITS assembly load
+         context and provides the SDK, so the types unify. See vendor\README.md. -->
+    <Reference Include="Unbroken.LaunchBox.Plugins">
+      <HintPath>..\..\vendor\Unbroken.LaunchBox.Plugins.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The release is a plain zip today. SharpCompress rather than System.IO.Compression all the
+         same, because it picks its reader by sniffing the bytes: a switch to .7z upstream - Xenia
+         did exactly that - then costs nothing here. -->
+    <PackageReference Include="SharpCompress" Version="0.41.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- WHAT THE PLUGIN CARRIES INTO AN EMULATOR FOLDER, embedded so it can never be out of step
+         with the code that deploys it (SuperZsnesBepInEx.cs):
+         - the documentation of the in-process plugin, docs\superzsnes\*.md, written to
+           <emulator>\BepInEx\nixx-docs\ - the runbook travels with what it describes;
+         - the in-process plugin itself, when it has been built. tools\superzsnes-bepinex needs a
+           game folder's generated interop to compile, so build-release.ps1 builds it first and
+           copies it to build\bepinex\; a checkout without that file still builds this plugin,
+           which then deploys BepInEx and the docs and says the plugin is not carried. -->
+    <EmbeddedResource Include="..\..\docs\superzsnes\*.md" LogicalName="docs/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\..\build\bepinex\SuperZsnes.BepInEx.dll" LogicalName="bepinex/SuperZsnes.BepInEx.dll"
+                      Condition="Exists('..\..\build\bepinex\SuperZsnes.BepInEx.dll')" />
+  </ItemGroup>
+
+  <!-- Fold every dependency INTO SuperZsnes.dll, internalized. See Xenia.csproj for why. -->
+  <Target Name="MergePlugin" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <PropertyGroup>
+      <MergedDir>$(OutDir)merged\</MergedDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <MergeInput Include="$(OutDir)$(AssemblyName).dll" />
+      <MergeInput Include="$(OutDir)*.dll" Exclude="$(OutDir)$(AssemblyName).dll;$(OutDir)LbIntegrations.Catalog.dll" />
+      <!-- The trailing "." keeps a directory ending in \ from escaping the closing quote. -->
+      <MergeLib Include="@(ReferencePath->'%(RootDir)%(Directory).')" />
+    </ItemGroup>
+    <MakeDir Directories="$(MergedDir)" />
+    <Exec Command="dotnet ilrepack /out:&quot;$(MergedDir)$(AssemblyName).dll&quot; /internalize @(MergeLib->Distinct()->'/lib:&quot;%(Identity)&quot;', ' ') @(MergeInput->'&quot;%(FullPath)&quot;', ' ')"
+          WorkingDirectory="$(MSBuildProjectDirectory)" StandardOutputImportance="low" />
+    <Message Importance="high" Text="  merged -> $(MergedDir)$(AssemblyName).dll" />
+  </Target>
+
+</Project>

@@ -16,9 +16,10 @@ is published by Unbroken Software), so these are installed by hand.
 | `src/MelonDs` | melonDS | Nintendo DS | download / update, BIOS, DS/DSi mode, per-title DSi NAND, save management (GPL-3.0) |
 | `src/NoGba` | no$gba | Nintendo Game Boy Advance, Nintendo DS | download / update, BIOS, **raw save format**, save management |
 | `src/Vita3k` | Vita3K | Sony Playstation Vita | download / update, firmware, **a disposable console per session**, save management |
+| `src/SuperZsnes` | SUPER ZSNES | Super Nintendo Entertainment System | download / update from zsnes.com, launch - **closed source**, see its notes for what is measured and what is not |
 
 Five folders are shared sources rather than plugins: `src/Shared.Lbip` (the row injection, used by
-all six), `src/Shared.Dsi` (the DSi NAND engine, melonDS and no$gba), `src/Shared.Psf` (PARAM.SFO,
+all seven), `src/Shared.Dsi` (the DSi NAND engine, melonDS and no$gba), `src/Shared.Psf` (PARAM.SFO,
 PPSSPP and Vita3K), `src/Shared.RamDisk` (below) and `src/Shared.Snapshot` (the walk, the difference
 and the deterministic container — Vita3K today, anything that needs a session diff tomorrow).
 
@@ -234,6 +235,7 @@ file is there. Before LaunchBox 14, `Plugins\` is the only option. `<Name>` is t
 | `src/MelonDs` | `Nixx-melonDS` | `Nixx-melonDS` | `Emulators\Nixx-melonDS` |
 | `src/NoGba` | `Nixx-nogba` | `Nixx-nogba` | `Emulators\Nixx-nogba` |
 | `src/Ppsspp` | `Nixx-PPSSPP` | `Nixx-PPSSPP` | `Emulators\Nixx-PPSSPP` |
+| `src/SuperZsnes` | `Nixx-SuperZSNES` | `Nixx-SuperZSNES` | `Emulators\Nixx-SuperZSNES` |
 | `src/Xenia` | `Nixx-Xenia` | `Nixx-Xenia` | `Emulators\Nixx-Xenia` |
 
 One constant per plugin drives that whole row, so the four cannot disagree.
@@ -381,6 +383,15 @@ It writes nothing unless you ask it to. These modes do — the last three only i
     RetroArch\system is copied under the name no$gba reads, that one nobody has is not
     invented, and that a save is listed under the name of the ROM INSIDE the archive
     rather than the archive's own.
+
+--superzsnes
+    the SUPER ZSNES contract, OFFLINE, against what was measured off its build and its site:
+    that the Windows card of zsnes.com's Downloads section gives the zip and not the .dmg or
+    the .tar.gz, that a renamed heading or an absolute link still does, that version.txt's
+    Windows line is read, that the About caption in a forged scene file gives the installed
+    version - the highest of three framed strings, as in the real build, hotfix letter
+    dropped, a token inside a longer string ignored - that 0.310 is newer than 0.230
+    numerically, and that the catalogue row says what the emulator's own extension table says.
 ```
 
 Point the first two at a throwaway install and a throwaway account.
@@ -1444,6 +1455,197 @@ packed twice in different orders giving the same sha256.
 
 **Not handled yet**: updates and DLC (the install step is where they go, and installed mid-session
 they would land in the difference), `.pkg` archives, which need a zRIF key, and themes.
+
+## Notes on SUPER ZSNES
+
+**It is not ZSNES, and it is not open.** SUPER ZSNES is a from-scratch rewrite by zsKnight and
+_Demo_, the authors of the original, released in April 2026: a Unity application compiled by IL2CPP,
+GPU-rendered PPU, a "Super Enhancement Engine" with hi-res redraws, widescreen and replaced audio
+for a dozen games, save states, rewind, cheats, and a RetroAchievements client. It is distributed
+from https://www.zsnes.com/ under a proprietary licence, free on desktop. The ZSNES 2.x on GitHub
+(xyproto/zsnes) is a different program - the 2007 GPL code ported to C - and this plugin has nothing
+to do with it.
+
+**So everything here was measured off the build, not read out of source.** The other plugins quote
+a line number; this one quotes a string table. The long version - what was measured, with which
+tools, what was deduced, which roads were tried, why BepInEx was kept, every patch, every option,
+and the runbook for the day an update breaks something - is [docs/superzsnes/](docs/superzsnes/README.md),
+in French, and it travels: the plugin embeds it and writes it to `<emulator>\BepInEx\nixx-docs\`. What follows says where each fact came from, because
+a fact from a closed binary is worth exactly as much as the measurement behind it. The build read is
+`SuperZSNES_v0.310.zip`, 99.7 MB, sha256 `747E05A8...D14A906`, Last-Modified 2026-09-26.
+
+**The download is a link on the home page, and the emulator has a version feed.** The Downloads
+section of zsnes.com carries one card per platform; the Windows one is `<h3>Windows</h3>` followed
+by `<a href="files/SuperZSNES_v0.310.zip">`. The plugin reads the page and takes that anchor,
+resolved against the page's address. Its cross-check is what the emulator itself reads to show "A new
+version of SUPER ZSNES is out!": `https://zsnes.com/version.txt`, found as a literal in
+`global-metadata.dat`, three lines of `Windows,0.310` / `Linux,0.310` / `Mac,0.310`. When the page
+cannot be parsed the feed plus the file-name pattern still gives a download, and when the two
+disagree the log says so. No GitHub, no API, no rate limit.
+
+**There is no version in the executable.** `SUPERZSNES.exe` is a 632 KB, 32-bit Unity player stub
+whose version resource says `6000.3.6` - the engine - with empty product and company fields. The
+About box's caption, `v0.310b`, is serialised into `SUPERZSNES_Data\level0` right before the list of
+enhanced games, and that is where `GetCurrentVersion` reads it, hotfix letter dropped so it compares
+with the feed. The scene holds two more strings of that shape, `v0.001` and `v0.100a` - the
+design-time texts of two labels, overwritten at runtime - so the highest of the framed matches is
+taken, and a token in the middle of a longer string (`shader@v17.200`) is not a match at all. An
+install also writes `lbip-superzsnes-build.txt` beside the executable, the fallback for the day the
+caption moves to another scene file.
+
+**The extensions are the emulator's own.** Its metadata carries the ROM types in one sorted run:
+`.sfc .smc .swc .zip`, plus `.spc` (music), `.srm`/`.sav` (saves), `.bps` (patches), `.cht`/`.zcht`
+(cheats), `.msu`/`.pcm` (MSU-1), `.szst`/`.szst-last`/`.szhistory`/`.bookmark-szst` (states), and its
+own `.zsmod`/`.zsaudiomod`/`.zlua` enhancement files. `.fig` is absent. `.7z` is absent. The
+catalogue row declares the four ROM types with `AutoExtract` off, since the emulator opens `.zip`
+itself.
+
+**No BIOS is declared, although six firmware files exist.** The About box names `dsp2.rom`,
+`dsp3.rom`, `dsp4.rom`, `st010.rom`, `st011.rom` and `st018.rom` - the coprocessor firmware of a
+handful of games (DSP-1 is not in the list, so presumably built in). Where the emulator looks for
+them was not measured, and a declared BIOS is a folder the host then checks; pointing that check at
+a folder we cannot name is the defect the melonDS notes above went to some trouble to remove.
+
+**RetroAchievements are in the emulator, not in the plugin.** The build carries rcheevos -
+`rc_client_begin_login_with_password`, `rc_client_set_hardcore_enabled`, `RC_CONSOLE_SUPER_NINTENDO`
+- and a Config > Retroachievements page with a Web API key field, although the site still lists the
+feature under "What's Coming". The credentials live in `szsnes_ui.data` (below) as `rauserID` and an
+**encrypted** token, `raencT`. The cipher was read off the x86 of `StringEnc` with Il2CppInspectorRedux
+(the build is IL2CPP metadata v39, which the original Il2CppDumper refuses):
+
+```
+key    = SHA256( UTF8( "VWSZaVVTXSC" + SystemInfo.deviceUniqueIdentifier + "YYZSUJA" ) )
+raencT = IV(16) || AES-256-CBC-PKCS7( key, IV, UTF8(token) )        StringEnc.GetEPW / GetNPW
+```
+
+`RetroAchievements.UserProfileResult` writes it after a successful login, `RetroAchievements.Start`
+decrypts it and calls `Login`, which does `dorequest.php?r=login2&u=<user>&t=<token>` - the connect
+API with the same token LaunchBox holds. So the plugin CAN write the credentials, once it can
+compute `deviceUniqueIdentifier`: Unity's Windows player hashes WMI strings (its documentation names
+`Win32_BaseBoard`, `Win32_BIOS` and `Win32_OperatingSystem` `SerialNumber`; `UnityPlayer.dll` also
+carries `Manufacturer`, `Model`, `DeviceId`), and the exact recipe is calibrated rather than assumed:
+log in once inside the emulator, and a script tries every recipe against the stored `raencT` until
+one decrypts to printable text. Until that calibration exists on a real machine,
+`SupportsRetroAchievements` answers no.
+
+**Saves: what the options dialog says, and why nothing is managed yet.** The paths page reads,
+verbatim: *"Keep the path fields empty if you want those files to be in the same folder as the ROM.
+This program will not move any files for you when you change any paths so you will need to manually
+do so if necessary. SZSNES Files below is where your game specific save folders like save states will
+go."* Its fields are `SRM File`, `BPS File`, `CHT File` and `SZSNES Files`, and the settings behind
+them are `srmPath`, `chtPath`, `bpsPath`, `gameSavePath`, with a `DisableSZSNESFolders` option. So
+by default a save is `<rom>.srm` beside the ROM and the states go into a per-game folder; but a user
+who set a path keeps their saves where `srmPath` and `gameSavePath` say, and those are read out of
+`szsnes_ui.data` (below) - which this plugin does not decode yet. Save management is therefore off
+rather than half right: a restore written beside a ROM the emulator no longer reads from would look
+like a restore and not be one. Decoding the NRBF is the next step, and it is a small one.
+
+**The scripts send almost nothing, on purpose.** Exit is Alt+F4, which closes any Unity window.
+Escape is left alone: in this emulator it opens the emulator's own menu (`EscapeBackToMenu`), where
+save states, cheats and the per-game enhancement toggles live, so a frontend remapping it to quit
+would take that menu from a keyboard player. The save-state keys exist and are bound by the user in
+Config > Input ("Press the key or button to set this input entry"); their defaults are in code this
+pack cannot read, so those two scripts are a comment.
+
+**Where the settings are, measured.** A run that reaches the menu and quits writes, under
+`%USERPROFILE%\AppData\LocalLow\ZEMU Software Inc_\SUPERZSNES\` (Unity's persistent data folder;
+the underscore is Unity's replacement for the trailing dot of "ZEMU Software Inc."):
+
+```
+szsnes_ui.data     13 KB   the settings, written at exit ("Save: .../szsnes_ui.data" in the log)
+Player.log                 Unity's log of the last run; Player-prev.log the one before
+```
+
+`szsnes_ui.data` is **NRBF** - the `BinaryFormatter` wire format, header
+`00 01 00 00 00 FF FF FF FF 01 00 00 00 00 00 00 00`, then a `BinaryLibrary` record naming
+`Assembly-CSharp` and one root object of class `MainMenuManager+MainMenuSettings`. Its member names
+are in clear in the file, and they are the settings seen in the metadata: `srmPath`, `chtPath`,
+`bpsPath`, `gameSavePath`, `noDirectoryForSaves`, `lastLoadedFiles`, `autoLoadLastSaveState`,
+`rauserID`, `raencT`, plus nested dictionaries for the input configuration, per-game settings and
+themes. On a fresh install every path is `null`. That is readable with `System.Formats.Nrbf`, and
+writable by hand: a null string member is one `ObjectNull` byte, and setting it means writing a
+`BinaryObjectString` record in its place - but only while the emulator is closed, since it rewrites
+the whole file at exit, the way melonDS does.
+
+**What a run answered, 30/09.** `Player.log` prints `# ARGS: <n>` at start and the `Save:` line
+with the full path of the settings file, and BepInEx (below) relays every Unity line, so each of
+these was one launch:
+
+| question | answer |
+|---|---|
+| does it take a ROM path on the command line? | **Yes.** `# ARGS: 2`, `ARG1: <path>`, `FOUND Filename Arg:` and the game starts. The default command line stays empty; the host appends the path. |
+| can it be made portable? | **Not by the emulator, yes by a patch in its process.** `MainMenuManager.GetConfigFilePath` is 128 bytes, `Application.persistentDataPath + "/szsnes_ui.data"`, no marker checked; the `.portable` literal belongs to MoonSharp; a Process Monitor trace shows no probe for any marker file. A BepInEx prefix on the `persistentDataPath` getter answers `<exe>\portable`, and the game's own log then says `Save: ...\portable/szsnes_ui.data`. The path settings also accept `{exec}` and `{persist}` tokens, expanded by `CommonTools.ModifyPathWithCustomPath`. |
+| where do saves and states go? | States in a folder beside the ROM named `<rom>.data.szsnes\`: `<rom>.szst0` for slot 0, `<rom>.szst-last` for the resume state the emulator writes when Escape opens its menu. SRAM as `<rom>.srm` beside the ROM by default, or where `srmPath` says. |
+| what are the default keys? | F2 saves, F4 loads - the pack's own convention, out of the box. Escape opened the emulator's menu; with the BepInEx plugin, F1 does that and Escape quits, asked twice. |
+
+The Steam build's `steam_api.dll` is present and the emulator runs without Steam. **The site warns
+that some virus scanners flag the executable**; an install that ends with a data folder and no
+executable is what a quarantine leaves behind, and the plugin says so.
+
+### The BepInEx side
+
+`tools/superzsnes-bepinex` is a plugin that runs INSIDE the emulator, under BepInEx 6's IL2CPP
+flavour. That is how a closed IL2CPP build gets patched durably: BepInEx (its `winhttp.dll` relay
+is the first DLL the process looks for in its own folder, measured with Process Monitor) puts a
+.NET 6 runtime into the process, Cpp2IL reads `global-metadata.dat` - version 39 is supported since
+build 785 - and Il2CppInterop generates `BepInEx\interop\Assembly-CSharp.dll`, against which
+HarmonyX detours the native methods **by name**. An emulator update that keeps its names keeps the
+patches; one that renames them fails at patch time with a line in `BepInEx\LogOutput.log`.
+
+Nothing in the game is obfuscated: `MainMenuManager`, `MasterExecutor`, `MainMenuSettings` with its
+`srmPath`, `gameSavePath`, `rauserID`, `raencT`, `StringEnc`, `ZInputSystem.GameInput` all come
+out under their own names. What the plugin does today, each line measured in the game's log:
+
+- `Application.persistentDataPath` answers `<exe>\portable` - the portable mode above.
+- `ZInputSystem.EscapePressed` is where the executor asks, every frame, whether Escape was hit;
+  the answer is a boolean nobody has acted on yet. F1 makes it true (the emulator's menu, its
+  `-last` state, its pause, exactly as before); a real Escape becomes false and shows "Press ESC
+  again to quit" on the game's own text line, and a second press within 2.5 s lets the emulator
+  save through its own `EscapeBackToMenu` and then calls `MainMenuManager.OnExit`. The pad's `Exit`
+  button, which the emulator itself turns into a bare `Application.Quit`, is untouched.
+
+Two traps for whoever adds to it. `Object.FindObjectOfType` and the new Input System's
+`ButtonControl` properties are stripped from this build and fail with "Method unstripping failed";
+the game's own singletons (`MasterExecutor.Instance`, `MainMenuManager.Instance`) and BepInEx's
+`UnityInput` (the legacy `Input` class, which `MasterExecutor.Update` itself calls) work. And
+`Update` asks `EscapePressed` twice per frame, so a press is one press per `Time.frameCount`.
+
+- **Every setting of the emulator, from the command line.** `--nixx-set:<field>=<value>` sets a
+  field of `MainMenuSettings` (`srmPath`, `gfxMode`, `rewindSpeed`, ...) and
+  `--nixx-game:<field>=<value>` one of the launched game's `GameSpecificSettings` (`overclock`,
+  `disEnhanceWide`, `widescreenOverride`, ...), by name, through reflection on the interop types -
+  which is why a typo is a warning in the log and not a crash. Applied after `LoadMainMenuSave` and
+  on every `GetGameSettings`, and **taken out again around every `SaveMainMenuSave`**, so the
+  emulator's file keeps the user's own values; `--nixx-persist` makes them stick instead.
+  `--nixx-dump-options` writes `<exe>\portable\options.json`, the live list of every reachable
+  field with its type and current value.
+- **The pack's own switches**: `--nixx-quit-confirm=on|off`, `--nixx-menu-key=<KeyCode>`,
+  `--nixx-portable=on|off`, `--nixx-support-popup=on|off` (the "check out our Patreon" dialog,
+  `MainMenuManager.supportUs`, is put back to sleep the frame it appears - off by default),
+  `--nixx-version-popup=on|off`.
+- **The emulator's own** `--loadstate` resumes the `-last` state, and Unity's
+  `-screen-fullscreen 1`, `-screen-width`, `-screen-height`, `-popupwindow`, `-monitor` need no
+  plugin at all. `MasterExecutor.Awake` ignores every argument starting with `-` that it does not
+  know, and takes as its ROM the first ending in `.smc/.sfc/.zip/.swc/.ufo`, so all of the above can
+  go in front of the ROM the host appends.
+
+**In LaunchBox, the SUPER ZSNES tab** of the Nixx configuration window (Tools menu) lists the whole
+catalogue - 66 options in `src/SuperZsnes/SuperZsnesOptions.cs`, grouped, one tick per option -
+and shows the command line the ticks add up to. What is ticked goes to
+`Local\Plugins\.data\<PluginId>\settings.ini`, and `PrepareEmulatorForLaunch` puts it on the line
+at every launch, without repeating a flag the user already typed on the emulator's own command
+line. The probe's `--superzsnes` builds that tab, reads it back and saves it.
+
+Building it needs a game folder that has been launched once with BepInEx in it, because it
+references the generated interop:
+
+```
+dotnet build tools\superzsnes-bepinex -c Release -p:SuperZsnesDir=<the emulator folder>
+```
+
+The output lands straight in `<SuperZsnesDir>\BepInEx\plugins\`. Not shipped by the installer yet:
+how BepInEx itself is put into an installation - downloaded like the emulator, or carried - is the
+next decision, and it is an LGPL redistribution question as much as a technical one.
 
 ## License
 

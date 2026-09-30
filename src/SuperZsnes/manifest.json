@@ -1,0 +1,19 @@
+{
+  "SchemaVersion": 1,
+  "PluginId": "3f6c1a2e-9b7d-4e58-a1c4-7d2f0b9e6a51",
+  "UserId": 0,
+  "Name": "Nixx-SuperZSNES",
+  "Developer": "nixxou",
+  "Description": "Download, update and launch integration for the SUPER ZSNES emulator (Super Nintendo Entertainment System).",
+  "Credits": "Many thanks to zsKnight and _Demo_, the developers of SUPER ZSNES!",
+  "OperatingSystemFamily": "Windows",
+  "InstalledVersion": "1.0",
+  "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
+  "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
+  "HomePageUrl": "https://www.zsnes.com/",
+  "TipJarUrl": "",
+  "SourceKind": "Local",
+  "Tags": [
+    "5aae585f-ffc5-42bc-9f95-e5e190ef99e2"
+  ]
+}

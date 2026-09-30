@@ -59,7 +59,7 @@ namespace LbIntegrations.Probe
 
             if (args.Length == 0 || args[0].StartsWith("-"))
             {
-                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--melonds] [--nogba] [--melonds-real ...] [--melonds-describe --rom <f>] [--rows] [--hotkeys] [--saves --emu <exe> --rom <rom>] [--ahk --emu <exe>] [--vita3k] [--vita3k-install --rom <f>] [--vita3k-real --emu <Vita3K.exe>]");
+                Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--melonds] [--nogba] [--superzsnes] [--melonds-real ...] [--melonds-describe --rom <f>] [--rows] [--hotkeys] [--saves --emu <exe> --rom <rom>] [--ahk --emu <exe>] [--vita3k] [--vita3k-install --rom <f>] [--vita3k-real --emu <Vita3K.exe>]");
                 // These two take no plugin at all - they exercise shared sources compiled
                 // into this probe, not anything loaded from a DLL.
                 Console.Error.WriteLine("       Probe --ramdisk --lb <LaunchBox root>");
@@ -628,6 +628,14 @@ namespace LbIntegrations.Probe
                 if (!NoGbaCheck.Run(plugin)) return 1;
             }
 
+            // SUPER ZSNES against what was measured off its build and its site, offline: the
+            // Downloads section, version.txt, the About caption in the scene file, the catalogue row.
+            bool superzsnes = Has(args, "--superzsnes");
+            if (superzsnes)
+            {
+                if (!SuperZsnesCheck.Run(plugin)) return 1;
+            }
+
             // The same plugin against a real installation: --flycast-real --emu <exe> --rom <rom>.
             if (Has(args, "--flycast-real"))
             {
@@ -663,6 +671,7 @@ namespace LbIntegrations.Probe
             if (nogba) wroteTo.Add("a forged no$gba in the temp folder");
             if (flycastSettings) wroteTo.Add("a forged Flycast in the temp folder (a game's settings)");
             if (ppsspp) wroteTo.Add("a forged PPSSPP in the temp folder (a game's settings)");
+            if (superzsnes) wroteTo.Add("a forged SUPER ZSNES in the temp folder");
             if (Has(args, "--melonds-real")) wroteTo.Add("COPIES of the NANDs given, in the temp folder");
             if (hotkeys) wroteTo.Add("a forged Flycast in the temp folder (keyboard mapping)");
             if (Has(args, "--vita3k")) wroteTo.Add("a forged Vita3K in the temp folder, junction included");

@@ -23,6 +23,36 @@ one non-framework entry — `Unbroken.LaunchBox.Plugins` — so there is nothing
 its partition-base probing order are sigil's work; the C# is ours. MPL-2.0 is file-scoped copyleft:
 that one file stays MPL and its source is in this repository, which is what the licence asks.
 
+## Merged into `SuperZsnes.dll`
+
+| Component | Licence | Used for |
+|---|---|---|
+| [SharpCompress](https://github.com/adamhathcock/sharpcompress) | MIT | reading the release archive - a plain zip today, read by sniffing so a change of container upstream costs nothing |
+| [Lib.Harmony](https://github.com/pardeike/Harmony) | MIT | the postfixes that let LaunchBox read our emulator row |
+
+Nothing of SUPER ZSNES itself is in here, and nothing could be: it is closed source. The plugin
+downloads the build from zsnes.com at the user's request, reads what the About box and the site say
+about its version, and runs it. It links none of its code and redistributes none of its files.
+
+## Loaded into the emulator by `tools/superzsnes-bepinex`
+
+The in-process plugin (`SuperZsnes.BepInEx.dll`, MIT, ours) runs under these, which it references
+at run time from the emulator's `BepInEx\` folder and never merges or carries:
+
+| Component | Licence | Role |
+|---|---|---|
+| [BepInEx 6](https://github.com/BepInEx/BepInEx) (IL2CPP, bleeding edge) | LGPL-2.1 | the loader: Doorstop's `winhttp.dll`, a .NET 6 runtime in the process, the chainloader |
+| [HarmonyX](https://github.com/BepInEx/HarmonyX) | MIT | the detours, resolved by name |
+| [Il2CppInterop](https://github.com/BepInEx/Il2CppInterop) | LGPL-3.0 | the generated interop assemblies the plugin compiles against |
+| [Cpp2IL](https://github.com/SamboyCoding/Cpp2IL) | MIT | reads the IL2CPP metadata for the generator |
+
+None of them is redistributed by this repository. `SuperZsnes.dll` **downloads** BepInEx at
+install time, from its own builds site (`builds.bepinex.dev`), a pinned bleeding-edge build
+(`6.0.0-be.788+5b766a3`) verified against a sha256 written in `SuperZsnesBepInEx.cs`, and extracts
+the unmodified archive over the emulator folder. It then writes a `BepInEx.cfg` that turns the
+console and the disk log off, its own plugin into `BepInEx\plugins\`, and `docs\superzsnes\*.md`
+into `BepInEx\nixx-docs\`. Nothing of BepInEx is inside our binaries.
+
 ## Merged into `Vita3k.dll`
 
 | Component | Licence | Used for |

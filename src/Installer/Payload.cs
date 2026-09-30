@@ -24,9 +24,10 @@ internal static class Payload
     public const string Ppsspp  = "Nixx-PPSSPP";
     public const string Vita3k  = "Nixx-Vita3K";
     public const string Xenia   = "Nixx-Xenia";
+    public const string SuperZsnes = "Nixx-SuperZSNES";
 
     public static readonly string[] Folders =
-        { Flycast, MelonDs, NoGba, Ppsspp, Vita3k, Xenia };
+        { Flycast, MelonDs, NoGba, Ppsspp, SuperZsnes, Vita3k, Xenia };
 
     /// <summary>Every folder name this pack has been installed under before the rename. They are
     /// swept on install, because PluginLoader dedupes by FILE NAME across plugin roots: a stale
@@ -54,7 +55,7 @@ internal static class Payload
     /// deleting it on the strength of its name alone is how an installer destroys something it was
     /// never told about.</summary>
     public static readonly string[] Assemblies =
-        { "Flycast.dll", "MelonDs.dll", "NoGba.dll", "Ppsspp.dll", "Vita3k.dll", "Xenia.dll", "NixxMenus.dll" };
+        { "Flycast.dll", "MelonDs.dll", "NoGba.dll", "Ppsspp.dll", "SuperZsnes.dll", "Vita3k.dll", "Xenia.dll", "NixxMenus.dll" };
 
     /// <summary>The menu relay: the pack's right-click entries on games, shown for the plugins.
     ///
@@ -121,6 +122,10 @@ internal static class Payload
         new("payload/Nixx-PPSSPP/Ppsspp.dll",       Ppsspp,  "Ppsspp.dll"),
         new("payload/Nixx-PPSSPP/manifest.json",    Ppsspp,  "manifest.json"),
         new(Contract,                               Ppsspp,  "LbIntegrations.Catalog.dll"),
+
+        new("payload/Nixx-SuperZSNES/SuperZsnes.dll",   SuperZsnes, "SuperZsnes.dll"),
+        new("payload/Nixx-SuperZSNES/manifest.json",    SuperZsnes, "manifest.json"),
+        new(Contract,                                   SuperZsnes, "LbIntegrations.Catalog.dll"),
 
         new("payload/Nixx-Vita3K/Vita3k.dll",       Vita3k,  "Vita3k.dll"),
         new("payload/Nixx-Vita3K/manifest.json",    Vita3k,  "manifest.json"),

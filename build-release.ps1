@@ -9,7 +9,7 @@
 #   .\build-release.ps1              # the lot
 #   .\build-release.ps1 -SkipPlugins # restage and republish from what is already built
 #
-# The result needs nothing installed on the target machine: it carries the .NET runtime, the six
+# The result needs nothing installed on the target machine: it carries the .NET runtime, the seven
 # plugins and the DSi NAND library. About 60 MB, of which roughly 50 is the runtime.
 
 [CmdletBinding()]
@@ -19,7 +19,14 @@ param(
     [switch] $SkipPlugins,
 
     [ValidateSet('Debug', 'Release')]
-    [string] $Configuration = 'Release'
+    [string] $Configuration = 'Release',
+
+    # A SUPER ZSNES folder that has been launched once with BepInEx in it: tools\superzsnes-bepinex
+    # compiles against the interop assemblies BepInEx generated there (BepInEx\interop\). The
+    # plugin built from it is embedded into SuperZsnes.dll and deployed into every emulator folder.
+    # Defaults to the SUPERZSNES_DIR environment variable. REQUIRED for a release: a pack shipped
+    # without it would install BepInEx into an emulator and put nothing in it.
+    [string] $SuperZsnesDir = $env:SUPERZSNES_DIR
 )
 
 $ErrorActionPreference = 'Stop'
@@ -32,12 +39,34 @@ $Stage = [ordered]@{
     'MelonDs' = 'Nixx-melonDS'
     'NoGba'   = 'Nixx-nogba'
     'Ppsspp'  = 'Nixx-PPSSPP'
+    'SuperZsnes' = 'Nixx-SuperZSNES'
     'Vita3k'  = 'Nixx-Vita3K'
     'Xenia'   = 'Nixx-Xenia'
 }
 
 $payload = Join-Path $repo 'build\payload'
 $release = Join-Path $repo 'release'
+
+# ── 0. the in-process plugin for SUPER ZSNES ────────────────────────────────
+#
+# BEFORE the plugins, because SuperZsnes.csproj embeds its output when build\bepinex\ holds it.
+# See tools\superzsnes-bepinex\SuperZsnes.BepInEx.csproj for why a game folder is needed.
+
+if (-not $SkipPlugins) {
+    if (-not $SuperZsnesDir) {
+        throw "No -SuperZsnesDir (or SUPERZSNES_DIR): tools\superzsnes-bepinex cannot be built without a SUPER ZSNES folder launched once with BepInEx in it, and a release must carry it."
+    }
+    if (-not (Test-Path (Join-Path $SuperZsnesDir 'BepInEx\interop\Assembly-CSharp.dll'))) {
+        throw "No BepInEx\interop\Assembly-CSharp.dll under $SuperZsnesDir - launch the emulator once with BepInEx installed."
+    }
+    Write-Host "Building the SUPER ZSNES in-process plugin ($Configuration)..." -ForegroundColor Cyan
+    $modOut = Join-Path $repo 'build\bepinex'
+    New-Item -ItemType Directory -Force -Path $modOut | Out-Null
+    dotnet build (Join-Path $repo 'tools\superzsnes-bepinex\SuperZsnes.BepInEx.csproj') -c $Configuration --nologo -v quiet "-p:SuperZsnesDir=$SuperZsnesDir" "-p:OutDir=$modOut\"
+    if ($LASTEXITCODE -ne 0) { throw "Build failed: SuperZsnes.BepInEx" }
+    if (-not (Test-Path (Join-Path $modOut 'SuperZsnes.BepInEx.dll'))) { throw "SuperZsnes.BepInEx.dll missing after build" }
+    Write-Host ("  built  {0,-14} {1,8:N0} KB" -f 'SuperZsnes.BepInEx.dll', ((Get-Item (Join-Path $modOut 'SuperZsnes.BepInEx.dll')).Length / 1KB))
+}
 
 # ── 1. the plugins ──────────────────────────────────────────────────────────
 
