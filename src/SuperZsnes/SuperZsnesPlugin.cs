@@ -419,6 +419,10 @@ namespace LbIntegrations.SuperZsnes
             emu.Title = PackName;
             emu.ApplicationPath = MakeRelativeToLaunchBox(exePath);
             emu.CommandLine = DefaultCommandLine;
+            // THE MOUSE STAYS (Mehdi, 01/10): the emulator's menus, its file browser and its options are driven by the
+            // mouse, and LaunchBox's "Hide mouse cursor during games" would take it away. Set on the entry this plugin
+            // creates only; an entry the user made keeps his choice.
+            try { emu.HideMouseCursorInGame = false; } catch (Exception ex) { Log.Info("could not leave the mouse cursor shown (" + ex.Message + ")"); }
             EnsureHotkeyScripts(emu);
 
             // DefaultPlatform IS NOT SET - see the note in XeniaPlugin.CreateEmulator: the Edit

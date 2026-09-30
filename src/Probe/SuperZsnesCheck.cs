@@ -75,6 +75,43 @@ namespace LbIntegrations.Probe
             return _fail == 0;
         }
 
+        /// <summary>--superzsnes-settings-shot out.png: the SUPER ZSNES tab of the Nixx window, drawn off screen at the
+        /// window's size and again tall enough to show every group, side by side. Nothing on screen, nothing written
+        /// but the picture.</summary>
+        public static bool SettingsShot(EmulatorPlugin plugin, string outPath)
+        {
+            System.Windows.Forms.Application.EnableVisualStyles();
+            var settings = plugin.GetType().Assembly.GetType("LbIntegrations.SuperZsnes.Settings", true);
+            var shots = new List<System.Drawing.Bitmap>();
+            foreach (var height in new[] { 530, 2600 })
+            {
+                using var form = new System.Windows.Forms.Form
+                {
+                    StartPosition = System.Windows.Forms.FormStartPosition.Manual, Location = new System.Drawing.Point(-4000, -4000),
+                    ClientSize = new System.Drawing.Size(684, height), Font = new System.Drawing.Font("Segoe UI", 9f),
+                };
+                var page = (System.Windows.Forms.Control)settings.GetMethod("CreatePage").Invoke(null, null);
+                page.Dock = System.Windows.Forms.DockStyle.Fill;
+                form.Controls.Add(page);
+                form.Show();
+                System.Windows.Forms.Application.DoEvents();
+                var bmp = new System.Drawing.Bitmap(form.Width, form.Height);
+                form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, bmp.Width, bmp.Height));
+                shots.Add(bmp);
+                form.Close();
+            }
+            using var all = new System.Drawing.Bitmap(shots.Sum(s => s.Width), shots.Max(s => s.Height));
+            using (var g = System.Drawing.Graphics.FromImage(all))
+            {
+                g.Clear(System.Drawing.Color.DimGray);
+                int x = 0;
+                foreach (var s in shots) { g.DrawImage(s, x, 0); x += s.Width; s.Dispose(); }
+            }
+            all.Save(outPath, System.Drawing.Imaging.ImageFormat.Png);
+            Console.WriteLine("  " + outPath);
+            return true;
+        }
+
         public static bool Run(EmulatorPlugin plugin)
         {
             _fail = 0;

@@ -68,12 +68,11 @@ namespace LbIntegrations.SuperZsnes
 
             foreach (var group in SuperZsnesOptions.All.GroupBy(o => o.Group))
             {
-                var box = new GroupBox { Text = group.Key, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(8, 4, 8, 8), Margin = new Padding(4, 4, 4, 10) };
-                var table = new TableLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 4, Dock = DockStyle.Top };
-                table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 26));
-                table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 250));
-                table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180));
-                table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 460));
+                // The table is PLACED, not docked (01/10): a docked child in a group box that sizes itself on
+                // its children is sized on the box - neither had a width, and each group came out a sliver.
+                // Three columns and the help under its option: the tab is some 660 px wide.
+                var box = Group(group.Key);
+                var table = Table(26, 250, 200);
                 foreach (var o in group)
                 {
                     saved.TryGetValue(o.IniKey, out var current);
@@ -84,7 +83,7 @@ namespace LbIntegrations.SuperZsnes
                     var help = new Label
                     {
                         Text = o.Help + (o.Default != null ? (o.Help.Length > 0 ? "  " : "") + "Default: " + o.Default + "." : ""),
-                        AutoSize = true, MaximumSize = new Size(450, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 7, 0, 4),
+                        AutoSize = true, MaximumSize = new Size(440, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 0, 0, 6),
                     };
                     var tip = new ToolTip();
                     tip.SetToolTip(label, o.IniKey);
@@ -95,7 +94,12 @@ namespace LbIntegrations.SuperZsnes
                     table.Controls.Add(row.Override, 0, r);
                     table.Controls.Add(label, 1, r);
                     table.Controls.Add(row.Editor, 2, r);
-                    table.Controls.Add(help, 3, r);
+                    if (help.Text.Length > 0)
+                    {
+                        int h = table.RowCount++;
+                        table.Controls.Add(help, 1, h);
+                        table.SetColumnSpan(help, 2);
+                    }
                     _rows.Add(row);
                 }
                 box.Controls.Add(table);
@@ -124,24 +128,21 @@ namespace LbIntegrations.SuperZsnes
         /// shows the steps.</summary>
         private GroupBox DeployBox()
         {
-            var box = new GroupBox { Text = "In-process plugin (BepInEx " + SuperZsnesBepInEx.Build + ")", AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(8, 4, 8, 8), Margin = new Padding(4, 4, 4, 10) };
-            var table = new TableLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 3, Dock = DockStyle.Top };
-            table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 440));
-            table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 300));
-            table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 170));
+            var box = Group("In-process plugin (BepInEx " + SuperZsnesBepInEx.Build + ")");
+            var table = Table(340, 136);
 
             var exes = KnownExecutables();
             if (exes.Count == 0)
             {
-                table.Controls.Add(new Label { Text = "No SUPER ZSNES emulator entry in the library yet. Install it from Add Emulator: BepInEx goes in with it.", AutoSize = true, MaximumSize = new Size(880, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 6, 0, 6) }, 0, 0);
-                table.SetColumnSpan(table.Controls[0], 3);
+                table.Controls.Add(new Label { Text = "No SUPER ZSNES emulator entry in the library yet. Install it from Add Emulator: BepInEx goes in with it.", AutoSize = true, MaximumSize = new Size(470, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 6, 0, 6) }, 0, 0);
+                table.SetColumnSpan(table.Controls[0], 2);
             }
             foreach (var exe in exes)
             {
                 var exeDir = System.IO.Path.GetDirectoryName(exe);
                 int r = table.RowCount++;
-                var where = new Label { Text = exeDir, AutoSize = true, MaximumSize = new Size(430, 0), Margin = new Padding(0, 9, 0, 0) };
-                var status = new Label { Text = SuperZsnesBepInEx.Describe(exeDir), AutoSize = true, MaximumSize = new Size(290, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 9, 0, 0) };
+                var where = new Label { Text = exeDir, AutoSize = true, MaximumSize = new Size(470, 0), Margin = new Padding(0, 9, 0, 0) };
+                var status = new Label { Text = SuperZsnesBepInEx.Describe(exeDir), AutoSize = true, MaximumSize = new Size(330, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 4, 0, 6) };
                 var button = new Button { Text = SuperZsnesBepInEx.IsDeployed(exeDir) ? "Repair / refresh" : "Install now", AutoSize = true, Margin = new Padding(3, 4, 0, 4) };
                 button.Click += (_, _) =>
                 {
@@ -158,12 +159,27 @@ namespace LbIntegrations.SuperZsnes
                     }) { IsBackground = true };
                     worker.Start();
                 };
+                // The folder on its own line, its state and the button under it.
                 table.Controls.Add(where, 0, r);
-                table.Controls.Add(status, 1, r);
-                table.Controls.Add(button, 2, r);
+                table.SetColumnSpan(where, 2);
+                int s = table.RowCount++;
+                table.Controls.Add(status, 0, s);
+                table.Controls.Add(button, 1, s);
             }
             box.Controls.Add(table);
             return box;
+        }
+
+        /// <summary>A group box that sizes itself on the table in it.</summary>
+        private static GroupBox Group(string title)
+            => new GroupBox { Text = title, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(8, 4, 8, 8), Margin = new Padding(4, 4, 4, 10) };
+
+        /// <summary>A table of fixed columns, PLACED under the group's caption - never docked, see the constructor.</summary>
+        private static TableLayoutPanel Table(params int[] widths)
+        {
+            var table = new TableLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = widths.Length, Location = new Point(8, 20) };
+            foreach (var w in widths) table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, w));
+            return table;
         }
 
         private static void SafeSet(Label label, string text)

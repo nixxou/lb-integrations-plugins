@@ -635,6 +635,8 @@ namespace LbIntegrations.Probe
             {
                 if (!SuperZsnesCheck.Run(plugin)) return 1;
             }
+            // The SUPER ZSNES tab of the Nixx window, drawn off screen: --superzsnes-settings-shot <out.png>.
+            if (Has(args, "--superzsnes-settings-shot")) return SuperZsnesCheck.SettingsShot(plugin, Arg(args, "--superzsnes-settings-shot")) ? 0 : 1;
             // BepInEx deployed FOR REAL into a SUPER ZSNES folder (downloads it): --superzsnes-deploy-real --emu <SUPERZSNES.exe>.
             if (Has(args, "--superzsnes-deploy-real") && !SuperZsnesCheck.DeployReal(plugin, Arg(args, "--emu"))) return 1;
 
