@@ -45,6 +45,36 @@ namespace LbIntegrations.Probe
         /// <summary>https://www.zsnes.com/version.txt, verbatim, 2026-09-30.</summary>
         private const string FeedFixture = "Windows,0.310\nLinux,0.310\nMac,0.310\n";
 
+        /// <summary>--superzsnes-deploy-real --emu SUPERZSNES.exe: THE REAL DEPLOY into that folder - BepInEx downloaded from
+        /// builds.bepinex.dev and checked against its pinned sha256, the silent config, the embedded plugin and docs. What
+        /// the install from LaunchBox does, with nothing forged. Writes into that folder only (and the temp folder).</summary>
+        public static bool DeployReal(EmulatorPlugin plugin, string exe)
+        {
+            _fail = 0;
+            Console.WriteLine();
+            Console.WriteLine("-- SUPER ZSNES, BepInEx deployed for real into " + exe + "  [WRITES there, downloads] ---");
+            var flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
+            var t = plugin.GetType().Assembly.GetType("LbIntegrations.SuperZsnes.SuperZsnesBepInEx", true);
+            if (!Check("the executable is there", exe != null && File.Exists(exe))) return false;
+            var dir = Path.GetDirectoryName(Path.GetFullPath(exe));
+            int lastTen = -1;
+            var r = t.GetMethod("Deploy", flags).Invoke(null, new object[] { exe, (Action<string, double?>)((m, p) =>
+            {
+                int ten = p == null ? -1 : (int)(p.Value * 10);
+                if (p == null || ten != lastTen) { lastTen = ten; Console.WriteLine("    " + m + (p == null ? "" : " " + (int)(p.Value * 100) + "%")); }
+            }), (Func<bool>)(() => false) });
+            bool ok = (bool)r.GetType().GetProperty("Ok").GetValue(r);
+            foreach (var step in (System.Collections.IEnumerable)r.GetType().GetField("Steps").GetValue(r)) Console.WriteLine("    step: " + step);
+            if (!Check("the deploy succeeds", ok)) Console.WriteLine("     " + (string)r.GetType().GetField("Problem").GetValue(r));
+            Check("BepInEx, Doorstop and the runtime are there", File.Exists(Path.Combine(dir, "winhttp.dll")) && File.Exists(Path.Combine(dir, "BepInEx", "core", "BepInEx.Unity.IL2CPP.dll")) && Directory.Exists(Path.Combine(dir, "dotnet")));
+            var cfg = Path.Combine(dir, "BepInEx", "config", "BepInEx.cfg");
+            Check("the config is silent", File.Exists(cfg) && File.ReadAllText(cfg).Replace("\r\n", "\n").Contains("[Logging.Console]\n\nEnabled = false"));
+            Check("the plugin is in BepInEx\\plugins", File.Exists(Path.Combine(dir, "BepInEx", "plugins", "SuperZsnes.BepInEx.dll")));
+            Check("the docs are in BepInEx\\nixx-docs", File.Exists(Path.Combine(dir, "BepInEx", "nixx-docs", "README.md")));
+            Console.WriteLine(_fail == 0 ? "  OK - BepInEx deployed for real" : "  " + _fail + " FAILED");
+            return _fail == 0;
+        }
+
         public static bool Run(EmulatorPlugin plugin)
         {
             _fail = 0;

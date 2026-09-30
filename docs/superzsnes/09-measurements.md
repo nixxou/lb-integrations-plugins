@@ -38,6 +38,7 @@ date plutôt que d'écraser.
 | arguments inconnus en `-` | ignorés | idem (`String.StartsWith("-")`) |
 | ROM | premier argument finissant par `.smc .sfc .zip .swc .ufo` | idem ; journal `FOUND Filename Arg:` 30/09 |
 | ROM derrière `--nixx-*` | chargée | lancement 30/09 |
+| ROM en chemin RELATIF | chargée, mais la SRAM est écrite vers `C:\<rom>.srm` (« Access to the path "C:\som.srm" is denied ») : un chemin relatif n'est pas résolu contre le dossier de travail. LaunchBox passe un chemin complet | LogOutput 01/10 01:03 |
 
 ## Entrées
 
@@ -80,7 +81,15 @@ date plutôt que d'écraser.
 | premier chargement | Doorstop 4.5.0, runtime 6.0.7 | LogOutput |
 | P1 vérifié | « Save: …\x\portable/szsnes_ui.data » | LogOutput 16:45 |
 | P2 vérifié | « Escape confirmed - saving through the emulator, then quitting » | LogOutput 16:53 |
-| P3–P7 | compilés, **non encore observés** en lancement réel au moment de cette doc | — |
+| P3–P7 | compilés, **non encore observés** en lancement réel au moment de cette doc (30/09) | — |
+| P3 vérifié | `set: gfxMode None -> Scanlines` | `nixx.log` 01/10 01:03, plugin 0.5.0 recompilé, Secret of Mana (USA) |
+| P4 vérifié | `game: overclock 0 -> 150` ; au lancement suivant, `overclock 0 -> 120` : la surcharge de jeu n'a pas été enregistrée | `nixx.log` 01/10 01:03 puis 01:06 |
+| P5 vérifié | au lancement suivant sans surcharge, `options.json` dit `gfxMode` = `None` et `numLaunches` 13 → 14 : la sauvegarde a eu lieu, sans la surcharge | fermeture par WM_CLOSE (comme Alt+F4), `options.json` 01/10 01:05 |
+| P6 | le patch tourne à chaque image sans erreur (aucun « popup patch - ») ; aucune des deux popups ne s'est levée en quatre lancements : **non observé** | `nixx.log` et LogOutput 01/10 |
+| P7 vérifié | `primary display: 0,0 2560x1440; window at 0,0 2560x1440 (on it); mode ExclusiveFullScreen` puis `full screen window, 2560x1440` | `nixx.log` 01/10 01:03 |
+| `--nixx-dump-options` | `portable\options.json` écrit (4,6 Ko), valeurs lues **avant** les surcharges | 01/10 01:03 |
+| déploiement réel | sur un 0.310 fraîchement extrait de l'archive officielle : be.788 x86 téléchargé et vérifié, 228 fichiers, `BepInEx.cfg` silencieux, plugin 27 136 o, 10 fichiers de doc | sonde `--superzsnes-deploy-real`, 01/10 01:08 |
+| premier lancement après déploiement | interop générée (112 assemblies), plugin chargé, `nixx.log` 20 s après le départ, **aucun** `LogOutput.log` (silencieux), `portable\szsnes_ui.data` créé | 01/10 01:09 |
 
 ## Popups
 

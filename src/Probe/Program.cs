@@ -635,6 +635,8 @@ namespace LbIntegrations.Probe
             {
                 if (!SuperZsnesCheck.Run(plugin)) return 1;
             }
+            // BepInEx deployed FOR REAL into a SUPER ZSNES folder (downloads it): --superzsnes-deploy-real --emu <SUPERZSNES.exe>.
+            if (Has(args, "--superzsnes-deploy-real") && !SuperZsnesCheck.DeployReal(plugin, Arg(args, "--emu"))) return 1;
 
             // The same plugin against a real installation: --flycast-real --emu <exe> --rom <rom>.
             if (Has(args, "--flycast-real"))
@@ -672,6 +674,7 @@ namespace LbIntegrations.Probe
             if (flycastSettings) wroteTo.Add("a forged Flycast in the temp folder (a game's settings)");
             if (ppsspp) wroteTo.Add("a forged PPSSPP in the temp folder (a game's settings)");
             if (superzsnes) wroteTo.Add("a forged SUPER ZSNES in the temp folder");
+            if (Has(args, "--superzsnes-deploy-real")) wroteTo.Add("BepInEx, the plugin and its docs into the SUPER ZSNES folder given (downloaded)");
             if (Has(args, "--melonds-real")) wroteTo.Add("COPIES of the NANDs given, in the temp folder");
             if (hotkeys) wroteTo.Add("a forged Flycast in the temp folder (keyboard mapping)");
             if (Has(args, "--vita3k")) wroteTo.Add("a forged Vita3K in the temp folder, junction included");
