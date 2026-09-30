@@ -162,6 +162,87 @@ namespace LbIntegrations.Catalog
         }
     }
 
+    // ── AFTER AN IMPORT: THE GAMES ARE IN ───────────────────────────────────────────────────────
+    //
+    // Added 30/09, never to be changed (see the header). Once a host has put the games of an import
+    // into its library, the plugins that care are told what was asked for and what really went in.
+    // What for, first: LaunchBox drops some files without a word (measured 30/09 - four Naomi 2 sets
+    // whose MAME title differs from the game of its database they fall on); the plugin of the emulator
+    // can put them back, through the host's own data API.
+    //
+    // "IN" MEANS IN THE LIBRARY, NOT FINISHED. A host goes on filling metadata and media afterwards;
+    // this is told before that, as soon as the games exist. Same shape as the emulator opened above:
+    // under LaunchBox the first plugin to start watches the import wizard and says so (Watching); the
+    // others only register. A host with an import of its own calls Finished itself.
+
+    /// <summary>A plugin that wants to know what an import has put in the library.</summary>
+    public interface ILbImportFinished
+    {
+        /// <summary>After the games of <paramref name="done"/> are in the host's library. On the host's
+        /// thread, so the data API can be used; never throwing.</summary>
+        void AfterImport(LbImportDone done);
+    }
+
+    /// <summary>One import, as asked and as it went in. Every path is full.</summary>
+    public sealed class LbImportDone
+    {
+        /// <summary>The platform the games went to, and the one they were scraped as.</summary>
+        public string Platform, ScrapeAs;
+
+        /// <summary>The executable of the emulator chosen for them, or null when none was.</summary>
+        public string EmulatorPath;
+
+        /// <summary>The files the import was asked for - its list when it was confirmed.</summary>
+        public List<string> Wanted = new List<string>();
+
+        /// <summary>The title each of them had in that list.</summary>
+        public Dictionary<string, string> TitleOf = new Dictionary<string, string>();
+
+        /// <summary>Those the library has, as a game or as a version of one.</summary>
+        public List<string> Imported = new List<string>();
+
+        /// <summary>Those it does not.</summary>
+        public List<string> Missing = new List<string>();
+
+        /// <summary>False when the host gave up waiting: what is in may still grow.</summary>
+        public bool Complete;
+
+        /// <summary>The choices the import was made with, as "page.option" -> value ("RomImportMameOptionsViewModel.SkipQuiz"
+        /// -> "True" under LaunchBox): what a plugin puts back must be what those choices would have let in.</summary>
+        public Dictionary<string, string> Options = new Dictionary<string, string>();
+    }
+
+    /// <summary>The listeners, and whoever watches the import to tell them.</summary>
+    public static class LbImportFinished
+    {
+        private static readonly object Gate = new object();
+        private static readonly List<ILbImportFinished> Listeners = new List<ILbImportFinished>();
+
+        /// <summary>Set by the plugin that watches the host's import. The others read it and do not
+        /// watch again.</summary>
+        public static bool Watching;
+
+        /// <summary>Register a listener - once per type: the host builds a plugin more than once.</summary>
+        public static void Register(ILbImportFinished listener)
+        {
+            if (listener == null) return;
+            lock (Gate)
+            {
+                if (Listeners.Exists(l => l.GetType().FullName == listener.GetType().FullName)) return;
+                Listeners.Add(listener);
+            }
+        }
+
+        /// <summary>The games of <paramref name="done"/> are in.</summary>
+        public static void Finished(LbImportDone done)
+        {
+            List<ILbImportFinished> all;
+            lock (Gate) all = new List<ILbImportFinished>(Listeners);
+            foreach (var l in all)
+                try { l.AfterImport(done); } catch { }
+        }
+    }
+
     // ── TO COME: A HOST'S OWN IMPORT, ASKING THE EMULATOR'S PLUGIN ─────────────────────────────
     //
     // Not written yet - noted here because this is where it will go (Mehdi, 28/09). LiteBox has no

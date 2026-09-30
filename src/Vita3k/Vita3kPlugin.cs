@@ -79,6 +79,20 @@ namespace LbIntegrations.Vita3k
             // It does nothing at all outside LaunchBox.exe. LiteBox's own import, when it comes, will call
             // this plugin rather than be watched by it - see the note at the end of src\Catalog\LbCatalog.cs.
             Vita3kLbImport.Install();
+
+            // When an import's games are in the library: told - and one watcher for the whole pack, see
+            // LbipImportWatch. Under a try, as above: LbImportFinished is newer still.
+            try { ListenForImports(); }
+            catch (Exception ex) { Log.Info("an import's end is not seen here (" + ex.GetType().Name + ": " + ex.Message + ")"); }
+        }
+
+        /// <summary>NOT INLINED, and called under a try, for the reason ListenForOpening is: a Catalog
+        /// older than LbImportFinished must cost this, never the plugin.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static void ListenForImports()
+        {
+            LbIntegrations.Catalog.LbImportFinished.Register(new Vita3kImportFinished());
+            LbipImportWatch.Install();
         }
 
         /// <summary>In a method of its own, NOT INLINED, and called under a try: LbEmulatorOpened is newer

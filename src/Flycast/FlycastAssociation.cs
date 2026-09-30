@@ -117,9 +117,12 @@ namespace LbIntegrations.Flycast
             {
                 string id;
                 try { id = emu.Id ?? ""; } catch { return; }
+                // Once per emulator AND per set of platforms wanted: a System SP platform the user creates
+                // mid-session (any platform named "... System SP ...") is added at the next ask, not the next start.
+                var wanted = FlycastPlatforms.Wanted();
                 lock (Gate)
                 {
-                    if (id.Length > 0 && !Done.Add(id)) return;
+                    if (id.Length > 0 && !Done.Add(id + "|" + string.Join(";", wanted))) return;
                 }
 
                 IEmulatorPlatform[] existing = emu.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>();
@@ -132,32 +135,16 @@ namespace LbIntegrations.Flycast
                     return;
                 }
 
-                var mine = new HashSet<string>(FlycastPlatforms.All, StringComparer.InvariantCultureIgnoreCase);
                 var have = new HashSet<string>(
                     existing.Select(p => (Safe(() => p.Platform) ?? "").Trim()).Where(n => n.Length > 0),
                     StringComparer.InvariantCultureIgnoreCase);
 
-                // UNCHECK what is not ours, never remove it.
-                //
-                // When LaunchBox does not know an emulator it associates it with everything, every row
-                // marked "Default Emulator" - and that column means "this emulator is the DEFAULT for
-                // this platform", so Flycast ends up the default for the SNES and everything else. That
-                // is the mess. Clearing the flag fixes it and destroys nothing: the association stays,
-                // the user keeps whatever they set up, and a wrong guess on our side costs one tick
-                // rather than a row they cannot get back.
-                var unchecked_ = new List<string>();
-                foreach (var row in existing)
-                {
-                    var name = (Safe(() => row.Platform) ?? "").Trim();
-                    if (name.Length == 0 || mine.Contains(name)) continue;
-                    bool isDefault = false;
-                    try { isDefault = row.IsDefault; } catch { }
-                    if (!isDefault) continue;
-                    try { row.IsDefault = false; unchecked_.Add(name); } catch { }
-                }
+                // A ROW THAT IS THERE IS NEVER TOUCHED (Mehdi, 30/09: never, whatever the plugin) - not
+                // removed, not unticked. A platform we do not know may be one the user made on purpose (a
+                // custom one); what they ticked is theirs. Only what we run and is missing is added.
 
                 var added = new List<string>();
-                foreach (var name in FlycastPlatforms.All)
+                foreach (var name in wanted)
                 {
                     if (have.Contains(name)) continue;
                     var platform = emu.AddNewEmulatorPlatform();
@@ -168,14 +155,7 @@ namespace LbIntegrations.Flycast
                     added.Add(name);
                 }
 
-                if (unchecked_.Count > 0)
-                    Log.Info("\"" + Safe(() => emu.Title) + "\": cleared \"default emulator\" on "
-                             + unchecked_.Count + " platform(s) Flycast does not run: "
-                             + string.Join(", ", unchecked_.Take(8))
-                             + (unchecked_.Count > 8 ? ", ..." : ""));
-
-                // The unchecking above already happened and is logged; nothing more to do when
-                // every platform we cover was already there.
+                // Nothing more to do when every platform we cover was already there.
                 if (added.Count == 0) return;
 
 

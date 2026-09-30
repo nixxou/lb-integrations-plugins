@@ -74,21 +74,35 @@ namespace LbIntegrations.Flycast
             why = null;
             var forced = Environment.GetEnvironmentVariable(ToolOverride);
             if (!string.IsNullOrWhiteSpace(forced)) return File.Exists(forced) ? forced : null;
-            if (string.IsNullOrEmpty(layout?.InstallDir)) { why = "no Flycast install"; return null; }
-            var beside = Path.Combine(layout.InstallDir, ToolName);
+            string carried = null;
             try
             {
                 var dir = Path.GetDirectoryName(typeof(FlycastGameIdentity).Assembly.Location);
-                var carried = string.IsNullOrEmpty(dir) ? null : Path.Combine(dir, "native", ToolName);
-                if (carried != null && File.Exists(carried) && !SameBytes(carried, beside))
-                {
-                    File.Copy(carried, beside, overwrite: true);
-                    Log.Info("game id: " + ToolName + " put beside Flycast (" + beside + ")");
-                }
+                carried = string.IsNullOrEmpty(dir) ? null : Path.Combine(dir, "native", ToolName);
+                if (carried != null && !File.Exists(carried)) carried = null;
             }
-            catch (Exception ex) { Log.Warn("game id: could not put " + ToolName + " beside Flycast", ex); }
-            if (File.Exists(beside)) return beside;
-            why = ToolName + " is not there (neither beside Flycast nor in the plugin's native folder)";
+            catch { carried = null; }
+            // Beside the emulator when there is one installed - its folder there, never made for it.
+            var beside = string.IsNullOrEmpty(layout?.InstallDir) || !Directory.Exists(layout.InstallDir) ? null : Path.Combine(layout.InstallDir, ToolName);
+            if (beside != null && carried != null)
+            {
+                try
+                {
+                    if (!SameBytes(carried, beside))
+                    {
+                        File.Copy(carried, beside, overwrite: true);
+                        Log.Info("game id: " + ToolName + " put beside Flycast (" + beside + ")");
+                    }
+                }
+                catch (Exception ex) { Log.Warn("game id: could not put " + ToolName + " beside Flycast", ex); }
+            }
+            // The one beside the emulator when it is the plugin's own; else the plugin's own, run from its folder
+            // (Mehdi, 30/09: an emulator entry of ours whose Flycast is not installed yet reads ids all the same);
+            // else whatever is beside the emulator.
+            if (beside != null && File.Exists(beside) && (carried == null || SameBytes(carried, beside))) return beside;
+            if (carried != null) return carried;
+            if (beside != null && File.Exists(beside)) return beside;
+            why = ToolName + " is not there (neither in the plugin's native folder nor beside Flycast)";
             return null;
         }
 
@@ -223,6 +237,134 @@ namespace LbIntegrations.Flycast
                 return id;
             }
             catch (Exception ex) { why = "the tool could not be run (" + ex.Message + ")"; return null; }
+        }
+
+        // ── the arcade sets Flycast knows ────────────────────────────────────
+
+        /// <summary>The "system" of a BIOS set in Sets: not a game - Flycast wants it in its own data folder.</summary>
+        public const string BiosSystem = "BIOS";
+
+        /// <summary>One arcade set of Flycast's table, as flycast-id --sets gives it.</summary>
+        internal sealed class ArcadeSet
+        {
+            public string Name, System, Parent, GdRom, Description;
+        }
+
+        private static readonly Dictionary<string, Dictionary<string, ArcadeSet>> SetLists = new Dictionary<string, Dictionary<string, ArcadeSet>>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Every arcade set the tool's Flycast knows, by name - asked once per tool (its bytes), so the
+        /// list is always the one of the Flycast the ids are read with. Null, with why, when there is no tool.</summary>
+        public static Dictionary<string, ArcadeSet> Sets(FlycastLayout layout, out string why)
+        {
+            var tool = Tool(layout, out why);
+            if (tool == null) return null;
+            string key;
+            try { key = Hash(tool); } catch (Exception ex) { why = ex.Message; return null; }
+            lock (SetLists) if (SetLists.TryGetValue(key, out var known)) return known;
+            try
+            {
+                var psi = new ProcessStartInfo(tool) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+                psi.ArgumentList.Add("--sets");
+                using var p = Process.Start(psi);
+                var output = new MemoryStream();
+                var read = p.StandardOutput.BaseStream.CopyToAsync(output);
+                if (!p.WaitForExit(15000)) { try { p.Kill(); } catch { } why = "the tool took too long to list its sets"; return null; }
+                read.Wait(2000);
+                if (p.ExitCode != 0) { why = "the tool could not list its sets (exit code " + p.ExitCode + ", an older flycast-id?)"; return null; }
+                var sets = new Dictionary<string, ArcadeSet>(StringComparer.OrdinalIgnoreCase);
+                foreach (var line in Encoding.Latin1.GetString(output.ToArray()).Split('\n'))
+                {
+                    var f = line.TrimEnd('\r').Split('\t');
+                    if (f.Length >= 6 && f[0] == "set")
+                        sets[f[1]] = new ArcadeSet { Name = f[1], System = f[2], Parent = f[3].Length > 0 ? f[3] : null, GdRom = f[4].Length > 0 ? f[4] : null, Description = f[5] };
+                    else if (f.Length >= 2 && f[0] == "bios" && !sets.ContainsKey(f[1]))
+                        sets[f[1]] = new ArcadeSet { Name = f[1], System = BiosSystem };
+                }
+                if (sets.Count == 0) { why = "the tool listed no set"; return null; }
+                lock (SetLists) SetLists[key] = sets;
+                Log.Info("arcade sets: " + sets.Count + " known to " + ToolName);
+                return sets;
+            }
+            catch (Exception ex) { why = "the tool could not be run (" + ex.Message + ")"; return null; }
+        }
+
+        /// <summary>What a zip's CONTENT is, by its files' CRCs (flycast-id --identify): the set it matches best
+        /// (Best, all of its files there when BestWhole) and the set it is NAMED as (Own, all of its files there -
+        /// its parent's zip counted in - when OwnWhole).</summary>
+        internal sealed class Identified
+        {
+            public string Best, Own;
+            public bool BestWhole, OwnWhole;
+        }
+
+        /// <summary>Many zips at once, one tool: path -> what it is. <paramref name="progress"/> is told each one
+        /// done; <paramref name="cancelled"/> stops it. Null, with why, when the tool cannot be asked.</summary>
+        public static Dictionary<string, Identified> Identify(FlycastLayout layout, IList<string> zips, Action<int> progress, Func<bool> cancelled, out string why)
+        {
+            var tool = Tool(layout, out why);
+            if (tool == null) return null;
+            var result = new Dictionary<string, Identified>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                var psi = new ProcessStartInfo(tool)
+                {
+                    UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true,
+                    RedirectStandardOutput = true, RedirectStandardError = true,
+                    StandardInputEncoding = new UTF8Encoding(false), StandardOutputEncoding = new UTF8Encoding(false),
+                };
+                psi.ArgumentList.Add("--identify");
+                psi.ArgumentList.Add("-");
+                using var p = Process.Start(psi);
+                var writer = System.Threading.Tasks.Task.Run(() =>
+                {
+                    try { foreach (var z in zips) p.StandardInput.WriteLine(z); p.StandardInput.Close(); } catch { }
+                });
+                p.StandardError.ReadToEndAsync();
+                int done = 0;
+                string line;
+                while ((line = p.StandardOutput.ReadLine()) != null)
+                {
+                    var f = line.Split('\t');
+                    if (f.Length >= 5)
+                        result[f[0]] = new Identified
+                        {
+                            Best = f[1].Length > 0 ? f[1] : null, BestWhole = Whole(f[2]),
+                            Own = f[3].Length > 0 ? f[3] : null, OwnWhole = Whole(f[4]),
+                        };
+                    progress?.Invoke(++done);
+                    if (cancelled != null && cancelled()) { try { p.Kill(); } catch { } why = "cancelled"; return null; }
+                }
+                p.WaitForExit(5000);
+                return result;
+            }
+            catch (Exception ex) { why = "the tool could not be run (" + ex.Message + ")"; return null; }
+        }
+
+        /// <summary>"found/needed" said whole: every file there, and at least one needed.</summary>
+        private static bool Whole(string count)
+        {
+            var at = count.IndexOf('/');
+            return at > 0 && int.TryParse(count.Substring(0, at), out var found) && int.TryParse(count.Substring(at + 1), out var needed)
+                   && needed > 0 && found == needed;
+        }
+
+        /// <summary>Where a GD-ROM set's image is, as Flycast looks for it: &lt;folder&gt;\&lt;set&gt;\&lt;image&gt;.chd,
+        /// else the parent's folder (gdcartridge.cpp). Null when neither is there.</summary>
+        public static string GdRomImage(string zipPath, ArcadeSet set)
+        {
+            if (set?.GdRom == null) return null;
+            try
+            {
+                var dir = Path.GetDirectoryName(zipPath) ?? "";
+                foreach (var owner in new[] { set.Name, set.Parent })
+                {
+                    if (owner == null) continue;
+                    var chd = Path.Combine(dir, owner, set.GdRom + ".chd");
+                    if (File.Exists(chd)) return chd;
+                }
+            }
+            catch { }
+            return null;
         }
 
         // ── learned from Flycast's log ───────────────────────────────────────

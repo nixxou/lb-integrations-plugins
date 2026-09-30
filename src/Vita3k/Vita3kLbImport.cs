@@ -179,6 +179,14 @@ namespace LbIntegrations.Vita3k
             try { games = gameList.GetType().GetProperty("Games")?.GetValue(gameList); } catch { }
             if (!(games is System.Collections.Specialized.INotifyCollectionChanged changes)) return;
 
+            // WHILE LAUNCHBOX FILLS THE LIST (Mehdi, 30/09, as for Flycast): a window says so, the lines counted as
+            // they come, until the reading below takes over with its own bar.
+            var since = System.Diagnostics.Stopwatch.StartNew();
+            var waiting = Waiting(new WindowOwner(window));
+            var count = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Normal, window.Dispatcher)
+            { Interval = TimeSpan.FromMilliseconds(300) };
+            count.Tick += (_, _) => waiting?.Say("LaunchBox is listing the files: " + ((games as System.Collections.ICollection)?.Count ?? 0) + " so far...");
+            count.Start();
             var timer = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background, window.Dispatcher)
             { Interval = TimeSpan.FromMilliseconds(500) };
             System.Collections.Specialized.NotifyCollectionChangedEventHandler restart = (_, _) => { timer.Stop(); timer.Start(); };
@@ -186,12 +194,51 @@ namespace LbIntegrations.Vita3k
             timer.Tick += (_, _) =>
             {
                 timer.Stop();
+                count.Stop();
                 changes.CollectionChanged -= restart;
+                waiting?.Close();
+                Log.Info("[import] LaunchBox listed " + ((games as System.Collections.ICollection)?.Count ?? 0) + " file(s) in " + since.Elapsed.TotalSeconds.ToString("0.0") + " s");
                 try { Vita3kImportCleanup.Run(new WindowOwner(window), gameList); }
                 catch (Exception ex) { Log.Warn("[import] could not put the list right", ex); }
             };
             timer.Start();
         }
+
+        /// <summary>A small window that says what is going on, not modal - LaunchBox goes on filling the list under it.</summary>
+        private sealed class WaitingWindow
+        {
+            public System.Windows.Forms.Form Form;
+            public System.Windows.Forms.Label Label;
+            public void Say(string text) { try { if (!Form.IsDisposed) Label.Text = text; } catch { } }
+            public void Close() { try { if (!Form.IsDisposed) Form.Close(); } catch { } }
+        }
+
+        private static WaitingWindow Waiting(System.Windows.Forms.IWin32Window owner)
+        {
+            try
+            {
+                var form = new System.Windows.Forms.Form
+                {
+                    Text = "Nixx-Vita3K - reading the games", StartPosition = System.Windows.Forms.FormStartPosition.Manual,
+                    FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog, MinimizeBox = false, MaximizeBox = false, ControlBox = false,
+                    ShowInTaskbar = false, ClientSize = new System.Drawing.Size(460, 80), Font = new System.Drawing.Font("Segoe UI", 9f),
+                };
+                var label = new System.Windows.Forms.Label { Location = new System.Drawing.Point(14, 14), Size = new System.Drawing.Size(432, 20), AutoEllipsis = true, Text = "LaunchBox is listing the files..." };
+                var bar = new System.Windows.Forms.ProgressBar { Location = new System.Drawing.Point(14, 42), Size = new System.Drawing.Size(432, 18), Style = System.Windows.Forms.ProgressBarStyle.Marquee, MarqueeAnimationSpeed = 30 };
+                form.Controls.AddRange(new System.Windows.Forms.Control[] { label, bar });
+                if (GetWindowRect(owner.Handle, out var w))
+                    form.Location = new System.Drawing.Point(w.Left + (w.Right - w.Left - form.Width) / 2, w.Top + (w.Bottom - w.Top - form.Height) / 2);
+                form.Show(owner);
+                return new WaitingWindow { Form = form, Label = label };
+            }
+            catch (Exception ex) { Log.Warn("[import] no waiting window", ex); return null; }
+        }
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct RECT { public int Left, Top, Right, Bottom; }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
 
         /// <summary>A WPF window as the owner of a WinForms dialog.</summary>
         private sealed class WindowOwner : System.Windows.Forms.IWin32Window

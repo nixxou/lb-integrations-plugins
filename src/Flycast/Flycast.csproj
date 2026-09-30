@@ -11,6 +11,8 @@
     <LangVersion>latest</LangVersion>
     <!-- The options window (right-click > Nixx-Flycast : Options...) is WinForms. -->
     <UseWindowsForms>true</UseWindowsForms>
+    <!-- And WPF: LaunchBox's Import ROM Files wizard is WPF, watched from its windows. See FlycastLbImport.cs. -->
+    <UseWPF>true</UseWPF>
     <AssemblyName>Flycast</AssemblyName>
     <RootNamespace>LbIntegrations.Flycast</RootNamespace>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>

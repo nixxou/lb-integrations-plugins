@@ -14,6 +14,8 @@
          dump has no console yet, whether the setup worked, and that a save's console has gone
          missing. See src\Shared.Dsi\DsiDialog.cs. -->
     <UseWindowsForms>true</UseWindowsForms>
+    <!-- And WPF: LaunchBox's Import ROM Files wizard is WPF, watched from its windows - see Shared.Lbip\LbipImportWatch.cs. -->
+    <UseWPF>true</UseWPF>
     <AssemblyName>NoGba</AssemblyName>
     <RootNamespace>LbIntegrations.NoGba</RootNamespace>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>

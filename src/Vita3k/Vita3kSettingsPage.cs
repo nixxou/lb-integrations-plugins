@@ -32,6 +32,7 @@ namespace LbIntegrations.Vita3k
             {
                 if (Vita3kSettings.BypassVitaImport != ours.Bypass) Vita3kSettings.BypassVitaImport = ours.Bypass;
                 if (Vita3kSettings.CleanImportList != ours.Clean) Vita3kSettings.CleanImportList = ours.Clean;
+                if (Vita3kSettings.ImportRegionVersion != ours.RegionVersion) Vita3kSettings.ImportRegionVersion = ours.RegionVersion;
             }
             catch (Exception ex) { return "the settings could not be written: " + ex.Message; }
             return ours.SaveSystem();
@@ -40,13 +41,14 @@ namespace LbIntegrations.Vita3k
 
     internal sealed class Vita3kSettingsPage : UserControl
     {
-        private readonly CheckBox _bypass, _clean;
+        private readonly CheckBox _bypass, _clean, _regionVersion;
         private readonly Vita3kLayout _layout;
         private readonly VitaSystemSettings _shown;
         private readonly Vita3kSystemFields _system;
 
         public bool Bypass => _bypass.Checked;
         public bool Clean => _clean.Checked;
+        public bool RegionVersion => _regionVersion.Checked;
 
         public Vita3kSettingsPage()
         {
@@ -79,12 +81,31 @@ namespace LbIntegrations.Vita3k
                      + "and DLC are taken out of the list and recorded for their game, so a launch finds them, and "
                      + "anything that is not a Vita game is taken out. You can still change the list before Finish.",
             };
-            _clean.Enabled = _bypass.Checked;
-            _bypass.CheckedChanged += (_, _) => _clean.Enabled = _bypass.Checked;
+            // After the import (Mehdi, 30/09) - see Vita3kImportFinished. Read while the list is put right, so it
+            // needs that box too.
+            _regionVersion = new CheckBox
+            {
+                Text = "After the import, set each game's region and version",
+                AutoSize = true, Location = new Point(50, 244), Checked = Vita3kSettings.ImportRegionVersion,
+            };
+            var explainRegion = new Label
+            {
+                AutoSize = false, Location = new Point(68, 268), Size = new Size(504, 56), ForeColor = SystemColors.GrayText,
+                Text = "Region: from the game's param.sfo - the store its CONTENT_ID names (U North America, E Europe, "
+                     + "J Japan, H Asia, K Korea), else its title id. Version: only the [tags] and (tags) of the file's "
+                     + "name - \"[PCSA00017] [USA] [NoNpDRM]\" - and nothing when it has none.",
+            };
+            void Enable() { _clean.Enabled = _bypass.Checked; _regionVersion.Enabled = _bypass.Checked && _clean.Checked; }
+            Enable();
+            _bypass.CheckedChanged += (_, _) => Enable();
+            _clean.CheckedChanged += (_, _) => Enable();
+            import.Height = 336;
             import.Controls.Add(_bypass);
             import.Controls.Add(explain);
             import.Controls.Add(_clean);
             import.Controls.Add(explainClean);
+            import.Controls.Add(_regionVersion);
+            import.Controls.Add(explainRegion);
 
             var where = new Label
             {

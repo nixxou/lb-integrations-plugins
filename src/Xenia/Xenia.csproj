@@ -9,6 +9,8 @@
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
+    <!-- And WPF: LaunchBox's Import ROM Files wizard is WPF, watched from its windows - see Shared.Lbip\LbipImportWatch.cs. -->
+    <UseWPF>true</UseWPF>
     <AssemblyName>Xenia</AssemblyName>
     <RootNamespace>LbIntegrations.Xenia</RootNamespace>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>

@@ -11,6 +11,8 @@
     <LangVersion>latest</LangVersion>
     <!-- The options window (right-click > Nixx-PPSSPP : Options...) is WinForms. -->
     <UseWindowsForms>true</UseWindowsForms>
+    <!-- And WPF: LaunchBox's Import ROM Files wizard is WPF, watched from its windows - see Shared.Lbip\LbipImportWatch.cs. -->
+    <UseWPF>true</UseWPF>
     <AssemblyName>Ppsspp</AssemblyName>
     <RootNamespace>LbIntegrations.Ppsspp</RootNamespace>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>

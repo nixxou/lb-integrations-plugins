@@ -549,6 +549,9 @@ namespace LbIntegrations.Probe
             // PPSSPP's options window, a fake game, one picture per tab: --ppsspp-options-shot <out.png>.
             // Flycast's options window, two fake games, one picture per tab: --flycast-options-shot <out.png>.
             if (Has(args, "--flycast-options-shot")) return FlycastSettingsCheck.OptionsShot(asm, Arg(args, "--flycast-options-shot")) ? 0 : 1;
+            // What a launch of a game WOULD write as its PPSSPP config, on a real install - read only, nothing
+            // written: --ppsspp-preview --emu <PPSSPPWindows64.exe> --disc <DISC_ID> --set Section/Key=value
+            if (Has(args, "--ppsspp-preview")) return PpssppCheck.PreviewReal(asm, emuPath, Arg(args, "--disc"), Arg(args, "--set")) ? 0 : 1;
             if (Has(args, "--ppsspp-options-shot")) return PpssppCheck.OptionsShot(asm, Arg(args, "--ppsspp-options-shot")) ? 0 : 1;
             if (Has(args, "--nogba-options-shot")) return NoGbaCheck.OptionsShot(asm, Arg(args, "--nogba-options-shot")) ? 0 : 1;
             if (Has(args, "--melonds-options-shot")) return MelonDsCheck.OptionsShot(asm, Arg(args, "--melonds-options-shot")) ? 0 : 1;
@@ -600,6 +603,14 @@ namespace LbIntegrations.Probe
             if (flycastSettings)
             {
                 if (!FlycastSettingsCheck.Settings(asm)) return 1;
+            }
+            if (Has(args, "--flycast-import-repair"))
+            {
+                if (!FlycastSettingsCheck.ImportRepair(asm, Arg(args, "--lb"))) return 1;
+            }
+            else if (Has(args, "--flycast-import"))
+            {
+                if (!FlycastSettingsCheck.ImportFilter(asm)) return 1;
             }
 
             bool ppsspp = Has(args, "--ppsspp-settings");

@@ -52,6 +52,20 @@ namespace LbIntegrations.Xenia
             // As early as possible: the patch only sees connections opened AFTER it is installed,
             // and LaunchBox reads its metadata the moment a window asks for it.
             LbipRowInjection.Install("com.nixxou.lbip.xenia", MetadataRows());
+
+            // When an import's games are in the library: told - and one watcher for the whole pack, see
+            // LbipImportWatch. Under a try: LbImportFinished is newer than a Catalog a host may carry.
+            try { ListenForImports(); }
+            catch (Exception ex) { Log.Info("an import's end is not seen here (" + ex.GetType().Name + ": " + ex.Message + ")"); }
+        }
+
+        /// <summary>NOT INLINED, and called under a try: named in the constructor, a type a host's older
+        /// Catalog lacks would fail the constructor itself; named here, it fails this call alone.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static void ListenForImports()
+        {
+            LbIntegrations.Catalog.LbImportFinished.Register(new XeniaImportFinished());
+            LbipImportWatch.Install();
         }
 
         /// <summary>The name this pack publishes under, in one place so its four uses cannot

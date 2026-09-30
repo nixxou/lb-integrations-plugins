@@ -443,13 +443,9 @@ namespace LbIntegrations.Probe
             return ok;
         }
 
-        /// <summary>When LaunchBox does not know an emulator it associates it with EVERYTHING, every
-        /// row ticked "Default Emulator" - which means Flycast becomes the default emulator for the
-        /// SNES, the NES and the rest. We clear that flag on the platforms Flycast cannot run.
-        ///
-        /// We do NOT remove those rows. A row the user set up by hand, under a name we do not know,
-        /// must survive a wrong guess on our side; a cleared tick costs them one click, a deleted row
-        /// costs them their configuration.</summary>
+        /// <summary>A row that is there is NEVER touched (Mehdi, 30/09): not removed, not unticked - a
+        /// platform we do not know may be a custom one the user made on purpose. Only the platforms
+        /// Flycast runs that are missing are added.</summary>
         private static bool ForeignPlatformsUnchecked(EmulatorPlugin plugin, string exe)
         {
             Console.WriteLine();
@@ -470,18 +466,17 @@ namespace LbIntegrations.Probe
             bool nothingRemoved = rows.Length >= 4
                 && byName.ContainsKey("Super Nintendo Entertainment System")
                 && byName.ContainsKey("Nintendo 64") && byName.ContainsKey("Sony Playstation");
-            bool foreignCleared = byName["Super Nintendo Entertainment System"] == false
-                && byName["Nintendo 64"] == false && byName["Sony Playstation"] == false;
+            bool foreignKept = byName["Super Nintendo Entertainment System"] && byName["Nintendo 64"] && byName["Sony Playstation"];
             bool oursKept = byName.TryGetValue("Sega Dreamcast", out var dc) && dc;
             bool oursCompleted = byName.ContainsKey("Sega Naomi") && byName.ContainsKey("Sega Naomi 2")
                 && byName.ContainsKey("Sammy Atomiswave");
 
             Console.WriteLine("  rows : " + string.Join(", ", rows.Select(r => r.Platform + (r.IsDefault ? "*" : ""))));
             Console.WriteLine("  nothing was removed                              " + (nothingRemoved ? "OK" : "FAIL"));
-            Console.WriteLine("  platforms Flycast cannot run are unchecked       " + (foreignCleared ? "OK" : "FAIL"));
+            Console.WriteLine("  the other platforms keep their tick, untouched   " + (foreignKept ? "OK" : "FAIL"));
             Console.WriteLine("  a platform it does run keeps its tick            " + (oursKept ? "OK" : "FAIL"));
             Console.WriteLine("  the ones it runs that were missing were added    " + (oursCompleted ? "OK" : "FAIL"));
-            return nothingRemoved && foreignCleared && oursKept && oursCompleted;
+            return nothingRemoved && foreignKept && oursKept && oursCompleted;
         }
 
         /// <summary>IsSaveActive, which decides whether the host shows a live save or only its vault
@@ -755,7 +750,8 @@ namespace LbIntegrations.Probe
 
             var typoRows = typo.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>();
             bool keptTypo = typoRows.Any(p => p.Platform == "Sega Dreamcaxst");
-            bool untickedTypo = !typoRows.Any(p => p.Platform == "Sega Dreamcaxst" && p.IsDefault);
+            // Its tick KEPT too (Mehdi, 30/09): a row that is there is never touched - it is said, not mended.
+            bool tickKept = typoRows.Any(p => p.Platform == "Sega Dreamcaxst" && p.IsDefault);
             Console.WriteLine("  a mistyped platform name : "
                               + string.Join(", ", typoRows.Select(p => p.Platform + (p.IsDefault ? "*" : ""))));
             // A platform Flycast runs that the library simply does not have yet is the ordinary
@@ -780,8 +776,8 @@ namespace LbIntegrations.Probe
             ok &= quiet;
 
             Console.WriteLine("  it is NOT removed, it may be deliberate     " + (keptTypo ? "OK" : "FAIL"));
-            Console.WriteLine("  but it loses \"default emulator\"             " + (untickedTypo ? "OK" : "FAIL"));
-            ok &= keptTypo && untickedTypo;
+            Console.WriteLine("  nor unticked - only said in the log          " + (tickKept ? "OK" : "FAIL"));
+            ok &= keptTypo && tickKept;
 
             // (b) THE bug: a row that exists but has no name yet, as the grid leaves it mid-edit
             var editing = new StubEmulator { Title = "Flycast (being edited)", ApplicationPath = exe };

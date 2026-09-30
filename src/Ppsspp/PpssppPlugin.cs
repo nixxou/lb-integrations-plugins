@@ -73,6 +73,20 @@ namespace LbIntegrations.Ppsspp
             // Process.Start patch for the whole pack - see LbipEmulatorOpened.
             try { ListenForOpening(); }
             catch (Exception ex) { Log.Info("an emulator opened without a game is not seen here (" + ex.GetType().Name + ": " + ex.Message + ")"); }
+
+            // When an import's games are in the library: told - and one watcher for the whole pack, see
+            // LbipImportWatch. Under a try, as above: LbImportFinished is newer still.
+            try { ListenForImports(); }
+            catch (Exception ex) { Log.Info("an import's end is not seen here (" + ex.GetType().Name + ": " + ex.Message + ")"); }
+        }
+
+        /// <summary>NOT INLINED, and called under a try, for the reason ListenForOpening is: a Catalog
+        /// older than LbImportFinished must cost this, never the plugin.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static void ListenForImports()
+        {
+            LbIntegrations.Catalog.LbImportFinished.Register(new PpssppImportFinished());
+            LbipImportWatch.Install();
         }
 
         /// <summary>In a method of its own, NOT INLINED, and called under a try: LbEmulatorOpened is newer

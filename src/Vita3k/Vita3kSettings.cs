@@ -47,6 +47,16 @@ namespace LbIntegrations.Vita3k
             set => Write(CleanImportListKey, value ? "true" : "false");
         }
 
+        public const string ImportRegionVersionKey = "ImportRegionVersion";
+
+        /// <summary>After such an import, each game's region from its param.sfo and its version from its file
+        /// name's [tags] - see Vita3kImportFinished. ON unless turned off.</summary>
+        public static bool ImportRegionVersion
+        {
+            get => Bool(ImportRegionVersionKey, true);
+            set => Write(ImportRegionVersionKey, value ? "true" : "false");
+        }
+
         public static string SettingsPath
         {
             get

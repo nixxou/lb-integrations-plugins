@@ -32,9 +32,48 @@ namespace LbIntegrations.Flycast
 
         public static readonly string[] All = { Dreamcast, Naomi, Naomi2, Atomiswave };
 
+        /// <summary>SEGA SYSTEM SP has no platform in LaunchBox's metadata, so a user makes one - named as they
+        /// like (Mehdi, 29/09): ANY platform whose name holds "system sp", whatever the case, is it.</summary>
+        public static bool IsSystemSp(string platform)
+            => (platform ?? "").IndexOf("system sp", StringComparison.OrdinalIgnoreCase) >= 0;
+
+        /// <summary>The platforms an emulator entry of ours carries: the four of the metadata, and every
+        /// platform of the library that is a System SP one. Never throws.</summary>
+        public static List<string> Wanted()
+        {
+            var names = new List<string>(All);
+            try
+            {
+                foreach (var p in PluginHelper.DataManager?.GetAllPlatforms() ?? Array.Empty<IPlatform>())
+                {
+                    string name = null;
+                    try { name = p?.Name?.Trim(); } catch { }
+                    if (!string.IsNullOrEmpty(name) && IsSystemSp(name) && !names.Contains(name, StringComparer.InvariantCultureIgnoreCase))
+                        names.Add(name);
+                }
+            }
+            catch { }
+            return names;
+        }
+
+        /// <summary>One of the platforms Flycast runs: the four of the metadata, or a System SP one.</summary>
+        public static bool IsOurs(string platform)
+            => All.Any(p => string.Equals(p, (platform ?? "").Trim(), StringComparison.InvariantCultureIgnoreCase)) || IsSystemSp(platform);
+
         public static bool IsArcade(string platform)
-            => !string.Equals(platform, Dreamcast, StringComparison.InvariantCultureIgnoreCase)
-               && All.Any(p => string.Equals(p, platform, StringComparison.InvariantCultureIgnoreCase));
+            => !string.Equals((platform ?? "").Trim(), Dreamcast, StringComparison.InvariantCultureIgnoreCase) && IsOurs(platform);
+
+        /// <summary>The system a platform is, in flycast-id's words (--sets): Dreamcast, Naomi, Naomi 2,
+        /// Atomiswave, System SP. Null for a platform not ours.</summary>
+        public static string SystemOf(string platform)
+        {
+            var name = (platform ?? "").Trim();
+            if (string.Equals(name, Dreamcast, StringComparison.InvariantCultureIgnoreCase)) return "Dreamcast";
+            if (string.Equals(name, Naomi, StringComparison.InvariantCultureIgnoreCase)) return "Naomi";
+            if (string.Equals(name, Naomi2, StringComparison.InvariantCultureIgnoreCase)) return "Naomi 2";
+            if (string.Equals(name, Atomiswave, StringComparison.InvariantCultureIgnoreCase)) return "Atomiswave";
+            return IsSystemSp(name) ? "System SP" : null;
+        }
     }
 
     public partial class FlycastPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
@@ -73,6 +112,24 @@ namespace LbIntegrations.Flycast
             // Process.Start patch for the whole pack - see LbipEmulatorOpened.
             try { ListenForOpening(); }
             catch (Exception ex) { Log.Info("an emulator opened without a game is not seen here (" + ex.GetType().Name + ": " + ex.Message + ")"); }
+
+            // LaunchBox's Import ROM Files wizard: its game list sorted for the platform imported to Flycast - see
+            // FlycastLbImport. It does nothing at all outside LaunchBox.exe.
+            FlycastLbImport.Install();
+
+            // When an import's games are in the library: told - and one watcher for the whole pack, see
+            // LbipImportWatch. Under a try, as above: LbImportFinished is newer still.
+            try { ListenForImports(); }
+            catch (Exception ex) { Log.Info("an import's end is not seen here (" + ex.GetType().Name + ": " + ex.Message + ")"); }
+        }
+
+        /// <summary>NOT INLINED, and called under a try, for the reason ListenForOpening is: a Catalog
+        /// older than LbImportFinished must cost this, never the plugin.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static void ListenForImports()
+        {
+            LbIntegrations.Catalog.LbImportFinished.Register(new FlycastImportFinished());
+            LbipImportWatch.Install();
         }
 
         /// <summary>In a method of its own, NOT INLINED, and called under a try: LbEmulatorOpened is newer
@@ -259,8 +316,7 @@ namespace LbIntegrations.Flycast
         public override EmulatorSupportResponse IsPlatformSupported(string platform)
         {
             var name = (platform ?? "").Trim();
-            bool supported = FlycastPlatforms.All
-                .Any(p => string.Equals(p, name, StringComparison.InvariantCultureIgnoreCase));
+            bool supported = FlycastPlatforms.IsOurs(name);
             bool recommended = string.Equals(name, FlycastPlatforms.Dreamcast,
                                              StringComparison.InvariantCultureIgnoreCase);
             Log.Verbose("IsPlatformSupported(\"" + platform + "\") -> " + supported
@@ -527,7 +583,8 @@ namespace LbIntegrations.Flycast
                 StringComparer.InvariantCultureIgnoreCase);
 
             var added = new List<string>();
-            foreach (var name in FlycastPlatforms.All)
+            // The four of the metadata, and a System SP platform of the library too (FlycastPlatforms.Wanted).
+            foreach (var name in FlycastPlatforms.Wanted())
             {
                 if (have.Contains(name)) continue;
                 var platform = emu.AddNewEmulatorPlatform();
@@ -673,6 +730,34 @@ namespace LbIntegrations.Flycast
         public override PrepareForLaunchResponse PrepareEmulatorForLaunch(PrepareForLaunchArgs args)
         {
             string newLine = null;
+            // A NAOMI GD-ROM GAME WITHOUT ITS IMAGE (Mehdi, 30/09: kept at import, said at launch): Flycast would
+            // only show "Naomi GDROM: Cannot open ...chd" in its own window. Refused here, with what is missing and
+            // where it goes. The sets come from flycast-id (--sets); no tool, no refusal - Flycast says it itself.
+            try
+            {
+                var rom = ResolveFullPath(Safe(() => args?.GameBeingLaunched?.ApplicationPath));
+                var exePath = Safe(() => args?.EmulatorBeingLaunched?.ApplicationPath);
+                if (!string.IsNullOrEmpty(rom) && Path.GetExtension(rom).Equals(".zip", StringComparison.OrdinalIgnoreCase)
+                    || !string.IsNullOrEmpty(rom) && Path.GetExtension(rom).Equals(".7z", StringComparison.OrdinalIgnoreCase))
+                {
+                    var layout = FlycastPaths.Resolve(ResolveFullPath(exePath));
+                    var sets = FlycastGameIdentity.Sets(layout, out _);
+                    if (sets != null && sets.TryGetValue(Path.GetFileNameWithoutExtension(rom), out var set)
+                        && set.GdRom != null && FlycastGameIdentity.GdRomImage(rom, set) == null)
+                    {
+                        var where = Path.Combine(Path.GetDirectoryName(rom) ?? "", set.Name, set.GdRom + ".chd");
+                        Log.Warn("not launching " + Path.GetFileName(rom) + ": its GD-ROM image is not there (" + where + ")");
+                        FlycastNotice.Show("Nixx-Flycast - " + (Safe(() => args?.GameBeingLaunched?.Title) ?? set.Name),
+                            "This Naomi GD-ROM game needs its disc image, and it is not there.\n\n"
+                            + "Put " + set.GdRom + ".chd in a folder named " + set.Name + " beside the game's zip:\n\n" + where
+                            + (set.Parent != null ? "\n\n(or in the parent set's folder, " + set.Parent + ")" : "")
+                            + "\n\nThe .zip holds only the game's security key; the game itself is on the GD-ROM image.");
+                        return new PrepareForLaunchResponse(success: false);
+                    }
+                }
+            }
+            catch (Exception ex) { Log.Warn("checking the GD-ROM image", ex); }
+
             try
             {
                 if (args?.RetroAchievementCredentials != null)

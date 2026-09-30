@@ -127,6 +127,8 @@ namespace LbIntegrations.Vita3k
                     Log.Info("[import]   removed " + name + " - " + noLicence);
                     continue;
                 }
+                // Its region and version, set once it is in the library - see Vita3kImportFinished.
+                Vita3kImportFinished.Prepare(f.Path, f.Content.ContentId, f.Content.TitleId);
                 var title = CleanTitle(f.Content.FullTitle ?? f.Content.Title);
                 if (!string.IsNullOrWhiteSpace(title) && !string.Equals(title, GetProperty(f.Record, "Title") as string, StringComparison.Ordinal)
                     && SetProperty(f.Record, "Title", title))
