@@ -150,6 +150,20 @@ namespace LbIntegrations.Probe
             return after == 0 && empty;
         }
 
+        /// <summary>The game config a launch would write for a disc id and one setting, on a real install. Read
+        /// only - the plugin's own Preview, what the options window's "Preview result" shows.</summary>
+        public static bool PreviewReal(Assembly pluginAssembly, string exe, string discId, string set)
+        {
+            _asm = pluginAssembly;
+            if (exe == null || discId == null || set == null || set.IndexOf('=') < 0) { Console.WriteLine("  --emu <exe> --disc <id> --set Section/Key=value"); return false; }
+            var layout = Call("PpssppPaths", "Resolve", exe);
+            var raws = Call("PpssppGameSettings", "ToRaw", new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [set.Substring(0, set.IndexOf('='))] = set.Substring(set.IndexOf('=') + 1) });
+            var a = new object[] { layout, discId, raws, null, null };
+            var result = (string)Call("PpssppGameSettings", "Preview", a);
+            Console.WriteLine(result ?? ("  no preview: " + a[4]));
+            return result != null;
+        }
+
         /// <summary>The options window, fed a fake game, one picture per tab. Nothing written.</summary>
         public static bool OptionsShot(Assembly pluginAssembly, string outPath)
         {

@@ -184,6 +184,37 @@ namespace LbIntegrations.NoGba
         public static Dictionary<string, string> Current(NoGbaLayout layout)
             => layout?.IniFile == null ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) : NoGbaIni.Read(layout.IniFile);
 
+        /// <summary>no$gba's own values for the settings offered - what a fresh no$gba 3.0 writes when asked to
+        /// "Save Options" before anything is changed (measured 29/09 on a fresh download of no$gba-w.zip).
+        /// no$gba never writes NO$GBA.INI by itself: a key it lacks is one of these.</summary>
+        internal static readonly Dictionary<string, string> Factory = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Emulation Speed, LCD Refresh"] = "-Realtime, Auto",
+            ["GBA Mode/Colors"] = "GBA SP (backlight)",
+            ["3D Renderer"] = "nocash",
+            ["Video Output"] = "24bit True Color",
+            ["GBA Cartridge Backup Media"] = "-Auto",
+            ["NDS-Cartridge Backup Media"] = "-Auto",
+            ["Solar Sensor Level"] = "Darkness",
+            ["Game Screen Sizing"] = "Strict",
+            ["Game Screen Filter"] = "None (fast)",
+            ["Sound Output Mode"] = "16bit stereo",
+            ["Sound Desired Sample Rate"] = "-High (44kHz) (best)",
+            ["Volume Control"] = "Hardware mixer",
+            ["Number of Emulated Gameboys"] = "-Single Machine",
+            ["Link Gamepaks"] = "-Gamepaks in all GBAs",
+            ["Link Cable Type"] = "-Automatic",
+        };
+
+        /// <summary>What the game runs on without settings of its own - "default" in the options window:
+        /// NO$GBA.INI's value, else no$gba's own (Factory). Not for writing: Current is the file as it is.</summary>
+        public static Dictionary<string, string> DefaultsOf(NoGbaLayout layout)
+        {
+            var values = new Dictionary<string, string>(Factory, StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in Current(layout)) values[kv.Key] = kv.Value;
+            return values;
+        }
+
         // ── set by hand ──────────────────────────────────────────────────────
 
         /// <summary>"Key == Value" lines, ";" comments. Null, with the line, when a line is not one.</summary>

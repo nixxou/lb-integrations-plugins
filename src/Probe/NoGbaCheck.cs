@@ -514,6 +514,18 @@ namespace LbIntegrations.Probe
             File.WriteAllText(ini, original);
             try
             {
+                // no$gba's own values, for a key NO$GBA.INI lacks: each one of no$gba's choices, word for word.
+                var factory = (Dictionary<string, string>)gs.GetField("Factory", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
+                var choices = (System.Collections.IDictionary)gs.GetField("Choices", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
+                var offered = ((Array)gs.GetField("Offered", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static).GetValue(null)).Cast<object>()
+                              .Select(s => (string)s.GetType().GetField("Key").GetValue(s)).ToList();
+                var wrong = factory.Where(kv => kv.Key != "Game Screen Sizing" && !(choices[kv.Key] is string[] c && c.Contains(kv.Value))).Select(kv => kv.Key + " = " + kv.Value).ToList();
+                ok &= Check("no$gba's own values: one for each setting offered, each one of its choices", offered.All(factory.ContainsKey) && wrong.Count == 0,
+                            string.Join(", ", wrong.Concat(offered.Where(k => !factory.ContainsKey(k)).Select(k => "missing " + k))));
+                var defaults = (Dictionary<string, string>)M("DefaultsOf").Invoke(null, new object[] { layout });
+                ok &= Check("'default': NO$GBA.INI's value where it has one, no$gba's own where it has not",
+                            defaults["GBA Mode/Colors"] == "GBA SP (backlight)" && defaults["Solar Sensor Level"] == "Darkness" && defaults["Video Output"] == "24bit True Color");
+
                 var own = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["Solar Sensor Level"] = "Bright Sunlight",

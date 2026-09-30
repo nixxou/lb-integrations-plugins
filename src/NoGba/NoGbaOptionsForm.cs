@@ -72,7 +72,7 @@ namespace LbIntegrations.NoGba
             _games = games;
             _groups = games.GroupBy(g => g.Key).Select(g => g.ToList()).ToList();
             _kinds = games.Aggregate(NoGbaKind.None, (k, g) => k | g.Kind);
-            _global = NoGbaGameSettings.Current(games.Select(g => g.Layout).FirstOrDefault(l => l != null));
+            _global = NoGbaGameSettings.DefaultsOf(games.Select(g => g.Layout).FirstOrDefault(l => l != null));
 
             Text = "Nixx-no$gba - Options" + (games.Count > 1 ? " (" + games.Count + " games)" : " - " + games[0].Title);
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -231,7 +231,7 @@ namespace LbIntegrations.NoGba
 
         private void ShowSizing(TabState t, string own)
         {
-            var sizing = own ?? (_global.TryGetValue(SizingKey, out var g) ? g : null) ?? "Free";
+            var sizing = own ?? (_global.TryGetValue(SizingKey, out var g) ? g : null) ?? "Strict";   // no$gba's own
             t.Step50.Checked = sizing == "Force 50% step" || sizing == "Strict";
             t.Aspect.Checked = sizing == "Force Aspect Ratio" || sizing == "Strict";
         }
