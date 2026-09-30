@@ -1171,6 +1171,12 @@ namespace LbIntegrations.RamDisk
                 if (!string.IsNullOrEmpty(type)) cfg.Append("type=").Append(type).Append("\r\n");
                 if (sparse) cfg.Append("sparse=1\r\n");
 
+                // 1.5, on every mount: a removable drive, which Everything and Windows Search leave
+                // alone - a fixed one they hold open, and its device outlives the unmount (measured
+                // 30/09). Sent whatever the helper's version: an older one ignores it and mounts a
+                // fixed drive, as it always did.
+                if (action == "mount") cfg.Append("removable=1\r\n");
+
                 // Keys of later protocols, written last: the helper keeps the LAST value of a key, so
                 // an extra "label" replaces LiteBox's constant one above.
                 if (extra != null)

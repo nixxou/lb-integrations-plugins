@@ -31,7 +31,7 @@
          disk is ABSENT OR OLDER and never when it is newer, and a caller checks this version
          before sending a key the older one would silently ignore. Bump it with the protocol,
          never with an ordinary fix. -->
-    <Version>1.4.0</Version>
+    <Version>1.5.0</Version>
 
     <Platforms>AnyCPU;x64</Platforms>
     <UseWindowsForms>false</UseWindowsForms>

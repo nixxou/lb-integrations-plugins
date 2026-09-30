@@ -47,6 +47,18 @@
 //                                  filesystem yet and must be formatted, one being loaded already
 //                                  has and must not be.
 //
+//   -- added in 1.5, optional --------------------------------------------------------------------
+//   removable = 1                  mount with removable media ("-o rem") - below
+//
+// removable = 1 (1.5): A DRIVE NO INDEXER HOLDS ON TO. Measured 30/09: Everything indexes every FIXED
+// NTFS volume the moment it appears and keeps a handle on it for its change journal; ImDisk is not a
+// Plug and Play driver, so nobody can tell Everything the drive is going, the lock is refused, and a
+// device removed while that handle is open stays "\Device\ImDisk<n>: the device has been removed" until
+// Everything lets go - 64 of them in six days, then NTFS failing to flush them ten times a second.
+// Everything leaves removable volumes alone by default, and so does Windows Search. AN OLDER HELPER
+// IGNORES THIS KEY and mounts a fixed drive, which is what every helper before it did - no worse, so a
+// caller may send it without checking the version.
+//
 // WHAT THE THREE TYPES MEAN, in imdisk's words and in ours:
 //
 //   vm    "allocated from virtual memory ... if a file is specified with -f that file is loaded
@@ -171,6 +183,7 @@ namespace RamDiskHelper
                 string image = Get(kv, "image", "");
                 string type = Get(kv, "type", "").ToLowerInvariant();
                 bool sparse = Get(kv, "sparse", "") == "1";
+                bool removable = Get(kv, "removable", "") == "1";
                 // FORMAT WHEN THERE IS NOTHING TO PRESERVE, which is not the same question as
                 // "was an image named". Measured, by getting it wrong: creating a new file-backed
                 // image with the format left empty attaches a disk with no filesystem on it - imdisk
@@ -207,6 +220,7 @@ namespace RamDiskHelper
                     var options = new List<string>();
                     if (awe) options.Add("awe");
                     if (sparse) options.Add("sparse");
+                    if (removable) options.Add("rem");
                     if (options.Count > 0) { psi.ArgumentList.Add("-o"); psi.ArgumentList.Add(string.Join(",", options)); }
 
                     psi.ArgumentList.Add("-m"); psi.ArgumentList.Add(drive + ":");
