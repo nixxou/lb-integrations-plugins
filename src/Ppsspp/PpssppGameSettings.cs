@@ -157,6 +157,15 @@ namespace LbIntegrations.Ppsspp
             => WriteLine(InstallPath(layout, StoreName), gameId, values == null || values.Count == 0 ? null
                 : string.Join(";", values.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase).Select(kv => Uri.EscapeDataString(kv.Key) + "=" + Uri.EscapeDataString(kv.Value))));
 
+        /// <summary>This plugin's settings of a game PAUSED (Mehdi, 01/10): kept, not used at launch - the game runs on its
+        /// own PPSSPP config, and what is changed there during the game is kept.</summary>
+        private const string PausedName = "lbip-settings-paused.tsv";
+
+        public static bool IsPaused(PpssppLayout layout, string gameId) => ReadLine(InstallPath(layout, PausedName), gameId) != null;
+
+        public static void SetPaused(PpssppLayout layout, string gameId, bool paused)
+            => WriteLine(InstallPath(layout, PausedName), gameId, paused ? "paused" : null);
+
         public static string LoadAdvanced(PpssppLayout layout, string gameId, out bool on)
         {
             var f = ReadLine(InstallPath(layout, AdvancedName), gameId);
@@ -317,6 +326,8 @@ namespace LbIntegrations.Ppsspp
         internal static List<Raw> KeysOf(PpssppLayout layout, string gameId, out string backend, out string why)
         {
             backend = null; why = null;
+            // Paused (the options window's red line): nothing of ours, the renderer included.
+            if (IsPaused(layout, gameId)) { Log.Info("game settings: paused for this game - it runs on its own PPSSPP config"); return null; }
             var own = Load(layout, gameId);
             if (own != null && own.TryGetValue(BackendId, out var b)) backend = b;
             var hand = LoadAdvanced(layout, gameId, out var on);

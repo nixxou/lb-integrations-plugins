@@ -81,6 +81,7 @@ namespace LbIntegrations.Vita3k
         private string _keptHand;
         private bool _handLoading;
         private readonly OptionMarks _marks = new OptionMarks();
+        private bool _paused;
 
 
         /// <summary>The games that were changed, once OK has run.</summary>
@@ -99,10 +100,13 @@ namespace LbIntegrations.Vita3k
             ShowInTaskbar = false;
             AutoScaleMode = AutoScaleMode.Dpi;
             Font = new Font("Segoe UI", 9f);
-            ClientSize = new Size(680, 672);
+            ClientSize = new Size(680, 708);
 
             // ── the top: which games, and where to start from
-            var top = new Panel { Dock = DockStyle.Top, Height = _groups.Count > 1 ? 86 : 56, Padding = new Padding(12, 10, 12, 0) };
+            var top = new Panel { Dock = DockStyle.Top, Height = _groups.Count > 1 ? 122 : 92, Padding = new Padding(12, 10, 12, 0) };
+            // What a session costs, and the way round it (Mehdi, 01/10) - see OptionMarks.PauseRow.
+            _paused = games.All(g => g.Layout != null && Vita3kGameConfig.IsPaused(g.Layout, g.GameId));
+            top.Controls.Add(OptionMarks.PauseRow("Vita3K", _paused, p => _paused = p));
             // WHAT THIS WINDOW IS (Mehdi, 29/09): a layer of this plugin's own, over the game's Custom Config.
             top.Controls.Add(new Label
             {
@@ -684,6 +688,14 @@ namespace LbIntegrations.Vita3k
                 bool same = g.AdvancedOn == (handOn && handText != null) && string.Equals((g.Advanced ?? "").Trim(), (handText ?? "").Trim(), StringComparison.Ordinal);
                 if (same) continue;
                 Vita3kGameConfig.SaveAdvanced(g.Layout, g.GameId, handText, handOn);
+                systems++;
+            }
+
+            // Paused or not (the red line's button).
+            foreach (var g in _games)
+            {
+                if (g.Layout == null || Vita3kGameConfig.IsPaused(g.Layout, g.GameId) == _paused) continue;
+                Vita3kGameConfig.SetPaused(g.Layout, g.GameId, _paused);
                 systems++;
             }
 

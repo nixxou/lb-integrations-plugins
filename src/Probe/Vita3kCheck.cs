@@ -1,4 +1,4 @@
-﻿// What the disposable Vita has to get right, on a forged install and a forged game.
+// What the disposable Vita has to get right, on a forged install and a forged game.
 //
 // It drives the SHIPPED assembly rather than a recompilation of its sources: the probe already loads
 // the merged DLL, and reaching an internal static class inside it by name costs a few lines of
@@ -2274,6 +2274,15 @@ namespace LbIntegrations.Probe
                 bool finished = System.Threading.Tasks.Task.WaitAll(ends, 30000);
                 Check("two ends at once: both return, the user's file back, nothing left behind",
                       finished && File.ReadAllText(xml) == own && !File.Exists(bak) && !File.Exists(Path.ChangeExtension(xml, ".lbip-session")));
+
+                // 4b. Paused (the window's red line, 01/10): kept, not used - nothing written, the user's file as it is.
+                Call("Vita3kGameConfig", "SetPaused", new object[] { layout, "game-v", true });
+                Check("paused: the launch writes nothing, the user's file as it is, the settings kept",
+                      !(bool)Call("Vita3kGameConfig", "Apply", new object[] { layout, TitleId, "game-v" }) && File.ReadAllText(xml) == own && !File.Exists(bak)
+                      && (bool)Call("Vita3kGameConfig", "IsPaused", new object[] { layout, "game-v" }) && Call("Vita3kGameConfig", "Load", new object[] { layout, "game-v" }) != null,
+                      "xml same " + (File.ReadAllText(xml) == own) + ", bak " + File.Exists(bak) + ", system kept " + (Call("Vita3kGameConfig", "Load", new object[] { layout, "game-v" }) != null));
+                Call("Vita3kGameConfig", "SetPaused", new object[] { layout, "game-v", false });
+                Check("  ...resumed: not paused any more", !(bool)Call("Vita3kGameConfig", "IsPaused", new object[] { layout, "game-v" }));
 
                 // 5. A late watcher: a later launch's session is not its to put back.
                 Call("Vita3kGameConfig", "Apply", new object[] { layout, TitleId, "game-v" });

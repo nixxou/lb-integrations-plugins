@@ -177,6 +177,15 @@ namespace LbIntegrations.Vita3k
             catch (Exception ex) { Log.Warn("could not save a game's own settings", ex); }
         }
 
+        /// <summary>This plugin's settings of a game PAUSED (Mehdi, 01/10): kept, not used at launch - the game runs on its
+        /// own custom config, and what is changed there during the game is kept. A section of the store of its own.</summary>
+        public const string PausedSection = "lbip-paused";
+
+        public static bool IsPaused(Vita3kLayout layout, string gameId) => LoadSection(layout, gameId, PausedSection) != null;
+
+        public static void SetPaused(Vita3kLayout layout, string gameId, bool paused)
+            => SaveSection(layout, gameId, PausedSection, paused ? new Dictionary<string, string>(StringComparer.Ordinal) { ["on"] = "true" } : null);
+
         /// <summary>section/attribute -> value, or null.</summary>
         private static Dictionary<string, string> LoadValues(Vita3kLayout layout, string gameId)
         {
@@ -366,6 +375,11 @@ namespace LbIntegrations.Vita3k
                 var all = LoadValues(layout, gameId);
                 var xml = PathOf(layout, titleId);
                 if (all == null || xml == null) return false;
+                if (all.ContainsKey(PausedSection + "/on"))
+                {
+                    Log.Info(titleId + ": this plugin's settings are paused for this game - it runs on its own custom config");
+                    return false;
+                }
 
                 // Section -> the element to put over the user's: from the tabs' values, or the text set by hand.
                 var over = new List<XElement>();
@@ -376,7 +390,7 @@ namespace LbIntegrations.Vita3k
                     catch (Exception ex) { Log.Warn(titleId + ": the settings set by hand cannot be read (" + ex.Message + ") - this game runs without its own settings this time"); return false; }
                 }
                 else
-                    foreach (var g in all.Where(kv => !kv.Key.StartsWith(AdvancedSection + "/", StringComparison.Ordinal))
+                    foreach (var g in all.Where(kv => !kv.Key.StartsWith(AdvancedSection + "/", StringComparison.Ordinal) && !kv.Key.StartsWith(PausedSection + "/", StringComparison.Ordinal))
                                          .GroupBy(kv => kv.Key.Split('/')[0], StringComparer.Ordinal))
                         over.Add(new XElement(g.Key, g.Select(kv => new XAttribute(kv.Key.Substring(g.Key.Length + 1), kv.Value))));
                 if (over.Count == 0) return false;

@@ -64,6 +64,7 @@ namespace LbIntegrations.Ppsspp
         private Label _handStatus;
         private string _keptHand;
         private bool _loading;
+        private bool _paused;
 
         public PpssppOptionsForm(List<Entry> games)
         {
@@ -76,9 +77,12 @@ namespace LbIntegrations.Ppsspp
             StartPosition = FormStartPosition.CenterParent;
             ShowInTaskbar = false;
             Font = new Font("Segoe UI", 9f);
-            ClientSize = new Size(600, 628);
+            ClientSize = new Size(600, 664);
 
-            var top = new Panel { Dock = DockStyle.Top, Height = _groups.Count > 1 ? 80 : 52, Padding = new Padding(12, 10, 12, 0) };
+            var top = new Panel { Dock = DockStyle.Top, Height = _groups.Count > 1 ? 116 : 88, Padding = new Padding(12, 10, 12, 0) };
+            // What a session costs, and the way round it (Mehdi, 01/10) - see OptionMarks.PauseRow.
+            _paused = games.All(g => g.Layout != null && PpssppGameSettings.IsPaused(g.Layout, g.GameId));
+            top.Controls.Add(OptionMarks.PauseRow("PPSSPP", _paused, p => _paused = p));
             top.Controls.Add(new Label
             {
                 AutoSize = false, Dock = DockStyle.Top, Height = 20, ForeColor = SystemColors.GrayText,
@@ -430,6 +434,7 @@ namespace LbIntegrations.Ppsspp
                 if (!(g.AdvancedOn == (_handOn.Checked && !string.IsNullOrEmpty(handText))
                       && string.Equals((g.Advanced ?? "").Trim(), handText ?? "", StringComparison.Ordinal)))
                 { PpssppGameSettings.SaveAdvanced(g.Layout, g.GameId, handText, _handOn.Checked); changed++; }
+                if (g.Layout != null && PpssppGameSettings.IsPaused(g.Layout, g.GameId) != _paused) { PpssppGameSettings.SetPaused(g.Layout, g.GameId, _paused); changed++; }
             }
             Log.Info("options window: " + changed + " change(s), of " + _games.Count + " game(s)");
             DialogResult = DialogResult.OK;

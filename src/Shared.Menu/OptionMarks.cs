@@ -88,6 +88,32 @@ namespace LbIntegrations.Lbip
             return row;
         }
 
+        /// <summary>For an emulator whose game config this plugin swaps whole for a session (Vita3K, PPSSPP - Mehdi, 01/10): a
+        /// red line saying what that costs, and a button that PAUSES this plugin's settings for the game - kept, not used at
+        /// launch, so what the user changes in the emulator's own game config during the game is kept. Saved on OK, like the
+        /// rest of the window. <paramref name="changed"/> is told each new state.</summary>
+        public static Panel PauseRow(string emulator, bool paused, Action<bool> changed)
+        {
+            var row = new Panel { Dock = DockStyle.Top, Height = 36, Padding = new Padding(0, 4, 0, 4) };
+            var line = new Label { AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, UseMnemonic = false };
+            var button = new Button { AutoSize = true, Dock = DockStyle.Right };
+            new ToolTip().SetToolTip(button, "Paused: this game's settings here are kept but not used at launch - the game runs on its own\n"
+                                             + emulator + " config, and what is changed there during the game is kept. Saved on OK.");
+            void Show()
+            {
+                line.ForeColor = paused ? Color.DarkGoldenrod : Color.Firebrick;
+                line.Text = paused
+                    ? "Paused: the game runs on its own " + emulator + " config - changes made there are kept."
+                    : "Changes made in " + emulator + "'s own game config during a game with these settings are not kept.";
+                button.Text = paused ? "Resume these settings" : "Pause these settings";
+            }
+            button.Click += (_, _) => { paused = !paused; Show(); changed(paused); };
+            Show();
+            row.Controls.Add(line);
+            row.Controls.Add(button);
+            return row;
+        }
+
         /// <summary>"Reset to defaults": every setting of the window back to its default - nothing is saved
         /// before OK.</summary>
         public static Button ResetButton(Action reset)

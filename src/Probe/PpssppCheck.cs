@@ -71,6 +71,13 @@ namespace LbIntegrations.Probe
                 Call("PpssppGameSettings", "Save", layout, "g1", own);
                 var loaded = (Dictionary<string, string>)Call("PpssppGameSettings", "Load", layout, "g1");
                 Check("kept, and read back", loaded != null && loaded.Count == 3 && loaded["Graphics/InternalResolution"] == "3");
+                // Paused (the window's red line, 01/10): kept, nothing of it used at launch - the renderer included.
+                Call("PpssppGameSettings", "SetPaused", layout, "g1", true);
+                var pausedArgs = new object[] { layout, "g1", null, null };
+                Check("paused: no keys, no renderer, the settings kept",
+                      Call("PpssppGameSettings", "KeysOf", pausedArgs) == null && pausedArgs[2] == null && Call("PpssppGameSettings", "Load", layout, "g1") != null);
+                Call("PpssppGameSettings", "SetPaused", layout, "g1", false);
+                Check("  ...resumed", !(bool)Call("PpssppGameSettings", "IsPaused", layout, "g1"));
 
                 // 1. A game with no config of its own.
                 var keysArgs = new object[] { layout, "g1", null, null };
