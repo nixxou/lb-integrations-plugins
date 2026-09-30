@@ -280,7 +280,12 @@ namespace LbIntegrations.Vita3k
             return Safe(() => args?.EmulatorBeingLaunched?.CommandLine) ?? "";
         }
 
+        /// <summary>One launch at a time for this plugin - see LbipLaunchGate: a launch while the last one is on is refused,
+        /// silently in its first 5 seconds (a double click).</summary>
         public override PrepareForLaunchResponse PrepareEmulatorForLaunch(PrepareForLaunchArgs args)
+            => LbIntegrations.Lbip.LbipLaunchGate.Run("Nixx-Vita3K", args, PrepareCore, null);
+
+        private PrepareForLaunchResponse PrepareCore(PrepareForLaunchArgs args)
         {
             bool go = true;
             try
@@ -374,16 +379,17 @@ namespace LbIntegrations.Vita3k
         // ── watching it end ──────────────────────────────────────────────────
 
         private static Vita3kLayout _playingLayout;
-        private static string _playingTitleId;
+        private static string _playingTitleId, _playingSession;
 
         internal static void Playing(Vita3kLayout layout, string titleId)
         {
             _playingLayout = layout;
             _playingTitleId = titleId;
-            WatchTheEmulator(layout, titleId);
+            _playingSession = Vita3kGameConfig.LastSession;
+            WatchTheEmulator(layout, titleId, _playingSession);
         }
 
-        internal static void NotPlaying() { _playingLayout = null; _playingTitleId = null; }
+        internal static void NotPlaying() { _playingLayout = null; _playingTitleId = null; _playingSession = null; }
 
         public void OnBeforeGameLaunching(IGame game, IAdditionalApplication app, IEmulator emulator) { }
 
@@ -397,6 +403,7 @@ namespace LbIntegrations.Vita3k
         {
             var layout = _playingLayout;
             var titleId = _playingTitleId;
+            var session = _playingSession;
             NotPlaying();
             if (layout == null || titleId == null) return;
 
@@ -407,7 +414,7 @@ namespace LbIntegrations.Vita3k
                     if (Vita3kWorkspace.CaptureOnExit(layout, titleId))
                         Log.Info("the session of " + titleId + " came out as the game closed");
                     // Not while Vita3K is still there: the watcher does it once it has gone.
-                    Vita3kGameConfig.Restore(layout, titleId, "the session is over");
+                    if (session != null) Vita3kGameConfig.Restore(layout, titleId, "the session is over", session);
                 }
                 catch (Exception ex) { Log.Warn("capture on exit", ex); }
             });
@@ -420,10 +427,13 @@ namespace LbIntegrations.Vita3k
         ///
         /// Two minutes for it to appear, so a launch the host refuses does not leave a thread polling
         /// for ever; then no ceiling at all, because a session lasts as long as it lasts.</summary>
-        private static void WatchTheEmulator(Vita3kLayout layout, string titleId)
+        private static void WatchTheEmulator(Vita3kLayout layout, string titleId, string session)
         {
+            // The launch gate stays shut until this watcher is done - its capture included (LbipLaunchGate.HoldOpen).
+            var hold = LbIntegrations.Lbip.LbipLaunchGate.HoldOpen();
             System.Threading.Tasks.Task.Run(() =>
             {
+                using var held = hold;
                 try
                 {
                     var armed = DateTime.UtcNow;
@@ -436,7 +446,7 @@ namespace LbIntegrations.Vita3k
                     if (!appeared)
                     {
                         Log.Info("watcher: Vita3K never appeared within two minutes of the launch");
-                        Vita3kGameConfig.Restore(layout, titleId, "Vita3K never started");
+                        if (session != null) Vita3kGameConfig.Restore(layout, titleId, "Vita3K never started", session);
                         return;
                     }
                     Log.Info("watcher: Vita3K is running");
@@ -499,7 +509,7 @@ namespace LbIntegrations.Vita3k
                     if (peak > 0) Vita3kWorkspace.RememberEmulatorPeak(layout, titleId, (int)(peak / (1024 * 1024)));
 
                     // Vita3K writes nothing of a game's custom config as it quits: put back at once.
-                    Vita3kGameConfig.Restore(layout, titleId, "the session is over");
+                    if (session != null) Vita3kGameConfig.Restore(layout, titleId, "the session is over", session);
 
                     if (Vita3kWorkspace.CaptureOnExit(layout, titleId))
                         Log.Info("watcher: the session of " + titleId + " came out of the tree");

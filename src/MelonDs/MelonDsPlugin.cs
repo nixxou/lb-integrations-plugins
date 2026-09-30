@@ -782,7 +782,13 @@ namespace LbIntegrations.MelonDs
         /// THIS CHANGES A GLOBAL EMULATOR SETTING per game, which is unusual enough to say out loud -
         /// the README does. It is written only when the value actually differs, and never while
         /// melonDS is running, because melonDS rewrites the whole file when it exits.</summary>
+        /// <summary>One launch at a time for this plugin - see LbipLaunchGate: a launch while the last one is on is refused,
+        /// silently in its first 5 seconds (a double click).</summary>
         public override PrepareForLaunchResponse PrepareEmulatorForLaunch(PrepareForLaunchArgs args)
+            => LbipLaunchGate.Run("Nixx-melonDS", args, PrepareCore,
+                                  () => !MelonDsGameSettings.Pending(MelonDsPaths.Resolve(ResolveFullPath(Safe(() => args?.EmulatorBeingLaunched?.ApplicationPath)))));
+
+        private PrepareForLaunchResponse PrepareCore(PrepareForLaunchArgs args)
         {
             // THE ONE THING THAT STOPS A LAUNCH. A dump being set up for the first time has just
             // had melonDS opened on it, and the game must not start on top of that. Everything else

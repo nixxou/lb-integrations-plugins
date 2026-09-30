@@ -347,6 +347,15 @@ namespace LbIntegrations.Ppsspp
                 var mapping = SectionLines(controls, "ControlMapping");
                 if (mapping.Count > 0) { lines.Add(""); lines.AddRange(mapping); }
             }
+            // AND ITS POST-PROCESSING SHADERS, for a game with no config of its own (30/09, read in Config.cpp,
+            // LoadGameConfig): a game's config is read with its shader list and settings CLEARED first - without these,
+            // the global shaders would be off for the whole session. A game with its own config keeps PPSSPP's way.
+            if (existing == null)
+                foreach (var shaders in new[] { "PostShaderList", "PostShaderSetting" })
+                {
+                    var block = SectionLines(layout?.ConfigFile, shaders);
+                    if (block.Count > 0) { lines.Add(""); lines.AddRange(block); }
+                }
             return lines;
         }
 
@@ -413,8 +422,12 @@ namespace LbIntegrations.Ppsspp
                 // 1. SET ASIDE FIRST: before a byte of the game's config changes.
                 Directory.CreateDirectory(Path.GetDirectoryName(ini));
                 if (existing != null) File.Copy(ini, bak, overwrite: false); else File.WriteAllBytes(bak, new byte[0]);
+                // Which session this is (a watcher puts back only its own - 30/09).
+                var session = Guid.NewGuid().ToString("N");
+                File.WriteAllText(ini + SessionSuffix, session);
                 // 2. The file for the session.
                 PpssppIni.WriteAtomicBytes(ini, new UTF8Encoding(false).GetBytes(string.Join("\r\n", Build(layout, discId, existing, keys)) + "\r\n"));
+                LastSession = session;
                 Log.Info("game settings: this game's own for its session (" + Path.GetFileName(ini) + ") - "
                          + string.Join(", ", keys.Select(k => "[" + k.Section + "] " + k.Key + " = " + k.Value))
                          + (existing != null ? " - its own config is set aside and comes back when PPSSPP quits" : ""));
@@ -429,7 +442,12 @@ namespace LbIntegrations.Ppsspp
         }
 
         /// <summary>Put back every set-aside game config of this install. Never while PPSSPP runs.</summary>
-        public static void Restore(PpssppLayout layout, string why)
+        private const string SessionSuffix = ".lbip-session";
+
+        /// <summary>The id of the session the last Apply started - for its watcher.</summary>
+        internal static string LastSession;
+
+        public static void Restore(PpssppLayout layout, string why, string session = null)
         {
             try
             {
@@ -442,6 +460,9 @@ namespace LbIntegrations.Ppsspp
                     var ini = bak.Substring(0, bak.Length - BakSuffix.Length);
                     try
                     {
+                        if (session != null && (File.Exists(ini + SessionSuffix) ? File.ReadAllText(ini + SessionSuffix).Trim() : null) != session)
+                        { Log.Info(Path.GetFileName(ini) + ": the session on is a later launch's - left to it (" + why + ")"); continue; }
+                        if (File.Exists(ini + SessionSuffix)) File.Delete(ini + SessionSuffix);
                         if (new FileInfo(bak).Length == 0) { if (File.Exists(ini)) File.Delete(ini); File.Delete(bak); Log.Info(Path.GetFileName(ini) + ": the session's is removed - the game had no config of its own (" + why + ")"); }
                         else { File.Move(bak, ini, overwrite: true); Log.Info(Path.GetFileName(ini) + ": the game's own config is back (" + why + ")"); }
                     }
@@ -454,8 +475,11 @@ namespace LbIntegrations.Ppsspp
         /// <summary>Wait for the PPSSPP of this launch to come and go, then put the game's config back.</summary>
         public static void RestoreWhenDone(PpssppLayout layout)
         {
+            var session = LastSession;
+            var hold = LbIntegrations.Lbip.LbipLaunchGate.HoldOpen();
             System.Threading.Tasks.Task.Run(() =>
             {
+                using var held = hold;
                 try
                 {
                     var armed = DateTime.UtcNow;
@@ -465,10 +489,11 @@ namespace LbIntegrations.Ppsspp
                         if (PpssppIni.RunningEmulatorProcess() != null) { appeared = true; break; }
                         System.Threading.Thread.Sleep(500);
                     }
-                    if (appeared)
-                        while (PpssppIni.RunningEmulatorProcess() != null) System.Threading.Thread.Sleep(500);
+                    // Whether it came or not, never put back while one runs.
+                    while (PpssppIni.RunningEmulatorProcess() != null) { appeared = true; System.Threading.Thread.Sleep(500); }
                     System.Threading.Thread.Sleep(1000);
-                    Restore(layout, appeared ? "the session is over" : "PPSSPP never started");
+                    while (PpssppIni.RunningEmulatorProcess() != null) { appeared = true; System.Threading.Thread.Sleep(500); }
+                    Restore(layout, appeared ? "the session is over" : "PPSSPP never started", session);
                 }
                 catch (Exception ex) { Log.Warn("game settings: watching for the end of the session", ex); }
             });

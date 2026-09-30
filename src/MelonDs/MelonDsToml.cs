@@ -45,6 +45,41 @@ namespace LbIntegrations.MelonDs
         //     scanner) tries again - 50, 100, 200, 400, 800 ms, about 1.5 s in all, paid only then;
         //   - a read that still cannot get in SAYS SO (TryRead), rather than answering empty.
         private static readonly object FileGate = new object();
+
+        /// <summary>A plain TOML value, as melonDS's parser takes it: true/false, an integer (decimal, 0x, 0o, 0b, '_'
+        /// between digits), a float (also inf/nan), a basic string with only TOML's escapes, a literal string - one line.
+        /// Anything else (an array, a table, a stray quote) is refused before it is written: a file melonDS cannot parse
+        /// is emptied at its next exit.</summary>
+        public static bool IsPlainValue(string token)
+        {
+            var t = (token ?? "").Trim();
+            if (t.Length == 0 || t.IndexOf('\n') >= 0 || t.IndexOf('\r') >= 0) return false;
+            if (t == "true" || t == "false") return true;
+            if (System.Text.RegularExpressions.Regex.IsMatch(t, @"^[+-]?(0|[1-9](_?[0-9])*)$")) return true;
+            if (System.Text.RegularExpressions.Regex.IsMatch(t, @"^0x[0-9A-Fa-f](_?[0-9A-Fa-f])*$|^0o[0-7](_?[0-7])*$|^0b[01](_?[01])*$")) return true;
+            if (System.Text.RegularExpressions.Regex.IsMatch(t, @"^[+-]?(0|[1-9](_?[0-9])*)(\.[0-9](_?[0-9])*)?([eE][+-]?[0-9](_?[0-9])*)?$")) return true;
+            if (System.Text.RegularExpressions.Regex.IsMatch(t, @"^[+-]?(inf|nan)$")) return true;
+            if (t.Length >= 2 && t[0] == '\'' && t[t.Length - 1] == '\'') return t.IndexOf('\'', 1, t.Length - 2) < 0;
+            if (t.Length >= 2 && t[0] == '"' && t[t.Length - 1] == '"')
+            {
+                for (int i = 1; i < t.Length - 1; i++)
+                {
+                    char c = t[i];
+                    if (c == '"') return false;
+                    if (c < ' ' && c != '\t') return false;
+                    if (c != '\\') continue;
+                    if (++i >= t.Length - 1) return false;
+                    char e = t[i];
+                    if ("btnfr\"\\".IndexOf(e) >= 0) continue;
+                    int n = e == 'u' ? 4 : e == 'U' ? 8 : 0;
+                    if (n == 0 || i + n >= t.Length) return false;
+                    for (int j = 1; j <= n; j++) if (!Uri.IsHexDigit(t[i + j])) return false;
+                    i += n;
+                }
+                return true;
+            }
+            return false;
+        }
         private static readonly int[] RetryMs = { 50, 100, 200, 400, 800 };
 
         /// <summary>Read the given keys from one table - see TryRead. A file that cannot be read comes

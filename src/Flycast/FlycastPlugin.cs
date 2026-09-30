@@ -727,7 +727,12 @@ namespace LbIntegrations.Flycast
         /// It must NEVER fail the launch: a user who cannot log in to RetroAchievements still wants to
         /// play the game. The command line is left alone - what we set at install is transient by
         /// construction and does not need rewriting.</summary>
+        /// <summary>One launch at a time for this plugin - see LbipLaunchGate: a launch while the last one is on is refused,
+        /// silently in its first 5 seconds (a double click).</summary>
         public override PrepareForLaunchResponse PrepareEmulatorForLaunch(PrepareForLaunchArgs args)
+            => LbipLaunchGate.Run("Nixx-Flycast", args, PrepareCore, () => !FlycastGameConfigSession.Pending(FlycastPaths.Resolve(ResolveFullPath(Safe(() => args?.EmulatorBeingLaunched?.ApplicationPath)))));
+
+        private PrepareForLaunchResponse PrepareCore(PrepareForLaunchArgs args)
         {
             string newLine = null;
             // A NAOMI GD-ROM GAME WITHOUT ITS IMAGE (Mehdi, 30/09: kept at import, said at launch): Flycast would
@@ -821,11 +826,12 @@ namespace LbIntegrations.Flycast
                             if (product == null) Log.Info("game id of " + Path.GetFileName(rom) + ": none read (" + idWhy + ") - learned from Flycast's log this time");
                             if (product == null) learning = FlycastGameIdentity.BeforeLaunch(layout, rom, out logArgument);
 
+                            // The section's own copies of our keys taken out for the session, whatever its id - never given
+                            // in its section on the command line: Flycast would save them as the user's (30/09, see
+                            // FlycastGameConfigSession). Ours go global only, which Flycast never saves.
                             var overGame = FlycastGameSettings.SetByGame(layout, product, keys);
-                            // An id the command line cannot name: the section's own keys taken out for the session.
-                            if (overGame.Count > 0 && !FlycastGameSettings.CanTarget(product))
-                                restore = FlycastGameConfigSession.Apply(layout, product, overGame);
-                            newLine = FlycastGameSettings.WithSettings(current, keys, product, overGame);
+                            if (overGame.Count > 0) restore = FlycastGameConfigSession.Apply(layout, product, overGame);
+                            newLine = FlycastGameSettings.WithSettings(current, keys);
                         }
                         if (logArgument != null) newLine = "-config " + logArgument + " " + (newLine ?? current).Trim();
                         FlycastGameConfigSession.WhenDone(layout, restore, learning);

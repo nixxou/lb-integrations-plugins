@@ -67,6 +67,7 @@ namespace LbIntegrations.Flycast
 
         private readonly List<Field> _fields = new List<Field>();
         private readonly OptionMarks _marks = new OptionMarks();
+        private Button _deleteConfig;
         private readonly List<Label> _handNotes = new List<Label>();
         private CheckBox _handOn;
         private TextBox _handText;
@@ -124,8 +125,13 @@ namespace LbIntegrations.Flycast
             var cancel = new Button { Text = "Cancel", Width = 90, DialogResult = DialogResult.Cancel };
             ok.Click += (_, _) => Apply();
             // Where each value comes from, said by colour - see OptionMarks.
+            // Beside it, when there is one: Flycast's OWN game config, deleted (Mehdi, 30/09) - see DeleteGameConfig.
+            _deleteConfig = new Button { Text = "Delete game config", AutoSize = true, Visible = WithGameConfig().Count > 0 };
+            new ToolTip().SetToolTip(_deleteConfig, "Deletes Flycast's own config of this game ([its id] in emu.cfg) - what Flycast's\n"
+                                                    + "\"Delete Game Config\" does. Not this plugin's settings. Done at once, not on OK.");
+            _deleteConfig.Click += (_, _) => DeleteGameConfig();
             var bottom = OptionMarks.Bottom(OptionMarks.Legend("Flycast", gameConfig: true, hereLoses: false),
-                                            OptionMarks.ResetButton(ResetDefaults), ok, cancel);
+                                            OptionMarks.ResetButton(ResetDefaults), ok, cancel, _deleteConfig);
             AcceptButton = ok;
             CancelButton = cancel;
 
@@ -266,6 +272,64 @@ namespace LbIntegrations.Flycast
                           : mine.ContainsKey(id) ? OptionLevel.Here   // over the game's own config too, whatever its id (FlycastGameConfigSession)
                           : _gameConfig.Contains(id) ? OptionLevel.GameConfig : OptionLevel.Emulator;
                 _marks.Set((Control)f.Combo ?? (Control)f.Box ?? f.Number, level);
+            }
+        }
+
+        /// <summary>The selected games whose emu.cfg holds a section of their own - a Flycast game config.</summary>
+        private List<Entry> WithGameConfig()
+            => _games.Where(g => !string.IsNullOrWhiteSpace(g.Product) && !string.IsNullOrEmpty(g.Layout?.ConfigFile)
+                                 && FlycastIni.HasSection(g.Layout.ConfigFile, g.Product)).ToList();
+
+        /// <summary>"Delete game config": the section [id] of each selected game taken out of emu.cfg, whole - what Flycast's own
+        /// "Delete Game Config" does. At once, asked first; never while Flycast runs or a session of ours is on (its keys
+        /// would come back at its end). The window's own choices stay as they are; only what they fall back on changes.</summary>
+        private void DeleteGameConfig()
+        {
+            try
+            {
+                var targets = WithGameConfig();
+                if (targets.Count == 0) { _deleteConfig.Visible = false; return; }
+                if (FlycastIni.RunningEmulatorProcess() != null)
+                {
+                    MessageBox.Show(this, "Flycast is running: close it first - it rewrites emu.cfg as it quits.", "Nixx-Flycast", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                if (targets.Any(t => FlycastGameConfigSession.Pending(t.Layout)))
+                {
+                    MessageBox.Show(this, "A game session of this plugin is still being put back - try again once Flycast has quit.", "Nixx-Flycast", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                var names = targets.GroupBy(t => t.Product).Select(g => g.First().Title + "  [" + g.Key + "]").ToList();
+                if (MessageBox.Show(this, "Delete Flycast's own game config of:\n\n" + string.Join("\n", names.Take(15)) + (names.Count > 15 ? "\n(and " + (names.Count - 15) + " more)" : "")
+                                    + "\n\nIt is the game's section in emu.cfg, set in Flycast - not this plugin's settings, which stay. It is done now, not on OK.",
+                                    "Nixx-Flycast - delete game config", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+                    return;
+
+                foreach (var file in targets.GroupBy(t => t.Layout.ConfigFile, StringComparer.OrdinalIgnoreCase))
+                    foreach (var product in file.Select(t => t.Product).Distinct(StringComparer.Ordinal))
+                    {
+                        var error = FlycastIni.RemoveSection(file.Key, product);
+                        if (error != null) { MessageBox.Show(this, "The game config could not be deleted: " + error, "Nixx-Flycast", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+                        Log.Info("options window: Flycast's game config deleted from " + file.Key + " - [" + product + "]");
+                    }
+                // What each game falls back on now: Flycast's settings.
+                foreach (var g in _games.Where(g => targets.Any(t => t.Product == g.Product)))
+                {
+                    g.Defaults = FlycastGameSettings.DefaultsOf(g.Layout, g.Product, out var wins);
+                    g.GameConfig = wins;
+                }
+                var current = SourceGame();
+                var chosen = ReadValues();
+                _defaults = current.Defaults ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                _gameConfig = current.GameConfig ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                _wins.Text = "";
+                ShowValues(chosen);
+                _deleteConfig.Visible = WithGameConfig().Count > 0;
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("options window: could not delete the game config", ex);
+                MessageBox.Show(this, "The game config could not be deleted: " + ex.Message, "Nixx-Flycast", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 

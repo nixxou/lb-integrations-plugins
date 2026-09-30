@@ -16,6 +16,13 @@
 //        Vita3K's default. Every other section of the .bak is kept as it is.
 //   WHEN VITA3K HAS QUIT: the .bak goes back - over the xml, or, empty, the xml is deleted - and the .bak
 //     with it. A change made in Vita3K's Custom Config DURING such a session is therefore not kept.
+//   A SESSION'S NOTE (config_<ID>.lbip-session, 30/09) names it - a launch's watcher puts back only its own, not a
+//     later launch's - and says what config.yml held of each of this plugin's settings: Vita3K's global settings
+//     window, used mid-session, copies the running game's values - ours - into config.yml; they are taken back
+//     when the session is put back, a crash's included.
+//   ONE AT A TIME: the watcher and OnGameExited both end a session, near together. A lock, never waited on for
+//     long (TryEnter): a launch that cannot get it in 5 s runs without the game's settings, an end that cannot
+//     get it in 2 s leaves it to the one holding it - LaunchBox is never kept waiting.
 //   A .BAK STILL THERE (the host or the machine went mid-session) is put back before anything else: at
 //     every launch, at the plugin's start-up check, before "Game settings in Vita3K...", and when Vita3K
 //     is opened without a game (LbEmulatorOpened). Never while Vita3K runs: the session is its own.
@@ -120,6 +127,14 @@ namespace LbIntegrations.Vita3k
         }
 
         private static string BakOf(string xml) => Path.ChangeExtension(xml, BakExtension);
+        private static string NoteOf(string xml) => Path.ChangeExtension(xml, ".lbip-session");
+
+        /// <summary>One Apply or Restore at a time. Held only around file work of this install: nothing inside it waits on
+        /// anything else, calls the host, or shows a window.</summary>
+        private static readonly object Gate = new object();
+
+        /// <summary>The id of the session the last Apply started (null: it wrote nothing) - for its watcher.</summary>
+        internal static string LastSession;
 
         private static string StorePath(Vita3kLayout layout)
             => layout?.InstallDir == null ? null : Path.Combine(layout.InstallDir, StoreName);
@@ -334,6 +349,18 @@ namespace LbIntegrations.Vita3k
         /// user's file kept aside first. True when there were any. Never throws.</summary>
         public static bool Apply(Vita3kLayout layout, string titleId, string gameId)
         {
+            if (!System.Threading.Monitor.TryEnter(Gate, TimeSpan.FromSeconds(5)))
+            {
+                Log.Warn(titleId + ": another session's custom config is still being put back - this game runs without its own settings this time");
+                return false;
+            }
+            try { return ApplyHeld(layout, titleId, gameId); }
+            finally { System.Threading.Monitor.Exit(Gate); }
+        }
+
+        private static bool ApplyHeld(Vita3kLayout layout, string titleId, string gameId)
+        {
+            LastSession = null;
             try
             {
                 var all = LoadValues(layout, gameId);
@@ -374,8 +401,22 @@ namespace LbIntegrations.Vita3k
                 if (original != null) File.Copy(xml, bak, overwrite: false);
                 else File.WriteAllBytes(bak, new byte[0]);
 
-                // 2. The file for the session.
+                // 2. The file for the session - and its note: its id, and what config.yml held of each of ours.
                 var doc = Build(layout, original, over);
+                var ymlNow = Vita3kConfig.ReadKeys(layout);
+                var session = Guid.NewGuid().ToString("N");
+                var note = new StringBuilder("session\t" + session + "\r\n");
+                foreach (var e in over)
+                    foreach (var a in e.Attributes())
+                    {
+                        var yml = Fields.FirstOrDefault(f => f.Section == e.Name.LocalName && f.Name == a.Name.LocalName)?.Yml;
+                        if (yml == null) continue;
+                        bool present = ymlNow.TryGetValue(yml, out var had);
+                        note.Append("yml\t").Append(yml).Append('\t').Append(present ? "1" : "0").Append('\t').Append(Uri.EscapeDataString(had ?? ""))
+                            .Append('\t').Append(Uri.EscapeDataString(a.Value)).Append("\r\n");
+                    }
+                File.WriteAllText(NoteOf(xml), note.ToString());
+                LastSession = session;
 
                 var tmp = xml + ".tmp";
                 doc.Save(tmp);
@@ -454,9 +495,21 @@ namespace LbIntegrations.Vita3k
             catch (Exception ex) { error = ex.Message; return null; }
         }
 
-        /// <summary>Put back every .bak of this install - or only <paramref name="titleId"/>'s. Nothing
-        /// while Vita3K runs. Never throws.</summary>
-        public static void Restore(Vita3kLayout layout, string titleId, string why)
+        /// <summary>Put back every .bak of this install - or only <paramref name="titleId"/>'s; <paramref name="session"/>: only
+        /// that session's (its watcher). Nothing while Vita3K runs. Never throws.</summary>
+        public static void Restore(Vita3kLayout layout, string titleId, string why, string session = null)
+        {
+            // Busy: the other end of the same session holds it, and does the same work - nothing is lost by leaving.
+            if (!System.Threading.Monitor.TryEnter(Gate, TimeSpan.FromSeconds(2)))
+            {
+                Log.Info("game settings: the custom configs are being put back already (" + why + ")");
+                return;
+            }
+            try { RestoreHeld(layout, titleId, why, session); }
+            finally { System.Threading.Monitor.Exit(Gate); }
+        }
+
+        private static void RestoreHeld(Vita3kLayout layout, string titleId, string why, string session)
         {
             try
             {
@@ -472,6 +525,13 @@ namespace LbIntegrations.Vita3k
                     var xml = Path.ChangeExtension(bak, ".xml");
                     try
                     {
+                        // A watcher puts back only its own session (30/09).
+                        if (session != null && (File.Exists(NoteOf(xml)) ? File.ReadLines(NoteOf(xml)).FirstOrDefault() : null) != "session\t" + session)
+                        { Log.Info(Path.GetFileName(xml) + ": the session on is a later launch's - left to it (" + why + ")"); continue; }
+                        // config.yml's copies of ours first, the note kept until that is done.
+                        if (!UnLeak(layout, xml, out var unleaked)) { Log.Warn(Path.GetFileName(xml) + ": config.yml could not be put right - left to try again"); continue; }
+                        if (unleaked.Count > 0) Log.Info(Path.GetFileName(xml) + ": config.yml had taken this plugin's " + string.Join(", ", unleaked) + " - put back");
+                        try { if (File.Exists(NoteOf(xml))) File.Delete(NoteOf(xml)); } catch { }
                         if (new FileInfo(bak).Length == 0)
                         {
                             if (File.Exists(xml)) File.Delete(xml);
@@ -488,6 +548,51 @@ namespace LbIntegrations.Vita3k
                 }
             }
             catch (Exception ex) { Log.Warn("game settings: could not put the custom configs back", ex); }
+        }
+
+        /// <summary>What config.yml says of this plugin's settings that is ours, not what it held at launch - Vita3K's global
+        /// window copied it there mid-session: back to what it held, or to Vita3K's default when it held nothing. False when
+        /// config.yml could not be written.</summary>
+        private static bool UnLeak(Vita3kLayout layout, string xml, out List<string> done)
+        {
+            var back = new Dictionary<string, string>(StringComparer.Ordinal);
+            done = new List<string>();
+            if (!File.Exists(NoteOf(xml))) return true;
+            var now = Vita3kConfig.ReadKeys(layout);
+            foreach (var line in File.ReadAllLines(NoteOf(xml)))
+            {
+                var f = line.Split('\t');
+                if (f.Length != 5 || f[0] != "yml") continue;
+                var key = f[1];
+                bool present = f[2] == "1";
+                var had = Uri.UnescapeDataString(f[3]);
+                var mine = Uri.UnescapeDataString(f[4]);
+                if (!now.TryGetValue(key, out var v) || !Same(v, mine)) continue;
+                var was = present ? had : Fields.FirstOrDefault(x => x.Yml == key)?.Default;
+                if (was != null && !Same(v, was)) back[key] = was;
+            }
+            done = back.Keys.ToList();
+            return back.Count == 0 || Vita3kConfig.WriteKeys(layout, back);
+        }
+
+        /// <summary>The same meaning, as Vita3K reads a value: equal text, the same number, or the same truth (pugixml and
+        /// yaml-cpp read "1"/"0", "yes"/"no" as truths).</summary>
+        private static bool Same(string a, string b)
+        {
+            if (a == null || b == null) return a == b;
+            var ta = a.Trim(); var tb = b.Trim();
+            if (ta == tb) return true;
+            if (Truth(ta, out var ba) && Truth(tb, out var bb)) return ba == bb;
+            if (double.TryParse(ta, NumberStyles.Float, CultureInfo.InvariantCulture, out var da)
+                && double.TryParse(tb, NumberStyles.Float, CultureInfo.InvariantCulture, out var db))
+                return da == db || Math.Abs(da - db) <= 1e-6 * Math.Max(1, Math.Abs(da));
+            return false;
+        }
+
+        private static bool Truth(string s, out bool v)
+        {
+            v = s.Equals("true", StringComparison.OrdinalIgnoreCase) || s.Equals("yes", StringComparison.OrdinalIgnoreCase) || s == "1";
+            return v || s.Equals("false", StringComparison.OrdinalIgnoreCase) || s.Equals("no", StringComparison.OrdinalIgnoreCase) || s == "0";
         }
     }
 }

@@ -481,7 +481,12 @@ namespace LbIntegrations.Xenia
         /// which is the ROM path, and the launch would fail in a way that looks like a bad ROM.
         ///
         /// Anything the user already set is left alone.</summary>
+        /// <summary>One launch at a time for this plugin - see LbipLaunchGate: a launch while the last one is on is refused,
+        /// silently in its first 5 seconds (a double click).</summary>
         public override PrepareForLaunchResponse PrepareEmulatorForLaunch(PrepareForLaunchArgs args)
+            => LbipLaunchGate.Run("Nixx-Xenia", args, PrepareCore, null);
+
+        private PrepareForLaunchResponse PrepareCore(PrepareForLaunchArgs args)
         {
             try
             {

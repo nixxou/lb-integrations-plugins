@@ -300,24 +300,35 @@ namespace LbIntegrations.NoGba
                 if (keys.All(kv => before.TryGetValue(kv.Key, out var was) && was == kv.Value))
                 { Log.Info("game settings: this game's own are no$gba's already - nothing to write"); return false; }
                 // THE NOTE FIRST: written down before a byte of NO$GBA.INI changes.
-                var note = string.Concat(keys.Select(kv => kv.Key + "\t" + (before.TryGetValue(kv.Key, out var was) ? "1\t" + was : "0\t") + "\r\n"));
+                // The session named first (a watcher puts back only its own - 30/09); "session\t<id>" is no key row.
+                var session = Guid.NewGuid().ToString("N");
+                var note = "session\t" + session + "\r\n" + string.Concat(keys.Select(kv => kv.Key + "\t" + (before.TryGetValue(kv.Key, out var was) ? "1\t" + was : "0\t") + "\r\n"));
                 NoGbaIni.WriteAtomicBytes(PathIn(layout, RestoreName), new UTF8Encoding(false).GetBytes(note));
                 var error = NoGbaIni.Write(layout.IniFile, keys.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase));
                 if (error != null) { Log.Warn("game settings: not written - " + error); Restore(layout, "the write failed"); return false; }
                 Log.Info("game settings: this game's own for its session - " + string.Join(", ", keys.Select(kv => kv.Key + " == " + kv.Value)));
+                LastSession = session;
                 return true;
             }
             catch (Exception ex) { Log.Warn("game settings: could not apply them", ex); return false; }
         }
 
         /// <summary>Put back what a session replaced, if a note says so. Never while no$gba runs.</summary>
-        public static void Restore(NoGbaLayout layout, string why)
+        /// <summary>The id of the session the last Apply started - for its watcher.</summary>
+        internal static string LastSession;
+
+        public static void Restore(NoGbaLayout layout, string why, string session = null)
         {
             try
             {
                 var note = PathIn(layout, RestoreName);
                 if (note == null || !File.Exists(note) || layout.IniFile == null) return;
                 if (DsiNand.EmulatorRunning()) { Log.Info("game settings: no$gba is running - its settings go back once it has quit"); return; }
+                if (session != null)
+                {
+                    var first = File.ReadLines(note).FirstOrDefault() ?? "";
+                    if (first != "session\t" + session) { Log.Info("game settings: the session on is a later launch's - left to it (" + why + ")"); return; }
+                }
                 var rows = File.ReadAllLines(note).Select(l => l.Split(new[] { '\t' }, 3)).Where(f => f.Length >= 2).ToList();
                 var back = rows.Where(f => f[1] == "1" && f.Length == 3).ToDictionary(f => f[0], f => f[2], StringComparer.OrdinalIgnoreCase);
                 var gone = rows.Where(f => f[1] == "0").Select(f => f[0]).ToList();
@@ -329,11 +340,21 @@ namespace LbIntegrations.NoGba
             catch (Exception ex) { Log.Warn("game settings: could not put no$gba's own back", ex); }
         }
 
+        /// <summary>Is a session's note still there - its settings not put back yet?</summary>
+        internal static bool Pending(NoGbaLayout layout)
+        {
+            var note = PathIn(layout, RestoreName);
+            return note != null && File.Exists(note);
+        }
+
         /// <summary>Wait for the no$gba of this launch to come and go, then put its settings back.</summary>
         public static void RestoreWhenDone(NoGbaLayout layout)
         {
+            var session = LastSession;
+            var hold = LbIntegrations.Lbip.LbipLaunchGate.HoldOpen();
             System.Threading.Tasks.Task.Run(() =>
             {
+                using var held = hold;
                 try
                 {
                     var armed = DateTime.UtcNow;
@@ -343,10 +364,11 @@ namespace LbIntegrations.NoGba
                         if (DsiNand.EmulatorRunning()) { appeared = true; break; }
                         System.Threading.Thread.Sleep(500);
                     }
-                    if (appeared)
-                        while (DsiNand.EmulatorRunning()) System.Threading.Thread.Sleep(500);
+                    // Whether it came or not, never put back while one runs (as melonDS's, 30/09).
+                    while (DsiNand.EmulatorRunning()) { appeared = true; System.Threading.Thread.Sleep(500); }
                     System.Threading.Thread.Sleep(500);
-                    Restore(layout, appeared ? "the session is over" : "no$gba never started");
+                    while (DsiNand.EmulatorRunning()) { appeared = true; System.Threading.Thread.Sleep(500); }
+                    Restore(layout, appeared ? "the session is over" : "no$gba never started", session);
                 }
                 catch (Exception ex) { Log.Warn("game settings: watching for the end of the session", ex); }
             });

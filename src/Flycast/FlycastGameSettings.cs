@@ -342,11 +342,6 @@ namespace LbIntegrations.Flycast
             return keys.Count > 0 ? keys : null;
         }
 
-        /// <summary>Can Flycast be given a key in this game's own section on its command line? Its id must be one
-        /// cl.cpp reads back whole: no space, no : , = or quote.</summary>
-        public static bool CanTarget(string product)
-            => !string.IsNullOrWhiteSpace(product) && product.IndexOfAny(new[] { ' ', ':', ',', '=', '"', '\'' }) < 0;
-
         /// <summary>Those of the keys the game's own config ([<paramref name="product"/>] in emu.cfg) sets too.</summary>
         public static List<Raw> SetByGame(FlycastLayout layout, string product, List<Raw> keys)
         {
@@ -355,23 +350,21 @@ namespace LbIntegrations.Flycast
             return keys.Where(k => held.ContainsKey(k.Section + "." + k.Key)).ToList();
         }
 
-        /// <summary>The -config argument of a set of keys, quoted when a value holds a space - and, for those the
-        /// game's own config sets too (<paramref name="overGame"/>), the same in its section. Null for none.</summary>
-        public static string Argument(List<Raw> keys, string product = null, List<Raw> overGame = null)
+        /// <summary>The -config argument of a set of keys, quoted when a value holds a space - GLOBAL values only, never in a
+        /// game's section: Flycast would save those as the user's (30/09, see FlycastGameConfigSession). Null for none.</summary>
+        public static string Argument(List<Raw> keys)
         {
             if (keys == null || keys.Count == 0) return null;
             var items = keys.Select(k => k.Section + ":" + k.Key + "=" + k.Value).ToList();
-            if (CanTarget(product) && overGame != null)
-                items.AddRange(overGame.Select(k => product + ":" + k.Section + "." + k.Key + "=" + k.Value));
             var list = string.Join(",", items);
             return "-config " + (list.IndexOf(' ') >= 0 ? "\"" + list + "\"" : list);
         }
 
         /// <summary>The line Flycast is started with, this game's -config in front - a -config the line already
         /// has comes after, and so wins. Null when it stays as it is.</summary>
-        public static string WithSettings(string line, List<Raw> keys, string product = null, List<Raw> overGame = null)
+        public static string WithSettings(string line, List<Raw> keys)
         {
-            var arg = Argument(keys, product, overGame);
+            var arg = Argument(keys);
             if (arg == null) return null;
             return arg + (string.IsNullOrWhiteSpace(line) ? "" : " " + line.Trim());
         }
@@ -392,12 +385,10 @@ namespace LbIntegrations.Flycast
                 now[k.Id] = held.TryGetValue(k.Key, out var h) ? h : "(not set)";
             }
             var overGame = SetByGame(layout, product, used);
-            bool target = CanTarget(product);
-            string Note(Raw k) => !overGame.Any(o => o.Id == k.Id) ? "" : target ? "      <- over its own game config too"
-                                  : "      <- taken out of its own game config for the session (its id cannot be named on the command line)";
+            string Note(Raw k) => !overGame.Any(o => o.Id == k.Id) ? "" : "      <- taken out of its own game config for the session";
             string Table(Func<Raw, string> value) => string.Join("\r\n", used.Select(k => "[" + k.Section + "] " + k.Key + " = " + value(k) + Note(k)));
             before = "Command line:\r\n" + (line ?? "").Trim() + "\r\n\r\nWhat Flycast uses:\r\n" + Table(k => now[k.Id]) + "\r\n";
-            return "Command line:\r\n" + WithSettings(line, used, product, overGame) + "\r\n\r\nWhat Flycast uses:\r\n"
+            return "Command line:\r\n" + WithSettings(line, used) + "\r\n\r\nWhat Flycast uses:\r\n"
                    + Table(k => k.Value) + "\r\n";
         }
     }

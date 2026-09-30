@@ -142,6 +142,29 @@ namespace LbIntegrations.Flycast
             catch (Exception ex) { Log.Warn("reading " + iniPath, ex); return false; }
         }
 
+        /// <summary>A whole section taken out, header and all - what Flycast's "Delete Game Config" does. Null on success
+        /// (none there is a success), or why nothing was written. Never while Flycast runs.</summary>
+        public static string RemoveSection(string iniPath, string section)
+        {
+            if (!File.Exists(iniPath)) return null;
+            string running = RunningEmulatorProcess();
+            if (running != null) return "Flycast is running (" + running + ") - it rewrites emu.cfg when it exits";
+            try
+            {
+                var lines = new List<string>(File.ReadAllLines(iniPath));
+                Bounds(lines, section, out int start, out int end);
+                if (start < 0) return null;
+                lines.RemoveRange(start, end - start);
+                WriteAtomic(iniPath, lines);
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("writing " + iniPath, ex);
+                return "Could not write " + iniPath + ": " + ex.Message;
+            }
+        }
+
         /// <summary>Take keys out of one section - its header and its other keys kept. Returns null on success
         /// (nothing to take is a success), or why nothing was written. Never while Flycast runs.</summary>
         public static string Remove(string iniPath, string section, IEnumerable<string> keys)

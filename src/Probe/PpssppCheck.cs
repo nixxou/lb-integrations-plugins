@@ -20,9 +20,13 @@ namespace LbIntegrations.Probe
 
         private static object Call(string type, string method, params object[] args)
         {
+            // The optional parameters left out are given their defaults (and out values go back to the caller).
             var m = T(type).GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
-                           .First(x => x.Name == method && x.GetParameters().Length == args.Length);
-            return m.Invoke(null, args);
+                           .First(x => x.Name == method && x.GetParameters().Length >= args.Length && x.GetParameters().Skip(args.Length).All(p => p.IsOptional));
+            var all = args.Concat(m.GetParameters().Skip(args.Length).Select(p => p.DefaultValue)).ToArray();
+            var result = m.Invoke(null, all);
+            Array.Copy(all, args, args.Length);
+            return result;
         }
 
         private static bool Check(string what, bool ok, string detail = null)
@@ -84,6 +88,16 @@ namespace LbIntegrations.Probe
                 Check("the preview is exactly what the launch wrote", preview == text, preview);
                 Call("PpssppGameSettings", "Restore", layout, "the session is over");
                 Check("once over: no game config again, nothing set aside", !File.Exists(ini) && !File.Exists(bak));
+
+                // 1b. The global shaders copied in: PPSSPP clears them before reading a game's config.
+                var global = File.ReadAllText(Path.Combine(system, "ppsspp.ini"));
+                File.WriteAllText(Path.Combine(system, "ppsspp.ini"), global + "[PostShaderList]\r\nPostShader1 = CRT\r\n[PostShaderSetting]\r\nCRTPass1 = 0.5\r\n");
+                Call("PpssppGameSettings", "Apply", layout, "g1", id);
+                text = File.ReadAllText(ini);
+                Check("no config of its own: the global shaders copied in - PPSSPP clears them for a game config",
+                      text.Contains("[PostShaderList]") && text.Contains("PostShader1 = CRT") && text.Contains("CRTPass1 = 0.5"), text);
+                Call("PpssppGameSettings", "Restore", layout, "the session is over");
+                File.WriteAllText(Path.Combine(system, "ppsspp.ini"), global);
 
                 // 2. A game config of the user's.
                 var mine = "; Game config for ULUS10064 - A Game\r\n[Graphics]\r\nFrameSkip = 2\r\nInternalResolution = 1\r\n[ControlMapping]\r\nUp = 10-19\r\n";

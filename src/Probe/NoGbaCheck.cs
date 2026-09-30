@@ -546,7 +546,7 @@ namespace LbIntegrations.Probe
                 ok &= Check("its speed and its sun, a line that was not there added", text.Contains("Emulation Speed, LCD Refresh == Realtime*2, Auto") && text.Contains("Solar Sensor Level == Bright Sunlight"), text);
                 ok &= Check("the console a launch sets: left out", text.Contains("NDS Mode/Colors == DSi (retail/16MB)"));
                 ok &= Check("the preview is exactly what the launch wrote", preview == text, preview);
-                M("Restore").Invoke(null, new object[] { layout, "the session is over" });
+                M("Restore").Invoke(null, new object[] { layout, "the session is over", null });
                 ok &= Check("once over, the file byte for byte - the added line taken out", File.ReadAllText(ini) == original && !File.Exists(note), File.ReadAllText(ini));
 
                 var hand = "; mine\r\nGame Screen Filter == Scale2x\r\nDSi RSA signatures == Insist on RSA\r\n";
@@ -554,11 +554,11 @@ namespace LbIntegrations.Probe
                 M("Apply").Invoke(null, new object[] { layout, "game-b" });
                 text = File.ReadAllText(ini);
                 ok &= Check("set by hand, in use: its lines, not the tabs'", text.Contains("Game Screen Filter == Scale2x") && !text.Contains("Bright Sunlight"), text);
-                M("Restore").Invoke(null, new object[] { layout, "the session is over" });
+                M("Restore").Invoke(null, new object[] { layout, "the session is over", null });
                 M("SaveAdvanced").Invoke(null, new object[] { layout, "game-b", hand, false });
                 M("Apply").Invoke(null, new object[] { layout, "game-b" });
                 ok &= Check("not in use: the tabs' again", File.ReadAllText(ini).Contains("Bright Sunlight") && !File.ReadAllText(ini).Contains("Scale2x"));
-                M("Restore").Invoke(null, new object[] { layout, "the session is over" });
+                M("Restore").Invoke(null, new object[] { layout, "the session is over", null });
 
                 List<string> Warn(string t, out string err)
                 {

@@ -104,21 +104,18 @@ namespace LbIntegrations.Probe
                 var p = new object[] { layout, "T-8120N", "-config window:fullscreen=yes", hand, Kind("All"), null, null };
                 var preview = (string)Call("FlycastGameSettings", "Preview", p);
                 Console.WriteLine("            " + (preview ?? (string)p[6]).Replace("\r\n", " | "));
-                Check("the preview: its game config sets the resolution - ours is given in its section too, and wins",
-                      preview != null && preview.Contains("-config config:rend.Resolution=2880,audio:backend=auto,T-8120N:config.rend.Resolution=2880 -config window:fullscreen=yes")
-                      && preview.Contains("over its own game config too") && ((string)p[5]).Contains("rend.Resolution = 1440"));
+                Check("the preview: its game config sets the resolution - taken out for the session, ours given globally only",
+                      preview != null && preview.Contains("-config config:rend.Resolution=2880,audio:backend=auto -config window:fullscreen=yes")
+                      && !preview.Contains("T-8120N:") && preview.Contains("taken out of its own game config for the session") && ((string)p[5]).Contains("rend.Resolution = 1440"), preview);
 
                 // This plugin's > the game's own config > Flycast's: the keys its section sets, given there too.
                 var over = Call("FlycastGameSettings", "SetByGame", layout, "T-8120N", hand);
                 Check("of the keys, the ones its own [T-8120N] sets: the resolution only", Ids(over) == "config:rend.Resolution", Ids(over));
-                var launch = (string)Call("FlycastGameSettings", "WithSettings", "", hand, "T-8120N", over);
-                Check("the launch line names its section for that one key, and only that one",
-                      launch == "-config config:rend.Resolution=2880,audio:backend=auto,T-8120N:config.rend.Resolution=2880", launch);
+                var launch = (string)Call("FlycastGameSettings", "WithSettings", "", hand);
+                Check("the launch line never names a game's section (Flycast would save it as the user's - 30/09)",
+                      launch == "-config config:rend.Resolution=2880,audio:backend=auto", launch);
                 Check("a game with no section of its own: its section never named (Flycast's per-game mode stays off)",
                       Ids(Call("FlycastGameSettings", "SetByGame", layout, "OTHER-1", hand)) == "(none)" || ((IEnumerable)Call("FlycastGameSettings", "SetByGame", layout, "OTHER-1", hand)).Cast<object>().Count() == 0);
-                Check("an id with a space (cl.cpp drops it) cannot be named: the line stays global",
-                      !(bool)Call("FlycastGameSettings", "CanTarget", "T8120D  50") && !(bool)Call("FlycastGameSettings", "CanTarget", " DERBY OWNERS CLUB")
-                      && (string)Call("FlycastGameSettings", "WithSettings", "", hand, "T8120D  50", over) == "-config config:rend.Resolution=2880,audio:backend=auto");
 
                 // Values with a space, and what cannot go on a command line.
                 var sp = new object[] { "[config]\r\nrend.Foo = a b\r\n", null };
@@ -289,7 +286,7 @@ namespace LbIntegrations.Probe
             }
             else Console.WriteLine("    (flycast-id.exe or the test set is not here: the tool is not run)");
 
-            // Over a game's own config whose id the command line cannot name.
+            // Over a game's own config - whatever its id (30/09: never named on the command line).
             var mine = "[  18WHEELER]\r\nconfig.rend.Fog = no\r\nconfig.rend.Resolution = 1440\r\n\r\n[config]\r\nrend.Resolution = 960\r\n";
             File.WriteAllText(cfgPath, mine);
             var keys = Raws("config:rend.Resolution=2880");
@@ -314,6 +311,23 @@ namespace LbIntegrations.Probe
             File.WriteAllText(cfgPath, "[config]\r\nrend.Resolution = 960\r\n");   // "Delete Game Config" in Flycast
             Call("FlycastGameConfigSession", "Restore", layout, "the session is over");
             Check("the section deleted in Flycast during the session: not brought back", !File.ReadAllText(cfgPath).Contains("18WHEELER") && !File.Exists(note));
+
+            // A late watcher (adversarial review, 30/09): a later launch's session is not its to put back.
+            File.WriteAllText(cfgPath, mine);
+            Call("FlycastGameConfigSession", "Apply", layout, "  18WHEELER", keys);
+            var later = (string)T("FlycastGameConfigSession").GetField("LastId", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
+            Call("FlycastGameConfigSession", "Restore", layout, "a late watcher", "not-this-session");
+            Check("a late watcher: the later session left as it is", File.Exists(note) && !File.ReadAllText(cfgPath).Contains("= 1440"));
+            Check("  ...pending while it is on", (bool)Call("FlycastGameConfigSession", "Pending", layout));
+            Call("FlycastGameConfigSession", "Restore", layout, "the session is over", later);
+            Check("  ...then its own end: the key back", File.ReadAllText(cfgPath).Contains("config.rend.Resolution = 1440") && !File.Exists(note)
+                  && !(bool)Call("FlycastGameConfigSession", "Pending", layout), File.ReadAllText(cfgPath));
+
+            // "Delete game config": the section whole, the rest byte for byte.
+            File.WriteAllText(cfgPath, "[config]\r\nrend.Resolution = 960\r\n\r\n[  18WHEELER]\r\nconfig.rend.Fog = no\r\n\r\n[audio]\r\nbackend = auto\r\n");
+            Check("delete game config: its section out, header and all, the others as they were",
+                  Call("FlycastIni", "RemoveSection", cfgPath, "  18WHEELER") == null
+                  && File.ReadAllText(cfgPath) == "[config]\r\nrend.Resolution = 960\r\n\r\n[audio]\r\nbackend = auto\r\n", File.ReadAllText(cfgPath));
 
             // Learned from the log: ours deleted once read, the user's left alone and read from where it stood.
             var log = Path.Combine(install, "flycast.log");

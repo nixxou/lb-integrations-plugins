@@ -22,6 +22,12 @@
 //   - WHEN melonDS HAS QUIT - it rewrites its whole file on exit, the game's values with it - the values
 //     written down go back, and the note is deleted. A change made to these settings DURING such a
 //     game is therefore not kept (the log says the session ended; the user's settings come back);
+//   - melonDS.toml AS IT WAS is kept too (<install>\lbip-settings.original.toml): melonDS that cannot parse its
+//     file starts from an EMPTY document and writes it over the file as it quits (Config.cpp, Load and Save - the
+//     recovery line is commented out). A file left without one table of the many it had is that: put back whole.
+//     And a value that is not a plain TOML value (set by hand) is never written - it would be the cause;
+//   - A session's note names it (Mehdi / adversarial review, 30/09): a launch's watcher puts back ONLY its own session - a
+//     later launch's, started while it was still waiting, is not its to touch.
 //   - A NOTE STILL THERE - the host or the machine went mid-session - is put back by the next launch and
 //     by the plugin's start-up check, before anything else. Opening melonDS on its own in between shows
 //     the game's values; changed there, they are put back over later (Mehdi: "pas un drame").
@@ -485,9 +491,15 @@ namespace LbIntegrations.MelonDs
             try
             {
                 if (keys == null || keys.Count == 0 || layout?.ConfigFile == null) return false;
+                // NEVER A VALUE melonDS COULD NOT PARSE: its file would come back empty (see the header).
+                var bad = keys.Where(k => !MelonDsToml.IsPlainValue(k.Token)).ToList();
+                foreach (var k in bad) Log.Warn("game settings: [" + k.Table + "] " + k.Key + " = " + k.Token + " is not a plain TOML value - not written");
+                keys = keys.Except(bad).ToList();
+                if (keys.Count == 0) return false;
                 // melonDS's own, to be put back - and so they must be REALLY its own: a file that could not
                 // be read writes nothing.
-                var note = new StringBuilder();
+                var session = Guid.NewGuid().ToString("N");
+                var note = new StringBuilder("session\t" + session + "\r\n");
                 bool same = true;
                 foreach (var t in keys.GroupBy(k => k.Table))
                 {
@@ -504,7 +516,9 @@ namespace LbIntegrations.MelonDs
                     }
                 }
                 if (same) { Log.Info("game settings: " + what + " are melonDS's already - nothing to write"); return false; }
-                // THE NOTE FIRST: written down before a byte of melonDS.toml changes.
+                // THE FILE AS IT IS, then THE NOTE: both before a byte of melonDS.toml changes.
+                if (File.Exists(layout.ConfigFile))
+                    MelonDsToml.WriteAtomicBytes(OriginalPath(layout.InstallDir), File.ReadAllBytes(layout.ConfigFile));
                 MelonDsToml.WriteAtomicBytes(RestorePath(layout.InstallDir), Encoding.UTF8.GetBytes(note.ToString()));
                 foreach (var t in keys.GroupBy(k => k.Table))
                 {
@@ -512,6 +526,7 @@ namespace LbIntegrations.MelonDs
                     if (error != null) { Log.Warn("game settings: " + what + " were not written - " + error); Restore(layout, "the write failed"); return false; }
                 }
                 Log.Info("game settings: " + what + " for the session - " + string.Join(", ", keys.Select(k => "[" + k.Table + "] " + k.Key + " = " + k.Token)));
+                LastSession = session;
                 return true;
             }
             catch (Exception ex) { Log.Warn("game settings: could not apply " + what, ex); return false; }
@@ -519,13 +534,38 @@ namespace LbIntegrations.MelonDs
 
         /// <summary>Put back the values a session replaced, if a note says there are any. Never while
         /// melonDS runs - it would write its own over them when it quits.</summary>
-        public static void Restore(MelonDsLayout layout, string why)
+        /// <summary>The id of the session the last ApplyRaw started - for its watcher.</summary>
+        internal static string LastSession;
+
+        /// <summary>The session a note names, or null (a note of before 30/09).</summary>
+        private static string SessionOf(string note)
+        {
+            try { var first = File.ReadLines(note).FirstOrDefault() ?? ""; return first.StartsWith("session\t", StringComparison.Ordinal) ? first.Substring(8) : null; }
+            catch { return null; }
+        }
+
+        public static void Restore(MelonDsLayout layout, string why, string session = null)
         {
             try
             {
                 var note = RestorePath(layout?.InstallDir);
-                if (note == null || !File.Exists(note) || layout.ConfigFile == null) return;
+                var original = OriginalPath(layout?.InstallDir);
+                if (note == null || !File.Exists(note) || layout.ConfigFile == null)
+                {
+                    if (original != null && File.Exists(original) && !DsiNand.EmulatorRunning()) File.Delete(original);   // no session: nothing it guards
+                    return;
+                }
                 if (DsiNand.EmulatorRunning()) { Log.Info("game settings: melonDS is running - its settings go back once it has quit"); return; }
+                if (session != null && SessionOf(note) != session) { Log.Info("game settings: the session on is a later launch's - left to it (" + why + ")"); return; }
+                // melonDS emptied its file (it could not parse it): the whole of it back, ours not in it.
+                if (File.Exists(original) && Wiped(File.ReadAllText(original), File.Exists(layout.ConfigFile) ? File.ReadAllText(layout.ConfigFile) : null))
+                {
+                    MelonDsToml.WriteAtomicBytes(layout.ConfigFile, File.ReadAllBytes(original));
+                    File.Delete(note);
+                    File.Delete(original);
+                    Log.Warn("game settings: melonDS left its settings file empty (it could not read it) - put back whole, as it was before the session (" + why + ")");
+                    return;
+                }
                 var text = File.ReadAllText(note);
                 string error = null;
                 if (text.IndexOf('\t') < 0) error = WriteValues(layout.ConfigFile, Parse(text), force: false);   // the first form
@@ -542,16 +582,37 @@ namespace LbIntegrations.MelonDs
                 }
                 if (error != null) { Log.Warn("game settings: melonDS's own could not go back yet - " + error); return; }
                 File.Delete(note);
+                if (File.Exists(original)) File.Delete(original);
                 Log.Info("game settings: melonDS's own are back (" + why + ")");
             }
             catch (Exception ex) { Log.Warn("game settings: could not put melonDS's own back", ex); }
         }
 
+        private static string OriginalPath(string installDir) => installDir == null ? null : Path.Combine(installDir, "lbip-settings.original.toml");
+
+        /// <summary>Is a session's note still there - its settings not put back yet?</summary>
+        internal static bool Pending(MelonDsLayout layout)
+        {
+            var note = RestorePath(layout?.InstallDir);
+            return note != null && File.Exists(note);
+        }
+
+        /// <summary>Did melonDS write an empty document over its file: the original had tables, what it left has none
+        /// (or is gone)?</summary>
+        internal static bool Wiped(string original, string now)
+        {
+            int Tables(string t) => (t ?? "").Replace("\r\n", "\n").Split('\n').Count(l => l.TrimStart().StartsWith("[", StringComparison.Ordinal));
+            return Tables(original) > 0 && (now == null || Tables(now) == 0);
+        }
+
         /// <summary>Wait for the melonDS of this launch to come and go, then put its settings back.</summary>
         public static void RestoreWhenDone(MelonDsLayout layout)
         {
+            var session = LastSession;
+            var hold = LbIntegrations.Lbip.LbipLaunchGate.HoldOpen();
             System.Threading.Tasks.Task.Run(() =>
             {
+                using var held = hold;
                 try
                 {
                     var armed = DateTime.UtcNow;
@@ -561,11 +622,13 @@ namespace LbIntegrations.MelonDs
                         if (DsiNand.EmulatorRunning()) { appeared = true; break; }
                         System.Threading.Thread.Sleep(500);
                     }
-                    if (appeared)
-                        while (DsiNand.EmulatorRunning()) System.Threading.Thread.Sleep(500);
+                    // Whether it came or not, never put back while one runs: one that started just after the last look
+                    // would otherwise find the end skipped (the adversarial review of Flycast's, 30/09).
+                    while (DsiNand.EmulatorRunning()) { appeared = true; System.Threading.Thread.Sleep(500); }
                     // melonDS writes its file as it quits: a moment for that to land.
                     System.Threading.Thread.Sleep(1000);
-                    Restore(layout, appeared ? "the session is over" : "melonDS never started");
+                    while (DsiNand.EmulatorRunning()) { appeared = true; System.Threading.Thread.Sleep(500); }
+                    Restore(layout, appeared ? "the session is over" : "melonDS never started", session);
                 }
                 catch (Exception ex) { Log.Warn("game settings: watching for the end of the session", ex); }
             });

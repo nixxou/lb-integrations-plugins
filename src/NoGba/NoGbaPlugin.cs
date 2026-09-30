@@ -608,7 +608,13 @@ namespace LbIntegrations.NoGba
         ///
         /// NEVER FAILS A LAUNCH. Everything here is a convenience; none of it is a reason to refuse
         /// somebody their game.</summary>
+        /// <summary>One launch at a time for this plugin - see LbipLaunchGate: a launch while the last one is on is refused,
+        /// silently in its first 5 seconds (a double click).</summary>
         public override PrepareForLaunchResponse PrepareEmulatorForLaunch(PrepareForLaunchArgs args)
+            => LbipLaunchGate.Run("Nixx-no$gba", args, PrepareCore,
+                                  () => !NoGbaGameSettings.Pending(NoGbaPaths.Resolve(ResolveFullPath(Safe(() => args?.EmulatorBeingLaunched?.ApplicationPath)))));
+
+        private PrepareForLaunchResponse PrepareCore(PrepareForLaunchArgs args)
         {
             try
             {

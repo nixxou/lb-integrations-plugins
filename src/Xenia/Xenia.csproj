@@ -11,6 +11,8 @@
     <LangVersion>latest</LangVersion>
     <!-- And WPF: LaunchBox's Import ROM Files wizard is WPF, watched from its windows - see Shared.Lbip\LbipImportWatch.cs. -->
     <UseWPF>true</UseWPF>
+    <!-- And WinForms: a launch refused says so in a message (Shared.Lbip\LbipNotice.cs). -->
+    <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>Xenia</AssemblyName>
     <RootNamespace>LbIntegrations.Xenia</RootNamespace>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>

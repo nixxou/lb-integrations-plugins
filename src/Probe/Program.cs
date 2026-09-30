@@ -82,6 +82,9 @@ namespace LbIntegrations.Probe
             };
 
             var asm = AssemblyLoadContext.Default.LoadFromAssemblyPath(dll);
+            // One launch at a time (LbipLaunchGate): off for the probe, whose launches start no emulator - but for --launch-gate.
+            try { asm.GetType("LbIntegrations.Lbip.LbipLaunchGate")?.GetField("Off", BindingFlags.NonPublic | BindingFlags.Static)?.SetValue(null, true); } catch { }
+            if (Has(args, "--launch-gate")) return LaunchGateCheck.Run(asm) ? 0 : 1;
             var type = asm.GetTypes().FirstOrDefault(t => !t.IsAbstract && typeof(EmulatorPlugin).IsAssignableFrom(t));
             if (type == null)
             {

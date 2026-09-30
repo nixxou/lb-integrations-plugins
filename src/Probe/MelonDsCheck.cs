@@ -175,12 +175,12 @@ namespace LbIntegrations.Probe
                 ok &= Check("melonDS's own written down first", File.Exists(note));
                 ok &= Check("and a key the game does not set left alone", Val("3D.GL", "BetterPolygons") == "false");
 
-                restore.Invoke(null, new object[] { layout, "the session is over" });
+                restore.Invoke(null, new object[] { layout, "the session is over", null });
                 ok &= Check("once it is over, melonDS's own are back", Val("3D", "Renderer") == "0" && Val("3D.GL", "ScaleFactor") == "1" && Val("Screen", "VSync") == "false" && !File.Exists(note));
 
                 // A session that never ended: the next launch puts them back before anything else.
                 apply.Invoke(null, new object[] { layout, "game-1" });
-                restore.Invoke(null, new object[] { layout, "left behind by a session that did not end" });
+                restore.Invoke(null, new object[] { layout, "left behind by a session that did not end", null });
                 ok &= Check("after a session that never ended, the next one puts them back", Val("3D", "Renderer") == "0" && !File.Exists(note));
 
                 video.GetMethod("Save").Invoke(null, new object[] { install, "game-1", null });
@@ -295,6 +295,50 @@ namespace LbIntegrations.Probe
                 ok &= Check("once over: every value back as it was written, the added key taken out",
                             text.Contains("Username = \"Me\"") && text.Contains("ScaleFactor = 1") && text.Contains("OverrideSettings = false")
                             && !text.Contains("NewKey") && !File.Exists(note), text);
+
+                // melonDS REWRITES ITS FILE as it quits (Config.cpp Save: the whole document, no comments): what the user
+                // changed in melonDS kept, ours back (30/09).
+                var saved = Path.Combine(install, "lbip-settings.original.toml");
+                File.WriteAllText(toml, original);
+                Call(M("Apply"), new object[] { layout, "game-t" });
+                ok &= Check("the session keeps the file as it was, beside the note", File.Exists(saved) && File.ReadAllText(saved) == original && File.Exists(note));
+                File.WriteAllText(toml, "[3D.GL]\nScaleFactor = 9\n\n[DSi]\nNANDPath = 'C:\\nand.bin'\nVolume = 50\n\n[Instance0.Firmware]\nOverrideSettings = true\nUsername = \"Nixx\"\n\n[Screen]\nNewKey = 3\n");
+                Call(M("Restore"), new object[] { layout, "the session is over" });
+                text = File.ReadAllText(toml);
+                ok &= Check("melonDS rewrote it: the volume the user set there kept, ours back (scale 1, Me, override off), the added key out",
+                            TomlValues(toml, "DSi").TryGetValue("Volume", out var vol) && vol == "50" && TomlValues(toml, "3D.GL")["ScaleFactor"] == "1"
+                            && text.Contains("Username = \"Me\"") && TomlValues(toml, "Instance0.Firmware")["OverrideSettings"] == "false"
+                            && !text.Contains("NewKey") && !File.Exists(note) && !File.Exists(saved), text);
+
+                // melonDS could not parse it, and wrote an empty document over it: the whole file back.
+                File.WriteAllText(toml, original);
+                Call(M("Apply"), new object[] { layout, "game-t" });
+                File.WriteAllText(toml, "");
+                Call(M("Restore"), new object[] { layout, "the session is over" });
+                ok &= Check("melonDS emptied its file: put back whole, byte for byte, nothing of ours", File.ReadAllText(toml) == original && !File.Exists(note) && !File.Exists(saved), File.ReadAllText(toml));
+
+                // Adversarial review, 30/09: launch 1's emulator never came; launch 2 came in while its watcher still waited.
+                // That watcher must not put launch 2's settings back before its emulator has read them.
+                var lastSession = gs.GetField("LastSession", BindingFlags.NonPublic | BindingFlags.Static);
+                File.WriteAllText(toml, original);
+                Call(M("Apply"), new object[] { layout, "game-t" });
+                var first = (string)lastSession.GetValue(null);
+                Call(M("Restore"), new object[] { layout, "left behind by a session that did not end" });   // launch 2, first thing
+                Call(M("Apply"), new object[] { layout, "game-t" });
+                var second = (string)lastSession.GetValue(null);
+                Call(M("Restore"), new object[] { layout, "melonDS never started", first });                // launch 1's watcher, late
+                ok &= Check("a late watcher of an earlier launch leaves the later one's settings in place",
+                            first != null && second != null && first != second && File.Exists(note) && TomlValues(toml, "3D.GL")["ScaleFactor"] == "5");
+                Call(M("Restore"), new object[] { layout, "the session is over", second });
+                ok &= Check("  ...and the later one's own watcher puts them back", !File.Exists(note) && TomlValues(toml, "3D.GL")["ScaleFactor"] == "1");
+
+                // Never a value melonDS could not parse.
+                var plain = TypeIn("MelonDsToml").GetMethod("IsPlainValue", BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic);
+                bool P(string t) => (bool)plain.Invoke(null, new object[] { t });
+                ok &= Check("plain TOML values taken: true, 12, -3, 0x1F, 1.5, 1e3, inf, \"a\\\"b\", \"\\u00e9\", 'C:\\x', \"\"",
+                            P("true") && P("12") && P("-3") && P("0x1F") && P("1.5") && P("1e3") && P("inf") && P("\"a\\\"b\"") && P("\"\\u00e9\"") && P("'C:\\x'") && P("\"\""));
+                ok &= Check("refused: an unclosed string, a stray quote, a bad escape, two lines, an array, a word, 012, 1.",
+                            !P("\"oops") && !P("\"a\"b\"") && !P("\"\\q\"") && !P("\"a\nb\"") && !P("[1, 2]") && !P("yes") && !P("012") && !P("1.") && !P("'it's'"));
 
                 M("SaveAdvanced").Invoke(null, new object[] { install, "game-t", hand, false });
                 Call(M("Apply"), new object[] { layout, "game-t" });

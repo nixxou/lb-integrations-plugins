@@ -2266,6 +2266,32 @@ namespace LbIntegrations.Probe
                 Call("Vita3kGameConfig", "Restore", new object[] { layout, null, "left behind by a session that did not end" });
                 Check("a .bak left behind: the user's file is back, byte for byte", File.ReadAllText(xml) == own && !File.Exists(bak));
 
+                // 4. Adversarial review, 30/09. Two ends of one session at once (the watcher and OnGameExited): both return,
+                //    the user's file back once, nothing left behind.
+                Call("Vita3kGameConfig", "Apply", new object[] { layout, TitleId, "game-v" });
+                var ends = Enumerable.Range(0, 2).Select(_ => System.Threading.Tasks.Task.Run(() =>
+                    Call("Vita3kGameConfig", "Restore", new object[] { layout, TitleId, "the session is over" }))).ToArray();
+                bool finished = System.Threading.Tasks.Task.WaitAll(ends, 30000);
+                Check("two ends at once: both return, the user's file back, nothing left behind",
+                      finished && File.ReadAllText(xml) == own && !File.Exists(bak) && !File.Exists(Path.ChangeExtension(xml, ".lbip-session")));
+
+                // 5. A late watcher: a later launch's session is not its to put back.
+                Call("Vita3kGameConfig", "Apply", new object[] { layout, TitleId, "game-v" });
+                var during = File.ReadAllText(xml);
+                Call("Vita3kGameConfig", "Restore", new object[] { layout, TitleId, "a late watcher", "not-this-session" });
+                Check("a late watcher: the later session left as it is", File.ReadAllText(xml) == during && File.Exists(bak));
+                Call("Vita3kGameConfig", "Restore", new object[] { layout, null, "left behind by a session that did not end" });
+
+                // 6. Vita3K's global window, used mid-session, copied ours into config.yml - a key it held, and one it did not:
+                //    both put right when the session is put back.
+                File.WriteAllText(config, "pstv-mode: true\nime-langs:\n  - 4\n  - 8\nsys-lang: 1\n");
+                Call("Vita3kGameConfig", "Apply", new object[] { layout, TitleId, "game-v" });
+                File.WriteAllText(config, "pstv-mode: true\nime-langs:\n  - 4\n  - 8\nsys-lang: 2\nsys-date-format: 1\n");   // ours, leaked
+                Call("Vita3kGameConfig", "Restore", new object[] { layout, null, "left behind by a session that did not end" });
+                var yml = File.ReadAllText(config);
+                Check("ours leaked into config.yml: the language back to 1, the date format (absent before) to Vita3K's default 2",
+                      yml.Contains("sys-lang: 1") && !yml.Contains("sys-lang: 2") && yml.Contains("sys-date-format: 2") && File.ReadAllText(xml) == own, yml);
+
                 Call("Vita3kGameConfig", "Save", new object[] { layout, "game-v", null });
                 Check("taken away from our store", Call("Vita3kGameConfig", "Load", new object[] { layout, "game-v" }) == null);
             }
@@ -3323,7 +3349,17 @@ namespace LbIntegrations.Probe
         {
             var t = _asm.GetType("LbIntegrations.Vita3k." + type, throwOnError: true);
             var m = FindMethod(t, method, args.Length);
-            if (m == null) throw new MissingMethodException(type + "." + method);
+            if (m == null)
+            {
+                // The optional parameters left out get their defaults (and out values go back to the caller).
+                m = t.GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
+                     .FirstOrDefault(x => x.Name == method && x.GetParameters().Length > args.Length && x.GetParameters().Skip(args.Length).All(p => p.IsOptional));
+                if (m == null) throw new MissingMethodException(type + "." + method);
+                var all = args.Concat(m.GetParameters().Skip(args.Length).Select(p => p.DefaultValue)).ToArray();
+                var result = m.Invoke(null, all);
+                Array.Copy(all, args, args.Length);
+                return result;
+            }
             return m.Invoke(null, args);
         }
 

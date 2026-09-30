@@ -700,7 +700,12 @@ namespace LbIntegrations.Ppsspp
         /// <summary>Called right before the spawn. Its only job is carrying the host's
         /// RetroAchievements credentials into PPSSPP's configuration. It must NEVER fail the launch:
         /// a user who cannot log in to RetroAchievements still wants to play the game.</summary>
+        /// <summary>One launch at a time for this plugin - see LbipLaunchGate: a launch while the last one is on is refused,
+        /// silently in its first 5 seconds (a double click).</summary>
         public override PrepareForLaunchResponse PrepareEmulatorForLaunch(PrepareForLaunchArgs args)
+            => LbipLaunchGate.Run("Nixx-PPSSPP", args, PrepareCore, null);
+
+        private PrepareForLaunchResponse PrepareCore(PrepareForLaunchArgs args)
         {
             string newLine = null;
             try
