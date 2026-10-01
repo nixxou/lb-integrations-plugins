@@ -76,6 +76,7 @@ namespace LbIntegrations.Probe
                         Console.WriteLine("        " + G("Kind") + "  title " + G("TitleId") + "  type " + U("ContentType").ToString("X8") + "  media " + U("MediaId").ToString("X8")
                                           + "  version " + U("Version").ToString("X8") + " (" + e.GetType().GetProperty("VersionText").GetValue(e) + ")  base " + U("BaseVersion").ToString("X8")
                                           + "  disc " + G("Disc") + "  name \"" + G("Name") + "\"" + (G("Problem").Length > 0 ? "  PROBLEM " + G("Problem") : ""));
+                        Console.WriteLine("        digest " + (G("Digest").Length > 0 ? G("Digest") : "-") + "  patch " + U("PatchFrom").ToString("X8") + " -> " + U("PatchTo").ToString("X8") + "  content id " + G("ContentId"));
                     }
                 }
             }
@@ -83,6 +84,54 @@ namespace LbIntegrations.Probe
             {
                 scan.GetField("CacheOverride", flags).SetValue(null, null);
                 try { File.Delete(cache); } catch { }
+            }
+            return true;
+        }
+
+        /// <summary>--xenia-stfs &lt;package or archive&gt;: the files inside each package, and a title update's patch read -
+        /// its media id and versions. An archive's entries read without extracting.</summary>
+        public static bool Package(Assembly asm, string path)
+        {
+            var flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
+            var filesT = asm.GetType("LbIntegrations.Xenia.StfsFiles", true);
+            var readT = asm.GetType("LbIntegrations.Xenia.XeniaPackageRead", true);
+            var seqT = asm.GetType("LbIntegrations.Xenia.SequentialRead", true);
+            void Show(string label, Func<long, int, byte[]> read, Func<string> extra)
+            {
+                Console.WriteLine("  " + label);
+                var files = filesT.GetMethod("Open", flags).Invoke(null, new object[] { read });
+                if (files == null) { Console.WriteLine("    not an STFS volume"); return; }
+                foreach (var e in ((IEnumerable)filesT.GetField("Entries").GetValue(files)).Cast<object>()) Console.WriteLine("    " + e);
+                var info = readT.GetMethod("UpdatePatch", flags).Invoke(null, new object[] { read });
+                if (info == null) Console.WriteLine("    no patch read");
+                else
+                {
+                    uint U(string n) => Convert.ToUInt32(info.GetType().GetField(n).GetValue(info));
+                    string V(uint v) => (v >> 28) + "." + ((v >> 24) & 0xF) + "." + ((v >> 8) & 0xFFFF) + "." + (v & 0xFF);
+                    Console.WriteLine("    patch: title " + U("TitleId").ToString("X8") + "  media " + U("MediaId").ToString("X8") + "  version " + V(U("Version"))
+                                      + "  base " + V(U("BaseVersion")) + "  patch " + V(U("PatchSourceVersion")) + " -> " + V(U("PatchTargetVersion")));
+                }
+                var game = readT.GetMethod("GameExecutable", flags).Invoke(null, new object[] { read });
+                if (game != null) Console.WriteLine("    default.xex: media " + Convert.ToUInt32(game.GetType().GetField("MediaId").GetValue(game)).ToString("X8") + "  signature digest " + game.GetType().GetField("SignatureDigest").GetValue(game));
+                if (info != null) Console.WriteLine("    patch digest_source " + info.GetType().GetField("PatchDigestSource").GetValue(info));
+                Console.WriteLine("    " + extra());
+            }
+            if (path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".7z", StringComparison.OrdinalIgnoreCase))
+            {
+                using var archive = SharpCompress.Archives.ArchiveFactory.Open(path);
+                foreach (var entry in archive.Entries.Where(x => !x.IsDirectory))
+                {
+                    using var s = entry.OpenEntryStream();
+                    var seq = Activator.CreateInstance(seqT, s, 256 * 1024 * 1024);
+                    var m = seqT.GetMethod("Read");
+                    Show(entry.Key + " (" + entry.Size + " bytes)", (o, l) => (byte[])m.Invoke(seq, new object[] { o, l }),
+                         () => "decompressed to read it: " + seqT.GetProperty("Decompressed").GetValue(seq) + " bytes");
+                }
+            }
+            else
+            {
+                using var fs = File.OpenRead(path);
+                Show(path, (o, l) => (byte[])asm.GetType("LbIntegrations.Xenia.Xex", true).GetMethod("ReadAt", flags).Invoke(null, new object[] { fs, o, l }), () => "");
             }
             return true;
         }

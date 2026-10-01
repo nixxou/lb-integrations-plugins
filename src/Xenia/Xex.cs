@@ -26,6 +26,16 @@ using System.IO;
 
 namespace LbIntegrations.Xenia
 {
+    /// <summary>See Xex.Info.</summary>
+    internal sealed class XexInfo
+    {
+        public bool HasExecutionInfo, IsPatch;
+        public uint MediaId, Version, BaseVersion, TitleId, PatchSourceVersion, PatchTargetVersion;
+        /// <summary>An executable's: SHA-1 of its RSA signature (security info +8, 0x100 bytes). A patch's: the digest_source of
+        /// its delta descriptor. Xenia applies a title update when the two are equal (KernelState::IsPatchSignatureProper).</summary>
+        public string SignatureDigest = "", PatchDigestSource = "";
+        public byte DiscNumber, DiscCount;
+    }
     internal static class Xex
     {
         private const uint ExecutionInfoKey = 0x00040006u;
@@ -77,6 +87,52 @@ namespace LbIntegrations.Xenia
             }
             catch (Exception ex) { Log.Warn("could not read the XEX header", ex); return null; }
         }
+
+        /// <summary>What an executable - or a title update's patch, a .xexp - says of itself: its execution info (the media
+        /// id of the disc it belongs to, its version, the base version, its title id) and, in a patch, its delta patch
+        /// descriptor (XEX_HEADER_DELTA_PATCH_DESCRIPTOR, 0x000005FF: the version it takes the game from, and to - what
+        /// Xenia's "XEX patch applied successfully: base version: x, new version: y" prints). Null when it does not read.</summary>
+        public static XexInfo Info(Func<long, int, byte[]> read)
+        {
+            try
+            {
+                var header = read(0, MinHeaderSize);
+                if (!IsXex(header)) return null;
+                uint count = BeUInt32(header, 0x14);
+                if (count == 0 || count > MaxOptionalHeaders) return null;
+                var info = new XexInfo();
+                // xex2_header +0x10: the security info's offset; +8 into it, the 0x100-byte RSA signature.
+                var signature = read(BeUInt32(header, 0x10) + 8, 0x100);
+                if (signature != null && signature.Length == 0x100)
+                    using (var sha = System.Security.Cryptography.SHA1.Create()) info.SignatureDigest = Convert.ToHexString(sha.ComputeHash(signature));
+                for (uint i = 0; i < count; i++)
+                {
+                    var entry = read(MinHeaderSize + (long)i * 8, 8);
+                    if (entry == null) return null;
+                    uint key = BeUInt32(entry, 0), value = BeUInt32(entry, 4);
+                    if (key == ExecutionInfoKey)
+                    {
+                        var e = read(value, 0x18);
+                        if (e == null) continue;
+                        info.HasExecutionInfo = true;
+                        info.MediaId = BeUInt32(e, 0); info.Version = BeUInt32(e, 4); info.BaseVersion = BeUInt32(e, 8); info.TitleId = BeUInt32(e, 0x0C);
+                        info.DiscNumber = e[0x12]; info.DiscCount = e[0x13];
+                    }
+                    else if (key == DeltaPatchDescriptorKey)
+                    {
+                        var p = read(value, 0x20);
+                        if (p == null || p.Length < 0x20) continue;
+                        info.IsPatch = true;
+                        info.PatchTargetVersion = BeUInt32(p, 4); info.PatchSourceVersion = BeUInt32(p, 8);
+                        info.PatchDigestSource = Convert.ToHexString(p, 0x0C, 0x14);
+                    }
+                }
+                return info;
+            }
+            catch (Exception ex) { Log.Warn("could not read the XEX header", ex); return null; }
+        }
+
+        private const uint DeltaPatchDescriptorKey = 0x000005FFu;
 
         /// <summary>Xbox 360 headers are big-endian; the BCL's BitConverter is not.</summary>
         public static uint BeUInt32(byte[] b, int offset)

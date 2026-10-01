@@ -58,11 +58,20 @@ namespace LbIntegrations.Xenia
         public byte Disc;
         public string Name = "";        // the package's name, or the file's
         public string Problem = "";     // why it is Invalid
+        /// <summary>A game's: the SHA-1 of its default.xex's RSA signature. An update's: the digest_source of its patch - the
+        /// game it applies to is the one with that digest, Xenia's own test (KernelState::IsPatchSignatureProper). Empty
+        /// when it could not be read (a Games on Demand package, a .zar).</summary>
+        public string Digest = "";
+        /// <summary>An update's patch: the version it takes the game from, and to ("0.0.0.5" -> "0.0.3.5").</summary>
+        public uint PatchFrom, PatchTo;
+        /// <summary>A package's content id: two files holding the same package have the same one.</summary>
+        public string ContentId = "";
 
         public string VersionText => XeniaScan.VersionText(Version);
 
         public override string ToString()
-            => Kind + " " + TitleId + " " + (Kind == XeniaFileKind.Update ? "v" + VersionText + " " : "") + Name + (Problem.Length > 0 ? " - " + Problem : "");
+            => Kind + " " + TitleId + " " + (Kind == XeniaFileKind.Update ? XeniaScan.VersionText(PatchFrom) + " -> " + XeniaScan.VersionText(PatchTo) + " " : "") + Name
+               + (Digest.Length > 0 ? " [" + Digest.Substring(0, 8) + "]" : "") + (Problem.Length > 0 ? " - " + Problem : "");
     }
 
     internal static class XeniaScan
@@ -229,34 +238,69 @@ namespace LbIntegrations.Xenia
             {
                 if (Directory.Exists(path))
                 {
-                    var id = XeniaTitleId.Of(path);
-                    if (id == null) return Invalid(e, "an extracted disc whose default.xex does not read");
-                    e.Kind = XeniaFileKind.Game; e.TitleId = id;
-                    return e;
+                    var xex = System.IO.Path.Combine(path, "default.xex");
+                    XexInfo info;
+                    using (var fs = File.OpenRead(xex)) info = Xex.Info(XeniaPackageRead.Reader(fs));
+                    if (info == null || !info.HasExecutionInfo) return Invalid(e, "an extracted disc whose default.xex does not read");
+                    return FromExecutable(e, info);
                 }
                 if (size < 4) return Invalid(e, "empty");
-                byte[] head;
-                using (var fs = File.OpenRead(path)) head = Xex.ReadAt(fs, 0, 4);
-                if (head == null) return Invalid(e, "unreadable");
-
-                if (Stfs.IsStfs(head))
-                    return FromPackage(e, Stfs.Read(path), () => Directory.Exists(path + ".data"));
-                if (Xex.IsXex(head))
-                {
-                    var id = Xex.TitleIdOfFile(path);
-                    if (!id.HasValue) return Invalid(e, "an executable without a title id");
-                    e.Kind = XeniaFileKind.Game; e.TitleId = Xex.Format(id.Value);
-                    return e;
-                }
-                var ext = System.IO.Path.GetExtension(path);
-                if (ext.Equals(".zar", StringComparison.OrdinalIgnoreCase)) { e.Kind = XeniaFileKind.GameNoId; return e; }
-                var disc = Xdvdfs.TitleIdOfImage(path);
-                if (disc.HasValue) { e.Kind = XeniaFileKind.Game; e.TitleId = Xex.Format(disc.Value); return e; }
-                return Invalid(e, ext.Equals(".iso", StringComparison.OrdinalIgnoreCase) ? "not an Xbox 360 disc image" : "not Xbox 360 content");
+                using var file = File.OpenRead(path);
+                return FromContent(e, XeniaPackageRead.Reader(file), System.IO.Path.GetExtension(path), () => Directory.Exists(path + ".data"), disc: true);
             }
             catch (Exception ex) { return Invalid(e, "could not be read: " + ex.Message); }
         }
 
+        /// <summary>What a file's content makes of an entry - a file on disk or an archive's entry, read through
+        /// <paramref name="read"/>. <paramref name="disc"/>: may it be a disc image (never in an archive: that would mean
+        /// decompressing gigabytes to find its executable).</summary>
+        private static XeniaScanEntry FromContent(XeniaScanEntry e, Func<long, int, byte[]> read, string ext, Func<bool> hasData, bool disc)
+        {
+            var head = read(0, Stfs.HeaderSize);
+            if (head == null || head.Length < 4) return Invalid(e, "empty");
+            if (Stfs.IsStfs(head))
+            {
+                var info = Stfs.Parse(head);
+                FromPackage(e, info, hasData);
+                if (info == null) return e;
+                e.ContentId = info.ContentId;
+                if (e.Kind == XeniaFileKind.Update)
+                {
+                    // The truth of an update is its patch: the game it applies to (the digest) and the versions.
+                    var patch = XeniaPackageRead.UpdatePatch(read);
+                    if (patch != null && patch.IsPatch) { e.Digest = patch.PatchDigestSource; e.PatchFrom = patch.PatchSourceVersion; e.PatchTo = patch.PatchTargetVersion; }
+                    else e.Problem = "its patch (default.xexp) does not read: which game it applies to is not known";
+                }
+                else if (e.Kind == XeniaFileKind.Game && info.VolumeType == 0)
+                {
+                    var xex = XeniaPackageRead.GameExecutable(read);
+                    if (xex != null) e.Digest = xex.SignatureDigest;
+                }
+                return e;
+            }
+            if (Xex.IsXex(head))
+            {
+                var info = Xex.Info(read);
+                if (info == null || !info.HasExecutionInfo) return Invalid(e, "an executable without a title id");
+                return FromExecutable(e, info);
+            }
+            if (ext.Equals(".zar", StringComparison.OrdinalIgnoreCase)) { e.Kind = XeniaFileKind.GameNoId; return e; }
+            if (disc)
+            {
+                var info = XeniaPackageRead.DiscExecutable(read);
+                if (info != null && info.HasExecutionInfo) return FromExecutable(e, info);
+            }
+            return Invalid(e, ext.Equals(".iso", StringComparison.OrdinalIgnoreCase) ? "not an Xbox 360 disc image" : "not Xbox 360 content");
+        }
+
+        private static XeniaScanEntry FromExecutable(XeniaScanEntry e, XexInfo info)
+        {
+            e.Kind = XeniaFileKind.Game;
+            e.TitleId = Xex.Format(info.TitleId);
+            e.MediaId = info.MediaId; e.Version = info.Version; e.BaseVersion = info.BaseVersion; e.Disc = info.DiscNumber;
+            e.Digest = info.SignatureDigest;
+            return e;
+        }
         /// <summary>What a package's header makes of an entry - a file's or an archive entry's. <paramref name="hasData"/>:
         /// is its &lt;name&gt;.data folder there (a Games on Demand package is nothing without it)?</summary>
         private static XeniaScanEntry FromPackage(XeniaScanEntry e, StfsInfo info, Func<bool> hasData)
@@ -314,18 +358,11 @@ namespace LbIntegrations.Xenia
                         }
                         else
                         {
-                            byte[] head;
-                            using (var s = entry.OpenEntryStream()) head = ReadUpTo(s, Math.Max(Stfs.HeaderSize, 0x10000));
-                            if (head.Length < 4) Invalid(e, "empty");
-                            else if (Stfs.IsStfs(head))
-                                FromPackage(e, Stfs.Parse(head), () => keys.Any(k => k.StartsWith(key + ".data/", StringComparison.OrdinalIgnoreCase)));
-                            else if (Xex.IsXex(head))
-                            {
-                                var id = Xex.TitleId((offset, length) => offset + length <= head.Length ? head.Skip((int)offset).Take(length).ToArray() : null);
-                                if (id.HasValue) { e.Kind = XeniaFileKind.Game; e.TitleId = Xex.Format(id.Value); }
-                                else Invalid(e, "an executable without a title id (or one whose header is past the first 64 KB)");
-                            }
-                            else Invalid(e, "not Xbox 360 content");
+                            // Decompressed as far as the reading goes - a header, a patch, an executable's headers - and no further.
+                            using var s = entry.OpenEntryStream();
+                            var seq = new SequentialRead(s);
+                            FromContent(e, seq.Read, System.IO.Path.GetExtension(key),
+                                        () => keys.Any(k => k.StartsWith(key + ".data/", StringComparison.OrdinalIgnoreCase)), disc: false);
                         }
                     }
                     catch (Exception ex) { Invalid(e, "could not be read: " + ex.Message); }
@@ -369,7 +406,8 @@ namespace LbIntegrations.Xenia
 
         // ── the cache file ───────────────────────────────────────────────────
 
-        private const string Header = "path\tsize\tticks\tkind\ttitle_id\tcontent_type\tmedia_id\tversion\tbase_version\tdisc\tname\tproblem";
+        /// <summary>The first line - and the format's version: a cache written by an older one is read again from the files.</summary>
+        private const string Header = "path\tsize\tticks\tkind\ttitle_id\tcontent_type\tmedia_id\tversion\tbase_version\tdisc\tname\tproblem\tdigest\tpatch_from\tpatch_to\tcontent_id";
 
         private static Dictionary<string, XeniaScanEntry> Load()
         {
@@ -379,15 +417,17 @@ namespace LbIntegrations.Xenia
                 try
                 {
                     if (!File.Exists(CachePath)) return map;
-                    foreach (var line in File.ReadAllLines(CachePath, Encoding.UTF8).Skip(1))
+                    var lines = File.ReadAllLines(CachePath, Encoding.UTF8);
+                    if (lines.Length == 0 || lines[0] != Header) { Log.Info("scan cache: written by an older version - every file is read again"); return map; }
+                    foreach (var line in lines.Skip(1))
                     {
                         var c = line.Split('\t');
-                        if (c.Length < 12 || !Enum.TryParse<XeniaFileKind>(c[3], out var kind)) continue;
+                        if (c.Length < 16 || !Enum.TryParse<XeniaFileKind>(c[3], out var kind)) continue;
                         map[c[0]] = new XeniaScanEntry
                         {
                             Path = c[0], Size = L(c[1]), Ticks = L(c[2]), Kind = kind, TitleId = c[4],
                             ContentType = U(c[5]), MediaId = U(c[6]), Version = U(c[7]), BaseVersion = U(c[8]), Disc = (byte)L(c[9]),
-                            Name = c[10], Problem = c[11],
+                            Name = c[10], Problem = c[11], Digest = c[12], PatchFrom = U(c[13]), PatchTo = U(c[14]), ContentId = c[15],
                         };
                     }
                 }
@@ -407,7 +447,7 @@ namespace LbIntegrations.Xenia
                     lines.AddRange(map.Values.OrderBy(e => e.Path, StringComparer.OrdinalIgnoreCase).Select(e => string.Join("\t",
                         e.Path, e.Size.ToString(CultureInfo.InvariantCulture), e.Ticks.ToString(CultureInfo.InvariantCulture), e.Kind, e.TitleId,
                         e.ContentType.ToString("X8"), e.MediaId.ToString("X8"), e.Version.ToString("X8"), e.BaseVersion.ToString("X8"),
-                        e.Disc.ToString(CultureInfo.InvariantCulture), Clean(e.Name), Clean(e.Problem))));
+                        e.Disc.ToString(CultureInfo.InvariantCulture), Clean(e.Name), Clean(e.Problem), e.Digest, e.PatchFrom.ToString("X8"), e.PatchTo.ToString("X8"), e.ContentId)));
                     var tmp = CachePath + ".tmp";
                     File.WriteAllLines(tmp, lines, new UTF8Encoding(false));
                     File.Move(tmp, CachePath, overwrite: true);

@@ -32,6 +32,9 @@ namespace LbIntegrations.Xenia
         public uint VolumeType;
         /// <summary>The package's own name (English, the first language) and its game's, empty when it has none.</summary>
         public string DisplayName = "", TitleName = "";
+        /// <summary>The package's content id (XContentHeader +0x32C, 20 bytes) in hex: the same package under two file names
+        /// has the same one.</summary>
+        public string ContentId = "";
     }
 
     internal static class Stfs
@@ -84,6 +87,7 @@ namespace LbIntegrations.Xenia
                     VolumeType = head.Length >= VolumeTypeOffset + 4 ? Xex.BeUInt32(head, VolumeTypeOffset) : 0,
                     DisplayName = Utf16(head, DisplayNameOffset, 0x100),
                     TitleName = Utf16(head, TitleNameOffset, 0x80),
+                    ContentId = head.Length >= 0x340 ? Convert.ToHexString(head, 0x32C, 0x14) : "",
                 };
             }
             catch { return null; }
