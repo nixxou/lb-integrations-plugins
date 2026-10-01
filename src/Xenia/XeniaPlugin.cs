@@ -539,6 +539,14 @@ namespace LbIntegrations.Xenia
                 }
                 catch (Exception ex) { Log.Info("compatibility: " + ex.Message); }
 
+                // A request a launcher left at the last session (XeniaRelaunch), adopted before anything looks at the game.
+                try
+                {
+                    var e0 = ResolveFullPath(args?.EmulatorBeingLaunched?.ApplicationPath);
+                    var r0 = ResolveFullPath(args?.GameBeingLaunched?.ApplicationPath);
+                    if (!string.IsNullOrEmpty(e0) && !string.IsNullOrEmpty(r0)) XeniaRelaunch.AdoptPending(e0, r0);
+                }
+                catch { }
                 string unpacked = null;
                 // The game's folder, its updates and DLC sorted (XeniaScan): long once for a big folder, then a walk and the
                 // cache - with a progress window when it takes a while.

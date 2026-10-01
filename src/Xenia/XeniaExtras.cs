@@ -165,6 +165,14 @@ namespace LbIntegrations.Xenia
             var all = XeniaScan.CachedAll().Where(e => SourceExists(e.Path)).ToList();
             var game = all.FirstOrDefault(e => e.Kind == XeniaFileKind.Game && string.Equals(e.Path, rom, StringComparison.OrdinalIgnoreCase))
                        ?? all.FirstOrDefault(e => e.Kind == XeniaFileKind.Game && e.Path.StartsWith(rom + "|", StringComparison.OrdinalIgnoreCase));
+            // A launcher (Minecraft's disc): the game it starts is what its updates and DLC go with - XeniaRelaunch.
+            var started = XeniaRelaunch.TargetOf(rom);
+            if (started != null)
+            {
+                var fi = new FileInfo(started);
+                var real = XeniaScan.Classify(started, fi.Exists ? fi.Length : 0, fi.Exists ? fi.LastWriteTimeUtc.Ticks : 0);
+                if (real.Kind == XeniaFileKind.Game && real.TitleId.Length > 0) { real.Path = game?.Path ?? rom; game = real; }
+            }
             if (game == null || game.TitleId.Length == 0) return null;
 
             var x = new XeniaGameExtras { Game = game, Folder = GameFolder(layout, rom, game.TitleId) };

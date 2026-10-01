@@ -32,6 +32,9 @@ namespace LbIntegrations.Xenia
         public static string Of(string path)
         {
             if (string.IsNullOrWhiteSpace(path)) return null;
+            // A launcher seen to start another game (Minecraft's disc): that game's title id - XeniaRelaunch.
+            var started = XeniaRelaunch.TargetOf(path);
+            if (started != null && !string.Equals(started, path, StringComparison.OrdinalIgnoreCase)) { var id = Of(started); if (id != null) return id; }
 
             string key;
             try

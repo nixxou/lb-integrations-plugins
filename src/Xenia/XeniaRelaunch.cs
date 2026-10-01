@@ -33,18 +33,28 @@ namespace LbIntegrations.Xenia
 
         /// <summary>At a launch: a request left behind is adopted, then the game's own redirection, if any - the path to hand
         /// Xenia as --target and the module to start in it (null for default.xex). Null when the game is not a launcher.</summary>
-        public static (string Target, string Module)? Before(string exe, string rom)
+        /// <summary>First thing at a launch: a request a previous session left behind is adopted - for the game last launched,
+        /// or this one when none is known - so that everything after it sees the game as what it really starts.</summary>
+        public static void AdoptPending(string exe, string rom)
         {
             try
             {
-                var dir = Path.GetDirectoryName(exe);
-                var file = Path.Combine(dir, FileName);
+                var file = Path.Combine(Path.GetDirectoryName(exe), FileName);
                 if (File.Exists(file))
                 {
                     var last = File.Exists(LastPath) ? File.ReadAllText(LastPath).Trim() : null;
                     Adopt(file, string.IsNullOrEmpty(last) ? rom : last);
                 }
+                Directory.CreateDirectory(Path.GetDirectoryName(LastPath));
                 File.WriteAllText(LastPath, rom);
+            }
+            catch (Exception ex) { Log.Warn("relaunch: pending request", ex); }
+        }
+
+        public static (string Target, string Module)? Before(string exe, string rom)
+        {
+            try
+            {
 
                 var map = Load();
                 if (!map.TryGetValue(rom, out var r)) return null;
@@ -59,6 +69,19 @@ namespace LbIntegrations.Xenia
                 return (r.Host, r.Module);
             }
             catch (Exception ex) { Log.Warn("relaunch", ex); return null; }
+        }
+
+        /// <summary>The game a launcher starts, when it has been seen to start one - null otherwise. What identifies such a game
+        /// (its title id, the executable its updates name) is THAT package, not the launcher.</summary>
+        public static string TargetOf(string rom)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(rom)) return null;
+                var map = Load();
+                return map.TryGetValue(rom, out var r) && (File.Exists(r.Host) || Directory.Exists(r.Host)) ? r.Host : null;
+            }
+            catch { return null; }
         }
 
         /// <summary>Once Xenia has come and gone: a request it wrote in this session is this game's.</summary>
