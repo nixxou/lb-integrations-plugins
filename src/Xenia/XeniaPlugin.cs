@@ -370,6 +370,11 @@ namespace LbIntegrations.Xenia
                 Log.Info("installed to " + targetDir + " - storage root: " + layout.StorageRoot
                          + " (" + layout.Reason + ")");
 
+                // Xenia's compatibility list, whole, at every install and update - see XeniaCompat. Its failure is a
+                // line in the log, never a failed install.
+                Report(args, "Downloading Xenia's compatibility list...", null);
+                XeniaCompat.Build(TimeSpan.FromSeconds(60), m => Report(args, m, null));
+
                 if (reinstall)
                 {
                     try { args.ExistingEmulator.ApplicationPath = MakeRelativeToLaunchBox(exe); } catch { }
@@ -490,6 +495,17 @@ namespace LbIntegrations.Xenia
         {
             try
             {
+                // The game's state in Xenia's compatibility list, in the log - and the list brought up to date in the
+                // background when it is a few hours old, never on the launch's time (XeniaCompat).
+                try
+                {
+                    XeniaCompat.RefreshSoon(TimeSpan.FromHours(6), TimeSpan.FromSeconds(20));
+                    var rom = ResolveFullPath(args?.GameBeingLaunched?.ApplicationPath);
+                    var titleId = string.IsNullOrEmpty(rom) ? null : XeniaTitleId.Of(rom);
+                    if (titleId != null) Log.Info("compatibility of " + titleId + ": " + XeniaCompat.Describe(titleId));
+                }
+                catch (Exception ex) { Log.Info("compatibility: " + ex.Message); }
+
                 var current = args?.CurrentCommandLine ?? "";
                 var added = new List<string>();
                 if (!HasOption(current, "license_mask")) added.Add("--license_mask=1");
