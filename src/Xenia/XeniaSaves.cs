@@ -118,7 +118,7 @@ namespace LbIntegrations.Xenia
                 IsDirectory = true,
                 OriginalFileName = XeniaContent.SavedGameType,
                 SaveGroupId = GroupPrefix + unit.TitleId,
-                SaveGroupName = SaveNameOf(unit, game),
+                SaveGroupName = SaveNameOf(unit, game) + UpdateTag(layout, unit.TitleId),
                 DisplayChipText = ChipText,
                 ReportedFileSizeBytes = unit.SizeBytes > 0 ? unit.SizeBytes : (long?)null,
                 ReportedLastModifiedUtc = unit.LastWriteUtc == default ? (DateTime?)null : unit.LastWriteUtc,
@@ -136,6 +136,24 @@ namespace LbIntegrations.Xenia
             }
             if (unit.Packages.Count > 1) return unit.Packages.Count + " saves";
             return Safe(() => game.Title) ?? unit.TitleId;
+        }
+
+        /// <summary>The title update this game runs with now, for the save's default name: " [Title Update 3]", or empty when
+        /// it has none. The one Xenia applies - the first file of content\0000000000000000\<title id>\000B0000, the order
+        /// it lists them in - named by its package, else by its version. A NAME ONLY (Mehdi, 01/10): nothing else depends on it.</summary>
+        private static string UpdateTag(XeniaLayout layout, string titleId)
+        {
+            try
+            {
+                var dir = Path.Combine(layout.ContentRoot, new string('0', 16), titleId, "000B0000");
+                if (!Directory.Exists(dir)) return "";
+                var first = Directory.GetFiles(dir).OrderBy(p => Path.GetFileName(p), StringComparer.OrdinalIgnoreCase).FirstOrDefault();
+                var info = first == null ? null : Stfs.Read(first);
+                if (info == null) return "";
+                var name = info.DisplayName.Length > 0 ? info.DisplayName : "TU " + XeniaScan.VersionText(info.Version);
+                return " [" + name + "]";
+            }
+            catch { return ""; }
         }
 
         // ── the container contract ───────────────────────────────────────────
