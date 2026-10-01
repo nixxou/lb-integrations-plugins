@@ -52,6 +52,41 @@ namespace LbIntegrations.Probe
             return b;
         }
 
+        /// <summary>--xenia-scan-dir &lt;folder&gt;: a real folder sorted, every field shown, twice (the second from the cache).
+        /// The cache in the temp folder; the folder only read.</summary>
+        public static bool Dir(Assembly asm, string folder)
+        {
+            var flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
+            var scan = asm.GetType("LbIntegrations.Xenia.XeniaScan", true);
+            var cache = Path.Combine(Path.GetTempPath(), "lbip-xenia-scan-dir-" + Guid.NewGuid().ToString("N") + ".tsv");
+            scan.GetField("CacheOverride", flags).SetValue(null, cache);
+            try
+            {
+                for (int pass = 1; pass <= 2; pass++)
+                {
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    var all = ((IEnumerable)scan.GetMethod("Scan", flags).Invoke(null, new object[] { folder, null, null })).Cast<object>().ToList();
+                    Console.WriteLine("  pass " + pass + ": " + all.Count + " entries in " + sw.ElapsedMilliseconds + " ms");
+                    if (pass == 2) break;
+                    foreach (var e in all.OrderBy(x => x.GetType().GetField("Path").GetValue(x)))
+                    {
+                        string G(string n) => Convert.ToString(e.GetType().GetField(n).GetValue(e));
+                        uint U(string n) => (uint)e.GetType().GetField(n).GetValue(e);
+                        Console.WriteLine("    " + G("Path").Substring(folder.TrimEnd('\\').Length + 1));
+                        Console.WriteLine("        " + G("Kind") + "  title " + G("TitleId") + "  type " + U("ContentType").ToString("X8") + "  media " + U("MediaId").ToString("X8")
+                                          + "  version " + U("Version").ToString("X8") + " (" + e.GetType().GetProperty("VersionText").GetValue(e) + ")  base " + U("BaseVersion").ToString("X8")
+                                          + "  disc " + G("Disc") + "  name \"" + G("Name") + "\"" + (G("Problem").Length > 0 ? "  PROBLEM " + G("Problem") : ""));
+                    }
+                }
+            }
+            finally
+            {
+                scan.GetField("CacheOverride", flags).SetValue(null, null);
+                try { File.Delete(cache); } catch { }
+            }
+            return true;
+        }
+
         public static bool Run(Assembly asm, string iso)
         {
             _bad = 0;
