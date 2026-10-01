@@ -78,10 +78,17 @@ namespace LbIntegrations.SuperZsnes
             // Unity's FullScreenMode: 0 exclusive, 1 full screen window, 2 maximized window, 3 windowed.
             var mode = Value("Screenmanager Fullscreen mode");
             if (mode != null) known["unity.screen-fullscreen"] = mode == 3 ? "windowed" : "fullscreen";
+            // "Use Native" 1 (the first run's, measured 01/10 with the key deleted): the display's own resolution, whatever
+            // the width and height beside it say (1920 x 1080 then).
+            var native = Value("Screenmanager Resolution Use Native");
             var w = Value("Screenmanager Resolution Width");
             var h = Value("Screenmanager Resolution Height");
-            if (w != null) known["unity.screen-width"] = w.Value.ToString(CultureInfo.InvariantCulture);
-            if (h != null) known["unity.screen-height"] = h.Value.ToString(CultureInfo.InvariantCulture);
+            if (native == 1) { known["unity.screen-width"] = "the display's"; known["unity.screen-height"] = "the display's"; }
+            else
+            {
+                if (w != null) known["unity.screen-width"] = w.Value.ToString(CultureInfo.InvariantCulture);
+                if (h != null) known["unity.screen-height"] = h.Value.ToString(CultureInfo.InvariantCulture);
+            }
             // 0-based in the registry, 1-based on -monitor.
             var monitor = Value("UnitySelectMonitor");
             if (monitor != null) known["unity.monitor"] = (monitor.Value + 1).ToString(CultureInfo.InvariantCulture);

@@ -32,6 +32,7 @@ date plutôt que d'écraser.
 | SRAM lue où elle est écrite | avec `srmPath` posé, la SRAM est LUE dans `saves\` : une `.srm` laissée à côté de la ROM n'est plus vue | idem |
 | dossiers du pack (`DataFolders.cs`) | posés dans le postfix de `LoadMainMenuSave`, **avant** « SRAM Data Loaded » ; relancé avec `--nixx-data-folders=off`, les trois chemins sont toujours dans `szsnes_ui.data`. Un déplacement de ce qui était à côté de la ROM a été écrit et mesuré (SRAM déplacée bien chargée), puis **retiré** à la demande de Mehdi : les anciennes saves restent où elles sont | LogOutput 01/10 10:00, `options.json` 10:01 |
 | registre | `HKCU\Software\ZEMU Software Inc.\SUPERZSNES` : seulement Screenmanager*, unity.* | ProcMon 14:52 |
+| registre, premier lancement | clé effacée puis lancement sans argument : `Fullscreen mode` 0 (exclusif), `Resolution Use Native` 1, `Resolution Width/Height` 1920 × 1080 (sans effet tant que Use Native vaut 1), `UnitySelectMonitor` 0. La clé est **commune à toutes les installations** de l'utilisateur Windows ; `-screen-*` sur la ligne de commande y reste écrit après la session | 01/10 10:3x, clé sauvegardée avant |
 
 ## Ligne de commande
 
