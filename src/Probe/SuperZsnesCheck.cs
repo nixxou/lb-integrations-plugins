@@ -301,7 +301,7 @@ namespace LbIntegrations.Probe
                 Check("declares no BIOS", !plugin.GetBiosFilesForPlatform(Snes).Any()
                                           && !plugin.GetBiosFilesForPlatform(exe, Snes, "").Any());
                 Check("RetroAchievements: not by the plugin", !plugin.SupportsRetroAchievements(exe).IsSupported);
-                Check("save management is off, on purpose", !plugin.SupportsSaveManagement());
+                Check("save management is on: the cartridge save and the states", plugin.SupportsSaveManagement());
                 Check("the launch is passed through untouched",
                       plugin.PrepareEmulatorForLaunch(new PrepareForLaunchArgs(mine, null, "", null, null))?.NewCommandLine == null);
 
@@ -584,6 +584,29 @@ namespace LbIntegrations.Probe
                     Check("the plugin embeds the SUPER ZSNES documentation folder (README + 9 chapters)", realDocs.Count >= 10);
                     Check("the runbook for a broken update travels with the emulator", realDocs.Contains("07-runbook.md") && realDocs.Contains("README.md"));
                 }
+
+                // ── save management: no settings file, so beside the ROM ─────────
+                Console.WriteLine("  saves and states");
+                var roms = Path.Combine(root, "roms");
+                var szData = Path.Combine(roms, "Game (USA).data.szsnes");
+                Directory.CreateDirectory(szData);
+                var romFile = Path.Combine(roms, "Game (USA).sfc");
+                File.WriteAllBytes(romFile, new byte[1024]);
+                File.WriteAllBytes(Path.Combine(roms, "Game (USA).srm"), new byte[8192]);
+                File.WriteAllBytes(Path.Combine(szData, "Game (USA).szst1"), new byte[100]);
+                File.WriteAllBytes(Path.Combine(szData, "Game (USA).szst-last"), new byte[100]);
+                File.WriteAllBytes(Path.Combine(szData, "Game (USA).szhistory"), new byte[10]);
+                var emuForSaves = new StubEmulator { Title = "Nixx-SuperZSNES", ApplicationPath = exe };
+                var gameForSaves = StubGame.Create("g-saves", "Game", romFile, emuForSaves.Id);
+                var listed = plugin.GetSaves(new GetSavesArgs { Emulator = emuForSaves, Games = new[] { gameForSaves } });
+                var szRows = listed?.FoundSaves?.ToList() ?? new List<GameSaveBase>();
+                Check("the cartridge save beside the ROM is listed", szRows.Count(r => !(r is GameSaveState) && r.FileLocation.EndsWith("Game (USA).srm")) == 1,
+                      string.Join(" | ", szRows.Select(r => r.FileLocation)));
+                Check("slot 1's state is listed, as slot 1", szRows.OfType<GameSaveState>().Count() == 1 && szRows.OfType<GameSaveState>().First().Slot == 1);
+                Check("neither the resume state (-last) nor the history is", !szRows.Any(r => r.FileLocation.Contains("-last") || r.FileLocation.Contains("szhistory")));
+                var removed = plugin.RemoveSave(szRows.OfType<GameSaveState>().First());
+                Check("deleting the state deletes its file, and only it", removed != null && removed.WasSuccess && !File.Exists(Path.Combine(szData, "Game (USA).szst1"))
+                      && File.Exists(Path.Combine(szData, "Game (USA).szst-last")));
             }
             finally
             {

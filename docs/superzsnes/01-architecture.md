@@ -35,6 +35,7 @@ dans LaunchBox, reproductible à la main, et l'émulateur ignore tout argument q
 | `SuperZsnesSettings.cs` | `settings.ini` de l'utilisateur, rendu de la ligne de commande, `Append` sans doublon |
 | `SuperZsnesSettingsPage.cs` | l'onglet SUPER ZSNES de la fenêtre Nixx, plus le bouton d'installation de BepInEx |
 | `SuperZsnesBepInEx.cs` | le **déployeur** : archive épinglée, hash, extraction, config silencieuse, plugin, docs |
+| `SuperZsnesSaves.cs` | la gestion des saves de LaunchBox : la `.srm` et les états `.szst<n>` là où les réglages de l'émulateur les rangent ; `-last` (reprise) et l'historique écartés |
 | `SuperZsnesAhk.cs` | les scripts AutoHotkey (aujourd'hui : sortie Alt+F4, le reste en commentaires) |
 | `Archives.cs`, `Log.cs` | extraction par-dessus, journal `%LOCALAPPDATA%\lb-integrations-plugins\superzsnes.log` |
 

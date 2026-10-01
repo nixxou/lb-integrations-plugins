@@ -37,6 +37,28 @@ namespace LbIntegrations.SuperZsnes
         }
 
 #pragma warning disable SYSLIB5005 // System.Formats.Nrbf: stable since 10.0, the attribute is kept on some members
+        /// <summary>Some members of the settings file as they are - a string, a bool, a number, or null for a null or a
+        /// record. Empty when the file is not there or cannot be read. For the save management's folders.</summary>
+        public static Dictionary<string, object> Raw(string exePath, params string[] members)
+        {
+            var raw = new Dictionary<string, object>(StringComparer.Ordinal);
+            try
+            {
+                var file = SuperZsnesPaths.SettingsFile(exePath);
+                if (file == null || !File.Exists(file)) return raw;
+                using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                if (!(NrbfDecoder.Decode(stream, leaveOpen: false) is ClassRecord root)) return raw;
+                foreach (var m in members)
+                    if (root.HasMember(m))
+                    {
+                        var v = root.GetRawValue(m);
+                        raw[m] = v is SerializationRecord ? null : v;
+                    }
+            }
+            catch (Exception ex) { Log.Info("settings file: could not be read (" + ex.Message + ")"); }
+            return raw;
+        }
+
         private static void FromSettingsFile(string exePath, Dictionary<string, string> known)
         {
             var file = SuperZsnesPaths.SettingsFile(exePath);
