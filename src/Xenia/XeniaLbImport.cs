@@ -15,6 +15,11 @@
 // WHEN: the platform page said "Microsoft Xbox 360", by its platform or its scrape-as. On by default, turned off in the
 // Nixx window's Xenia tab (content.ini, import_clean=off).
 //
+// AND THE SCAN IS MADE AS FOR ANY ROM (Mehdi, 01/10): an Xbox 360 import listed the ISO of a folder and none of its
+// zips. As Vita3kLbImport does for Vita, the wizard is shown "Microsoft Xbox 360 Temp" for the scan only - from "Next"
+// on the custom options to "Finish" - and the real platform goes back onto every record and the platform page before
+// anything is imported.
+//
 // ONLY INSIDE LAUNCHBOX. Install() looks at the process first: in LiteBox and Big Box nothing is registered and no
 // view model is read. The wizard is WPF, its core obfuscated: class handlers on every window's Loaded and every
 // button's Click, and the view models' readable property names - as Vita3kLbImport, measured 27/09 on LaunchBox 14.
@@ -35,9 +40,15 @@ namespace LbIntegrations.Xenia
         private const string WizardType = "WizardViewModel";
         private const string PlatformPage = "ImportWizardPlatformSelectViewModel";
         private const string GameListPage = "RomImportGameListViewModel";
+        private const string OptionsPage = "RomImportCustomOptionsViewModel";
+        internal const string StandIn = "Microsoft Xbox 360 Temp";
 
         private static bool _installed;
         private static object _platformPage, _cleanedList;
+
+        /// <summary>What was swapped, and from what - null for a value left alone.</summary>
+        private static string _swappedPlatform, _swappedScrapeAs;
+        private static bool Swapped => _swappedPlatform != null || _swappedScrapeAs != null;
 
         public static bool Wanted
             => !(XeniaExtras.ReadSettings().TryGetValue("import_clean", out var v) && string.Equals(v, "off", StringComparison.OrdinalIgnoreCase));
@@ -71,6 +82,9 @@ namespace LbIntegrations.Xenia
             {
                 System.Windows.EventManager.RegisterClassHandler(typeof(System.Windows.Window),
                     System.Windows.FrameworkElement.LoadedEvent, new System.Windows.RoutedEventHandler(WindowLoaded));
+                // A CLASS handler runs before the wizard's own Next and Finish; handledEventsToo, as for Vita.
+                System.Windows.EventManager.RegisterClassHandler(typeof(System.Windows.Controls.Primitives.ButtonBase),
+                    System.Windows.Controls.Primitives.ButtonBase.ClickEvent, new System.Windows.RoutedEventHandler(ButtonClicked), true);
             }
             catch (Exception ex) { Log.Warn("[import] could not watch the import wizard", ex); }
         }
@@ -82,6 +96,7 @@ namespace LbIntegrations.Xenia
                 if (!(sender is System.Windows.Window window) || window.DataContext?.GetType().Name != WizardType) return;
                 _platformPage = null;
                 _cleanedList = null;
+                _swappedPlatform = _swappedScrapeAs = null;
                 if (window.DataContext is INotifyPropertyChanged notify)
                     notify.PropertyChanged += (s, a) => PageShown(window, s);
             }
@@ -94,7 +109,12 @@ namespace LbIntegrations.Xenia
             {
                 var page = CurrentPage(wizard);
                 var name = page?.GetType().Name;
-                if (name == PlatformPage) { _platformPage = page; _cleanedList = null; }
+                if (name == PlatformPage)
+                {
+                    _platformPage = page;
+                    _cleanedList = null;
+                    if (Swapped) Undo(page, "back on the platform page");
+                }
                 else if (name == GameListPage && !ReferenceEquals(_cleanedList, page) && IsXbox360() && Wanted)
                 {
                     _cleanedList = page;
@@ -105,8 +125,9 @@ namespace LbIntegrations.Xenia
         }
 
         private static bool IsXbox360()
-            => _platformPage != null && (string.Equals(Get(_platformPage, "Platform"), Platform, StringComparison.OrdinalIgnoreCase)
-                                         || string.Equals(Get(_platformPage, "ScrapeAs"), Platform, StringComparison.OrdinalIgnoreCase));
+            => Swapped || (_platformPage != null && (Is360(Get(_platformPage, "Platform")) || Is360(Get(_platformPage, "ScrapeAs"))));
+
+        private static bool Is360(string platform) => string.Equals(platform, Platform, StringComparison.OrdinalIgnoreCase);
 
         /// <summary>The list fills after its page appears (measured on Vita): the cleanup once it has stopped changing, 500 ms.</summary>
         private static void WhenFilled(System.Windows.Window window, object gameList)
@@ -182,6 +203,111 @@ namespace LbIntegrations.Xenia
             Log.Info("[import] the list put right: " + games + " game(s) kept, " + extras + " title update(s)/DLC removed (kept for their game), " + invalid + " file(s) that are not Xbox 360 games removed");
         }
 
+        // ── the swap (Mehdi, 01/10: LaunchBox may filter an Xbox 360 import - as Vita3kLbImport, a stand-in for the scan) ──
+
+        private static void ButtonClicked(object sender, System.Windows.RoutedEventArgs e)
+        {
+            try
+            {
+                if (!(sender is System.Windows.Controls.Primitives.ButtonBase button)) return;
+                var window = System.Windows.Window.GetWindow(button);
+                if (window == null || window.DataContext?.GetType().Name != WizardType) return;
+                var label = button.Content as string;
+                var page = CurrentPage(window.DataContext);
+                var name = page?.GetType().Name;
+                if (label == "Next" && name == OptionsPage) BeforeScan();
+                else if (label == "Finish" && name == GameListPage) BeforeImport(page);
+            }
+            catch (Exception ex) { Log.Warn("[import] wizard button", ex); }
+        }
+
+        /// <summary>"Next" on the custom options: the scan comes next, and must not see Xbox 360 - by the platform or the scrape-as.</summary>
+        private static void BeforeScan()
+        {
+            _cleanedList = null;                    // the scan fills the list again
+            var page = _platformPage;
+            if (page == null || Swapped || !Wanted) return;
+            var platform = Get(page, "Platform");
+            var scrapeAs = Get(page, "ScrapeAs");
+            bool byName = Is360(platform), byScrape = Is360(scrapeAs);
+            if (!byName && !byScrape) return;
+            if (byName)
+            {
+                if (Set(page, "Platform", StandIn) && Get(page, "Platform") == StandIn) _swappedPlatform = platform;
+                else Log.Warn("[import] the platform could not be swapped - it reads \"" + Get(page, "Platform") + "\"");
+            }
+            if (byScrape)
+            {
+                // In the drop-down's list first, or the binding may put it back to null.
+                if (ScrapeAsList(page) is IList list && !list.Contains(StandIn)) list.Add(StandIn);
+                if (Set(page, "ScrapeAs", StandIn) && Get(page, "ScrapeAs") == StandIn) _swappedScrapeAs = scrapeAs;
+                else Log.Warn("[import] the scrape-as could not be swapped - it reads \"" + Get(page, "ScrapeAs") + "\"");
+            }
+            if (Swapped)
+                Log.Info("[import] Xbox 360 games scanned as ROM files: platform \"" + platform + "\" -> \"" + Get(page, "Platform")
+                         + "\", scrape-as \"" + scrapeAs + "\" -> \"" + Get(page, "ScrapeAs") + "\" until Finish");
+        }
+
+        /// <summary>"Finish" on the game list, before the wizard imports: the real values go back - onto every record, then onto
+        /// the platform page.</summary>
+        private static void BeforeImport(object gameList)
+        {
+            if (!Swapped) return;
+            int records = 0, left = 0;
+            if (gameList?.GetType().GetProperty("Games")?.GetValue(gameList) is IEnumerable list)
+                foreach (var record in list.Cast<object>().ToList())
+                {
+                    records++;
+                    SetFields(record, StandIn, Platform);
+                    if (Get(record, "Platform") == StandIn) left++;
+                }
+            Undo(_platformPage, null);
+            if (left == 0) Log.Info("[import] restored before the import: " + records + " game(s), platform \"" + Get(_platformPage, "Platform") + "\", scrape-as \"" + Get(_platformPage, "ScrapeAs") + "\"");
+            else Log.Warn("[import] " + left + " of " + records + " game(s) still carry \"" + StandIn + "\" - LaunchBox will create that platform");
+        }
+
+        private static void Undo(object page, string why)
+        {
+            if (_swappedPlatform != null) Set(page, "Platform", _swappedPlatform);
+            if (_swappedScrapeAs != null)
+            {
+                Set(page, "ScrapeAs", _swappedScrapeAs);
+                if (ScrapeAsList(page) is IList list && list.Contains(StandIn)) list.Remove(StandIn);
+            }
+            _swappedPlatform = _swappedScrapeAs = null;
+            if (why != null) Log.Info("[import] " + why + ": the swap is undone");
+        }
+
+        private static object ScrapeAsList(object page)
+        {
+            try { return page?.GetType().GetProperty("ScrapeAsPlatforms", BindingFlags.Public | BindingFlags.Instance)?.GetValue(page); }
+            catch { return null; }
+        }
+
+        private static bool Set(object vm, string name, object value)
+        {
+            try
+            {
+                var p = vm?.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
+                if (p == null || !p.CanWrite) return false;
+                p.SetValue(vm, value);
+                return true;
+            }
+            catch (Exception ex) { Log.Warn("[import] could not set " + name, ex); return false; }
+        }
+
+        /// <summary>Every string field of a record holding exactly <paramref name="was"/> set to <paramref name="now"/> - a record's
+        /// Platform is read-only, its field's name obfuscated (measured on Vita, 27/09).</summary>
+        private static void SetFields(object record, string was, string now)
+        {
+            for (var t = record?.GetType(); t != null && t != typeof(object); t = t.BaseType)
+                foreach (var f in t.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+                {
+                    if (f.FieldType != typeof(string)) continue;
+                    try { if (string.Equals(f.GetValue(record) as string, was, StringComparison.Ordinal)) f.SetValue(record, now); }
+                    catch (Exception ex) { Log.Warn("[import] could not set a field of a game", ex); }
+                }
+        }
         private static string Full(string path)
         {
             try { return string.IsNullOrWhiteSpace(path) ? null : XeniaPlugin.ResolveFullPathForUi(path); } catch { return null; }
