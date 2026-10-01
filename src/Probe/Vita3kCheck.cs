@@ -3051,12 +3051,19 @@ namespace LbIntegrations.Probe
             }
 
             using var form = (System.Windows.Forms.Form)Activator.CreateInstance(formType, Entries(1));
-            formType.GetMethod("LoadExtras", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(form, null);
+            var loadExtras = formType.GetMethod("LoadExtras", BindingFlags.NonPublic | BindingFlags.Instance);
+            loadExtras.Invoke(form, new object[] { false });
             var updates = F<System.Collections.IList>(form, "_updates");
             var dlc = F<System.Collections.IList>(form, "_dlc");
             var auto = F<System.Windows.Forms.RadioButton>(form, "_updateAuto");
             var none = F<System.Windows.Forms.RadioButton>(form, "_updateNone");
             Console.WriteLine("            " + auto?.Text + " | " + updates.Count + " update(s) | " + dlc.Count + " DLC");
+            // "Look at the folder again": the same lists, built again - nothing added twice.
+            int u0 = updates.Count, d0 = dlc.Count;
+            loadExtras.Invoke(form, new object[] { true });
+            updates = F<System.Collections.IList>(form, "_updates"); dlc = F<System.Collections.IList>(form, "_dlc");
+            auto = F<System.Windows.Forms.RadioButton>(form, "_updateAuto"); none = F<System.Windows.Forms.RadioButton>(form, "_updateNone");
+            Check("looking at the folder again lists the same, nothing twice", updates.Count == u0 && dlc.Count == d0, updates.Count + " / " + dlc.Count);
             Check("it lists the two updates and the two DLC found", updates.Count == 2 && dlc.Count == 2);
             Check("with no choice made: Automatic, every DLC ticked", auto != null && auto.Checked
                   && dlc.Cast<object>().All(d => ((System.Windows.Forms.CheckBox)d.GetType().GetField("Item1").GetValue(d)).Checked));

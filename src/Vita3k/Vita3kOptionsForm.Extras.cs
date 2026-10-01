@@ -49,25 +49,33 @@ namespace LbIntegrations.Vita3k
             return _extrasTab;
         }
 
-        private void LoadExtras()
+        /// <summary>The tab filled: the game's folder scanned first (Vita3kScan - quick but for what is new), under a progress
+        /// window when that takes a while, as the Xbox 360's tab does. <paramref name="again"/>: the button "Look at the folder
+        /// again" - the ticks shown are kept.</summary>
+        private void LoadExtras(bool again = false)
         {
-            if (_extrasLoaded) return;
+            if (_extrasLoaded && !again) return;
             _extrasLoaded = true;
             var g = _games[0];
+            var shown = again && _found != null ? ExtrasChoice() : null;
             Cursor = Cursors.WaitCursor;
             string problem = null;
+            var window = Vita3kProgressWindow.Open("Nixx-Vita3K - Looking at the game's folder");
             try
             {
                 var content = Vita3kContent.Describe(g.RomFull, out problem);
                 if (content != null && !content.IsGame) problem = "this is not a game";
                 if (problem == null)
                 {
-                    _found = Vita3kExtras.Evaluate(g.RomFull, content, g.Title, g.InstallDir);
-                    _choiceWas = Vita3kExtrasChoice.Load(g.InstallDir, g.GameId);
+                    _found = Vita3kExtras.Evaluate(g.RomFull, content, g.Title, g.InstallDir, (step, f) => window?.Report(step, f));
+                    if (!again) _choiceWas = Vita3kExtrasChoice.Load(g.InstallDir, g.GameId);
                 }
             }
             catch (Exception ex) { problem = ex.Message; }
-            finally { Cursor = Cursors.Default; }
+            finally { window?.Dispose(); Cursor = Cursors.Default; }
+            var choice = shown ?? _choiceWas;
+            _updates.Clear();
+            _dlc.Clear();
 
             _extrasTab.Controls.Clear();
             if (_found == null)
@@ -80,6 +88,9 @@ namespace LbIntegrations.Vita3k
             void Add(Control c, int x) { c.Location = new Point(x, y); _extrasTab.Controls.Add(c); }
             Label Bold(string t) => new Label { Text = t, AutoSize = true, Font = new Font(Font, FontStyle.Bold) };
             Label Grey(string t) => new Label { Text = t, AutoSize = true, ForeColor = SystemColors.GrayText };
+
+            Add(new Label { Text = "Looked for in " + Vita3kScan.FolderFor(g.RomFull) + " and its subfolders, and wherever else updates and DLC of this game were seen.",
+                            AutoSize = true, MaximumSize = new Size(560, 0), ForeColor = SystemColors.GrayText }, 8); y += 40;
 
             Add(Bold("Update"), 8); y += 24;
             var highest = _found.Updates.FirstOrDefault();
@@ -100,19 +111,24 @@ namespace LbIntegrations.Vita3k
             foreach (var d in _found.Addons)
             {
                 var id = d.Content.ContentId ?? "";
-                var box = new CheckBox { AutoSize = true, Checked = _choiceWas == null || !_choiceWas.LeftOut.Contains(id),
+                var box = new CheckBox { AutoSize = true, Checked = choice == null || !choice.LeftOut.Contains(id),
                                          Text = (d.Content.Title ?? id) + "  -  " + d.Name };
                 Add(box, 18); y += 20;
                 Add(Grey(id + ", " + d.FoundBy + ", " + Vita3kExtras.Mb(d.Bytes)), 36); y += 22;
                 _dlc.Add((box, d));
             }
 
+            y += 10;
+            var rescan = new Button { Text = "Look at the folder again", AutoSize = true };
+            rescan.Click += (_, _) => LoadExtras(again: true);
+            Add(rescan, 8);
+
             // What is chosen now.
-            if (_choiceWas == null) _updateAuto.Checked = true;
-            else if (_choiceWas.NoUpdate) _updateNone.Checked = true;
+            if (choice == null) _updateAuto.Checked = true;
+            else if (choice.NoUpdate) _updateNone.Checked = true;
             else
             {
-                var chosen = _updates.FirstOrDefault(u => VitaExtra.SameRef(u.Update.Ref, _choiceWas.UpdatePath));
+                var chosen = _updates.FirstOrDefault(u => VitaExtra.SameRef(u.Update.Ref, choice.UpdatePath));
                 if (chosen.Button != null) chosen.Button.Checked = true; else _updateAuto.Checked = true;
             }
 
