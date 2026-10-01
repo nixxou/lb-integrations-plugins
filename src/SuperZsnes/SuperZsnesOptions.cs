@@ -85,7 +85,7 @@ namespace LbIntegrations.SuperZsnes
             Bool(OptionFamily.Plugin, "portable", "Integration", "Keep settings beside the emulator",
                  "persistentDataPath answers <exe>\\portable, so szsnes_ui.data lives there instead of %USERPROFILE%\\AppData\\LocalLow.", "on"),
             Bool(OptionFamily.Plugin, "data-folders", "Integration", "Saves, states and cheats beside the emulator",
-                 "The SRAM in <exe>\\saves, the states and history in <exe>\\states, the cheats in <exe>\\cheats, rather than beside the ROM - written into the emulator's settings, so it holds when the emulator is opened on its own too. Only an empty folder setting is filled; what was beside a ROM moves there when that game starts.", "on"),
+                 "The SRAM in <exe>\\saves, the states and history in <exe>\\states, the cheats in <exe>\\cheats, rather than beside the ROM - written into the emulator's settings, so it holds when the emulator is opened on its own too. Only an empty folder setting is filled; nothing already beside a ROM is moved.", "on"),
             Bool(OptionFamily.Plugin, "support-popup", "Integration", "Show the \"support us on Patreon\" dialog",
                  "The emulator raises it on its own schedule. Off: it is put back to sleep the frame it appears.", "off"),
             Bool(OptionFamily.Plugin, "version-popup", "Integration", "Show the \"a new version is out\" dialog",
