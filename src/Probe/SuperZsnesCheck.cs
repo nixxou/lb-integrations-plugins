@@ -149,6 +149,19 @@ namespace LbIntegrations.Probe
             return true;
         }
 
+        /// <summary>--superzsnes-current --emu SUPERZSNES.exe: what the options window reads as SUPER ZSNES's own values -
+        /// its settings file (NRBF) and Unity's registry values. Read only.</summary>
+        public static bool Current(EmulatorPlugin plugin, string exe)
+        {
+            var t = plugin.GetType().Assembly.GetType("LbIntegrations.SuperZsnes.SuperZsnesCurrent", true);
+            var values = (Dictionary<string, string>)t.GetMethod("Read", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, new object[] { exe });
+            Console.WriteLine();
+            Console.WriteLine("-- SUPER ZSNES's own values, read off " + exe + " ---");
+            foreach (var kv in values.OrderBy(kv => kv.Key)) Console.WriteLine("  " + kv.Key.PadRight(32) + kv.Value);
+            Console.WriteLine("  " + values.Count + " value(s)");
+            return values.Count > 0;
+        }
+
         public static bool Run(EmulatorPlugin plugin)
         {
             _fail = 0;

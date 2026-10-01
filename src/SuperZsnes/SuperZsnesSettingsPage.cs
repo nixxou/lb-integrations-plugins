@@ -71,14 +71,22 @@ namespace LbIntegrations.SuperZsnes
         }
 
         private readonly List<Row> _rows = new List<Row>();
+
+        /// <summary>What SUPER ZSNES runs on when nothing is passed, by IniKey - read off its files (SuperZsnesCurrent).</summary>
+        private static Dictionary<string, string> _current = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>"SUPER ZSNES's own", with its value when it is known.</summary>
+        private static string OwnOf(Option o) => _current.TryGetValue(o.IniKey, out var v) && !string.IsNullOrEmpty(v) ? Own + ": " + v : Own;
         private readonly TextBox _line;
         private readonly Label _count;
 
         /// <summary>The options <paramref name="show"/> picks, with <paramref name="saved"/>'s values; the in-process plugin's
         /// box under them when <paramref name="deploy"/>; <paramref name="where"/> at the bottom.</summary>
-        public SuperZsnesSettingsPage(Func<Option, bool> show, Dictionary<string, string> saved, string intro, bool deploy, string where)
+        public SuperZsnesSettingsPage(Func<Option, bool> show, Dictionary<string, string> saved, string intro, bool deploy, string where,
+                                      Dictionary<string, string> running = null)
         {
             saved = saved ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            _current = running ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var top = new Label { Dock = DockStyle.Top, Height = 52, Padding = new Padding(12, 8, 12, 0), ForeColor = SystemColors.GrayText, Text = intro };
 
             var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(8) };
@@ -132,7 +140,9 @@ namespace LbIntegrations.SuperZsnes
             Item(NotPassed, "Not passed: " + Own + ", or the pack's default");
             _count = new Label { Dock = DockStyle.Top, Height = 20, ForeColor = SystemColors.GrayText };
             _line = new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Font = new Font("Consolas", 9f), BackColor = SystemColors.Window };
-            var file = new Label { Dock = DockStyle.Bottom, Height = 18, ForeColor = SystemColors.GrayText, Text = where ?? "" };
+            // A text box, not a label: a long path in a label wraps at its first space and the line is lost (01/10).
+            var file = new TextBox { Dock = DockStyle.Bottom, ReadOnly = true, BorderStyle = BorderStyle.None, BackColor = SystemColors.Control,
+                                     ForeColor = SystemColors.GrayText, Text = where ?? "", TabStop = false };
             bottom.Controls.Add(_line);
             bottom.Controls.Add(_count);
             bottom.Controls.Add(legend);
@@ -176,13 +186,13 @@ namespace LbIntegrations.SuperZsnes
                 case Shape.Choice:
                 {
                     var c = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200, Margin = new Padding(3, 3, 0, 0) };
-                    c.Items.Add("<" + Own + ">");
+                    c.Items.Add("<" + OwnOf(o) + ">");
                     c.Items.AddRange(o.Choices);
                     c.SelectedIndex = 1 + Array.FindIndex(o.Choices, x => string.Equals(x, current, StringComparison.OrdinalIgnoreCase));
                     return c;
                 }
                 default:
-                    return Field(current ?? "", Own + (o.Default != null ? ": " + o.Default : "")
+                    return Field(current ?? "", (_current.ContainsKey(o.IniKey) ? OwnOf(o) : Own + (o.Default != null ? ": " + o.Default : ""))
                                                + (o.Kind != OptionKind.Text ? " (" + Range(o) + ")" : ""));
             }
         }
@@ -217,7 +227,7 @@ namespace LbIntegrations.SuperZsnes
             if (row.Editor is CheckBox c)
             {
                 bool on = c.CheckState == CheckState.Checked;
-                c.Text = row.Shape == Shape.Tri && c.CheckState == CheckState.Indeterminate ? Own
+                c.Text = row.Shape == Shape.Tri && c.CheckState == CheckState.Indeterminate ? OwnOf(row.Option)
                        : (on ? "on" : "off") + (row.Shape == Shape.Ours && on == OnByDefault(row.Option) ? " (default)" : "");
             }
             if (row.Bar != null) row.Bar.BackColor = ValueOf(row) != null ? Passed : NotPassed;

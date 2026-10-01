@@ -59,6 +59,9 @@
          same, because it picks its reader by sniffing the bytes: a switch to .7z upstream - Xenia
          did exactly that - then costs nothing here. -->
     <PackageReference Include="SharpCompress" Version="0.41.0" />
+    <!-- The emulator's settings file is .NET's binary format (NRBF): read, never instantiated, for the options window
+         to show what SUPER ZSNES runs on - see SuperZsnesCurrent.cs. -->
+    <PackageReference Include="System.Formats.Nrbf" Version="10.0.0" />
   </ItemGroup>
 
   <ItemGroup>
