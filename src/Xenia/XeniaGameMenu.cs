@@ -66,6 +66,7 @@ namespace LbIntegrations.Xenia
         private readonly TextBox _line;
         private readonly Panel _compat;
         private readonly string _titleId;
+        private readonly XeniaExtrasTab _extrasTab;
 
         public XeniaGameOptionsForm(List<IGame> games)
         {
@@ -114,6 +115,17 @@ namespace LbIntegrations.Xenia
             _rows.Changed += ShowLine;
             ShowLine();
             tabs.TabPages.Add(optionsTab);
+
+            // ── Updates & DLC: one game at a time - what it can take depends on its own executable ──
+            var extrasTab = new TabPage("Updates & DLC") { UseVisualStyleBackColor = true };
+            if (_games.Count == 1)
+            {
+                _extrasTab = new XeniaExtrasTab(XeniaPlugin.ResolveFullPathForUi(Safe(() => games[0].ApplicationPath)), first.Id, exe);
+                extrasTab.Controls.Add(_extrasTab);
+            }
+            else extrasTab.Controls.Add(new Label { Dock = DockStyle.Fill, Padding = new Padding(12), ForeColor = SystemColors.GrayText,
+                                                    Text = "A game's title update and DLC are chosen one game at a time: open this window on one game." });
+            tabs.TabPages.Add(extrasTab);
 
             // ── Compatibility ──
             var compatTab = new TabPage("Compatibility") { UseVisualStyleBackColor = true, Padding = new Padding(10) };
@@ -207,7 +219,7 @@ namespace LbIntegrations.Xenia
             try
             {
                 var dm = PluginHelper.DataManager;
-                if (dm == null) return null;
+                if (dm == null) return XeniaLibrary.Executables().FirstOrDefault();
                 IEmulator emu = null;
                 var id = game == null ? null : Safe(() => game.EmulatorId);
                 if (!string.IsNullOrWhiteSpace(id)) emu = dm.GetEmulatorById(id);
@@ -225,6 +237,7 @@ namespace LbIntegrations.Xenia
                 && MessageBox.Show(this, "These options will be applied to all " + _games.Count + " selected games.", Text,
                                    MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) != DialogResult.OK)
                 return;
+            _extrasTab?.Save();
             var values = _rows.Values();
             int changed = 0;
             foreach (var g in _games)

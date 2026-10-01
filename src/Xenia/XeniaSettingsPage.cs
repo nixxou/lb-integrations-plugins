@@ -35,6 +35,7 @@ namespace LbIntegrations.Xenia
         private readonly XeniaConsolePanel _console;
         private readonly XeniaOptionRows _rows;
         private readonly TextBox _line;
+        private readonly TextBox _contentFolder, _contentLimit;
 
         public XeniaSettingsPage()
         {
@@ -63,6 +64,32 @@ namespace LbIntegrations.Xenia
                     Text = "No Xenia Canary in the library yet: its profile and console settings show here once it is installed (Add Emulator).",
                 });
 
+            // Where a game's title update and DLC are put down for Xenia, and how much room they may take (XeniaExtras).
+            var content = XeniaExtras.ReadSettings();
+            var cbox = XeniaConsolePanel.Group("Title updates and DLC");
+            var ct = new TableLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, Location = new Point(8, 20) };
+            ct.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+            ct.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 340));
+            var defaultFolder = exe != null ? XeniaExtras.ContentFolder(XeniaPaths.Resolve(exe)) : "<Xenia's folder>\\lbip-content";
+            _contentFolder = new TextBox { Width = 330, Text = content.TryGetValue("folder", out var cf) ? cf : "", Margin = new Padding(3, 3, 0, 0) };
+            _contentFolder.HandleCreated += (_, _) => SendMessage(_contentFolder.Handle, 0x1501, (IntPtr)1, defaultFolder);
+            _contentLimit = new TextBox { Width = 80, Text = content.TryGetValue("limit_gb", out var cl) ? cl : "", Margin = new Padding(3, 3, 0, 0) };
+            _contentLimit.HandleCreated += (_, _) => SendMessage(_contentLimit.Handle, 0x1501, (IntPtr)1, "0 = no limit");
+            ct.Controls.Add(new Label { Text = "Folder", AutoSize = true, Margin = new Padding(0, 7, 4, 0) }, 0, 0);
+            ct.Controls.Add(_contentFolder, 1, 0);
+            ct.Controls.Add(new Label { Text = "Size limit (GB)", AutoSize = true, Margin = new Padding(0, 7, 4, 0) }, 0, 1);
+            ct.Controls.Add(_contentLimit, 1, 1);
+            var help = new Label
+            {
+                AutoSize = true, MaximumSize = new Size(480, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 4, 0, 4),
+                Text = "Xenia reads a game's title update and DLC from its own folders only, and cannot read an archive: at a launch, what the game's "
+                       + "options choose is extracted here once, then linked into place. Over the limit, the games launched longest ago lose theirs, "
+                       + "whole - they come back at their next launch. Your own files are never changed.",
+            };
+            ct.Controls.Add(help, 0, 2);
+            ct.SetColumnSpan(help, 2);
+            cbox.Controls.Add(ct);
+            stack.Controls.Add(cbox);
             var own = exe != null ? XeniaOptions.Own(XeniaPaths.Resolve(exe).ConfigFile) : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             stack.Controls.Add(new Label { Text = "Options for every game", AutoSize = true, Font = new Font("Segoe UI", 10f, FontStyle.Bold), Margin = new Padding(4, 8, 0, 2) });
             _rows = new XeniaOptionRows(XeniaSettings.Read(), o => "Xenia's own: " + o.LabelOf(own.TryGetValue(o.Key, out var v) ? v : o.Default));
@@ -83,6 +110,9 @@ namespace LbIntegrations.Xenia
             ShowLine();
         }
 
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, string lParam);
+
         private void ShowLine()
         {
             var flags = XeniaSettings.Flags(_rows.Values());
@@ -93,8 +123,12 @@ namespace LbIntegrations.Xenia
         {
             var problem = _rows.Problem() ?? _console?.Problem();
             if (problem != null) return problem;
+            var limit = _contentLimit.Text.Trim().Replace(',', '.');
+            if (limit.Length > 0 && (!double.TryParse(limit, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var gb) || gb < 0))
+                return "The size limit is a number of GB, 0 for none.";
             _console?.Save();
             XeniaSettings.WriteAll(_rows.Values());
+            XeniaExtras.WriteSettings(new Dictionary<string, string> { ["folder"] = _contentFolder.Text.Trim(), ["limit_gb"] = limit });
             return null;
         }
     }

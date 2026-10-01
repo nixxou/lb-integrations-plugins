@@ -136,6 +136,31 @@ namespace LbIntegrations.Probe
             return true;
         }
 
+        /// <summary>--xenia-prepare --emu &lt;xenia_canary.exe&gt; --rom &lt;game&gt; [--game-id id] [--settings-dir d]: what a launch does
+        /// for the game's title update and DLC (XeniaExtras.Prepare), for real, on that Xenia - then what it put down.</summary>
+        public static bool Prepare(Assembly asm, string exe, string rom, string gameId, string settingsDir)
+        {
+            var flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
+            if (settingsDir != null) asm.GetType("LbIntegrations.Xenia.XeniaSettings", true).GetField("DirOverride", flags).SetValue(null, settingsDir);
+            var scan = asm.GetType("LbIntegrations.Xenia.XeniaScan", true);
+            var extras = asm.GetType("LbIntegrations.Xenia.XeniaExtras", true);
+            var paths = asm.GetType("LbIntegrations.Xenia.XeniaPaths", true);
+            var layout = paths.GetMethod("Resolve", flags).Invoke(null, new object[] { exe, null });
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            scan.GetMethod("Scan", flags).Invoke(null, new object[] { Path.GetDirectoryName(rom), null, null });
+            extras.GetMethod("Prepare", flags).Invoke(null, new object[] { rom, gameId ?? "probe-game", layout });
+            Console.WriteLine("  prepared in " + sw.ElapsedMilliseconds + " ms");
+            var common = Path.Combine((string)layout.GetType().GetField("ContentRoot").GetValue(layout), "0000000000000000");
+            if (Directory.Exists(common))
+                foreach (var d in Directory.GetDirectories(common, "*", SearchOption.AllDirectories))
+                {
+                    var di = new DirectoryInfo(d);
+                    Console.WriteLine("    " + d.Substring(common.Length + 1) + (di.LinkTarget != null ? "  -> " + di.LinkTarget : ""));
+                    foreach (var f in Directory.GetFiles(d)) Console.WriteLine("        " + Path.GetFileName(f) + "  " + new FileInfo(f).Length);
+                }
+            return true;
+        }
+
         public static bool Run(Assembly asm, string iso)
         {
             _bad = 0;

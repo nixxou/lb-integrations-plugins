@@ -521,6 +521,12 @@ namespace LbIntegrations.Xenia
                     var rom = ResolveFullPath(args?.GameBeingLaunched?.ApplicationPath);
                     var folder = string.IsNullOrEmpty(rom) ? null : (Directory.Exists(rom) ? Path.GetDirectoryName(rom.TrimEnd('\\')) : Path.GetDirectoryName(rom));
                     if (folder != null) XeniaScan.ScanShowing(folder, "Nixx-Xenia - Looking at the game's folder");
+                    // Then its title update and DLC, as chosen, where Xenia looks for them (XeniaExtras).
+                    var exe = ResolveFullPath(args?.EmulatorBeingLaunched?.ApplicationPath);
+                    string launchedId = null;
+                    try { launchedId = args?.GameBeingLaunched?.Id; } catch { }
+                    if (folder != null && !string.IsNullOrEmpty(exe) && XeniaPaths.ForkOf(exe) == XeniaFork.Canary)
+                        XeniaExtras.Prepare(rom, launchedId, XeniaPaths.Resolve(exe, args?.CurrentCommandLine));
                 }
                 catch (Exception ex) { Log.Info("scan at launch: " + ex.Message); }
 

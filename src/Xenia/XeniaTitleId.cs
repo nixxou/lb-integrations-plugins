@@ -19,6 +19,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Linq;
 
 namespace LbIntegrations.Xenia
 {
@@ -50,6 +51,22 @@ namespace LbIntegrations.Xenia
             if (Cache.TryGetValue(key, out var cached)) return cached.Length == 0 ? null : cached;
 
             string found = null;
+            // AN ARCHIVE - No-Intro's digital sets zip each package: the game inside it, read by its content (XeniaScan), the
+            // scan's cache first. One game in it, or the first.
+            if (XeniaScan.IsArchive(path))
+            {
+                try
+                {
+                    var full = Path.GetFullPath(path);
+                    var games = XeniaScan.Cached(Path.GetDirectoryName(full)).Where(e => e.Path.StartsWith(full + "|", StringComparison.OrdinalIgnoreCase)).ToList();
+                    if (games.Count == 0 || games.Any(e => e.Size != new FileInfo(full).Length)) games = XeniaScan.ClassifyArchive(full, new FileInfo(full).Length, new FileInfo(full).LastWriteTimeUtc.Ticks);
+                    found = games.FirstOrDefault(e => e.Kind == XeniaFileKind.Game && e.TitleId.Length == 8)?.TitleId;
+                }
+                catch (Exception ex) { Log.Warn("could not read a title id from the archive " + path, ex); }
+                Cache[key] = found ?? "";
+                if (found != null) Log.Info("title id " + found + " <- " + Path.GetFileName(path) + " (the game in it)");
+                return found;
+            }
             try { found = Extract(path); }
             catch (Exception ex) { Log.Warn("could not read a title id from " + path, ex); }
 

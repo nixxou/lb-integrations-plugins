@@ -65,17 +65,19 @@ namespace LbIntegrations.Probe
                 form.Close();
             }
             var formType = asm.GetType("LbIntegrations.Xenia.XeniaGameOptionsForm", true);
-            var games = new List<Unbroken.LaunchBox.Plugins.Data.IGame> { StubGame.Create("probe-shot", "Bakugan Battle Brawlers", rom ?? "C:\\none.iso") };
+            var games = new List<Unbroken.LaunchBox.Plugins.Data.IGame> { StubGame.Create("probe-shot", rom != null ? Path.GetFileNameWithoutExtension(rom) : "No game", rom ?? "C:\\none.iso") };
             using (var form = (System.Windows.Forms.Form)Activator.CreateInstance(formType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new object[] { games }, null))
             {
                 form.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
                 form.Location = new System.Drawing.Point(-4000, -4000);
                 form.Show();
                 var tabs = form.Controls.OfType<System.Windows.Forms.TabControl>().First();
-                shots.Add(Snap(form));
-                tabs.SelectedIndex = 1;
-                System.Threading.Thread.Sleep(200);
-                shots.Add(Snap(form));
+                for (int i = 0; i < tabs.TabCount; i++)
+                {
+                    tabs.SelectedIndex = i;
+                    System.Threading.Thread.Sleep(200);
+                    shots.Add(Snap(form));
+                }
                 form.Close();
             }
             int w = shots.Sum(s => s.Width + 8), h = shots.Max(s => s.Height);
