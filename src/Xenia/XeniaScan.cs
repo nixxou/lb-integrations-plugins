@@ -93,6 +93,7 @@ namespace LbIntegrations.Xenia
 
         /// <summary>The Indie games' common title id - see the header.</summary>
         public const string IndieTitleId = "584E07D2";
+        public const string XnaProblem = "an Xbox Live Indie game (XNA): Xenia cannot run these";
 
         /// <summary>Is this a file the rule looks at? By its name - and, for a name with no extension, where it sits:
         /// <paramref name="path"/> is a file path or an archive entry's, "/" or "\" alike.</summary>
@@ -317,7 +318,11 @@ namespace LbIntegrations.Xenia
             switch (info.ContentType)
             {
                 case 0x000B0000: e.Kind = XeniaFileKind.Update; break;
-                case 0x00000002: e.Kind = e.TitleId == IndieTitleId ? XeniaFileKind.Game : XeniaFileKind.Dlc; break;
+                case 0x00000002:
+                    // An Indie game: an XNA (.NET) program the console runs through its XNA runtime, which Xenia does not emulate
+                    // (no support anywhere in its code - measured on Real Evil: "File not found: GAME:\default.xex"). Out (Mehdi, 01/10).
+                    if (e.TitleId == IndieTitleId) return Invalid(e, XnaProblem);
+                    e.Kind = XeniaFileKind.Dlc; break;
                 case 0x00007000:   // Games on Demand
                 case 0x000D0000:   // Xbox Live Arcade
                 case 0x00080000:   // demo
@@ -410,7 +415,7 @@ namespace LbIntegrations.Xenia
         // ── the cache file ───────────────────────────────────────────────────
 
         /// <summary>The first line - and the format's version: a cache written by an older one is read again from the files.</summary>
-        private const string Header = "path\tsize\tticks\tkind\ttitle_id\tcontent_type\tmedia_id\tversion\tbase_version\tdisc\tname\tproblem\tdigest\tpatch_from\tpatch_to\tcontent_id";
+        private const string Header = "v2\tpath\tsize\tticks\tkind\ttitle_id\tcontent_type\tmedia_id\tversion\tbase_version\tdisc\tname\tproblem\tdigest\tpatch_from\tpatch_to\tcontent_id";
 
         private static Dictionary<string, XeniaScanEntry> Load()
         {

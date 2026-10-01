@@ -287,7 +287,7 @@ namespace LbIntegrations.Probe
                       Entry(all, "Real Steel (World) (XBLA).zip")?.ToString());
                 Check("a zipped title update: Update, its version", KindIn(all, "Real Steel (World) (v3) (Title Update).zip") == "Update" && F(Entry(all, "Real Steel (World) (v3) (Title Update).zip"), "VersionText") == "0.0.3.0");
                 Check("a zipped add-on: Dlc of the game's title id", KindIn(all, "Real Steel - Add-on 01 (World) (Addon).zip") == "Dlc" && F(Entry(all, "Real Steel - Add-on 01 (World) (Addon).zip"), "TitleId") == "584111E0");
-                Check("a zipped Indie game (00000002 of 584E07D2): Game, not DLC", KindIn(all, "QbTron 3D (World) (XBLIG).zip") == "Game");
+                Check("a zipped Indie game (00000002 of 584E07D2): Invalid - XNA, Xenia cannot run it", KindIn(all, "QbTron 3D (World) (XBLIG).zip") == "Invalid" && F(Entry(all, "QbTron 3D (World) (XBLIG).zip"), "Problem").Contains("XNA"));
                 Check("a zip with nothing of ours: one Invalid line for it", KindIn(all, "nothing.zip") == "Invalid" && F(Entry(all, "nothing.zip"), "Problem").Contains("no Xbox 360 content"));
                 Check("a disc image in a zip: noted, not read", KindIn(all, "disc.zip") == "GameNoId" && F(Entry(all, "disc.zip"), "Problem").Contains("not read"));
 

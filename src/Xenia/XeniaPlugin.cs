@@ -547,6 +547,14 @@ namespace LbIntegrations.Xenia
                     var rom = ResolveFullPath(args?.GameBeingLaunched?.ApplicationPath);
                     var folder = string.IsNullOrEmpty(rom) ? null : (Directory.Exists(rom) ? Path.GetDirectoryName(rom.TrimEnd('\\')) : Path.GetDirectoryName(rom));
                     if (folder != null) XeniaScan.ScanShowing(folder, "Nixx-Xenia - Looking at the game's folder");
+                    // An Xbox Live Indie game cannot run on Xenia (XeniaScan.XnaProblem): refused with a word, not Xenia's own failure.
+                    if (folder != null && XeniaScan.Cached(folder).Any(e => e.Problem == XeniaScan.XnaProblem
+                            && (string.Equals(e.Path, rom, StringComparison.OrdinalIgnoreCase) || e.Path.StartsWith(rom + "|", StringComparison.OrdinalIgnoreCase))))
+                    {
+                        Log.Info("launch refused: " + rom + " is an Xbox Live Indie game (XNA), which Xenia cannot run");
+                        LbipNotice.Show("Nixx-Xenia", Path.GetFileNameWithoutExtension(rom) + " is an Xbox Live Indie game. These are XNA programs, and Xenia cannot run them.");
+                        return new PrepareForLaunchResponse(success: false);
+                    }
                     // Then its title update and DLC, as chosen, where Xenia looks for them (XeniaExtras).
                     var exe = ResolveFullPath(args?.EmulatorBeingLaunched?.ApplicationPath);
                     string launchedId = null;

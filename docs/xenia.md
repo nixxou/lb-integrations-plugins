@@ -51,7 +51,8 @@ ne sert qu'à décider quoi ouvrir : **le classement vient toujours du contenu**
   Un ISO dans une archive est noté, pas lu.
 - Un fichier retenu mais illisible est **invalide, avec sa raison**.
 - Un jeu Indie (XBLIG) est rangé comme un DLC : contenu `00000002` du title id commun `584E07D2`.
-  Ici, c'est un jeu.
+  C'est un programme XNA (.NET), que Xenia ne sait pas lancer (aucun support dans son code ; mesuré sur
+  Real Evil : « File not found: GAME:\default.xex ») : invalide, retiré à l'import, refusé au lancement.
 - Cache `xenia-scan.tsv` par chemin, taille et date, format versionné : un second passage ne relit que
   ce qui a changé.
 
