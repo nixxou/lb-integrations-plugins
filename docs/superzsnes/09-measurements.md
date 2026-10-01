@@ -53,6 +53,7 @@ date plutôt que d'écraser.
 | Échap | `ZInputSystem.EscapePressed` (0x104AD760) interrogé 2× par frame dans `MasterExecutor.Update` (0x104F2E70) ; → SaveState "-last", OpenMenu, pause, SaveSaveData | xref Update ; préfixe sur EscapeBackToMenu muet sur 5 appuis |
 | Exit pad | `ZInputSystem.ExitPressed` (0x104AD810) → ZSWebServer.Stop, Application.Quit, sans SaveSaveData | xref Update |
 | touches par défaut | F2 save, F4 load | utilisateur, 30/09 |
+| touches par défaut, dans le fichier | `inputData` d'un 0.310 neuf : GameInput SaveState (2) → Key 95 = F2, LoadState (3) → Key 97 = F4, StateSelect (4) → Key 96 = F3 (enum Key de l'Input System, F1 = 94) ; les scripts AHK du pack envoient F2 et F4 | NRBF 01/10 |
 | `Input.GetKeyDown` legacy | appelé par Update (0x119DAFC0) → UnityInput fonctionne | xref ; log « input through LegacyInputSystem » |
 | nouveau Input System | `ButtonControl.wasPressedThisFrame` élagué | « Method unstripping failed », 30/09 16:45 |
 | `Object.FindObjectOfType` | élagué | idem 16:50 |

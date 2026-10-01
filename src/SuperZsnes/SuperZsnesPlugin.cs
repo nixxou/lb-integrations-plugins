@@ -218,16 +218,18 @@ namespace LbIntegrations.SuperZsnes
             catch (Exception ex) { Log.Warn("could not describe the hotkeys on the emulator entry", ex); }
         }
 
+        /// <summary>Blank - or still the text an earlier version of this plugin wrote (SuperZsnesAhk.Superseded).</summary>
         private static bool IsBlank(Func<string> get)
         {
-            try { return string.IsNullOrWhiteSpace(get()); } catch { return false; }
+            try { var v = get(); return string.IsNullOrWhiteSpace(v) || Array.IndexOf(SuperZsnesAhk.Superseded, v.Replace("\r\n", "\n").Replace("\n", "\r\n")) >= 0; }
+            catch { return false; }
         }
 
         private static bool Fill(Func<string> get, Action<string> set, string value)
         {
             try
             {
-                if (!string.IsNullOrWhiteSpace(get())) return false;
+                if (!IsBlank(get) || get() == value) return false;
                 set(value);
                 return true;
             }

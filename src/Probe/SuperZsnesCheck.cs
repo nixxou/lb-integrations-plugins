@@ -327,8 +327,16 @@ namespace LbIntegrations.Probe
                 string Script(string name) => (string)ahk.GetField(name, flags).GetValue(null);
                 Check("the exit script sends Alt+F4", Script("Exit").Contains("{Alt down}") && Script("Exit").Contains("{F4}"));
                 Check("the running script sends nothing (Escape is the emulator's menu)", AllComments(Script("Running")));
-                Check("the save-state scripts send nothing (no key measured)",
-                      AllComments(Script("SaveState")) && AllComments(Script("LoadState")));
+                Check("the save-state script sends F2, the load-state one F4 (measured in inputData)",
+                      Script("SaveState").Contains("{F2 down}") && Script("LoadState").Contains("{F4 down}"));
+                // An entry an earlier version described with "Nothing is sent": given the scripts now.
+                var stale = (string[])ahk.GetField("Superseded", flags).GetValue(null);
+                var old = new StubEmulator { Title = "Nixx-SuperZSNES", ApplicationPath = exe, AutoHotkeyScript = stale[1], ExitAutoHotkeyScript = Script("Exit"), SaveStateAutoHotkeyScript = stale[0], LoadStateAutoHotkeyScript = stale[0] };
+                plugin.GetApplicableEmulators(new IEmulator[] { old }).ToList();
+                Check("an older version's placeholders are replaced, nothing else", old.SaveStateAutoHotkeyScript == Script("SaveState") && old.LoadStateAutoHotkeyScript == Script("LoadState") && old.AutoHotkeyScript == Script("Running"));
+                var mineAhk = new StubEmulator { Title = "Nixx-SuperZSNES", ApplicationPath = exe, SaveStateAutoHotkeyScript = "Send {F5}" };
+                plugin.GetApplicableEmulators(new IEmulator[] { mineAhk }).ToList();
+                Check("  ...a script the user wrote is left alone", mineAhk.SaveStateAutoHotkeyScript == "Send {F5}");
 
                 // ── the command line the window builds ────────────────────────
                 Console.WriteLine("  the command line");
