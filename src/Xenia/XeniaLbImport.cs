@@ -134,6 +134,17 @@ namespace LbIntegrations.Xenia
             var list = gameList.GetType().GetProperty("Games")?.GetValue(gameList) as IList;
             if (list == null || list.Count == 0) return;
             var records = list.Cast<object>().Select(r => (Record: r, Path: Full(Get(r, "ApplicationPath")))).ToList();
+            // What a line of LaunchBox's list is - logged, for the day the plugin adds the games LaunchBox did not list.
+            try
+            {
+                var first = list[0];
+                Log.Info("[import] the list: " + list.GetType().FullName + " of " + list.Count + " - a line is " + first.GetType().FullName + ": "
+                         + string.Join(", ", first.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(p => p.GetIndexParameters().Length == 0)
+                               .Select(p => { object v = null; try { v = p.GetValue(first); } catch { } return p.Name + (p.CanWrite ? "(rw)" : "") + "=" + (v is string s ? s : v?.GetType().Name ?? "null"); })));
+                Log.Info("[import] its constructors: " + string.Join(" | ", first.GetType().GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+                               .Select(c => "(" + string.Join(", ", c.GetParameters().Select(x => x.ParameterType.Name)) + ")")));
+            }
+            catch (Exception ex) { Log.Info("[import] the list's line type: " + ex.Message); }
 
             // Every folder of the list, scanned - the cache answers for what it knows already.
             var folders = records.Select(r => r.Path == null ? null : Path.GetDirectoryName(r.Path)).Where(d => d != null).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
