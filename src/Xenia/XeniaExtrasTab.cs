@@ -36,7 +36,7 @@ namespace LbIntegrations.Xenia
             Build(look: true);
         }
 
-        private string Folder => string.IsNullOrEmpty(_rom) ? null : Directory.Exists(_rom) ? Path.GetDirectoryName(_rom.TrimEnd('\\')) : Path.GetDirectoryName(_rom);
+        private string Folder => XeniaScan.FolderFor(_rom);
 
         private void Build(bool look)
         {

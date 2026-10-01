@@ -553,7 +553,7 @@ namespace LbIntegrations.Xenia
                 try
                 {
                     var rom = ResolveFullPath(args?.GameBeingLaunched?.ApplicationPath);
-                    var folder = string.IsNullOrEmpty(rom) ? null : (Directory.Exists(rom) ? Path.GetDirectoryName(rom.TrimEnd('\\')) : Path.GetDirectoryName(rom));
+                    var folder = XeniaScan.FolderFor(rom);
                     if (folder != null) XeniaScan.ScanShowing(folder, "Nixx-Xenia - Looking at the game's folder");
                     // An Xbox Live Indie game cannot run on Xenia (XeniaScan.XnaProblem): refused with a word, not Xenia's own failure.
                     if (folder != null && XeniaScan.Cached(folder).Any(e => e.Problem == XeniaScan.XnaProblem

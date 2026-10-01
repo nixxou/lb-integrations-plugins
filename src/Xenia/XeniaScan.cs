@@ -193,6 +193,23 @@ namespace LbIntegrations.Xenia
             return result;
         }
 
+        /// <summary>The folder a game's scan covers - before a launch and in its options window: the game's own folder, or, when
+        /// the folder above it is named with "360" (Mehdi, 01/10: "...\360\Iso\game.zar" beside "...\360\Update\"), that one,
+        /// all of it. Never a drive's root.</summary>
+        public static string FolderFor(string rom)
+        {
+            if (string.IsNullOrWhiteSpace(rom)) return null;
+            try
+            {
+                var own = Directory.Exists(rom) ? System.IO.Path.GetDirectoryName(rom.TrimEnd('\\')) : System.IO.Path.GetDirectoryName(rom);
+                var above = own == null ? null : System.IO.Path.GetDirectoryName(own);
+                if (above != null && System.IO.Path.GetDirectoryName(above) != null
+                    && System.IO.Path.GetFileName(above).IndexOf("360", StringComparison.OrdinalIgnoreCase) >= 0) return above;
+                return own;
+            }
+            catch { return null; }
+        }
+
         /// <summary>Scan, with a progress window when it takes a while (nothing on screen for a folder the cache knows).
         /// Never throws.</summary>
         public static List<XeniaScanEntry> ScanShowing(string root, string title)
