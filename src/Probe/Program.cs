@@ -94,6 +94,7 @@ namespace LbIntegrations.Probe
             if (Has(args, "--xenia-shot")) return XeniaSetupCheck.Shot(asm, Arg(args, "--xenia-shot"), emuPath, Arg(args, "--rom"), Arg(args, "--compat-dir")) ? 0 : 1;
             // The sorting of a folder's Xbox 360 files and its cache: --xenia-scan [--iso <a real disc image>].
             if (Has(args, "--xenia-ram-release")) { if (Arg(args, "--settings-dir") != null) asm.GetType("LbIntegrations.Xenia.XeniaSettings", true).GetField("DirOverride", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, Arg(args, "--settings-dir")); asm.GetType("LbIntegrations.Xenia.XeniaRamSession", true).GetMethod("Release", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, new object[] { "the probe asked" }); return 0; }
+            if (Has(args, "--xenia-import-clean")) return XeniaScanCheck.ImportClean(asm, Arg(args, "--xenia-import-clean"), Arg(args, "--settings-dir")) ? 0 : 1;
             if (Has(args, "--xenia-prepare")) return XeniaScanCheck.Prepare(asm, emuPath, Arg(args, "--rom"), Arg(args, "--game-id"), Arg(args, "--settings-dir")) ? 0 : 1;
             if (Has(args, "--xenia-stfs")) return XeniaScanCheck.Package(asm, Arg(args, "--xenia-stfs")) ? 0 : 1;
             if (Has(args, "--xenia-scan-dir")) return XeniaScanCheck.Dir(asm, Arg(args, "--xenia-scan-dir")) ? 0 : 1;

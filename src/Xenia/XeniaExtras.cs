@@ -511,7 +511,7 @@ namespace LbIntegrations.Xenia
             if (limit <= 0 || needed <= 0 || !Directory.Exists(root)) return;
             var games = Directory.GetDirectories(root).Where(d => File.Exists(Path.Combine(d, Manifest)))
                 .Select(d => (Dir: d, Used: DateTime.TryParse(ManifestValue(d, "last_used"), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var t) ? t : DateTime.MinValue,
-                              Size: SizeOfFolder(Path.Combine(d, "store"))))
+                              Size: SizeOfFolder(Path.Combine(d, "store")) + SizeOfFolder(Path.Combine(d, "game"))))
                 .ToList();
             long total = games.Sum(g => g.Size);
             foreach (var g in games.Where(g => !string.Equals(g.Dir, keep, StringComparison.OrdinalIgnoreCase)).OrderBy(g => g.Used))
@@ -545,7 +545,9 @@ namespace LbIntegrations.Xenia
 
         private static long SizeOfFolder(string dir)
         {
-            try { return Directory.Exists(dir) ? Directory.EnumerateFiles(dir).Sum(f => new FileInfo(f).Length) : 0; } catch { return 0; }
+            // The store and the game's own unpacked package (with a Games on Demand .data folder): the 000B0000 and 00000002 folders
+            // hold links to the store, and take no room of their own.
+            try { return Directory.Exists(dir) ? Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Sum(f => new FileInfo(f).Length) : 0; } catch { return 0; }
         }
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]

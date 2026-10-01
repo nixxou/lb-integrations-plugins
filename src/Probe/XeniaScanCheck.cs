@@ -164,6 +164,28 @@ namespace LbIntegrations.Probe
             return true;
         }
 
+        /// <summary>A stand-in for a record of LaunchBox's import list: what XeniaLbImport reads of one.</summary>
+        public sealed class FakeRecord { public string ApplicationPath { get; set; } public string Title { get; set; } }
+        /// <summary>A stand-in for the wizard's game-list page: its Games, an observable list as Caliburn's is.</summary>
+        public sealed class FakeGameList { public System.Collections.ObjectModel.ObservableCollection<FakeRecord> Games { get; } = new System.Collections.ObjectModel.ObservableCollection<FakeRecord>(); }
+
+        /// <summary>--xenia-import-clean &lt;folder&gt; [--settings-dir d]: the import wizard's list put right (XeniaLbImport.Clean),
+        /// on a list made of every file of the folder that LaunchBox would list (the catalogue's extensions).</summary>
+        public static bool ImportClean(Assembly asm, string folder, string settingsDir)
+        {
+            var flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
+            if (settingsDir != null) asm.GetType("LbIntegrations.Xenia.XeniaSettings", true).GetField("DirOverride", flags).SetValue(null, settingsDir);
+            var list = new FakeGameList();
+            var exts = new[] { ".iso", ".xex", ".zar", ".zip", ".7z" };
+            foreach (var f in Directory.GetFiles(folder, "*", SearchOption.AllDirectories).Where(f => exts.Contains(Path.GetExtension(f).ToLowerInvariant())).OrderBy(f => f))
+                list.Games.Add(new FakeRecord { ApplicationPath = f, Title = Path.GetFileNameWithoutExtension(f) });
+            Console.WriteLine("  before: " + list.Games.Count + " line(s)");
+            asm.GetType("LbIntegrations.Xenia.XeniaLbImport", true).GetMethod("Clean", flags).Invoke(null, new object[] { list });
+            Console.WriteLine("  after: " + list.Games.Count + " line(s)");
+            foreach (var r in list.Games) Console.WriteLine("    " + r.Title);
+            return true;
+        }
+
         public static bool Run(Assembly asm, string iso)
         {
             _bad = 0;
