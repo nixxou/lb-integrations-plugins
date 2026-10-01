@@ -200,6 +200,13 @@ namespace LbIntegrations.Xenia
         /// <summary>When the copy was last asked for, or null when there is none.</summary>
         public static DateTime? Asked() => File.Exists(JsonPath) ? ReadMeta().Asked : null;
 
+        /// <summary>Is there a copy asked for less than <see cref="MaxAge"/> ago?</summary>
+        public static bool IsFresh()
+        {
+            var asked = Asked();
+            return asked != null && DateTime.UtcNow - asked.Value < MaxAge;
+        }
+
         /// <summary>Ask for the file - "only if it changed" when there is a copy - and keep what comes back once it reads.
         /// True when the copy is good now. Never throws.</summary>
         public static bool Fetch(TimeSpan timeout)

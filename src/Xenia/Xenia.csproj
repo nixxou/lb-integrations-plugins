@@ -45,6 +45,8 @@
          folder is how they cannot drift. ILRepack still folds it into one DLL per plugin. See
          src\Shared.Lbip\LbipLog.cs for how it reaches this plugin's logger without naming it. -->
     <Compile Include="..\Shared.Lbip\**\*.cs" />
+    <!-- The icon of the right-click entry (Shared.Menu\LbipMenuIcon.cs), as the other plugins with a game menu. -->
+    <Compile Include="..\Shared.Menu\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>

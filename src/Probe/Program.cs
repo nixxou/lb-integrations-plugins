@@ -1,4 +1,4 @@
-﻿// A host stand-in for exercising an integration plugin without LaunchBox or LiteBox.
+// A host stand-in for exercising an integration plugin without LaunchBox or LiteBox.
 //
 // It loads a plugin DLL, finds its EmulatorPlugin subclass, and calls the read-only half of the
 // contract against inputs you give it, printing what comes back. That is the difference between
@@ -87,6 +87,12 @@ namespace LbIntegrations.Probe
             if (Has(args, "--launch-gate")) return LaunchGateCheck.Run(asm) ? 0 : 1;
             // Xenia's compatibility list: --xenia-compat [--online].
             if (Has(args, "--xenia-compat")) return XeniaCompatCheck.Run(asm, Has(args, "--online")) ? 0 : 1;
+            // What a first install of Xenia sets up, and the options at launch: --xenia-setup [--xconfig f] [--account f] [--toml f].
+            // A first install's setup run for real on a Xenia folder (XeniaSetup.AfterFirstInstall): --xenia-firstrun <xenia_canary.exe>.
+            if (Has(args, "--xenia-firstrun")) { asm.GetType("LbIntegrations.Xenia.XeniaSetup", true).GetMethod("AfterFirstInstall", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, new object[] { Path.GetFullPath(Arg(args, "--xenia-firstrun")) }); return 0; }
+            // The Xenia tab of the Nixx window and a game's options window, drawn: --xenia-shot <out.png> --emu <xenia_canary.exe> [--rom <game>].
+            if (Has(args, "--xenia-shot")) return XeniaSetupCheck.Shot(asm, Arg(args, "--xenia-shot"), emuPath, Arg(args, "--rom"), Arg(args, "--compat-dir")) ? 0 : 1;
+            if (Has(args, "--xenia-setup")) return XeniaSetupCheck.Run(asm, Arg(args, "--xconfig"), Arg(args, "--account"), Arg(args, "--toml")) ? 0 : 1;
             var type = asm.GetTypes().FirstOrDefault(t => !t.IsAbstract && typeof(EmulatorPlugin).IsAssignableFrom(t));
             if (type == null)
             {

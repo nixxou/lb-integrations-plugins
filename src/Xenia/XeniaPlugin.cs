@@ -375,6 +375,14 @@ namespace LbIntegrations.Xenia
                 Report(args, "Downloading Xenia's compatibility list...", null);
                 XeniaCompat.Fetch(TimeSpan.FromSeconds(30));
 
+                // A first install gets a profile and the console set as this Windows is, then a notification asking
+                // whether that is right - an update sets nothing up (XeniaSetup).
+                if (!reinstall)
+                {
+                    Report(args, "Setting up Xenia's profile...", null);
+                    XeniaSetup.AfterFirstInstall(exe);
+                }
+
                 if (reinstall)
                 {
                     try { args.ExistingEmulator.ApplicationPath = MakeRelativeToLaunchBox(exe); } catch { }
@@ -511,11 +519,16 @@ namespace LbIntegrations.Xenia
                 if (!HasOption(current, "license_mask")) added.Add("--license_mask=1");
                 if (!HasOption(current, "discord")) added.Add("--discord=false");
 
-                if (added.Count > 0)
-                {
-                    var rewritten = (current.Trim() + " " + string.Join(" ", added)).Trim();
+                // The options of the Nixx window (every game) and of the game's own window, the game's over every game's
+                // - on the command line, so never saved into Xenia's config (XeniaOptions).
+                string gameId = null;
+                try { gameId = args?.GameBeingLaunched?.Id; } catch { }
+                var options = XeniaSettings.Flags(XeniaSettings.ForGame(gameId));
+                if (options.Count > 0) Log.Info("options passed: " + string.Join(" ", options));
+
+                var rewritten = XeniaSettings.Append(current, added.Concat(options));
+                if (rewritten != current.Trim())
                     return new PrepareForLaunchResponse(success: true) { NewCommandLine = rewritten };
-                }
             }
             catch (Exception ex) { Log.Warn("PrepareEmulatorForLaunch", ex); }
             return new PrepareForLaunchResponse(success: true);
@@ -557,6 +570,9 @@ namespace LbIntegrations.Xenia
             }
             catch { return fullPath; }
         }
+
+        /// <summary>For the windows (settings page, game menu): a library path made full.</summary>
+        internal static string ResolveFullPathForUi(string maybeRelative) => ResolveFullPath(maybeRelative);
 
         private static string ResolveFullPath(string maybeRelative)
         {
