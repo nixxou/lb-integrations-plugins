@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SUPER ZSNES - Nixx plugin guide</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#ffffff; --ink:#1d1d1f; --muted:#5f6368; --line:#e3e3e0; --accent:#0a6ed1; --ok:#1e8e3e; --warn:#b06000; --no:#c5221f; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17181a; --card:#1f2124; --ink:#e8e8e6; --muted:#a0a3a7; --line:#33363a; --accent:#5aa9ff; --ok:#5bc27a; --warn:#e3a34a; --no:#ff7b72; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 "Segoe UI", system-ui, sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 64px; }
+  header h1 { margin:0 0 4px; font-size:30px; }
+  header p { margin:0; color:var(--muted); }
+  nav { margin:20px 0 8px; display:flex; flex-wrap:wrap; gap:8px; }
+  nav a { font-size:14px; color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; background:var(--card); }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 24px; margin:18px 0; }
+  h2 { margin:0 0 10px; font-size:21px; }
+  h3 { margin:18px 0 6px; font-size:17px; }
+  ul { padding-left:22px; } li { margin:4px 0; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .yes { color:var(--ok); font-weight:600; } .partly { color:var(--warn); font-weight:600; } .no { color:var(--no); font-weight:600; }
+  .tip, .warn { border-left:4px solid var(--accent); padding:8px 14px; margin:12px 0; background:color-mix(in srgb, var(--accent) 8%, transparent); border-radius:0 8px 8px 0; }
+  .warn { border-color:var(--warn); background:color-mix(in srgb, var(--warn) 10%, transparent); }
+  code, kbd { font-family:Consolas, monospace; font-size:14px; background:color-mix(in srgb, var(--ink) 8%, transparent); padding:1px 5px; border-radius:4px; }
+  footer { color:var(--muted); font-size:13px; text-align:center; margin-top:30px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>SUPER ZSNES</h1>
+  <p>What the Nixx plugin does for you, and what to expect.</p>
+</header>
+<nav>
+  <a href="#overview">In short</a><a href="#start">Getting started</a><a href="#play">Playing</a><a href="#options">Options</a>
+  <a href="#saves">Saves</a><a href="#support">What works</a><a href="#limits">Limits</a><a href="#trouble">If something goes wrong</a>
+</nav>
+
+<section id="overview"><h2>In short</h2>
+  <p>SUPER ZSNES is a new Super Nintendo emulator by the authors of the original ZSNES. It is free to download from
+  <code>zsnes.com</code>, but it is not open source. It is a different program from the old ZSNES. It plays one console:
+  the <b>Super Nintendo Entertainment System</b>.</p>
+  <p>The Nixx plugin lets you install and update SUPER ZSNES from LaunchBox, play your SNES games with it, set options per game
+  from a right-click, and see your cartridge saves and save states in LaunchBox's save management.</p>
+  <p>To do some of this, the plugin also puts a small helper inside the emulator, called <b>BepInEx</b>. It is a common
+  free tool that lets the plugin adjust the emulator while it runs. It shows nothing on screen and writes no log by default.
+  You can turn it off (see <a href="#limits">Limits</a>).</p>
+</section>
+
+<section id="start"><h2>Getting started</h2>
+  <h3>Installing the emulator</h3>
+  <ul>
+    <li>In LaunchBox, add a new emulator (<b>Add Emulator</b>) and pick <b>Nixx-SuperZSNES</b> in the list.
+    Let LaunchBox download and install it.</li>
+    <li>The plugin downloads the latest Windows version from <code>zsnes.com</code> and installs it in
+    <code>LaunchBox\Emulators\Nixx-SuperZSNES</code>.</li>
+    <li>It creates an emulator entry named <b>Nixx-SuperZSNES</b>, set as the default emulator for Super Nintendo Entertainment System.</li>
+    <li>The mouse cursor is left visible during games, because the emulator's menus are used with the mouse.</li>
+    <li>It also downloads and installs the in-game helper (BepInEx), unless you turned it off first.</li>
+  </ul>
+  <div class="tip">The <b>first start</b> after installing takes about a minute before anything shows. The helper prepares itself
+  once, silently. Later starts are normal.</div>
+  <div class="warn">The SUPER ZSNES site itself warns that some antivirus programs wrongly flag the emulator. If the install says the
+  program file is missing, look in your antivirus quarantine, restore it (or exclude the folder) and install again.</div>
+  <h3>Updating</h3>
+  <ul>
+    <li>LaunchBox's usual update check compares your version with the one on <code>zsnes.com</code> and offers the new one.</li>
+    <li>An update is unpacked over your existing folder. Nothing in the folder is deleted first.</li>
+  </ul>
+  <h3>Importing games</h3>
+  <ul>
+    <li>Import your SNES games as usual and choose Nixx-SuperZSNES as the emulator.</li>
+    <li>Supported files: <code>.sfc</code>, <code>.smc</code>, <code>.swc</code> and <code>.zip</code>.
+    The emulator opens <code>.zip</code> files itself, so LaunchBox does not unpack them.</li>
+  </ul>
+</section>
+
+<section id="play"><h2>Playing a game</h2>
+  <ul>
+    <li>When you click Play, the plugin adds your chosen options for this game to the emulator's command line, then the game starts.
+    No extra window appears.</li>
+    <li>Only one game at a time: a second launch while SUPER ZSNES is still open is refused. A quick double click starts the game only once.</li>
+  </ul>
+  <h3>Keys in the game (with the helper)</h3>
+  <ul>
+    <li><kbd>Esc</kbd> no longer opens the menu at once. The first press shows <i>"Press ESC again to quit"</i>.
+    A second press within 2.5 seconds lets the emulator save, then quits. You can turn this off.</li>
+    <li><kbd>F1</kbd> opens the emulator's own menu (save states, cheats, its settings). You can choose another key.</li>
+    <li><kbd>F2</kbd> saves a state, <kbd>F4</kbd> loads it, <kbd>F3</kbd> changes the slot. These are the emulator's own keys.</li>
+    <li>A controller Exit button, if you set one in the emulator, still quits at once, without asking.</li>
+  </ul>
+  <h3>Pop-ups</h3>
+  <p>The emulator's "support us on Patreon" and "a new version is out" dialogs are hidden by default. LaunchBox still checks for updates.</p>
+  <h3>When you quit</h3>
+  <ul>
+    <li>The emulator saves its own settings as usual. The options you set per game are not kept in them (see <a href="#options">Options</a>).</li>
+    <li>If a game used window options (size, full screen, monitor), the window settings SUPER ZSNES remembers in Windows are put back as they were
+    before the game, about a second after it closes. So one game's window settings do not carry over to the next game.</li>
+  </ul>
+</section>
+
+<section id="options"><h2>Options</h2>
+  <p>There are two places. In both, each row has a small bar on the left: <b>blue</b> means it is passed to the emulator,
+  <b>grey</b> means the emulator keeps its own setting (or the plugin's default). The bottom of the page shows what will be passed at launch.</p>
+
+  <h3>For every game: Tools &gt; Nixx Integration Plugins Configuration...</h3>
+  <p>Open the <b>SUPER ZSNES</b> tab. These options apply to all games:</p>
+  <ul>
+    <li><b>Install the in-process plugin (BepInEx)</b>: on by default. Off: the helper is not installed or repaired any more.</li>
+    <li><b>Escape asks before quitting</b>: the double <kbd>Esc</kbd> described above. Off: <kbd>Esc</kbd> opens the menu, as the emulator ships.</li>
+    <li><b>Key that opens the emulator's menu</b>: <kbd>F1</kbd> by default.</li>
+    <li><b>Keep settings beside the emulator</b>: the emulator's settings file is kept in a <code>portable</code> folder in the emulator's folder,
+    instead of your Windows user profile.</li>
+    <li><b>Saves, states and cheats beside the emulator</b>: see <a href="#saves">Saves</a>.</li>
+    <li><b>Show the "support us on Patreon" dialog</b> and <b>Show the "a new version is out" dialog</b>: both off by default.</li>
+    <li><b>Write the overrides into the emulator's settings file</b>: off by default. See below.</li>
+  </ul>
+  <p>Under the options, a box lists each SUPER ZSNES in your library with the helper's state and a button:
+  <b>Install now</b> (for an emulator installed before the plugin, or by hand) or <b>Repair / refresh</b>.</p>
+
+  <h3>For one game: right-click &gt; Nixx-SuperZSNES : Options...</h3>
+  <p>Right-click a SNES game (or select several) and choose <b>Nixx-SuperZSNES : Options...</b>. With several games, the same options
+  are given to all of them after you confirm.</p>
+  <ul>
+    <li><b>Window</b>: always full screen on the main display, full screen or windowed, width and height, borderless window, which monitor.</li>
+    <li><b>Start-up</b>: resume the last state when the game starts.</li>
+    <li><b>Display</b>: screen effect (none, scanlines, 3D effect), scanline strength, smoothing, no bilinear filtering, maximum brightness, 8:7 picture instead of 4:3.</li>
+    <li><b>Gameplay</b>: turn rewind off, rumble, right stick changes game speed, swap the accept and cancel buttons.</li>
+    <li><b>Audio</b>: interface, game and MSU-1 volume.</li>
+  </ul>
+  <p>Each option shows <i>"SUPER ZSNES's own"</i> (with its current value when the plugin can read it) until you change it.
+  Leave it that way to keep the emulator's setting.</p>
+  <div class="tip">Options you set here are used only while the game runs. They are <b>never saved into the emulator's own settings</b>,
+  so opening SUPER ZSNES on its own, or another game, is not affected. The only exception is the
+  <b>Write the overrides into the emulator's settings file</b> option in the tab: when it is on, they are saved for good.</div>
+  <p>Most options need the helper. Without it, only the window options and "resume the last state" still work, except
+  "always full screen on the main display", which needs the helper too.</p>
+</section>
+
+<section id="saves"><h2>Saves and save states</h2>
+  <h3>Where they go</h3>
+  <ul>
+    <li>With the option <b>Saves, states and cheats beside the emulator</b> (on by default), the emulator keeps them in its own folder:
+    <code>saves</code> (cartridge saves), <code>states</code> (save states) and <code>cheats</code>, next to <code>SUPERZSNES.exe</code>.</li>
+    <li>This is written into the emulator's settings, so it also holds when you open SUPER ZSNES on its own.</li>
+    <li>It is only done when the emulator has no folder set. A folder you chose yourself in the emulator stays yours.</li>
+    <li>For a zipped game, the save is named after the zip file.</li>
+  </ul>
+  <div class="warn">Old saves are <b>not moved</b>. If you played before with saves next to your games, the emulator no longer sees them.
+  Move them yourself: the <code>.srm</code> file into <code>saves</code>, the game's <code>.data.szsnes</code> folder into <code>states</code>.
+  Or turn the option off before your first launch.</div>
+  <h3>In LaunchBox's save management</h3>
+  <ul>
+    <li>LaunchBox shows the <b>cartridge save</b> (marked SRM) and the <b>save states</b> (marked STATE, with their slot number).</li>
+    <li>You can back them up, restore them and delete them. A restore puts the file back where the emulator reads it, and asks before replacing one.</li>
+    <li>The plugin looks where the emulator's settings say, so it follows folders you changed in the emulator.</li>
+    <li>Not listed on purpose: the "last state" the emulator rewrites each time you open its menu or quit, and its rewind history.</li>
+  </ul>
+  <h3>Pause screen hotkeys</h3>
+  <ul>
+    <li>The plugin fills the emulator entry's AutoHotkey scripts, but only if they are empty: save state sends <kbd>F2</kbd>,
+    load state sends <kbd>F4</kbd>, exit sends <kbd>Alt</kbd>+<kbd>F4</kbd>.</li>
+    <li>If you change those keys in the emulator, the scripts still send the old ones. Edit them in the emulator entry.</li>
+  </ul>
+</section>
+
+<section id="support"><h2>What works</h2>
+  <table><tr><th>Feature</th><th></th><th>Notes</th></tr>
+  <tr><td>Install from LaunchBox</td><td class="yes">Yes</td><td>Downloaded from zsnes.com, with its emulator entry.</td></tr>
+  <tr><td>Updates</td><td class="yes">Yes</td><td>LaunchBox's update check, against zsnes.com.</td></tr>
+  <tr><td>Game files</td><td class="yes">Yes</td><td>.sfc, .smc, .swc, .zip. Not .7z.</td></tr>
+  <tr><td>Launch from LaunchBox and Big Box</td><td class="yes">Yes</td><td>One game at a time.</td></tr>
+  <tr><td>Escape asks before quitting</td><td class="yes">Yes</td><td>Needs the helper. Can be turned off.</td></tr>
+  <tr><td>Emulator menu on another key</td><td class="yes">Yes</td><td>F1 by default. Needs the helper.</td></tr>
+  <tr><td>Options per game</td><td class="yes">Yes</td><td>Right-click. Used only for that game, never saved into the emulator. Most need the helper.</td></tr>
+  <tr><td>Full screen on the main display</td><td class="yes">Yes</td><td>Per game. Needs the helper.</td></tr>
+  <tr><td>Settings, saves, states, cheats in the emulator folder</td><td class="partly">Partly</td><td>Yes for new saves. Old saves next to your games are not moved.</td></tr>
+  <tr><td>Patreon and new-version pop-ups hidden</td><td class="yes">Yes</td><td>Needs the helper. Can be shown again.</td></tr>
+  <tr><td>Save management (cartridge saves)</td><td class="yes">Yes</td><td>Backup, restore, delete.</td></tr>
+  <tr><td>Save management (save states)</td><td class="yes">Yes</td><td>Numbered slots. The "last state" is not listed.</td></tr>
+  <tr><td>Pause screen save / load state</td><td class="partly">Partly</td><td>Sends the emulator's default keys F2 and F4 only.</td></tr>
+  <tr><td>Exit from the pause screen</td><td class="yes">Yes</td><td>Alt+F4.</td></tr>
+  <tr><td>Controller setup from LaunchBox</td><td class="no">No</td><td>Set it in the emulator, Config &gt; Input.</td></tr>
+  <tr><td>Game enhancement toggles from LaunchBox</td><td class="no">No</td><td>Use the emulator's own menu.</td></tr>
+  <tr><td>Extra chip files (dsp2.rom, st010.rom...)</td><td class="no">No</td><td>Not managed by the plugin. Most games do not need them.</td></tr>
+  <tr><td>RetroAchievements</td><td class="no">No</td><td>Not supported.</td></tr></table>
+</section>
+
+<section id="limits"><h2>Limits and things to know</h2>
+  <ul>
+    <li><b>The in-game helper (BepInEx).</b> It is put into the emulator's folder and runs inside the emulator to add the features above.
+    To stop it being installed or repaired, untick <b>Install the in-process plugin (BepInEx)</b> in the SUPER ZSNES tab.
+    To switch it off in an emulator where it is already installed, delete the file <code>winhttp.dll</code> next to
+    <code>SUPERZSNES.exe</code>: the emulator is then exactly as it ships. Without the helper, most options do nothing.</li>
+    <li><b>Per-game options are never saved into the emulator's own settings</b>, unless you turn on
+    "Write the overrides into the emulator's settings file".</li>
+    <li><b>Saves, states and cheats go in the emulator's folder</b> (<code>saves</code>, <code>states</code>, <code>cheats</code>).
+    Older saves next to your games are not moved, and the emulator stops seeing them.</li>
+    <li><b>RetroAchievements are not supported.</b> The plugin does not pass your LaunchBox login to the emulator. The emulator's own
+    achievements feature is still marked "work in progress" by its authors.</li>
+    <li><b>Emulator updates.</b> SUPER ZSNES is closed source. A new version of the emulator may stop one of the helper's features from working.
+    The game still runs; only that feature is lost until the plugin is updated.</li>
+    <li>Only the Windows version of SUPER ZSNES is used.</li>
+    <li>If you typed an option yourself on the emulator's command line in LaunchBox, the plugin does not add the same one again: yours wins.</li>
+  </ul>
+</section>
+
+<section id="trouble"><h2>If something goes wrong</h2>
+  <ul><li>The plugin's log: <code>%LOCALAPPDATA%\lb-integrations-plugins\superzsnes.log</code> (General tab: "Open the logs folder").</li>
+    <li>The install says the emulator file is missing: your antivirus probably removed it. Restore it from quarantine and install again.</li>
+    <li>Options seem ignored: open the SUPER ZSNES tab and look at the helper box. If it is not installed, click <b>Install now</b>,
+    or <b>Repair / refresh</b>. Antivirus programs sometimes remove <code>winhttp.dll</code> too.</li>
+    <li>A feature stopped working after an emulator update: look for <code>portable\nixx-errors.log</code> in the emulator's folder.
+    It lists what the helper could not set up.</li>
+    <li>A game does not start because SUPER ZSNES is already open: close the emulator first, then click Play again.</li>
+    <li>Your old saves are gone: they are still next to your games. Move them into the emulator's <code>saves</code> and <code>states</code> folders.</li>
+  </ul>
+</section>
+
+<footer>Nixx integration plugins for LaunchBox</footer>
+</main>
+</body>
+</html>

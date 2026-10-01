@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>no$gba - Nixx plugin guide</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#ffffff; --ink:#1d1d1f; --muted:#5f6368; --line:#e3e3e0; --accent:#0a6ed1; --ok:#1e8e3e; --warn:#b06000; --no:#c5221f; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17181a; --card:#1f2124; --ink:#e8e8e6; --muted:#a0a3a7; --line:#33363a; --accent:#5aa9ff; --ok:#5bc27a; --warn:#e3a34a; --no:#ff7b72; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 "Segoe UI", system-ui, sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 64px; }
+  header h1 { margin:0 0 4px; font-size:30px; }
+  header p { margin:0; color:var(--muted); }
+  nav { margin:20px 0 8px; display:flex; flex-wrap:wrap; gap:8px; }
+  nav a { font-size:14px; color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; background:var(--card); }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 24px; margin:18px 0; }
+  h2 { margin:0 0 10px; font-size:21px; }
+  h3 { margin:18px 0 6px; font-size:17px; }
+  ul { padding-left:22px; } li { margin:4px 0; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .yes { color:var(--ok); font-weight:600; } .partly { color:var(--warn); font-weight:600; } .no { color:var(--no); font-weight:600; }
+  .tip, .warn { border-left:4px solid var(--accent); padding:8px 14px; margin:12px 0; background:color-mix(in srgb, var(--accent) 8%, transparent); border-radius:0 8px 8px 0; }
+  .warn { border-color:var(--warn); background:color-mix(in srgb, var(--warn) 10%, transparent); }
+  code, kbd { font-family:Consolas, monospace; font-size:14px; background:color-mix(in srgb, var(--ink) 8%, transparent); padding:1px 5px; border-radius:4px; }
+  footer { color:var(--muted); font-size:13px; text-align:center; margin-top:30px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>no$gba</h1>
+  <p>What the Nixx plugin does for you, and what to expect.</p>
+</header>
+<nav>
+  <a href="#overview">In short</a><a href="#start">Getting started</a><a href="#play">Playing</a><a href="#options">Options</a>
+  <a href="#saves">Saves</a><a href="#support">What works</a><a href="#limits">Limits</a><a href="#trouble">If something goes wrong</a>
+</nav>
+
+<section id="overview"><h2>In short</h2>
+  <p>no$gba is a small, free emulator for the <strong>Game Boy Advance</strong> and the <strong>Nintendo DS</strong>. With this plugin it can also run <strong>DSiWare</strong> (the downloadable games of the Nintendo DSi), provided you have your own DSi files (see <a href="#limits">Limits</a>).</p>
+  <p>The plugin installs and updates no$gba from LaunchBox, and lets LaunchBox see, back up and restore your saves. Most importantly, it fixes one hidden setting: out of the box, no$gba writes its saves in a compressed format that only no$gba can read. The plugin switches it to the plain <code>.sav</code> format, so the same save works in RetroArch, melonDS, DeSmuME, save editors, RomM or Argosy.</p>
+  <p>In LaunchBox the emulator is called <strong>Nixx-nogba</strong> (without the dollar sign).</p>
+</section>
+
+<section id="start"><h2>Getting started</h2>
+  <h3>Installing</h3>
+  <ul>
+    <li>In LaunchBox, open <strong>Tools &gt; Manage &gt; Emulators</strong>, click <strong>Add</strong>, pick <strong>Nixx-nogba</strong> and click <strong>Download</strong>.</li>
+    <li>The plugin downloads no$gba from its author's site (a single zip of about 210 KB) and unpacks it into <code>LaunchBox\Emulators\Nixx-nogba</code>.</li>
+    <li>It creates the emulator entry with three platforms: <strong>Nintendo Game Boy Advance</strong>, <strong>Nintendo DS</strong> and <strong>Nintendo DSiware</strong>.</li>
+    <li>no$gba has no version number. The "version" you see is the date of the file on the author's server, for example <code>2025-04-14</code>.</li>
+  </ul>
+  <h3>Updating</h3>
+  <ul>
+    <li>When the author publishes a new zip, LaunchBox offers the update like for any other emulator.</li>
+    <li>An update unpacks over the old files. Your settings, saves and DSi files in that folder are kept.</li>
+    <li>If you installed no$gba yourself (not through the plugin), the plugin still works with it but never offers to update or replace it.</li>
+  </ul>
+  <h3>BIOS files (optional for GBA and DS)</h3>
+  <ul>
+    <li>no$gba runs Game Boy Advance and DS games <strong>without any BIOS</strong>. BIOS files only add accuracy and the Nintendo boot logo.</li>
+    <li>no$gba only looks for them in its own folder, under fixed names. So put your files in <code>LaunchBox\Emulators\RetroArch\system</code> (the same folder the melonDS plugin and RetroArch use) and the plugin copies them for you, under the right names, before each game.</li>
+    <li>Names it recognises: <code>gba_bios.bin</code> (or <code>biosgba.bin</code>), <code>bios7.bin</code>, <code>bios9.bin</code>, <code>firmware.bin</code>, and for DSi <code>dsi_bios7.bin</code> and <code>dsi_bios9.bin</code> (also <code>bios7i.bin</code> / <code>bios9i.bin</code>).</li>
+    <li>LaunchBox's BIOS list shows them all as <em>optional</em>, and warns when a file there has the wrong size.</li>
+  </ul>
+  <h3>Importing games</h3>
+  <ul>
+    <li>Import your ROMs as usual. Supported files: <code>.gba</code>, <code>.agb</code>, <code>.mb</code> (GBA) and <code>.nds</code>, <code>.srl</code>, <code>.dsi</code>, <code>.ids</code> (DS / DSiWare).</li>
+    <li>Zipped games (<code>.zip</code>, <code>.7z</code>, <code>.rar</code>...) are fine: LaunchBox unpacks them before the game starts (see <a href="#limits">Limits</a>).</li>
+  </ul>
+</section>
+
+<section id="play"><h2>Playing a game</h2>
+  <h3>Game Boy Advance and DS games</h3>
+  <p>Click Play. Just before no$gba starts, the plugin:</p>
+  <ul>
+    <li>makes sure saves are still written in the plain <code>.sav</code> format (it checks at every launch, because no$gba's own <em>Options &gt; Save Options</em> can quietly undo it);</li>
+    <li>copies any new or changed BIOS file from <code>Emulators\RetroArch\system</code>;</li>
+    <li>puts no$gba back in normal DS mode, starting the cartridge directly, in case a DSiWare game changed that last time;</li>
+    <li>applies the game's own settings if you set any (see <a href="#options">Options</a>). They are put back to normal when no$gba quits.</li>
+  </ul>
+  <p>Press <kbd>Esc</kbd> to quit no$gba. LaunchBox's and Big Box's Exit button works too.</p>
+
+  <h3>DSiWare games</h3>
+  <p>The plugin recognises a DSiWare game by reading the file itself, whatever platform it is on. Then it:</p>
+  <ul>
+    <li>picks one of your DSi NAND dumps (a copy of a real DSi's memory) that matches the game's region;</li>
+    <li>prepares a working DSi with the game installed in it, and your earlier progress for that game put back;</li>
+    <li>switches no$gba to DSi mode. no$gba shows the DSi menu, and you start the game from there. The game file is also loaded "in the cartridge slot", only because no$gba refuses to start without one: ignore it.</li>
+  </ul>
+  <p>When you quit, the plugin notices no$gba has closed and keeps the progress of that session as the game's save.</p>
+
+  <h3>The first DSiWare game of a region: setting up the console</h3>
+  <p>A DSi must be set up once (name, language, date, favourite colour), like a new console. The first time you launch a DSiWare game with a given NAND dump, a window asks <em>"no console for this NAND yet"</em>:</p>
+  <ul>
+    <li><strong>Set one up now</strong>: the plugin makes a copy of your dump (your own file is never changed) and opens no$gba on the DSi menu. Go through the welcome screens, then quit no$gba.</li>
+    <li>A second window asks whether it worked: <strong>Yes, keep it</strong> or <strong>No, throw it away</strong> (you will simply be asked again next time).</li>
+    <li>Either way, the game itself does not start this time. Launch it again once the console is ready.</li>
+    <li>This is asked once per dump: every DSiWare game of that region then uses the same console.</li>
+  </ul>
+  <div class="tip">If the DSi menu does not come up during this setup, put any small homebrew <code>.nds</code> file at <code>Emulators\Nixx-nogba\dsi\boot.nds</code>. The plugin then uses it to start the machine instead of your game.</div>
+
+  <h3>One game at a time</h3>
+  <ul>
+    <li>While a no$gba game is starting or running, a second launch from LaunchBox is refused. A double click is ignored silently; after a few seconds you get a message.</li>
+    <li>If no$gba is already open on its own (not launched by LaunchBox), the launch is refused with a message: close it first.</li>
+  </ul>
+</section>
+
+<section id="options"><h2>Options</h2>
+  <h3>Tools menu</h3>
+  <p>The pack's window, <strong>Tools &gt; Nixx Integration Plugins Configuration...</strong>, has <strong>no no$gba tab</strong>: this plugin has no global settings. Its General tab still gives you the logs folder.</p>
+
+  <h3>Right-click on a game: "Nixx-no$gba : Options..."</h3>
+  <p>Right-click a game (or a selection of games) that no$gba can run and choose <strong>Nixx-no$gba : Options...</strong>. This entry is shown through the pack's <em>Nixx-Menus</em> helper. It sets <strong>this game's own settings</strong>, used only while it runs; no$gba's normal settings come back when it quits.</p>
+  <ul>
+    <li><strong>Emulation</strong>: emulation speed, video output, the GBA screen model (GBA, GBA SP...), the DS 3D renderer.</li>
+    <li><strong>Cartridge</strong>: the save chip type (GBA or DS), the light level for GBA games with a solar sensor.</li>
+    <li><strong>Display &amp; sound</strong>: screen sizing (force 50% steps, force aspect ratio), screen filter, sound output, sample rate, volume control.</li>
+    <li><strong>Link</strong> (GBA games only): number of emulated Game Boys, link cable type, gamepaks in every machine or only the first.</li>
+    <li><strong>Advanced</strong>: shows the lines of no$gba's settings file that the game changes. Tick <strong>Edit by hand</strong> to type your own lines instead (the other tabs are then ignored). <strong>Preview result...</strong> shows the file as no$gba will read it for that game.</li>
+  </ul>
+  <p>Every setting starts on <em>&lt;Default&gt;</em>, which means "leave it as no$gba has it". Only what you change is kept for the game. Each kind of game (GBA, DS cartridge, DSiWare) is only offered what applies to it. With several games selected, OK applies the window to all of them, after asking.</p>
+  <div class="tip">Three things are never taken from a game's settings, because the plugin sets them itself at every launch: the DS/DSi console mode, how the game boots, and the save format.</div>
+  <p>Any other no$gba setting (keys, for example) is changed in no$gba itself, as usual.</p>
+</section>
+
+<section id="saves"><h2>Saves and save states</h2>
+  <h3>Cartridge saves (GBA and DS)</h3>
+  <ul>
+    <li>no$gba keeps them in <code>Emulators\Nixx-nogba\BATTERY</code>, one <code>.SAV</code> file per game, named after the ROM file. Example: <code>mk.nds</code> saves as <code>BATTERY\mk.SAV</code>.</li>
+    <li>For a zipped game, the name is the file <em>inside</em> the zip, not the zip's name. The plugin knows this, so LaunchBox still finds the save.</li>
+    <li>LaunchBox's save management shows them as <strong>Cartridge save</strong> (tag <em>SAV</em>): you can back up, restore and delete them.</li>
+    <li>Because they are plain <code>.sav</code> files, you can take them to another emulator, or bring one in.</li>
+  </ul>
+  <h3>DSiWare saves</h3>
+  <ul>
+    <li>A DSiWare game saves inside the DSi's memory, not in <code>BATTERY</code>. The plugin keeps what the game changed as one small file per game, shown in LaunchBox as <strong>DSiWare save</strong> (tag <em>NAND</em>).</li>
+    <li>Backup, restore and delete work. After a restore, the next launch rebuilds the console around the restored save.</li>
+    <li>A DSiWare save remembers which console it was made on, and it is the same kind of save the melonDS plugin makes, so it can move between the two.</li>
+  </ul>
+  <h3>Save states</h3>
+  <ul>
+    <li>no$gba has one "snapshot" (no numbered slots): <kbd>F8</kbd> writes it, <kbd>F7</kbd> loads it. The plugin fills LaunchBox's pause-screen Save State / Load State with these keys, only if those fields are empty.</li>
+    <li>Snapshots are <strong>not</strong> listed in LaunchBox's save management. In testing, F8 never left a file on disk, so there was nothing to manage.</li>
+  </ul>
+</section>
+
+<section id="support"><h2>What works</h2>
+  <table><tr><th>Feature</th><th></th><th>Notes</th></tr>
+  <tr><td>Install from Add Emulator</td><td class="yes">Yes</td><td>Downloads the official zip into <code>Emulators\Nixx-nogba</code>.</td></tr>
+  <tr><td>Updates</td><td class="partly">Partly</td><td>Only for a copy the plugin installed. A copy you installed yourself is left alone.</td></tr>
+  <tr><td>Game Boy Advance</td><td class="yes">Yes</td><td>Offered, not recommended: mGBA and RetroArch are more accurate.</td></tr>
+  <tr><td>Nintendo DS</td><td class="yes">Yes</td><td>Offered, not recommended for the same reason.</td></tr>
+  <tr><td>DSiWare</td><td class="partly">Partly</td><td>Needs your own DSi BIOS and NAND dump, and a one-time console setup. Launched from the DSi menu.</td></tr>
+  <tr><td>Zipped games</td><td class="yes">Yes</td><td>LaunchBox unpacks them; the plugin keeps that option switched on.</td></tr>
+  <tr><td>BIOS files</td><td class="yes">Yes</td><td>Optional for GBA/DS; copied from <code>Emulators\RetroArch\system</code>.</td></tr>
+  <tr><td>Plain, portable saves</td><td class="yes">Yes</td><td>The main reason for this plugin: <code>.sav</code> files every other emulator reads.</td></tr>
+  <tr><td>Save backup / restore / delete</td><td class="yes">Yes</td><td>Cartridge saves and DSiWare saves.</td></tr>
+  <tr><td>Save states in LaunchBox</td><td class="no">No</td><td>F7/F8 keys are sent, but snapshots are not listed or backed up.</td></tr>
+  <tr><td>Per-game settings</td><td class="yes">Yes</td><td>Right-click &gt; Nixx-no$gba : Options... Only for the game's session.</td></tr>
+  <tr><td>Exit / pause-screen keys</td><td class="yes">Yes</td><td><kbd>Esc</kbd> quits; filled in only where the field was empty.</td></tr>
+  <tr><td>RetroAchievements</td><td class="no">No</td><td>no$gba has no achievements support.</td></tr>
+  <tr><td>Global settings tab</td><td class="no">No</td><td>Nothing to set for the whole plugin.</td></tr>
+  </table>
+</section>
+
+<section id="limits"><h2>Limits and things to know</h2>
+  <ul>
+    <li><strong>no$gba cannot open archives.</strong> Given a zip, it shows a "Cartridge not found" box and waits. So the plugin always switches on <em>Auto-Extract</em> for this emulator, even if you turned it off: LaunchBox then unpacks the game first. This is the only one of your settings the plugin overrides.</li>
+    <li><strong>no$gba has no folder settings.</strong> It only reads files from its own folder, under fixed names. That is why the plugin copies your BIOS files there instead of pointing to them.</li>
+    <li><strong>A save's name follows the ROM file name.</strong> If you rename a ROM, no$gba looks for a save under the new name. Two versions of a game with different file names have separate saves.</li>
+    <li><strong>Old compressed saves are not converted.</strong> The plugin changes the format for saves written from now on; it does not convert saves an earlier no$gba setup already wrote in its own compressed format.</li>
+    <li><strong>Changing some settings in no$gba is undone.</strong> The DS/DSi mode, the boot setting and the save format are set by the plugin before every game. If you change them in no$gba, they are put back at the next launch.</li>
+    <li><strong>DSiWare needs your own files</strong>, in <code>Emulators\RetroArch\system</code>:
+      <ul>
+        <li>the two DSi BIOS files (<code>dsi_bios7.bin</code> and <code>dsi_bios9.bin</code>, 64 KB each);</li>
+        <li>a NAND dump from a DSi of the <strong>same region</strong> as the game (a Japanese game needs a Japanese dump). Any file name works: the plugin reads the region from inside the dump. If you have several of the same region, the one already set up as a console is used, so your saves stay with it.</li>
+      </ul>
+      Nothing of this is supplied. If a file is missing, <strong>no window tells you</strong>: the game starts in normal DS mode and will not run properly, and the reason is written in the log.</li>
+    <li><strong>Setting up a DSi console</strong> copies about 240 MB twice, once per dump, ever. It never happens on a normal launch.</li>
+    <li><strong>Internet for DSiWare (rarely).</strong> To install a DSiWare game, the plugin needs a small description file for it. It first looks next to the ROM (<code>game.nds.tmd</code>), then in a built-in list of about 1700 titles, and only if neither has it does it ask Nintendo's update server. Only the game's ID is sent. As a last resort it builds one itself; the DSi menu may then refuse to start the game.</li>
+    <li><strong>One DSiWare game at a time.</strong> If no$gba is still closing, a DSiWare launch is skipped: launch it again once no$gba has closed.</li>
+    <li><strong>Your own DSi file is kept.</strong> If you had set up a DSi by hand in no$gba (a <code>DSi-1.mmc</code> file in its folder), the plugin renames it to <code>DSi-1.mmc.yours</code> instead of overwriting it. It is never deleted.</li>
+    <li><strong>No command-line options.</strong> no$gba takes only the game file, so there is nothing to tune on the command line.</li>
+  </ul>
+</section>
+
+<section id="trouble"><h2>If something goes wrong</h2>
+  <ul><li>The plugin's log: <code>%LOCALAPPDATA%\lb-integrations-plugins\nogba.log</code> (General tab: "Open the logs folder").</li>
+    <li><strong>A "Cartridge not found" box appears</strong>: check that <em>Auto-Extract</em> is on for Nixx-nogba in Edit Emulator. The plugin turns it on, but the log warns you if it finds it off at launch.</li>
+    <li><strong>A save made in no$gba is not readable elsewhere</strong>: it was probably written before the plugin was in charge, in no$gba's compressed format. Saves written after the next launch are plain.</li>
+    <li><strong>A DSiWare game runs as a plain DS game, or not at all</strong>: look in the log for the reason (missing DSi BIOS, no NAND dump of the game's region...).</li>
+    <li><strong>The DSi menu does not appear during console setup</strong>: put a small homebrew <code>.nds</code> at <code>Emulators\Nixx-nogba\dsi\boot.nds</code> and try again. Also check in no$gba's <em>Options &gt; Emulation Setup</em> that nothing was changed by hand.</li>
+    <li><strong>The game's own settings seem stuck after a crash</strong>: they are put back automatically at the next launch, when LaunchBox starts, or when you open no$gba without a game.</li>
+    <li><strong>More detail in the log</strong>: create an empty file named <code>trace</code> (no extension) in <code>%LOCALAPPDATA%\lb-integrations-plugins</code> and restart LaunchBox.</li>
+    <li><strong>To turn DSiWare handling off</strong>: create an empty file named <code>no-nogba-dsi</code> in the same folder and restart LaunchBox. DSiWare games are then started as they are, without any preparation.</li>
+    <li>Report problems at <code>github.com/nixxou/lb-integrations-plugins/issues</code>, with the log attached.</li>
+  </ul>
+</section>
+
+<footer>Nixx integration plugins for LaunchBox</footer>
+</main>
+</body>
+</html>

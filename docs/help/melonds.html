@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>melonDS - Nixx plugin guide</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#ffffff; --ink:#1d1d1f; --muted:#5f6368; --line:#e3e3e0; --accent:#0a6ed1; --ok:#1e8e3e; --warn:#b06000; --no:#c5221f; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17181a; --card:#1f2124; --ink:#e8e8e6; --muted:#a0a3a7; --line:#33363a; --accent:#5aa9ff; --ok:#5bc27a; --warn:#e3a34a; --no:#ff7b72; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 "Segoe UI", system-ui, sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 64px; }
+  header h1 { margin:0 0 4px; font-size:30px; }
+  header p { margin:0; color:var(--muted); }
+  nav { margin:20px 0 8px; display:flex; flex-wrap:wrap; gap:8px; }
+  nav a { font-size:14px; color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; background:var(--card); }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 24px; margin:18px 0; }
+  h2 { margin:0 0 10px; font-size:21px; }
+  h3 { margin:18px 0 6px; font-size:17px; }
+  ul { padding-left:22px; } li { margin:4px 0; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .yes { color:var(--ok); font-weight:600; } .partly { color:var(--warn); font-weight:600; } .no { color:var(--no); font-weight:600; }
+  .tip, .warn { border-left:4px solid var(--accent); padding:8px 14px; margin:12px 0; background:color-mix(in srgb, var(--accent) 8%, transparent); border-radius:0 8px 8px 0; }
+  .warn { border-color:var(--warn); background:color-mix(in srgb, var(--warn) 10%, transparent); }
+  code, kbd { font-family:Consolas, monospace; font-size:14px; background:color-mix(in srgb, var(--ink) 8%, transparent); padding:1px 5px; border-radius:4px; }
+  footer { color:var(--muted); font-size:13px; text-align:center; margin-top:30px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>melonDS</h1>
+  <p>What the Nixx plugin does for you, and what to expect.</p>
+</header>
+<nav>
+  <a href="#overview">In short</a><a href="#start">Getting started</a><a href="#play">Playing</a><a href="#options">Options</a>
+  <a href="#saves">Saves</a><a href="#support">What works</a><a href="#limits">Limits</a><a href="#trouble">If something goes wrong</a>
+</nav>
+
+<section id="overview"><h2>In short</h2>
+  <p>melonDS is an emulator for the Nintendo DS and the Nintendo DSi. LaunchBox has no standalone DS emulator of its own (only RetroArch), so this plugin adds <b>Nixx-melonDS</b> to LaunchBox's Add Emulator window.</p>
+  <p>What it does for you:</p>
+  <ul>
+    <li>Downloads melonDS and keeps it up to date from LaunchBox.</li>
+    <li>Gives melonDS a playable keyboard layout (melonDS comes with no keys set at all).</li>
+    <li>Finds your BIOS, firmware and DSi NAND files and sets them up in melonDS for you. You only drop the files in a folder.</li>
+    <li>Picks DS or DSi mode for each game on its own.</li>
+    <li>Runs <b>DSiWare</b> (the downloadable DSi games): it installs the game into a DSi console, picks a console of the right region, and keeps each game's save small and separate.</li>
+    <li>Lets LaunchBox see, back up, restore and delete your saves and save states.</li>
+    <li>Lets you give one game its own video and console settings.</li>
+  </ul>
+  <p>Plain DS games need nothing more than the game file. DSiWare needs files from a real DSi, which you must provide yourself (see <a href="#start">Getting started</a>).</p>
+</section>
+
+<section id="start"><h2>Getting started</h2>
+  <h3>1. Install melonDS</h3>
+  <ul>
+    <li>In LaunchBox, open <b>Tools &gt; Manage &gt; Emulators</b>, click <b>Add</b>, and choose <b>Nixx-melonDS</b>. Use the download button to install it.</li>
+    <li>melonDS goes into <code>LaunchBox\Emulators\Nixx-melonDS</code>. The emulator entry is linked to the <b>Nintendo DS</b> platform and set as its default.</li>
+    <li>The plugin sets melonDS up during the install: a <code>saves</code> folder and a <code>savestates</code> folder inside the melonDS folder (so no save files end up next to your games), and a keyboard layout.</li>
+    <li>Games start in fullscreen.</li>
+  </ul>
+  <h3>2. Import your games</h3>
+  <ul>
+    <li>Import DS games into the <b>Nintendo DS</b> platform as usual. Accepted files: <code>.nds</code>, <code>.srl</code>, <code>.dsi</code>, <code>.ids</code>, and games inside <code>.zip</code>, <code>.7z</code>, <code>.rar</code>, <code>.tar</code> or <code>.tgz</code> archives.</li>
+    <li>LaunchBox has no DSi platform. If you keep DSiWare in its own platform, the plugin recognises the names <b>Nintendo DSi</b> and <b>Nintendo DSiWare</b> (any spacing or case). Add that platform to the emulator in its Edit Emulator window. DSiWare can also stay in Nintendo DS: the plugin reads each game file to know what it is.</li>
+  </ul>
+  <h3>3. BIOS, firmware and NAND (only if you need them)</h3>
+  <p>All these files go in <code>LaunchBox\Emulators\RetroArch\system</code>. This is RetroArch's folder, on purpose: if you ever set up a DS core in RetroArch, the files are probably already there. The plugin creates the folder if it is missing and puts a short note in it (<code>WHICH-FILES-GO-HERE.txt</code>).</p>
+  <table>
+    <tr><th>To play</th><th>You need</th></tr>
+    <tr><td>DS games</td><td><b>Nothing.</b> melonDS has a built-in BIOS. If you add your own DS BIOS and firmware (all three: <code>biosnds7.bin</code>, <code>biosnds9.bin</code>, <code>dsfirmware.bin</code>), melonDS uses them, and you get the real DS boot screen.</td></tr>
+    <tr><td>DSiWare</td><td><code>biosdsi7.bin</code>, <code>biosdsi9.bin</code>, <code>dsifirmware.bin</code>, <b>and a DSi NAND dump of the right region</b>.</td></tr>
+  </table>
+  <ul>
+    <li>RetroArch's names work too: <code>bios7.bin</code>, <code>bios9.bin</code>, <code>firmware.bin</code>, <code>dsi_bios7.bin</code>, <code>dsi_bios9.bin</code>, <code>dsi_firmware.bin</code>. Upper or lower case does not matter.</li>
+    <li>A <b>NAND</b> is a copy of a DSi console's internal memory, about 240 MB. You can name it anything. The plugin opens each file of that size and reads which region it comes from (Japan, USA, Europe, Australia, China or Korea). You can put several, one per region you own.</li>
+    <li>The plugin never writes to your files in that folder. It only reads them and makes copies.</li>
+    <li>LaunchBox's BIOS check for this emulator lists these files, with the DS ones marked optional.</li>
+    <li>If you already set a path to a file yourself in melonDS, the plugin leaves it alone.</li>
+  </ul>
+  <div class="warn">None of these files come with the plugin. They must be dumped from your own console.</div>
+</section>
+
+<section id="play"><h2>Playing a game</h2>
+  <h3>A DS game</h3>
+  <p>Click Play. The plugin sets melonDS to DS mode (or DSi mode for a DSi-enhanced cartridge, when the DSi files and a NAND are set up), points it at your BIOS files if you have them, and the game starts straight away. To quit, press <kbd>Esc</kbd> (the plugin turns it into melonDS's own quit key, <kbd>Ctrl</kbd>+<kbd>Q</kbd>).</p>
+
+  <h3>A DSiWare game: the first time with a new NAND</h3>
+  <p>A DSi has to be set up once (owner name, language, birthday, colour). The plugin does this on a copy of your NAND, never on your file. So the first time you launch a DSiWare game with a NAND that has never been used:</p>
+  <ol>
+    <li>A window says there is no console for this NAND yet. Click <b>Set one up now</b>.</li>
+    <li>Your NAND is copied into melonDS's <code>dsi</code> folder and melonDS opens on that copy.</li>
+    <li>A small window over melonDS tells you what to click: <b>File &gt; Boot firmware</b> in melonDS. That starts the DSi menu. (melonDS cannot be told to do this from outside, so this one click is yours.)</li>
+    <li>Go through the DSi setup, then quit melonDS.</li>
+    <li>A window asks if the setup worked. <b>Yes, keep it</b> keeps this console. <b>No, throw it away</b> deletes the copy; you will be asked again next time.</li>
+    <li>The game you launched does <b>not</b> start this time. Launch it again.</li>
+  </ol>
+  <p>This happens once per NAND. Every DSiWare game of that region then uses the same console. Closing the first window cancels the launch: there is no "play without a console", because the setup would then be stored inside each game's save instead.</p>
+
+  <h3>A DSiWare game: every time after that</h3>
+  <ul>
+    <li>The plugin picks a NAND whose region matches the game. It reads this from the game file first, and uses the name of the game file (like <code>(Japan)</code>) only to narrow things down.</li>
+    <li>It builds a fresh working console, installs the game in it, puts your save back, and melonDS starts on the <b>DSi menu</b>. Click the game there to play.</li>
+    <li>Why the menu and not straight into the game: tests showed that starting a DSiWare game directly loses its save.</li>
+    <li>The game's information file that the DSi needs (a "<code>.tmd</code>") is found for you: next to your game file if you have one (<code>yourgame.nds.tmd</code>), otherwise from a list inside the plugin, otherwise from Nintendo's update server (only the game's id is sent).</li>
+    <li>A DSiWare game inside an archive works: it is unpacked to a temporary file, installed, and the temporary file is deleted.</li>
+    <li>Relaunching the same game reuses the working console when nothing changed, so it is quick.</li>
+  </ul>
+
+  <h3>When you quit</h3>
+  <ul>
+    <li>For DSiWare, the plugin notices melonDS has closed and takes what changed (your save) out of the working console.</li>
+    <li>If a game had its own settings (see <a href="#options">Options</a>), melonDS's normal settings are put back.</li>
+    <li>If LaunchBox or the PC stopped in the middle of a game, this is fixed at the next launch, or a few seconds after LaunchBox starts.</li>
+  </ul>
+
+  <h3>Windows you may see</h3>
+  <ul>
+    <li><b>Files missing</b>: a DSiWare game needs a file you don't have. The window names the files and the folder where they go, and can open it.</li>
+    <li><b>Waiting for melonDS</b>: you launch a game while melonDS is still closing. The plugin waits up to three minutes. After ten seconds a window shows, with a button to stop waiting (the launch is then cancelled and nothing is lost).</li>
+    <li><b>This save's console is missing</b>: see <a href="#saves">Saves</a>.</li>
+    <li>Only one game at a time: a second launch while a melonDS game is on is refused (silently in the first few seconds, so a double click does nothing bad). A launch is also refused, with a message, while melonDS is already open on its own.</li>
+  </ul>
+</section>
+
+<section id="options"><h2>Options</h2>
+  <h3>Per game: right-click &gt; Nixx-melonDS : Options...</h3>
+  <p>Right-click one DS game, or a selection, and choose <b>Nixx-melonDS : Options...</b>. This entry is shown by the pack's small menu plugin, Nixx-Menus, and only in LaunchBox (not Big Box). The window has these tabs:</p>
+  <ul>
+    <li><b>Session</b> (DSiWare only): where the working console is kept while you play. <b>RAM disk</b> (the default when one is available) is faster and writes nothing to your disk while you play. <b>Disk</b> survives a crash of the PC in the middle of a game. If no RAM disk is available, that choice is greyed out and the window says why.</li>
+    <li><b>Video</b>: this game's own video settings, the same as melonDS's Video settings window (3D renderer, OpenGL display, VSync and VSync interval, separate thread, internal resolution, improved polygon splitting, high resolution coordinates). Each setting can stay on "Default", which means melonDS's own value.</li>
+    <li><b>Firmware</b>: this game's own console settings, the same as melonDS's Firmware settings window (user name, language, birthday, favourite colour, message, MAC address). Tick "Overwrite melonDS's firmware settings" to use them.</li>
+    <li><b>Advanced</b>: shows the settings above as text. Tick <b>Edit by hand</b> to type any melonDS setting yourself instead; the Video and Firmware tabs are then not used. <b>Preview result...</b> shows what melonDS will read for this game. Settings the plugin needs for itself (console type, BIOS, NAND, save folders) are left out.</li>
+  </ul>
+  <p>These settings apply only while that game runs. When melonDS quits, its normal settings come back. If the selected games have different options, a list at the top lets you choose which group to start from; OK applies what you see to all selected games, after asking.</p>
+  <div class="tip">A change you make inside melonDS's own menus while a game with its own settings is running is not kept: melonDS's normal settings are put back when it quits.</div>
+
+  <h3>For melonDS itself: Tools &gt; Nixx Integration Plugins Configuration...</h3>
+  <p>This window has one tab per plugin of the pack. The <b>melonDS</b> tab holds melonDS's own firmware settings (name, language, birthday, colour, message, MAC address), used by every game that has none of its own. It applies to the melonDS this pack installed (<code>Emulators\Nixx-melonDS</code>). The <b>Open melonDS.toml...</b> button opens melonDS's settings file in Notepad for everything else. Changes are refused while melonDS is running, because melonDS rewrites that file when it quits.</p>
+  <p>The <b>General</b> tab has a button to open the logs folder, and links to the plugin guides.</p>
+
+  <h3>Controls</h3>
+  <p>The plugin sets a keyboard layout, but only for keys that have nothing set, so your own layout is never changed:</p>
+  <table>
+    <tr><th>DS button</th><th>Key</th></tr>
+    <tr><td>D-pad</td><td>Arrow keys</td></tr>
+    <tr><td>A / B</td><td><kbd>X</kbd> / <kbd>Z</kbd></td></tr>
+    <tr><td>X / Y</td><td><kbd>S</kbd> / <kbd>A</kbd></td></tr>
+    <tr><td>L / R</td><td><kbd>Q</kbd> / <kbd>W</kbd></td></tr>
+    <tr><td>Start / Select</td><td><kbd>Enter</kbd> / <kbd>Backspace</kbd></td></tr>
+  </table>
+  <p>Gamepads are <b>not</b> set up by the plugin, because button numbers differ from one pad to another. Set yours in melonDS: <b>Config &gt; Input and hotkeys</b>.</p>
+</section>
+
+<section id="saves"><h2>Saves and save states</h2>
+  <p>LaunchBox's save management (the game's Saves page, backups, restore, delete) sees three kinds of melonDS save:</p>
+  <ul>
+    <li><b>Cartridge save</b>: the game's own save, a <code>.sav</code> named like the game file. On an install made by this plugin it is in <code>Emulators\Nixx-melonDS\saves</code>; on a melonDS you set up yourself, wherever melonDS keeps it (by default next to the game).</li>
+    <li><b>Save states</b>: melonDS's 8 slots.</li>
+    <li><b>DSiWare save</b>: one <code>.dsisave</code> file per game. It holds everything the game changed in the console (the game's save plus the console settings around it), which is usually a few dozen kilobytes instead of a 240 MB console. Backups of it are named after the game, like <code>The Game (USA).dsisave</code>.</li>
+  </ul>
+  <h3>Save state keys</h3>
+  <p>These are melonDS's own keys and cannot be changed:</p>
+  <ul>
+    <li><kbd>Shift</kbd>+<kbd>F1</kbd> to <kbd>Shift</kbd>+<kbd>F8</kbd>: save to slot 1 to 8. <kbd>F1</kbd> to <kbd>F8</kbd>: load slot 1 to 8. <kbd>F12</kbd>: undo the last load.</li>
+    <li>The Save State and Load State buttons of LaunchBox's and Big Box's pause screen use <b>slot 1</b>. Exit sends melonDS's quit key.</li>
+    <li>The plugin only fills these pause-screen scripts when they are empty, so your own scripts are kept.</li>
+    <li>Save states are not available for DSiWare.</li>
+  </ul>
+  <h3>DSiWare saves, in more detail</h3>
+  <ul>
+    <li><b>Restore</b> puts the save back; the next launch rebuilds the console around it.</li>
+    <li><b>Delete</b> means "this game was never played": the next launch starts it fresh. Not possible while melonDS is running.</li>
+    <li>If the save was changed by something else (a sync, a restore from another PC, a file you copied), the plugin notices, and the new save wins over the old session.</li>
+    <li>Each DSiWare save remembers which console it was made on, and how to rebuild that console from your NAND file. So if you lose melonDS's <code>dsi</code> folder or move to a new PC, putting the same NAND file back in the BIOS folder brings your saves back.</li>
+    <li>If that NAND file is gone too, a window names it (name, size, fingerprint). You can stop and go find it, or <b>Start a new game</b> on another console of the same region. Your old save is then set aside, not deleted, and comes back the day that NAND file is back.</li>
+  </ul>
+</section>
+
+<section id="support"><h2>What works</h2>
+  <table><tr><th>Feature</th><th></th><th>Notes</th></tr>
+  <tr><td>Install and update from LaunchBox</td><td class="yes">Yes</td><td>Latest official Windows release from melonDS's GitHub page.</td></tr>
+  <tr><td>DS games</td><td class="yes">Yes</td><td>No BIOS needed. Your own DS BIOS and firmware are used if all three are there.</td></tr>
+  <tr><td>Games in archives</td><td class="yes">Yes</td><td><code>.zip</code>, <code>.7z</code>, <code>.rar</code>, <code>.tar</code>, <code>.tgz</code>.</td></tr>
+  <tr><td>DSi-enhanced and DSi cartridges</td><td class="partly">Partly</td><td>DSi mode only when the DSi BIOS, firmware and a NAND are set up; otherwise DS mode.</td></tr>
+  <tr><td>DSiWare</td><td class="yes">Yes</td><td>Needs DSi BIOS, firmware and a NAND of the right region. One click in the DSi menu to start the game.</td></tr>
+  <tr><td>Automatic BIOS and NAND setup</td><td class="yes">Yes</td><td>Drop the files in the folder; the plugin sets the paths in melonDS.</td></tr>
+  <tr><td>NAND region chosen per game</td><td class="yes">Yes</td><td>Read from the NAND and the game file, not from file names.</td></tr>
+  <tr><td>Keyboard layout</td><td class="yes">Yes</td><td>Only for keys with nothing set.</td></tr>
+  <tr><td>Gamepad layout</td><td class="no">No</td><td>Set it in melonDS.</td></tr>
+  <tr><td>Save management (cartridge saves, save states)</td><td class="yes">Yes</td><td>List, back up, restore, delete.</td></tr>
+  <tr><td>Save management (DSiWare)</td><td class="yes">Yes</td><td>One small file per game.</td></tr>
+  <tr><td>Pause screen save / load state</td><td class="partly">Partly</td><td>Slot 1 only.</td></tr>
+  <tr><td>Per-game video and firmware settings</td><td class="yes">Yes</td><td>For that game's session only.</td></tr>
+  <tr><td>RAM disk for DSiWare</td><td class="partly">Partly</td><td>Only when a RAM disk is available (see Limits); otherwise the disk is used.</td></tr>
+  <tr><td>RetroAchievements</td><td class="no">No</td><td>Standalone melonDS has no achievement support.</td></tr>
+  </table>
+</section>
+
+<section id="limits"><h2>Limits and things to know</h2>
+  <ul>
+    <li><b>You must provide the DSi files.</b> A DSi NAND cannot be created; it must be dumped from a real DSi. The DSi firmware is required for DSiWare even though melonDS may look like it doesn't need it.</li>
+    <li><b>Region lock.</b> A DSi only runs DSiWare of its own region. Without a NAND of the right region, the game cannot start, and a window says which region is needed.</li>
+    <li><b>A NAND belongs to one console.</b> A save can only be rebuilt from the very same NAND file, not from another console's dump, even of the same region.</li>
+    <li><b>One click per DSiWare launch:</b> the game is started from the DSi menu.</li>
+    <li><b>Disk space:</b> each NAND you set up becomes a console of about 240 MB in melonDS's <code>dsi</code> folder, plus one working console of about 240 MB. This does not grow with the number of games.</li>
+    <li><b>RAM disk:</b> it needs the free ImDisk driver installed by you, the RAM disk turned on in the pack's installer (<code>NixxIntegrations.exe</code>), and about 300 MB of free memory. If the PC crashes in the middle of a game played on the RAM disk, that session is lost. Choose <b>Disk</b> in the game's Options to avoid this. Without a RAM disk, games simply run from the disk.</li>
+    <li><b>Per-game settings are written into melonDS's single settings file</b> for the time of the game, then put back. If you open melonDS on its own right after a session that did not end properly, the plugin puts your settings back first.</li>
+    <li><b>Do not change melonDS's settings while it is running</b> through the plugin's windows: melonDS rewrites its file when it quits.</li>
+    <li><b>A DSiWare game may be refused by the DSi menu</b> in a rare case: when no real <code>.tmd</code> was found anywhere (no file next to the game, not in the plugin's list, and Nintendo's server unreachable). The plugin then makes one from the game file, and the log says so.</li>
+    <li>The plugin only changes paths it set itself. A melonDS you configured by hand keeps its save folders and BIOS paths.</li>
+    <li>The per-game options are not shown in Big Box.</li>
+  </ul>
+</section>
+
+<section id="trouble"><h2>If something goes wrong</h2>
+  <ul>
+    <li>The plugin's log: <code>%LOCALAPPDATA%\lb-integrations-plugins\melonds.log</code> (General tab: "Open the logs folder").</li>
+    <li>For more detail in the log, create an empty file named <code>trace</code> in that same folder, then restart LaunchBox.</li>
+    <li><b>A DSiWare game does not start:</b> check that the three DSi files and a NAND of the game's region are in <code>LaunchBox\Emulators\RetroArch\system</code>. The log names what is missing.</li>
+    <li><b>The DSi menu shows no game:</b> the log says whether the game could be installed. If the plugin's NAND helper could not be used, the log asks for one manual step: in melonDS, open <b>Manage DSi titles</b> and import the game.</li>
+    <li><b>The game was not started after the console setup:</b> this is normal. Launch it again.</li>
+    <li><b>Nothing happens on a second launch:</b> a melonDS game is still on, or melonDS is still closing. Wait a few seconds and try again.</li>
+    <li><b>Wrong console used:</b> if you have two NANDs of the same region, the one that already has a console set up wins; the log says which one was taken.</li>
+    <li>Bugs and questions: <code>https://github.com/nixxou/lb-integrations-plugins/issues</code></li>
+  </ul>
+</section>
+
+<footer>Nixx integration plugins for LaunchBox</footer>
+</main>
+</body>
+</html>

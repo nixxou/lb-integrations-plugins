@@ -230,8 +230,74 @@ namespace LbIntegrations.Menus
                 catch (Exception ex) { RelayLog.Warn("open the logs folder", ex); }
             };
             tab.Controls.Add(text);
+            tab.Controls.Add(HelpButtons());
             tab.Controls.Add(open);
             return tab;
+        }
+
+        /// <summary>One button per plugin that carries a user guide - an embedded resource named "help.html" (Mehdi, 01/10).
+        /// Found among the loaded assemblies like the rest of this relay; the page is written to the logs folder's help\ and
+        /// opened in the browser. A plugin without one simply has no button.</summary>
+        private static Control HelpButtons()
+        {
+            var box = new GroupBox { Text = "User guides", Dock = DockStyle.Bottom, Height = 64, Padding = new Padding(8, 4, 8, 4) };
+            var row = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = true, AutoScroll = true };
+            foreach (var (name, asm) in HelpProviders())
+            {
+                var button = new Button { Text = name, AutoSize = true, Margin = new Padding(0, 2, 6, 2) };
+                button.Click += (_, _) => OpenHelp(name, asm);
+                row.Controls.Add(button);
+            }
+            if (row.Controls.Count == 0) row.Controls.Add(new Label { Text = "No plugin with a guide is loaded.", AutoSize = true, ForeColor = SystemColors.GrayText, Margin = new Padding(0, 6, 0, 0) });
+            box.Controls.Add(row);
+            return box;
+        }
+
+        private static List<(string Name, Assembly Assembly)> HelpProviders()
+        {
+            var found = new List<(string, Assembly)>();
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                try
+                {
+                    if (asm.IsDynamic || !asm.GetManifestResourceNames().Contains("help.html")) continue;
+                    found.Add((TitleOf(asm) ?? asm.GetName().Name, asm));
+                }
+                catch { }
+            }
+            return found.OrderBy(f => f.Item1, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        /// <summary>The page's own &lt;title&gt;, up to its " - ": "Xenia - Nixx plugin guide" -> "Xenia".</summary>
+        private static string TitleOf(Assembly asm)
+        {
+            try
+            {
+                using var s = asm.GetManifestResourceStream("help.html");
+                using var r = new StreamReader(s);
+                var html = r.ReadToEnd();
+                int a = html.IndexOf("<title>", StringComparison.OrdinalIgnoreCase), b = html.IndexOf("</title>", StringComparison.OrdinalIgnoreCase);
+                if (a < 0 || b < a) return null;
+                var t = System.Net.WebUtility.HtmlDecode(html.Substring(a + 7, b - a - 7)).Trim();
+                int dash = t.IndexOf(" - ", StringComparison.Ordinal);
+                return dash > 0 ? t.Substring(0, dash) : t;
+            }
+            catch { return null; }
+        }
+
+        private static void OpenHelp(string name, Assembly asm)
+        {
+            try
+            {
+                var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "lb-integrations-plugins", "help");
+                Directory.CreateDirectory(dir);
+                var path = Path.Combine(dir, asm.GetName().Name + ".html");
+                using (var s = asm.GetManifestResourceStream("help.html"))
+                using (var f = File.Create(path)) s.CopyTo(f);
+                Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+                RelayLog.Info("opened the guide of " + name + " -> " + path);
+            }
+            catch (Exception ex) { RelayLog.Warn("the guide of " + name, ex); }
         }
     }
 

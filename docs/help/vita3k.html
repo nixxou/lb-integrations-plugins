@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vita3K - Nixx plugin guide</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#ffffff; --ink:#1d1d1f; --muted:#5f6368; --line:#e3e3e0; --accent:#0a6ed1; --ok:#1e8e3e; --warn:#b06000; --no:#c5221f; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17181a; --card:#1f2124; --ink:#e8e8e6; --muted:#a0a3a7; --line:#33363a; --accent:#5aa9ff; --ok:#5bc27a; --warn:#e3a34a; --no:#ff7b72; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 "Segoe UI", system-ui, sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 64px; }
+  header h1 { margin:0 0 4px; font-size:30px; }
+  header p { margin:0; color:var(--muted); }
+  nav { margin:20px 0 8px; display:flex; flex-wrap:wrap; gap:8px; }
+  nav a { font-size:14px; color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; background:var(--card); }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 24px; margin:18px 0; }
+  h2 { margin:0 0 10px; font-size:21px; }
+  h3 { margin:18px 0 6px; font-size:17px; }
+  ul { padding-left:22px; } li { margin:4px 0; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .yes { color:var(--ok); font-weight:600; } .partly { color:var(--warn); font-weight:600; } .no { color:var(--no); font-weight:600; }
+  .tip, .warn { border-left:4px solid var(--accent); padding:8px 14px; margin:12px 0; background:color-mix(in srgb, var(--accent) 8%, transparent); border-radius:0 8px 8px 0; }
+  .warn { border-color:var(--warn); background:color-mix(in srgb, var(--warn) 10%, transparent); }
+  code, kbd { font-family:Consolas, monospace; font-size:14px; background:color-mix(in srgb, var(--ink) 8%, transparent); padding:1px 5px; border-radius:4px; }
+  footer { color:var(--muted); font-size:13px; text-align:center; margin-top:30px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Vita3K</h1>
+  <p>What the Nixx plugin does for you, and what to expect.</p>
+</header>
+<nav>
+  <a href="#overview">In short</a><a href="#start">Getting started</a><a href="#play">Playing</a><a href="#options">Options</a>
+  <a href="#saves">Saves</a><a href="#support">What works</a><a href="#limits">Limits</a><a href="#trouble">If something goes wrong</a>
+</nav>
+
+<section id="overview"><h2>In short</h2>
+  <p>Vita3K is a PlayStation Vita emulator. The Nixx-Vita3K plugin lets you use it from LaunchBox like any other emulator: you keep your Vita games as files (<code>.vpk</code>, <code>.zip</code> or <code>.pkg</code>), you import them as ROMs, and you click Play.</p>
+  <p>The plugin works differently from a normal Vita setup. Nothing is installed in Vita3K for good. Each time you play, the plugin builds a fresh, clean Vita console, installs the game on it (with its update and DLC), restores your save, and starts the game. When you quit, it keeps only what the game changed - that is your save - and throws the console away. Your Vita stays clean, and each game's save is one file that LaunchBox's save manager can back up and restore.</p>
+  <p>On top of that, the plugin downloads Vita3K and the Vita system software (firmware) for you, fixes LaunchBox's import of Vita games, finds updates and DLC by itself, and gives each game its own settings window.</p>
+</section>
+
+<section id="start"><h2>Getting started</h2>
+  <h3>1. Install Vita3K</h3>
+  <ul>
+    <li>In LaunchBox, add a new emulator and choose <strong>Nixx-Vita3K</strong> from the list, then let it download. The plugin fetches the latest Vita3K build and puts it in <code>LaunchBox\Emulators\Nixx-Vita3K</code>.</li>
+    <li>It then downloads the Vita firmware (about 300 MB) from Sony's own update servers and installs it. You do not need to look for it yourself. An internet connection is needed for this step.</li>
+    <li>Vita3K is set up to start games full screen, without its welcome window, and without checking for its own updates (updates come through LaunchBox, see below).</li>
+    <li>A notification then tells you which language, date and time format and confirm button (cross or circle) your games will use. These are taken from your Windows settings. Click <strong>Yes</strong> if they are right. Click <strong>No</strong> to open a small window and change them.</li>
+  </ul>
+  <div class="warn">Keep your LaunchBox folder at a reasonably short path (for example <code>D:\LaunchBox</code>). The firmware contains very deep folders, and if the emulator folder path is too long (more than about 120 characters) the plugin refuses to install the firmware rather than leave you with a broken console. It checks this before downloading anything.</div>
+
+  <h3>2. Import your games</h3>
+  <ul>
+    <li>Use LaunchBox's normal <strong>Import &gt; ROM Files</strong> wizard. Pick your files, choose the platform <strong>Sony Playstation Vita</strong> and the emulator <strong>Nixx-Vita3K</strong>.</li>
+    <li>File types the plugin can play:
+      <ul>
+        <li><code>.vpk</code> - the usual homebrew and game package;</li>
+        <li><code>.zip</code> - for example a "NoNpDRM" game dump, which carries its own licence. A zip can also hold the game together with its update and DLC;</li>
+        <li><code>.pkg</code> - a PlayStation Store package. A .pkg never contains its licence: you must supply it (see below).</li>
+      </ul>
+    </li>
+    <li>Leave the files as they are. Do not unzip them: the plugin reads and installs them itself at each launch.</li>
+  </ul>
+  <p><strong>Why the import needs help.</strong> When you choose "Sony Playstation Vita", LaunchBox normally ignores the files you picked and lists games already installed inside Vita3K instead. With this plugin nothing stays installed, so that list would be empty. The plugin quietly works around this: the wizard scans your files like ordinary ROMs, and the games are still imported under "Sony Playstation Vita" with their metadata and images. This only happens in LaunchBox (not Big Box).</p>
+  <p><strong>The game list is tidied before you click Finish.</strong> Each file is read, and:</p>
+  <ul>
+    <li>games get their real title, taken from the game itself (for example "LittleBigPlanet PlayStation Vita"), without the &trade; and &reg; signs;</li>
+    <li>updates and DLC are removed from the list (they are not separate games) and remembered, so the game finds them when you play;</li>
+    <li>a .pkg game whose licence cannot be found is removed, because it could not start anyway;</li>
+    <li>anything that is not a Vita game is removed.</li>
+  </ul>
+  <p>You can still change the list before Finish. After the import, each game's <strong>Region</strong> is filled in from the game itself (North America, Europe, Japan, Asia, Korea), and its <strong>Version</strong> field keeps only the tags of the file name, like <code>[PCSA00017] [USA] [NoNpDRM]</code>. Each of these three helpers can be turned off (see <a href="#options">Options</a>).</p>
+
+  <h3>3. Licences for .pkg files</h3>
+  <p>The plugin ships no licences. For each .pkg game or DLC you own, give it the licence in one of these ways:</p>
+  <ul>
+    <li>a licence file next to the .pkg with the same name: <code>MyGame.rif</code>, <code>MyGame.bin</code>, <code>MyGame.work.bin</code>, or a text file <code>MyGame.zrif</code> holding the licence text (a "zRIF"). A licence file with another name in the same folder is also found, as long as it belongs to that package;</li>
+    <li>or a table in the folder <code>LaunchBox\Emulators\Nixx-Vita3K\zrif\</code>. The plugin puts a ready-made <code>my-licences.tsv</code> there, with the explanation inside. Each line holds a <strong>Content ID</strong> (like <code>UP0000-PCSE00000_00-XXXXXXXXXXXXXXXX</code>) and its <strong>zRIF</strong>, separated by a tab. You can have several such tables.</li>
+  </ul>
+  <p>A licence is only used for the exact package it was made for. An update in .pkg form needs no licence: it uses its game's.</p>
+
+  <h3>4. Updates and DLC</h3>
+  <p>You do not import updates and DLC as games. The plugin looks for them at each launch, around the game's file:</p>
+  <ul>
+    <li>next to the game, in a file whose name contains the game's ID (like <code>PCSA00017</code>);</li>
+    <li>the same, inside a sub-folder named <code>DLC</code>, <code>Update</code> or <code>Patch</code> (or the same in the plural);</li>
+    <li>in any folder named after the game's ID, or after the game's title, below the game's folder;</li>
+    <li>inside the game's own zip;</li>
+    <li>and anywhere the import found them in the same batch of files.</li>
+  </ul>
+  <p>Names only point the way: a file is used only if its contents say it really belongs to that game. By default the game gets <strong>every DLC</strong> and <strong>the highest update</strong> (Vita updates include all earlier ones). You can change this per game in the Options window.</p>
+  <p><strong>Updating Vita3K:</strong> use the plugin's Download button in LaunchBox's emulator window when a newer build is offered. Your firmware, settings and saves are kept.</p>
+</section>
+
+<section id="play"><h2>Playing a game</h2>
+  <p>When you click Play, the plugin:</p>
+  <ul>
+    <li>builds a fresh console from the clean firmware, in memory (a RAM disk) when your PC has enough free memory and the RAM disk is set up, otherwise in a folder on your disk;</li>
+    <li>installs the game, its update and DLC on it (decrypting the game if needed);</li>
+    <li>puts your save back;</li>
+    <li>applies the game's own settings, if you set any;</li>
+    <li>starts Vita3K directly on the game.</li>
+  </ul>
+  <p>A small window shows the progress when this takes more than a moment. It also shows the game's state in Vita3K's compatibility list (for example "Playable" or "Ingame"), with a link to its report. Playing the same game again is fast: if the console still holds that game, nothing is rebuilt.</p>
+  <p>If a save may not suit the game as it is now - it was made with a newer update that is no longer found, or with a DLC that is gone - the plugin asks before loading it. If you answer No, the game starts without it and the save is kept aside as a copy.</p>
+  <h3>Quitting</h3>
+  <ul>
+    <li>Press <kbd>Esc</kbd>, use the Exit of LaunchBox's or Big Box's pause screen, or close the window. Vita3K does not ask for confirmation.</li>
+    <li>Vita3K tends to go back to its own game list instead of quitting, or to hang while stopping. The plugin closes it for you about five seconds after the game window is gone.</li>
+    <li>A closing window then appears while your save is taken and the RAM disk is released. LaunchBox stays locked until it is done - this only takes a few seconds. Do not turn off the PC during it.</li>
+  </ul>
+</section>
+
+<section id="options"><h2>Options</h2>
+  <h3>The pack's window: Tools &gt; "Nixx Integration Plugins Configuration..."</h3>
+  <p>The <strong>Vita3K</strong> tab has:</p>
+  <ul>
+    <li><strong>Import Vita games as ROM files</strong> - the import fix described above (on by default);</li>
+    <li><strong>Put the game list right before importing</strong> - titles from the games, updates and DLC taken out (on by default);</li>
+    <li><strong>After the import, set each game's region and version</strong>;</li>
+    <li><strong>System settings</strong> - the language, date format, time format and confirm button Vita3K tells every game. Vita3K must be closed to change them;</li>
+    <li><strong>Open config.yml...</strong> - opens Vita3K's own settings file in Notepad, for everything else. Close Vita3K first: it rewrites that file when it quits.</li>
+  </ul>
+  <p>Note that game titles in your library stay in US English whatever language you choose here.</p>
+
+  <h3>Per game: right-click &gt; "Nixx-Vita3K : Options..."</h3>
+  <p>Right-click a game (or a selection of games) in LaunchBox. The entry is provided by the pack's menu plugin and appears for any game a Nixx-Vita3K can run. It is not available in Big Box. The window has several tabs:</p>
+  <ul>
+    <li><strong>Session</strong> - where the console lives while you play: <em>RAM disk</em> (default; falls back to the disk when memory is short), <em>Disk only</em>, or <em>VHDX files</em> (the game is installed once into virtual disk files kept in a folder you choose, so later launches skip the install). Also the RAM disk safety margin and how much memory to keep free for Vita3K itself. Left empty, that last one uses what the game needed last time plus 15%.</li>
+    <li><strong>Updates &amp; DLC</strong> - which update the game runs with (<em>Automatic</em> = the highest found, a specific one, or <em>None</em>) and which DLC to leave out. One game at a time. A DLC found later is added automatically. Changing this can affect existing saves, so the window warns you first.</li>
+    <li><strong>System</strong> - a different language, date, time format or confirm button for this game only.</li>
+    <li><strong>Graphics</strong> - Vita3K's renderer (Vulkan or OpenGL), image quality settings and FPS hack, for this game.</li>
+    <li><strong>Compatibility</strong> - the game's state in Vita3K's compatibility list, and three settings some games need: <em>File loading delay</em> (for games that load too fast, such as Silent Hill), <em>CPU optimizations</em> and <em>NGS audio</em> (some games crash or have no sound with them).</li>
+    <li><strong>Advanced</strong> - shows what the other tabs change, and lets you write Vita3K's per-game settings by hand. <em>Preview result...</em> shows exactly what Vita3K will read.</li>
+  </ul>
+  <p>Every setting can stay on "default", which means the game runs as it would without the plugin. A coloured bar next to each setting shows where its value comes from, and <strong>Reset to defaults</strong> puts everything back. With several games selected, OK applies the window to all of them (you are asked first).</p>
+  <div class="warn">These per-game settings are applied only while the game runs; Vita3K's own per-game file is put back as it was when you quit. So a change you make in Vita3K's own game settings <em>during</em> such a session is lost - the window says so in red. Click <strong>Pause these settings</strong> to keep the plugin's settings for the game without using them: the game then runs on Vita3K's own settings, and changes made there are kept.</div>
+  <p>The <strong>Game settings in Vita3K...</strong> button at the bottom opens Vita3K on the selected game(s) without starting them, so you can use Vita3K's own "Custom Config" menu (right-click the game in Vita3K's list). The game cannot be played from there. Close Vita3K when you are done.</p>
+</section>
+
+<section id="saves"><h2>Saves and save states</h2>
+  <ul>
+    <li>Each game has <strong>one save file</strong>, which holds everything the game wrote during your sessions. LaunchBox's save management shows it with a <strong>VITA</strong> chip ("Vita save"), and you can back it up, restore it or delete it there.</li>
+    <li>A restored save is used at the next launch: the console is rebuilt around it.</li>
+    <li>The save stays valid when you change the update or DLC. Only two cases ask before loading: a save made with a higher update than the game now has, or with a DLC that is no longer there.</li>
+    <li>Saves live in <code>LaunchBox\Emulators\Nixx-Vita3K\portable\saves\</code>, one folder per game ID.</li>
+    <li><strong>No save states.</strong> Vita3K has no save states at all, so the plugin adds no save/load state hotkeys. Use the game's own save system.</li>
+  </ul>
+</section>
+
+<section id="support"><h2>What works</h2>
+  <table><tr><th>Feature</th><th></th><th>Notes</th></tr>
+  <tr><td>Download and update Vita3K</td><td class="yes">Yes</td><td>Latest build from Vita3K's GitHub releases; settings, firmware and saves kept on update.</td></tr>
+  <tr><td>Vita firmware</td><td class="yes">Yes</td><td>Downloaded from Sony and installed automatically. Needs a short install path.</td></tr>
+  <tr><td>.vpk games</td><td class="yes">Yes</td><td>Installed at each launch.</td></tr>
+  <tr><td>.zip game dumps (NoNpDRM)</td><td class="yes">Yes</td><td>Decrypted at launch, straight from the zip. A zip may also hold the update and DLC.</td></tr>
+  <tr><td>.pkg store packages</td><td class="partly">Partly</td><td>Only with a licence you supply (file next to it or zRIF table).</td></tr>
+  <tr><td>Updates and DLC</td><td class="yes">Yes</td><td>Found automatically; choice per game in Options.</td></tr>
+  <tr><td>Import wizard for Vita games</td><td class="yes">Yes</td><td>LaunchBox only. Titles, region and version filled in; updates/DLC filtered out.</td></tr>
+  <tr><td>Save management in LaunchBox</td><td class="yes">Yes</td><td>One file per game: backup, restore, delete.</td></tr>
+  <tr><td>Save states</td><td class="no">No</td><td>Vita3K has none.</td></tr>
+  <tr><td>RAM disk</td><td class="partly">Partly</td><td>Only if the free ImDisk driver is installed and the RAM disk was enabled in the pack's installer, and only when enough memory is free. Otherwise the disk is used.</td></tr>
+  <tr><td>VHDX mode</td><td class="partly">Partly</td><td>Needs the same RAM disk helper and a local (not network) folder. Falls back to the RAM disk or disk if it cannot be used.</td></tr>
+  <tr><td>Per-game settings</td><td class="yes">Yes</td><td>System, Graphics, Compatibility, Advanced; applied only during the game.</td></tr>
+  <tr><td>Compatibility info</td><td class="partly">Partly</td><td>Shown once Vita3K has downloaded its compatibility list (it does this itself when it runs).</td></tr>
+  <tr><td>Quit with Esc / pause screen Exit</td><td class="yes">Yes</td><td>No confirmation; Vita3K is closed for you if it lingers.</td></tr>
+  <tr><td>Right-click Options in Big Box</td><td class="no">No</td><td>LaunchBox only. Playing from Big Box works.</td></tr>
+  <tr><td>Themes and .vci files</td><td class="no">No</td><td>Not handled.</td></tr>
+  </table>
+</section>
+
+<section id="limits"><h2>Limits and things to know</h2>
+  <ul>
+    <li><strong>One game per file.</strong> If a zip holds several games, only the biggest is used.</li>
+    <li><strong>The first launch of a game takes time.</strong> A large game has to be copied and decrypted (several seconds for a 4 GB game). The progress window tells you what is happening.</li>
+    <li><strong>Memory.</strong> With the RAM disk, the whole console is in memory during play. If memory runs short, the plugin first frees idle memory from other programs, then uses the disk instead.</li>
+    <li><strong>Do not cut the power during a game.</strong> A RAM disk does not survive a crash or power cut: the session you were playing would be lost (your previous save stays).</li>
+    <li><strong>Do not install games in this Vita3K by hand.</strong> The console is rebuilt at every launch; whatever you install by starting Vita3K on its own is moved aside.</li>
+    <li>If you point the plugin at a Vita3K you already used before, it does not move that install's data around, so your old games and saves there stay where they were. The plugin works best with the Vita3K it installs itself.</li>
+    <li>Changing the update or DLC of a game may make old saves load wrong. The plugin keeps the save either way and asks when it sees a risk.</li>
+    <li>Licences are never included: you need your own for every .pkg.</li>
+    <li>Changes made in Vita3K's own game settings during a game that has plugin settings are not kept (see <a href="#options">Options</a>, "Pause these settings").</li>
+    <li>The import fix and the right-click Options are for LaunchBox; they do nothing in Big Box.</li>
+  </ul>
+</section>
+
+<section id="trouble"><h2>If something goes wrong</h2>
+  <ul>
+    <li>The plugin's log: <code>%LOCALAPPDATA%\lb-integrations-plugins\vita3k.log</code> (General tab: "Open the logs folder"). It says why a game was refused, which updates and DLC were found or set aside, and which licence was used or missing.</li>
+    <li>Vita3K's own log: <code>LaunchBox\Emulators\Nixx-Vita3K\portable\vita3k.log</code>, rewritten at each start.</li>
+    <li><strong>A .pkg game does not start:</strong> its licence is missing or belongs to another package. Check the file name next to it, or the Content ID in your zRIF table.</li>
+    <li><strong>A DLC or update is not used:</strong> open the game's Options, tab Updates &amp; DLC, to see what was found. The log explains why a file was not kept.</li>
+    <li><strong>The firmware will not install:</strong> check your internet connection, and that the LaunchBox folder path is not too long.</li>
+    <li><strong>A game crashes or has no sound:</strong> look at its compatibility state, and try the Compatibility tab (CPU optimizations, NGS audio, file loading delay) or another renderer in Graphics.</li>
+    <li><strong>The import shows no games:</strong> make sure "Import Vita games as ROM files" is ticked in the Vita3K tab of the pack's window.</li>
+  </ul>
+</section>
+
+<footer>Nixx integration plugins for LaunchBox</footer>
+</main>
+</body>
+</html>

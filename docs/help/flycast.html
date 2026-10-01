@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flycast - Nixx plugin guide</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#ffffff; --ink:#1d1d1f; --muted:#5f6368; --line:#e3e3e0; --accent:#0a6ed1; --ok:#1e8e3e; --warn:#b06000; --no:#c5221f; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17181a; --card:#1f2124; --ink:#e8e8e6; --muted:#a0a3a7; --line:#33363a; --accent:#5aa9ff; --ok:#5bc27a; --warn:#e3a34a; --no:#ff7b72; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 "Segoe UI", system-ui, sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 64px; }
+  header h1 { margin:0 0 4px; font-size:30px; }
+  header p { margin:0; color:var(--muted); }
+  nav { margin:20px 0 8px; display:flex; flex-wrap:wrap; gap:8px; }
+  nav a { font-size:14px; color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; background:var(--card); }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 24px; margin:18px 0; }
+  h2 { margin:0 0 10px; font-size:21px; }
+  h3 { margin:18px 0 6px; font-size:17px; }
+  ul { padding-left:22px; } li { margin:4px 0; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .yes { color:var(--ok); font-weight:600; } .partly { color:var(--warn); font-weight:600; } .no { color:var(--no); font-weight:600; }
+  .tip, .warn { border-left:4px solid var(--accent); padding:8px 14px; margin:12px 0; background:color-mix(in srgb, var(--accent) 8%, transparent); border-radius:0 8px 8px 0; }
+  .warn { border-color:var(--warn); background:color-mix(in srgb, var(--warn) 10%, transparent); }
+  code, kbd { font-family:Consolas, monospace; font-size:14px; background:color-mix(in srgb, var(--ink) 8%, transparent); padding:1px 5px; border-radius:4px; }
+  footer { color:var(--muted); font-size:13px; text-align:center; margin-top:30px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Flycast</h1>
+  <p>What the Nixx plugin does for you, and what to expect.</p>
+</header>
+<nav>
+  <a href="#overview">In short</a><a href="#start">Getting started</a><a href="#play">Playing</a><a href="#options">Options</a>
+  <a href="#saves">Saves</a><a href="#support">What works</a><a href="#limits">Limits</a><a href="#trouble">If something goes wrong</a>
+</nav>
+
+<section id="overview"><h2>In short</h2>
+  <p>Flycast is the emulator for Sega's Dreamcast and for the arcade boards built on the same hardware. One emulator covers four LaunchBox platforms: <b>Sega Dreamcast</b>, <b>Sega Naomi</b>, <b>Sega Naomi 2</b> and <b>Sammy Atomiswave</b>. Flycast also runs Sega System SP games; LaunchBox has no platform for those, but if you create one yourself with "System SP" anywhere in its name, the plugin treats it as a Flycast platform too.</p>
+  <p>LaunchBox does not know Flycast on its own. The Nixx-Flycast plugin fills that gap: it downloads and updates Flycast for you, sets up the emulator entry with the right platforms, tells LaunchBox which BIOS files are needed, passes your RetroAchievements login, gives Flycast keys to save and load states and to quit, lets LaunchBox see and back up your saves, and adds a per-game options window. It also helps LaunchBox's Import ROM Files wizard when you import a big arcade (MAME) folder.</p>
+</section>
+
+<section id="start"><h2>Getting started</h2>
+  <h3>Installing Flycast</h3>
+  <ul>
+    <li>In LaunchBox, open <b>Tools &gt; Manage &gt; Emulators</b>, click <b>Add</b>, and pick <b>Nixx-Flycast</b> in the list. Click the download button: the plugin fetches the latest Windows release of Flycast from its official GitHub page.</li>
+    <li>Flycast is installed into <code>LaunchBox\Emulators\Nixx-Flycast</code>. The emulator entry is created with its four platforms already ticked as default emulator, and launches games in fullscreen.</li>
+    <li>Pressing download a second time does not create a second entry: the existing one is reused.</li>
+    <li>When a newer Flycast is released, LaunchBox shows an update for it. Updating unpacks the new version over the old one and never empties the folder first, so your memory cards, save states and settings stay.</li>
+  </ul>
+  <h3>Already have Flycast?</h3>
+  <p>You can also add a Flycast you installed yourself, by hand. As long as the entry points to <code>flycast.exe</code>, the plugin recognises it, adds the missing Flycast platforms to it (it never removes or unticks a platform you set), and fills empty save/load/exit pause-screen scripts.</p>
+  <h3>BIOS files</h3>
+  <p>The plugin tells LaunchBox which BIOS files each platform needs, so LaunchBox can show you what is missing. Put them in Flycast's <code>data</code> folder (<code>Emulators\Nixx-Flycast\data</code>):</p>
+  <ul>
+    <li><b>Dreamcast:</b> <code>dc_boot.bin</code> (or <code>dc_bios.bin</code>). Optional: without it, Flycast uses its own built-in BIOS, which runs most games. A few games refuse it and need the real one.</li>
+    <li><b>Naomi:</b> <code>naomi.zip</code>, required (234 of 244 titles). A few games want their own BIOS as well: <code>hod2bios.zip</code>, <code>f355bios.zip</code>, <code>f355dlx.zip</code>, <code>airlbios.zip</code>, <code>naomigd.zip</code>, <code>naomidev.zip</code>.</li>
+    <li><b>Naomi 2:</b> <code>naomi2.zip</code>, required.</li>
+    <li><b>Atomiswave:</b> <code>awbios.zip</code>, required.</li>
+  </ul>
+  <h3>Importing games</h3>
+  <ul>
+    <li>Dreamcast games: <code>.chd</code>, <code>.gdi</code>, <code>.cdi</code> or <code>.cue</code> (and <code>.elf</code> homebrew).</li>
+    <li>Arcade games: MAME romsets as <code>.zip</code> or <code>.7z</code>, kept zipped. Flycast reads the zip itself, so the plugin turns LaunchBox's automatic extraction off.</li>
+    <li>When you use <b>Import ROM Files</b> and choose Nixx-Flycast as the emulator, the plugin helps the wizard:
+      <ul>
+        <li>On the last page, the game list keeps only the games of the chosen platform. Handy when you point it at a whole MAME folder, most of which is not Naomi or Atomiswave. While LaunchBox fills the list (it can take a minute), a small window tells you it is working.</li>
+        <li>For an arcade platform, "Force using MAME metadata" is ticked for you, and the MAME page's "Skip..." boxes are unticked (Flycast runs quiz and mahjong games, and many sets MAME calls unplayable). You can tick them back.</li>
+        <li>Once the list is sorted, the <b>Back</b> button is greyed: finish or cancel from there.</li>
+        <li>After the import, some arcade sets that LaunchBox silently drops (for example <i>vf4b</i> next to <i>vf4</i>, both "Virtua Fighter 4") are added back as versions of their game. Nothing LaunchBox imported is changed, and your choices on the MAME page are respected.</li>
+      </ul>
+    </li>
+    <li>How strict that list check is can be set per platform (see <a href="#options">Options</a>).</li>
+  </ul>
+</section>
+
+<section id="play"><h2>Playing a game</h2>
+  <p>Select a game and click <b>Play</b>. Before Flycast starts, the plugin:</p>
+  <ul>
+    <li>writes your RetroAchievements login into Flycast's settings, if LaunchBox has one (and hardcore mode if you turned it on for the emulator). If that fails, the game still starts;</li>
+    <li>makes sure Flycast has the save state and quit keys (see <a href="#saves">Saves</a>);</li>
+    <li>applies the game's own options, if you set some in the Options window. They are given to Flycast for this session only.</li>
+  </ul>
+  <p>For a <b>Naomi GD-ROM game</b> (a zip plus a disc image), if the disc image is missing the plugin does not start Flycast. It shows a message instead, saying which <code>.chd</code> file is needed and in which folder to put it (a folder named after the set, next to the zip). The zip only holds the game's security key; the game itself is on the disc image.</p>
+  <p>Only one Flycast game can be launched at a time. A second launch while one is still running is refused (silently if it is a double click, with a message otherwise). A launch is also refused if Flycast is already open on its own.</p>
+  <p>When you quit, use <kbd>Escape</kbd> (or LaunchBox's Exit): Flycast closes cleanly and finishes writing its memory card. If the plugin had to set aside part of the game's own Flycast config for the session, it puts it back once Flycast has closed. If LaunchBox or the PC stopped in the middle, this is done at the next launch, at the next LaunchBox start, or when you open Flycast without a game.</p>
+</section>
+
+<section id="options"><h2>Options</h2>
+  <h3>Per game: right-click &gt; Nixx-Flycast : Options...</h3>
+  <p>Right-click a game (or a selection of games) &gt; <b>Nixx-Flycast : Options...</b>. This entry is added by the pack's small helper plugin <b>Nixx-Menus</b>; it shows in LaunchBox, not in Big Box. It appears for games whose emulator is a Flycast, or whose platform one of your Flycast entries runs.</p>
+  <ul>
+    <li>Three tabs of settings, with Flycast's own names: <b>Video</b> (renderer, internal resolution, filtering, widescreen, integer scaling, VSync, FPS counter...), <b>Rendering</b> (frame skipping, shadows, fog, framebuffer emulation...), and <b>System</b> (region, Dreamcast language, broadcast, cable, CPU clock, volume, HLE BIOS, fast GD-ROM loading, 32 MB RAM mod, Naomi free play...).</li>
+    <li>Everything starts on <b>Default</b>: what the game runs on without the plugin (its own Flycast game config if you made one in Flycast, else Flycast's settings). A list shows <code>&lt;Default : value&gt;</code>, a checkbox has a third "filled" state for default, a number has an "Override default" box. Only what you change is kept, so opening the window changes nothing.</li>
+    <li>A colored bar beside each setting tells you where its value comes from: set here, from the game's own Flycast config, or from Flycast's settings. <b>Reset to defaults</b> puts everything back on default.</li>
+    <li>What you set here wins over the game's own Flycast config for the session. Flycast's built-in fixes for known games still win over it.</li>
+    <li>A setting that only means something for the Dreamcast (cable, language...) or for arcade games is marked so when your selection mixes both, and is only given to the games it applies to.</li>
+    <li>Several games with different settings: a list at the top lets you pick which one to start from. OK applies what is shown to all selected games, after asking.</li>
+    <li><b>Advanced</b> tab: shows the exact lines given to Flycast. Tick "Edit by hand" to write your own (Flycast's section and key names); the other tabs are then not used. <b>Preview result...</b> shows the command line Flycast will be started with.</li>
+    <li><b>Delete game config</b> (only shown when the game has one): deletes the game's own Flycast config, the same as Flycast's "Delete Game Config". This is done right away, after asking, not on OK. It does not touch the plugin's own settings for the game, and it is refused while Flycast is running.</li>
+  </ul>
+  <p>Your Flycast settings file is never rewritten for these options: they are passed to Flycast for each session only.</p>
+  <h3>Plugin settings: Tools &gt; Nixx Integration Plugins Configuration...</h3>
+  <p>The pack's window has a <b>General</b> tab and one tab per plugin. The <b>Flycast</b> tab holds the Import ROM Files settings:</p>
+  <ul>
+    <li><b>Quick check</b> (on by default), per platform: the game list keeps a file by its name, the way Flycast finds a set (a Dreamcast disc by its extension). Instant.</li>
+    <li><b>CRC check</b> (off by default), per platform: checks the files' content. A set must contain all its files; a set under the wrong name is recognised and the list tells you what to rename it to; each game is test-loaded the way Flycast loads it. This can take minutes on a whole MAME folder, under a window you can cancel.</li>
+    <li><b>After the import, put back the arcade sets LaunchBox left out</b> (on by default): see <a href="#start">Importing games</a>.</li>
+  </ul>
+</section>
+
+<section id="saves"><h2>Saves and save states</h2>
+  <p>LaunchBox's save management sees your Flycast saves, can back them up and restore them. Everything lives in Flycast's <code>data</code> folder (<code>Emulators\Nixx-Flycast\data</code>), unless you redirected folders in Flycast's settings, which the plugin follows.</p>
+  <ul>
+    <li><b>Dreamcast:</b> the game's memory card (VMU in port A1). Flycast names it after the disc's product number, read from the disc image, so it is found whatever the file name of your game.</li>
+    <li><b>Arcade games:</b> the board's saved data (high scores, settings, card files), named after the game's zip. A backup, restore or delete always takes the whole set of files together.</li>
+    <li><b>Save states:</b> 10 slots (0 to 9) per game, named after the game's file.</li>
+    <li>A memory card coming from Argosy (named <code>&lt;id&gt;.A1.bin</code>) is restored under the name Flycast actually reads.</li>
+  </ul>
+  <h3>Keys</h3>
+  <p>Flycast ships with no key to save or load a state, and none to quit. On install (or at first launch for a Flycast you added yourself), the plugin adds them:</p>
+  <table><tr><th>Key</th><th>Action</th></tr>
+  <tr><td><kbd>F2</kbd></td><td>Save state</td></tr>
+  <tr><td><kbd>F4</kbd></td><td>Load state</td></tr>
+  <tr><td><kbd>F6</kbd> / <kbd>F7</kbd></td><td>Previous / next state slot</td></tr>
+  <tr><td><kbd>Escape</kbd></td><td>Quit Flycast</td></tr></table>
+  <p>Flycast's normal controls are kept. A key you already use is never taken, an action you already bound keeps your key, and a keyboard mapping file you already have is never rewritten. The emulator entry's pause-screen scripts (save state, load state, exit) are filled with the keys Flycast really has, so LaunchBox's and Big Box's pause screen work. Only empty scripts are filled.</p>
+</section>
+
+<section id="support"><h2>What works</h2>
+  <table><tr><th>Feature</th><th></th><th>Notes</th></tr>
+  <tr><td>Download and install Flycast</td><td class="yes">Yes</td><td>Latest Windows release from GitHub, into <code>Emulators\Nixx-Flycast</code>.</td></tr>
+  <tr><td>Updates</td><td class="yes">Yes</td><td>Installed over the old version; saves and settings kept.</td></tr>
+  <tr><td>Dreamcast</td><td class="yes">Yes</td><td>Recommended emulator for this platform.</td></tr>
+  <tr><td>Naomi, Naomi 2, Atomiswave</td><td class="yes">Yes</td><td>Supported; MAME remains a valid choice if you prefer it.</td></tr>
+  <tr><td>Sega System SP</td><td class="partly">Partly</td><td>Only on a platform you create yourself with "System SP" in its name. No BIOS list for it.</td></tr>
+  <tr><td>Emulator entry you made by hand</td><td class="yes">Yes</td><td>Missing platforms added; your existing platforms never touched.</td></tr>
+  <tr><td>BIOS check</td><td class="partly">Partly</td><td>LaunchBox is told the main BIOS per platform. Some Naomi games need a BIOS of their own, listed as optional.</td></tr>
+  <tr><td>RetroAchievements</td><td class="yes">Yes</td><td>Login and hardcore mode passed to Flycast before each game.</td></tr>
+  <tr><td>Fullscreen launch</td><td class="yes">Yes</td><td>For the session only; your windowed size is not changed.</td></tr>
+  <tr><td>Per-game options</td><td class="yes">Yes</td><td>Right-click &gt; Nixx-Flycast : Options... In LaunchBox only, not in Big Box.</td></tr>
+  <tr><td>Save management (VMU, arcade data, states)</td><td class="yes">Yes</td><td>Backup, restore, delete in LaunchBox.</td></tr>
+  <tr><td>Shared memory cards (other ports than A1)</td><td class="no">No</td><td>Not shown as a game's save (see Limits).</td></tr>
+  <tr><td>Save state / load state / quit keys</td><td class="yes">Yes</td><td>F2, F4, F6/F7, Escape, unless you already use them.</td></tr>
+  <tr><td>Pause screen scripts</td><td class="yes">Yes</td><td>LaunchBox and Big Box. LiteBox keeps them but has no pause screen yet.</td></tr>
+  <tr><td>Import ROM Files help</td><td class="yes">Yes</td><td>List filtered per platform, MAME options preset, dropped sets put back.</td></tr>
+  <tr><td>Naomi GD-ROM game without its disc image</td><td class="partly">Partly</td><td>Kept at import; at launch, a clear message instead of starting.</td></tr>
+  </table>
+</section>
+
+<section id="limits"><h2>Limits and things to know</h2>
+  <ul>
+    <li><b>Shared memory cards are left alone.</b> Flycast gives each game its own card in port A1 only. The cards in the other ports (A2 to D2) are shared by all games, like a real memory card. Restoring one as "this game's save" would wipe other games' data, so they never appear in LaunchBox's saves. The plugin's log mentions it when one of them holds data.</li>
+    <li>Machine files in the <code>data</code> folder (console memory, BIOS) are not game saves and are never listed.</li>
+    <li>A Dreamcast game has two names in Flycast: its memory card follows the disc's product number, its save states follow the game's file name. Renaming the game file means its old save states no longer match.</li>
+    <li>Arcade saves and states follow the zip's file name: keep MAME's set names.</li>
+    <li>Do not change Flycast's settings file while Flycast is open: Flycast rewrites it when it quits. The plugin refuses to write it while Flycast runs.</li>
+    <li>For the Options window to go over a game's own Flycast config, the plugin needs the game's Flycast id. It reads it from the disc, or asks a small helper tool placed next to <code>flycast.exe</code>. When neither works, it learns the id from Flycast's own log during that one launch.</li>
+    <li>Flycast's own fixes for known games always win over the Options window.</li>
+    <li>The RetroAchievements section of Flycast's settings cannot be set from the Advanced tab: the plugin manages it.</li>
+    <li>Only the Windows zip release of Flycast is installed; the Microsoft Store version is not.</li>
+    <li>The plugin's right-click entry and settings window are not shown in Big Box.</li>
+    <li>The game options are kept in the Flycast folder. If you delete or move that folder, they go with it.</li>
+  </ul>
+</section>
+
+<section id="trouble"><h2>If something goes wrong</h2>
+  <ul>
+    <li>The plugin's log: <code>%LOCALAPPDATA%\lb-integrations-plugins\flycast.log</code> (General tab: "Open the logs folder").</li>
+    <li><b>No download offered / "Couldn't determine which build of Flycast to install":</b> GitHub may be limiting requests from your PC. Wait a few minutes and try again.</li>
+    <li><b>An arcade game does not start:</b> check its BIOS is in <code>Emulators\Nixx-Flycast\data</code> (<code>naomi.zip</code>, <code>naomi2.zip</code> or <code>awbios.zip</code>), and that the game is still zipped.</li>
+    <li><b>A Naomi game says its disc image is missing:</b> put the <code>.chd</code> named in the message into a folder named after the set, next to the zip.</li>
+    <li><b>A game will not launch and nothing happens:</b> another Flycast game may still be running, or Flycast is open on its own. Close it and try again.</li>
+    <li><b>A game in the import list is missing:</b> it may have been filtered out as not a Flycast game for that platform. Try with only Quick check, or look at the lines starting with <code>[import]</code> in the log.</li>
+    <li><b>Save state keys do nothing:</b> if you had your own keyboard mapping in Flycast, the plugin left it as it was; bind save/load state in Flycast's Controls settings.</li>
+  </ul>
+</section>
+
+<footer>Nixx integration plugins for LaunchBox</footer>
+</main>
+</body>
+</html>

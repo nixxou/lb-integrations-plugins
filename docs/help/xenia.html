@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Xenia - Nixx plugin guide</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#ffffff; --ink:#1d1d1f; --muted:#5f6368; --line:#e3e3e0; --accent:#0a6ed1; --ok:#1e8e3e; --warn:#b06000; --no:#c5221f; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17181a; --card:#1f2124; --ink:#e8e8e6; --muted:#a0a3a7; --line:#33363a; --accent:#5aa9ff; --ok:#5bc27a; --warn:#e3a34a; --no:#ff7b72; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 "Segoe UI", system-ui, sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 64px; }
+  header h1 { margin:0 0 4px; font-size:30px; }
+  header p { margin:0; color:var(--muted); }
+  nav { margin:20px 0 8px; display:flex; flex-wrap:wrap; gap:8px; }
+  nav a { font-size:14px; color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; background:var(--card); }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 24px; margin:18px 0; }
+  h2 { margin:0 0 10px; font-size:21px; }
+  h3 { margin:18px 0 6px; font-size:17px; }
+  ul { padding-left:22px; } li { margin:4px 0; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .yes { color:var(--ok); font-weight:600; } .partly { color:var(--warn); font-weight:600; } .no { color:var(--no); font-weight:600; }
+  .tip, .warn { border-left:4px solid var(--accent); padding:8px 14px; margin:12px 0; background:color-mix(in srgb, var(--accent) 8%, transparent); border-radius:0 8px 8px 0; }
+  .warn { border-color:var(--warn); background:color-mix(in srgb, var(--warn) 10%, transparent); }
+  code, kbd { font-family:Consolas, monospace; font-size:14px; background:color-mix(in srgb, var(--ink) 8%, transparent); padding:1px 5px; border-radius:4px; }
+  footer { color:var(--muted); font-size:13px; text-align:center; margin-top:30px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Xenia</h1>
+  <p>What the Nixx plugin does for you, and what to expect.</p>
+</header>
+<nav>
+  <a href="#overview">In short</a><a href="#start">Getting started</a><a href="#play">Playing</a><a href="#options">Options</a>
+  <a href="#saves">Saves</a><a href="#support">What works</a><a href="#limits">Limits</a><a href="#trouble">If something goes wrong</a>
+</nav>
+
+<section id="overview"><h2>In short</h2>
+  <p>Xenia is an Xbox 360 emulator. The plugin installs and updates <b>Xenia Canary</b> (the actively developed version),
+  sets it up so a game can start straight away, and takes care of the things Xenia does not do on its own:</p>
+  <ul>
+    <li>it plays your games even when they are <b>zipped</b> (Xenia cannot open an archive),</li>
+    <li>it finds each game's <b>title updates</b> and <b>DLC</b> in your folders and puts them in place for that game only,</li>
+    <li>it gives every game its own options, and shows how well the game runs according to Xenia's compatibility list.</li>
+  </ul>
+</section>
+
+<section id="start"><h2>Getting started</h2>
+  <h3>Installing Xenia</h3>
+  <p>In LaunchBox: <b>Tools &gt; Manage &gt; Emulators &gt; Add</b>, pick <b>Nixx-Xenia</b> and let it download. On a first install the
+  plugin also:</p>
+  <ul>
+    <li>creates a <b>profile</b> named after your Windows account, and makes Xenia sign into it on start - without one, Xenia asks
+    for a profile every time and games cannot save;</li>
+    <li>sets the console's <b>language, country, time zone and clock</b> the way your Windows is set. The language is the one games
+    use: a game that has French will start in French.</li>
+  </ul>
+  <p>A notification then tells you what was used: click <b>Yes</b> if it suits you, or <b>Change...</b> to correct it. An <b>update</b>
+  of Xenia never touches your profile or console settings.</p>
+  <div class="tip">Already had Xenia without a profile? Open Tools &gt; Nixx Integration Plugins Configuration..., the <b>Xenia</b> tab:
+  the gamertag is filled in, click OK and the profile is created.</div>
+
+  <h3>Importing games</h3>
+  <p>Use LaunchBox's <b>Import &gt; ROM Files</b> with the platform <b>Microsoft Xbox 360</b>. The plugin reads every file it is shown
+  and cleans the list before you click Finish:</p>
+  <ul>
+    <li><b>games stay</b> - disc images (<code>.iso</code>), extracted discs, Xbox Live Arcade and Games on Demand packages, loose or zipped
+    (for example the No-Intro digital sets);</li>
+    <li><b>title updates and DLC leave the list</b> - they are not games. They are not lost: the plugin remembers them and offers them
+    to their game;</li>
+    <li>files that are not Xbox 360 content leave the list, with the reason in the log.</li>
+  </ul>
+  <p>Keep updates and DLC <b>in your game folders</b> (beside the games or in a subfolder): that is where the plugin looks for them.</p>
+</section>
+
+<section id="play"><h2>Playing a game</h2>
+  <p>When you click Play, the plugin:</p>
+  <ol>
+    <li>looks at the game's folder for anything new - the first time on a big folder this can take a little while, a window shows the
+    progress; afterwards it is almost instant;</li>
+    <li>if the game is zipped, <b>unpacks it</b> together with its chosen update and DLC;</li>
+    <li>puts the chosen update and DLC where Xenia expects them, for this game only;</li>
+    <li>starts Xenia with the game's options.</li>
+  </ol>
+  <h3>Where unpacked content goes</h3>
+  <ul>
+    <li>If everything fits under a size you choose (2 GB by default), it goes to a <b>RAM disk</b> for the session: nothing is written
+    to your drive, and it is gone when you quit the game.</li>
+    <li>Otherwise it is unpacked once into a content folder on your drive (by default <code>Emulators\Nixx-Xenia\lbip-content</code>) and
+    reused at the next launches. Changing which DLC are on does not unpack anything again.</li>
+    <li>You can give that folder a <b>size limit</b>: when it is full, the games you launched longest ago lose their unpacked content
+    (all of it, never half), and get it back the next time you play them.</li>
+  </ul>
+  <p>Your own files - the zips, the ISOs - are never changed or deleted.</p>
+  <div class="tip">The RAM disk needs ImDisk and the small helper the pack installs (the same one LiteBox uses). Without them, everything simply
+  goes to the drive.</div>
+</section>
+
+<section id="options"><h2>Options</h2>
+  <h3>For every game: the Xenia tab</h3>
+  <p><b>Tools &gt; Nixx Integration Plugins Configuration...</b>, tab <b>Xenia</b>:</p>
+  <ul>
+    <li><b>Profile</b>: your gamertag (rename it, or create the profile).</li>
+    <li><b>Console</b>: language, country, time zone, 24-hour clock, video region, console resolution, music volume, and a button to take
+    them from Windows. These can only be changed while Xenia is closed.</li>
+    <li><b>Title updates and DLC</b>: the content folder, its size limit, the RAM disk and its threshold, and whether the import list is cleaned.</li>
+    <li><b>Options for every game</b>: graphics backend, rendering resolution (1x to 3x), VSync, frame-rate limit, gamma, anti-aliasing,
+    sharpening (CAS / FSR), dithering, aspect ratio, vibration, mute, audio backend.</li>
+  </ul>
+  <h3>For one game: its right-click menu</h3>
+  <p>Right-click a game &gt; <b>Nixx-Xenia : Options...</b> opens three tabs:</p>
+  <ul>
+    <li><b>Options</b> - the same list, for this game only. Left unset, an option follows the Xenia tab, then Xenia's own setting.</li>
+    <li><b>Updates &amp; DLC</b> - choose the title update (one, or <i>None</i> for the game as released) and tick the DLC you want.
+    By default: the most recent update and every DLC. Updates made for another version of the game (another region, for instance) are
+    shown greyed out and cannot be picked.</li>
+    <li><b>Compatibility</b> - how the game runs according to Xenia's community list (Playable, Gameplay, Loads, Unplayable), its known
+    problems, and a link to its report. The list is refreshed automatically when it is old.</li>
+  </ul>
+  <div class="tip">Options are given to Xenia when the game starts and are <b>never saved into Xenia's own configuration</b>: a game's setting
+  cannot leak into another game, or into Xenia opened on its own.</div>
+</section>
+
+<section id="saves"><h2>Saves</h2>
+  <p>Each game's saves are visible in LaunchBox's save management: backups are made when you quit a game, and you can restore an older
+  one from LaunchBox. The default name of a backup says which title update the game was running, for example
+  <code>MYSAVE [Title Update 3]</code>.</p>
+  <p>Saves belong to your Xenia profile - another reason the plugin creates one for you.</p>
+</section>
+
+<section id="support"><h2>What works</h2>
+  <table><tr><th>Feature</th><th></th><th>Notes</th></tr>
+  <tr><td>Install and update Xenia Canary</td><td class="yes">Yes</td><td>From Add Emulator, and LaunchBox's update button.</td></tr>
+  <tr><td>Disc images (.iso), extracted discs, .xex</td><td class="yes">Yes</td><td>Opened directly.</td></tr>
+  <tr><td>Xbox Live Arcade and Games on Demand</td><td class="yes">Yes</td><td>Loose or zipped (.zip, .7z).</td></tr>
+  <tr><td>Zipped games</td><td class="yes">Yes</td><td>Unpacked by the plugin, to a RAM disk when possible.</td></tr>
+  <tr><td>Title updates</td><td class="yes">Yes</td><td>Found by their content, matched to the right version of the game; one per game, your choice.</td></tr>
+  <tr><td>DLC</td><td class="yes">Yes</td><td>Ticked per game; the same DLC in two files counts once.</td></tr>
+  <tr><td>Full versions of Arcade games</td><td class="yes">Yes</td><td>Always on - no trial mode.</td></tr>
+  <tr><td>Per-game options</td><td class="yes">Yes</td><td>Never written into Xenia's configuration.</td></tr>
+  <tr><td>Compatibility information</td><td class="yes">Yes</td><td>From Xenia's community list.</td></tr>
+  <tr><td>Saves in LaunchBox</td><td class="yes">Yes</td><td>Backups and restore.</td></tr>
+  <tr><td>Xenia's own archive format (.zar)</td><td class="partly">Partly</td><td>The game runs, but the plugin cannot read it yet: no saves, updates, DLC or compatibility for it.</td></tr>
+  <tr><td>Updates for Games on Demand</td><td class="partly">Partly</td><td>Offered, but without the version check: pick the right one yourself.</td></tr>
+  <tr><td>Xbox Live Indie Games</td><td class="no">No</td><td>Xenia cannot run them; they are left out at import and refused at launch.</td></tr>
+  <tr><td>RetroAchievements</td><td class="no">No</td><td>Xenia keeps its own Xbox 360 achievements instead.</td></tr>
+  <tr><td>Xenia (master version)</td><td class="partly">Partly</td><td>Recognised and its saves read, but only Canary is installed and fully handled.</td></tr>
+  </table>
+</section>
+
+<section id="limits"><h2>Limits and things to know</h2>
+  <ul>
+    <li>How well a game runs is Xenia's business, not the plugin's: check the Compatibility tab before blaming your setup.</li>
+    <li>Xenia applies <b>one</b> title update per game. Updates contain the earlier ones, so the most recent is usually right; pick an older one
+    or <i>None</i> if a recent update breaks the game on Xenia.</li>
+    <li>Updates and DLC are looked for in the folders you imported from and in the game's own folder. Put them somewhere else and the game
+    will not see them until those folders are scanned.</li>
+    <li>A disc image inside a zip is not read - keep ISOs unzipped.</li>
+    <li>Profile and console settings are written to Xenia's own files, so they can only be changed while Xenia is closed.</li>
+    <li>If you installed DLC yourself with Xenia's "Install Content", the plugin leaves that game's installed content alone.</li>
+    <li>On the RAM disk, the unpacked content of a session disappears when the game ends - that is the point. Your saves are elsewhere and are kept.</li>
+  </ul>
+</section>
+
+<section id="trouble"><h2>If something goes wrong</h2>
+  <ul>
+    <li><b>The game does not start</b>: look at Xenia's own log, <code>Emulators\Nixx-Xenia\xenia.log</code>, and the Compatibility tab.</li>
+    <li><b>No updates or DLC in the game's tab</b>: click <i>Look at the folder again</i>; check the files are in the game's folder or in a folder
+    you imported from.</li>
+    <li><b>A profile prompt on start</b>: open the Xenia tab of the configuration window and click OK.</li>
+    <li>The plugin's log: <code>%LOCALAPPDATA%\lb-integrations-plugins\xenia.log</code> (General tab: "Open the logs folder").</li>
+  </ul>
+</section>
+
+<footer>Nixx integration plugins for LaunchBox</footer>
+</main>
+</body>
+</html>

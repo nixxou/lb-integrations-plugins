@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PPSSPP - Nixx plugin guide</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#ffffff; --ink:#1d1d1f; --muted:#5f6368; --line:#e3e3e0; --accent:#0a6ed1; --ok:#1e8e3e; --warn:#b06000; --no:#c5221f; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17181a; --card:#1f2124; --ink:#e8e8e6; --muted:#a0a3a7; --line:#33363a; --accent:#5aa9ff; --ok:#5bc27a; --warn:#e3a34a; --no:#ff7b72; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 "Segoe UI", system-ui, sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 64px; }
+  header h1 { margin:0 0 4px; font-size:30px; }
+  header p { margin:0; color:var(--muted); }
+  nav { margin:20px 0 8px; display:flex; flex-wrap:wrap; gap:8px; }
+  nav a { font-size:14px; color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; background:var(--card); }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 24px; margin:18px 0; }
+  h2 { margin:0 0 10px; font-size:21px; }
+  h3 { margin:18px 0 6px; font-size:17px; }
+  ul { padding-left:22px; } li { margin:4px 0; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .yes { color:var(--ok); font-weight:600; } .partly { color:var(--warn); font-weight:600; } .no { color:var(--no); font-weight:600; }
+  .tip, .warn { border-left:4px solid var(--accent); padding:8px 14px; margin:12px 0; background:color-mix(in srgb, var(--accent) 8%, transparent); border-radius:0 8px 8px 0; }
+  .warn { border-color:var(--warn); background:color-mix(in srgb, var(--warn) 10%, transparent); }
+  code, kbd { font-family:Consolas, monospace; font-size:14px; background:color-mix(in srgb, var(--ink) 8%, transparent); padding:1px 5px; border-radius:4px; }
+  footer { color:var(--muted); font-size:13px; text-align:center; margin-top:30px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>PPSSPP</h1>
+  <p>What the Nixx plugin does for you, and what to expect.</p>
+</header>
+<nav>
+  <a href="#overview">In short</a><a href="#start">Getting started</a><a href="#play">Playing</a><a href="#options">Options</a>
+  <a href="#saves">Saves</a><a href="#support">What works</a><a href="#limits">Limits</a><a href="#trouble">If something goes wrong</a>
+</nav>
+
+<section id="overview"><h2>In short</h2>
+  <p>PPSSPP is the reference emulator for the <strong>Sony PSP</strong>. The Nixx plugin, listed in LaunchBox as <strong>Nixx-PPSSPP</strong>, installs it for you, keeps it up to date, and connects it to LaunchBox.</p>
+  <p>On top of plain LaunchBox it adds:</p>
+  <ul>
+    <li>a one-click install and update from PPSSPP's official releases;</li>
+    <li>ready-to-use keys for save states (F2 to save, F4 to load) and a clean Escape to quit;</li>
+    <li>your RetroAchievements login, passed to PPSSPP before each game;</li>
+    <li>your PSP saves and save states, listed in LaunchBox's save management, with backup and restore;</li>
+    <li>a per-game <strong>Options</strong> window (renderer, resolution, language, and more) from the right-click on a game.</li>
+  </ul>
+  <p>PPSSPP needs <strong>no BIOS or firmware</strong>. Nothing to find or copy.</p>
+</section>
+
+<section id="start"><h2>Getting started</h2>
+  <h3>Install PPSSPP</h3>
+  <ul>
+    <li>In LaunchBox, open <strong>Tools &gt; Manage &gt; Emulators</strong>, click <strong>Add</strong>, and pick <strong>Nixx-PPSSPP</strong> in the list. Let LaunchBox download and install it.</li>
+    <li>The plugin downloads the latest Windows 64-bit release from PPSSPP's official GitHub page (the ARM64 build only if a release has no 64-bit one).</li>
+    <li>It goes into <code>Emulators\Nixx-PPSSPP</code> inside your LaunchBox folder. The name is prefixed on purpose, so it never collides with LaunchBox's own PPSSPP folder.</li>
+    <li>The emulator entry is created for you, set as the default emulator for <strong>Sony PSP</strong>, with the command line <code>--fullscreen --pause-menu-exit</code>.</li>
+  </ul>
+  <h3>Where your data lives</h3>
+  <p>This install is <em>portable</em>: saves, save states and settings are all kept in <code>Emulators\Nixx-PPSSPP\memstick</code>, next to the emulator. Back up that folder and you have everything.</p>
+  <div class="tip">You already have PPSSPP set up yourself? An emulator entry that points to a PPSSPP program (<code>PPSSPP...exe</code>) is recognised too. If it was installed with PPSSPP's own installer, its data is in <code>Documents\PPSSPP</code>, and the plugin reads it from there. It never moves your data.</div>
+  <h3>Updates</h3>
+  <p>When a newer PPSSPP release is out, LaunchBox shows an update for the emulator. The update unpacks over the existing folder: your memory stick (saves, states, settings) is kept. If the installed version cannot be read, no update is offered rather than one forever.</p>
+  <h3>Import your games</h3>
+  <p>Import your PSP games into the <strong>Sony PSP</strong> platform as usual. Accepted files: <code>.iso</code>, <code>.cso</code>, <code>.zso</code>, <code>.chd</code>, <code>.pbp</code>, <code>.elf</code>, <code>.prx</code>, <code>.zip</code>, <code>.ppdmp</code>. Files are not extracted by LaunchBox: PPSSPP opens them directly.</p>
+  <div class="tip">For the best results use <code>.iso</code>, <code>.cso</code>, <code>.zso</code>, <code>.chd</code> or <code>.pbp</code>. The plugin can read the game's ID from these, which is what links a game to its saves, its save states and its own options.</div>
+</section>
+
+<section id="play"><h2>Playing a game</h2>
+  <p>When you click Play, just before PPSSPP starts, the plugin:</p>
+  <ul>
+    <li>passes your RetroAchievements account from LaunchBox to PPSSPP (hardcore follows the emulator's setting in LaunchBox). If this fails, the game starts anyway;</li>
+    <li>makes sure the save state keys are in place (see below);</li>
+    <li>if you gave this game its own options, applies them for this session only, and picks its renderer.</li>
+  </ul>
+  <p>PPSSPP opens full screen.</p>
+  <h3>Keys</h3>
+  <table><tr><th>Key</th><th>What it does</th></tr>
+  <tr><td><kbd>F1</kbd></td><td>PPSSPP's pause menu</td></tr>
+  <tr><td><kbd>F2</kbd></td><td>Save state in the current slot</td></tr>
+  <tr><td><kbd>F4</kbd></td><td>Load state from the current slot</td></tr>
+  <tr><td><kbd>F6</kbd> / <kbd>F7</kbd></td><td>Previous / next state slot</td></tr>
+  <tr><td><kbd>Esc</kbd></td><td>Quit PPSSPP and go back to LaunchBox</td></tr>
+  </table>
+  <ul>
+    <li>PPSSPP normally opens its menu with Escape and has no save state key. The plugin moves the menu to F1 and gives Escape to "quit", so LaunchBox's Exit works.</li>
+    <li>Only missing keys are added. A key you already use for something else is never taken, and a binding you changed yourself is left alone. Your controller buttons are never touched.</li>
+    <li>When quitting, PPSSPP itself may ask you to confirm (for example after a few minutes of unsaved play). That is PPSSPP protecting your progress.</li>
+    <li>LaunchBox's and Big Box's pause screen can save and load states too: the plugin fills in the emulator's save/load state scripts with these keys.</li>
+  </ul>
+  <h3>When you quit</h3>
+  <p>If the game had its own options, the game's PPSSPP config is put back as it was, a moment after PPSSPP closes.</p>
+  <h3>One game at a time</h3>
+  <ul>
+    <li>While a PPSSPP game is running, another launch from LaunchBox is refused. A quick double click is ignored silently; later, a message tells you the game is still running.</li>
+    <li>If PPSSPP is already open on its own, the launch is refused with a message: close it first, then launch the game again.</li>
+  </ul>
+</section>
+
+<section id="options"><h2>Options</h2>
+  <h3>Tools menu</h3>
+  <p><strong>Tools &gt; Nixx Integration Plugins Configuration...</strong> opens the pack's window. PPSSPP has <strong>no settings tab of its own</strong> there. The <strong>General</strong> tab has a button to open this guide and an <strong>Open the logs folder</strong> button.</p>
+  <h3>Right-click on a game: "Nixx-PPSSPP : Options..."</h3>
+  <p>Right-click a PSP game (or select several) and choose <strong>Nixx-PPSSPP : Options...</strong>. The entry shows on games that run with Nixx-PPSSPP, or on games of a platform it is set up for. This window gives the game its <strong>own settings</strong>, used only while that game runs.</p>
+  <p>Tabs:</p>
+  <ul>
+    <li><strong>Graphics</strong>: Backend (Vulkan, Direct3D 11, OpenGL), Software Rendering, Rendering Resolution (Auto to 10x PSP), Frame Skipping, Auto FrameSkip, VSync, Hardware Transform, texture upscaler and Upscale Level, Anisotropic Filtering, Texture Filter.</li>
+    <li><strong>System</strong>: Game language, Confirmation Button (O or X), PSP Model, Fast Memory, I/O timing method, CPU clock.</li>
+    <li><strong>Hacks</strong>: Skip Buffer Effects, Skip GPU Readbacks, Lens flare occlusion, Lower resolution for effects. PPSSPP already applies its own fixes to known games.</li>
+    <li><strong>Advanced</strong>: shows the exact lines the game will change. Tick <strong>Edit by hand</strong> to write your own lines instead, in PPSSPP's own <code>[Section]</code> and <code>Key = Value</code> form, for any setting PPSSPP keeps per game. The window checks what you type and warns about unknown names or values. <strong>Preview result...</strong> shows the game's config as PPSSPP will read it, changed lines highlighted.</li>
+  </ul>
+  <p>How it behaves:</p>
+  <ul>
+    <li>Every setting starts on <strong>Default</strong>: a list shows <code>&lt;Default : value&gt;</code>, a box is in its "filled" middle state, the CPU clock has an <strong>Override default</strong> box. Default means "what the game runs on without this plugin": the game's own PPSSPP game settings if you made some in PPSSPP, else PPSSPP's general settings. Only what you change is kept.</li>
+    <li>A coloured bar beside each setting says where its value comes from: blue = set here, amber = the game's own PPSSPP config, grey = PPSSPP's settings.</li>
+    <li><strong>Reset to defaults</strong> puts every setting back to Default. Nothing is saved until you click OK.</li>
+    <li><strong>Pause these settings</strong> keeps your settings but stops using them: the game then runs on its own PPSSPP config, and changes you make inside PPSSPP during the game are kept. <strong>Resume these settings</strong> turns them back on.</li>
+    <li>With several games selected: if their settings differ, a list lets you pick which game to start from. OK applies what is shown to <strong>all</strong> selected games, after asking.</li>
+  </ul>
+  <div class="warn">While a game runs with settings from this window, changes you make in PPSSPP's <em>own</em> per-game settings during that game are <strong>not kept</strong>: the game's config is put back as it was when PPSSPP quits. Use <strong>Pause these settings</strong> if you want to tune a game inside PPSSPP.</div>
+  <ul>
+    <li>The Backend is not saved in PPSSPP: it is added to the command line at launch. If the emulator's command line already names a renderer, that one wins.</li>
+    <li>RetroAchievements and controls are left out of this window: the plugin handles them elsewhere.</li>
+  </ul>
+</section>
+
+<section id="saves"><h2>Saves and save states</h2>
+  <p>Open a game's saves in LaunchBox (its save management page). For each PSP game you see:</p>
+  <ul>
+    <li><strong>Memory Stick</strong>: the game's save. A PSP game often writes several save folders (the save, its options, its system data); they are kept together as <strong>one</strong> save, named after the save's own title.</li>
+    <li><strong>Save State</strong>: one entry per occupied slot, numbered 1 to 5 as in PPSSPP.</li>
+  </ul>
+  <h3>What you can do</h3>
+  <ul>
+    <li><strong>Back up</strong>: copies all of the game's save folders, or the state file, to LaunchBox's save vault.</li>
+    <li><strong>Restore</strong>: puts a backup back. For a save, the game's current save folders are replaced (LaunchBox asks before overwriting), so no old leftover stays mixed in. For a state, its screenshot comes back too when the backup kept it.</li>
+    <li><strong>Delete</strong>: removes all of the game's save folders. For a state, it removes the slot, its screenshot and PPSSPP's "undo" copy of that slot.</li>
+  </ul>
+  <ul>
+    <li>Saves are found by the game's ID, read from inside the game file. Renaming a file does not lose its saves. When the ID cannot be read, the save is matched on the exact game title instead.</li>
+    <li>Folders that hold installed game data (not saves) are left out.</li>
+    <li>The backup history follows the game even if your memory stick moves, or a save folder is renamed. A state keeps its history when you update the game to a new version.</li>
+    <li>Keys: F2 save state, F4 load state, F6/F7 change slot, also usable from LaunchBox's pause screen.</li>
+  </ul>
+</section>
+
+<section id="support"><h2>What works</h2>
+  <table><tr><th>Feature</th><th></th><th>Notes</th></tr>
+  <tr><td>Install from LaunchBox (Add Emulator)</td><td class="yes">Yes</td><td>Latest official Windows release, into <code>Emulators\Nixx-PPSSPP</code>, portable.</td></tr>
+  <tr><td>Update detection and update</td><td class="yes">Yes</td><td>Saves and settings kept. No update offered when the installed version cannot be read.</td></tr>
+  <tr><td>BIOS / firmware</td><td class="yes">Yes</td><td>None needed.</td></tr>
+  <tr><td>Game formats</td><td class="yes">Yes</td><td>.iso, .cso, .zso, .chd, .pbp, .elf, .prx, .zip, .ppdmp.</td></tr>
+  <tr><td>RetroAchievements login</td><td class="yes">Yes</td><td>Passed from LaunchBox before each game, hardcore included.</td></tr>
+  <tr><td>Save state keys</td><td class="partly">Partly</td><td>F2 / F4 / F6 / F7, F1 menu, Escape quits. Not on the very first launch of a fresh install (see Limits).</td></tr>
+  <tr><td>Pause screen save/load state</td><td class="yes">Yes</td><td>LaunchBox and Big Box pause screen.</td></tr>
+  <tr><td>Saves in LaunchBox (list, backup, restore, delete)</td><td class="yes">Yes</td><td>All of a game's save folders as one save.</td></tr>
+  <tr><td>Save states in LaunchBox</td><td class="partly">Partly</td><td>Slots 1 to 5 only. Restore refused when the game version cannot be worked out.</td></tr>
+  <tr><td>Per-game options window</td><td class="partly">Partly</td><td>Needs the game's ID; without it only the Backend applies.</td></tr>
+  <tr><td>Several games at once in the options window</td><td class="yes">Yes</td><td>Applied to all selected games after confirmation.</td></tr>
+  <tr><td>Settings tab in the Tools window</td><td class="no">No</td><td>PPSSPP has none; everything is per game.</td></tr>
+  <tr><td>Two PPSSPP games at the same time</td><td class="no">No</td><td>One launch at a time, on purpose.</td></tr>
+  </table>
+</section>
+
+<section id="limits"><h2>Limits and things to know</h2>
+  <ul>
+    <li><strong>First launch of a fresh install:</strong> PPSSPP writes its key file only when it quits for the first time. So the very first session uses PPSSPP's defaults (Escape opens the menu, no save state key). From the second launch on, the plugin's keys are there.</li>
+    <li><strong>Game ID needed:</strong> the game ID can only be read from <code>.iso</code>, <code>.cso</code>, <code>.zso</code>, <code>.chd</code> and <code>.pbp</code>. For other files (a <code>.zip</code>, a homebrew), save states are not listed, saves are found only by exact title, and in the options window only the Backend applies.</li>
+    <li><strong>Five state slots:</strong> LaunchBox only sees slots 1 to 5, PPSSPP's default, even if you raised the number of slots in PPSSPP.</li>
+    <li><strong>State restore and game version:</strong> PPSSPP names a state after the exact version of the game. If a backup does not say which version it is for, and the game has no other state to learn it from, the restore is refused with a message. Save one state in PPSSPP, then restore again.</li>
+    <li><strong>Own options and in-game changes:</strong> while a game runs with options from this plugin, changes to PPSSPP's own per-game settings during that game are undone when it quits. Use <strong>Pause these settings</strong> to avoid this.</li>
+    <li><strong>Settings files are not changed while PPSSPP runs:</strong> PPSSPP rewrites its settings when it quits, so the plugin waits. A game config left over by a crash is put back at the next launch, a few seconds after LaunchBox starts, or when you open PPSSPP on its own.</li>
+    <li><strong>The update keeps old files:</strong> it unpacks over the folder to protect your saves, so files dropped by a newer release stay behind. This is harmless.</li>
+    <li><strong>Escape and the exit question:</strong> PPSSPP may ask "are you sure?" when you quit. This is PPSSPP's own behaviour.</li>
+  </ul>
+</section>
+
+<section id="trouble"><h2>If something goes wrong</h2>
+  <ul><li>The plugin's log: <code>%LOCALAPPDATA%\lb-integrations-plugins\ppsspp.log</code> (General tab: "Open the logs folder").</li>
+  <li>For more detail in the log, create an empty file named <code>trace</code> (no extension) in that same folder, then restart LaunchBox.</li>
+  <li><strong>F2 / F4 do nothing:</strong> launch the game once more after PPSSPP has run and quit at least once. If you had already put other actions on those keys, the plugin left them alone: check PPSSPP's control settings.</li>
+  <li><strong>A game's options seem ignored:</strong> check that the game is a <code>.iso</code>, <code>.cso</code>, <code>.zso</code>, <code>.chd</code> or <code>.pbp</code> file (the options window shows the game ID next to the title), and that the settings are not paused.</li>
+  <li><strong>The game will not launch:</strong> a PPSSPP window may still be open, or a previous game still running. Close PPSSPP and try again.</li>
+  <li><strong>No saves listed:</strong> the game must have saved at least once in PPSSPP, and the save must be on the memory stick of the emulator the game uses.</li>
+  <li><strong>Install fails:</strong> GitHub may be limiting downloads from your machine for a while. Wait a few minutes and try again.</li></ul>
+</section>
+
+<footer>Nixx integration plugins for LaunchBox</footer>
+</main>
+</body>
+</html>

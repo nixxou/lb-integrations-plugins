@@ -129,4 +129,10 @@
     <Message Importance="high" Text="  merged -> $(MergedDir)$(AssemblyName).dll" />
   </Target>
 
+  <ItemGroup>
+    <!-- The plugin's user guide, shown from the General tab of the Nixx window (src\Menus\Settings.cs): embedded, so it
+         travels inside the DLL and no deployment list has to know about it. -->
+    <EmbeddedResource Include="..\..\docs\help\vita3k.html" LogicalName="help.html" />
+  </ItemGroup>
+
 </Project>
