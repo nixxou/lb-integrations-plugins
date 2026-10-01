@@ -33,7 +33,7 @@ namespace LbIntegrations.Xenia
             Padding = new Padding(10);
             _stack = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Dock = DockStyle.Top };
             Controls.Add(_stack);
-            Build(look: true);
+            Build(look: false);   // the cache only: the folder is scanned on the button (Mehdi, 01/10)
         }
 
         private string Folder => XeniaScan.FolderFor(_rom);
@@ -52,13 +52,22 @@ namespace LbIntegrations.Xenia
             _extras = XeniaExtras.For(_rom, _layout);
             if (_extras == null)
             {
-                _stack.Controls.Add(Line("This game was not recognised in its folder (" + Folder + "): its title id could not be read, so nothing can be matched to it.", false));
+                _stack.Controls.Add(Line(look
+                    ? "This game was not recognised in its folder (" + Folder + "): its title id could not be read, so nothing can be matched to it."
+                    : "This game's folder has not been looked at yet. Click Look at the folder to look in " + Folder + ".", false));
+                if (!look)
+                {
+                    var first = new Button { Text = "Look at the folder", AutoSize = true, Margin = new Padding(0, 4, 0, 0) };
+                    first.Click += (_, _) => Build(look: true);
+                    _stack.Controls.Add(first);
+                }
                 _stack.ResumeLayout();
                 return;
             }
             var (update, dlc) = XeniaExtras.Chosen(_extras, keep);
 
-            _stack.Controls.Add(Line("Title id " + _extras.Game.TitleId + (_extras.Game.Digest.Length > 0 ? "  -  executable " + _extras.Game.Digest.Substring(0, 8) : "") + ". Looked for in " + Folder + " and its subfolders."));
+            _stack.Controls.Add(Line("Title id " + _extras.Game.TitleId + (_extras.Game.Digest.Length > 0 ? "  -  executable " + _extras.Game.Digest.Substring(0, 8) : "")
+                                     + (look ? ". Looked for in " + Folder + " and its subfolders." : ". What was seen so far - click Look at the folder to look in " + Folder + ".")));
 
             // ── the update ──
             var ub = XeniaConsolePanel.Group("Title update (one at most - each holds every earlier one)");
@@ -110,7 +119,7 @@ namespace LbIntegrations.Xenia
 
             _stack.Controls.Add(Line("Put down at the next launch, in " + _extras.Folder + " - extracted from its archive once, then linked: "
                                      + "changing the choice later extracts nothing again. Your own files are never changed."));
-            var again = new Button { Text = "Look at the folder again", AutoSize = true, Margin = new Padding(0, 4, 0, 0) };
+            var again = new Button { Text = look ? "Look at the folder again" : "Look at the folder", AutoSize = true, Margin = new Padding(0, 4, 0, 0) };
             again.Click += (_, _) => Build(look: true);
             _stack.Controls.Add(again);
             _stack.ResumeLayout();

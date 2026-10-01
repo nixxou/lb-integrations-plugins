@@ -49,9 +49,9 @@ namespace LbIntegrations.Vita3k
             return _extrasTab;
         }
 
-        /// <summary>The tab filled: the game's folder scanned first (Vita3kScan - quick but for what is new), under a progress
-        /// window when that takes a while, as the Xbox 360's tab does. <paramref name="again"/>: the button "Look at the folder
-        /// again" - the ticks shown are kept.</summary>
+        /// <summary>The tab filled from what the scan's cache knows - nothing is scanned by opening it (Mehdi, 01/10). <paramref name="again"/>:
+        /// the button "Look at the folder" - the game's folder scanned (Vita3kScan), under a progress window when that takes a while,
+        /// and the ticks shown kept.</summary>
         private void LoadExtras(bool again = false)
         {
             if (_extrasLoaded && !again) return;
@@ -60,14 +60,14 @@ namespace LbIntegrations.Vita3k
             var shown = again && _found != null ? ExtrasChoice() : null;
             Cursor = Cursors.WaitCursor;
             string problem = null;
-            var window = Vita3kProgressWindow.Open("Nixx-Vita3K - Looking at the game's folder");
+            var window = again ? Vita3kProgressWindow.Open("Nixx-Vita3K - Looking at the game's folder") : null;
             try
             {
                 var content = Vita3kContent.Describe(g.RomFull, out problem);
                 if (content != null && !content.IsGame) problem = "this is not a game";
                 if (problem == null)
                 {
-                    _found = Vita3kExtras.Evaluate(g.RomFull, content, g.Title, g.InstallDir, (step, f) => window?.Report(step, f));
+                    _found = Vita3kExtras.Evaluate(g.RomFull, content, g.Title, g.InstallDir, (step, f) => window?.Report(step, f), scan: again);
                     if (!again) _choiceWas = Vita3kExtrasChoice.Load(g.InstallDir, g.GameId);
                 }
             }
@@ -89,7 +89,8 @@ namespace LbIntegrations.Vita3k
             Label Bold(string t) => new Label { Text = t, AutoSize = true, Font = new Font(Font, FontStyle.Bold) };
             Label Grey(string t) => new Label { Text = t, AutoSize = true, ForeColor = SystemColors.GrayText };
 
-            Add(new Label { Text = "Looked for in " + Vita3kScan.FolderFor(g.RomFull) + " and its subfolders, and wherever else updates and DLC of this game were seen.",
+            Add(new Label { Text = (again ? "Looked for in " : "What was seen so far - click Look at the folder to look in ") + Vita3kScan.FolderFor(g.RomFull)
+                                   + " and its subfolders. Updates and DLC of this game seen elsewhere are listed too.",
                             AutoSize = true, MaximumSize = new Size(560, 0), ForeColor = SystemColors.GrayText }, 8); y += 40;
 
             Add(Bold("Update"), 8); y += 24;
@@ -119,7 +120,7 @@ namespace LbIntegrations.Vita3k
             }
 
             y += 10;
-            var rescan = new Button { Text = "Look at the folder again", AutoSize = true };
+            var rescan = new Button { Text = again ? "Look at the folder again" : "Look at the folder", AutoSize = true };
             rescan.Click += (_, _) => LoadExtras(again: true);
             Add(rescan, 8);
 

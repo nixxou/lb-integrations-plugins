@@ -93,20 +93,21 @@ namespace LbIntegrations.Vita3k
         /// <summary>Everything that belongs to the game: every valid update, every DLC (one per
         /// CONTENT_ID) - nothing chosen yet. The game's folder is scanned first: quick but for what is new.</summary>
         public static FoundExtras Evaluate(string romPath, VitaContent game, string hostTitle, string installDir = null,
-                                           Action<string, double?> progress = null)
+                                           Action<string, double?> progress = null, bool scan = true)
         {
             var found = new FoundExtras();
             try
             {
                 if (game?.TitleId == null || string.IsNullOrWhiteSpace(romPath)) return found;
                 var folder = Vita3kScan.FolderFor(romPath);
-                Vita3kScan.Scan(folder, progress);
+                // A launch scans; the options window shows the cache, and scans on its button (Mehdi, 01/10).
+                if (scan) Vita3kScan.Scan(folder, progress);
                 var rom = Full(romPath);
                 var mine = Vita3kScan.CachedAll()
                     .Where(e => !e.Invalid && string.Equals(e.TitleId, game.TitleId, StringComparison.OrdinalIgnoreCase))
                     .OrderBy(e => string.Equals(Full(e.Archive), rom, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
                     .ThenBy(e => e.Path, StringComparer.OrdinalIgnoreCase).ToList();
-                Log.Info("updates and DLC of " + game.TitleId + ": " + mine.Count + " content(s) of that title id known, " + folder + " scanned");
+                Log.Info("updates and DLC of " + game.TitleId + ": " + mine.Count + " content(s) of that title id known" + (scan ? ", " + folder + " scanned" : " (the cache, not scanned)"));
 
                 var addons = new Dictionary<string, VitaExtra>(StringComparer.OrdinalIgnoreCase);
                 foreach (var e in mine)
