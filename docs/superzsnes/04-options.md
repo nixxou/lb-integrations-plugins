@@ -13,8 +13,17 @@ Choix de Mehdi : le catalogue garde les 67 options, mesurées et rendues, mais c
 
 Au lancement, `SuperZsnesSettings.ForLaunch` envoie les options Global de `settings.ini` et les
 options Game du fichier du jeu ; une clé d'une autre portée (écrite par une version précédente ou à la
-main) est ignorée. Toutes passent par le plugin en mémoire : le fichier de l'émulateur n'en reçoit
-aucune, sauf `persist`.
+main) est ignorée. Celles du plugin passent en mémoire : le fichier de l'émulateur n'en reçoit aucune,
+sauf `persist`.
+
+**Les options Window sont à Unity, pas au plugin** : `-screen-*`, `-popupwindow`, `-monitor` sont
+appliqués par le lecteur avant tout plugin, et Unity écrit l'écran utilisé dans
+`HKCU\Software\ZEMU Software Inc.\SUPERZSNES` en quittant - clé commune à toutes les installations et à
+tous les jeux. `SuperZsnesScreenSession` les rend à la session : un lancement qui en **ajoute** une (ou
+`--nixx-display=primary`) note d'abord les valeurs d'écran de la clé (`<données du greffon>\screen-session.txt`),
+et sa surveillance les remet une fois SUPER ZSNES fermé (+1 s), en effaçant celles que la session a
+ajoutées ; une note restée (plantage) est remise au lancement suivant, au démarrage de l'hôte et à
+l'ouverture de l'émulateur seul (« Open emulator »). Les compteurs `unity.*` voisins ne sont pas touchés.
 
 ## La grammaire
 

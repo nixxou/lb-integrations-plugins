@@ -37,6 +37,9 @@ namespace LbIntegrations.SuperZsnes
     internal static class SuperZsnesPaths
     {
         public const string ExecutableName = "SUPERZSNES.exe";
+
+        /// <summary>Its process name, for "is it running".</summary>
+        public const string ProcessName = "SUPERZSNES";
         public const string DataFolder = "SUPERZSNES_Data";
 
         /// <summary>The settings file, NRBF, written at exit.

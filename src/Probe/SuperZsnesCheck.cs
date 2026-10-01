@@ -339,6 +339,16 @@ namespace LbIntegrations.Probe
                     var pathField = settingsType.GetField("PathOverride", flags);
                     var ini = Path.Combine(root, "settings.ini");
                     pathField.SetValue(null, ini);
+                    // The screen session works on a key of its own here, never the real one.
+                    var screen = asm.GetType("LbIntegrations.SuperZsnes.SuperZsnesScreenSession", true);
+                    const string testKey = @"Software\lbip-probe\SUPERZSNES";
+                    screen.GetField("KeyOverride", flags).SetValue(null, testKey);
+                    using (var k = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(testKey))
+                    {
+                        k.SetValue("Screenmanager Fullscreen mode_h3630240806", 0, Microsoft.Win32.RegistryValueKind.DWord);
+                        k.SetValue("Screenmanager Resolution Width_h182942802", 1920, Microsoft.Win32.RegistryValueKind.DWord);
+                        k.SetValue("unity.player_session_count_h922449978", 7, Microsoft.Win32.RegistryValueKind.DWord);
+                    }
                     try
                     {
                         // The catalogue itself.
@@ -419,6 +429,29 @@ namespace LbIntegrations.Probe
                         Check("  ...and the game's own options", nl.Contains("--nixx-set:gfxMode=Scanlines") && nl.Contains("-screen-width 1280"));
                         Check("  ...but no option shown nowhere (srmPath, overclock), and nothing of the wrong scope (the game's quit-confirm)",
                               !nl.Contains("srmPath") && !nl.Contains("overclock") && !nl.Contains("--nixx-quit-confirm=on") && !nl.Contains("-screen-fullscreen") && !nl.Contains("--loadstate"));
+                        // A game with a Window option: the registry's screen values written down, put back at its end.
+                        var pending = screen.GetProperty("Pending", flags);
+                        var lastId = (string)screen.GetField("LastId", flags).GetValue(null);
+                        Check("a Window option added: the registry's screen values written down", (bool)pending.GetValue(null) && lastId != null);
+                        using (var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(testKey, true))
+                        {
+                            // What Unity would write as it quits after -screen-width 1280 -screen-fullscreen 0.
+                            k.SetValue("Screenmanager Fullscreen mode_h3630240806", 3, Microsoft.Win32.RegistryValueKind.DWord);
+                            k.SetValue("Screenmanager Resolution Width_h182942802", 1280, Microsoft.Win32.RegistryValueKind.DWord);
+                            k.SetValue("Screenmanager Resolution Window Width_h2524650974", 1280, Microsoft.Win32.RegistryValueKind.DWord);
+                            k.SetValue("unity.player_session_count_h922449978", 8, Microsoft.Win32.RegistryValueKind.DWord);
+                        }
+                        var restore = screen.GetMethod("Restore", flags);
+                        restore.Invoke(null, new object[] { "a late watcher", "not-this-session" });
+                        Check("  ...a late watcher leaves the session's alone", (bool)pending.GetValue(null));
+                        restore.Invoke(null, new object[] { "the session is over", lastId });
+                        using (var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(testKey))
+                            Check("  ...its end: the screen values back, the one it added gone, Unity's counter untouched",
+                                  !(bool)pending.GetValue(null) && (int)k.GetValue("Screenmanager Fullscreen mode_h3630240806") == 0
+                                  && (int)k.GetValue("Screenmanager Resolution Width_h182942802") == 1920
+                                  && k.GetValue("Screenmanager Resolution Window Width_h2524650974") == null
+                                  && (int)k.GetValue("unity.player_session_count_h922449978") == 8);
+                        Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(@"Software\lbip-probe", false);
                         var otherGame = plugin.PrepareEmulatorForLaunch(new PrepareForLaunchArgs(mine, StubGame.Create("g-other", "Other", Path.Combine(root, "other.sfc")), "", null, null));
                         Check("another game: not this one's options", otherGame?.NewCommandLine == null || !otherGame.NewCommandLine.Contains("gfxMode"));
 

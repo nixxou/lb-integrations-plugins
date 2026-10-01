@@ -63,6 +63,41 @@ namespace LbIntegrations.SuperZsnes
             // LbipImportWatch. Under a try: LbImportFinished is newer than a Catalog a host may carry.
             try { ListenForImports(); }
             catch (Exception ex) { Log.Info("an import's end is not seen here (" + ex.GetType().Name + ": " + ex.Message + ")"); }
+
+            // SUPER ZSNES opened without a game: told, so a session's screen values left behind go back first. One
+            // Process.Start patch for the whole pack - see LbipEmulatorOpened.
+            try { ListenForOpening(); }
+            catch (Exception ex) { Log.Info("an emulator opened without a game is not seen here (" + ex.GetType().Name + ": " + ex.Message + ")"); }
+
+            StartUpCheck();
+        }
+
+        /// <summary>NOT INLINED, and called under a try - as ListenForImports.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static void ListenForOpening()
+        {
+            LbIntegrations.Catalog.LbEmulatorOpened.Register(new SuperZsnesEmulatorOpened());
+            if (!LbIntegrations.Catalog.LbCatalog.HostWillAsk) LbipEmulatorOpened.Install("com.nixxou.lbip.superzsnes");
+        }
+
+        /// <summary>A few seconds after start, inside a host only: a session's screen values left behind - the host or the
+        /// machine went mid-session - go back. The probe loads this plugin too, and must never touch the real registry.</summary>
+        private static void StartUpCheck()
+        {
+            try
+            {
+                var process = System.Diagnostics.Process.GetCurrentProcess().ProcessName;
+                if (!new[] { "LaunchBox", "BigBox", "LiteBox" }.Any(h => string.Equals(h, process, StringComparison.OrdinalIgnoreCase)))
+                    return;
+                var thread = new System.Threading.Thread(() =>
+                {
+                    try { System.Threading.Thread.Sleep(3000); SuperZsnesScreenSession.Restore("left behind by a session that did not end"); }
+                    catch (Exception ex) { Log.Warn("start-up check", ex); }
+                })
+                { IsBackground = true, Name = "SUPER ZSNES start-up check" };
+                thread.Start();
+            }
+            catch (Exception ex) { Log.Warn("could not start the start-up check", ex); }
         }
 
         /// <summary>NOT INLINED, and called under a try: named in the constructor, a type a host's older
@@ -483,7 +518,7 @@ namespace LbIntegrations.SuperZsnes
         /// One launch at a time for this plugin - see LbipLaunchGate: a launch while the last one is on is refused,
         /// silently in its first 5 seconds (a double click), and so is one while SUPERZSNES.exe is already open.</summary>
         public override PrepareForLaunchResponse PrepareEmulatorForLaunch(PrepareForLaunchArgs args)
-            => LbipLaunchGate.Run(PackName, args, PrepareCore, null);
+            => LbipLaunchGate.Run(PackName, args, PrepareCore, () => !SuperZsnesScreenSession.Pending);
 
         private PrepareForLaunchResponse PrepareCore(PrepareForLaunchArgs args)
         {
@@ -516,6 +551,11 @@ namespace LbIntegrations.SuperZsnes
                 if (flags.Count == 0) return new PrepareForLaunchResponse(success: true);
                 var current = args?.CurrentCommandLine ?? "";
                 var rewritten = SuperZsnesSettings.Append(current, flags);
+                // A screen switch WE add (not one the user typed): the registry's screen values written down, and put
+                // back once SUPER ZSNES has quit - see SuperZsnesScreenSession.
+                if (flags.Any(f => SuperZsnesScreenSession.IsScreenFlag(f) && current.IndexOf(f.Name, StringComparison.OrdinalIgnoreCase) < 0)
+                    && SuperZsnesScreenSession.Begin())
+                    SuperZsnesScreenSession.WhenDone(SuperZsnesScreenSession.LastId);
                 if (rewritten != current.Trim())
                 {
                     Log.Info("launch: +" + flags.Count + " option(s): " + rewritten);
