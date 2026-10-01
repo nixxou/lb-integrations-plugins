@@ -118,6 +118,12 @@ connexion ; `Start` déchiffre et appelle `Login`, qui envoie
 directement rend `deviceUniqueIdentifier` inutile ; hors processus, `tools\il2cpp-xref\radecrypt.ps1`
 calibre la recette par force brute. Non implémenté à ce jour.
 
+MESURÉ LE 01/10 (`--nixx-ra-probe`, voir 09) : le panneau est masqué dans la 0.310 et
+`OptionsOverlay.EnableRetroachievements()` l'affiche (`--nixx-ra-unlock`), mais l'émulateur l'ouvre sur
+son propre avertissement : les succès ne sont **ni envoyés ni enregistrés** à ce stade. Le client natif
+`ZRCheevosIntegration` n'est jamais démarré. Rien à brancher côté LaunchBox tant qu'un build ne les
+envoie pas.
+
 ## Version et site
 
 - Version installée : caption « v0.310b » dans `SUPERZSNES_Data\level0` (champ de script, avec deux

@@ -68,6 +68,11 @@ date plutôt que d'écraser.
 | chiffré | IV(16) ‖ AES-256-CBC-PKCS7 | xref GetEPW (0x10499790), GetNPW (0x10499B20) |
 | qui écrit | `RetroAchievements.UserProfileResult` (0x10400580) | refs.ps1 -Methods StringEnc.GetEPW |
 | login | `dorequest.php?r=login2&u=&t=` | xref RetroAchievements.Login (0x103FFB30) |
+| deux clients dans le build | `RetroAchievements` (C# : login, MD5 de la ROM, session, jeux de succès, `RCAchievementProcessor` évalué à chaque image, `GrantAchievement`, widgets) et `ZRCheevosIntegration` (rcheevos natif : lecture mémoire, appels serveur, login, chargement de jeu) ; écran `RetroAchievementsOverlay` (identifiant, clé Web API) | interop `Assembly-CSharp.dll`, lecture par MetadataLoadContext, 01/10 |
+| au démarrage | `RetroAchievements.Awake` appelé, `Instance` présente, non connectée ; `ZRCheevosIntegration.Start` **jamais** appelé | `--nixx-ra-probe`, `nixx.log` 01/10 09:30 |
+| le verrou | `OptionsOverlay.retroachievements` est le panneau RetroAchievements lui-même, posé sur les options, **masqué** ; `EnableRetroachievements()` l'affiche ; il s'ouvre sur le message de l'émulateur « Work In Progress! … Achievements aren't sent or saved yet and many achievements aren't supported yet » | `--nixx-ra-drive`, capture d'écran 01/10 09:30 |
+| hardcore | aucun réglage, aucun appel ; seule la réponse de session sépare `HardcoreUnlocks` et `Unlocks` | interop 01/10 |
+| patcher les rappels natifs | `LoginCallback`, `load_game_callback`, `LogMessage` patchés : appelés aussitôt avec des valeurs aberrantes (rcheevos tient des pointeurs vers eux) - **ne pas les patcher** | `nixx.log` 01/10 09:29 |
 | deviceUniqueIdentifier Windows | WMI Win32_BaseBoard/BIOS/OperatingSystem SerialNumber (+Manufacturer, Model, DeviceId dans UnityPlayer) ; recette exacte non calibrée | chaînes UTF-16 UnityPlayer.dll ; doc Unity |
 
 ## BepInEx

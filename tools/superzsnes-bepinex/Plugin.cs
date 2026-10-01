@@ -80,6 +80,7 @@ namespace LbIntegrations.SuperZsnes.Mod
                 Patch(harmony, typeof(Overrides.AfterGameSettings), "per-game overrides");
                 Patch(harmony, typeof(Overrides.AroundSave), "keeping overrides out of the file");
                 Patch(harmony, typeof(PopupPatch), "popups and primary display");
+                if (Opt.RaProbe) RaProbe.Install(harmony, Patch);
                 Logger.LogInfo("patched: " + string.Join(", ", harmony.GetPatchedMethods()));
             }
             catch (Exception ex)

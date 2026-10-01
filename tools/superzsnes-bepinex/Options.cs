@@ -50,6 +50,8 @@ namespace LbIntegrations.SuperZsnes.Mod
         public string Display;
         /// <summary>--nixx-log: this plugin's lines also go to portable\nixx.log. See NixxLog.</summary>
         public bool Log = false;
+        /// <summary>--nixx-ra-probe / --nixx-ra-unlock: the RetroAchievements diagnostic - see RaProbe.cs.</summary>
+        public bool RaProbe = false, RaUnlock = false, RaDrive = false;
         public readonly List<string> Unknown = new List<string>();
 
         public static Options Parse(string[] args)
@@ -82,6 +84,9 @@ namespace LbIntegrations.SuperZsnes.Mod
                         case "dump-options":  o.DumpOptions = Flag(value, true); break;
                         case "display":       o.Display = string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToLowerInvariant(); break;
                         case "log":           o.Log = Flag(value, true); break;
+                        case "ra-probe":      o.RaProbe = Flag(value, true); break;
+                        case "ra-unlock":     o.RaUnlock = Flag(value, true); if (o.RaUnlock) o.RaProbe = true; break;
+                        case "ra-drive":      o.RaDrive = Flag(value, true); if (o.RaDrive) o.RaProbe = true; break;
                         default: o.Unknown.Add(raw); break;
                     }
                 }
