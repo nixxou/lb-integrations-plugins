@@ -514,6 +514,16 @@ namespace LbIntegrations.Xenia
                 }
                 catch (Exception ex) { Log.Info("compatibility: " + ex.Message); }
 
+                // The game's folder, its updates and DLC sorted (XeniaScan): long once for a big folder, then a walk and the
+                // cache - with a progress window when it takes a while.
+                try
+                {
+                    var rom = ResolveFullPath(args?.GameBeingLaunched?.ApplicationPath);
+                    var folder = string.IsNullOrEmpty(rom) ? null : (Directory.Exists(rom) ? Path.GetDirectoryName(rom.TrimEnd('\\')) : Path.GetDirectoryName(rom));
+                    if (folder != null) XeniaScan.ScanShowing(folder, "Nixx-Xenia - Looking at the game's folder");
+                }
+                catch (Exception ex) { Log.Info("scan at launch: " + ex.Message); }
+
                 var current = args?.CurrentCommandLine ?? "";
                 var added = new List<string>();
                 if (!HasOption(current, "license_mask")) added.Add("--license_mask=1");

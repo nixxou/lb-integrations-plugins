@@ -92,6 +92,8 @@ namespace LbIntegrations.Probe
             if (Has(args, "--xenia-firstrun")) { asm.GetType("LbIntegrations.Xenia.XeniaSetup", true).GetMethod("AfterFirstInstall", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, new object[] { Path.GetFullPath(Arg(args, "--xenia-firstrun")) }); return 0; }
             // The Xenia tab of the Nixx window and a game's options window, drawn: --xenia-shot <out.png> --emu <xenia_canary.exe> [--rom <game>].
             if (Has(args, "--xenia-shot")) return XeniaSetupCheck.Shot(asm, Arg(args, "--xenia-shot"), emuPath, Arg(args, "--rom"), Arg(args, "--compat-dir")) ? 0 : 1;
+            // The sorting of a folder's Xbox 360 files and its cache: --xenia-scan [--iso <a real disc image>].
+            if (Has(args, "--xenia-scan")) return XeniaScanCheck.Run(asm, Arg(args, "--iso")) ? 0 : 1;
             if (Has(args, "--xenia-setup")) return XeniaSetupCheck.Run(asm, Arg(args, "--xconfig"), Arg(args, "--account"), Arg(args, "--toml")) ? 0 : 1;
             var type = asm.GetTypes().FirstOrDefault(t => !t.IsAbstract && typeof(EmulatorPlugin).IsAssignableFrom(t));
             if (type == null)
