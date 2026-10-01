@@ -48,6 +48,7 @@ namespace LbIntegrations.Xenia
             // every plugin of this pack and cannot tell on its own which log file to write to, nor which kill
             // switches to read. See LbipLog.
             LbipLog.Use(Log.Info, Log.Warn, Log.Disabled, () => Log.Tracing);
+            LbIntegrations.RamDisk.RamDiskLog.Use(Log.Info, (m, ex) => Log.Warn(m, ex));
 
             // As early as possible: the patch only sees connections opened AFTER it is installed,
             // and LaunchBox reads its metadata the moment a window asks for it.
@@ -55,6 +56,10 @@ namespace LbIntegrations.Xenia
 
             // When an import's games are in the library: told - and one watcher for the whole pack, see
             // LbipImportWatch. Under a try: LbImportFinished is newer than a Catalog a host may carry.
+            // The import wizard's game list put right for Xbox 360: updates, DLC and what is not a game taken out - XeniaLbImport.
+            try { XeniaLbImport.Install(); }
+            catch (Exception ex) { Log.Info("the import wizard is not watched (" + ex.GetType().Name + ": " + ex.Message + ")"); }
+
             try { ListenForImports(); }
             catch (Exception ex) { Log.Info("an import's end is not seen here (" + ex.GetType().Name + ": " + ex.Message + ")"); }
         }
@@ -98,7 +103,9 @@ namespace LbIntegrations.Xenia
         /// user would discover was wrong is worse than repeating what is already there.</summary>
         private static IEnumerable<LbCatalogEmulator> MetadataRows()
         {
-            const string extensions = ".iso";
+            // A disc image, an executable, Xenia's own archive - and the archives No-Intro's digital sets come in, which
+            // this plugin unpacks for Xenia, which reads none (XeniaExtras.Prepare).
+            const string extensions = ".iso,.xex,.zar,.zip,.7z";
 
             yield return new LbCatalogEmulator
             {
@@ -107,7 +114,7 @@ namespace LbIntegrations.Xenia
                 ApplicableFileExtensions = extensions,
                 Url = "https://xenia.jp/",
                 BinaryFileName = XeniaPaths.ExecutableNames[0],
-                AutoExtract = true,
+                AutoExtract = false,
                 Platforms =
                 {
                     new LbCatalogPlatform { Platform = Xbox360Platform,
@@ -146,6 +153,8 @@ namespace LbIntegrations.Xenia
                     && eventType != SystemEventTypes.BigBoxStartupCompleted) return;
 
                 Log.Info("host event " + Q(eventType));
+                // A RAM disk a session left behind (the host went before its game did): released.
+                XeniaRamSession.Release("the host has started");
                 LbipRowInjection.Install("com.nixxou.lbip.xenia", MetadataRows());
             }
             catch (Exception ex) { Log.Warn("OnEventRaised", ex); }
@@ -183,6 +192,7 @@ namespace LbIntegrations.Xenia
                 catch { }
 
                 EnsureHotkeyScripts(emu);
+                EnsureAutoExtract(emu);
             }
             // The host asks this constantly - twenty-three times in one second, measured - and the
             // answer almost never changes. Said once, then only when it does.
@@ -229,6 +239,20 @@ namespace LbIntegrations.Xenia
                     Log.Info("hotkey scripts set: " + string.Join(", ", set));
             }
             catch (Exception ex) { Log.Warn("could not describe the hotkeys on the emulator entry", ex); }
+        }
+
+        /// <summary>AutoExtract OFF: Xenia opens no archive, and it is THIS plugin that unpacks one (Mehdi, 01/10) - to a RAM disk
+        /// when it can, with the game's update and DLC beside it (XeniaExtras.Prepare). LaunchBox unpacking it first would put
+        /// it on the disk every time. Forced: an entry set to extract would do that work for nothing.</summary>
+        private static void EnsureAutoExtract(IEmulator emu)
+        {
+            try
+            {
+                if (!emu.AutoExtract) return;
+                emu.AutoExtract = false;
+                Log.Info("AutoExtract turned off - this plugin unpacks Xenia's archives itself");
+            }
+            catch { }
         }
 
         private static bool IsBlank(Func<string> get)
@@ -430,6 +454,7 @@ namespace LbIntegrations.Xenia
             emu.Title = PackName;
             emu.ApplicationPath = MakeRelativeToLaunchBox(exePath);
             emu.CommandLine = DefaultCommandLine;
+            emu.AutoExtract = false;         // see EnsureAutoExtract
             EnsureHotkeyScripts(emu);
 
             // DefaultPlatform IS NOT SET, and that is the point.
@@ -514,6 +539,7 @@ namespace LbIntegrations.Xenia
                 }
                 catch (Exception ex) { Log.Info("compatibility: " + ex.Message); }
 
+                string unpacked = null;
                 // The game's folder, its updates and DLC sorted (XeniaScan): long once for a big folder, then a walk and the
                 // cache - with a progress window when it takes a while.
                 try
@@ -526,7 +552,7 @@ namespace LbIntegrations.Xenia
                     string launchedId = null;
                     try { launchedId = args?.GameBeingLaunched?.Id; } catch { }
                     if (folder != null && !string.IsNullOrEmpty(exe) && XeniaPaths.ForkOf(exe) == XeniaFork.Canary)
-                        XeniaExtras.Prepare(rom, launchedId, XeniaPaths.Resolve(exe, args?.CurrentCommandLine));
+                        unpacked = XeniaExtras.Prepare(rom, launchedId, XeniaPaths.Resolve(exe, args?.CurrentCommandLine), exe);
                 }
                 catch (Exception ex) { Log.Info("scan at launch: " + ex.Message); }
 
@@ -543,6 +569,9 @@ namespace LbIntegrations.Xenia
                 if (options.Count > 0) Log.Info("options passed: " + string.Join(" ", options));
 
                 var rewritten = XeniaSettings.Append(current, added.Concat(options));
+                // A game the plugin unpacked (it came in an archive): Xenia is handed it by --target. LaunchBox still appends the
+                // archive's path after the line - measured 01/10, Xenia takes --target and leaves the second path unmatched.
+                if (unpacked != null) rewritten = (rewritten + " \"--target=" + unpacked + "\"").Trim();
                 if (rewritten != current.Trim())
                     return new PrepareForLaunchResponse(success: true) { NewCommandLine = rewritten };
             }

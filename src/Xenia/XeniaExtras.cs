@@ -160,8 +160,9 @@ namespace LbIntegrations.Xenia
         public static XeniaGameExtras For(string rom, XeniaLayout layout)
         {
             if (string.IsNullOrWhiteSpace(rom)) return null;
-            var folder = Directory.Exists(rom) ? Path.GetDirectoryName(rom.TrimEnd('\\')) : Path.GetDirectoryName(rom);
-            var all = XeniaScan.Cached(folder);
+            // EVERYTHING THE SCANS HAVE SEEN, not only the game's folder: an import's folders too - No-Intro's sets put the
+            // updates beside the games, not under them. Matched by content (title id, digest); what is no longer there is left out.
+            var all = XeniaScan.CachedAll().Where(e => SourceExists(e.Path)).ToList();
             var game = all.FirstOrDefault(e => e.Kind == XeniaFileKind.Game && string.Equals(e.Path, rom, StringComparison.OrdinalIgnoreCase))
                        ?? all.FirstOrDefault(e => e.Kind == XeniaFileKind.Game && e.Path.StartsWith(rom + "|", StringComparison.OrdinalIgnoreCase));
             if (game == null || game.TitleId.Length == 0) return null;
@@ -185,6 +186,12 @@ namespace LbIntegrations.Xenia
             foreach (var u in x.Updates) u.Matches = game.Digest.Length == 0 || string.Equals(u.Entry.Digest, game.Digest, StringComparison.OrdinalIgnoreCase);
             x.Dlc = Group(all.Where(e => e.Kind == XeniaFileKind.Dlc && e.TitleId == game.TitleId));
             return x;
+        }
+
+        private static bool SourceExists(string path)
+        {
+            try { var bar = path.IndexOf('|'); var p = bar >= 0 ? path.Substring(0, bar) : path; return File.Exists(p) || Directory.Exists(p); }
+            catch { return false; }
         }
 
         private static long SizeOf(XeniaScanEntry e)
@@ -265,94 +272,186 @@ namespace LbIntegrations.Xenia
 
         // ── at launch ────────────────────────────────────────────────────────
 
-        /// <summary>Put this game's chosen update and DLC where Xenia looks. Never throws; what it could not do is logged.</summary>
-        public static void Prepare(string rom, string gameId, XeniaLayout layout)
+        /// <summary>What a launch puts down: the game's package when it is in an archive (Xenia reads none - Mehdi, 01/10: the
+        /// plugin unpacks it, never LaunchBox, so that it can go to a RAM disk), and the chosen update and DLC. Returns the
+        /// path to hand Xenia as --target when the game was unpacked, null when Xenia is to open the game's own file.
+        /// Never throws; what it could not do is logged, and the launch goes on.</summary>
+        public static string Prepare(string rom, string gameId, XeniaLayout layout, string exe)
         {
             try
             {
+                XeniaRamSession.Release("a game is being launched");
                 var x = For(rom, layout);
-                if (x == null) { Log.Info("extras: " + rom + " is not among the scanned games - nothing put down"); return; }
+                if (x == null) { Log.Info("extras: " + rom + " is not among the scanned games - nothing put down"); return null; }
                 var (update, dlc) = Chosen(x, ReadChoice(gameId));
-                var wanted = (update != null ? new[] { update } : new XeniaExtra[0]).Concat(dlc).ToList();
+                var extras = (update != null ? new[] { update } : new XeniaExtra[0]).Concat(dlc).ToList();
+                bool archived = x.Game.Path.Contains('|');
                 Log.Info("extras of " + x.Game.TitleId + ": " + (update != null ? "update \"" + update.Entry.Name + "\" (" + XeniaScan.VersionText(update.Entry.PatchTo) + ")" : "no update")
-                         + ", " + dlc.Count + " of " + x.Dlc.Count + " DLC" + (x.Updates.Count(u => !u.Matches) > 0 ? ", " + x.Updates.Count(u => !u.Matches) + " update(s) for another version of the game left out" : ""));
+                         + ", " + dlc.Count + " of " + x.Dlc.Count + " DLC" + (x.Updates.Count(u => !u.Matches) > 0 ? ", " + x.Updates.Count(u => !u.Matches) + " update(s) for another version of the game left out" : "")
+                         + (archived ? ", the game itself in its archive" : ""));
 
                 var content = Path.Combine(layout.ContentRoot, CommonXuid, x.Game.TitleId);
-                if (wanted.Count == 0 && !Directory.Exists(content)) return;   // nothing to put, nothing put before
+                if (!archived && extras.Count == 0 && !Directory.Exists(content)) return null;   // nothing to put, nothing put before
 
-                Directory.CreateDirectory(Path.Combine(x.Folder, "store"));
-                WriteManifest(x.Folder, rom, x.Game.TitleId);
-
-                long needed = wanted.Where(w => !w.InStore && w.Entry.Path.Contains('|')).Sum(w => w.Size);
-                MakeRoom(ContentFolder(layout), x.Folder, needed, layout);
-
-                using (var window = needed > 0 ? XeniaProgressWindow.Open("Nixx-Xenia - Title update and DLC") : null)
+                // WHERE (Mehdi, 01/10): what is on the disk already stays read from the disk; else, under the threshold, a RAM
+                // disk for all of it; else the disk.
+                var gameFile = archived ? Path.Combine(x.Folder, "game", Leaf(x.Game.Path)) : null;
+                bool onDisk = (gameFile != null && File.Exists(gameFile)) || extras.Any(e => e.InStore);
+                long total = (archived ? GameSize(x.Game) : 0) + extras.Sum(e => e.Size);
+                string baseDir = null;
+                if (!onDisk && total > 0) baseDir = XeniaRamSession.Open(layout, x.Game.TitleId, Safe(Path.GetFileName(x.Folder)), total, exe);
+                bool ram = baseDir != null;
+                if (!ram)
                 {
-                    int n = 0;
-                    foreach (var w in wanted)
+                    baseDir = x.Folder;
+                    Directory.CreateDirectory(Path.Combine(baseDir, "store"));
+                    WriteManifest(baseDir, rom, x.Game.TitleId);
+                    long needed = (archived && !File.Exists(gameFile) ? GameSize(x.Game) : 0) + extras.Where(w => !w.InStore && w.Entry.Path.Contains('|')).Sum(w => w.Size);
+                    MakeRoom(ContentFolder(layout), baseDir, needed, layout);
+                }
+                else Directory.CreateDirectory(Path.Combine(baseDir, "store"));
+
+                string target = null;
+                bool slow = ram || archived || extras.Any(e => !e.InStore);
+                using (var window = slow ? XeniaProgressWindow.Open("Nixx-Xenia - Preparing the game") : null)
+                {
+                    int n = 0, count = (archived ? 1 : 0) + extras.Count;
+                    if (archived)
                     {
                         n++;
-                        if (!w.InStore) PutInStore(x.Folder, w, (step, f) => window?.Report("(" + n + "/" + wanted.Count + ") " + step, f));
+                        target = PutGame(baseDir, x.Game, (step, f) => window?.Report("(" + n + "/" + count + ") " + step, f));
+                    }
+                    foreach (var w in extras)
+                    {
+                        n++;
+                        if (ram || !w.InStore) PutInStore(baseDir, w, (step, f) => window?.Report("(" + n + "/" + count + ") " + step, f));
                     }
                 }
 
-                var store = StoreIndex(x.Folder);
-                Link(x.Folder, UpdateType, update != null ? new[] { update } : new XeniaExtra[0], store);
-                Link(x.Folder, DlcType, dlc, store);
-                PointAt(Path.Combine(content, UpdateType), Path.Combine(x.Folder, UpdateType));
-                PointAt(Path.Combine(content, DlcType), Path.Combine(x.Folder, DlcType));
+                var store = StoreIndex(baseDir);
+                Link(baseDir, UpdateType, update != null ? new[] { update } : new XeniaExtra[0], store);
+                Link(baseDir, DlcType, dlc, store);
+                if (extras.Count > 0 || Directory.Exists(content))
+                {
+                    PointAt(Path.Combine(content, UpdateType), Path.Combine(baseDir, UpdateType));
+                    PointAt(Path.Combine(content, DlcType), Path.Combine(baseDir, DlcType));
+                }
+                Log.Info("extras: put down " + (ram ? "on a RAM disk at " : "on the disk at ") + baseDir + (target != null ? " - Xenia is handed " + target : ""));
+                return target;
             }
-            catch (Exception ex) { Log.Warn("extras: could not put the title update and DLC down", ex); }
+            catch (Exception ex) { Log.Warn("extras: could not put the game's content down", ex); return null; }
+        }
+
+        private static string Leaf(string path)
+        {
+            var key = path.Contains('|') ? Split(path).Key : path;
+            return key.Replace('\\', '/').Split('/').Last();
+        }
+
+        /// <summary>The size of an archived game unpacked: its package, and a Games on Demand package's .data pieces.</summary>
+        private static long GameSize(XeniaScanEntry game)
+        {
+            try
+            {
+                var (archive, key) = Split(game.Path);
+                using var a = SharpCompress.Archives.ArchiveFactory.Open(archive);
+                return a.Entries.Where(e => e.Key != null && !e.IsDirectory && Belongs(e.Key, key)).Sum(e => e.Size);
+            }
+            catch { return 0; }
+        }
+
+        private static bool Belongs(string entryKey, string key)
+        {
+            var k = entryKey.Replace('\\', '/');
+            return k == key || k.StartsWith(key + ".data/", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>An archived game unpacked into &lt;base&gt;\game, once - a Games on Demand package with its .data folder.
+        /// The package's path, for --target.</summary>
+        private static string PutGame(string baseDir, XeniaScanEntry game, Action<string, double?> progress)
+        {
+            var (archive, key) = Split(game.Path);
+            var dir = Path.Combine(baseDir, "game");
+            var leaf = Leaf(game.Path);
+            var target = Path.Combine(dir, leaf);
+            var done = Path.Combine(dir, ".done");
+            if (File.Exists(target) && File.Exists(done) && File.ReadAllText(done).Trim() == game.Path + "|" + game.Size + "|" + game.Ticks) return target;
+            Directory.CreateDirectory(dir);
+            using var a = SharpCompress.Archives.ArchiveFactory.Open(archive);
+            var entries = a.Entries.Where(e => e.Key != null && !e.IsDirectory && Belongs(e.Key, key)).ToList();
+            long total = Math.Max(1, entries.Sum(e => e.Size)), copied = 0;
+            var prefix = key.Contains('/') ? key.Substring(0, key.LastIndexOf('/') + 1) : "";
+            foreach (var entry in entries)
+            {
+                var rel = entry.Key.Replace('\\', '/').Substring(prefix.Length).Replace('/', '\\');
+                var path = Path.Combine(dir, rel);
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                Copy(entry, path, n => progress("Unpacking " + game.Name, (double)(copied + n) / total));
+                copied += entry.Size;
+            }
+            File.WriteAllText(done, game.Path + "|" + game.Size + "|" + game.Ticks);
+            Log.Info("extras: unpacked the game " + game.Path + " -> " + target);
+            return target;
+        }
+
+        /// <summary>One archive entry to a file, through a temporary one.</summary>
+        private static void Copy(SharpCompress.Archives.IArchiveEntry entry, string path, Action<long> progress)
+        {
+            var tmp = path + ".tmp";
+            try
+            {
+                using (var src = entry.OpenEntryStream())
+                using (var dst = File.Create(tmp))
+                {
+                    var buffer = new byte[1 << 20];
+                    long done = 0;
+                    int r;
+                    while ((r = src.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        dst.Write(buffer, 0, r);
+                        done += r;
+                        progress(done);
+                    }
+                }
+                File.Move(tmp, path, overwrite: true);
+            }
+            catch
+            {
+                try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+                throw;
+            }
         }
 
         /// <summary>One package into the store, once: from its archive, else a hard link to the loose file, else a copy.</summary>
-        private static void PutInStore(string gameFolder, XeniaExtra w, Action<string, double?> progress)
+        private static void PutInStore(string baseDir, XeniaExtra w, Action<string, double?> progress)
         {
-            var store = Path.Combine(gameFolder, "store");
+            var store = Path.Combine(baseDir, "store");
             var e = w.Entry;
-            var name = e.Path.Contains('|') ? Split(e.Path).Key.Split('/').Last() : Path.GetFileName(e.Path);
+            var name = Leaf(e.Path);
             var target = Path.Combine(store, name);
             if (File.Exists(target)) target = Path.Combine(store, w.ContentId.Length <= 42 ? w.ContentId : name + "-" + Guid.NewGuid().ToString("N").Substring(0, 6));
-            var tmp = target + ".tmp";
             try
             {
                 if (e.Path.Contains('|'))
                 {
                     var (archive, key) = Split(e.Path);
-                    progress("Extracting " + e.Name, 0);
                     using var a = SharpCompress.Archives.ArchiveFactory.Open(archive);
                     var entry = a.Entries.First(x => x.Key != null && x.Key.Replace('\\', '/') == key);
-                    using (var src = entry.OpenEntryStream())
-                    using (var dst = File.Create(tmp))
-                    {
-                        var buffer = new byte[1 << 20];
-                        long done = 0, total = Math.Max(1, entry.Size);
-                        int r;
-                        while ((r = src.Read(buffer, 0, buffer.Length)) > 0)
-                        {
-                            dst.Write(buffer, 0, r);
-                            done += r;
-                            progress("Extracting " + e.Name, (double)done / total);
-                        }
-                    }
-                    File.Move(tmp, target);
-                    Log.Info("extras: extracted " + e.Path + " -> " + target);
+                    long size = Math.Max(1, entry.Size);
+                    Copy(entry, target, n => progress("Unpacking " + e.Name, (double)n / size));
+                    Log.Info("extras: unpacked " + e.Path + " -> " + target);
                 }
                 else if (!CreateHardLink(target, e.Path, IntPtr.Zero))
                 {
                     progress("Copying " + e.Name, null);
-                    File.Copy(e.Path, tmp);
-                    File.Move(tmp, target);
+                    File.Copy(e.Path, target + ".tmp");
+                    File.Move(target + ".tmp", target);
                     Log.Info("extras: copied " + e.Path + " -> " + target + " (another drive: no hard link)");
                 }
                 else Log.Info("extras: linked " + e.Path + " -> " + target);
                 File.AppendAllLines(Path.Combine(store, "store.tsv"), new[] { w.ContentId + "\t" + Path.GetFileName(target) + "\t" + e.Path });
             }
-            catch (Exception ex)
-            {
-                try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
-                Log.Warn("extras: " + e.Path + " could not be put down", ex);
-            }
+            catch (Exception ex) { Log.Warn("extras: " + e.Path + " could not be put down", ex); }
         }
 
         /// <summary>&lt;game folder&gt;\&lt;type&gt; made to hold hard links to exactly these packages of the store.</summary>

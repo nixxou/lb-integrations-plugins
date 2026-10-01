@@ -140,6 +140,7 @@ namespace LbIntegrations.Probe
         /// for the game's title update and DLC (XeniaExtras.Prepare), for real, on that Xenia - then what it put down.</summary>
         public static bool Prepare(Assembly asm, string exe, string rom, string gameId, string settingsDir)
         {
+            bool Has(string a) => Environment.GetCommandLineArgs().Contains(a);
             var flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
             if (settingsDir != null) asm.GetType("LbIntegrations.Xenia.XeniaSettings", true).GetField("DirOverride", flags).SetValue(null, settingsDir);
             var scan = asm.GetType("LbIntegrations.Xenia.XeniaScan", true);
@@ -148,7 +149,9 @@ namespace LbIntegrations.Probe
             var layout = paths.GetMethod("Resolve", flags).Invoke(null, new object[] { exe, null });
             var sw = System.Diagnostics.Stopwatch.StartNew();
             scan.GetMethod("Scan", flags).Invoke(null, new object[] { Path.GetDirectoryName(rom), null, null });
-            extras.GetMethod("Prepare", flags).Invoke(null, new object[] { rom, gameId ?? "probe-game", layout });
+            var target = (string)extras.GetMethod("Prepare", flags).Invoke(null, new object[] { rom, gameId ?? "probe-game", layout, exe });
+            Console.WriteLine("  --target: " + (target ?? "(none: Xenia opens the game's own file)"));
+            if (Has("--release")) asm.GetType("LbIntegrations.Xenia.XeniaRamSession", true).GetMethod("Release", flags).Invoke(null, new object[] { "the probe asked" });
             Console.WriteLine("  prepared in " + sw.ElapsedMilliseconds + " ms");
             var common = Path.Combine((string)layout.GetType().GetField("ContentRoot").GetValue(layout), "0000000000000000");
             if (Directory.Exists(common))

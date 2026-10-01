@@ -35,7 +35,8 @@ namespace LbIntegrations.Xenia
         private readonly XeniaConsolePanel _console;
         private readonly XeniaOptionRows _rows;
         private readonly TextBox _line;
-        private readonly TextBox _contentFolder, _contentLimit;
+        private readonly TextBox _contentFolder, _contentLimit, _ramBelow;
+        private readonly CheckBox _ram, _importClean;
 
         public XeniaSettingsPage()
         {
@@ -79,14 +80,28 @@ namespace LbIntegrations.Xenia
             ct.Controls.Add(_contentFolder, 1, 0);
             ct.Controls.Add(new Label { Text = "Size limit (GB)", AutoSize = true, Margin = new Padding(0, 7, 4, 0) }, 0, 1);
             ct.Controls.Add(_contentLimit, 1, 1);
+            _ram = new CheckBox { Text = "On a RAM disk below", AutoSize = true, Margin = new Padding(0, 6, 0, 0),
+                                  Checked = !(content.TryGetValue("ramdisk", out var rd) && string.Equals(rd, "off", StringComparison.OrdinalIgnoreCase)) };
+            _ramBelow = new TextBox { Width = 80, Text = content.TryGetValue("ramdisk_below_gb", out var rb) ? rb : "", Margin = new Padding(3, 3, 0, 0) };
+            _ramBelow.HandleCreated += (_, _) => SendMessage(_ramBelow.Handle, 0x1501, (IntPtr)1, "2 GB");
+            var ramRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty };
+            ramRow.Controls.Add(_ramBelow);
+            ramRow.Controls.Add(new Label { Text = "GB of content for the game", AutoSize = true, Margin = new Padding(4, 7, 0, 0) });
+            ct.Controls.Add(_ram, 0, 2);
+            ct.Controls.Add(ramRow, 1, 2);
+            _importClean = new CheckBox { Text = "Take updates, DLC and what is not a game out of LaunchBox's import list", AutoSize = true, Margin = new Padding(0, 6, 0, 0),
+                                          Checked = XeniaLbImport.Wanted };
+            ct.Controls.Add(_importClean, 0, 3);
+            ct.SetColumnSpan(_importClean, 2);
             var help = new Label
             {
                 AutoSize = true, MaximumSize = new Size(480, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 4, 0, 4),
-                Text = "Xenia reads a game's title update and DLC from its own folders only, and cannot read an archive: at a launch, what the game's "
-                       + "options choose is extracted here once, then linked into place. Over the limit, the games launched longest ago lose theirs, "
-                       + "whole - they come back at their next launch. Your own files are never changed.",
+                Text = "Xenia cannot read an archive, and reads a game's title update and DLC from its own folders only: at a launch, a zipped "
+                       + "game and what its options choose are unpacked by the plugin - to a RAM disk for the session when it all fits under that size and "
+                       + "none of it is on the disk yet, else here, once, then linked into place. Over the size limit, the games launched longest ago lose "
+                       + "theirs, whole - they come back at their next launch. Your own files are never changed.",
             };
-            ct.Controls.Add(help, 0, 2);
+            ct.Controls.Add(help, 0, 4);
             ct.SetColumnSpan(help, 2);
             cbox.Controls.Add(ct);
             stack.Controls.Add(cbox);
@@ -126,9 +141,13 @@ namespace LbIntegrations.Xenia
             var limit = _contentLimit.Text.Trim().Replace(',', '.');
             if (limit.Length > 0 && (!double.TryParse(limit, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var gb) || gb < 0))
                 return "The size limit is a number of GB, 0 for none.";
+            var below = _ramBelow.Text.Trim().Replace(',', '.');
+            if (below.Length > 0 && (!double.TryParse(below, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var rg) || rg <= 0))
+                return "The RAM disk threshold is a number of GB.";
             _console?.Save();
             XeniaSettings.WriteAll(_rows.Values());
-            XeniaExtras.WriteSettings(new Dictionary<string, string> { ["folder"] = _contentFolder.Text.Trim(), ["limit_gb"] = limit });
+            XeniaExtras.WriteSettings(new Dictionary<string, string> { ["folder"] = _contentFolder.Text.Trim(), ["limit_gb"] = limit,
+                ["ramdisk"] = _ram.Checked ? "" : "off", ["ramdisk_below_gb"] = below, ["import_clean"] = _importClean.Checked ? "" : "off" });
             return null;
         }
     }

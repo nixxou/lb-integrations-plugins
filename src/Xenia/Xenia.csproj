@@ -47,6 +47,8 @@
     <Compile Include="..\Shared.Lbip\**\*.cs" />
     <!-- The icon of the right-click entry (Shared.Menu\LbipMenuIcon.cs), as the other plugins with a game menu. -->
     <Compile Include="..\Shared.Menu\**\*.cs" />
+    <!-- The RAM disk a game's unpacked content goes to - the one LiteBox, melonDS and Vita3K mount. See src\Shared.RamDisk\RamDrive.cs. -->
+    <Compile Include="..\Shared.RamDisk\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>

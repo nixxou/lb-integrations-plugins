@@ -202,6 +202,9 @@ namespace LbIntegrations.Xenia
             finally { window?.Dispose(); }
         }
 
+        /// <summary>Everything the cache knows, wherever it was scanned - an import's folders, every game's.</summary>
+        public static List<XeniaScanEntry> CachedAll() => Load().Values.ToList();
+
         /// <summary>What the cache knows of the files under <paramref name="root"/>, without looking at the disk.</summary>
         public static List<XeniaScanEntry> Cached(string root)
         {
