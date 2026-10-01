@@ -1,5 +1,5 @@
-// The options window's "Updates & DLC" tab: what a launch would find for the game - by the usual rules
-// and in the import's index (Vita3kExtras.Evaluate) - and which of it the game is launched with.
+// The options window's "Updates & DLC" tab: what a launch would find for the game - the scan of its folder and
+// whatever else the scans have seen (Vita3kExtras.Evaluate) - and which of it the game is launched with.
 //
 //   - the update: "Automatic" (the highest found, today and whenever a newer one appears), one of those
 //     found, or "None";

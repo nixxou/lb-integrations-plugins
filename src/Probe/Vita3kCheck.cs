@@ -38,7 +38,10 @@ namespace LbIntegrations.Probe
 
             _asm = pluginAssembly;
             _bad = 0;
-            var root = Path.Combine(Path.GetTempPath(), "lbip-vita3k-" + Guid.NewGuid().ToString("N"));
+            // NOT named with "vita": the folder above a game named so is scanned whole (Vita3kScan.FolderFor), and every section
+            // of this probe forges the same title id - each would find the others'.
+            var root = Path.Combine(Path.GetTempPath(), "lbip-v3k-" + Guid.NewGuid().ToString("N"));
+            var scanCache = _asm_ScanCache(pluginAssembly, Path.Combine(Path.GetTempPath(), "lbip-vita3k-scan-" + Guid.NewGuid().ToString("N") + ".tsv"));
             try
             {
                 var install = Path.Combine(root, "Emulators", "Nixx-Vita3K");
@@ -77,7 +80,22 @@ namespace LbIntegrations.Probe
                 Console.WriteLine("  EXCEPTION: " + ex);
                 return false;
             }
-            finally { Scrub(root); }
+            finally { Scrub(root); _asm_ScanCache(pluginAssembly, null); try { if (scanCache != null) File.Delete(scanCache); } catch { } }
+        }
+
+        /// <summary>The scan's cache forgotten: the sections of this probe forge the same title id in folders of their own, and
+        /// the cache, looked at whole, would hand each one the others' contents - as it should for a user.</summary>
+        private static void ForgetScan()
+        {
+            var path = (string)_asm.GetType("LbIntegrations.Vita3k.Vita3kScan", true).GetField("CacheOverride", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
+            if (path != null && File.Exists(path)) File.Delete(path);
+        }
+
+        /// <summary>The scan's cache (Vita3kScan) put in the temp folder for the run - null puts it back.</summary>
+        private static string _asm_ScanCache(Assembly asm, string path)
+        {
+            asm.GetType("LbIntegrations.Vita3k.Vita3kScan", true).GetField("CacheOverride", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, path);
+            return path;
         }
 
         /// <summary>The native library the plugin loads, called the way the plugin calls it.
@@ -1998,49 +2016,54 @@ namespace LbIntegrations.Probe
             Console.WriteLine();
             Console.WriteLine("  updates and DLC");
 
-            // A library laid out the four ways, with a decoy for each rule.
-            var roms = Path.Combine(root, "roms");
+            // A library laid out anyhow: names and folders decide nothing any more, the contents do (Vita3kScan, Mehdi 01/10).
+            // Under root\library\roms: the folder above, "library", is not named with "vita" - only roms is scanned.
+            var roms = Path.Combine(root, "library", "roms");
             Directory.CreateDirectory(roms);
             var game = ForgeContent(roms, "A Forged Game [PCSE00965].vpk", TitleId, "gd", "UP0000-PCSE00965_00-FORGEDGAME000000", "01.00", "A Forged Game");
             ForgeContent(roms, "A Forged Game [PCSE00965] [PATCH] [v1.10].vpk", TitleId, "gp", "UP0000-PCSE00965_00-FORGEDGAME000000", "01.10", "A Forged Game");
             ForgeContent(Path.Combine(roms, "UPDATE"), "update PCSE00965 1.20.vpk", TitleId, "gp", "UP0000-PCSE00965_00-FORGEDGAME000000", "01.20", "A Forged Game");
             ForgeContent(Path.Combine(roms, "PCSE00965"), "costume.vpk", TitleId, "ac", "UP0000-PCSE00965_00-DLCCOSTUME000001", null, "A Costume");
             ForgeContent(Path.Combine(roms, "PCSE00965"), "costume again.vpk", TitleId, "ac", "UP0000-PCSE00965_00-DLCCOSTUME000001", null, "A Costume");
-            ForgeContent(Path.Combine(roms, "Forged Game, The - Extras"), "level pack.vpk", TitleId, "ac", "UP0000-PCSE00965_00-DLCLEVELPACK0002", null, "A Level Pack");
+            ForgeContent(Path.Combine(roms, "Forged Game"), "level pack.vpk", TitleId, "ac", "UP0000-PCSE00965_00-DLCLEVELPACK0002", null, "A Level Pack");
             ForgeContent(roms, "not really PCSE00965.vpk", "PCSE99999", "gp", "UP0000-PCSE99999_00-SOMETHINGELSE000", "09.99", "Another Game");
-            ForgeContent(Path.Combine(roms, "Unrelated"), "unrelated.vpk", TitleId, "ac", "UP0000-PCSE00965_00-NEVERFOUND000003", null, "Never Found");
+            var anywhere = ForgeContent(Path.Combine(roms, "Unrelated", "deep"), "zz.vpk", TitleId, "ac", "UP0000-PCSE00965_00-ANYWHERE00000003", null, "Found Anywhere");
+            File.WriteAllText(Path.Combine(roms, "broken.vpk"), "not an archive");
+            File.WriteAllText(Path.Combine(roms, "readme.txt"), "not ours");
 
-            var described = Call("Vita3kContent", "Describe", new object[] { game, null });
-            var candidates = (System.Collections.IList)Call("Vita3kExtras", "Candidates", new object[] { game, described, "A Forged Game" });
-            var names = new List<string>();
-            foreach (var c in candidates) names.Add(Path.GetFileName((string)c.GetType().GetField("Item1").GetValue(c)));
-            Console.WriteLine("            candidates: " + string.Join(", ", names));
-            Check("the update beside the game, by its name, is a candidate", names.Contains("A Forged Game [PCSE00965] [PATCH] [v1.10].vpk"));
-            Check("the one in UPDATE is", names.Contains("update PCSE00965 1.20.vpk"));
-            Check("everything in the folder named the title id is", names.Contains("costume.vpk") && names.Contains("costume again.vpk"));
-            Check("everything in a folder named the game is (\"Forged Game, The - Extras\" has another key: not)", !names.Contains("level pack.vpk"));
-            Check("a zip naming the id in a folder with no reason to be looked at is not", !names.Contains("unrelated.vpk"));
-            Check("the game itself is never a candidate", !names.Contains("A Forged Game [PCSE00965].vpk"));
+            var scan = _asm.GetType("LbIntegrations.Vita3k.Vita3kScan", throwOnError: true);
+            var folderFor = (string)scan.GetMethod("FolderFor", BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { game });
+            Check("the game's folder is scanned, not the one above (not named with \"vita\")", string.Equals(folderFor, roms, StringComparison.OrdinalIgnoreCase), folderFor);
+            var vitaAbove = Path.Combine(root, "My Vita games", "Action", "x.vpk");
+            var vitaFor = (string)scan.GetMethod("FolderFor", BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { vitaAbove });
+            Check("a folder above named with \"vita\" (any case) is scanned instead", string.Equals(vitaFor, Path.Combine(root, "My Vita games"), StringComparison.OrdinalIgnoreCase), vitaFor);
 
-            // The folder named the game: its key has to be the game's.
-            var named = Path.Combine(roms, "A Forged Game - Extras");
-            Directory.Move(Path.Combine(roms, "Forged Game, The - Extras"), Path.Combine(roms, "Forged Game"));
-            candidates = (System.Collections.IList)Call("Vita3kExtras", "Candidates", new object[] { game, described, "A Forged Game" });
-            names.Clear();
-            foreach (var c in candidates) names.Add(Path.GetFileName((string)c.GetType().GetField("Item1").GetValue(c)));
-            Check("a folder named the game by its key (\"Forged Game\" = FORGEDGAME) is looked into", names.Contains("level pack.vpk"));
+            System.Collections.IList Scan() => (System.Collections.IList)scan.GetMethod("Scan", BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { roms, null, null });
+            var entries = Scan();
+            var shown = new List<string>();
+            foreach (var e in entries) shown.Add(e.ToString());
+            foreach (var s in shown.OrderBy(x => x)) Console.WriteLine("            " + s);
+            Check("every .vpk read, readme.txt not looked at", shown.Count == 9 && !shown.Any(s => s.Contains("readme")), shown.Count.ToString());
+            Check("a .vpk that is not an archive: noted invalid, with its reason", shown.Any(s => s.StartsWith("broken.vpk") && s.Contains("Invalid")));
+            var again = Scan();
+            Check("a second look finds the same, from the cache", again.Count == entries.Count);
 
-            var extras = Call("Vita3kExtras", "For", new object[] { game, described, "A Forged Game", null, null });
+            var extras = Call("Vita3kExtras", "For", new object[] { game, Call("Vita3kContent", "Describe", new object[] { game, null }), "A Forged Game", null, null });
             var update = extras.GetType().GetField("Update").GetValue(extras);
             var addons = (System.Collections.IList)extras.GetType().GetField("Addons").GetValue(extras);
             string AppVer(object e) => e == null ? null : (string)Field(Field(e, "Content"), "AppVer");
             Check("of the two updates, the highest is kept (01.20)", AppVer(update) == "01.20");
-            Check("two DLC kept - one per CONTENT_ID, the decoy of another game set aside", addons.Count == 2);
+            Check("three DLC - one per CONTENT_ID, wherever they are; another game's update set aside", addons.Count == 3, addons.Count.ToString());
 
+            // The launch checks after this expect two DLC: the one found anywhere goes.
+            File.Delete(anywhere);
+            var described = Call("Vita3kContent", "Describe", new object[] { game, null });
             ImportIndexAndChoice(layout, root, game, described);
             SettingsConsole(layout, root, game, described);
             ImportCleanup(root);
+            ForgetScan();
             MultiContent(root);
+            ForgetScan();
             TheConfig(layout);
             TheGameConfig(layout);
             TheGameGraphics(layout);
@@ -2079,6 +2102,7 @@ namespace LbIntegrations.Probe
             Check("a DLC added since: it launches", Call("Vita3kWorkspace", "Prepare", args) as string == TitleId, args[2] as string);
             Check("and the console was rebuilt with it", Directory.Exists(Path.Combine(work, "ux0", "addcont", TitleId, "DLCBONUS00000003")));
 
+            ForgetScan();
             SavesAcrossExtras(layout, portable, roms, game);
         }
 
@@ -2937,66 +2961,25 @@ namespace LbIntegrations.Probe
             public string ApplicationPath { get; }
         }
 
-        /// <summary>The import's index (an extra the four rules never look at, found through it) and the
+        /// <summary>An extra in another folder, found once that folder is scanned, and the
         /// game's choice of update and DLC (none, another, a DLC left out). Leaves the forged library as
         /// it found it: the launch checks after this expect 01.20 and two DLC.</summary>
         private static void ImportIndexAndChoice(object layout, string root, string game, object described)
         {
             Console.WriteLine();
-            Console.WriteLine("  the import's index, and the game's choice");
+            Console.WriteLine("  an extra scanned elsewhere, and the game's choice");
             var install = (string)Field(layout, "InstallDir");
             string AppVer(object e) => e == null ? null : (string)Field(Field(e, "Content"), "AppVer");
 
-            // AN UPDATE NOWHERE THE RULES LOOK: in another folder, under a name without the title id.
+            // AN UPDATE NO SCAN OF THE GAME'S FOLDER SEES: in another folder. Once that folder is scanned - an import does it -
+            // it is the game's: the cache is looked at whole.
             var elsewhere = Path.Combine(root, "elsewhere");
             var hidden = ForgeContent(elsewhere, "the big patch.vpk", TitleId, "gp", "UP0000-PCSE00965_00-FORGEDGAME000000", "01.30", "A Forged Game");
-            var hiddenContent = Call("Vita3kContent", "Describe", new object[] { hidden, null });
             var extras = Call("Vita3kExtras", "For", new object[] { game, described, "A Forged Game", install, null });
-            Check("without the index, an update elsewhere is not found", AppVer(extras.GetType().GetField("Update").GetValue(extras)) == "01.20");
-
-            var row = Call("Vita3kExtrasIndex", "From", new object[] { game, hidden, hiddenContent });
-            var rows = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(row.GetType()));
-            rows.Add(row);
-            Call("Vita3kExtrasIndex", "Record", new object[] { install, new[] { game }, rows });
-            var index = Path.Combine(install, "lbip-vita-extras.tsv");
-            Check("the import writes the index in the emulator's folder", File.Exists(index) && File.ReadAllText(index).Contains("the big patch.vpk"));
+            Check("an update in a folder never scanned is not found", AppVer(extras.GetType().GetField("Update").GetValue(extras)) == "01.20");
+            _asm.GetType("LbIntegrations.Vita3k.Vita3kScan", true).GetMethod("Scan", BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { elsewhere, null, null });
             extras = Call("Vita3kExtras", "For", new object[] { game, described, "A Forged Game", install, null });
-            Check("with it, that update is found - and, the highest, kept (01.30)", AppVer(extras.GetType().GetField("Update").GetValue(extras)) == "01.30");
-
-            // Recorded again for the same game: replaced, not added.
-            Call("Vita3kExtrasIndex", "Record", new object[] { install, new[] { game }, rows });
-            Check("the same import twice: one line, not two",
-                  File.ReadAllLines(index).Count(l => l.Contains("the big patch.vpk")) == 1);
-            Check("the game is kept by its name and size, not its path",
-                  File.ReadAllLines(index).Any(l => l.StartsWith(Path.GetFileName(game) + "\t" + new FileInfo(game).Length + "\t")));
-            Check("an extra outside the game's folder keeps its full path", File.ReadAllText(index).Contains(hidden));
-
-            // BESIDE THE GAME, RELATIVE - and a library moved whole keeps its index.
-            var lib = Path.Combine(root, "library");
-            var libGame = ForgeContent(lib, "moved game [PCSE00965].vpk", TitleId, "gd", "UP0000-PCSE00965_00-FORGEDGAME000000", "01.00", "A Forged Game");
-            var libDlc = ForgeContent(Path.Combine(lib, "odd folder"), "extra thing.vpk", TitleId, "ac", "UP0000-PCSE00965_00-DLCMOVED00000001", null, "A Moved Costume");
-            var libRows = (System.Collections.IList)Activator.CreateInstance(rows.GetType());
-            libRows.Add(Call("Vita3kExtrasIndex", "From", new object[] { libGame, libDlc, Call("Vita3kContent", "Describe", new object[] { libDlc, null }) }));
-            Call("Vita3kExtrasIndex", "Record", new object[] { install, new[] { libGame }, libRows });
-            Check("an extra under the game's folder is kept relative to it",
-                  File.ReadAllLines(index).Any(l => l.Contains("\todd folder\\extra thing.vpk\t")));
-            var moved = Path.Combine(root, "library moved");
-            Directory.Move(lib, moved);
-            var proposed = (List<string>)Call("Vita3kExtrasIndex", "For", new object[] { install, TitleId, Path.Combine(moved, "moved game [PCSE00965].vpk") });
-            Check("the library moved whole: the extra is found where it is now",
-                  proposed.Contains(Path.Combine(moved, "odd folder", "extra thing.vpk")));
-
-            // THE SAME GAME SCANNED AGAIN FROM ITS NEW PLACE: its lines replaced, none added.
-            var movedGame = Path.Combine(moved, "moved game [PCSE00965].vpk");
-            var movedRows = (System.Collections.IList)Activator.CreateInstance(rows.GetType());
-            movedRows.Add(Call("Vita3kExtrasIndex", "From", new object[] { movedGame, Path.Combine(moved, "odd folder", "extra thing.vpk"),
-                                                                            Call("Vita3kContent", "Describe", new object[] { Path.Combine(moved, "odd folder", "extra thing.vpk"), null }) }));
-            movedRows.Add(movedRows[0]);   // and found twice in the one batch
-            Call("Vita3kExtrasIndex", "Record", new object[] { install, new[] { movedGame }, movedRows });
-            Check("scanned again from elsewhere, and twice in one batch: still one line",
-                  File.ReadAllLines(index).Count(l => l.Contains("extra thing.vpk")) == 1);
-            Scrub(moved);
-
+            Check("once its folder is scanned, it is found - and, the highest, kept (01.30)", AppVer(extras.GetType().GetField("Update").GetValue(extras)) == "01.30");
             // THE CHOICE: none, another update, a DLC left out.
             var found = Call("Vita3kExtras", "Evaluate", new object[] { game, described, "A Forged Game", install });
             var choiceType = _asm.GetType("LbIntegrations.Vita3k.Vita3kExtrasChoice", throwOnError: true);
@@ -3030,7 +3013,7 @@ namespace LbIntegrations.Probe
             // A line whose file is gone is not proposed - and the library is as it was.
             File.Delete(hidden);
             extras = Call("Vita3kExtras", "For", new object[] { game, described, "A Forged Game", install, null });
-            Check("its file gone, the indexed update is no longer proposed", AppVer(extras.GetType().GetField("Update").GetValue(extras)) == "01.20");
+            Check("its file gone, that update is no longer proposed", AppVer(extras.GetType().GetField("Update").GetValue(extras)) == "01.20");
 
             ExtrasTab(install, game);
         }

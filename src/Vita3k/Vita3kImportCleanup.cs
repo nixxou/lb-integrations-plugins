@@ -1,17 +1,15 @@
 // The game list of LaunchBox's Import ROM Files wizard, put right for Vita games - after the scan, while
 // the list is on show, so the user sees the result and can still change it before "Finish".
 //
-// Every file of the list is read (its param.sfo, from the archive, without unpacking it), with a
-// progress window:
+// The folders of the list are scanned (Vita3kScan: every Vita file there read once by its param.sfo, without unpacking,
+// and kept in the scan's cache), under a progress window, then each line is judged by what its file holds:
 //   - a GAME (CATEGORY gd) stays, titled by its param.sfo's TITLE - "LittleBigPlanet PlayStation Vita"
 //     rather than the file's name with its tags - cleaned of ™ ® © and their kind;
-//   - an UPDATE (gp) or a DLC (ac) goes: it is not a game, a launch installs it with its game. It is
-//     recorded in the emulator's index (Vita3kExtrasIndex), with the game archives of the same title
-//     id found in the same list - the next launch looks there too;
+//   - an UPDATE (gp) or a DLC (ac) goes: it is not a game, a launch installs it with its game - found there in the
+//     scan's cache, by its title id;
 //   - a GAME AS A .pkg WHOSE LICENCE IS NOWHERE goes: it would be imported, then refused at every
 //     launch (Vita3kLicences - beside it, or in the emulator's zrif folder). An update needs none (it
-//     runs under its game's); a DLC's is not looked for here - it leaves the list anyway, and its
-//     index line is a hint a launch checks.
+//     runs under its game's); a DLC's is not looked for here - it leaves the list anyway.
 //   - anything else - unreadable, not Vita content - goes, and the log says why.
 //
 // ONLY IN THE VITA CASE (Vita3kLbImport swapped the platform: the wizard was on its way to its own
@@ -26,14 +24,12 @@
 //   - LAUNCHBOX'S: the list itself - Games, ApplicationPath, the Title setter, the out-and-back to
 //     redraw a line, NotifyOfPropertyChange("GameCount"), the progress window over the wizard. All
 //     by reflection on a host we do not own.
-//   - THE HOST'S BUSINESS, NOBODY'S IN PARTICULAR: what each FILE is - Read (the param.sfo, through
-//     Vita3kContent.Describe), then the verdict in Run (a game, and its title by CleanTitle; an update
-//     or a DLC, and the index line it leaves; a .pkg game without a licence; not Vita content), and
-//     Vita3kExtrasIndex.Record at the end.
+//   - THE HOST'S BUSINESS, NOBODY'S IN PARTICULAR: what each FILE is - Read (the scan), then the verdict in
+//     Run (a game, and its title by CleanTitle; an update or a DLC; a .pkg game without a licence; not Vita content).
 // FOR LITEBOX'S FUTURE IMPORT (Mehdi, 28/09: it will call the chosen emulator's plugin on the final
 // listing - the contract to come is noted at the end of src\Catalog\LbCatalog.cs), the second half
 // comes out of Run into a method over PATHS that returns a verdict per file - keep as <title>, or
-// drop with a reason - and records the index itself. Run then becomes LaunchBox's adapter: the list
+// drop with a reason. Run then becomes LaunchBox's adapter: the list
 // in, the verdicts applied to its records. Not done yet: nothing calls it but this file.
 
 using System;
@@ -93,7 +89,6 @@ namespace LbIntegrations.Vita3k
             int renamed = 0, extras = 0, invalid = 0, unlicensed = 0;
             if (Vita3kLicences.InstallDir == null) Vita3kLicences.InstallDir = Installs().FirstOrDefault();
             var games = findings.Where(f => f.Content != null && f.Content.IsGame).ToList();
-            var found = new List<IndexedExtra>();
             for (int i = list.Count - 1; i >= 0; i--)
             {
                 var f = findings.FirstOrDefault(x => ReferenceEquals(x.Record, list[i]));
@@ -109,10 +104,8 @@ namespace LbIntegrations.Vita3k
                 {
                     list.RemoveAt(i); extras++;
                     var with = games.Where(g => string.Equals(g.Content.TitleId, f.Content.TitleId, StringComparison.OrdinalIgnoreCase)).ToList();
-                    if (with.Count == 0) found.Add(Vita3kExtrasIndex.From("", f.Path, f.Content));
-                    foreach (var g in with) found.Add(Vita3kExtrasIndex.From(g.Path, f.Path, f.Content));
                     Log.Info("[import]   removed " + name + " - " + (f.Content.IsPatch ? "update " + f.Content.AppVer : "DLC " + (f.Content.Title ?? f.Content.ContentId))
-                             + " of " + f.Content.TitleId + ", recorded for its game" + (with.Count == 0 ? " (none in this list)" : ""));
+                             + " of " + f.Content.TitleId + ", found by its game at launch" + (with.Count == 0 ? " (its game is not in this list)" : ""));
                     continue;
                 }
                 if (!f.Content.IsGame)
@@ -141,12 +134,8 @@ namespace LbIntegrations.Vita3k
             }
             Notify(gameList, "GameCount");
 
-            if (games.Count > 0 || found.Count > 0)
-                foreach (var install in Installs())
-                    Vita3kExtrasIndex.Record(install, games.Select(g => g.Path), found);
-
             Log.Info("[import] the list put right: " + games.Count + " game(s), " + renamed + " renamed from their param.sfo, "
-                     + extras + " update(s)/DLC recorded for their game and removed, " + invalid + " file(s) that are not Vita games removed, "
+                     + extras + " update(s)/DLC removed (found by their game at launch), " + invalid + " file(s) that are not Vita games removed, "
                      + unlicensed + " .pkg game(s) without a licence removed");
         }
 
@@ -160,7 +149,7 @@ namespace LbIntegrations.Vita3k
                 ShowInTaskbar = false, ClientSize = new Size(460, 110), Font = new Font("Segoe UI", 9f),
             };
             var label = new Label { Location = new Point(14, 14), Size = new Size(432, 20), AutoEllipsis = true, Text = "Reading the list..." };
-            var bar = new ProgressBar { Location = new Point(14, 40), Size = new Size(432, 18), Maximum = Math.Max(1, findings.Count) };
+            var bar = new ProgressBar { Location = new Point(14, 40), Size = new Size(432, 18), Maximum = 1000 };
             var cancel = new Button { Text = "Cancel", Location = new Point(356, 70), Width = 90 };
             form.Controls.AddRange(new Control[] { label, bar, cancel });
             bool cancelled = false;
@@ -170,15 +159,27 @@ namespace LbIntegrations.Vita3k
             {
                 var thread = new Thread(() =>
                 {
-                    for (int i = 0; i < findings.Count && !cancelled; i++)
+                    // Every folder of the list scanned (Vita3kScan): each file read once by its contents and kept in the scan's
+                    // cache - which is where a launch then finds the updates and DLC this list held, wherever they were.
+                    var folders = findings.Where(f => !string.IsNullOrWhiteSpace(f.Path)).Select(f => System.IO.Path.GetDirectoryName(f.Path))
+                                          .Where(d => d != null).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                    for (int i = 0; i < folders.Count && !cancelled; i++)
                     {
-                        var f = findings[i];
                         int n = i;
-                        try { form.BeginInvoke(new Action(() => { label.Text = "Reading " + (n + 1) + "/" + findings.Count + ": " + System.IO.Path.GetFileName(f.Path); bar.Value = n; })); } catch { }
+                        Vita3kScan.Scan(folders[i], (step, frac) =>
+                        {
+                            try { form.BeginInvoke(new Action(() => { label.Text = "(" + (n + 1) + "/" + folders.Count + ") " + step; bar.Value = Math.Min(bar.Maximum, (int)((n + (frac ?? 0)) * bar.Maximum / folders.Count)); })); } catch { }
+                        }, () => cancelled);
+                    }
+                    var known = Vita3kScan.CachedAll();
+                    foreach (var f in findings)
+                    {
                         if (string.IsNullOrWhiteSpace(f.Path) || !File.Exists(f.Path)) { f.Error = "the file is not there"; continue; }
                         if (!Vita3kContent.Installable(f.Path)) { f.Error = "not an archive a Vita game comes in"; continue; }
-                        try { f.Content = Vita3kContent.Describe(f.Path, out f.Error); }
-                        catch (Exception ex) { f.Error = ex.Message; }
+                        var of = known.Where(e => string.Equals(e.Archive, f.Path, StringComparison.OrdinalIgnoreCase)).ToList();
+                        if (of.Count == 0) { f.Error = "not read"; continue; }
+                        if (of.All(e => e.Invalid)) { f.Error = of[0].Problem; continue; }
+                        f.Content = Vita3kContent.Primary(of.Where(e => !e.Invalid).Select(e => e.ToContent()).ToList(), f.Path);
                     }
                     try { form.BeginInvoke(new Action(() => form.Close())); } catch { }
                 })

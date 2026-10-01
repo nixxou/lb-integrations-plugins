@@ -592,7 +592,7 @@ namespace LbIntegrations.Vita3k
                 // A .pkg's licence is looked for in this emulator's zrif folder - see Vita3kLicences.
                 Vita3kLicences.InstallDir = layout.InstallDir;
                 var extras = Vita3kExtras.For(romPath, content, launch.HostTitle, layout.InstallDir,
-                                              Vita3kExtrasChoice.Load(layout.InstallDir, launch.GameId));
+                                              Vita3kExtrasChoice.Load(layout.InstallDir, launch.GameId), report);
                 var extrasKey = extras.Key();
 
                 // --use-vhdx SUPPLANTS THE RAM DISK - when it can. Whatever stops it is logged and

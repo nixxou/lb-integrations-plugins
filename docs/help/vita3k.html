@@ -86,15 +86,14 @@
   <p>A licence is only used for the exact package it was made for. An update in .pkg form needs no licence: it uses its game's.</p>
 
   <h3>4. Updates and DLC</h3>
-  <p>You do not import updates and DLC as games. The plugin looks for them at each launch, around the game's file:</p>
-  <ul>
-    <li>next to the game, in a file whose name contains the game's ID (like <code>PCSA00017</code>);</li>
-    <li>the same, inside a sub-folder named <code>DLC</code>, <code>Update</code> or <code>Patch</code> (or the same in the plural);</li>
-    <li>in any folder named after the game's ID, or after the game's title, below the game's folder;</li>
-    <li>inside the game's own zip;</li>
-    <li>and anywhere the import found them in the same batch of files.</li>
-  </ul>
-  <p>Names only point the way: a file is used only if its contents say it really belongs to that game. By default the game gets <strong>every DLC</strong> and <strong>the highest update</strong> (Vita updates include all earlier ones). You can change this per game in the Options window.</p>
+  <p>You do not import updates and DLC as games. At each launch the plugin looks at the game's folder and every folder below it.
+  If the folder just above the game's has <code>vita</code> in its name (for example <code>D:\Vita\Games\...</code> or <code>PS Vita</code>),
+  that whole folder is looked at instead - handy when updates and DLC sit in a sibling folder.</p>
+  <p>Every <code>.vpk</code>, <code>.zip</code> and <code>.pkg</code> found is opened <strong>once</strong>: what it holds (game, update or DLC, and for
+  which game) is remembered, so the next launches only look at new or changed files. A file that is not Vita content is remembered too,
+  and never opened again. File and folder names do not matter: only what is inside decides. Updates and DLC seen in folders you imported
+  from are found as well, and so is anything inside the game's own zip.</p>
+  <p>By default the game gets <strong>every DLC</strong> and <strong>the highest update</strong> (Vita updates include all earlier ones). You can change this per game in the Options window.</p>
   <p><strong>Updating Vita3K:</strong> use the plugin's Download button in LaunchBox's emulator window when a newer build is offered. Your firmware, settings and saves are kept.</p>
 </section>
 
