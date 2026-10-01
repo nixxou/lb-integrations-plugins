@@ -4,15 +4,25 @@
 // THE CONTRACT IS A NAME, as for Vita3K (src\Menus\Settings.cs has it): a public static class
 // LbIntegrations.<assembly name>.Settings with Title, Control CreatePage(), string Save(Control).
 //
-// One row per option of the catalogue, grouped: a tick for "override", the label, an editor of the
-// option's kind, and the help in grey. Untick and the emulator's own value stands. The command line
-// the ticks add up to is shown live at the bottom, so what will be passed is never a guess.
+// ONE CONTROL PER OPTION, AND IT SHOWS THE STATE (Mehdi, 01/10 - the first version had a tick to override
+// AND an editor, which said one thing while the help said another). Two kinds of row:
+//   - the pack's own settings (the "Integration" group: BepInEx, the log, Escape, the menu key...): they
+//     have a known default, so the control shows the value in use - "on (default)" ticked, for instance.
+//     Only what differs from the default is written;
+//   - the emulator's options: until set here, they are SUPER ZSNES's own, and the control says so - a
+//     three-state box reading "SUPER ZSNES's own" / "on" / "off", a list whose first entry is
+//     "<SUPER ZSNES's own>", a field left empty (its grey hint says so). Anything else goes on the
+//     command line at every launch. A switch that is nothing unless sent (--loadstate, -popupwindow, the
+//     primary display) is a plain on/off box.
+// The bar at the left of each row says it at a glance: blue, passed on the command line; grey, not. The
+// command line the page adds up to is shown live at the bottom, so what will be passed is never a guess.
 
 using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace LbIntegrations.SuperZsnes
@@ -40,11 +50,18 @@ namespace LbIntegrations.SuperZsnes
 
     internal sealed class SuperZsnesSettingsPage : UserControl
     {
+        private const string Own = "SUPER ZSNES's own";
+        private static readonly Color Passed = Color.FromArgb(0, 120, 215), NotPassed = Color.FromArgb(175, 175, 175);
+
+        /// <summary>How a row is edited - see the header.</summary>
+        private enum Shape { Ours, Switch, Tri, Choice, Field }
+
         private sealed class Row
         {
             public Option Option;
-            public CheckBox Override;
+            public Shape Shape;
             public Control Editor;
+            public Panel Bar;
         }
 
         private readonly List<Row> _rows = new List<Row>();
@@ -57,9 +74,9 @@ namespace LbIntegrations.SuperZsnes
 
             var top = new Label
             {
-                Dock = DockStyle.Top, Height = 48, Padding = new Padding(12, 10, 12, 0), ForeColor = SystemColors.GrayText,
-                Text = "Tick an option to pass it on the emulator's command line at every launch; unticked, the emulator's own "
-                     + "value stands. --nixx-* options need the pack's BepInEx plugin inside the emulator.",
+                Dock = DockStyle.Top, Height = 52, Padding = new Padding(12, 8, 12, 0), ForeColor = SystemColors.GrayText,
+                Text = "Integration: what the pack's plugin does inside the emulator. Every other option stays " + Own
+                     + " until it is set here; set, it goes on the emulator's command line at every launch. --nixx-* options need the pack's BepInEx plugin.",
             };
 
             var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(8) };
@@ -68,34 +85,28 @@ namespace LbIntegrations.SuperZsnes
 
             foreach (var group in SuperZsnesOptions.All.GroupBy(o => o.Group))
             {
-                // The table is PLACED, not docked (01/10): a docked child in a group box that sizes itself on
-                // its children is sized on the box - neither had a width, and each group came out a sliver.
-                // Three columns and the help under its option: the tab is some 660 px wide.
+                // The table is PLACED, not docked: a docked child in a group box that sizes itself on its children
+                // is sized on the box - neither had a width, and each group came out a sliver (01/10).
                 var box = Group(group.Key);
-                var table = Table(26, 250, 200);
+                var table = Table(12, 240, 214);
                 foreach (var o in group)
                 {
                     saved.TryGetValue(o.IniKey, out var current);
-                    var row = new Row { Option = o };
-                    row.Override = new CheckBox { Checked = !string.IsNullOrEmpty(current), Margin = new Padding(3, 6, 0, 0), AutoSize = true };
-                    var label = new Label { Text = o.Label, AutoSize = true, Margin = new Padding(0, 7, 0, 0) };
-                    row.Editor = Editor(o, current);
-                    var help = new Label
-                    {
-                        Text = o.Help + (o.Default != null ? (o.Help.Length > 0 ? "  " : "") + "Default: " + o.Default + "." : ""),
-                        AutoSize = true, MaximumSize = new Size(440, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 0, 0, 6),
-                    };
-                    var tip = new ToolTip();
-                    tip.SetToolTip(label, o.IniKey);
-                    row.Override.CheckedChanged += (_, _) => { row.Editor.Enabled = row.Override.Checked; Refresh(); };
-                    row.Editor.Enabled = row.Override.Checked;
-                    Hook(row.Editor, () => { if (!row.Override.Checked) row.Override.Checked = true; Refresh(); });
+                    var row = new Row { Option = o, Shape = ShapeOf(o) };
+                    row.Editor = Editor(row, current);
+                    row.Bar = new Panel { Width = 4, Height = 18, Margin = new Padding(0, 6, 8, 0) };
+                    var label = new Label { Text = o.Label, AutoSize = true, MaximumSize = new Size(236, 0), Margin = new Padding(0, 7, 4, 0) };
+                    new ToolTip().SetToolTip(label, o.IniKey);
+                    Hook(row.Editor, () => { Show(row); Refresh(); });
+                    Show(row);
+
                     int r = table.RowCount++;
-                    table.Controls.Add(row.Override, 0, r);
+                    table.Controls.Add(row.Bar, 0, r);
                     table.Controls.Add(label, 1, r);
                     table.Controls.Add(row.Editor, 2, r);
-                    if (help.Text.Length > 0)
+                    if (!string.IsNullOrEmpty(o.Help))
                     {
+                        var help = new Label { Text = o.Help, AutoSize = true, MaximumSize = new Size(450, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 0, 0, 6) };
                         int h = table.RowCount++;
                         table.Controls.Add(help, 1, h);
                         table.SetColumnSpan(help, 2);
@@ -108,12 +119,21 @@ namespace LbIntegrations.SuperZsnes
 
             stack.Controls.Add(DeployBox());
 
-            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 112, Padding = new Padding(12, 6, 12, 8) };
+            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 132, Padding = new Padding(12, 4, 12, 8) };
+            var legend = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 22, WrapContents = false };
+            void Item(Color c, string text)
+            {
+                legend.Controls.Add(new Panel { BackColor = c, Size = new Size(4, 14), Margin = new Padding(0, 3, 4, 0) });
+                legend.Controls.Add(new Label { Text = text, AutoSize = true, Margin = new Padding(0, 2, 14, 0) });
+            }
+            Item(Passed, "Passed on the command line");
+            Item(NotPassed, "Not passed: " + Own + ", or the pack's default");
             _count = new Label { Dock = DockStyle.Top, Height = 20, ForeColor = SystemColors.GrayText };
             _line = new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Font = new Font("Consolas", 9f), BackColor = SystemColors.Window };
             var where = new Label { Dock = DockStyle.Bottom, Height = 18, ForeColor = SystemColors.GrayText, Text = "Settings file: " + SuperZsnesSettings.SettingsPath };
             bottom.Controls.Add(_line);
             bottom.Controls.Add(_count);
+            bottom.Controls.Add(legend);
             bottom.Controls.Add(where);
 
             Controls.Add(scroll);
@@ -121,6 +141,151 @@ namespace LbIntegrations.SuperZsnes
             Controls.Add(bottom);
             Refresh();
         }
+
+        // ── the rows ─────────────────────────────────────────────────────────
+
+        private static Shape ShapeOf(Option o)
+        {
+            if (o.Family == OptionFamily.Plugin && o.Key != "display") return Shape.Ours;
+            if (o.Kind == OptionKind.Bool)
+                return o.Family == OptionFamily.Setting || o.Family == OptionFamily.Game ? Shape.Tri : Shape.Switch;
+            return o.Kind == OptionKind.Choice ? Shape.Choice : Shape.Field;
+        }
+
+        private static bool OnByDefault(Option o) => SuperZsnesSettings.IsTrue(o.Default);
+
+        private static Control Editor(Row row, string current)
+        {
+            var o = row.Option;
+            switch (row.Shape)
+            {
+                case Shape.Ours when o.Kind == OptionKind.Bool:
+                    return new CheckBox { AutoSize = true, Checked = current != null ? SuperZsnesSettings.IsTrue(current) : OnByDefault(o), Margin = new Padding(3, 6, 0, 0) };
+                case Shape.Ours:
+                    return Field(string.IsNullOrEmpty(current) ? o.Default ?? "" : current, o.Default != null ? "the default, " + o.Default : null);
+                case Shape.Switch:
+                    return new CheckBox { AutoSize = true, Checked = current != null && SuperZsnesSettings.IsTrue(current), Margin = new Padding(3, 6, 0, 0) };
+                case Shape.Tri:
+                    return new CheckBox
+                    {
+                        AutoSize = true, ThreeState = true, Margin = new Padding(3, 6, 0, 0),
+                        CheckState = current == null ? CheckState.Indeterminate : SuperZsnesSettings.IsTrue(current) ? CheckState.Checked : CheckState.Unchecked,
+                    };
+                case Shape.Choice:
+                {
+                    var c = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200, Margin = new Padding(3, 3, 0, 0) };
+                    c.Items.Add("<" + Own + ">");
+                    c.Items.AddRange(o.Choices);
+                    c.SelectedIndex = 1 + Array.FindIndex(o.Choices, x => string.Equals(x, current, StringComparison.OrdinalIgnoreCase));
+                    return c;
+                }
+                default:
+                    return Field(current ?? "", Own + (o.Default != null ? ": " + o.Default : "")
+                                               + (o.Kind != OptionKind.Text ? " (" + Range(o) + ")" : ""));
+            }
+        }
+
+        private static string Range(Option o)
+            => o.Min.ToString(CultureInfo.InvariantCulture) + " to " + o.Max.ToString(CultureInfo.InvariantCulture);
+
+        /// <summary>A text field with a grey hint while it is empty - what an empty one means.</summary>
+        private static TextBox Field(string text, string hint)
+        {
+            var t = new TextBox { Text = text, Width = 200, Margin = new Padding(3, 3, 0, 0) };
+            if (hint != null) t.HandleCreated += (_, _) => SendMessage(t.Handle, 0x1501 /* EM_SETCUEBANNER */, (IntPtr)1, hint);
+            return t;
+        }
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, string lParam);
+
+        private static void Hook(Control editor, Action changed)
+        {
+            switch (editor)
+            {
+                case CheckBox c: c.CheckStateChanged += (_, _) => changed(); break;
+                case ComboBox b: b.SelectedIndexChanged += (_, _) => changed(); break;
+                case TextBox t: t.TextChanged += (_, _) => changed(); break;
+            }
+        }
+
+        /// <summary>The row's box says its state in words, and its bar whether it is passed.</summary>
+        private static void Show(Row row)
+        {
+            if (row.Editor is CheckBox c)
+            {
+                bool on = c.CheckState == CheckState.Checked;
+                c.Text = row.Shape == Shape.Tri && c.CheckState == CheckState.Indeterminate ? Own
+                       : (on ? "on" : "off") + (row.Shape == Shape.Ours && on == OnByDefault(row.Option) ? " (default)" : "");
+            }
+            if (row.Bar != null) row.Bar.BackColor = ValueOf(row) != null ? Passed : NotPassed;
+        }
+
+        /// <summary>What the row writes, or null for nothing: the emulator's own value, or the pack's default.</summary>
+        private static string ValueOf(Row row)
+        {
+            var o = row.Option;
+            switch (row.Editor)
+            {
+                case CheckBox c when row.Shape == Shape.Tri:
+                    return c.CheckState == CheckState.Indeterminate ? null : c.Checked ? "true" : "false";
+                case CheckBox c when row.Shape == Shape.Ours:
+                    return c.Checked == OnByDefault(o) ? null : c.Checked ? "true" : "false";
+                case CheckBox c:
+                    return c.Checked ? "true" : null;
+                case ComboBox b:
+                    return b.SelectedIndex <= 0 ? null : b.SelectedItem?.ToString();
+                case TextBox t:
+                {
+                    var v = t.Text.Trim();
+                    if (v.Length == 0) return null;
+                    if (row.Shape == Shape.Ours && string.Equals(v, o.Default, StringComparison.OrdinalIgnoreCase)) return null;
+                    return v;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>What Save writes: the rows that pass something.</summary>
+        public Dictionary<string, string> Values()
+        {
+            var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in _rows)
+            {
+                var v = ValueOf(row);
+                if (v != null) values[row.Option.IniKey] = v;
+            }
+            return values;
+        }
+
+        /// <summary>Why the page cannot be saved, or null.</summary>
+        public string Problem()
+        {
+            foreach (var row in _rows)
+            {
+                var o = row.Option;
+                if (!(row.Editor is TextBox t)) continue;
+                var v = t.Text.Trim();
+                if (row.Shape == Shape.Ours && v.Length == 0)
+                    return "\"" + o.Label + "\" is empty. Type a key, or " + o.Default + " for the default.";
+                if (v.Length == 0 || o.Kind == OptionKind.Text) continue;
+                if (!decimal.TryParse(v.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var d) || d < o.Min || d > o.Max
+                    || (o.Kind == OptionKind.Int && d != decimal.Truncate(d)))
+                    return "\"" + o.Label + "\": " + v + " is not " + (o.Kind == OptionKind.Int ? "a whole number" : "a number") + " from " + Range(o)
+                           + ". Empty it to leave " + Own + " value.";
+            }
+            return null;
+        }
+
+        private new void Refresh()
+        {
+            if (_line == null) return;
+            var flags = SuperZsnesSettings.Flags(Values());
+            _count.Text = flags.Count == 0 ? "Nothing added to the command line." : flags.Count + " option(s) added to the command line, before the ROM path:";
+            _line.Text = string.Join(" ", flags.Select(f => f.Text));
+        }
+
+        // ── the in-process plugin, per emulator ──────────────────────────────
 
         /// <summary>The in-process plugin's state in every SUPER ZSNES the library knows, and a button
         /// to install or repair it there now - the way to get BepInEx into an emulator that was
@@ -212,92 +377,6 @@ namespace LbIntegrations.SuperZsnes
             }
             catch (Exception ex) { Log.Warn("listing the emulators", ex); }
             return found;
-        }
-
-        private static Control Editor(Option o, string current)
-        {
-            switch (o.Kind)
-            {
-                case OptionKind.Bool:
-                    return new CheckBox { Text = "on", AutoSize = true, Checked = current != null && SuperZsnesSettings.IsTrue(current), Margin = new Padding(3, 6, 0, 0) };
-                case OptionKind.Int:
-                {
-                    var n = new NumericUpDown { Minimum = o.Min, Maximum = o.Max, Width = 110, Margin = new Padding(3, 3, 0, 0) };
-                    if (current != null && decimal.TryParse(current, NumberStyles.Number, CultureInfo.InvariantCulture, out var v)) n.Value = Math.Min(o.Max, Math.Max(o.Min, v));
-                    return n;
-                }
-                case OptionKind.Float:
-                {
-                    var n = new NumericUpDown { Minimum = o.Min, Maximum = o.Max, DecimalPlaces = o.Decimals, Increment = 0.05m, Width = 110, Margin = new Padding(3, 3, 0, 0) };
-                    if (current != null && decimal.TryParse(current.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var v)) n.Value = Math.Min(o.Max, Math.Max(o.Min, v));
-                    return n;
-                }
-                case OptionKind.Choice:
-                {
-                    var c = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 170, Margin = new Padding(3, 3, 0, 0) };
-                    c.Items.AddRange(o.Choices);
-                    c.SelectedIndex = Math.Max(0, Array.FindIndex(o.Choices, x => string.Equals(x, current, StringComparison.OrdinalIgnoreCase)));
-                    return c;
-                }
-                default:
-                    return new TextBox { Text = current ?? "", Width = 170, Margin = new Padding(3, 3, 0, 0) };
-            }
-        }
-
-        private static void Hook(Control editor, Action changed)
-        {
-            switch (editor)
-            {
-                case CheckBox c: c.CheckedChanged += (_, _) => changed(); break;
-                case NumericUpDown n: n.ValueChanged += (_, _) => changed(); break;
-                case ComboBox b: b.SelectedIndexChanged += (_, _) => changed(); break;
-                case TextBox t: t.TextChanged += (_, _) => changed(); break;
-            }
-        }
-
-        private static string ValueOf(Row row)
-        {
-            switch (row.Editor)
-            {
-                case CheckBox c: return c.Checked ? "true" : "false";
-                case NumericUpDown n: return n.Value.ToString(CultureInfo.InvariantCulture);
-                case ComboBox b: return b.SelectedItem?.ToString() ?? "";
-                case TextBox t: return t.Text.Trim();
-            }
-            return "";
-        }
-
-        /// <summary>What Save writes: only the ticked rows.</summary>
-        public Dictionary<string, string> Values()
-        {
-            var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var row in _rows)
-            {
-                if (!row.Override.Checked) continue;
-                var v = ValueOf(row);
-                if (v.Length > 0) values[row.Option.IniKey] = v;
-            }
-            return values;
-        }
-
-        /// <summary>Why the page cannot be saved, or null.</summary>
-        public string Problem()
-        {
-            foreach (var row in _rows)
-            {
-                if (!row.Override.Checked) continue;
-                if (row.Option.Kind == OptionKind.Text && ValueOf(row).Length == 0)
-                    return "\"" + row.Option.Label + "\" is ticked but empty. Untick it to leave the emulator's value, or type one.";
-            }
-            return null;
-        }
-
-        private new void Refresh()
-        {
-            if (_line == null) return;
-            var flags = SuperZsnesSettings.Flags(Values());
-            _count.Text = flags.Count == 0 ? "Nothing added to the command line." : flags.Count + " option(s) added to the command line, before the ROM path:";
-            _line.Text = string.Join(" ", flags.Select(f => f.Text));
         }
     }
 }
