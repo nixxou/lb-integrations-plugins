@@ -91,7 +91,10 @@ rangent les TU à côté des jeux, pas dessous.
 5. Les dossiers de Xenia pour ce title id deviennent des **jonctions** vers ces deux dossiers
    (`mklink /J`, sans administrateur). Un vrai dossier de Xenia qui a du contenu n'est jamais touché.
 6. **Limite de taille** (0 = aucune) : les jeux lancés il y a le plus longtemps perdent leur dossier
-   entier, jonctions comprises ; jamais celui qu'on lance.
+   entier, jonctions comprises ; jamais celui qu'on lance, ni un jeu marqué « garder » (exclu aussi du compte).
+7. **Onglet Session** (XeniaSessionTab, XeniaExtras.Plan) : tailles, destination et raison ; par jeu,
+   placement automatique / toujours le ramdisk / toujours le disque, la case « garder », et la libération de ce
+   qui a été extrait puis décoché (il reste sinon dans store, non lié).
 
 Le ramdisk est celui de LiteBox, melonDS et Vita3K. Marqueur `ramdisk.where` ; libéré quand Xenia se
 ferme, au lancement suivant et au démarrage de l'hôte, ses jonctions retirées avant.

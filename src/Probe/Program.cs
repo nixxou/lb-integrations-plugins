@@ -92,7 +92,7 @@ namespace LbIntegrations.Probe
             // A first install's setup run for real on a Xenia folder (XeniaSetup.AfterFirstInstall): --xenia-firstrun <xenia_canary.exe>.
             if (Has(args, "--xenia-firstrun")) { asm.GetType("LbIntegrations.Xenia.XeniaSetup", true).GetMethod("AfterFirstInstall", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, new object[] { Path.GetFullPath(Arg(args, "--xenia-firstrun")) }); return 0; }
             // The Xenia tab of the Nixx window and a game's options window, drawn: --xenia-shot <out.png> --emu <xenia_canary.exe> [--rom <game>].
-            if (Has(args, "--xenia-shot")) return XeniaSetupCheck.Shot(asm, Arg(args, "--xenia-shot"), emuPath, Arg(args, "--rom"), Arg(args, "--compat-dir")) ? 0 : 1;
+            if (Has(args, "--xenia-shot")) return XeniaSetupCheck.Shot(asm, Arg(args, "--xenia-shot"), emuPath, Arg(args, "--rom"), Arg(args, "--compat-dir"), Arg(args, "--settings-dir")) ? 0 : 1;
             // The sorting of a folder's Xbox 360 files and its cache: --xenia-scan [--iso <a real disc image>].
             if (Has(args, "--xenia-ram-release")) { if (Arg(args, "--settings-dir") != null) asm.GetType("LbIntegrations.Xenia.XeniaSettings", true).GetField("DirOverride", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, Arg(args, "--settings-dir")); asm.GetType("LbIntegrations.Xenia.XeniaRamSession", true).GetMethod("Release", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, new object[] { "the probe asked" }); return 0; }
             if (Has(args, "--xenia-import-clean")) return XeniaScanCheck.ImportClean(asm, Arg(args, "--xenia-import-clean"), Arg(args, "--settings-dir")) ? 0 : 1;

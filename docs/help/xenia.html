@@ -93,7 +93,8 @@
     <li>Otherwise it is unpacked once into a content folder on your drive (by default <code>Emulators\Nixx-Xenia\lbip-content</code>) and
     reused at the next launches. Changing which DLC are on does not unpack anything again.</li>
     <li>You can give that folder a <b>size limit</b>: when it is full, the games you launched longest ago lose their unpacked content
-    (all of it, never half), and get it back the next time you play them.</li>
+    (all of it, never half), and get it back the next time you play them. A game marked <i>Keep it on the disk</i> (its Session tab) is never removed.</li>
+    <li>Changing a game's update or DLC later unpacks nothing again: what was unpacked stays, and only what is ticked is used. The Session tab can free the rest.</li>
   </ul>
   <p>Your own files - the zips, the ISOs - are never changed or deleted.</p>
   <div class="tip">The RAM disk needs ImDisk and the small helper the pack installs (the same one LiteBox uses). Without them, everything simply
@@ -118,6 +119,10 @@
     <li><b>Updates &amp; DLC</b> - choose the title update (one, or <i>None</i> for the game as released) and tick the DLC you want.
     By default: the most recent update and every DLC. Updates made for another version of the game (another region, for instance) are
     shown greyed out and cannot be picked.</li>
+    <li><b>Session</b> - what the next launch will unpack for this game (the game itself when it is zipped, its update, its DLC), how big it
+    is, and whether it goes to the RAM disk or the drive, and why. Here you can also force <i>always the RAM disk</i> or <i>always the drive</i>,
+    tick <i>Keep it on the disk</i> so the size limit never removes it (and does not count it), and free what was unpacked once and is no
+    longer chosen.</li>
     <li><b>Compatibility</b> - how the game runs according to Xenia's community list (Playable, Gameplay, Loads, Unplayable), its known
     problems, and a link to its report. The list is refreshed automatically when it is old.</li>
   </ul>

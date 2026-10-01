@@ -41,26 +41,37 @@ namespace LbIntegrations.Xenia
             return (on, (long)(gb * 1024 * 1024 * 1024));
         }
 
-        /// <summary>A RAM disk for <paramref name="bytes"/> of content: the folder to put it in, or null - then it goes to the disk.</summary>
-        public static string Open(XeniaLayout layout, string titleId, string name, long bytes, string exe)
+        private static int SizeMb(long bytes) => (int)(bytes / (1024 * 1024)) + 32 + (int)(bytes / (1024 * 1024) / 20);
+
+        /// <summary>Why <paramref name="bytes"/> of content would NOT go to a RAM disk now - null when it would. Nothing is
+        /// mounted: the game's Session tab asks this. <paramref name="forced"/>: the game's options say "always the RAM disk" -
+        /// the threshold is not asked, the rest is. <paramref name="cleanMemory"/>: a launch may free memory to make room.</summary>
+        public static string WhyNot(XeniaLayout layout, long bytes, bool forced, bool cleanMemory = false)
         {
             try
             {
                 var (on, threshold) = Setting();
-                string why = null;
-                int sizeMb = (int)(bytes / (1024 * 1024)) + 32 + (int)(bytes / (1024 * 1024) / 20);
+                int sizeMb = SizeMb(bytes);
                 UseRoot(layout?.InstallDir);
-                if (!on) why = "the RAM disk is off in the settings";
-                else if (bytes > threshold) why = (bytes >> 20) + " MB of content, over the " + (threshold >> 20) + " MB threshold";
-                else if (!RamDrive.IsReady()) why = NotReady();
-                else
-                {
-                    int free = RamDrive.GetFreeRamMb();
-                    if (free > 0 && free < sizeMb + ReserveMb && RamDrive.CanCleanMemory) { RamDrive.CleanMemory(); free = RamDrive.GetFreeRamMb(); }
-                    if (free > 0 && free < sizeMb + ReserveMb) why = sizeMb + " MB for the disk and " + ReserveMb + " kept free needed, " + free + " MB of RAM free";
-                }
-                if (why != null) { Log.Info("ramdisk: the content goes to the disk - " + why); return null; }
+                if (!on && !forced) return "the RAM disk is off in the settings";
+                if (!forced && bytes > threshold) return (bytes >> 20) + " MB of content, over the " + (threshold >> 20) + " MB threshold";
+                if (!RamDrive.IsReady()) return NotReady();
+                int free = RamDrive.GetFreeRamMb();
+                if (cleanMemory && free > 0 && free < sizeMb + ReserveMb && RamDrive.CanCleanMemory) { RamDrive.CleanMemory(); free = RamDrive.GetFreeRamMb(); }
+                if (free > 0 && free < sizeMb + ReserveMb) return sizeMb + " MB for the disk and " + ReserveMb + " kept free needed, " + free + " MB of RAM free";
+                return null;
+            }
+            catch (Exception ex) { return ex.Message; }
+        }
 
+        /// <summary>A RAM disk for <paramref name="bytes"/> of content: the folder to put it in, or null - then it goes to the disk.</summary>
+        public static string Open(XeniaLayout layout, string titleId, string name, long bytes, string exe, bool forced = false)
+        {
+            try
+            {
+                int sizeMb = SizeMb(bytes);
+                var why = WhyNot(layout, bytes, forced, cleanMemory: true);
+                if (why != null) { Log.Info("ramdisk: the content goes to the disk - " + why); return null; }
                 var root = RamDrive.MountFor(MountKey, sizeMb);
                 if (root == null) { Log.Info("ramdisk: did not mount - the content goes to the disk"); return null; }
                 var dir = Path.Combine(root, name);

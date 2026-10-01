@@ -67,6 +67,7 @@ namespace LbIntegrations.Xenia
         private readonly Panel _compat;
         private readonly string _titleId;
         private readonly XeniaExtrasTab _extrasTab;
+        private readonly XeniaSessionTab _sessionTab;
 
         public XeniaGameOptionsForm(List<IGame> games)
         {
@@ -126,6 +127,16 @@ namespace LbIntegrations.Xenia
             else extrasTab.Controls.Add(new Label { Dock = DockStyle.Fill, Padding = new Padding(12), ForeColor = SystemColors.GrayText,
                                                     Text = "A game's title update and DLC are chosen one game at a time: open this window on one game." });
             tabs.TabPages.Add(extrasTab);
+
+            // ── Session: what the next launch unpacks, where, and this game's say in it (XeniaSessionTab) ──
+            if (_games.Count == 1)
+            {
+                var sessionTab = new TabPage("Session") { UseVisualStyleBackColor = true };
+                _sessionTab = new XeniaSessionTab(XeniaPlugin.ResolveFullPathForUi(Safe(() => games[0].ApplicationPath)), first.Id, exe, () => _extrasTab?.Values());
+                sessionTab.Controls.Add(_sessionTab);
+                tabs.TabPages.Add(sessionTab);
+                tabs.SelectedIndexChanged += (_, _) => { if (tabs.SelectedTab == sessionTab) _sessionTab.Show(); };
+            }
 
             // ── Compatibility ──
             var compatTab = new TabPage("Compatibility") { UseVisualStyleBackColor = true, Padding = new Padding(10) };
@@ -237,7 +248,8 @@ namespace LbIntegrations.Xenia
                 && MessageBox.Show(this, "These options will be applied to all " + _games.Count + " selected games.", Text,
                                    MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) != DialogResult.OK)
                 return;
-            _extrasTab?.Save();
+            _extrasTab?.Save(c => _sessionTab?.Apply(c));
+            _sessionTab?.Saved();
             var values = _rows.Values();
             int changed = 0;
             foreach (var g in _games)

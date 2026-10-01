@@ -117,8 +117,8 @@ namespace LbIntegrations.Xenia
             db.Controls.Add(df);
             _stack.Controls.Add(db);
 
-            _stack.Controls.Add(Line("Put down at the next launch, in " + _extras.Folder + " - extracted from its archive once, then linked: "
-                                     + "changing the choice later extracts nothing again. Your own files are never changed."));
+            _stack.Controls.Add(Line("Put in place at the next launch - on a RAM disk or on the disk: the Session tab says which, and why. Unpacked once on the disk, "
+                                     + "changing the choice later unpacks nothing again. Your own files are never changed."));
             var again = new Button { Text = look ? "Look at the folder again" : "Look at the folder", AutoSize = true, Margin = new Padding(0, 4, 0, 0) };
             again.Click += (_, _) => Build(look: true);
             _stack.Controls.Add(again);
@@ -146,10 +146,11 @@ namespace LbIntegrations.Xenia
             return v;
         }
 
-        public void Save()
+        /// <summary>The choice written - <paramref name="also"/> adds what other tabs keep in the same file (the Session tab's).</summary>
+        public void Save(Action<IDictionary<string, string>> also = null)
         {
-            if (_extras == null) return;
             var v = Values();
+            also?.Invoke(v);
             XeniaExtras.WriteChoice(_gameId, v);
             Log.Info("updates and DLC of " + _gameId + ": " + (v.Count == 0 ? "the defaults" : string.Join(", ", v.Select(kv => kv.Key + "=" + kv.Value))));
         }

@@ -253,12 +253,27 @@ namespace LbIntegrations.Xenia
             return null;
         }
 
-        private static void WriteManifest(string dir, string rom, string titleId)
+        private static void WriteManifest(string dir, string rom, string titleId, bool keep = false)
             => File.WriteAllLines(Path.Combine(dir, Manifest), new[]
             {
                 "# Which game this folder is - the Xenia plugin puts its title updates and DLC down here. Safe to delete: they are put back at its next launch.",
                 "rom=" + rom, "title_id=" + titleId, "last_used=" + DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture),
+                "keep=" + (keep ? "on" : "off"),
             });
+
+        /// <summary>The game's "keep" written into its folder at once - the Session tab's box, without waiting for a launch.</summary>
+        public static void SetKeep(string gameFolder, bool keep)
+        {
+            try
+            {
+                var path = Path.Combine(gameFolder, Manifest);
+                if (!File.Exists(path)) return;
+                var lines = File.ReadAllLines(path).Where(l => !l.StartsWith("keep=", StringComparison.OrdinalIgnoreCase)).ToList();
+                lines.Add("keep=" + (keep ? "on" : "off"));
+                File.WriteAllLines(path, lines);
+            }
+            catch (Exception ex) { Log.Warn("extras: keep of " + gameFolder, ex); }
+        }
 
         /// <summary>content id -> file name, for what the store holds.</summary>
         private static Dictionary<string, string> StoreIndex(string gameFolder)
@@ -278,6 +293,85 @@ namespace LbIntegrations.Xenia
             return map;
         }
 
+        // ── the plan: where a launch would put the content, and why ──────────
+
+        /// <summary>The game's placement, from its options (Mehdi, 01/10): "auto" (the rule), "ram" (always the RAM disk when one
+        /// can be had, whatever the size or what is on the disk), "disk" (always the disk).</summary>
+        public static string Placement(IDictionary<string, string> choice)
+            => choice.TryGetValue("placement", out var p) && (p == "ram" || p == "disk") ? p : "auto";
+
+        /// <summary>"keep" on: the game's folder on the disk is never purged, and does not count towards the size limit.</summary>
+        public static bool Keep(IDictionary<string, string> choice)
+            => choice.TryGetValue("keep", out var k) && (k == "on" || k == "1" || k == "true");
+
+        internal sealed class XeniaPlan
+        {
+            public bool Archived;                 // the game itself comes in an archive: it is unpacked too
+            public long Game, Update, Dlc;        // their sizes once unpacked (Game 0 when it is opened where it is)
+            public long Total => Game + Update + Dlc;
+            public bool GameOnDisk;               // the game already unpacked on the disk
+            public long OnDisk, Unused;           // the game's folder on the disk now, and what of it the choice does not use
+            public bool Ram;                      // the next launch puts it on a RAM disk
+            public string Why = "";
+            public string Placement = "auto";
+            public bool Keep;
+            public string Folder;                 // the game's folder on the disk
+        }
+
+        /// <summary>What the next launch would do with <paramref name="choice"/>: sizes, and RAM disk or disk, with the reason.
+        /// Nothing is unpacked or mounted.</summary>
+        public static XeniaPlan Plan(XeniaGameExtras x, IDictionary<string, string> choice, XeniaLayout layout)
+        {
+            var (update, dlc) = Chosen(x, choice);
+            var p = new XeniaPlan
+            {
+                Archived = x.Game.Path.Contains('|'), Update = update?.Size ?? 0, Dlc = dlc.Sum(d => d.Size),
+                Placement = Placement(choice), Keep = Keep(choice), Folder = x.Folder,
+            };
+            if (p.Archived) p.Game = GameSize(x.Game);
+            p.GameOnDisk = p.Archived && File.Exists(Path.Combine(x.Folder, "game", Leaf(x.Game.Path)));
+            p.OnDisk = SizeOfFolder(Path.Combine(x.Folder, "store")) + SizeOfFolder(Path.Combine(x.Folder, "game"));
+            var used = new HashSet<string>((update != null ? new[] { update } : new XeniaExtra[0]).Concat(dlc).Select(e => e.ContentId), StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in StoreIndex(x.Folder))
+                if (!used.Contains(kv.Key)) { try { p.Unused += new FileInfo(Path.Combine(x.Folder, "store", kv.Value)).Length; } catch { } }
+
+            bool onDisk = p.GameOnDisk || (update != null && update.InStore) || dlc.Any(d => d.InStore);
+            if (p.Total == 0) { p.Why = "nothing to unpack: the game is opened where it is, with no update or DLC"; return p; }
+            if (p.Placement == "disk") { p.Why = "the game's options say: always the disk"; return p; }
+            if (p.Placement == "auto" && onDisk) { p.Why = "part of it is on the disk already - what is there is read from there"; return p; }
+            var no = XeniaRamSession.WhyNot(layout, p.Total, forced: p.Placement == "ram");
+            p.Ram = no == null;
+            p.Why = p.Ram ? (p.Placement == "ram" ? "the game's options say: always the RAM disk" : "it fits under the RAM disk threshold") : no;
+            return p;
+        }
+
+        /// <summary>What the game's folder holds that the choice does not use - unpacked once, unticked since - deleted. The
+        /// bytes freed.</summary>
+        public static long FreeUnused(XeniaGameExtras x, IDictionary<string, string> choice)
+        {
+            var (update, dlc) = Chosen(x, choice);
+            var used = new HashSet<string>((update != null ? new[] { update } : new XeniaExtra[0]).Concat(dlc).Select(e => e.ContentId), StringComparer.OrdinalIgnoreCase);
+            var store = Path.Combine(x.Folder, "store");
+            var index = Path.Combine(store, "store.tsv");
+            if (!File.Exists(index)) return 0;
+            long freed = 0;
+            var keep = new List<string>();
+            foreach (var line in File.ReadAllLines(index))
+            {
+                var c = line.Split('\t');
+                if (c.Length < 2 || used.Contains(c[0])) { keep.Add(line); continue; }
+                var file = Path.Combine(store, c[1]);
+                try
+                {
+                    foreach (var type in new[] { UpdateType, DlcType }) { var l = Path.Combine(x.Folder, type, c[1]); if (File.Exists(l)) File.Delete(l); }
+                    if (File.Exists(file)) { freed += new FileInfo(file).Length; File.Delete(file); }
+                }
+                catch (Exception ex) { Log.Warn("extras: could not free " + file, ex); keep.Add(line); }
+            }
+            File.WriteAllLines(index, keep);
+            Log.Info("extras: " + (freed >> 20) + " MB freed in " + x.Folder + " - what the choice no longer uses");
+            return freed;
+        }
         // ── at launch ────────────────────────────────────────────────────────
 
         /// <summary>What a launch puts down: the game's package when it is in an archive (Xenia reads none - Mehdi, 01/10: the
@@ -301,19 +395,20 @@ namespace LbIntegrations.Xenia
                 var content = Path.Combine(layout.ContentRoot, CommonXuid, x.Game.TitleId);
                 if (!archived && extras.Count == 0 && !Directory.Exists(content)) return null;   // nothing to put, nothing put before
 
-                // WHERE (Mehdi, 01/10): what is on the disk already stays read from the disk; else, under the threshold, a RAM
-                // disk for all of it; else the disk.
+                // WHERE (Mehdi, 01/10) - Plan: what is on the disk already stays read from the disk; else, under the threshold, a
+                // RAM disk for all of it; else the disk - unless the game's options force one or the other.
                 var gameFile = archived ? Path.Combine(x.Folder, "game", Leaf(x.Game.Path)) : null;
-                bool onDisk = (gameFile != null && File.Exists(gameFile)) || extras.Any(e => e.InStore);
-                long total = (archived ? GameSize(x.Game) : 0) + extras.Sum(e => e.Size);
+                var choice = ReadChoice(gameId);
+                var plan = Plan(x, choice, layout);
+                Log.Info("extras: " + (plan.Ram ? "RAM disk" : "disk") + " - " + plan.Why);
                 string baseDir = null;
-                if (!onDisk && total > 0) baseDir = XeniaRamSession.Open(layout, x.Game.TitleId, Safe(Path.GetFileName(x.Folder)), total, exe);
+                if (plan.Ram) baseDir = XeniaRamSession.Open(layout, x.Game.TitleId, Safe(Path.GetFileName(x.Folder)), plan.Total, exe, forced: plan.Placement == "ram");
                 bool ram = baseDir != null;
                 if (!ram)
                 {
                     baseDir = x.Folder;
                     Directory.CreateDirectory(Path.Combine(baseDir, "store"));
-                    WriteManifest(baseDir, rom, x.Game.TitleId);
+                    WriteManifest(baseDir, rom, x.Game.TitleId, plan.Keep);
                     long needed = (archived && !File.Exists(gameFile) ? GameSize(x.Game) : 0) + extras.Where(w => !w.InStore && w.Entry.Path.Contains('|')).Sum(w => w.Size);
                     MakeRoom(ContentFolder(layout), baseDir, needed, layout);
                 }
@@ -517,7 +612,8 @@ namespace LbIntegrations.Xenia
         {
             long limit = Limit();
             if (limit <= 0 || needed <= 0 || !Directory.Exists(root)) return;
-            var games = Directory.GetDirectories(root).Where(d => File.Exists(Path.Combine(d, Manifest)))
+            // A game kept (its Session tab) is never purged, and takes no part in the count (Mehdi, 01/10).
+            var games = Directory.GetDirectories(root).Where(d => File.Exists(Path.Combine(d, Manifest)) && ManifestValue(d, "keep") != "on")
                 .Select(d => (Dir: d, Used: DateTime.TryParse(ManifestValue(d, "last_used"), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var t) ? t : DateTime.MinValue,
                               Size: SizeOfFolder(Path.Combine(d, "store")) + SizeOfFolder(Path.Combine(d, "game"))))
                 .ToList();

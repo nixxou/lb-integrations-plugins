@@ -28,12 +28,13 @@ namespace LbIntegrations.Probe
 
         /// <summary>--xenia-shot out.png --emu xenia_canary.exe [--rom game]: the Xenia tab of the Nixx window, scrolled page by page,
         /// then a game's options window on each of its tabs - drawn off screen, the pictures side by side.</summary>
-        public static bool Shot(Assembly asm, string outPath, string exe, string rom, string compatDir)
+        public static bool Shot(Assembly asm, string outPath, string exe, string rom, string compatDir, string settingsDir = null)
         {
             var flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
             System.Windows.Forms.Application.EnableVisualStyles();
             asm.GetType("LbIntegrations.Xenia.XeniaLibrary", true).GetField("ExeOverride", flags).SetValue(null, Path.GetFullPath(exe));
             if (compatDir != null) asm.GetType("LbIntegrations.Xenia.XeniaCompat", true).GetField("DirOverride", flags).SetValue(null, compatDir);
+            if (settingsDir != null) asm.GetType("LbIntegrations.Xenia.XeniaSettings", true).GetField("DirOverride", flags).SetValue(null, settingsDir);
             var shots = new List<System.Drawing.Bitmap>();
             System.Drawing.Bitmap Snap(System.Windows.Forms.Form f)
             {
