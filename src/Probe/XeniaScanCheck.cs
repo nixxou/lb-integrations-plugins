@@ -186,6 +186,23 @@ namespace LbIntegrations.Probe
             return true;
         }
 
+        /// <summary>--xenia-extras-of &lt;game&gt; --emu &lt;exe&gt; [--settings-dir d]: what the game's Updates &amp; DLC tab lists (XeniaExtras.For),
+        /// from the scan's cache - nothing written but the scan of its folder.</summary>
+        public static bool ExtrasOf(Assembly asm, string rom, string exe, string settingsDir)
+        {
+            var flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
+            if (settingsDir != null) asm.GetType("LbIntegrations.Xenia.XeniaSettings", true).GetField("DirOverride", flags).SetValue(null, settingsDir);
+            var layout = asm.GetType("LbIntegrations.Xenia.XeniaPaths", true).GetMethod("Resolve", flags).Invoke(null, new object[] { exe, null });
+            asm.GetType("LbIntegrations.Xenia.XeniaScan", true).GetMethod("Scan", flags).Invoke(null, new object[] { Path.GetDirectoryName(rom), null, null });
+            var x = asm.GetType("LbIntegrations.Xenia.XeniaExtras", true).GetMethod("For", flags).Invoke(null, new object[] { rom, layout });
+            if (x == null) { Console.WriteLine("  not recognised"); return true; }
+            Console.WriteLine("  game: " + x.GetType().GetField("Game").GetValue(x));
+            foreach (var kind in new[] { "Updates", "Dlc" })
+                foreach (var e in (IEnumerable)x.GetType().GetField(kind).GetValue(x))
+                    Console.WriteLine("  " + kind + ": " + e.GetType().GetField("Entry").GetValue(e) + "  matches=" + e.GetType().GetField("Matches").GetValue(e));
+            return true;
+        }
+
         public static bool Run(Assembly asm, string iso)
         {
             _bad = 0;
