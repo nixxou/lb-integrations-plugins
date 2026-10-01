@@ -105,7 +105,7 @@ namespace LbIntegrations.Xenia
         {
             // A disc image, an executable, Xenia's own archive - and the archives No-Intro's digital sets come in, which
             // this plugin unpacks for Xenia, which reads none (XeniaExtras.Prepare).
-            const string extensions = ".iso,.xex,.zar,.zip,.7z";
+            const string extensions = ".iso; .xex; .zar; .zip; .7z";        // LaunchBox's own separator: "; "
 
             yield return new LbCatalogEmulator
             {

@@ -57,6 +57,7 @@ namespace LbIntegrations.Probe
                 return 0;
             }
 
+            if (args.Length >= 3 && args[0] == "--lb-types") return LbTypesCheck.Run(args[1], args[2]) ? 0 : 1;
             if (args.Length == 0 || args[0].StartsWith("-"))
             {
                 Console.Error.WriteLine("usage: Probe <plugin.dll> [--emu <emulator.exe>] [--platform <name>] [--states --rom <rom>] [--flycast] [--melonds] [--nogba] [--superzsnes] [--melonds-real ...] [--melonds-describe --rom <f>] [--rows] [--hotkeys] [--saves --emu <exe> --rom <rom>] [--ahk --emu <exe>] [--vita3k] [--vita3k-install --rom <f>] [--vita3k-real --emu <Vita3K.exe>]");
