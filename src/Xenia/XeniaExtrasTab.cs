@@ -68,7 +68,7 @@ namespace LbIntegrations.Xenia
             _updates.Add((none, null));
             foreach (var u in _extras.Updates.OrderBy(x => x.Matches ? 0 : 1).ThenByDescending(x => x.Entry.PatchTo))
             {
-                var text = u.Entry.Name + "  -  " + XeniaScan.VersionText(u.Entry.PatchFrom) + " -> " + XeniaScan.VersionText(u.Entry.PatchTo) + ", " + Size(u.Size)
+                var text = u.Entry.Name + "  -  " + XeniaScan.VersionText(u.Entry.PatchFrom) + " -> " + XeniaScan.VersionText(u.Entry.PatchTo) + ", " + SizeText(u.Size)
                            + (u.Matches ? (u.InStore ? ", put down already" : "") : "  (for another version of the game)");
                 var r = new RadioButton { Text = text, AutoSize = true, Enabled = u.Matches, Checked = update == u, Margin = new Padding(3, 3, 0, 0) };
                 new ToolTip().SetToolTip(r, string.Join("\n", u.Copies.Select(c => c.Path)) + (u.Entry.Problem.Length > 0 ? "\n" + u.Entry.Problem : ""));
@@ -87,7 +87,7 @@ namespace LbIntegrations.Xenia
             {
                 var c = new CheckBox
                 {
-                    Text = d.Entry.Name + "  -  " + Size(d.Size) + (d.InStore ? ", put down already" : "") + (d.Copies.Count > 1 ? ", in " + d.Copies.Count + " files" : ""),
+                    Text = d.Entry.Name + "  -  " + SizeText(d.Size) + (d.InStore ? ", put down already" : "") + (d.Copies.Count > 1 ? ", in " + d.Copies.Count + " files" : ""),
                     AutoSize = true, Checked = dlc.Contains(d), Margin = new Padding(3, 3, 0, 0),
                 };
                 new ToolTip().SetToolTip(c, string.Join("\n", d.Copies.Select(x => x.Path)));
@@ -122,7 +122,7 @@ namespace LbIntegrations.Xenia
             return p.Contains('|') ? Path.GetFileName(p.Substring(0, p.IndexOf('|'))) : Path.GetFileName(p);
         }
 
-        private static string Size(long bytes)
+        private static string SizeText(long bytes)
             => bytes >= 1L << 30 ? (bytes / (double)(1L << 30)).ToString("0.0") + " GB" : bytes >= 1L << 20 ? (bytes / (double)(1L << 20)).ToString("0.0") + " MB" : Math.Max(1, bytes / 1024) + " KB";
 
         /// <summary>The choice as the controls say: only what differs from the default is kept.</summary>
