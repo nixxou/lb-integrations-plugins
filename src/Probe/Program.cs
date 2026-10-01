@@ -85,8 +85,8 @@ namespace LbIntegrations.Probe
             // One launch at a time (LbipLaunchGate): off for the probe, whose launches start no emulator - but for --launch-gate.
             try { asm.GetType("LbIntegrations.Lbip.LbipLaunchGate")?.GetField("Off", BindingFlags.NonPublic | BindingFlags.Static)?.SetValue(null, true); } catch { }
             if (Has(args, "--launch-gate")) return LaunchGateCheck.Run(asm) ? 0 : 1;
-            // Xenia's compatibility list, offline: --xenia-compat.
-            if (Has(args, "--xenia-compat")) return XeniaCompatCheck.Run(asm) ? 0 : 1;
+            // Xenia's compatibility list: --xenia-compat [--online].
+            if (Has(args, "--xenia-compat")) return XeniaCompatCheck.Run(asm, Has(args, "--online")) ? 0 : 1;
             var type = asm.GetTypes().FirstOrDefault(t => !t.IsAbstract && typeof(EmulatorPlugin).IsAssignableFrom(t));
             if (type == null)
             {

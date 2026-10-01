@@ -373,7 +373,7 @@ namespace LbIntegrations.Xenia
                 // Xenia's compatibility list, whole, at every install and update - see XeniaCompat. Its failure is a
                 // line in the log, never a failed install.
                 Report(args, "Downloading Xenia's compatibility list...", null);
-                XeniaCompat.Build(TimeSpan.FromSeconds(60), m => Report(args, m, null));
+                XeniaCompat.Fetch(TimeSpan.FromSeconds(30));
 
                 if (reinstall)
                 {
@@ -495,11 +495,11 @@ namespace LbIntegrations.Xenia
         {
             try
             {
-                // The game's state in Xenia's compatibility list, in the log - and the list brought up to date in the
-                // background when it is a few hours old, never on the launch's time (XeniaCompat).
+                // The game's state in Xenia's compatibility list, in the log - and the list brought up to date once the
+                // game is over, in the background, when it is older than 8 hours (XeniaCompat).
                 try
                 {
-                    XeniaCompat.RefreshSoon(TimeSpan.FromHours(6), TimeSpan.FromSeconds(20));
+                    XeniaCompat.RefreshAfter(ResolveFullPath(args?.EmulatorBeingLaunched?.ApplicationPath));
                     var rom = ResolveFullPath(args?.GameBeingLaunched?.ApplicationPath);
                     var titleId = string.IsNullOrEmpty(rom) ? null : XeniaTitleId.Of(rom);
                     if (titleId != null) Log.Info("compatibility of " + titleId + ": " + XeniaCompat.Describe(titleId));
