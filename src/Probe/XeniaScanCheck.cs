@@ -76,7 +76,7 @@ namespace LbIntegrations.Probe
                 File.WriteAllBytes(Path.Combine(root, "Halo 3", "updates", tu), Package("LIVE", 0x000B0000, 0x4D5307E6, 0x00000E01, name: "Title Update 5"));
                 const string dlc = "0000000000000000000000000000000000000ABC";
                 File.WriteAllBytes(Path.Combine(root, "Halo 3", dlc), Package("PIRS", 0x00000002, 0x4D5307E6, name: "Heroic Map Pack"));
-                File.WriteAllBytes(Path.Combine(root, "Arcade", "58410A5D"), Package("LIVE", 0x000D0000, 0x58410A5D, name: "Braid"));
+                File.WriteAllBytes(Path.Combine(root, "Arcade", "58410A5D0000000000000000000000000000000000"), Package("LIVE", 0x000D0000, 0x58410A5D, name: "Braid"));
                 var god = Path.Combine(root, "GoD", "4D5307E6", "00007000");
                 File.WriteAllBytes(Path.Combine(god, "WITHDATA"), Package("LIVE", 0x00007000, 0x4D5307E6, volume: 1, name: "Halo 3"));
                 Directory.CreateDirectory(Path.Combine(god, "WITHDATA.data"));
@@ -85,11 +85,31 @@ namespace LbIntegrations.Probe
                 File.WriteAllBytes(Path.Combine(root, "Extracted", "Some Game", "default.xex"), Xex(0x41560857));
                 File.WriteAllBytes(Path.Combine(root, "Extracted", "Some Game", "media", "ignored"), new byte[16]);
                 File.WriteAllBytes(Path.Combine(root, "game.zar"), new byte[128]);
-                File.WriteAllBytes(Path.Combine(root, "theme"), Package("CON ", 0x00030000, 0x4D5307E6, name: "A theme"));
-                File.WriteAllBytes(Path.Combine(root, "junk"), Encoding.ASCII.GetBytes("this is not a package at all"));
+                Directory.CreateDirectory(Path.Combine(root, "4D5307E6", "00030000"));
+                File.WriteAllBytes(Path.Combine(root, "4D5307E6", "00030000", "theme"), Package("CON ", 0x00030000, 0x4D5307E6, name: "A theme"));
+                File.WriteAllBytes(Path.Combine(root, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"), Encoding.ASCII.GetBytes("this is not a package at all"));
                 File.WriteAllBytes(Path.Combine(root, "broken.iso"), new byte[70000]);
-                File.WriteAllBytes(Path.Combine(root, "zero"), Package("LIVE", 0x000B0000, 0));
-                File.WriteAllText(Path.Combine(root, "readme.txt"), "not ours");
+                File.WriteAllBytes(Path.Combine(root, "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"), Package("LIVE", 0x000B0000, 0));
+                File.WriteAllText(Path.Combine(root, "notes"), "a file with no extension, named as nothing of ours");
+                File.WriteAllBytes(Path.Combine(root, "58410A5D"), Package("LIVE", 0x000D0000, 0x58410A5D));
+                // No-Intro's digital sets: each package zipped, the console's tree around it.
+                Directory.CreateDirectory(Path.Combine(root, "Digital"));
+                void Zip(string name, params (string Entry, byte[] Data)[] items)
+                {
+                    using var z = System.IO.Compression.ZipFile.Open(Path.Combine(root, "Digital", name), System.IO.Compression.ZipArchiveMode.Create);
+                    foreach (var (entry, data) in items)
+                    {
+                        using var s = z.CreateEntry(entry, System.IO.Compression.CompressionLevel.Optimal).Open();
+                        s.Write(data, 0, data.Length);
+                    }
+                }
+                byte[] Big(byte[] head) { var b = new byte[4 * 1024 * 1024]; head.CopyTo(b, 0); new Random(1).NextBytes(b.AsSpan(head.Length)); return b; }
+                Zip("Real Steel (World) (XBLA).zip", ("584111E0/000D0000/62939F79719792E4C7A3023F3C63E17428928B4D58", Big(Package("LIVE", 0x000D0000, 0x584111E0, name: "Real Steel"))));
+                Zip("Real Steel (World) (v3) (Title Update).zip", ("584111E0/000B0000/34B98210F59364D0E50938EE7D0E5AA3FD92558B58", Package("LIVE", 0x000B0000, 0x584111E0, 0x00000300, name: "Title Update 3")));
+                Zip("Real Steel - Add-on 01 (World) (Addon).zip", ("584111E0/00000002/C729FE8E08F1AC6E8A781CA41A016D2028818ED558", Package("PIRS", 0x00000002, 0x584111E0, name: "Add-on 01")));
+                Zip("QbTron 3D (World) (XBLIG).zip", ("584E07D2/00000002/13A061B9D5E8222C8E51FD6B11BFC536586D84E458", Package("LIVE", 0x00000002, 0x584E07D2, name: "QbTron 3D")));
+                Zip("nothing.zip", ("readme.txt", Encoding.ASCII.GetBytes("hello")));
+                Zip("disc.zip", ("Game.iso", new byte[4096]));                File.WriteAllText(Path.Combine(root, "readme.txt"), "not ours");
                 File.WriteAllText(Path.Combine(root, "Halo 3", "cover.jpg"), "not ours");
 
                 var all = Scan();
@@ -98,17 +118,27 @@ namespace LbIntegrations.Probe
                 Check("a title update named as XboxUnity names them: Update, its version read", Kind(tu) == "Update" && F(One(all, tu), "VersionText") == "0.0.14.1" && F(One(all, tu), "TitleId") == "4D5307E6",
                       One(all, tu)?.ToString());
                 Check("a DLC with no extension: Dlc, its name read", Kind(dlc) == "Dlc" && F(One(all, dlc), "Name") == "Heroic Map Pack");
-                Check("an Arcade game with no extension: Game", Kind("58410A5D") == "Game" && F(One(all, "58410A5D"), "TitleId") == "58410A5D");
+                Check("an Arcade game with no extension: Game", Kind("58410A5D0000000000000000000000000000000000"[..42]) == "Game" && F(One(all, "58410A5D0000000000000000000000000000000000"[..42]), "TitleId") == "58410A5D");
                 Check("Games on Demand with its .data: Game, and nothing inside .data listed", Kind("WITHDATA") == "Game" && One(all, "Data0000") == null);
                 Check("Games on Demand without its .data: Invalid, said why", Kind("NODATA") == "Invalid" && F(One(all, "NODATA"), "Problem").Contains(".data"));
                 Check("an extracted disc: ONE entry, the folder, its id from default.xex", Kind("Some Game") == "Game" && F(One(all, "Some Game"), "TitleId") == "41560857"
                       && One(all, "default.xex") == null && One(all, "ignored") == null);
                 Check("a .zar: a game with no id", Kind("game.zar") == "GameNoId");
                 Check("a theme: Other", Kind("theme") == "Other");
-                Check("a file with no extension that is not a package: Invalid", Kind("junk") == "Invalid" && F(One(all, "junk"), "Problem") == "not Xbox 360 content");
+                Check("a file named as a package that is not one: Invalid", Kind("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA") == "Invalid" && F(One(all, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"), "Problem") == "not Xbox 360 content");
                 Check("an .iso that is not a disc: Invalid", Kind("broken.iso") == "Invalid" && F(One(all, "broken.iso"), "Problem") == "not an Xbox 360 disc image");
-                Check("a package with no title id: Invalid", Kind("zero") == "Invalid");
+                Check("a package with no title id: Invalid", Kind("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB") == "Invalid");
+                Check("a file with no extension named as nothing of ours, outside a <title id>\\<type> folder: not looked at", One(all, "notes") == null && One(all, "58410A5D") == null);
                 Check("readme.txt and cover.jpg not looked at", One(all, "readme.txt") == null && One(all, "cover.jpg") == null);
+                object Entry(List<object> list, string zip) => list.FirstOrDefault(e => F(e, "Path").Contains("\\Digital\\" + zip + "|"));
+                string KindIn(List<object> list, string zip) { var e = Entry(list, zip); return e == null ? "(missing)" : F(e, "Kind"); }
+                Check("a zipped Arcade game: Game, read without extracting", KindIn(all, "Real Steel (World) (XBLA).zip") == "Game" && F(Entry(all, "Real Steel (World) (XBLA).zip"), "TitleId") == "584111E0",
+                      Entry(all, "Real Steel (World) (XBLA).zip")?.ToString());
+                Check("a zipped title update: Update, its version", KindIn(all, "Real Steel (World) (v3) (Title Update).zip") == "Update" && F(Entry(all, "Real Steel (World) (v3) (Title Update).zip"), "VersionText") == "0.0.3.0");
+                Check("a zipped add-on: Dlc of the game's title id", KindIn(all, "Real Steel - Add-on 01 (World) (Addon).zip") == "Dlc" && F(Entry(all, "Real Steel - Add-on 01 (World) (Addon).zip"), "TitleId") == "584111E0");
+                Check("a zipped Indie game (00000002 of 584E07D2): Game, not DLC", KindIn(all, "QbTron 3D (World) (XBLIG).zip") == "Game");
+                Check("a zip with nothing of ours: one Invalid line for it", KindIn(all, "nothing.zip") == "Invalid" && F(Entry(all, "nothing.zip"), "Problem").Contains("no Xbox 360 content"));
+                Check("a disc image in a zip: noted, not read", KindIn(all, "disc.zip") == "GameNoId" && F(Entry(all, "disc.zip"), "Problem").Contains("not read"));
 
                 Console.WriteLine();
                 Console.WriteLine("-- the cache --");
@@ -121,12 +151,16 @@ namespace LbIntegrations.Probe
                 var log = Path.Combine(dir, "watch");
                 File.WriteAllBytes(Path.Combine(root, "Halo 3", dlc), Package("PIRS", 0x00000002, 0x4D5307E6, name: "Heroic Map Pack v2"));
                 File.SetLastWriteTimeUtc(Path.Combine(root, "Halo 3", dlc), DateTime.UtcNow.AddMinutes(1));
-                File.Delete(Path.Combine(root, "junk"));
+                File.Delete(Path.Combine(root, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"));
                 again = Scan();
                 Check("a changed file is read again", F(One(again, dlc), "Name") == "Heroic Map Pack v2", F(One(again, dlc), "Name"));
-                Check("a removed file is gone, from the scan and the cache", One(again, "junk") == null && !File.ReadAllText(Path.Combine(dir, "xenia-scan.tsv")).Contains("\\junk\t"));
+                Check("a removed file is gone, from the scan and the cache", One(again, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA") == null && !File.ReadAllText(Path.Combine(dir, "xenia-scan.tsv")).Contains("\\AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\t"));
                 var cached = ((IEnumerable)scan.GetMethod("Cached", flags).Invoke(null, new object[] { Path.Combine(root, "Halo 3") })).Cast<object>().ToList();
                 Check("the cache alone, for a game's folder: its two files", cached.Count == 2, cached.Count.ToString());
+                var zipPath = Path.Combine(root, "Digital", "Real Steel (World) (v3) (Title Update).zip");
+                File.SetLastWriteTimeUtc(zipPath, DateTime.UtcNow.AddMinutes(2));
+                again = Scan();
+                Check("a changed zip is read again, the others from the cache", KindIn(again, "Real Steel (World) (v3) (Title Update).zip") == "Update" && again.Count == all.Count - 1);
 
                 if (iso != null && File.Exists(iso))
                 {

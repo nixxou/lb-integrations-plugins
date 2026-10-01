@@ -4,12 +4,21 @@
 //
 // WHICH FILES. A folder of Xbox 360 games holds little else, so the rule is wide and the CONTENT decides:
 //   - .iso, .xex, .zar;
-//   - a file with NO extension - title updates, DLC, Xbox Live Arcade and Games on Demand packages almost always
-//     have none ("4D5307E6..." of 42 hex digits);
-//   - an "extension" holding a digit - the names XboxUnity gives title updates, "TU_10ID8B4_0000014000000.00000000000O4".
+//   - a file with NO extension when it is named as a package is (Mehdi, 01/10: a regex): 40 to 42 hex digits - the
+//     console names a package by up to 42 characters (XCONTENT_DATA.file_name_raw[42]), and DLC fill them - or a title
+//     update's names, "TU_..." (XboxUnity) and "tu<8 hex>_<8 hex>"; or, whatever its name, when it sits where the
+//     console puts one: <title id>\<content type>\<file>;
+//   - an "extension" holding a digit - the names XboxUnity gives title updates, "TU_10ID8B4_0000014000000.00000000000O4";
+//   - .zip and .7z: No-Intro's digital sets ship each package zipped with the console's tree around it -
+//     "Real Steel (World) (XBLA).zip" holds 584111E0/000D0000/62939F79...58. Every entry the same rule takes is read
+//     WITHOUT EXTRACTING: its first 0x1711 bytes decompressed, no further, nothing written. A disc image in an archive
+//     is noted and not read (Mehdi: nobody zips an ISO).
 // Each one is opened and its first bytes read: "CON " / "LIVE" / "PIRS" is an STFS package, whose header says its
 // type, its title id, its version (Stfs); XEX2 is an executable; an XDVDFS volume is a disc image. A file the rule
 // takes that none of these is, is INVALID, with the reason - listed, never used.
+//
+// AN INDIE GAME IS FILED AS DLC: Xbox Live Indie Games are marketplace content (00000002) of one common title id,
+// 584E07D2 - measured on QbTron 3D (XBLIG), 584E07D2/00000002/<42 hex>. That pair is a game here, not an add-on.
 //
 // TWO SHAPES ARE ONE ENTRY, NOT MANY FILES: a folder holding default.xex is an extracted disc (the folder is the game,
 // nothing under it is looked at); the <name>.data folder beside a Games on Demand package is that package's data.
@@ -68,14 +77,30 @@ namespace LbIntegrations.Xenia
 
         public static string CachePath => CacheOverride ?? System.IO.Path.Combine(XeniaSettings.Dir, "xenia-scan.tsv");
 
-        /// <summary>Is this a file the rule looks at? By its name only.</summary>
+        private static readonly string[] ArchiveExtensions = { ".zip", ".7z" };
+        private static readonly System.Text.RegularExpressions.Regex PackageName =
+            new System.Text.RegularExpressions.Regex("^([0-9A-Fa-f]{40,42}|TU_.+|tu[0-9A-Fa-f]{8}_[0-9A-Fa-f]{8})$");
+        private static readonly System.Text.RegularExpressions.Regex Hex8 = new System.Text.RegularExpressions.Regex("^[0-9A-Fa-f]{8}$");
+
+        /// <summary>The Indie games' common title id - see the header.</summary>
+        public const string IndieTitleId = "584E07D2";
+
+        /// <summary>Is this a file the rule looks at? By its name - and, for a name with no extension, where it sits:
+        /// <paramref name="path"/> is a file path or an archive entry's, "/" or "\" alike.</summary>
         internal static bool Taken(string path)
         {
-            var ext = System.IO.Path.GetExtension(path);
-            if (string.IsNullOrEmpty(ext)) return true;
+            var parts = path.Split('\\', '/');
+            var name = parts[parts.Length - 1];
+            var ext = System.IO.Path.GetExtension(name);
+            if (string.IsNullOrEmpty(ext))
+                return PackageName.IsMatch(name)
+                       || (parts.Length >= 3 && Hex8.IsMatch(parts[parts.Length - 2]) && Hex8.IsMatch(parts[parts.Length - 3]));
             if (Extensions.Contains(ext, StringComparer.OrdinalIgnoreCase)) return true;
+            if (PackageName.IsMatch(name)) return true;
             return ext.Skip(1).Any(char.IsDigit);
         }
+
+        internal static bool IsArchive(string path) => ArchiveExtensions.Contains(System.IO.Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
 
         /// <summary>xex2_version: major.minor.build.qfe, from the top bits down.</summary>
         public static string VersionText(uint v)
@@ -100,10 +125,12 @@ namespace LbIntegrations.Xenia
 
             var cache = Load();
             var under = root.TrimEnd('\\') + "\\";
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             int n = files.Count + folders.Count, done = 0, read = 0;
+            bool stopped = false;
             foreach (var path in folders.Concat(files))
             {
-                if (cancel?.Invoke() == true) { Log.Info("scan of " + root + ": stopped after " + done + " of " + n); break; }
+                if (cancel?.Invoke() == true) { Log.Info("scan of " + root + ": stopped after " + done + " of " + n); stopped = true; break; }
                 done++;
                 long size = 0, ticks = 0;
                 try
@@ -112,7 +139,32 @@ namespace LbIntegrations.Xenia
                     else { var fi = new FileInfo(path); size = fi.Length; ticks = fi.LastWriteTimeUtc.Ticks; }
                 }
                 catch { continue; }
-                if (cache.TryGetValue(path, out var known) && known.Size == size && known.Ticks == ticks) { result.Add(known); continue; }
+
+                if (IsArchive(path))
+                {
+                    // An archive is its entries, "<archive>|<entry>", all kept while the archive is the same.
+                    var prefix = path + "|";
+                    var known = cache.Values.Where(e => e.Path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList();
+                    if (known.Count > 0 && known.All(e => e.Size == size && e.Ticks == ticks))
+                    {
+                        result.AddRange(known);
+                        foreach (var e in known) seen.Add(e.Path);
+                        continue;
+                    }
+                    progress?.Invoke("Reading " + System.IO.Path.GetFileName(path), (double)done / Math.Max(1, n));
+                    foreach (var stale in known) cache.Remove(stale.Path);
+                    foreach (var e in ClassifyArchive(path, size, ticks))
+                    {
+                        cache[e.Path] = e;
+                        seen.Add(e.Path);
+                        result.Add(e);
+                        read++;
+                    }
+                    continue;
+                }
+
+                seen.Add(path);
+                if (cache.TryGetValue(path, out var cached) && cached.Size == size && cached.Ticks == ticks) { result.Add(cached); continue; }
                 progress?.Invoke("Reading " + System.IO.Path.GetFileName(path), (double)done / Math.Max(1, n));
                 var entry = Classify(path, size, ticks);
                 read++;
@@ -120,9 +172,8 @@ namespace LbIntegrations.Xenia
                 result.Add(entry);
             }
 
-            // What was under this root and is not any more goes.
-            var seen = new HashSet<string>(folders.Concat(files), StringComparer.OrdinalIgnoreCase);
-            foreach (var gone in cache.Keys.Where(k => k.StartsWith(under, StringComparison.OrdinalIgnoreCase) && !seen.Contains(k)).ToList())
+            // What was under this root and is not any more goes - unless the scan was stopped, and did not see everything.
+            if (!stopped) foreach (var gone in cache.Keys.Where(k => k.StartsWith(under, StringComparison.OrdinalIgnoreCase) && !seen.Contains(k)).ToList())
                 cache.Remove(gone);
             Save(cache);
 
@@ -155,7 +206,7 @@ namespace LbIntegrations.Xenia
             string[] subs, names;
             try { subs = Directory.GetDirectories(folder); names = Directory.GetFiles(folder); }
             catch (Exception ex) { Log.Info("scan: " + folder + " skipped (" + ex.Message + ")"); return; }
-            foreach (var f in names) if (Taken(f)) files.Add(f);
+            foreach (var f in names) if (Taken(f) || IsArchive(f)) files.Add(f);
             if (!deep) return;
             foreach (var d in subs)
             {
@@ -189,30 +240,7 @@ namespace LbIntegrations.Xenia
                 if (head == null) return Invalid(e, "unreadable");
 
                 if (Stfs.IsStfs(head))
-                {
-                    var info = Stfs.Read(path);
-                    if (info == null) return Invalid(e, "an STFS package whose header does not read");
-                    e.TitleId = info.TitleId == 0 ? "" : Xex.Format(info.TitleId);
-                    e.ContentType = info.ContentType; e.MediaId = info.MediaId; e.Version = info.Version; e.BaseVersion = info.BaseVersion; e.Disc = info.DiscNumber;
-                    var name = info.DisplayName.Length > 0 ? info.DisplayName : info.TitleName;
-                    if (name.Length > 0) e.Name = name;
-                    if (info.TitleId == 0) return Invalid(e, "an STFS package with no title id");
-                    switch (info.ContentType)
-                    {
-                        case 0x000B0000: e.Kind = XeniaFileKind.Update; break;
-                        case 0x00000002: e.Kind = XeniaFileKind.Dlc; break;
-                        case 0x00007000:   // Games on Demand
-                        case 0x000D0000:   // Xbox Live Arcade
-                        case 0x00080000:   // demo
-                        case 0x000A0000:   // game title
-                        case 0x00004000:   // installed game
-                            e.Kind = XeniaFileKind.Game;
-                            if (info.VolumeType == 1 && !Directory.Exists(path + ".data")) return Invalid(e, "a Games on Demand package without its " + System.IO.Path.GetFileName(path) + ".data folder");
-                            break;
-                        default: e.Kind = XeniaFileKind.Other; break;
-                    }
-                    return e;
-                }
+                    return FromPackage(e, Stfs.Read(path), () => Directory.Exists(path + ".data"));
                 if (Xex.IsXex(head))
                 {
                     var id = Xex.TitleIdOfFile(path);
@@ -227,6 +255,109 @@ namespace LbIntegrations.Xenia
                 return Invalid(e, ext.Equals(".iso", StringComparison.OrdinalIgnoreCase) ? "not an Xbox 360 disc image" : "not Xbox 360 content");
             }
             catch (Exception ex) { return Invalid(e, "could not be read: " + ex.Message); }
+        }
+
+        /// <summary>What a package's header makes of an entry - a file's or an archive entry's. <paramref name="hasData"/>:
+        /// is its &lt;name&gt;.data folder there (a Games on Demand package is nothing without it)?</summary>
+        private static XeniaScanEntry FromPackage(XeniaScanEntry e, StfsInfo info, Func<bool> hasData)
+        {
+            if (info == null) return Invalid(e, "an STFS package whose header does not read");
+            e.TitleId = info.TitleId == 0 ? "" : Xex.Format(info.TitleId);
+            e.ContentType = info.ContentType; e.MediaId = info.MediaId; e.Version = info.Version; e.BaseVersion = info.BaseVersion; e.Disc = info.DiscNumber;
+            var name = info.DisplayName.Length > 0 ? info.DisplayName : info.TitleName;
+            if (name.Length > 0) e.Name = name;
+            if (info.TitleId == 0) return Invalid(e, "an STFS package with no title id");
+            switch (info.ContentType)
+            {
+                case 0x000B0000: e.Kind = XeniaFileKind.Update; break;
+                case 0x00000002: e.Kind = e.TitleId == IndieTitleId ? XeniaFileKind.Game : XeniaFileKind.Dlc; break;
+                case 0x00007000:   // Games on Demand
+                case 0x000D0000:   // Xbox Live Arcade
+                case 0x00080000:   // demo
+                case 0x000A0000:   // game title
+                case 0x00004000:   // installed game
+                case 0x02000000:   // community (Indie) game
+                    e.Kind = XeniaFileKind.Game;
+                    if (info.VolumeType == 1 && !hasData()) return Invalid(e, "a Games on Demand package without its .data folder");
+                    break;
+                default: e.Kind = XeniaFileKind.Other; break;
+            }
+            return e;
+        }
+
+        /// <summary>The entries of an archive the rule takes, each read without extracting: its first bytes decompressed,
+        /// nothing written. An archive that holds none of ours is ONE entry, Invalid, so it is noted - and cached.</summary>
+        internal static List<XeniaScanEntry> ClassifyArchive(string path, long size, long ticks)
+        {
+            var found = new List<XeniaScanEntry>();
+            try
+            {
+                using var archive = SharpCompress.Archives.ArchiveFactory.Open(path);
+                var entries = archive.Entries.Where(x => !x.IsDirectory && x.Key != null).ToList();
+                var keys = new HashSet<string>(entries.Select(x => x.Key.Replace('\\', '/')), StringComparer.OrdinalIgnoreCase);
+                foreach (var entry in entries)
+                {
+                    var key = entry.Key.Replace('\\', '/');
+                    // A Games on Demand package's pieces: <package>.data/Data0000...
+                    var slash = key.LastIndexOf('/');
+                    var folder = slash > 0 ? key.Substring(0, slash) : "";
+                    if (folder.EndsWith(".data", StringComparison.OrdinalIgnoreCase) && keys.Contains(folder.Substring(0, folder.Length - 5))) continue;
+                    if (!Taken(key)) continue;
+
+                    var e = new XeniaScanEntry { Path = path + "|" + key, Size = size, Ticks = ticks, Name = key.Substring(slash + 1) };
+                    try
+                    {
+                        if (System.IO.Path.GetExtension(key).Equals(".iso", StringComparison.OrdinalIgnoreCase))
+                        {
+                            e.Kind = XeniaFileKind.GameNoId;
+                            e.Problem = "a disc image inside an archive: not read";
+                        }
+                        else
+                        {
+                            byte[] head;
+                            using (var s = entry.OpenEntryStream()) head = ReadUpTo(s, Math.Max(Stfs.HeaderSize, 0x10000));
+                            if (head.Length < 4) Invalid(e, "empty");
+                            else if (Stfs.IsStfs(head))
+                                FromPackage(e, Stfs.Parse(head), () => keys.Any(k => k.StartsWith(key + ".data/", StringComparison.OrdinalIgnoreCase)));
+                            else if (Xex.IsXex(head))
+                            {
+                                var id = Xex.TitleId((offset, length) => offset + length <= head.Length ? head.Skip((int)offset).Take(length).ToArray() : null);
+                                if (id.HasValue) { e.Kind = XeniaFileKind.Game; e.TitleId = Xex.Format(id.Value); }
+                                else Invalid(e, "an executable without a title id (or one whose header is past the first 64 KB)");
+                            }
+                            else Invalid(e, "not Xbox 360 content");
+                        }
+                    }
+                    catch (Exception ex) { Invalid(e, "could not be read: " + ex.Message); }
+                    found.Add(e);
+                }
+            }
+            catch (Exception ex)
+            {
+                found.Clear();
+                found.Add(Invalid(new XeniaScanEntry { Path = path + "|", Size = size, Ticks = ticks, Name = System.IO.Path.GetFileName(path) }, "the archive could not be opened: " + ex.Message));
+                return found;
+            }
+            if (found.Count == 0)
+                found.Add(Invalid(new XeniaScanEntry { Path = path + "|", Size = size, Ticks = ticks, Name = System.IO.Path.GetFileName(path) }, "an archive with no Xbox 360 content in it"));
+            return found;
+        }
+
+        /// <summary>At most <paramref name="max"/> bytes of a stream - fewer when it ends first. Decompresses that far, no further.</summary>
+        private static byte[] ReadUpTo(Stream s, int max)
+        {
+            var buffer = new byte[max];
+            int done = 0;
+            while (done < max)
+            {
+                int n = s.Read(buffer, done, max - done);
+                if (n <= 0) break;
+                done += n;
+            }
+            if (done == max) return buffer;
+            var shorter = new byte[done];
+            Array.Copy(buffer, shorter, done);
+            return shorter;
         }
 
         private static XeniaScanEntry Invalid(XeniaScanEntry e, string why)

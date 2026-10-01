@@ -59,7 +59,17 @@ namespace LbIntegrations.Xenia
             try
             {
                 using var fs = File.OpenRead(path);
-                var head = Xex.ReadAt(fs, 0, HeaderProbe);
+                return Parse(Xex.ReadAt(fs, 0, HeaderProbe));
+            }
+            catch (Exception ex) { Log.Warn("could not read the STFS header of " + path, ex); return null; }
+        }
+
+        /// <summary>The first <see cref="HeaderSize"/> bytes of a package - from a file, or from an archive's entry
+        /// decompressed that far and no further - read; null when they are not an STFS header.</summary>
+        public static StfsInfo Parse(byte[] head)
+        {
+            try
+            {
                 if (!IsStfs(head)) return null;
                 return new StfsInfo
                 {
@@ -76,8 +86,11 @@ namespace LbIntegrations.Xenia
                     TitleName = Utf16(head, TitleNameOffset, 0x80),
                 };
             }
-            catch (Exception ex) { Log.Warn("could not read the STFS header of " + path, ex); return null; }
+            catch { return null; }
         }
+
+        /// <summary>How many bytes of a package <see cref="Parse"/> wants.</summary>
+        public const int HeaderSize = HeaderProbe;
 
         public static uint? TitleIdOfFile(string path) => Read(path)?.TitleId;
 
