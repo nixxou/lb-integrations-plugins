@@ -11,7 +11,7 @@
 //   --nixx-menu-key=<KeyCode>         the key that opens the emulator's menu (default F1)
 //   --nixx-portable=on|off            persistentDataPath -> <exe>\portable (default on)
 //   --nixx-support-popup=on|off       the "check out our Patreon" dialog (default off: hidden)
-//   --nixx-version-popup=on|off       the "a new version is out" dialog (default on)
+//   --nixx-version-popup=on|off       the "a new version is out" dialog (default off: hidden - Mehdi, 01/10)
 //   --nixx-display=primary            full screen window on the PRIMARY display, whichever index
 //                                     Unity gives it - see Display.cs
 //   --nixx-log                        write this plugin's lines to <exe>\portable\nixx.log too
@@ -43,7 +43,7 @@ namespace LbIntegrations.SuperZsnes.Mod
         public string MenuKey = "F1";
         public bool Portable = true;
         public bool SupportPopup = false;
-        public bool VersionPopup = true;
+        public bool VersionPopup = false;
         public bool Persist = false;
         public bool DumpOptions = false;
         /// <summary>"primary", or null for "leave the display alone".</summary>

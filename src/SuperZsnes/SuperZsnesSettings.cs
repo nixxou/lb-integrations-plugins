@@ -68,12 +68,41 @@ namespace LbIntegrations.SuperZsnes
             }
         }
 
-        public static Dictionary<string, string> Read()
+        public static Dictionary<string, string> Read() => Read(SettingsPath);
+
+        /// <summary>A game's own options (its right-click window): <c>games\&lt;LaunchBox game id&gt;.ini</c> beside
+        /// settings.ini, the same format. Null for no id.</summary>
+        public static string GamePath(string gameId)
+        {
+            if (string.IsNullOrWhiteSpace(gameId)) return null;
+            var safe = new string(gameId.Trim().Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c).ToArray());
+            return Path.Combine(Path.GetDirectoryName(SettingsPath), "games", safe + ".ini");
+        }
+
+        public static Dictionary<string, string> ReadGame(string gameId)
+        {
+            var path = GamePath(gameId);
+            return path == null ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) : Read(path);
+        }
+
+        /// <summary>A game's own options written - the file removed when there are none.</summary>
+        public static void WriteGame(string gameId, IDictionary<string, string> values)
+        {
+            var path = GamePath(gameId);
+            if (path == null) return;
+            if (values == null || values.All(kv => string.IsNullOrEmpty(kv.Value)))
+            {
+                if (File.Exists(path)) { File.Delete(path); Log.Info("game options of " + gameId + ": none any more"); }
+                return;
+            }
+            WriteTo(path, values, "# SUPER ZSNES: this game's own options, passed on its command line at launch. Edited by its options window.");
+        }
+
+        private static Dictionary<string, string> Read(string path)
         {
             var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             try
             {
-                var path = SettingsPath;
                 if (!File.Exists(path)) return values;
                 foreach (var line in File.ReadAllLines(path))
                 {
@@ -89,14 +118,12 @@ namespace LbIntegrations.SuperZsnes
         /// <summary>Replace the whole file - through a temporary one, so a failure halfway leaves
         /// the previous settings. Null or empty values mean "not overridden" and are dropped.</summary>
         public static void WriteAll(IDictionary<string, string> values)
+            => WriteTo(SettingsPath, values, "# SUPER ZSNES: what the pack passes on the emulator's command line for every game. Edited by the Nixx window.");
+
+        private static void WriteTo(string path, IDictionary<string, string> values, string header)
         {
-            var path = SettingsPath;
             Directory.CreateDirectory(Path.GetDirectoryName(path));
-            var lines = new List<string>
-            {
-                "# SUPER ZSNES: what the pack passes on the emulator's command line. A key present is an",
-                "# override; remove the line to leave the emulator's own value. Edited by the Nixx window.",
-            };
+            var lines = new List<string> { header, "# A key present is passed; remove the line to leave the emulator's own value (or the pack's default)." };
             lines.AddRange(values.Where(kv => !string.IsNullOrEmpty(kv.Value))
                                  .OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
                                  .Select(kv => kv.Key + "=" + kv.Value));
@@ -115,14 +142,25 @@ namespace LbIntegrations.SuperZsnes
 
         // ── the command line ─────────────────────────────────────────────────
 
-        /// <summary>Every flag the current settings ask for, in catalogue order.</summary>
-        public static List<Flag> Flags() => Flags(Read());
+        /// <summary>What a launch of this game passes: the pack's own settings (settings.ini, the Global options only)
+        /// and the game's (its file, the Game options only), in catalogue order. A key of the wrong scope - left by an
+        /// older version, or typed by hand - is not sent.</summary>
+        public static List<Flag> ForLaunch(string gameId)
+        {
+            var flags = Flags(Read(), OptionScope.Global);
+            flags.AddRange(Flags(ReadGame(gameId), OptionScope.Game));
+            return flags;
+        }
 
-        public static List<Flag> Flags(IDictionary<string, string> values)
+        /// <summary>Every flag these values ask for, whatever the scope - the renderer, as the probe tests it.</summary>
+        public static List<Flag> Flags(IDictionary<string, string> values) => Flags(values, null);
+
+        public static List<Flag> Flags(IDictionary<string, string> values, OptionScope? scope)
         {
             var flags = new List<Flag>();
             foreach (var o in SuperZsnesOptions.All)
             {
+                if (scope != null && o.Scope != scope) continue;
                 if (!values.TryGetValue(o.IniKey, out var value) || string.IsNullOrEmpty(value)) continue;
                 var flag = Render(o, value);
                 if (flag != null) flags.Add(flag);

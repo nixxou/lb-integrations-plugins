@@ -1,5 +1,21 @@
 # 04 · Les options et la ligne de commande
 
+## Où chaque option se règle (01/10)
+
+Choix de Mehdi : le catalogue garde les 67 options, mesurées et rendues, mais chacune a une **portée**
+(`SuperZsnesOptions.ScopeOf`) :
+
+| portée | où | options |
+|---|---|---|
+| Global | onglet SUPER ZSNES de la fenêtre Nixx, `settings.ini` | `plugin.bepinex`, `quit-confirm`, `menu-key`, `portable`, `support-popup`, `version-popup`, `persist` |
+| Game | clic droit sur un jeu, « Nixx-SuperZSNES : Options... », `games\<id LaunchBox>.ini` à côté de `settings.ini` | fenêtre (`plugin.display`, `unity.screen-*`, `popupwindow`, `monitor`), `native.loadstate`, affichage (`gfxMode`, `scanlineStrength`, `interpolationMode`, `noBilinearFiltering`, `maxBrightness`, `use87aspect`), `rewindDisabled`, `snesRumble`, `rightStickGameSpeed`, `swapAcceptCancel`, les trois volumes |
+| Hidden | nulle part, jamais envoyée | tout le reste (dossiers, `game.*`, le reste du gameplay et de l'affichage, `plugin.log`) |
+
+Au lancement, `SuperZsnesSettings.ForLaunch` envoie les options Global de `settings.ini` et les
+options Game du fichier du jeu ; une clé d'une autre portée (écrite par une version précédente ou à la
+main) est ignorée. Toutes passent par le plugin en mémoire : le fichier de l'émulateur n'en reçoit
+aucune, sauf `persist`.
+
 ## La grammaire
 
 Tout ce qui est à nous commence par `--nixx-`. L'émulateur (`MasterExecutor.Awake`) ignore tout
@@ -41,7 +57,7 @@ surcharge envoyée.
 | plugin.menu-key | `--nixx-menu-key=<KeyCode>` | F1 | touche du menu |
 | plugin.portable | `--nixx-portable=on\|off` | on | P1 |
 | plugin.support-popup | `--nixx-support-popup=on\|off` | off | popup Patreon |
-| plugin.version-popup | `--nixx-version-popup=on\|off` | on | popup nouvelle version |
+| plugin.version-popup | `--nixx-version-popup=on\|off` | off (01/10) | popup nouvelle version |
 | plugin.display | `--nixx-display=primary` | off | écran principal, P7 |
 | plugin.persist | `--nixx-persist=on\|off` | off | écrire les surcharges dans le fichier |
 

@@ -18,7 +18,9 @@
 // can write the live one as <exe>\portable\options.json with --nixx-dump-options. Controller
 // bindings (inputData) are deliberately not here yet.
 //
-// This is a catalogue, not a policy: which of these the pack ends up showing is decided later.
+// WHERE EACH IS SET (Mehdi, 01/10): a few are the pack's own, for every game (the Nixx window's tab); a
+// selection is per game (the game's right-click "Nixx-SuperZSNES : Options..."); the rest stays in the
+// catalogue, measured and renderable, but is shown nowhere and never sent. See ScopeOf.
 
 using System.Collections.Generic;
 
@@ -27,6 +29,10 @@ namespace LbIntegrations.SuperZsnes
     internal enum OptionFamily { Setting, Game, Plugin, Native, Unity }
 
     internal enum OptionKind { Bool, Int, Float, Text, Choice }
+
+    /// <summary>Where an option is set: nowhere (kept in the catalogue only), the Nixx window for every game, or a
+    /// game's own options window.</summary>
+    internal enum OptionScope { Hidden, Global, Game }
 
     internal sealed class Option
     {
@@ -44,6 +50,8 @@ namespace LbIntegrations.SuperZsnes
 
         /// <summary>The settings.ini key: "<family>.<key>".</summary>
         public string IniKey => Family.ToString().ToLowerInvariant() + "." + Key;
+
+        public OptionScope Scope => SuperZsnesOptions.ScopeOf(IniKey);
     }
 
     internal static class SuperZsnesOptions
@@ -79,7 +87,7 @@ namespace LbIntegrations.SuperZsnes
             Bool(OptionFamily.Plugin, "support-popup", "Integration", "Show the \"support us on Patreon\" dialog",
                  "The emulator raises it on its own schedule. Off: it is put back to sleep the frame it appears.", "off"),
             Bool(OptionFamily.Plugin, "version-popup", "Integration", "Show the \"a new version is out\" dialog",
-                 "Off hides it; the pack's own update check still runs in LaunchBox.", "on"),
+                 "Off hides it; the pack's own update check still runs in LaunchBox.", "off"),
             Bool(OptionFamily.Plugin, "display", "Window", "Always full screen on the primary display",
                  "The display holding the desktop's origin, whatever number Unity gives it: the window is moved there over the first frames, then put in a borderless full screen window at its resolution. Beats -monitor and the remembered display. Needs the BepInEx plugin."),
             Bool(OptionFamily.Plugin, "persist", "Integration", "Write the overrides into the emulator's settings file",
@@ -159,6 +167,26 @@ namespace LbIntegrations.SuperZsnes
             Int(OptionFamily.Game, "widescreenCOL", "Widescreen (this game)", "Colour-math extension (tiles)", "0 to 7.", 0, 7),
             Int(OptionFamily.Game, "aspectOverride", "Widescreen (this game)", "Aspect override", "The emulator's own index.", 0, 8),
         };
+
+        /// <summary>Mehdi's choice of 01/10: these for every game, those per game, the others nowhere.</summary>
+        private static readonly HashSet<string> GlobalKeys = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase)
+        {
+            "plugin.bepinex", "plugin.quit-confirm", "plugin.menu-key", "plugin.portable", "plugin.support-popup",
+            "plugin.version-popup", "plugin.persist",
+        };
+
+        private static readonly HashSet<string> GameKeys = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase)
+        {
+            "plugin.display", "unity.screen-fullscreen", "unity.screen-width", "unity.screen-height", "unity.popupwindow", "unity.monitor",
+            "native.loadstate",
+            "setting.gfxMode", "setting.scanlineStrength", "setting.interpolationMode", "setting.noBilinearFiltering",
+            "setting.maxBrightness", "setting.use87aspect",
+            "setting.rewindDisabled", "setting.snesRumble", "setting.rightStickGameSpeed", "setting.swapAcceptCancel",
+            "setting.uiVolumeInv", "setting.gameVolumeInv", "setting.msu1VolumeInv",
+        };
+
+        public static OptionScope ScopeOf(string iniKey)
+            => GlobalKeys.Contains(iniKey) ? OptionScope.Global : GameKeys.Contains(iniKey) ? OptionScope.Game : OptionScope.Hidden;
 
         public static Option Find(string iniKey)
         {

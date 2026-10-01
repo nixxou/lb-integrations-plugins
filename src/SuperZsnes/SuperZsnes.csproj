@@ -34,6 +34,8 @@
   <ItemGroup>
     <!-- THE SHARED ROW INJECTION, compiled in rather than referenced - see src\Shared.Lbip. -->
     <Compile Include="..\Shared.Lbip\**\*.cs" />
+    <!-- And the menu helpers: the right-click entry's icon (LbipMenuIcon). -->
+    <Compile Include="..\Shared.Menu\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>

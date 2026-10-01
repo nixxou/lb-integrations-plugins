@@ -22,6 +22,13 @@ namespace LbIntegrations.Probe
     {
         private static int _fail;
 
+        private static bool Check(string what, bool good, string detail)
+        {
+            var ok = Check(what, good);
+            if (!ok && detail != null) Console.WriteLine("     got: " + detail);
+            return ok;
+        }
+
         private static bool Check(string what, bool good)
         {
             if (!good) _fail++;
@@ -96,6 +103,29 @@ namespace LbIntegrations.Probe
                 System.Windows.Forms.Application.DoEvents();
                 var scroll = page.Controls.OfType<System.Windows.Forms.Panel>().First(p => p.AutoScroll);
                 for (int y = 0, last = -1; shots.Count < 12; y += scroll.ClientSize.Height - 40)
+                {
+                    scroll.AutoScrollPosition = new System.Drawing.Point(0, y);
+                    System.Windows.Forms.Application.DoEvents();
+                    if (-scroll.AutoScrollPosition.Y == last) break;
+                    last = -scroll.AutoScrollPosition.Y;
+                    var bmp = new System.Drawing.Bitmap(form.Width, form.Height);
+                    form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, bmp.Width, bmp.Height));
+                    shots.Add(bmp);
+                }
+                form.Close();
+            }
+            // And a game's own options window, as its right-click opens it.
+            var formType = plugin.GetType().Assembly.GetType("LbIntegrations.SuperZsnes.SuperZsnesGameOptionsForm", true);
+            var games = new List<IGame> { StubGame.Create("probe-shot", "Star Fox", "C:\\starfox.sfc") };
+            using (var form = (System.Windows.Forms.Form)Activator.CreateInstance(formType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new object[] { games }, null))
+            {
+                form.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
+                form.Location = new System.Drawing.Point(-4000, -4000);
+                form.Show();
+                System.Windows.Forms.Application.DoEvents();
+                var page = form.Controls.OfType<System.Windows.Forms.UserControl>().First();
+                var scroll = page.Controls.OfType<System.Windows.Forms.Panel>().First(p => p.AutoScroll);
+                for (int y = 0, last = -1, n = 0; n < 6; y += scroll.ClientSize.Height - 40, n++)
                 {
                     scroll.AutoScrollPosition = new System.Drawing.Point(0, y);
                     System.Windows.Forms.Application.DoEvents();
@@ -335,7 +365,10 @@ namespace LbIntegrations.Probe
                             "plugin.display=true",
                             "nonsense.key=1",
                         });
-                        var list = (System.Collections.IEnumerable)settingsType.GetMethod("Flags", flags, null, Type.EmptyTypes, null).Invoke(null, null);
+                        // The renderer, on every option whatever its scope.
+                        var read = settingsType.GetMethod("Read", flags, null, Type.EmptyTypes, null);
+                        var list = (System.Collections.IEnumerable)settingsType.GetMethod("Flags", flags, null, new[] { typeof(IDictionary<string, string>) }, null)
+                                                                              .Invoke(null, new[] { read.Invoke(null, null) });
                         var texts = new List<string>(); var names = new List<string>();
                         foreach (var f in list) { texts.Add((string)f.GetType().GetField("Text").GetValue(f)); names.Add((string)f.GetType().GetField("Name").GetValue(f)); }
                         var line = string.Join(" ", texts);
@@ -359,10 +392,22 @@ namespace LbIntegrations.Probe
                               appended.StartsWith("-screen-fullscreen 0 --nixx-set:srmPath=mine") && !appended.Contains("-screen-fullscreen 1") && !appended.Contains("srmPath={exec}"));
                         Check("but the others are, after the user's line", appended.Contains("--nixx-game:overclock=150") && appended.Contains("--loadstate"));
 
-                        // Through the plugin, the way the host asks.
-                        var prepared = plugin.PrepareEmulatorForLaunch(new PrepareForLaunchArgs(mine, null, "-force-d3d11", null, null));
-                        Check("PrepareEmulatorForLaunch keeps the user's line and adds the options",
-                              prepared != null && prepared.NewCommandLine != null && prepared.NewCommandLine.StartsWith("-force-d3d11 ") && prepared.NewCommandLine.Contains("--nixx-set:srmPath={exec}/saves"));
+                        // Through the plugin, the way the host asks: settings.ini gives only the pack's own settings (01/10),
+                        // the game's file only the game's options; a key of another scope is not sent.
+                        var gamesDir = Path.Combine(Path.GetDirectoryName(ini), "games");
+                        Directory.CreateDirectory(gamesDir);
+                        File.WriteAllLines(Path.Combine(gamesDir, "g-szs.ini"), new[] { "setting.gfxMode=Scanlines", "unity.screen-width=1280", "game.overclock=150", "plugin.quit-confirm=true" });
+                        var launched = StubGame.Create("g-szs", "Star Fox", Path.Combine(root, "starfox.sfc"));
+                        var prepared = plugin.PrepareEmulatorForLaunch(new PrepareForLaunchArgs(mine, launched, "-force-d3d11", null, null));
+                        var nl = prepared?.NewCommandLine ?? "";
+                        Console.WriteLine("  launch     : " + nl);
+                        Check("PrepareEmulatorForLaunch keeps the user's line and adds the pack's own settings",
+                              nl.StartsWith("-force-d3d11 ") && nl.Contains("--nixx-quit-confirm=off") && nl.Contains("--nixx-menu-key=F3"));
+                        Check("  ...and the game's own options", nl.Contains("--nixx-set:gfxMode=Scanlines") && nl.Contains("-screen-width 1280"));
+                        Check("  ...but no option shown nowhere (srmPath, overclock), and nothing of the wrong scope (the game's quit-confirm)",
+                              !nl.Contains("srmPath") && !nl.Contains("overclock") && !nl.Contains("--nixx-quit-confirm=on") && !nl.Contains("-screen-fullscreen") && !nl.Contains("--loadstate"));
+                        var otherGame = plugin.PrepareEmulatorForLaunch(new PrepareForLaunchArgs(mine, StubGame.Create("g-other", "Other", Path.Combine(root, "other.sfc")), "", null, null));
+                        Check("another game: not this one's options", otherGame?.NewCommandLine == null || !otherGame.NewCommandLine.Contains("gfxMode"));
 
                         // The window's tab, built and saved the way Nixx-Menus does it - on an STA thread,
                         // since WinForms wants one and the probe's main thread is not.
@@ -389,13 +434,12 @@ namespace LbIntegrations.Probe
                         ui.Join(TimeSpan.FromSeconds(30));
                         Check("the tab builds without throwing", uiFailure == null && title == "SUPER ZSNES");
                         if (uiFailure != null) Console.WriteLine("     " + uiFailure.GetType().Name + ": " + uiFailure.Message);
-                        Check("its editors show the saved overrides", shown != null
-                              && shown.TryGetValue("setting.srmPath", out var s1) && s1 == "{exec}/saves"
-                              && shown.TryGetValue("game.overclock", out var s2) && s2 == "150"
-                              && shown.TryGetValue("unity.screen-fullscreen", out var s3) && s3 == "fullscreen"
+                        Check("its controls show the saved settings, the pack's own only", shown != null
                               && shown.TryGetValue("plugin.menu-key", out var s4) && s4 == "F3"
-                              && !shown.ContainsKey("nonsense.key"));
-                        Check("Save accepts the page and rewrites the file", saveAnswer == null && File.ReadAllText(ini).Contains("setting.srmPath={exec}/saves"));
+                              && shown.TryGetValue("plugin.quit-confirm", out var s5) && s5 == "false"
+                              && !shown.ContainsKey("setting.srmPath") && !shown.ContainsKey("unity.screen-fullscreen") && !shown.ContainsKey("nonsense.key"),
+                              shown == null ? "null" : string.Join(", ", shown.Select(kv => kv.Key + "=" + kv.Value)));
+                        Check("Save accepts the page and rewrites the file", saveAnswer == null && File.ReadAllText(ini).Contains("plugin.menu-key=F3"));
 
                         File.WriteAllText(ini, "# nothing ticked\r\n");
                         var untouched = plugin.PrepareEmulatorForLaunch(new PrepareForLaunchArgs(mine, null, "", null, null));

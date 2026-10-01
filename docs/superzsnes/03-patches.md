@@ -110,7 +110,7 @@ quitter, puis chercher `Scanlines` dans `portable\szsnes_ui.data` : il ne doit p
 ## P6 · `MainMenuManager.Update()` — postfix
 
 **Classe** : `PopupPatch`. **Options** : `--nixx-support-popup=on|off` (défaut off = cachée),
-`--nixx-version-popup=on|off` (défaut on), `--nixx-display=primary`.
+`--nixx-version-popup=on|off` (défaut off depuis le 01/10), `--nixx-display=primary`.
 
 **Fait**, chaque frame :
 - si `supportUs.activeSelf` et popup non voulue → `SetActive(false)` (la boîte « Just this once, we

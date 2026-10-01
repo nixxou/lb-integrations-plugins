@@ -510,7 +510,9 @@ namespace LbIntegrations.SuperZsnes
                 }
                 catch (Exception ex) { Log.Warn("bepinex at launch", ex); }
 
-                var flags = SuperZsnesSettings.Flags();
+                string gameId = null;
+                try { gameId = args?.GameBeingLaunched?.Id; } catch { }
+                var flags = SuperZsnesSettings.ForLaunch(gameId);
                 if (flags.Count == 0) return new PrepareForLaunchResponse(success: true);
                 var current = args?.CurrentCommandLine ?? "";
                 var rewritten = SuperZsnesSettings.Append(current, flags);

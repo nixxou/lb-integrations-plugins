@@ -1,5 +1,7 @@
-// The SUPER ZSNES tab of the pack's configuration window. Nixx-Menus owns the window (its Tools menu
-// entry "Nixx Integration Plugins Configuration..."), this plugin builds what is inside its own tab.
+// The SUPER ZSNES tab of the pack's configuration window - the pack's own settings, for every game - and the
+// same page for ONE GAME'S options (its right-click window, SuperZsnesGameMenu): which options it shows is
+// the catalogue's scope (SuperZsnesOptions.ScopeOf). Nixx-Menus owns the configuration window (its Tools
+// menu entry "Nixx Integration Plugins Configuration..."), this plugin builds what is inside its own tab.
 //
 // THE CONTRACT IS A NAME, as for Vita3K (src\Menus\Settings.cs has it): a public static class
 // LbIntegrations.<assembly name>.Settings with Title, Control CreatePage(), string Save(Control).
@@ -32,7 +34,11 @@ namespace LbIntegrations.SuperZsnes
     {
         public static string Title => "SUPER ZSNES";
 
-        public static Control CreatePage() => new SuperZsnesSettingsPage();
+        public static Control CreatePage()
+            => new SuperZsnesSettingsPage(o => o.Scope == OptionScope.Global, SuperZsnesSettings.Read(),
+                   "What the pack's plugin does inside SUPER ZSNES, for every game. A game's own options - window, display, "
+                   + "gameplay, audio - are in its right-click menu: Nixx-SuperZSNES : Options...",
+                   deploy: true, where: "Settings file: " + SuperZsnesSettings.SettingsPath);
 
         public static string Save(Control page)
         {
@@ -68,22 +74,18 @@ namespace LbIntegrations.SuperZsnes
         private readonly TextBox _line;
         private readonly Label _count;
 
-        public SuperZsnesSettingsPage()
+        /// <summary>The options <paramref name="show"/> picks, with <paramref name="saved"/>'s values; the in-process plugin's
+        /// box under them when <paramref name="deploy"/>; <paramref name="where"/> at the bottom.</summary>
+        public SuperZsnesSettingsPage(Func<Option, bool> show, Dictionary<string, string> saved, string intro, bool deploy, string where)
         {
-            var saved = SuperZsnesSettings.Read();
-
-            var top = new Label
-            {
-                Dock = DockStyle.Top, Height = 52, Padding = new Padding(12, 8, 12, 0), ForeColor = SystemColors.GrayText,
-                Text = "Integration: what the pack's plugin does inside the emulator. Every other option stays " + Own
-                     + " until it is set here; set, it goes on the emulator's command line at every launch. --nixx-* options need the pack's BepInEx plugin.",
-            };
+            saved = saved ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var top = new Label { Dock = DockStyle.Top, Height = 52, Padding = new Padding(12, 8, 12, 0), ForeColor = SystemColors.GrayText, Text = intro };
 
             var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(8) };
             var stack = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
             scroll.Controls.Add(stack);
 
-            foreach (var group in SuperZsnesOptions.All.GroupBy(o => o.Group))
+            foreach (var group in SuperZsnesOptions.All.Where(show).GroupBy(o => o.Group))
             {
                 // The table is PLACED, not docked: a docked child in a group box that sizes itself on its children
                 // is sized on the box - neither had a width, and each group came out a sliver (01/10).
@@ -117,7 +119,7 @@ namespace LbIntegrations.SuperZsnes
                 stack.Controls.Add(box);
             }
 
-            stack.Controls.Add(DeployBox());
+            if (deploy) stack.Controls.Add(DeployBox());
 
             var bottom = new Panel { Dock = DockStyle.Bottom, Height = 132, Padding = new Padding(12, 4, 12, 8) };
             var legend = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 22, WrapContents = false };
@@ -130,11 +132,11 @@ namespace LbIntegrations.SuperZsnes
             Item(NotPassed, "Not passed: " + Own + ", or the pack's default");
             _count = new Label { Dock = DockStyle.Top, Height = 20, ForeColor = SystemColors.GrayText };
             _line = new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Font = new Font("Consolas", 9f), BackColor = SystemColors.Window };
-            var where = new Label { Dock = DockStyle.Bottom, Height = 18, ForeColor = SystemColors.GrayText, Text = "Settings file: " + SuperZsnesSettings.SettingsPath };
+            var file = new Label { Dock = DockStyle.Bottom, Height = 18, ForeColor = SystemColors.GrayText, Text = where ?? "" };
             bottom.Controls.Add(_line);
             bottom.Controls.Add(_count);
             bottom.Controls.Add(legend);
-            bottom.Controls.Add(where);
+            bottom.Controls.Add(file);
 
             Controls.Add(scroll);
             Controls.Add(top);
