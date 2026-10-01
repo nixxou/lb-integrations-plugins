@@ -108,6 +108,9 @@ namespace LbIntegrations.SuperZsnes.Mod
             {
                 try
                 {
+                    // The data folders FIRST: written for good, they must be the user's values before the overrides
+                    // take their originals - see DataFolders.cs.
+                    DataFolders.Apply(__instance.mainMenuSettings);
                     if (Plugin.Opt.Settings.Count == 0 && !Plugin.Opt.DumpOptions) return;
                     var settings = __instance.mainMenuSettings;
                     if (settings == null) { Plugin.Logger.LogWarning("no MainMenuSettings after LoadMainMenuSave"); return; }

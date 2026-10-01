@@ -28,6 +28,9 @@ date plutôt que d'écraser.
 | jetons de chemin | `{persist}`, `{exec}` | xref CommonTools.ModifyPathWithCustomPath (0x104924A0), FileHelper.GetParsedPath |
 | SRAM | `<rom>.srm` à côté de la ROM (défaut) | texte du dialogue Files + MainMemoryMap.SaveSaveData |
 | états | `<rom>.data.szsnes\<rom>.szst0`, `.szst-last` | lancement 30/09 avec Star Fox, fichiers observés |
+| `{exec}` dans les chemins | `srmPath={exec}/saves` → `<exe>\saves\<rom>.srm` ; `gameSavePath={exec}/states` → `<exe>\states\<rom>.data.szsnes\<rom>.szst0` (F2) ; les trois dossiers créés par l'émulateur | lancements 01/10 09:57 et 09:59, `--nixx-set:` |
+| SRAM lue où elle est écrite | avec `srmPath` posé, la SRAM est LUE dans `saves\` : une `.srm` laissée à côté de la ROM n'est plus vue | idem |
+| dossiers du pack (`DataFolders.cs`) | posés dans le postfix de `LoadMainMenuSave`, déplacement **avant** « SRAM Data Loaded: 8192 » : la SRAM déplacée (même hash) est celle chargée ; `som.data.szsnes\` passé dans `states\` ; relancé avec `--nixx-data-folders=off`, les trois chemins sont toujours dans `szsnes_ui.data` | LogOutput 01/10 10:00, `options.json` 10:01 |
 | registre | `HKCU\Software\ZEMU Software Inc.\SUPERZSNES` : seulement Screenmanager*, unity.* | ProcMon 14:52 |
 
 ## Ligne de commande

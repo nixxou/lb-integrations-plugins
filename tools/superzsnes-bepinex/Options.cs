@@ -18,6 +18,8 @@
 //                                     (BepInEx is deployed silent; see NixxLog.cs)
 //   --nixx-persist                    write the overrides into the settings file instead of
 //                                     restoring the user's values around every save
+//   --nixx-data-folders=on|off        saves, states and cheats in <exe>\saves, \states, \cheats rather than
+//                                     beside the ROM, written for good (default on) - see DataFolders.cs
 //   --nixx-dump-options               write <portable>\options.json, the schema of every field
 //                                     the two --nixx-set/--nixx-game families can reach
 //
@@ -46,6 +48,7 @@ namespace LbIntegrations.SuperZsnes.Mod
         public bool VersionPopup = false;
         public bool Persist = false;
         public bool DumpOptions = false;
+        public bool DataFolders = true;
         /// <summary>"primary", or null for "leave the display alone".</summary>
         public string Display;
         /// <summary>--nixx-log: this plugin's lines also go to portable\nixx.log. See NixxLog.</summary>
@@ -82,6 +85,7 @@ namespace LbIntegrations.SuperZsnes.Mod
                         case "version-popup": o.VersionPopup = Flag(value, true); break;
                         case "persist":       o.Persist = Flag(value, true); break;
                         case "dump-options":  o.DumpOptions = Flag(value, true); break;
+                        case "data-folders":  o.DataFolders = Flag(value, true); break;
                         case "display":       o.Display = string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToLowerInvariant(); break;
                         case "log":           o.Log = Flag(value, true); break;
                         case "ra-probe":      o.RaProbe = Flag(value, true); break;

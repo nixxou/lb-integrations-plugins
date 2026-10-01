@@ -65,7 +65,7 @@ namespace LbIntegrations.SuperZsnes.Mod
                 foreach (var u in Opt.Unknown) Logger.LogWarning("unknown option ignored: " + u);
                 Logger.LogInfo("options: portable=" + Opt.Portable + " quit-confirm=" + Opt.QuitConfirm + " menu-key=" + Opt.MenuKey
                             + " support-popup=" + Opt.SupportPopup + " version-popup=" + Opt.VersionPopup + " persist=" + Opt.Persist
-                            + " display=" + (Opt.Display ?? "as is") + " log=" + Opt.Log + " set=" + Opt.Settings.Count + " game=" + Opt.GameSettings.Count);
+                            + " display=" + (Opt.Display ?? "as is") + " data-folders=" + Opt.DataFolders + " log=" + Opt.Log + " set=" + Opt.Settings.Count + " game=" + Opt.GameSettings.Count);
                 if (Opt.Display != null && Opt.Display != "primary") Logger.LogWarning("display \"" + Opt.Display + "\" is not understood; only \"primary\" is");
 
                 if (!Enum.TryParse(Opt.MenuKey, true, out MenuKey)) { Logger.LogWarning("menu-key \"" + Opt.MenuKey + "\" is not a KeyCode; F1 kept"); MenuKey = KeyCode.F1; }

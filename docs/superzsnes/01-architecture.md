@@ -71,6 +71,7 @@ BepInEx\plugins\SuperZsnes.BepInEx.dll                                notre plug
 BepInEx\nixx-docs\*.md                                                cette documentation
 BepInEx\LogOutput.log                                                 SEULEMENT si le journal BepInEx est réactivé
 portable\szsnes_ui.data                                               les réglages de l'émulateur, déplacés ici
+saves\<rom>.srm, states\<rom>.data.szsnes\, cheats\<rom>.cht         ce que l'émulateur écrit pour un jeu (DataFolders.cs, --nixx-data-folders)
 portable\options.json                                                 le schéma des options, sur --nixx-dump-options
 portable\nixx.log                                                     notre journal, sur --nixx-log
 portable\nixx-errors.log                                              nos erreurs, toujours (patch non posé…)
