@@ -579,6 +579,23 @@ namespace LbIntegrations.Xenia
                 var rewritten = XeniaSettings.Append(current, added.Concat(options));
                 // A game the plugin unpacked (it came in an archive): Xenia is handed it by --target. LaunchBox still appends the
                 // archive's path after the line - measured 01/10, Xenia takes --target and leaves the second path unmatched.
+                // A game that is only a launcher for another (Minecraft's disc): the game it starts, directly - XeniaRelaunch.
+                try
+                {
+                    var exePath = ResolveFullPath(args?.EmulatorBeingLaunched?.ApplicationPath);
+                    var romPath = ResolveFullPath(args?.GameBeingLaunched?.ApplicationPath);
+                    if (!string.IsNullOrEmpty(exePath) && !string.IsNullOrEmpty(romPath))
+                    {
+                        var redirect = XeniaRelaunch.Before(exePath, romPath);
+                        XeniaRelaunch.WatchAfter(exePath, romPath);
+                        if (redirect != null)
+                        {
+                            unpacked = redirect.Value.Target;
+                            if (redirect.Value.Module != null) rewritten = (rewritten + " \"--launch_module=" + redirect.Value.Module + "\"").Trim();
+                        }
+                    }
+                }
+                catch (Exception ex) { Log.Info("relaunch: " + ex.Message); }
                 if (unpacked != null) rewritten = (rewritten + " \"--target=" + unpacked + "\"").Trim();
                 if (rewritten != current.Trim())
                     return new PrepareForLaunchResponse(success: true) { NewCommandLine = rewritten };
