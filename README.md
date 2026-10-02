@@ -137,8 +137,11 @@ NixxIntegrations.exe --uninstall "G:\LB1326"
 
 ### The RAM disk, shared with LiteBox
 
-Optional, off by default, and **nothing in the pack needs it yet** - Vita3K will, for the temporary
-image a session is played on. It is here now because the installer is what can put it in place.
+Optional. melonDS (DSiWare NAND), Vita3K and Xenia play a session on it when it is there and fits, and on
+the disk otherwise. **Two drivers, Arsenal Image Mounter first**: the helper 1.6 mounts through AIM when
+it is installed and through ImDisk otherwise (`backend=` in the cfg; the NixxMenu's RAM disk tab can force
+one). The installer installs either: ImDisk 2.1.2 as its own driver package does (the driver alone), or
+the AIM Toolkit whole, as its own setup does.
 
 LiteBox already ships this machinery, and this pack deliberately builds none of its own: the same
 helper goes into the same folder, and the same scheduled task drives it. Two elevated tasks doing one
@@ -148,8 +151,8 @@ Three pieces, each missing for a different reason and each repaired differently:
 
 | | what | how it gets there |
 |---|---|---|
-| **ImDisk** | the driver that makes a RAM drive | a free download, installed by the user - never bundled |
-| **the helper** | a 150 KB exe that runs `imdisk` for us | written by this installer, or by LiteBox, into `<LaunchBox>\ThirdParty\RomExtractor\ramdisk\` |
+| **AIM or ImDisk** | the driver that makes a RAM drive | from the installer's two driver panels (`vendor\aim`, `vendor\imdisk`, as shipped) or the user's own install |
+| **the helper** | a 150 KB exe that runs `aim_ll` or `imdisk` for us | written by this installer, or by LiteBox, into `<LaunchBox>\ThirdParty\RomExtractor\ramdisk\` |
 | **the task** | `LiteBox_RomExtractor_RamDisk_<hash>`, registered at HIGHEST | one UAC prompt from the installer, then never again |
 
 The installer's window shows all four states separately (the fourth is whether a .NET runtime the
@@ -170,6 +173,27 @@ byte-identical in both repositories.
 |---|---|
 | 1.0 | `action`, `drive`, `size`, `label` - and `label` is read by the helper and then **ignored**, which is worth knowing before somebody spends an evening on it |
 | 1.1 | plus `image`, `type` (`vm` \| `file` \| `awe`), `sparse`, `format` |
+| 1.2 | `action=clean` (frees memory), `id` echoed in the result |
+| 1.3 | `action=vhdx-create`, `vhdx-child`, `vhdx-attach`, `vhdx-detach` (diskpart) |
+| 1.4 | `action=dismount`: flushed, locked, dismounted, then removed - no device left behind |
+| 1.5 | `removable=1` - indexers leave a removable drive alone (measured 30/09) |
+| 1.6 | `backend=auto\|aim\|imdisk` (absent = imdisk, so a 1.0 caller gets what it always got), `mount=<folder>`, `compress=1` and `dynamic=1` (AIM's RamDyn, memory allocated as used - kept in the helper, not used by the plugins: compression needs about twice the volume it holds, measured, and a volume sized to the content filled up and crashed Vita3K), `type=awe` without an image, `action=image-attach` / `image-detach` (ISO, raw, VHD, VHDX and differencing chains, VMDK..., with an optional write overlay deleted at the detach), `action=list` |
+
+**AIM, measured 02/10.** A RAM disk mounts in 1.4 s against ImDisk's 5 to 88 (imdisk.exe broadcasts to every
+window), unmounts cleanly in 0.4 s (locked and dismounted every time: a PnP disk, which indexers let go of),
+in a letter or a folder, removable, in virtual or physical memory. Its disks are real disks: the
+mount manager gives a volume a letter of its own, which the helper takes off again. `aim_ll` answers only
+elevated; `aim_ll -l -m X:` does not answer for a letter (the full list is read). Images go through `aim_cli`
+(DiscUtils), which needs the DevIO driver - a manual service the helper starts - returns the PID of the
+process serving the image as its exit code, and refuses to write into an image without `--ignorerisks`
+(given except on Windows 11 builds 22000-22620, where it warns of a write-cache deadlock). Without AIM, ISO goes
+through the virtual disk API (diskpart cannot select one), VHD/VHDX through diskpart, raw images through
+ImDisk. ImDisk in a folder is a junction to `\Device\ImDiskN`, not a volume mount point.
+
+The options for every plugin are in `%LOCALAPPDATA%\lb-integrations-plugins\ramdisk.ini` (driver, removable,
+memory, and how a VHDX is attached; the plugins always mount on a drive letter - `mount=<folder>` stays in the helper), edited in the NixxMenu's
+"RamDisk & VHDX" tab, and resolved at each mount against what is installed then. Anything past `backend` and
+`removable` needs the helper 1.6: an older one gets no mount rather than a different one.
 
 A caller checks the version **before** sending a 1.1 key, and refuses rather than degrades: a 1.0
 helper does not fail on a key it has never heard of, it mounts a blank 1024 MB disk instead - a wrong
@@ -195,7 +219,14 @@ install's helper. Otherwise it would helpfully register a second task beside the
 
 ```
 dotnet run --project src\Probe -c Release -- --ramdisk --lb "G:\LB1326"
+dotnet run --project src\Probe -c Release -- --ramdisk-backends --lb "G:\LB1326" --images <folder>
 ```
+
+The second goes through every driver installed and every option - removable,
+virtual memory and AWE - then attaches an ISO, a raw image, a VHDX in a folder, a differencing
+VHDX and a VHDX under a write overlay from `<folder>` (test.iso, raw.img, base.vhdx, child.vhdx), checking
+each read, write and detach and that no device is left behind. `LBIP_RAMDISK_BACKEND=aim|imdisk` forces
+the driver for either.
 
 That prints the four states and then, if they are all there, mounts 64 MB, writes a file, reads it
 back, unmounts and checks the drive is gone. It is the only test that proves the whole chain - task,

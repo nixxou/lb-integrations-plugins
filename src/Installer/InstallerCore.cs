@@ -28,6 +28,10 @@ internal sealed record Layout(string Root, string Core, int LbMajor,
                               string PluginsRoot, string LocalRoot, string LegacyRoot,
                               string LiteBoxIni);
 
+/// <summary>A plugin folder against this exe's copy: not there, the same bytes, other bytes, or only
+/// in the plugin root this LaunchBox version no longer uses.</summary>
+internal enum PluginStatus { Missing, UpToDate, Outdated, Elsewhere }
+
 internal static class InstallerCore
 {
     // ── Finding a LaunchBox ──────────────────────────────────────────────────
@@ -111,6 +115,49 @@ internal static class InstallerCore
             foreach (var folder in Payload.Folders)
                 if (Payload.IsOurs(Path.Combine(root, folder))) return true;
         return false;
+    }
+
+    /// <summary>One plugin folder, against what this exe carries for it - asked by hash, file by file,
+    /// the same test the install itself verifies its writes with.</summary>
+    public static PluginStatus StatusOf(Layout l, string folder)
+    {
+        bool menus = folder == Payload.Menus;
+        var root = menus ? l.LegacyRoot : l.PluginsRoot;
+        var files = menus ? Payload.LegacyFiles : Payload.Files.Where(f => f.Folder == folder).ToArray();
+        var dir = Path.Combine(root, folder);
+        if (!Payload.IsOurs(dir))
+        {
+            // Installed under the other root (before a LaunchBox upgrade): an install moves it.
+            if (!menus && Roots(l).Any(r => !string.Equals(r, root, StringComparison.OrdinalIgnoreCase) && Payload.IsOurs(Path.Combine(r, folder))))
+                return PluginStatus.Elsewhere;
+            return PluginStatus.Missing;
+        }
+        foreach (var f in files)
+        {
+            var path = Path.Combine(dir, f.Relative);
+            try
+            {
+                if (!File.Exists(path)) return PluginStatus.Outdated;
+                using var s = File.OpenRead(path);
+                if (Hash(s) != ResourceHash(f.Resource)) return PluginStatus.Outdated;
+            }
+            catch { return PluginStatus.Outdated; }
+        }
+        return PluginStatus.UpToDate;
+    }
+
+    private static readonly Dictionary<string, string> _resourceHashes = new();
+
+    private static string ResourceHash(string logicalName)
+    {
+        lock (_resourceHashes)
+        {
+            if (_resourceHashes.TryGetValue(logicalName, out var h)) return h;
+            using var s = typeof(InstallerCore).Assembly.GetManifestResourceStream(logicalName);
+            h = s == null ? "" : Hash(s);
+            _resourceHashes[logicalName] = h;
+            return h;
+        }
     }
 
     private static IEnumerable<string> Roots(Layout l)

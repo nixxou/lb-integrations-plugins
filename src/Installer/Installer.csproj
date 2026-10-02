@@ -134,6 +134,25 @@
     </EmbeddedResource>
   </ItemGroup>
 
+  <!-- THE IMDISK DRIVER, as LTR Data's own package installs it - see vendor\imdisk\SOURCE.md and
+       ImDiskSetup.cs. In the repository rather than staged: it is not built, it is taken as shipped.
+       The resource names keep the INF's source layout, which is what the INF looks for. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\vendor\imdisk\imdisk.inf"><LogicalName>payload/imdisk/imdisk.inf</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="..\..\vendor\imdisk\uninstall_imdisk.cmd"><LogicalName>payload/imdisk/uninstall_imdisk.cmd</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="..\..\vendor\imdisk\sys\amd64\imdisk.sys"><LogicalName>payload/imdisk/sys/amd64/imdisk.sys</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="..\..\vendor\imdisk\cli\amd64\imdisk.exe"><LogicalName>payload/imdisk/cli/amd64/imdisk.exe</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="..\..\vendor\imdisk\cli\i386\imdisk.exe"><LogicalName>payload/imdisk/cli/i386/imdisk.exe</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="..\..\vendor\imdisk\cpl\amd64\imdisk.cpl"><LogicalName>payload/imdisk/cpl/amd64/imdisk.cpl</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="..\..\vendor\imdisk\cpl\i386\imdisk.cpl"><LogicalName>payload/imdisk/cpl/i386/imdisk.cpl</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="..\..\vendor\imdisk\svc\amd64\imdsksvc.exe"><LogicalName>payload/imdisk/svc/amd64/imdsksvc.exe</LogicalName></EmbeddedResource>
+  </ItemGroup>
+
+  <!-- THE AIM TOOLKIT, offered beside ImDisk: its files.cab as shipped - vendor\aim\SOURCE.md and AimSetup.cs. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\vendor\aim\files.cab"><LogicalName>payload/aim/files.cab</LogicalName></EmbeddedResource>
+  </ItemGroup>
+
   <!-- FAIL LOUDLY RATHER THAN SHIP AN EMPTY INSTALLER. An exe with no payload builds perfectly
        well and then tells the user "Embedded payload missing" the first time they press a button,
        which is a defect discovered by the wrong person. -->

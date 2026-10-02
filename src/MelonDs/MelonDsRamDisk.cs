@@ -213,7 +213,7 @@ namespace LbIntegrations.MelonDs
         /// <summary>What IsReady found missing, in words.</summary>
         internal static string NotReadyReason()
         {
-            if (!RamDrive.IsDriverInstalled()) return "ImDisk is not installed";
+            if (!RamDrive.IsDriverInstalled()) return "no RAM disk driver is installed (Arsenal Image Mounter or ImDisk)";
             if (!RamDrive.RuntimeReady(out var runtime)) return "the RAM disk helper cannot run (" + runtime + ")";
             if (!RamDrive.IsHelperInstalled()) return "the RAM disk helper is not installed";
             if (RamDrive.InstalledTaskName() == null) return "the RAM disk task is not set up";

@@ -224,6 +224,14 @@ namespace LbIntegrations.RamDisk
         /// <summary>Attach a VHDX and give it a free letter. Returns its root ("X:\") or null.</summary>
         public static string AttachVhdx(string path, bool readOnly, out string error)
         {
+            // vhdx=aim (and AIM there, and the helper 1.6): through AIM - removable when the options say so. Else
+            // Windows' own, as before. Decided now, from what is installed now.
+            if (ActiveVhdx() == "aim")
+            {
+                var viaAim = AttachImage(path, readOnly, out error, backend: "aim");
+                if (viaAim != null) return viaAim;
+                RamDiskLog.Warn("the VHDX did not attach through AIM (" + error + ") - Windows' own instead");
+            }
             char letter = FreeDriveLetter();
             if (letter == '\0') { error = "no free drive letter"; return null; }
             var extra = new Dictionary<string, string>();
@@ -237,7 +245,26 @@ namespace LbIntegrations.RamDisk
         }
 
         /// <summary>Detach a VHDX.</summary>
-        public static bool DetachVhdx(string path, out string error) => Vhdx("vhdx-detach", path, out error, null);
+        public static bool DetachVhdx(string path, out string error)
+        {
+            // Attached through AIM - by this process or one before it - the helper knows where, from the file alone.
+            var v = HelperVersion;
+            if (v != null && v >= BackendProtocol && InstalledTaskName() != null)
+            {
+                var said = RunAndWait("image-detach", 'Z', path, new Dictionary<string, string>());
+                if (said != null && said.StartsWith("OK image-detach", StringComparison.Ordinal)) { error = null; return true; }
+            }
+            return Vhdx("vhdx-detach", path, out error, null);
+        }
+
+        /// <summary>How a VHDX is attached now: "aim" or "windows", from the options and what is installed.</summary>
+        public static string ActiveVhdx()
+        {
+            var v = HelperVersion;
+            bool modern = v != null && v >= BackendProtocol && InstalledTaskName() != null;
+            var e = RamDiskOptions.Load().Effective(modern && IsAimInstalled(), IsImDiskInstalled(), out _);
+            return e.Vhdx == "aim" && modern ? "aim" : "windows";
+        }
 
         /// <summary>One vhdx-* run, waited for - every one of them is followed by something that
         /// needs its result. Asked twice at most, for the run somebody else had going.</summary>
@@ -337,12 +364,69 @@ namespace LbIntegrations.RamDisk
 
         // ── what is available ────────────────────────────────────────────────
 
-        /// <summary>True when the ImDisk CLI is present, which is how LiteBox decides the driver is
-        /// installed. The user installs it themselves - neither side ships it.</summary>
-        public static bool IsDriverInstalled()
+        /// <summary>Is there a RAM disk driver - Arsenal Image Mounter or ImDisk? (LiteBox asks for ImDisk
+        /// alone, by its CLI; this pack takes either, ImDisk first - see RamDiskOptions.)</summary>
+        public static bool IsDriverInstalled() => IsImDiskInstalled() || IsAimInstalled();
+
+        /// <summary>True when the ImDisk CLI is present, which is how LiteBox decides the driver is installed.</summary>
+        public static bool IsImDiskInstalled()
         {
             try { return File.Exists(ImDiskExe); } catch { return false; }
         }
+
+        /// <summary>Arsenal Image Mounter: its driver (service phdskmnt) and the AIM Toolkit's aim_ll.exe.</summary>
+        public static bool IsAimInstalled()
+        {
+            try
+            {
+                using (var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\phdskmnt"))
+                    if (k == null) return false;
+                return AimLowLevel != null;
+            }
+            catch { return false; }
+        }
+
+        /// <summary>The AIM Toolkit's folder - from its uninstall entry, else Program Files\AIM Toolkit - when it
+        /// holds aim_ll.exe; null otherwise.</summary>
+        public static string AimFolder
+        {
+            get
+            {
+                var dirs = new List<string>();
+                try
+                {
+                    using (var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\AIM-tk"))
+                        foreach (var name in new[] { "InstallLocation", "DisplayIcon", "UninstallString" })
+                        {
+                            var v = ((k?.GetValue(name) as string) ?? "").Trim();
+                            if (v.StartsWith("\"")) { int end = v.IndexOf('"', 1); v = end > 0 ? v.Substring(1, end - 1) : v.Trim('"'); }
+                            int exe = v.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
+                            if (exe > 0) v = Path.GetDirectoryName(v.Substring(0, exe + 4));
+                            if (!string.IsNullOrEmpty(v)) dirs.Add(v);
+                        }
+                }
+                catch { }
+                dirs.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "AIM Toolkit"));
+                foreach (var d in dirs) { try { if (File.Exists(Path.Combine(d, "aim_ll.exe"))) return d; } catch { } }
+                return null;
+            }
+        }
+
+        public static string AimLowLevel { get { var d = AimFolder; return d == null ? null : Path.Combine(d, "aim_ll.exe"); } }
+
+        /// <summary>Which driver a mount goes through now: "aim", "imdisk" or null - for messages.</summary>
+        public static string ActiveBackend()
+        {
+            var v = HelperVersion;
+            bool modern = v != null && v >= BackendProtocol;
+            if (!modern) return IsImDiskInstalled() ? "imdisk" : null;
+            return RamDiskOptions.Load().Effective(IsAimInstalled(), IsImDiskInstalled(), out _).Backend;
+        }
+
+        /// <summary>The helper version that knows backend=, mount=, compress=, type=awe without an image and the
+        /// image-* actions - Arsenal Image Mounter beside ImDisk. AN OLDER ONE IGNORES THE KEYS and
+        /// reads the image actions as a mount.</summary>
+        public static readonly Version BackendProtocol = new Version(1, 6, 0, 0);
 
         /// <summary>True when the helper is sitting where it belongs.</summary>
         public static bool IsHelperInstalled()
@@ -560,24 +644,46 @@ namespace LbIntegrations.RamDisk
         // ── mount / unmount ──────────────────────────────────────────────────
 
         /// <summary>Mount an NTFS RAM drive and remember it under <paramref name="key"/>, so a later
-        /// cleanup can unmount it without being told where it went. Returns the drive root ("R:\")
-        /// or null.</summary>
+        /// cleanup can unmount it without being told where it went. Returns the root - "R:\", or a folder
+        /// when the options say so - or null.</summary>
         public static string MountFor(string key, int sizeMb, CancellationToken ct = default(CancellationToken))
         {
-            var root = Mount(sizeMb, ct);
+            var root = Mount(sizeMb, ct, key);
             if (!string.IsNullOrEmpty(root) && !string.IsNullOrEmpty(key)) _active[key] = root;
             return root;
         }
 
-        /// <summary>Mount an NTFS RAM drive of <paramref name="sizeMb"/> MB. Uses the elevated task
-        /// when one is registered, else a direct imdisk call - which only works if we are already
-        /// elevated. Returns the drive root ("R:\") or null on any failure.</summary>
-        public static string Mount(int sizeMb, CancellationToken ct = default(CancellationToken))
+        /// <summary>Mount an NTFS RAM drive of <paramref name="sizeMb"/> MB, the way RamDiskOptions says:
+        /// through Arsenal Image Mounter or ImDisk, on a letter or in a folder, removable, in
+        /// virtual or physical memory. Uses the elevated task when one is registered, else a direct call -
+        /// which only works if we are already elevated. Returns the root or null on any failure.</summary>
+        public static string Mount(int sizeMb, CancellationToken ct = default(CancellationToken), string key = null)
         {
             try
             {
                 if (sizeMb <= 0) return null;
-                if (!IsDriverInstalled()) { RamDiskLog.Info("no ImDisk driver - not mounting"); return null; }
+                if (!IsDriverInstalled()) { RamDiskLog.Info("no RAM disk driver (neither AIM nor ImDisk) - not mounting"); return null; }
+                var v = HelperVersion;
+                bool modern = v != null && v >= BackendProtocol;
+                // What is installed NOW decides, not what was installed when the options were saved.
+                var o = RamDiskOptions.Load().Effective(modern && IsAimInstalled(), IsImDiskInstalled(), out var notes);
+                if (notes.Length > 0) RamDiskLog.Warn("RAM disk options: " + notes);
+                if (o.Backend == null) { RamDiskLog.Info("no usable RAM disk driver - not mounting"); return null; }
+
+                // REFUSED RATHER THAN DONE OTHERWISE: a helper older than 1.6 reads none of these keys and
+                // would mount a fixed letter in virtual memory through ImDisk - not what was asked.
+                if (!modern && o.NeedsProtocol16)
+                {
+                    RamDiskLog.Warn("the RAM disk options ask for " + "AWE "
+                                    + "and the helper is " + (v?.ToString() ?? "absent") + " - " + BackendProtocol + " is needed. Run the installer again.");
+                    return null;
+                }
+                if (!modern && !IsImDiskInstalled())
+                {
+                    RamDiskLog.Warn("only Arsenal Image Mounter is installed, and the helper " + (v?.ToString() ?? "(absent)") + " only knows ImDisk - "
+                                    + BackendProtocol + " is needed. Run the installer again.");
+                    return null;
+                }
 
                 int free = GetFreeRamMb();
                 if (free > 0 && sizeMb >= free)
@@ -586,9 +692,20 @@ namespace LbIntegrations.RamDisk
                     return null;
                 }
 
+                // Always a drive letter (Mehdi, 02/10: a folder mount was of anecdotal use - the helper keeps mount=).
+                string folder = null;
                 char letter = FreeDriveLetter();
                 if (letter == '\0') { RamDiskLog.Info("no free drive letter"); return null; }
                 string root = letter + ":\\";
+
+                var extra = new Dictionary<string, string>();
+                if (modern) extra["backend"] = o.Backend;
+                // memory=auto: AWE through AIM, virtual memory through ImDisk - decided by the driver that will be used.
+                bool viaAim = o.Backend == "aim";
+                bool awe = o.AweFor(viaAim);
+                string type = awe ? "awe" : null;
+                string what = sizeMb + " MB, " + (awe ? "physical memory" : "virtual memory")
+                              + (o.Removable ? ", removable" : "") + ", backend " + o.Backend;
 
                 var task = InstalledTaskName();
                 if (task != null)
@@ -602,16 +719,16 @@ namespace LbIntegrations.RamDisk
                     string said = null;
                     for (int attempt = 1; attempt <= 2; attempt++)
                     {
-                        if (!StartRun(task, "mount", letter, sizeMb, ct)) return null;
+                        if (!StartRun(task, "mount", letter, sizeMb, ct, type: type, extra: extra, removable: o.Removable)) return null;
 
                         // The drive, not the helper - measured at a third of a second, against
                         // seconds or minutes for the helper to finish afterwards. See the header for
                         // why the waiting happens before the NEXT run instead.
                         bool foreign = false;
-                        WaitFor(() => Directory.Exists(root) || (foreign = ForeignAnswer()), MountSeconds, ct);
-                        if (Directory.Exists(root))
+                        WaitFor(() => IsMountedAt(root) || (foreign = ForeignAnswer()), MountSeconds, ct);
+                        if (IsMountedAt(root))
                         {
-                            RamDiskLog.Info("mounted " + root + " (" + sizeMb + " MB) through the elevated task"
+                            RamDiskLog.Info("mounted " + root + " (" + what + ") through the elevated task"
                                             + (attempt > 1 ? ", second asking" : ""));
                             return root;
                         }
@@ -643,50 +760,80 @@ namespace LbIntegrations.RamDisk
                     return null;
                 }
 
-                int exit = RunQuiet(ImDiskExe, new[] { "-a", "-s", sizeMb + "M", "-m", letter + ":", "-p", "/fs:ntfs /q /y" });
-                if (exit == 0 && Directory.Exists(root))
+                // Elevated already and no task: the driver directly - the same arguments the helper uses.
+                bool aim = o.Backend == "aim" || (o.Backend == "auto" && IsAimInstalled());
+                var exe = aim ? AimLowLevel : ImDiskExe;
+                if (exe == null || !File.Exists(exe)) { RamDiskLog.Warn("the chosen driver's tool is not there"); return null; }
+                var args = new List<string> { "-a", "-t", awe ? "file" : "vm", "-s", sizeMb + "M" };
+                var opts = new List<string>();
+                if (awe) opts.Add("awe");
+                if (o.Removable) opts.Add("rem");
+                if (opts.Count > 0) { args.Add("-o"); args.Add(string.Join(",", opts)); }
+                args.Add("-m"); args.Add(folder != null ? folder.TrimEnd('\\') : letter + ":");
+                args.Add("-p"); args.Add("/fs:ntfs /q /y");
+                int exit = RunQuiet(exe, args.ToArray());
+                if (exit == 0 && WaitFor(() => IsMountedAt(root), 10, ct))
                 {
-                    RamDiskLog.Info("mounted " + root + " (" + sizeMb + " MB) directly");
+                    RamDiskLog.Info("mounted " + root + " (" + what + ") directly");
                     return root;
                 }
-                RamDiskLog.Warn("imdisk exited with " + exit + " and " + root + " is not there");
+                RamDiskLog.Warn(Path.GetFileName(exe) + " exited with " + exit + " and " + root + " is not there");
                 return null;
             }
             catch (Exception ex) { RamDiskLog.Warn("mount threw", ex); return null; }
         }
 
-        /// <summary>Unmount a drive by its root ("R:\"). True when it is gone afterwards.</summary>
+        /// <summary>Unmount a RAM disk by its root ("R:\" or a folder). True when it is gone afterwards.</summary>
         public static bool Unmount(string driveRoot, CancellationToken ct = default(CancellationToken))
         {
             try
             {
                 if (string.IsNullOrEmpty(driveRoot)) return false;
-                char letter = driveRoot[0];
+                bool isLetter = driveRoot.Length <= 3 && driveRoot.Length >= 2 && driveRoot[1] == ':';
+                char letter = isLetter ? driveRoot[0] : 'Z';
+                Func<bool> gone = () => !IsMountedAt(driveRoot);
+                if (gone()) { TidyFolder(driveRoot); return true; }
 
-                // CLEANLY FIRST, when the helper can (1.4): locked, dismounted, removed - nothing left
-                // behind. The unelevated removal below leaves the device "removed" until Windows restarts
-                // (measured 28/09, one per session), so it is what a helper too old, busy or absent gets.
-                if (CanDismountCleanly && IsImDiskDrive(driveRoot) && Dismount(driveRoot, ct)) return true;
+                // CLEANLY FIRST, when the helper can (1.4, and 1.6 for AIM or a folder): locked, dismounted,
+                // removed - nothing left behind. The unelevated removal below leaves an ImDisk device "removed"
+                // until Windows restarts (measured 28/09, one per session), so it is what a helper too old, busy
+                // or absent gets.
+                if (CanDismountCleanly && IsRamDisk(driveRoot) && Dismount(driveRoot, ct)) { TidyFolder(driveRoot); return true; }
 
-                if (DropDirect(driveRoot)) return true;
+                if (isLetter && DropDirect(driveRoot)) return true;
 
                 var task = InstalledTaskName();
                 if (task != null)
                 {
-                    if (!StartRun(task, "umount", letter, 0, ct)) return false;
+                    if (!isLetter && (HelperVersion == null || HelperVersion < BackendProtocol)) return false;
+                    var extra = isLetter ? null : new Dictionary<string, string> { { "mount", driveRoot.TrimEnd('\\') } };
+                    if (!StartRun(task, "umount", letter, 0, ct, extra: extra)) return false;
 
-                    bool gone = WaitFor(() => !Directory.Exists(driveRoot), UnmountSeconds, ct);
-                    RamDiskLog.Info("unmounted " + driveRoot + " through the task (gone=" + gone + ")");
-                    if (!gone)
+                    bool ok = WaitFor(gone, UnmountSeconds, ct);
+                    RamDiskLog.Info("unmounted " + driveRoot + " through the task (gone=" + ok + ")");
+                    if (!ok)
                         RamDiskLog.Warn(driveRoot + " is still there after " + UnmountSeconds
                                         + "s - the helper will say why in ramdisk.result when it ends");
-                    return gone;
+                    else TidyFolder(driveRoot);
+                    return ok;
                 }
 
+                if (!isLetter || !File.Exists(ImDiskExe)) return false;
                 int exit = RunQuiet(ImDiskExe, new[] { "-D", "-m", letter + ":" });
-                return exit == 0 && !Directory.Exists(driveRoot);
+                return exit == 0 && gone();
             }
             catch (Exception ex) { RamDiskLog.Warn("unmount threw", ex); return false; }
+        }
+
+        /// <summary>A folder mount point left empty is taken away with its drive.</summary>
+        private static void TidyFolder(string root)
+        {
+            try
+            {
+                if (root.Length <= 3) return;
+                if (Directory.Exists(root) && !IsMountedAt(root) && !Directory.EnumerateFileSystemEntries(root).Any()) Directory.Delete(root);
+            }
+            catch { }
         }
 
         /// <summary>Ask the helper for action=dismount, waiting only so long for it to be free. True when
@@ -697,10 +844,13 @@ namespace LbIntegrations.RamDisk
             {
                 var task = InstalledTaskName();
                 if (task == null) return false;
-                if (!StartRun(task, "dismount", driveRoot[0], 0, ct, previousSeconds: DismountWaitSeconds)) return false;
+                bool isLetter = driveRoot.Length <= 3 && driveRoot[1] == ':';
+                if (!isLetter && (HelperVersion == null || HelperVersion < BackendProtocol)) return false;
+                var extra = isLetter ? null : new Dictionary<string, string> { { "mount", driveRoot.TrimEnd('\\') } };
+                if (!StartRun(task, "dismount", isLetter ? driveRoot[0] : 'Z', 0, ct, extra: extra, previousSeconds: DismountWaitSeconds)) return false;
                 var said = WaitForResult(ct, DismountWaitSeconds);
                 _runInFlight = said == null;
-                bool gone = WaitFor(() => !Directory.Exists(driveRoot), 5, ct);
+                bool gone = WaitFor(() => !IsMountedAt(driveRoot), 5, ct);
                 if (said == null || !IsOurs(said))
                 {
                     RamDiskLog.Info("the helper did not answer this dismount (" + (said ?? "nothing") + ") - "
@@ -818,16 +968,230 @@ namespace LbIntegrations.RamDisk
             }
         }
 
-        /// <summary>Is this drive root an ImDisk drive? What a caller checks before unmounting a
-        /// letter it only knows from a file, since after a reboot that letter may be anything.</summary>
-        public static bool IsImDiskDrive(string driveRoot)
+        /// <summary>Is this root one of our RAM disks' kind - an ImDisk drive or an Arsenal Image Mounter disk,
+        /// on a letter or in a folder? What a caller checks before unmounting a root it only knows from a file,
+        /// since after a reboot that letter may be anything. (Kept under its old name: every caller asks it.)</summary>
+        public static bool IsImDiskDrive(string driveRoot) => IsRamDisk(driveRoot);
+
+        public static bool IsRamDisk(string root)
         {
             try
             {
-                if (string.IsNullOrEmpty(driveRoot) || driveRoot.Length < 2 || driveRoot[1] != ':') return false;
-                return ImDiskNumber(DosTarget(char.ToUpperInvariant(driveRoot[0]) + ":"), out _);
+                if (string.IsNullOrEmpty(root) || root.Length < 2) return false;
+                var device = DeviceOf(root);
+                if (device == null) return false;
+                if (ImDiskNumber(device, out _)) return true;
+                return IsAimVolume(root);
             }
             catch { return false; }
+        }
+
+        /// <summary>Is something mounted at this root? A letter: it exists. A folder: it is a volume mount
+        /// point of its own - the folder itself exists before and after.</summary>
+        public static bool IsMountedAt(string root)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(root)) return false;
+                if (root.Length <= 3 && root.Length >= 2 && root[1] == ':') return Directory.Exists(root.Substring(0, 2) + "\\");
+                if (JunctionDevice(root) != null) return true;          // ImDisk in a folder: a junction to its device
+                var here = VolumeOf(root);
+                return here != null && !string.Equals(here, VolumeOf(Path.GetPathRoot(root)), StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return false; }
+        }
+
+        /// <summary>The root of the volume holding a path: "R:\" or the folder a RAM disk is mounted in -
+        /// what Path.GetPathRoot gives only for a letter.</summary>
+        public static string MountRootOf(string path)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(path)) return null;
+                // An ImDisk folder mount is a junction, which GetVolumePathName walks THROUGH (to
+                // \\?\GLOBALROOT\Device\ImDisk3\): the nearest folder that is one is the root.
+                for (var dir = Path.GetFullPath(path).TrimEnd('\\'); !string.IsNullOrEmpty(dir) && dir.Length > 3; dir = Path.GetDirectoryName(dir))
+                    if (JunctionDevice(dir) != null) return dir + "\\";
+                var buffer = new StringBuilder(1024);
+                return GetVolumePathName(Path.GetFullPath(path), buffer, (uint)buffer.Capacity) ? buffer.ToString() : Path.GetPathRoot(path);
+            }
+            catch { return Path.GetPathRoot(path ?? ""); }
+        }
+
+        private static string VolumeOf(string root)
+        {
+            var name = new StringBuilder(64);
+            return GetVolumeNameForVolumeMountPoint(root.TrimEnd('\\') + "\\", name, (uint)name.Capacity) ? name.ToString() : null;
+        }
+
+        /// <summary>The device behind a root: \Device\ImDisk3, \Device\HarddiskVolume12...</summary>
+        private static string DeviceOf(string root)
+        {
+            if (root.Length <= 3 && root[1] == ':') return DosTarget(char.ToUpperInvariant(root[0]) + ":");
+            var junction = JunctionDevice(root);
+            if (junction != null) return junction;
+            var volume = VolumeOf(root);
+            return volume == null ? null : DosTarget(volume.Substring(4).TrimEnd('\\'));
+        }
+
+        /// <summary>IMDISK IN A FOLDER IS NOT A VOLUME MOUNT POINT - measured 02/10: ImDisk is not known to the
+        /// mount manager, so "imdisk -m C:\x" makes a mount-point reparse point (a junction) to \Device\ImDisk3\.
+        /// Read from the reparse data itself - .NET's LinkTarget answers null for it. Its device, or null.</summary>
+        private static string JunctionDevice(string folder)
+        {
+            IntPtr h = CreateFileW(folder.TrimEnd('\\'), 0x80 /* FILE_READ_ATTRIBUTES */, 7, IntPtr.Zero, 3,
+                                  0x02000000 | 0x00200000 /* BACKUP_SEMANTICS | OPEN_REPARSE_POINT */, IntPtr.Zero);
+            if (h == new IntPtr(-1)) return null;
+            try
+            {
+                var buffer = new byte[16384];
+                if (!DeviceIoControlBytes(h, 0x000900A8 /* FSCTL_GET_REPARSE_POINT */, null, 0, buffer, (uint)buffer.Length, out _, IntPtr.Zero)) return null;
+                if (BitConverter.ToUInt32(buffer, 0) != 0xA0000003) return null;          // IO_REPARSE_TAG_MOUNT_POINT
+                int offset = BitConverter.ToUInt16(buffer, 8), length = BitConverter.ToUInt16(buffer, 10);
+                var target = System.Text.Encoding.Unicode.GetString(buffer, 16 + offset, length);
+                return target.StartsWith(@"\Device\ImDisk", StringComparison.OrdinalIgnoreCase) ? target.TrimEnd('\\') : null;
+            }
+            catch { return null; }
+            finally { CloseHandle(h); }
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true, EntryPoint = "DeviceIoControl")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool DeviceIoControlBytes(IntPtr device, uint code, byte[] inBuf, uint inSize, byte[] outBuf, uint outSize, out uint returned, IntPtr overlapped);
+
+        /// <summary>Does the disk under this volume say it is Arsenal Image Mounter's? Asked of the storage stack
+        /// (IOCTL_STORAGE_QUERY_PROPERTY, vendor or product "Arsenal"), which answers without elevation - aim_ll
+        /// does not.</summary>
+        private static bool IsAimVolume(string root)
+        {
+            var volume = VolumeOf(root);
+            if (volume == null) return false;
+            IntPtr h = CreateFileW(volume.TrimEnd('\\'), 0, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);
+            if (h == new IntPtr(-1)) return false;
+            try
+            {
+                var query = new byte[12];                      // StorageDeviceProperty, PropertyStandardQuery
+                var output = new byte[1024];
+                if (!DeviceIoControl(h, 0x002D1400, query, (uint)query.Length, output, (uint)output.Length, out _, IntPtr.Zero)) return false;
+                int vendor = BitConverter.ToInt32(output, 12), product = BitConverter.ToInt32(output, 16);
+                string Read(int at)
+                {
+                    if (at <= 0 || at >= output.Length) return "";
+                    int end = at;
+                    while (end < output.Length && output[end] != 0) end++;
+                    return Encoding.ASCII.GetString(output, at, end - at).Trim();
+                }
+                return Read(vendor).StartsWith("Arsenal", StringComparison.OrdinalIgnoreCase)
+                       || Read(product).StartsWith("Arsenal", StringComparison.OrdinalIgnoreCase);
+            }
+            finally { CloseHandle(h); }
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetVolumeNameForVolumeMountPoint(string mountPoint, StringBuilder volumeName, uint length);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetVolumePathName(string fileName, StringBuilder volumePath, uint length);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr CreateFileW(string name, uint access, uint share, IntPtr sa, uint disposition, uint flags, IntPtr template);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool DeviceIoControl(IntPtr device, uint code, byte[] inBuf, uint inSize, byte[] outBuf, uint outSize, out uint returned, IntPtr overlapped);
+
+        // ── images (helper 1.6) ──────────────────────────────────────────────
+
+        /// <summary>Attach a disk image - ISO, raw, VHD, VHDX (a differencing one with its chain), VMDK... - on a
+        /// free letter or in <paramref name="folder"/>. Through AIM when it is there, else Windows' own support
+        /// (VHD, VHDX, ISO) or ImDisk (raw). <paramref name="overlay"/>: writes go to that file instead of the
+        /// image (AIM: any format but ISO; Windows: a differencing .vhdx), deleted at the detach when
+        /// <paramref name="deleteOverlay"/>. Returns the root, or null with the reason in <paramref name="error"/>.</summary>
+        public static string AttachImage(string image, bool readOnly, out string error, string overlay = null, bool deleteOverlay = false, string folder = null, bool? removable = null, string backend = null)
+        {
+            error = null;
+            try
+            {
+                var v = HelperVersion;
+                if (v == null || v < BackendProtocol || InstalledTaskName() == null)
+                { error = "the helper cannot attach images (it is " + (v?.ToString() ?? "absent") + ", " + BackendProtocol + " and its task are needed)"; return null; }
+                if (string.IsNullOrWhiteSpace(image) || !OneLine(image) || !Path.IsPathFullyQualified(image)) { error = "an image path must be absolute and on one line"; return null; }
+                var options = RamDiskOptions.Load().Effective(IsAimInstalled(), IsImDiskInstalled(), out var notes);
+                if (notes.Length > 0) RamDiskLog.Warn("image options: " + notes);
+                // A VHD/VHDX goes the way vhdx= says (Windows' own or AIM); anything else through AIM when it is
+                // there (ISO, raw, VMDK...), Windows/ImDisk otherwise.
+                var ext = Path.GetExtension(image).ToLowerInvariant();
+                bool virtualDisk = ext == ".vhd" || ext == ".vhdx" || ext == ".avhdx";
+                if (backend == "aim" && !IsAimInstalled()) backend = null;
+                string how = backend ?? (virtualDisk ? options.Vhdx : options.Backend == "aim" ? "aim" : "windows");
+                if (folder != null && how != "aim") { error = "a folder mount is AIM only"; return null; }
+                var extra = new Dictionary<string, string> { { "backend", how } };
+                // Removable as the RAM disks are, when the options say so: through AIM only (Windows' attach has no
+                // such choice; an older or ImDisk path ignores the key).
+                if (removable ?? options.Removable) extra["removable"] = "1";
+                char letter = 'Z';
+                string root;
+                if (folder != null)
+                {
+                    if (!OneLine(folder) || !Path.IsPathFullyQualified(folder)) { error = "the folder must be absolute"; return null; }
+                    extra["mount"] = folder.TrimEnd('\\');
+                    root = folder.TrimEnd('\\') + "\\";
+                }
+                else
+                {
+                    letter = FreeDriveLetter();
+                    if (letter == '\0') { error = "no free drive letter"; return null; }
+                    root = letter + ":\\";
+                }
+                if (readOnly) extra["readonly"] = "1";
+                if (!string.IsNullOrEmpty(overlay))
+                {
+                    if (!OneLine(overlay) || !Path.IsPathFullyQualified(overlay)) { error = "the overlay path must be absolute"; return null; }
+                    extra["overlay"] = overlay;
+                    if (deleteOverlay) extra["autodelete"] = "1";
+                }
+                var said = RunAndWait("image-attach", letter, image, extra);
+                if (said == null) { error = "the helper never answered"; return null; }
+                if (!said.StartsWith("OK image-attach", StringComparison.Ordinal)) { error = said; RamDiskLog.Warn("image-attach " + Path.GetFileName(image) + ": " + said); return null; }
+                RamDiskLog.Info("attached " + Path.GetFileName(image) + " at " + root + (readOnly ? " (read-only)" : "") + (overlay != null ? " over " + overlay : "") + " - " + said);
+                return root;
+            }
+            catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; return null; }
+        }
+
+        /// <summary>Detach what AttachImage attached, by its root.</summary>
+        public static bool DetachImage(string root, out string error)
+        {
+            error = null;
+            try
+            {
+                if (string.IsNullOrEmpty(root)) { error = "no root"; return false; }
+                bool isLetter = root.Length <= 3 && root[1] == ':';
+                var extra = new Dictionary<string, string>();
+                if (!isLetter) extra["mount"] = root.TrimEnd('\\');
+                var said = RunAndWait("image-detach", isLetter ? root[0] : 'Z', null, extra);
+                if (said != null && said.StartsWith("OK image-detach", StringComparison.Ordinal)) { TidyFolder(root); return true; }
+                error = said ?? "the helper never answered";
+                return false;
+            }
+            catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; return false; }
+        }
+
+        /// <summary>One run waited for, asked twice at most for the run somebody else had going.</summary>
+        private static string RunAndWait(string action, char drive, string image, IDictionary<string, string> extra)
+        {
+            var task = InstalledTaskName();
+            if (task == null) return null;
+            for (int attempt = 1; attempt <= 2; attempt++)
+            {
+                if (!StartRun(task, action, drive, 0, default(CancellationToken), image, extra: extra)) return null;
+                var said = WaitForResult(default(CancellationToken));
+                _runInFlight = said == null;
+                if (said != null && IsOurs(said)) return said;
+            }
+            return null;
         }
 
         private static string DosTarget(string letter)
@@ -981,7 +1345,9 @@ namespace LbIntegrations.RamDisk
 
                 // Sparse only means anything for a file that IS the disk, and only when creating it.
                 bool sparse = mode == RamImage.File && !exists;
-                if (!StartRun(task, "mount", letter, sizeMbIfNew, ct, imagePath, TypeOf(mode), sparse))
+                var hv = HelperVersion;
+                var imageExtra = hv != null && hv >= BackendProtocol ? new Dictionary<string, string> { { "backend", RamDiskOptions.Load().Backend } } : null;
+                if (!StartRun(task, "mount", letter, sizeMbIfNew, ct, imagePath, TypeOf(mode), sparse, imageExtra))
                     return null;
 
                 if (WaitFor(() => Directory.Exists(root), MountSeconds, ct))
@@ -1081,7 +1447,7 @@ namespace LbIntegrations.RamDisk
 
         /// <summary>The version of the helper this build carries, read off its bytes. Null when it
         /// carries none or it cannot be read - and then an installed helper is left alone.</summary>
-        private static Version BundledVersion(Func<string, byte[]> fileByName)
+        public static Version BundledVersion(Func<string, byte[]> fileByName)
         {
             string temp = null;
             try
@@ -1142,7 +1508,7 @@ namespace LbIntegrations.RamDisk
 
         private static bool WriteCfg(string action, char drive, int sizeMb,
                                     string image = null, string type = null, bool sparse = false,
-                                    IDictionary<string, string> extra = null)
+                                    IDictionary<string, string> extra = null, bool removable = true)
         {
             if (!OneLine(action) || !OneLine(image) || !OneLine(type)
                 || (extra != null && extra.Any(kv => !OneLine(kv.Key) || !OneLine(kv.Value) || kv.Key.Contains('='))))
@@ -1175,7 +1541,7 @@ namespace LbIntegrations.RamDisk
                 // alone - a fixed one they hold open, and its device outlives the unmount (measured
                 // 30/09). Sent whatever the helper's version: an older one ignores it and mounts a
                 // fixed drive, as it always did.
-                if (action == "mount") cfg.Append("removable=1\r\n");
+                if (action == "mount" && removable) cfg.Append("removable=1\r\n");
 
                 // Keys of later protocols, written last: the helper keeps the LAST value of a key, so
                 // an extra "label" replaces LiteBox's constant one above.
@@ -1204,7 +1570,7 @@ namespace LbIntegrations.RamDisk
         private static bool StartRun(string task, string action, char drive, int sizeMb,
                                     CancellationToken ct, string image = null, string type = null,
                                     bool sparse = false, IDictionary<string, string> extra = null,
-                                    int previousSeconds = HelperSeconds)
+                                    int previousSeconds = HelperSeconds, bool removable = true)
         {
             if (_runInFlight)
             {
@@ -1220,7 +1586,7 @@ namespace LbIntegrations.RamDisk
                 RamDiskLog.Info("the previous run ended: " + previous);
             }
 
-            if (!WriteCfg(action, drive, sizeMb, image, type, sparse, extra)) return false;
+            if (!WriteCfg(action, drive, sizeMb, image, type, sparse, extra, removable)) return false;
             ClearResult();
             RunTask(task, ct);
             _runInFlight = true;

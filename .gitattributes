@@ -4,3 +4,7 @@
 
 # The vendored SDK is a binary; never touch it.
 *.dll binary
+
+# The ImDisk driver package, kept byte for byte as LTR Data ships it (see vendor/imdisk/SOURCE.md).
+vendor/imdisk/** binary
+vendor/aim/** binary

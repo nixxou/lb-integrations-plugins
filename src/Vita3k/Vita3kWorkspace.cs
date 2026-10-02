@@ -1229,13 +1229,13 @@ namespace LbIntegrations.Vita3k
             var session = WorkVhdx(layout);
             if (session != null) { DropSessionDisk(session); return; }
             if (RamDrive.UnmountFor(titleId) || !OnRamDisk(layout)) return;
-            var drive = Path.GetPathRoot(WorkRoot(layout) ?? "");
+            var drive = RamDrive.MountRootOf(WorkRoot(layout) ?? "");     // "R:\" or the folder it is mounted in
             if (string.IsNullOrEmpty(drive) || !RamDrive.IsImDiskDrive(drive)) return;
             if (!Owns(layout, drive))
             {
                 // Measured risk, not a guess: LiteBox mounts its own RAM disks from the same helper
                 // and picks letters from Z down, exactly as we do.
-                Log.Info(drive + " is an ImDisk drive but not this console's - left mounted");
+                Log.Info(drive + " is a RAM disk but not this console's - left mounted");
                 return;
             }
             Log.Info("the RAM disk " + drive + " was not mounted by this process - releasing it from the marker");
@@ -1591,7 +1591,7 @@ namespace LbIntegrations.Vita3k
         /// them carries it.</summary>
         private static void Claim(Vita3kLayout layout, string drive)
         {
-            try { File.WriteAllText(Path.Combine(Path.GetPathRoot(drive), OwnerName), Owner(layout)); }
+            try { File.WriteAllText(Path.Combine(RamDrive.MountRootOf(drive), OwnerName), Owner(layout)); }
             catch (Exception ex) { Log.Warn("could not mark the RAM disk as this console's", ex); }
         }
 
@@ -1601,7 +1601,7 @@ namespace LbIntegrations.Vita3k
             try
             {
                 var owner = Owner(layout);
-                var file = Path.Combine(Path.GetPathRoot(path) ?? "", OwnerName);
+                var file = Path.Combine(RamDrive.MountRootOf(path) ?? "", OwnerName);
                 return owner != null && File.Exists(file)
                        && string.Equals(File.ReadAllText(file).Trim(), owner, StringComparison.OrdinalIgnoreCase);
             }

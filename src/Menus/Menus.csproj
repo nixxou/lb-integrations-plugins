@@ -18,6 +18,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The RAM disk options and what the machine has, for the RAM disk tab (RamDiskTab.cs): the shared
+         sources compiled in, as the plugins and the installer do. -->
+    <Compile Include="..\Shared.RamDisk\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- The SDK, referenced and not copied: the host provides it, and the IGame this relay hands on
          has to be the host's IGame for the plugin receiving it. See vendor\README.md. -->
     <Reference Include="Unbroken.LaunchBox.Plugins">

@@ -260,8 +260,13 @@ namespace LbIntegrations.Probe
                 Directory.CreateDirectory(linkDir);
                 try
                 {
-                    if (!Check("a junction to the drive ROOT is refused",
-                               !Junction(Path.Combine(linkDir, "at-root"), root))) bad++;
+                    // AN IMDISK RULE AFTER ALL - measured 02/10: an Arsenal Image Mounter drive is a volume the
+                    // mount manager knows, and the junction to its root is created. Still checked for ImDisk;
+                    // Vita3K goes one folder down either way.
+                    bool atRoot = Junction(Path.Combine(linkDir, "at-root"), root);
+                    bool imdisk = RamDrive.IsRamDisk(root) && RamDrive.ActiveBackend() == "imdisk";
+                    if (imdisk) { if (!Check("a junction to the drive ROOT is refused (ImDisk)", !atRoot)) bad++; }
+                    else Console.WriteLine("  note      a junction to the drive root is " + (atRoot ? "accepted" : "refused") + " on this " + RamDrive.ActiveBackend() + " drive");
 
                     var inside = Path.Combine(root, "fs");
                     Directory.CreateDirectory(inside);

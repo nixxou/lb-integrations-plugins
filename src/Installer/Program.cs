@@ -31,7 +31,10 @@ internal static class Program
             return Command(args);
 
         ApplicationConfiguration.Initialize();
-        Application.Run(new InstallerForm());
+        // A LaunchBox root as the one argument opens the window on it - what a shortcut or a drop on the
+        // exe gives.
+        var start = args.Length == 1 && InstallerCore.LooksLikeRoot(args[0]) ? Path.GetFullPath(args[0]) : null;
+        Application.Run(new InstallerForm(start));
         return 0;
     }
 
@@ -56,6 +59,20 @@ internal static class Program
         catch { }
 
         var verb = args[0];
+
+        // THE ELEVATED HALF OF A DRIVER PANEL: --driver-setup <imdisk|aim> <result file> [LaunchBox root].
+        // A driver belongs to the machine, so the root is optional; with one, ImDisk comes with the helper
+        // and the task. What happened goes to the file the window named - this process has no window.
+        if (verb == "--driver-setup" && args.Length >= 3)
+        {
+            var chosen = args[1] == "aim" ? RamDriver.Aim : RamDriver.ImDisk;
+            var at = args.Length >= 4 && InstallerCore.LooksLikeRoot(args[3]) ? InstallerCore.Resolve(Path.GetFullPath(args[3])) : null;
+            var (done, said) = ImDiskSetup.SetUpElevated(at, chosen);
+            try { File.WriteAllText(args[2], said); } catch { }
+            Console.WriteLine(said);
+            return done ? 0 : 1;
+        }
+
         var root = args.Length >= 2 ? Path.GetFullPath(args[1]) : "";
 
         if (root.Length == 0 || !InstallerCore.LooksLikeRoot(root))
@@ -80,11 +97,16 @@ internal static class Program
             // The optional half, one line per thing that can be missing - the same four the window
             // shows, because "not ready" on its own tells nobody what to do about it.
             var ram = RamDiskSetup.Look(layout);
-            Console.WriteLine("ramdisk   " + (ram.Ready ? "ready (shared with LiteBox)" : "not ready"));
-            Console.WriteLine("  driver    " + (ram.Driver ? "ImDisk installed" : "ImDisk NOT installed"));
+            Console.WriteLine("ramdisk   " + (ram.Ready ? "ready (shared with LiteBox), through " + (LbIntegrations.RamDisk.RamDrive.ActiveBackend() ?? "nothing") : "not ready"));
+            Console.WriteLine("  driver    " + (ram.Driver ? "ImDisk installed, " + (ImDiskSetup.InstalledVersion()?.ToString() ?? "version unreadable")
+                                                    : "ImDisk NOT installed - this exe carries " + ImDiskSetup.Bundled()));
             Console.WriteLine("  runtime   " + (ram.Runtime ? "present" : "MISSING - " + ram.RuntimeWhy));
-            Console.WriteLine("  helper    " + (ram.Helper ? "in place" : "not deployed"));
+            Console.WriteLine("  helper    " + (!ram.Helper ? "not deployed"
+                              : "in place, " + (ram.HelperVersion?.ToString() ?? "no version")
+                                + (ram.HelperOld ? " - OLDER than the bundled " + ram.BundledVersion : "")));
             Console.WriteLine("  task      " + (ram.Task ?? "not registered"));
+            Console.WriteLine("  aim       " + (AimSetup.ToolkitInstalled() ? "AIM Toolkit installed" : "AIM Toolkit not installed - this exe carries build " + AimSetup.Build)
+                              + (AimSetup.DriverVersion() is { } aim ? ", driver " + aim : "") + (LbIntegrations.RamDisk.RamDrive.ActiveBackend() == "aim" ? " - the RAM disk uses it" : ""));
 
             // VHDX: a property of the machine, reported part by part.
             foreach (var line in VhdxSetup.Lines(VhdxSetup.Look())) Console.WriteLine(line);
@@ -100,7 +122,9 @@ internal static class Program
             "--uninstall" => InstallerCore.Uninstall(layout),
             // Prompts for elevation exactly once, to register the task. Scriptable for the same
             // reason the other two are: a window cannot be tested.
-            "--ramdisk"   => RamDiskSetup.Enable(layout),
+            "--ramdisk"   => !RamDiskSetup.DriverInstalled()
+                                 ? (ImDiskSetup.IsElevated() ? ImDiskSetup.SetUpElevated(layout) : ImDiskSetup.SetUpWithPrompt(layout))
+                                 : RamDiskSetup.Enable(layout),
             _             => (false, "unknown command: " + verb),
         };
 

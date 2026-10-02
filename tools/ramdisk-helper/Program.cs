@@ -122,6 +122,34 @@
 //     hung window somewhere.
 // Same caution as clean: an older helper reads "dismount" as a mount; check FileVersion >= 1.4.
 //
+// -- added in 1.6: ARSENAL IMAGE MOUNTER, FIRST WHEN THERE ---------------------------------------
+//   backend  = auto | aim | imdisk  which driver a mount goes through. ABSENT MEANS imdisk - what every
+//                                  helper before did, so a caller that never heard of AIM (LiteBox's
+//                                  1.0 cfg) gets exactly what it always got. auto = AIM when its driver
+//                                  (service phdskmnt) and aim_ll.exe are both there, else ImDisk.
+//   compress = 1                   NTFS compression: "/c" added to the format parameters
+//   mount    = <folder>            mount in an empty folder (an NTFS mount point) instead of drive=
+//   type     = awe, no image       a blank disk in PHYSICAL memory (awealloc), size= MB. AIM always has
+//                                  awealloc; ImDisk only when its service is there - else FAIL, never a
+//                                  silent vm disk instead
+//   action   = image-attach        a disk image attached as a disk: image=<path> [readonly=1]
+//                                  [overlay=<diff file> [autodelete=1]] [drive=<L> | mount=<folder>].
+//                                  AIM: raw and ISO through aim_ll, VHD/VHDX/AVHDX/VMDK/VDI (differencing
+//                                  chains included) and any overlay through aim_cli (DiscUtils). Without
+//                                  AIM: Windows' own (diskpart attach vdisk) for VHD/VHDX/ISO, an overlay
+//                                  on a VHDX being a differencing child; ImDisk for raw images and ISO.
+//   action   = image-detach        detach what image-attach attached: drive= | mount= | image=
+// Every result gains " backend=aim|imdisk|windows" before " id=", and image-attach " at=<where>".
+// The umount and dismount actions tell the backend from the drive itself. An older helper reads the
+// image-* actions as a MOUNT: check FileVersion >= 1.6.
+//
+// AIM, WHAT DIFFERS FROM IMDISK. aim_ll takes imdisk's arguments almost word for word, but its disks
+// are real SCSI disks: Windows' mount manager gives a new volume a letter of its own on top of the one
+// asked for, which is taken off again (only the mount point asked for is kept), and the disk goes the
+// Plug and Play way - Windows announces its departure itself, which nothing here can stop. What dismount
+// keeps from 1.4: flushed, locked if it can be, dismounted, and only then removed; no broadcast of ours.
+// aim_ll only works elevated: unelevated it answers "Arsenal Image Mounter not installed".
+//
 // THIS IS NOT A PRIVILEGE BOUNDARY, and never was: the cfg is writable by the user and this runs
 // elevated, which is inherent to every no-UAC elevation bridge - LiteBox says the same of its
 // admin-launch helper. 1.1 widens what the cfg can ask for, so the values are held to the shapes
@@ -168,22 +196,59 @@ namespace RamDiskHelper
                     File.WriteAllText(resultPath, Clean() + id);
                     return 0;
                 }
-                if (action.Equals("dismount", StringComparison.OrdinalIgnoreCase))
+                if (action.Equals("list", StringComparison.OrdinalIgnoreCase))
                 {
-                    var said = Dismount(Get(kv, "drive", "").TrimEnd(':'));
+                    // 1.6: what the drivers have mounted, for a diagnosis - aim_ll -l, which only answers elevated.
+                    File.WriteAllText(resultPath, "OK list exit=0 - aim: " + (Aim.Available ? Flat(Run(Aim.LowLevel, "-l").output) : "not installed")
+                                                  + " - imdisk: " + (File.Exists(ImDiskExe) ? Flat(Run(ImDiskExe, "-l").output) : "not installed") + id);
+                    return 0;
+                }
+                if (action.StartsWith("image-", StringComparison.OrdinalIgnoreCase))
+                {
+                    var said = action.Equals("image-attach", StringComparison.OrdinalIgnoreCase) ? ImageAttach(kv, dir)
+                             : action.Equals("image-detach", StringComparison.OrdinalIgnoreCase) ? ImageDetach(kv, dir)
+                             : "FAIL " + action + " exit=-1 - no such action";
                     File.WriteAllText(resultPath, said + id);
                     return said.StartsWith("OK", StringComparison.Ordinal) ? 0 : 1;
                 }
-                string drive = Get(kv, "drive", "R").TrimEnd(':');
+
+                // WHERE: a letter (drive=, the 1.0 key) or, 1.6, an empty folder (mount=).
+                if (!Point(kv, out string point, out string token, out string pointError))
+                {
+                    File.WriteAllText(resultPath, "FAIL " + action + " ? exit=-1 - " + pointError + id);
+                    return 1;
+                }
+                if (action.Equals("dismount", StringComparison.OrdinalIgnoreCase))
+                {
+                    var said = Dismount(point, token);
+                    File.WriteAllText(resultPath, said + id);
+                    return said.StartsWith("OK", StringComparison.Ordinal) ? 0 : 1;
+                }
                 string size = Get(kv, "size", "1024");
                 bool umount = action.Equals("umount", StringComparison.OrdinalIgnoreCase)
                            || action.Equals("unmount", StringComparison.OrdinalIgnoreCase)
                            || action.Equals("remove", StringComparison.OrdinalIgnoreCase);
 
+                if (umount)
+                {
+                    // The drive says which driver it is on; nothing in the cfg needs to.
+                    bool onAim = !IsImDiskPoint(point) && Aim.IsAimPoint(point);
+                    var unpsi = new ProcessStartInfo(onAim ? Aim.LowLevel : ImDiskExe) { UseShellExecute = false, CreateNoWindow = true };
+                    unpsi.ArgumentList.Add("-D");
+                    unpsi.ArgumentList.Add("-m"); unpsi.ArgumentList.Add(point);
+                    using var up = Process.Start(unpsi);
+                    up.WaitForExit();
+                    if (token == "folder") RemoveFolderMount(point);
+                    File.WriteAllText(resultPath, (up.ExitCode == 0 ? "OK" : "FAIL") + " umount " + token + " exit=" + up.ExitCode
+                                                  + " backend=" + (onAim ? "aim" : "imdisk") + id);
+                    return up.ExitCode;
+                }
+
                 string image = Get(kv, "image", "");
                 string type = Get(kv, "type", "").ToLowerInvariant();
                 bool sparse = Get(kv, "sparse", "") == "1";
                 bool removable = Get(kv, "removable", "") == "1";
+                bool compress = Get(kv, "compress", "") == "1";
                 // FORMAT WHEN THERE IS NOTHING TO PRESERVE, which is not the same question as
                 // "was an image named". Measured, by getting it wrong: creating a new file-backed
                 // image with the format left empty attaches a disk with no filesystem on it - imdisk
@@ -192,6 +257,7 @@ namespace RamDiskHelper
                 // base would be wiped by the act of mounting it.
                 string format = Get(kv, "format",
                     image.Length == 0 || !File.Exists(image) ? "/fs:ntfs /q /y" : "");
+                if (compress && format.Length > 0 && format.IndexOf("/c", StringComparison.OrdinalIgnoreCase) < 0) format += " /c";
 
                 // Only the three imdisk knows about. Anything else is treated as not given rather
                 // than handed on, because this runs elevated.
@@ -199,37 +265,104 @@ namespace RamDiskHelper
                 if (awe) type = "file";
                 if (type != "vm" && type != "file") type = "";
 
-                string imdisk = Path.Combine(Environment.SystemDirectory ?? @"C:\Windows\System32", "imdisk.exe");
-                var psi = new ProcessStartInfo(imdisk) { UseShellExecute = false, CreateNoWindow = true };
-                if (umount)
+                // 1.6: which driver. Absent = ImDisk, as before AIM existed here.
+                string backend = Get(kv, "backend", "imdisk").ToLowerInvariant();
+                bool useAim = backend == "aim" || (backend == "auto" && Aim.Available);
+                if (backend == "aim" && !Aim.Available)
                 {
-                    psi.ArgumentList.Add("-D");
-                    psi.ArgumentList.Add("-m"); psi.ArgumentList.Add(drive + ":");
+                    File.WriteAllText(resultPath, "FAIL mount " + token + " exit=-1 backend=aim - Arsenal Image Mounter is not installed" + id);
+                    return 1;
                 }
-                else
+                if (!useAim && !File.Exists(ImDiskExe))
                 {
-                    psi.ArgumentList.Add("-a");
-                    if (type.Length > 0) { psi.ArgumentList.Add("-t"); psi.ArgumentList.Add(type); }
-                    if (image.Length > 0) { psi.ArgumentList.Add("-f"); psi.ArgumentList.Add(image); }
-
-                    // A size is needed for a blank disk, and for a file that does not exist yet. It
-                    // is meaningless when loading an existing image, whose size is the image's.
-                    if (image.Length == 0 || !File.Exists(image))
-                    { psi.ArgumentList.Add("-s"); psi.ArgumentList.Add(size + "M"); }
-
-                    var options = new List<string>();
-                    if (awe) options.Add("awe");
-                    if (sparse) options.Add("sparse");
-                    if (removable) options.Add("rem");
-                    if (options.Count > 0) { psi.ArgumentList.Add("-o"); psi.ArgumentList.Add(string.Join(",", options)); }
-
-                    psi.ArgumentList.Add("-m"); psi.ArgumentList.Add(drive + ":");
-                    if (format.Length > 0) { psi.ArgumentList.Add("-p"); psi.ArgumentList.Add(format); }
+                    File.WriteAllText(resultPath, "FAIL mount " + token + " exit=-1 backend=imdisk - ImDisk is not installed" + id);
+                    return 1;
                 }
+                if (awe && !useAim && !AweAllocInstalled())
+                {
+                    File.WriteAllText(resultPath, "FAIL mount " + token + " exit=-1 backend=imdisk - awe unavailable: the AWEAlloc driver is not installed" + id);
+                    return 1;
+                }
+                if (useAim && type.Length == 0) type = "vm";     // aim_ll wants a type, imdisk defaults one
+                if (token == "folder")
+                {
+                    Directory.CreateDirectory(point);
+                    if (Directory.EnumerateFileSystemEntries(point).GetEnumerator().MoveNext())
+                    {
+                        File.WriteAllText(resultPath, "FAIL mount folder exit=-1 - the folder is not empty" + id);
+                        return 1;
+                    }
+                }
+
+                // COMPRESSION IS AIM ONLY, AND COMES WITH MEMORY ALLOCATED AS IT IS USED. Not used by the plugins any
+                // more (Mehdi, 02/10: compression made Vita3K crash - see the sizing note below). A fixed-size
+                // disk commits its whole size up front: compressing what is on it would save nothing - the callers
+                // size it from the uncompressed content. So compress=1 through AIM is a DYNAMIC disk: the Toolkit's
+                // RamDyn.exe, a proxy that allocates memory as blocks are written and gives it back on TRIM, under a
+                // compressed NTFS - memory used ~ the compressed size. Virtual memory: RamDyn's AWE needs the "lock
+                // pages in memory" right, which administrators do not have by default. Through ImDisk, compress=1
+                // is not applied.
+                if (compress && !useAim && format.Length > 0) format = format.Replace(" /c", "");
+                // dynamic=1: the same dynamic disk without the compression - for telling the two apart.
+                bool dynamicOnly = Get(kv, "dynamic", "") == "1";
+                if ((compress || dynamicOnly) && useAim && image.Length == 0)
+                {
+                    var ramDyn = Path.Combine(Aim.Folder ?? "", "RamDyn.exe");
+                    if (!File.Exists(ramDyn))
+                    {
+                        File.WriteAllText(resultPath, "FAIL mount " + token + " exit=-1 backend=aim - RamDyn.exe is not in the AIM Toolkit's folder" + id);
+                        return 1;
+                    }
+                    if (!long.TryParse(size, out long sizeMb) || sizeMb <= 0) sizeMb = 1024;
+                    // NO MARGIN IS ADDED FOR COMPRESSION, and a caller using it must know: NTFS compression holds space
+                    // by 64 KB unit and reserves the uncompressed size of what is being written - measured 02/10, a
+                    // volume sized to its content said "not enough space" half full (1.3 GB in 2.9 GB), and Vita3K died
+                    // at its first write. The plugins no longer ask for it (Mehdi, 02/10); the keys stay for later use.
+                    // RamDyn.exe MountPoint SizeKB TRIM MemoryType BlockSize FormatParam Label SectorSize Removable
+                    var dyn = new ProcessStartInfo(ramDyn) { UseShellExecute = false, CreateNoWindow = true };
+                    foreach (var a in new[] { point, (sizeMb * 1024).ToString(), "-1", "0", "20", compress ? "/fs:ntfs /c" : "/fs:ntfs", "RamDisk", "512", removable ? "1" : "0" })
+                        dyn.ArgumentList.Add(a);
+                    var started = Process.Start(dyn);
+                    // It stays, serving the disk: waited for until the volume is there, or it gives up.
+                    bool up = false;
+                    for (int i = 0; i < 120 && !up; i++)
+                    {
+                        up = VolumeOf(point.TrimEnd('\\') + "\\") != null && (point.Length > 2 || Directory.Exists(point + "\\"));
+                        if (!up && started.HasExited) break;
+                        if (!up) System.Threading.Thread.Sleep(250);
+                    }
+                    if (up) KeepOnly(point);
+                    File.WriteAllText(resultPath, (up ? "OK" : "FAIL") + " mount " + token + " exit=" + (up ? 0 : started.HasExited ? started.ExitCode : -2)
+                                                  + " backend=aim dynamic=1" + (up ? "" : " - RamDyn did not bring the disk up") + id);
+                    return up ? 0 : 1;
+                }
+
+                var psi = new ProcessStartInfo(useAim ? Aim.LowLevel : ImDiskExe) { UseShellExecute = false, CreateNoWindow = true };
+                psi.ArgumentList.Add("-a");
+                if (type.Length > 0) { psi.ArgumentList.Add("-t"); psi.ArgumentList.Add(type); }
+                if (image.Length > 0) { psi.ArgumentList.Add("-f"); psi.ArgumentList.Add(image); }
+
+                // A size is needed for a blank disk, and for a file that does not exist yet. It
+                // is meaningless when loading an existing image, whose size is the image's.
+                if (image.Length == 0 || !File.Exists(image))
+                { psi.ArgumentList.Add("-s"); psi.ArgumentList.Add(size + "M"); }
+
+                var options = new List<string>();
+                if (awe) options.Add("awe");
+                if (sparse) options.Add("sparse");
+                if (removable) options.Add("rem");
+                if (options.Count > 0) { psi.ArgumentList.Add("-o"); psi.ArgumentList.Add(string.Join(",", options)); }
+
+                psi.ArgumentList.Add("-m"); psi.ArgumentList.Add(point);
+                if (format.Length > 0) { psi.ArgumentList.Add("-p"); psi.ArgumentList.Add(format); }
 
                 using var p = Process.Start(psi);
                 p.WaitForExit();
-                File.WriteAllText(resultPath, (p.ExitCode == 0 ? "OK" : "FAIL") + " " + (umount ? "umount" : "mount") + " " + drive + " exit=" + p.ExitCode + id);
+                // AIM's disk is a real disk: the mount manager may have given its volume a letter of its
+                // own besides the one asked for. Only the mount point asked for stays.
+                if (p.ExitCode == 0 && useAim) KeepOnly(point);
+                File.WriteAllText(resultPath, (p.ExitCode == 0 ? "OK" : "FAIL") + " mount " + token + " exit=" + p.ExitCode
+                                              + " backend=" + (useAim ? "aim" : "imdisk") + id);
                 return p.ExitCode;
             }
             catch (Exception ex)
@@ -250,6 +383,295 @@ namespace RamDiskHelper
 
         private static string Get(Dictionary<string, string> kv, string key, string def)
             => kv.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v) ? v : def;
+
+        private static string ImDiskExe => Path.Combine(Environment.SystemDirectory ?? @"C:\Windows\System32", "imdisk.exe");
+
+        /// <summary>Where: mount= (1.6, a folder) when given, else drive= (a letter, R by default as in
+        /// 1.0). The point is what goes to -m: "R:" or the folder; the token is what the result line
+        /// says: the letter, or "folder".</summary>
+        private static bool Point(Dictionary<string, string> kv, out string point, out string token, out string error)
+        {
+            error = null;
+            string folder = Get(kv, "mount", "");
+            if (folder.Length > 0)
+            {
+                point = folder.TrimEnd('\\');
+                token = "folder";
+                if (!SafeFolder(point)) { error = "mount must be an absolute folder on a local drive, not a drive root, of a plain shape"; return false; }
+                return true;
+            }
+            string drive = Get(kv, "drive", "R").TrimEnd(':').ToUpperInvariant();
+            point = drive + ":";
+            token = drive;
+            if (drive.Length != 1 || drive[0] < 'A' || drive[0] > 'Z') { error = "drive must be one letter"; return false; }
+            return true;
+        }
+
+        /// <summary>A folder this elevated process may make a mount point of: absolute, local (X:\...),
+        /// not a drive root, no quote and no control character.</summary>
+        private static bool SafeFolder(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || path.Length > 240 || path.Length < 4) return false;
+            if (!(char.IsLetter(path[0]) && path[1] == ':' && path[2] == '\\')) return false;
+            foreach (var c in path) if (c < ' ' || c == '"' || c == '*' || c == '?' || c == '<' || c == '>' || c == '|') return false;
+            try { return Path.IsPathFullyQualified(path) && Path.GetFullPath(path).TrimEnd('\\') == path; } catch { return false; }
+        }
+
+        private static bool AweAllocInstalled()
+        {
+            try { using var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\AWEAlloc"); return k != null; }
+            catch { return false; }
+        }
+
+        // ── Arsenal Image Mounter ────────────────────────────────────────────
+
+        private static class Aim
+        {
+            /// <summary>The AIM Toolkit's folder: its uninstall entry names config.exe there; Program Files\AIM
+            /// Toolkit otherwise. Null when neither holds aim_ll.exe.</summary>
+            public static string Folder
+            {
+                get
+                {
+                    var dirs = new List<string>();
+                    try
+                    {
+                        using var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\AIM-tk");
+                        foreach (var name in new[] { "InstallLocation", "DisplayIcon", "UninstallString" })
+                        {
+                            var v = (k?.GetValue(name) as string ?? "").Trim();
+                            if (v.StartsWith("\"")) { int end = v.IndexOf('"', 1); v = end > 0 ? v.Substring(1, end - 1) : v.Trim('"'); }
+                            int exe = v.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
+                            if (exe > 0) v = Path.GetDirectoryName(v.Substring(0, exe + 4));
+                            if (v.Length > 0) dirs.Add(v);
+                        }
+                    }
+                    catch { }
+                    dirs.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "AIM Toolkit"));
+                    foreach (var d in dirs) if (File.Exists(Path.Combine(d, "aim_ll.exe"))) return d;
+                    return null;
+                }
+            }
+
+            public static string LowLevel => Path.Combine(Folder ?? "", "aim_ll.exe");
+            public static string Cli => Path.Combine(Folder ?? "", "aim_cli.exe");
+
+            public static bool DriverInstalled
+            {
+                get
+                {
+                    try { using var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\phdskmnt"); return k != null; }
+                    catch { return false; }
+                }
+            }
+
+            public static bool Available => DriverInstalled && Folder != null;
+            public static bool CliAvailable => Available && File.Exists(Cli);
+
+            /// <summary>Is this mount point an AIM disk's? Asked of aim_ll itself.</summary>
+            public static bool IsAimPoint(string point) => Available && UnitOf(point) != null;
+
+            /// <summary>The six-digit device numbers aim_ll knows about.</summary>
+            public static HashSet<string> Units()
+            {
+                var units = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                if (!Available) return units;
+                var (_, output) = Run(LowLevel, "-l");
+                foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(output, @"Device number ([0-9A-Fa-f]{6})"))
+                    units.Add(m.Groups[1].Value.ToUpperInvariant());
+                return units;
+            }
+
+            /// <summary>The six-digit device number behind a mount point. MEASURED 02/10: "aim_ll -l -m W:"
+            /// does not answer for a letter, so the whole list is read - one block per device, "Device
+            /// number 000000", then its volume ("Contains volume \\?\Volume{...}\") and where it is
+            /// mounted ("Mounted at W:\") - and the block that names this point or its volume is the one.</summary>
+            public static string UnitOf(string point)
+            {
+                if (!Available) return null;
+                var (_, output) = Run(LowLevel, "-l");
+                string at = point.TrimEnd('\\') + "\\";
+                string volume = VolumeOf(at);
+                foreach (var block in output.Split(new[] { "Device number " }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    if (block.Length < 6) continue;
+                    string unit = block.Substring(0, 6);
+                    if (!System.Text.RegularExpressions.Regex.IsMatch(unit, "^[0-9A-Fa-f]{6}$")) continue;
+                    if (block.IndexOf("Mounted at " + at, StringComparison.OrdinalIgnoreCase) >= 0
+                        || (volume != null && block.IndexOf(volume, StringComparison.OrdinalIgnoreCase) >= 0))
+                        return unit.ToUpperInvariant();
+                }
+                return null;
+            }
+        }
+        /// <summary>Run a tool and read what it says. For tools that exit - never aim_cli --background, whose
+        /// child would hold the pipe open.</summary>
+        private static (int code, string output) Run(string exe, params string[] args)
+        {
+            try
+            {
+                var psi = new ProcessStartInfo(exe) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+                foreach (var a in args) psi.ArgumentList.Add(a);
+                using var p = Process.Start(psi);
+                var output = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
+                p.WaitForExit();
+                return (p.ExitCode, output);
+            }
+            catch (Exception ex) { return (-1, ex.Message); }
+        }
+
+        // ── volumes and mount points ─────────────────────────────────────────
+
+        /// <summary>The device a mount point leads to: \Device\ImDisk3, \Device\HarddiskVolume12...</summary>
+        private static string DeviceOf(string point)
+        {
+            var target = new System.Text.StringBuilder(1024);
+            if (point.Length == 2 && point[1] == ':')
+                return QueryDosDevice(point, target, target.Capacity) == 0 ? null : target.ToString();
+            var junction = JunctionDevice(point);
+            if (junction != null) return junction;
+            var volume = VolumeOf(point);
+            if (volume == null) return null;
+            // \\?\Volume{guid}\ -> Volume{guid}
+            return QueryDosDevice(volume.Substring(4).TrimEnd('\\'), target, target.Capacity) == 0 ? null : target.ToString();
+        }
+
+        /// <summary>IMDISK IN A FOLDER IS NOT A VOLUME MOUNT POINT - measured 02/10: ImDisk is not known to the
+        /// mount manager, so "imdisk -m C:\x" makes a mount-point reparse point (a junction) to \Device\ImDisk3\.
+        /// Read from the reparse data itself - .NET's LinkTarget answers null for it. Its device, or null.</summary>
+        private static string JunctionDevice(string folder)
+        {
+            IntPtr h = CreateFile(folder.TrimEnd('\\'), 0x80 /* FILE_READ_ATTRIBUTES */, 7, IntPtr.Zero, 3,
+                                  0x02000000 | 0x00200000 /* BACKUP_SEMANTICS | OPEN_REPARSE_POINT */, IntPtr.Zero);
+            if (h == new IntPtr(-1)) return null;
+            try
+            {
+                var buffer = new byte[16384];
+                if (!DeviceIoControlBytes(h, 0x000900A8 /* FSCTL_GET_REPARSE_POINT */, null, 0, buffer, (uint)buffer.Length, out _, IntPtr.Zero)) return null;
+                if (BitConverter.ToUInt32(buffer, 0) != 0xA0000003) return null;          // IO_REPARSE_TAG_MOUNT_POINT
+                int offset = BitConverter.ToUInt16(buffer, 8), length = BitConverter.ToUInt16(buffer, 10);
+                var target = System.Text.Encoding.Unicode.GetString(buffer, 16 + offset, length);
+                return target.StartsWith(@"\Device\ImDisk", StringComparison.OrdinalIgnoreCase) ? target.TrimEnd('\\') : null;
+            }
+            catch { return null; }
+            finally { CloseHandle(h); }
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true, EntryPoint = "DeviceIoControl")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool DeviceIoControlBytes(IntPtr device, uint code, byte[] inBuf, uint inSize, byte[] outBuf, uint outSize, out uint returned, IntPtr overlapped);
+
+        /// <summary>\\?\Volume{guid}\ of what is mounted at this point, or null.</summary>
+        private static string VolumeOf(string point)
+        {
+            var name = new System.Text.StringBuilder(64);
+            return GetVolumeNameForVolumeMountPoint(point.TrimEnd('\\') + "\\", name, (uint)name.Capacity) ? name.ToString() : null;
+        }
+
+        private static bool IsImDiskPoint(string point)
+        {
+            var device = DeviceOf(point);
+            return device != null && device.StartsWith(@"\Device\ImDisk", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>Every mount point of a volume: "R:\", "C:\x\y\".</summary>
+        private static List<string> PathsOf(string volume)
+        {
+            var list = new List<string>();
+            var buffer = new char[4096];
+            if (!GetVolumePathNamesForVolumeName(volume, buffer, (uint)buffer.Length, out uint length)) return list;
+            int start = 0;
+            for (int i = 0; i < length; i++)
+            {
+                if (buffer[i] != '\0') continue;
+                if (i > start) list.Add(new string(buffer, start, i - start));
+                start = i + 1;
+            }
+            return list;
+        }
+
+        /// <summary>The mount point asked for is the only one the volume keeps - waiting a little for it,
+        /// since the mount manager works after aim_ll has returned.</summary>
+        private static void KeepOnly(string point)
+        {
+            string wanted = point.TrimEnd('\\') + "\\";
+            for (int i = 0; i < 20; i++)
+            {
+                var volume = VolumeOf(wanted);
+                if (volume != null)
+                {
+                    System.Threading.Thread.Sleep(500);     // the automatic letter lands a beat later
+                    foreach (var other in PathsOf(volume))
+                        if (!string.Equals(other, wanted, StringComparison.OrdinalIgnoreCase)) DeleteVolumeMountPoint(other);
+                    return;
+                }
+                System.Threading.Thread.Sleep(250);
+            }
+        }
+
+        private static void RemoveFolderMount(string folder)
+        {
+            try
+            {
+                if (VolumeOf(folder) != null) DeleteVolumeMountPoint(folder.TrimEnd('\\') + "\\");
+                else if (JunctionDevice(folder) != null) Directory.Delete(folder);      // the link, not what it led to
+            }
+            catch { }
+        }
+
+        /// <summary>Every volume on the machine, by name.</summary>
+        private static HashSet<string> Volumes()
+        {
+            var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var name = new System.Text.StringBuilder(64);
+            IntPtr find = FindFirstVolume(name, (uint)name.Capacity);
+            if (find == InvalidHandle) return set;
+            try
+            {
+                do { set.Add(name.ToString()); name.Clear(); name.EnsureCapacity(64); }
+                while (FindNextVolume(find, name, (uint)name.Capacity));
+            }
+            finally { FindVolumeClose(find); }
+            return set;
+        }
+
+        /// <summary>Wait for a volume that was not there before.</summary>
+        private static string NewVolume(HashSet<string> before, int seconds)
+        {
+            for (int i = 0; i < seconds * 4; i++)
+            {
+                foreach (var v in Volumes()) if (!before.Contains(v)) return v;
+                System.Threading.Thread.Sleep(250);
+            }
+            return null;
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetVolumeNameForVolumeMountPoint(string mountPoint, System.Text.StringBuilder volumeName, uint length);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetVolumePathNamesForVolumeName(string volumeName, [Out] char[] paths, uint length, out uint returned);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool DeleteVolumeMountPoint(string mountPoint);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SetVolumeMountPoint(string mountPoint, string volumeName);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr FindFirstVolume(System.Text.StringBuilder name, uint length);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool FindNextVolume(IntPtr find, System.Text.StringBuilder name, uint length);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool FindVolumeClose(IntPtr find);
 
         // ── action = vhdx-* ──────────────────────────────────────────────────
 
@@ -355,24 +777,408 @@ namespace RamDiskHelper
             return last.Length > 200 ? last.Substring(0, 200) : last;
         }
 
+        // ── action = image-attach / image-detach (1.6) ───────────────────────
+        //
+        // ONE WAY TO ANY IMAGE, three drivers behind it. Whatever attaches it, the volume that appears is
+        // found by comparing the machine's volumes before and after, its automatic mount points are taken
+        // off, and the one asked for is given - so a letter or a folder behaves the same on all three.
+        // What was attached, how, and what to delete afterwards is written to attached.tsv beside this
+        // exe: image-detach needs only the mount point.
+
+        private static readonly string[] RawImages = { ".img", ".ima", ".raw", ".dd", ".bin", ".001" };
+        private static readonly string[] VirtualDisks = { ".vhd", ".vhdx", ".avhdx", ".vmdk", ".vdi", ".dmg", ".xva" };
+
+        private static string ImageAttach(Dictionary<string, string> kv, string dir)
+        {
+            const string head = "image-attach";
+            string image = Get(kv, "image", "");
+            if (!SafeImage(image) || !File.Exists(image)) return "FAIL " + head + " exit=-1 - image is not an existing file with an absolute path of a plain shape";
+            string ext = Path.GetExtension(image).ToLowerInvariant();
+            bool iso = ext == ".iso";
+            bool raw = Array.IndexOf(RawImages, ext) >= 0;
+            bool virt = Array.IndexOf(VirtualDisks, ext) >= 0;
+            if (!iso && !raw && !virt) return "FAIL " + head + " exit=-1 - not an image this knows: " + ext;
+            bool readOnly = Get(kv, "readonly", "") == "1" || iso;
+            string overlay = Get(kv, "overlay", "");
+            bool autodelete = Get(kv, "autodelete", "") == "1";
+            if (overlay.Length > 0 && (!SafeImage(overlay) || iso)) return "FAIL " + head + " exit=-1 - " + (iso ? "an ISO takes no write overlay" : "overlay is not an absolute path of a plain shape");
+            string drive = Get(kv, "drive", "");
+            if (drive.Length == 0 && Get(kv, "mount", "").Length == 0)
+            {
+                char free = FreeLetter();
+                if (free == '\0') return "FAIL " + head + " exit=-1 - no free drive letter";
+                kv["drive"] = free.ToString();
+            }
+            if (!Point(kv, out string point, out string token, out string pointError)) return "FAIL " + head + " exit=-1 - " + pointError;
+            if (token == "folder")
+            {
+                Directory.CreateDirectory(point);
+                if (Directory.EnumerateFileSystemEntries(point).GetEnumerator().MoveNext()) return "FAIL " + head + " exit=-1 - the folder is not empty";
+            }
+            else if (Directory.Exists(point + "\\")) return "FAIL " + head + " exit=-1 - " + point + " is in use";
+
+            string backend = Get(kv, "backend", "auto").ToLowerInvariant();
+            bool aim = backend != "imdisk" && backend != "windows" && Aim.CliAvailable;
+            // WRITING INTO THE IMAGE ITSELF through AIM CLI is refused without --ignorerisks - measured 02/10:
+            // "a system-wide write-cache deadlock could occur while mounting in write-original mode on
+            // Windows 11 prior to 22H2". That is builds 22000 to 22620; anywhere else the flag only answers a
+            // warning that does not apply. On those builds a VHD/VHDX goes to Windows' own support instead,
+            // and anything else is refused.
+            bool writeOriginal = !readOnly && overlay.Length == 0;
+            int build = Environment.OSVersion.Version.Build;
+            bool riskyBuild = build >= 22000 && build < 22621;
+            if (aim && writeOriginal && riskyBuild)
+            {
+                if (ext == ".vhd" || ext == ".vhdx" || ext == ".avhdx") aim = false;
+                else return "FAIL " + head + " exit=-1 backend=aim - writing into the image is unsafe on this Windows 11 build: attach it read-only or with an overlay";
+            }
+            var before = Volumes();
+            var unitsBefore = aim ? Aim.Units() : new HashSet<string>();
+            string how, detail;
+            int code;
+            if (aim)
+            {
+                how = "aim";
+                // AIM CLI serves the image through the DevIO driver, which the Toolkit installs as a MANUAL
+                // service - measured 02/10: "Cannot open \\?\DevIoDrv\..., the system cannot find the path".
+                // Started here; already running is not a failure.
+                var (sc, scSaid) = Run(Path.Combine(Environment.SystemDirectory ?? @"C:\Windows\System32", "sc.exe"), "start", "deviodrv");
+                // removable=1 (1.6, AIM only): the image as REMOVABLE media, like the RAM disks - indexers leave it
+                // alone. Windows' own attach has no such choice; an ISO is a CD-ROM either way.
+                bool asRemovable = Get(kv, "removable", "") == "1";
+                var args = new List<string> { iso ? "--mount=cdrom" : asRemovable ? "--mount=removable" : "--mount", readOnly ? "--readonly" : "--writable", "--online",
+                                              "--filename=" + image, "--provider=" + (virt ? "DiscUtils" : "None") };
+                if (overlay.Length > 0) { args.Add("--writeoverlay=" + overlay); if (autodelete) args.Add("--autodelete"); }
+                if (writeOriginal) args.Add("--ignorerisks");
+                args.Add("--background");
+                (code, detail) = RunDetached(Aim.Cli, args, 120);
+            }
+            else if (raw)
+            {
+                if (!File.Exists(ImDiskExe)) return "FAIL " + head + " exit=-1 - a raw image needs AIM or ImDisk";
+                if (overlay.Length > 0) return "FAIL " + head + " exit=-1 - a write overlay on a raw image needs AIM";
+                how = "imdisk";
+                var opts = new List<string> { readOnly ? "ro" : "rw" };
+                var (c, said) = Run(ImDiskExe, "-a", "-t", "file", "-f", image, "-o", string.Join(",", opts), "-m", point);
+                code = c; detail = said;
+                if (code == 0)
+                {
+                    WriteAttached(dir, point, how, image, "");
+                    return "OK " + head + " " + token + " exit=0 backend=imdisk at=" + point;
+                }
+                return "FAIL " + head + " " + token + " exit=" + code + " backend=imdisk - " + LastWords(said);
+            }
+            else
+            {
+                // Windows' own virtual disk support: VHD, VHDX (differencing chains included), ISO.
+                how = "windows";
+                if (ext != ".vhd" && ext != ".vhdx" && ext != ".avhdx" && !iso) return "FAIL " + head + " exit=-1 - " + ext + " needs the AIM Toolkit";
+                if (iso)
+                {
+                    // diskpart cannot select an ISO ("There is no virtual disk selected", measured 02/10):
+                    // the virtual disk API itself, which mounts it as a CD-ROM, read-only, for good -
+                    // PERMANENT_LIFETIME, or it would go with this process.
+                    int isoError = VirtualDisk.AttachIso(image);
+                    if (isoError != 0) return "FAIL " + head + " " + token + " exit=" + isoError + " backend=windows - the ISO could not be attached";
+                    code = 0; detail = "";
+                    WriteAttached(dir, point, "windows-iso", image, "");
+                    goto attached;
+                }
+                string target = image;
+                if (overlay.Length > 0)
+                {
+                    if (!overlay.EndsWith(".vhdx", StringComparison.OrdinalIgnoreCase) && !overlay.EndsWith(".avhdx", StringComparison.OrdinalIgnoreCase))
+                        return "FAIL " + head + " exit=-1 - without AIM the overlay is a differencing VHDX: name it .vhdx";
+                    if (!File.Exists(overlay))
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(overlay));
+                        var (cc, cs) = DiskPart(dir, "create vdisk file=\"" + overlay + "\" parent=\"" + image + "\"\r\n");
+                        if (cc != 0) return "FAIL " + head + " exit=" + cc + " backend=windows - the overlay was not created: " + LastWords(cs);
+                    }
+                    target = overlay;
+                    readOnly = false;
+                }
+                (code, detail) = DiskPart(dir, "select vdisk file=\"" + target + "\"\r\nattach vdisk" + (readOnly ? " readonly" : "") + "\r\n");
+                if (code != 0) return "FAIL " + head + " exit=" + code + " backend=windows - " + LastWords(detail);
+                WriteAttached(dir, point, how, target, overlay.Length > 0 && autodelete ? overlay : "");
+            }
+            // AIM CLI's exit code is not a verdict - measured: the PID of the process it leaves serving the
+            // image (58604 for a mount that worked). The volume that comes is.
+            if (code != 0 && how != "aim") return "FAIL " + head + " " + token + " exit=" + code + " backend=" + how + " - " + LastWords(detail);
+            attached:
+
+            // The volume that came, and only the mount point asked for.
+            var volume = NewVolume(before, 30);
+            if (volume == null)
+            {
+                if (how == "aim") DropNewAimDevices(unitsBefore);
+                return "FAIL " + head + " " + token + " exit=" + code + " backend=" + how + " - no volume appeared (no file system Windows reads?) - " + Flat(detail);
+            }
+            System.Threading.Thread.Sleep(500);
+            foreach (var other in PathsOf(volume)) DeleteVolumeMountPoint(other);
+            string wanted = point.TrimEnd('\\') + "\\";
+            if (!SetVolumeMountPoint(wanted, volume))
+            {
+                int error = Marshal.GetLastWin32Error();
+                if (how == "aim") DropNewAimDevices(unitsBefore);
+                return "FAIL " + head + " " + token + " exit=" + error + " backend=" + how + " - attached, but " + point + " could not be given to it";
+            }
+            if (how == "aim") WriteAttached(dir, point, how, image, "");
+            return "OK " + head + " " + token + " exit=0 backend=" + how + " at=" + point;
+        }
+
+        /// <summary>ISO through virtdisk.dll - the API Windows' own "Mount" uses. Win32 error codes back.</summary>
+        private static class VirtualDisk
+        {
+            [StructLayout(LayoutKind.Sequential)]
+            private struct VIRTUAL_STORAGE_TYPE { public uint DeviceId; public Guid VendorId; }
+
+            [StructLayout(LayoutKind.Sequential)]
+            private struct OPEN_VIRTUAL_DISK_PARAMETERS { public uint Version; public uint RWDepth; }
+
+            [StructLayout(LayoutKind.Sequential)]
+            private struct ATTACH_VIRTUAL_DISK_PARAMETERS { public uint Version; public uint Reserved; }
+
+            private const uint VIRTUAL_STORAGE_TYPE_DEVICE_ISO = 1;
+            private static readonly Guid VendorMicrosoft = new Guid("EC984AEC-A0F9-47e9-901F-71415A66345B");
+            private const uint VIRTUAL_DISK_ACCESS_READ = 0x000D0000, VIRTUAL_DISK_ACCESS_DETACH = 0x00040000;
+            private const uint ATTACH_READ_ONLY = 0x1, ATTACH_PERMANENT_LIFETIME = 0x4;
+
+            [DllImport("virtdisk.dll", CharSet = CharSet.Unicode)]
+            private static extern int OpenVirtualDisk(ref VIRTUAL_STORAGE_TYPE type, string path, uint access, uint flags, ref OPEN_VIRTUAL_DISK_PARAMETERS parameters, out IntPtr handle);
+
+            [DllImport("virtdisk.dll")]
+            private static extern int AttachVirtualDisk(IntPtr handle, IntPtr securityDescriptor, uint flags, uint providerFlags, ref ATTACH_VIRTUAL_DISK_PARAMETERS parameters, IntPtr overlapped);
+
+            [DllImport("virtdisk.dll")]
+            private static extern int DetachVirtualDisk(IntPtr handle, uint flags, uint providerFlags);
+
+            private static int Open(string path, uint access, out IntPtr handle)
+            {
+                var type = new VIRTUAL_STORAGE_TYPE { DeviceId = VIRTUAL_STORAGE_TYPE_DEVICE_ISO, VendorId = VendorMicrosoft };
+                var p = new OPEN_VIRTUAL_DISK_PARAMETERS { Version = 1, RWDepth = 0 };
+                return OpenVirtualDisk(ref type, path, access, 0, ref p, out handle);
+            }
+
+            public static int AttachIso(string path)
+            {
+                int e = Open(path, VIRTUAL_DISK_ACCESS_READ, out var h);
+                if (e != 0) return e;
+                try
+                {
+                    var p = new ATTACH_VIRTUAL_DISK_PARAMETERS { Version = 1 };
+                    return AttachVirtualDisk(h, IntPtr.Zero, ATTACH_READ_ONLY | ATTACH_PERMANENT_LIFETIME, 0, ref p, IntPtr.Zero);
+                }
+                finally { CloseHandle(h); }
+            }
+
+            public static int DetachIso(string path)
+            {
+                int e = Open(path, VIRTUAL_DISK_ACCESS_DETACH, out var h);
+                if (e != 0) return e;
+                try { return DetachVirtualDisk(h, 0, 0); }
+                finally { CloseHandle(h); }
+            }
+        }
+
+        /// <summary>An attach that went wrong leaves nothing behind: the AIM devices that were not there
+        /// before are removed.</summary>
+        private static void DropNewAimDevices(HashSet<string> before)
+        {
+            foreach (var unit in Aim.Units())
+                if (!before.Contains(unit)) Run(Aim.LowLevel, "-D", "-u", unit);
+        }
+
+        private static string ImageDetach(Dictionary<string, string> kv, string dir)
+        {
+            const string head = "image-detach";
+            // By the image alone (no drive=, no mount=): wherever attached.tsv says it was attached - what a caller
+            // that knows only the file asks, after a restart of its own.
+            string byImage = Get(kv, "image", "");
+            if (byImage.Length > 0 && Get(kv, "drive", "").Length == 0 && Get(kv, "mount", "").Length == 0)
+            {
+                var found = ReadAttachedByFile(dir, byImage);
+                if (found == null) return "FAIL " + head + " exit=-1 - " + Path.GetFileName(byImage) + " is not attached by this helper";
+                if (found[0].Length == 2) kv["drive"] = found[0].Substring(0, 1); else kv["mount"] = found[0];
+            }
+            if (!Point(kv, out string point, out string token, out string pointError)) return "FAIL " + head + " exit=-1 - " + pointError;
+            var record = ReadAttached(dir, point);
+            string how = record?[1] ?? (IsImDiskPoint(point) ? "imdisk" : Aim.Available && Aim.UnitOf(point) != null ? "aim" : "windows");
+            string result;
+            if (how == "windows-iso")
+            {
+                FlushAndDismount(point);
+                if (point.Length > 2) DeleteVolumeMountPoint(point.TrimEnd('\\') + "\\");
+                int error = VirtualDisk.DetachIso(record[2]);
+                result = error == 0 ? "OK " + head + " " + token + " exit=0 backend=windows" : "FAIL " + head + " " + token + " exit=" + error + " backend=windows - the ISO could not be detached";
+            }
+            else if (how == "windows")
+            {
+                string file = record?[2] ?? Get(kv, "image", "");
+                if (!SafeImage(file)) return "FAIL " + head + " " + token + " exit=-1 - which image is attached there is not known";
+                FlushAndDismount(point);
+                if (point.Length > 2) DeleteVolumeMountPoint(point.TrimEnd('\\') + "\\");
+                var (code, said) = DiskPart(dir, "select vdisk file=\"" + file + "\"\r\ndetach vdisk\r\n");
+                result = code == 0 ? "OK " + head + " " + token + " exit=0 backend=windows" : "FAIL " + head + " " + token + " exit=" + code + " backend=windows - " + LastWords(said);
+                string delete = record?[3] ?? "";
+                if (code == 0 && delete.Length > 0) { try { File.Delete(delete); } catch { } }
+            }
+            else
+            {
+                // ImDisk and AIM: the clean dismount, which knows both.
+                result = Dismount(point, token).Replace("dismount " + token, head + " " + token);
+            }
+            if (result.StartsWith("OK", StringComparison.Ordinal)) ForgetAttached(dir, point);
+            return result;
+        }
+
+        private static void FlushAndDismount(string point)
+        {
+            string volumeName = VolumeOf(point);
+            if (volumeName == null) return;
+            IntPtr volume = CreateFile(volumeName.TrimEnd('\\'), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
+            if (volume == InvalidHandle) return;
+            try
+            {
+                FlushFileBuffers(volume);
+                DeviceIoControl(volume, FSCTL_LOCK_VOLUME, IntPtr.Zero, 0, IntPtr.Zero, 0, out _, IntPtr.Zero);
+                DeviceIoControl(volume, FSCTL_DISMOUNT_VOLUME, IntPtr.Zero, 0, IntPtr.Zero, 0, out _, IntPtr.Zero);
+            }
+            finally { CloseHandle(volume); }
+        }
+
+        /// <summary>An absolute path to an existing-or-to-be file, nothing a diskpart script or a command line
+        /// could read as more.</summary>
+        private static bool SafeImage(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || path.Length > 400) return false;
+            foreach (var c in path) if (c < ' ' || c == '"') return false;
+            try { return Path.IsPathFullyQualified(path) && Path.GetFullPath(path) == path; } catch { return false; }
+        }
+
+        private static (int code, string output) DiskPart(string dir, string script)
+        {
+            var scriptPath = Path.Combine(dir, "image-" + Guid.NewGuid().ToString("N") + ".diskpart");
+            try
+            {
+                File.WriteAllText(scriptPath, script);
+                return Run(Path.Combine(Environment.SystemDirectory ?? @"C:\Windows\System32", "diskpart.exe"), "/s", scriptPath);
+            }
+            finally { try { File.Delete(scriptPath); } catch { } }
+        }
+
+        /// <summary>Run a tool that may leave a child behind (aim_cli --background serves the image from a
+        /// process of its own): its words are read as they come, never to the end of the pipe - the child
+        /// holds it open - and only the parent is waited for, with a ceiling. AIM CLI's exit code is not a
+        /// verdict (measured: 31252 for a mount that worked), so the caller judges by the volume that comes.</summary>
+        private static (int code, string output) RunDetached(string exe, List<string> args, int seconds)
+        {
+            try
+            {
+                var psi = new ProcessStartInfo(exe) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+                foreach (var a in args) psi.ArgumentList.Add(a);
+                var said = new System.Text.StringBuilder();
+                using var p = new Process { StartInfo = psi };
+                p.OutputDataReceived += (_, e) => { if (e.Data != null) lock (said) said.AppendLine(e.Data); };
+                p.ErrorDataReceived += (_, e) => { if (e.Data != null) lock (said) said.AppendLine(e.Data); };
+                p.Start();
+                p.BeginOutputReadLine();
+                p.BeginErrorReadLine();
+                bool exited = p.WaitForExit(seconds * 1000);
+                System.Threading.Thread.Sleep(300);
+                lock (said) return (exited ? p.ExitCode : -2, said.ToString() + (exited ? "" : " (still running after " + seconds + " s)"));
+            }
+            catch (Exception ex) { return (-1, ex.Message); }
+        }
+        private static char FreeLetter()
+        {
+            var used = new HashSet<char>();
+            foreach (var d in DriveInfo.GetDrives()) used.Add(char.ToUpperInvariant(d.Name[0]));
+            for (char c = 'Z'; c >= 'D'; c--) if (!used.Contains(c)) return c;
+            return '\0';
+        }
+
+        private static string AttachedPath(string dir) => Path.Combine(dir, "attached.tsv");
+
+        private static void WriteAttached(string dir, string point, string how, string file, string deleteAfter)
+        {
+            try
+            {
+                ForgetAttached(dir, point);
+                File.AppendAllText(AttachedPath(dir), point + "\t" + how + "\t" + file + "\t" + deleteAfter + "\r\n");
+            }
+            catch { }
+        }
+
+        private static string[] ReadAttached(string dir, string point)
+        {
+            try
+            {
+                if (!File.Exists(AttachedPath(dir))) return null;
+                foreach (var line in File.ReadAllLines(AttachedPath(dir)))
+                {
+                    var parts = line.Split('\t');
+                    if (parts.Length >= 4 && string.Equals(parts[0], point, StringComparison.OrdinalIgnoreCase)) return parts;
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        private static string[] ReadAttachedByFile(string dir, string file)
+        {
+            try
+            {
+                if (!File.Exists(AttachedPath(dir))) return null;
+                foreach (var line in File.ReadAllLines(AttachedPath(dir)))
+                {
+                    var parts = line.Split('\t');
+                    if (parts.Length >= 4 && string.Equals(parts[2], file, StringComparison.OrdinalIgnoreCase)) return parts;
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        private static void ForgetAttached(string dir, string point)
+        {
+            try
+            {
+                var path = AttachedPath(dir);
+                if (!File.Exists(path)) return;
+                var keep = new List<string>();
+                foreach (var line in File.ReadAllLines(path))
+                    if (!line.StartsWith(point + "\t", StringComparison.OrdinalIgnoreCase)) keep.Add(line);
+                File.WriteAllLines(path, keep);
+            }
+            catch { }
+        }
+
         // ── action = dismount ────────────────────────────────────────────────
 
-        private static string Dismount(string drive)
+        private static string Dismount(string point, string token)
         {
-            drive = (drive ?? "").ToUpperInvariant();
-            if (drive.Length != 1 || drive[0] < 'A' || drive[0] > 'Z') return "FAIL dismount ? locked=0 dismounted=0 exit=-1 - drive must be one letter";
-            string letter = drive + ":";
-            string head = "dismount " + drive;
-
-            var target = new System.Text.StringBuilder(1024);
-            if (QueryDosDevice(letter, target, target.Capacity) == 0) return "FAIL " + head + " locked=0 dismounted=0 exit=-1 - no such drive";
+            string head = "dismount " + token;
+            string device = DeviceOf(point);
+            if (device == null) return "FAIL " + head + " locked=0 dismounted=0 exit=-1 - no such drive";
             const string prefix = @"\Device\ImDisk";
-            string device = target.ToString();
-            if (!device.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) || !uint.TryParse(device.Substring(prefix.Length), out uint number))
-                return "FAIL " + head + " locked=0 dismounted=0 exit=-1 - " + letter + " is " + device + ", not an ImDisk drive";
+            bool imdisk = device.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+            uint number = 0;
+            if (imdisk && !uint.TryParse(device.Substring(prefix.Length), out number))
+                return "FAIL " + head + " locked=0 dismounted=0 exit=-1 - " + point + " is " + device + ", not an ImDisk drive";
+            string unit = null;
+            if (!imdisk)
+            {
+                unit = Aim.Available ? Aim.UnitOf(point) : null;
+                if (unit == null) return "FAIL " + head + " locked=0 dismounted=0 exit=-1 - " + point + " is " + device + ", not an ImDisk or AIM drive"
+                                         + (Aim.Available ? " [aim_ll -l: " + Flat(Run(Aim.LowLevel, "-l").output) + "]" : " [no AIM]");
+            }
+            // The volume, opened by its GUID path: works for a letter and for a folder alike.
+            string volumeName = VolumeOf(point);
+            string open = volumeName != null ? volumeName.TrimEnd('\\') : point.Length == 2 ? @"\\.\" + point : @"\\?\GLOBALROOT" + device;
 
             bool locked = false, dismounted = false;
-            IntPtr volume = CreateFile(@"\\.\" + letter, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+            IntPtr volume = CreateFile(open, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
                                        IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
             int openError = volume == InvalidHandle ? Marshal.GetLastWin32Error() : 0;
             int dismountError = 0;
@@ -396,6 +1202,22 @@ namespace RamDiskHelper
                     if (!dismounted) dismountError = Marshal.GetLastWin32Error();
                 }
 
+                if (!imdisk)
+                {
+                    // AIM: the mount point goes first, quietly, then the device by its number. aim_ll locks
+                    // the volume itself, so ours is let go first - dismounted already, nothing on it.
+                    // -D only when -d is refused.
+                    if (point.Length > 2) DeleteVolumeMountPoint(point.TrimEnd('\\') + "\\");
+                    if (volume != InvalidHandle) { CloseHandle(volume); volume = InvalidHandle; }
+                    var (code, said) = Run(Aim.LowLevel, "-d", "-u", unit);
+                    if (code != 0) (code, said) = Run(Aim.LowLevel, "-D", "-u", unit);
+                    if (code != 0)
+                        return "FAIL " + head + " locked=" + B(locked) + " dismounted=" + B(dismounted) + " exit=" + code + " backend=aim - " + LastWords(said);
+                    if (point.Length == 2) SHChangeNotify(SHCNE_DRIVEREMOVED, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, point + "\\", IntPtr.Zero);
+                    return "OK " + head + " locked=" + B(locked) + " dismounted=" + B(dismounted) + " exit=0 backend=aim"
+                           + (openError != 0 ? " - the volume could not be opened (error " + openError + ")" : "");
+                }
+
                 // The removal, with the volume still held locked: nothing can remount it in between.
                 IntPtr handle = ImDiskOpenDeviceByNumber(number, 0);
                 if (handle == IntPtr.Zero || handle == InvalidHandle)
@@ -410,16 +1232,22 @@ namespace RamDiskHelper
 
             // The driver takes the letter with the device; when it is still there and still this device,
             // it goes quietly - no broadcast.
-            var now = new System.Text.StringBuilder(1024);
-            if (QueryDosDevice(letter, now, now.Capacity) != 0 && string.Equals(now.ToString(), device, StringComparison.OrdinalIgnoreCase))
-                DefineDosDevice(DDD_REMOVE_DEFINITION | DDD_NO_BROADCAST_SYSTEM, letter, null);
-            SHChangeNotify(SHCNE_DRIVEREMOVED, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, letter + "\\", IntPtr.Zero);
-            return "OK " + head + " locked=" + B(locked) + " dismounted=" + B(dismounted) + " exit=0"
+            if (point.Length == 2)
+            {
+                var now = new System.Text.StringBuilder(1024);
+                if (QueryDosDevice(point, now, now.Capacity) != 0 && string.Equals(now.ToString(), device, StringComparison.OrdinalIgnoreCase))
+                    DefineDosDevice(DDD_REMOVE_DEFINITION | DDD_NO_BROADCAST_SYSTEM, point, null);
+                SHChangeNotify(SHCNE_DRIVEREMOVED, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, point + "\\", IntPtr.Zero);
+            }
+            else RemoveFolderMount(point);
+            return "OK " + head + " locked=" + B(locked) + " dismounted=" + B(dismounted) + " exit=0 backend=imdisk"
                    + (openError != 0 ? " - the volume could not be opened (error " + openError + ")" : "")
                    + (dismountError != 0 ? " - the dismount was refused (error " + dismountError + ")" : "");
         }
 
         private static string B(bool value) => value ? "1" : "0";
+
+        private static string Flat(string s) { s = (s ?? "").Replace("\r", " ").Replace("\n", " | "); return s.Length > 600 ? s.Substring(0, 600) : s; }
 
         private static readonly IntPtr InvalidHandle = new IntPtr(-1);
         private const uint GENERIC_READ = 0x80000000, GENERIC_WRITE = 0x40000000, FILE_SHARE_READ = 1, FILE_SHARE_WRITE = 2, OPEN_EXISTING = 3;

@@ -31,11 +31,16 @@ namespace LbIntegrations.Probe
             // plugin under test - there is nothing to load a DLL for, and requiring one would mean
             // naming a plugin that has nothing to do with the question.
             // How long unmounting takes by each method: --ramdisk-bench --lb <root> [--only-api | --shipped].
+            // read/write speed of each RAM disk and of a VHDX by each driver: --ramdisk-perf --lb <root> [--vhdx-dir <folder>] [--mb 512]
+            if (Has(args, "--ramdisk-perf") && Has(args, "--detail")) return RamDiskPerf.Detail(Arg(args, "--lb"), int.TryParse(Arg(args, "--mb"), out var detailMb) ? detailMb : 512) ? 0 : 1;
+            if (Has(args, "--ramdisk-perf")) return RamDiskPerf.Run(Arg(args, "--lb"), Arg(args, "--vhdx-dir"), int.TryParse(Arg(args, "--mb"), out var perfMb) ? perfMb : 512) ? 0 : 1;
             if (Has(args, "--vhdx")) return RamDiskBench.Vhdx(Arg(args, "--lb")) ? 0 : 1;
             if (Has(args, "--ramdisk-fit")) return RamDiskFit.Run(Arg(args, "--lb"), Arg(args, "--nand"), Arg(args, "--extra")) ? 0 : 1;
             if (Has(args, "--ramdisk-leak")) return RamDiskLeak.Run(Arg(args, "--lb"), int.TryParse(Arg(args, "--size"), out var leakMb) ? leakMb : 1024, Has(args, "--dismount")) ? 0 : 1;
             if (Has(args, "--ramdisk-clean")) return RamDiskBench.Clean(Arg(args, "--lb")) ? 0 : 1;
             if (Has(args, "--ramdisk-bench")) return RamDiskBench.Run(Arg(args, "--lb"), Has(args, "--only-api"), Has(args, "--shipped")) ? 0 : 1;
+            if (Has(args, "--ramdisk-tab")) { LbIntegrations.RamDisk.RamDiskHost.UseRoot(Arg(args, "--lb")); var form = new System.Windows.Forms.Form { ClientSize = new System.Drawing.Size(720, 1000), Font = new System.Drawing.Font("Segoe UI", 9f), Text = "RAM disk" }; var tab = new LbIntegrations.Menus.RamDiskTab(); form.Controls.Add(tab); form.Show(); System.Windows.Forms.Application.DoEvents(); System.Threading.Thread.Sleep(300); System.Windows.Forms.Application.DoEvents(); using var bmp = new System.Drawing.Bitmap(form.Width, form.Height); form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, form.Width, form.Height)); bmp.Save(Arg(args, "--out")); return 0; }
+            if (Has(args, "--ramdisk-backends")) return RamDiskBackendCheck.Run(Arg(args, "--lb"), Arg(args, "--images")) ? 0 : 1;
             if (Has(args, "--ramdisk")) return RamDiskCheck.Run(Arg(args, "--lb")) ? 0 : 1;
 
             // The snapshot engine needs no plugin and no emulator either: it is a walk, a

@@ -111,6 +111,8 @@ namespace LbIntegrations.Menus
     {
         private readonly List<(SettingsProvider Provider, TabPage Tab, Control Page)> _plugins = new List<(SettingsProvider, TabPage, Control)>();
         private readonly TabControl _tabs;
+        private RamDiskTab _ramDisk;
+        private TabPage _ramDiskPage;
 
         public NixxSettingsForm(List<SettingsProvider> providers)
         {
@@ -126,6 +128,7 @@ namespace LbIntegrations.Menus
 
             _tabs = new TabControl { Dock = DockStyle.Fill };
             _tabs.TabPages.Add(GeneralTab(providers));
+            _tabs.TabPages.Add(RamDiskPage());
             foreach (var provider in providers) _tabs.TabPages.Add(PluginTab(provider));
 
             var bottom = new Panel { Dock = DockStyle.Bottom, Height = 46 };
@@ -152,6 +155,16 @@ namespace LbIntegrations.Menus
         /// with its reason, and nothing after it is saved.</summary>
         private bool SaveAll()
         {
+            if (_ramDisk != null)
+            {
+                var problem = _ramDisk.Save();
+                if (problem != null)
+                {
+                    _tabs.SelectedTab = _ramDiskPage;
+                    MessageBox.Show(this, problem, RamDiskTab.Title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return false;
+                }
+            }
             foreach (var (provider, tab, page) in _plugins)
             {
                 if (page == null) continue;   // its page could not be built: nothing to save
@@ -164,6 +177,19 @@ namespace LbIntegrations.Menus
                 return false;
             }
             return true;
+        }
+
+        /// <summary>One RAM disk section for every plugin of the pack - see RamDiskTab.</summary>
+        private TabPage RamDiskPage()
+        {
+            _ramDiskPage = new TabPage(RamDiskTab.Title) { UseVisualStyleBackColor = true };
+            try { _ramDisk = new RamDiskTab(); _ramDiskPage.Controls.Add(_ramDisk); }
+            catch (Exception ex)
+            {
+                RelayLog.Warn("the RAM disk tab", ex);
+                _ramDiskPage.Controls.Add(new Label { Dock = DockStyle.Fill, Padding = new Padding(12), ForeColor = Color.Firebrick, Text = "The RAM disk settings could not be shown:\n\n" + ex.Message });
+            }
+            return _ramDiskPage;
         }
 
         private TabPage PluginTab(SettingsProvider provider)

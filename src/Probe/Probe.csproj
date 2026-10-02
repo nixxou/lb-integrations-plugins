@@ -58,6 +58,8 @@
          write to the same folder and look for the same task. See src\Shared.RamDisk\RamDisk.cs for
          the protocol, and RamDiskLog.cs for how it reaches a log without naming one. -->
     <Compile Include="..\Shared.RamDisk\**\*.cs" />
+    <!-- The NixxMenu's RAM disk tab, for the ramdisk-tab arm: a picture of it without LaunchBox. -->
+    <Compile Include="..\Menus\RamDiskTab.cs" />
   </ItemGroup>
 
 
