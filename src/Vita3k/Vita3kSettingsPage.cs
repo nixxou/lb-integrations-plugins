@@ -32,6 +32,7 @@ namespace LbIntegrations.Vita3k
             {
                 if (Vita3kSettings.BypassVitaImport != ours.Bypass) Vita3kSettings.BypassVitaImport = ours.Bypass;
                 if (Vita3kSettings.CleanImportList != ours.Clean) Vita3kSettings.CleanImportList = ours.Clean;
+                if (Vita3kSettings.ImportTitle != ours.Title) Vita3kSettings.ImportTitle = ours.Title;
                 if (Vita3kSettings.ImportRegionVersion != ours.RegionVersion) Vita3kSettings.ImportRegionVersion = ours.RegionVersion;
             }
             catch (Exception ex) { return "the settings could not be written: " + ex.Message; }
@@ -41,13 +42,14 @@ namespace LbIntegrations.Vita3k
 
     internal sealed class Vita3kSettingsPage : UserControl
     {
-        private readonly CheckBox _bypass, _clean, _regionVersion;
+        private readonly CheckBox _bypass, _clean, _title, _regionVersion;
         private readonly Vita3kLayout _layout;
         private readonly VitaSystemSettings _shown;
         private readonly Vita3kSystemFields _system;
 
         public bool Bypass => _bypass.Checked;
         public bool Clean => _clean.Checked;
+        public bool Title => _title.Checked;
         public bool RegionVersion => _regionVersion.Checked;
 
         public Vita3kSettingsPage()
@@ -71,39 +73,49 @@ namespace LbIntegrations.Vita3k
             };
             _clean = new CheckBox
             {
-                Text = "Put the game list right before importing",
+                Text = "Filter out what is not a game",
                 AutoSize = true, Location = new Point(32, 146), Checked = Vita3kSettings.CleanImportList,
             };
             var explainClean = new Label
             {
-                AutoSize = false, Location = new Point(50, 170), Size = new Size(522, 70), ForeColor = SystemColors.GrayText,
-                Text = "Each file is read: games are named from their param.sfo (without the trademark signs), updates "
-                     + "and DLC are taken out of the list and recorded for their game, so a launch finds them, and "
-                     + "anything that is not a Vita game is taken out. You can still change the list before Finish.",
+                AutoSize = false, Location = new Point(50, 170), Size = new Size(522, 52), ForeColor = SystemColors.GrayText,
+                Text = "Each file's param.sfo is read before you click Finish: a game stays; an update or a DLC is noted for "
+                     + "its game, found again at launch; a .pkg with no licence and anything else goes.",
             };
-            // After the import (Mehdi, 30/09) - see Vita3kImportFinished. Read while the list is put right, so it
-            // needs that box too.
+            _title = new CheckBox
+            {
+                Text = "Rename games when their name is not in LaunchBox's database",
+                AutoSize = true, Location = new Point(32, 226), Checked = Vita3kSettings.ImportTitle,
+            };
+            var explainTitle = new Label
+            {
+                AutoSize = false, Location = new Point(50, 250), Size = new Size(522, 52), ForeColor = SystemColors.GrayText,
+                Text = "The file's name is kept when LaunchBox's database knows it on Sony Playstation Vita; else the param.sfo's "
+                     + "title, written as the database writes it. Shown in the list before you click Finish.",
+            };
+            // After the import (Mehdi, 30/09) - see Vita3kImportFinished. Read while the list is read.
             _regionVersion = new CheckBox
             {
-                Text = "After the import, set each game's region and version",
-                AutoSize = true, Location = new Point(50, 244), Checked = Vita3kSettings.ImportRegionVersion,
+                Text = "Set each game's region and version after the import",
+                AutoSize = true, Location = new Point(32, 306), Checked = Vita3kSettings.ImportRegionVersion,
             };
             var explainRegion = new Label
             {
-                AutoSize = false, Location = new Point(68, 268), Size = new Size(504, 56), ForeColor = SystemColors.GrayText,
+                AutoSize = false, Location = new Point(50, 330), Size = new Size(522, 56), ForeColor = SystemColors.GrayText,
                 Text = "Region: from the game's param.sfo - the store its CONTENT_ID names (U North America, E Europe, "
                      + "J Japan, H Asia, K Korea), else its title id. Version: only the [tags] and (tags) of the file's "
                      + "name - \"[PCSA00017] [USA] [NoNpDRM]\" - and nothing when it has none.",
             };
-            void Enable() { _clean.Enabled = _bypass.Checked; _regionVersion.Enabled = _bypass.Checked && _clean.Checked; }
+            void Enable() { _clean.Enabled = _title.Enabled = _regionVersion.Enabled = _bypass.Checked; }
             Enable();
             _bypass.CheckedChanged += (_, _) => Enable();
-            _clean.CheckedChanged += (_, _) => Enable();
-            import.Height = 336;
+            import.Height = 396;
             import.Controls.Add(_bypass);
             import.Controls.Add(explain);
             import.Controls.Add(_clean);
             import.Controls.Add(explainClean);
+            import.Controls.Add(_title);
+            import.Controls.Add(explainTitle);
             import.Controls.Add(_regionVersion);
             import.Controls.Add(explainRegion);
 

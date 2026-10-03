@@ -36,7 +36,7 @@ namespace LbIntegrations.Xenia
         private readonly XeniaOptionRows _rows;
         private readonly TextBox _line;
         private readonly TextBox _contentFolder, _contentLimit, _ramBelow;
-        private readonly CheckBox _ram, _importClean, _importTitle, _optimized, _isoInArchive, _importRegion;
+        private readonly CheckBox _ram, _importClean, _importTitle, _optimized, _importRegion;
 
         public XeniaSettingsPage()
         {
@@ -69,24 +69,25 @@ namespace LbIntegrations.Xenia
             // Vita3K tabs have it.
             var import = XeniaConsolePanel.Group("LaunchBox's Import ROM Files wizard (Microsoft Xbox 360)");
             var im = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Location = new Point(8, 20) };
-            _importClean = new CheckBox { Text = "Take updates, DLC and what is not a game out of the list", AutoSize = true, Checked = XeniaLbImport.Wanted };
+            _importClean = new CheckBox { Text = "Filter out what is not a game", AutoSize = true, Checked = XeniaLbImport.Wanted };
             im.Controls.Add(_importClean);
             im.Controls.Add(new Label
             {
                 AutoSize = true, MaximumSize = new Size(500, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(18, 0, 0, 6),
-                Text = "Each file is read for what it holds, not its name: a game stays - a disc, an extracted disc, an Arcade, Indie or Games on "
-                       + "Demand package, loose or in an archive; a title update, a DLC, a theme or anything else goes, before you click Finish. Updates "
-                       + "and DLC are not lost: a launch finds them by their game.",
+                Text = "Each file is read for what it holds, before you click Finish: a disc, an extracted disc, an Arcade, Indie or Games on Demand "
+                       + "package stays, loose or in an archive; a title update or a DLC is noted for its game, found again at launch; a theme or "
+                       + "anything else goes. A disc image inside an archive is read too - it takes longer, once.",
             });
-            _importTitle = new CheckBox { Text = "Name each game as Xenia's compatibility list does", AutoSize = true, Checked = XeniaLbImport.Titles };
+            _importTitle = new CheckBox { Text = "Rename games when their name is not in LaunchBox's database", AutoSize = true, Checked = XeniaLbImport.Titles };
             im.Controls.Add(_importTitle);
             im.Controls.Add(new Label
             {
                 AutoSize = true, MaximumSize = new Size(500, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(18, 0, 0, 6),
-                Text = "The name the list gives the game's title id (\"PDC World Championship Darts\"), shown in the list before you click Finish; "
-                       + "a game the list does not have keeps the name LaunchBox gave it.",
+                Text = "The file's name is kept when LaunchBox's database knows it on Microsoft Xbox 360; else Xenia's compatibility list's name for "
+                       + "its title id, else the game's own - the first the database knows, written as it writes it. Shown in the list before you "
+                       + "click Finish.",
             });
-            _importRegion = new CheckBox { Text = "After the import, set each game's region", AutoSize = true, Checked = XeniaLbImport.Regions };
+            _importRegion = new CheckBox { Text = "Set each game's region after the import", AutoSize = true, Checked = XeniaLbImport.Regions };
             im.Controls.Add(_importRegion);
             im.Controls.Add(new Label
             {
@@ -94,17 +95,7 @@ namespace LbIntegrations.Xenia
                 Text = "The region the game's executable declares - North America, Japan, Europe, Asia, Australia, or World when it plays on "
                        + "several - on the game, or on the version LaunchBox filed it as.",
             });
-            // A disc image inside an archive (Mehdi, 03/10): refused unless asked for - XeniaScan.IsoInArchiveAllowed.
-            _isoInArchive = new CheckBox { Text = "Accept disc images (ISO) inside archives (.zip, .7z, .rar)", AutoSize = true, Checked = XeniaScan.IsoInArchiveAllowed };
-            im.Controls.Add(_isoInArchive);
-            im.Controls.Add(new Label
-            {
-                AutoSize = true, MaximumSize = new Size(500, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(18, 0, 0, 6),
-                Text = "Arcade and Games on Demand games, title updates and DLC are fine in a .zip, .7z or .rar: they are read in an instant. A disc "
-                       + "image in an archive is a bad idea: to know which game it is, the plugin has to decompress it up to its executable - "
-                       + "hundreds of MB, seconds to minutes per game, once - and every launch unpacks the whole disc again. Keep ISOs as they are, "
-                       + "or convert them to .zar, Xenia's own compressed format. Unticked, they are taken out at import and refused at launch.",
-            });
+
             import.Controls.Add(im);
             stack.Controls.Add(import);
 
@@ -204,7 +195,7 @@ namespace LbIntegrations.Xenia
             if (!_optimized.Checked) every[XeniaOptimized.SettingKey] = "off";
             XeniaSettings.WriteAll(every);
             XeniaExtras.WriteSettings(new Dictionary<string, string> { ["folder"] = _contentFolder.Text.Trim(), ["limit_gb"] = limit,
-                ["ramdisk"] = _ram.Checked ? "" : "off", ["ramdisk_below_gb"] = below, ["import_clean"] = _importClean.Checked ? "" : "off", ["import_title"] = _importTitle.Checked ? "" : "off", ["iso_in_archive"] = _isoInArchive.Checked ? "on" : "", ["import_region"] = _importRegion.Checked ? "" : "off" });
+                ["ramdisk"] = _ram.Checked ? "" : "off", ["ramdisk_below_gb"] = below, ["import_clean"] = _importClean.Checked ? "" : "off", ["import_title"] = _importTitle.Checked ? "" : "off", ["import_region"] = _importRegion.Checked ? "" : "off" });
             return null;
         }
     }

@@ -48,7 +48,7 @@ namespace LbIntegrations.Cxbx
     internal sealed class CxbxSettingsPage : UserControl
     {
         private readonly TextBox _folder, _limit, _ramBelow;
-        private readonly CheckBox _ram, _borderless, _importClean, _importTitle, _importRegion, _attach, _importByName;
+        private readonly CheckBox _ram, _borderless, _importClean, _importTitle, _importRegion, _attach;
         private readonly CxbxOptionRows _rows;
 
         public CxbxSettingsPage()
@@ -76,25 +76,20 @@ namespace LbIntegrations.Cxbx
             var import = Group("LaunchBox's Import ROM Files wizard (Microsoft Xbox)");
             var im = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Location = new Point(8, 20) };
             Label Explain(string text) => new Label { AutoSize = true, MaximumSize = new Size(500, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(18, 0, 0, 6), Text = text };
-            _importClean = new CheckBox { Text = "Take out of the list what is not an original Xbox game", AutoSize = true, Checked = CxbxSettings.On(s, "import_clean", true) };
+            _importClean = new CheckBox { Text = "Filter out what is not a game", AutoSize = true, Checked = CxbxSettings.On(s, "import_clean", true) };
             im.Controls.Add(_importClean);
-            im.Controls.Add(Explain("Each file is read for what it holds, not its name: a disc with a default.xbe stays, an Xbox 360 disc or anything else "
-                                    + "goes, before you click Finish. A disc is listed on the way and the listing kept, so its first launch only unpacks it - "
-                                    + "the reading takes a few seconds per zipped game, with a window saying how far it is."));
-            _importByName = new CheckBox { Text = "Do not read a zip or 7z whose name is an Xbox game of LaunchBox's database", AutoSize = true, Checked = CxbxSettings.On(s, "import_by_name", false), Margin = new Padding(18, 0, 0, 0) };
-            im.Controls.Add(_importByName);
-            im.Controls.Add(Explain("Reading the disc in an archive means decompressing it - 10 to 20 seconds for a full game. A name such as \"Grand Theft "
-                                    + "Auto - San Andreas (Europe) (Rev 1).zip\" is looked up first among LaunchBox's Microsoft Xbox games, compared as "
-                                    + "LaunchBox compares them; a name it knows is kept as it is, unread: its disc is read at its first launch instead, "
-                                    + "and the compatibility list's name and region below do not apply to it."));
-            _importTitle = new CheckBox { Text = "After the import, name each game as the compatibility list does", AutoSize = true, Checked = CxbxSettings.On(s, "import_title", true) };
+            im.Controls.Add(Explain("Each file is read for what it holds, zipped or not, before you click Finish: a disc with a default.xbe stays; an "
+                                    + "Xbox 360 disc or anything else goes. The disc is listed on the way, so its first launch only unpacks it - a zipped "
+                                    + "game takes a few seconds to read, once, under a window saying how far it is."));
+            _importTitle = new CheckBox { Text = "Rename games when their name is not in LaunchBox's database", AutoSize = true, Checked = CxbxSettings.On(s, "import_title", true) };
             im.Controls.Add(_importTitle);
-            im.Controls.Add(Explain("The name cxbx-reloaded.co.uk gives the game's serial (\"Grand Theft Auto: San Andreas\"); a game it does not list "
-                                    + "takes the name its executable carries."));
-            _importRegion = new CheckBox { Text = "After the import, set each game's region", AutoSize = true, Checked = CxbxSettings.On(s, "import_region", true) };
+            im.Controls.Add(Explain("The file's name is kept when LaunchBox's database knows it on Microsoft Xbox; else the compatibility list's name for its "
+                                    + "serial, else the name its executable carries - the first the database knows, written as it writes it. Shown in the "
+                                    + "list before you click Finish."));
+            _importRegion = new CheckBox { Text = "Set each game's region after the import", AutoSize = true, Checked = CxbxSettings.On(s, "import_region", true) };
             im.Controls.Add(_importRegion);
-            im.Controls.Add(Explain("The region of the compatibility list's entry for that very disc (Europe, Germany, North America...); else the one its "
-                                    + "executable declares - North America, Japan, or the rest of the world as Europe, World when it has several."));
+            im.Controls.Add(Explain("The compatibility list's entry for that very disc (Europe, Germany, North America...), else the region its executable "
+                                    + "declares - North America, Japan, or the rest of the world as Europe, World when it has several."));
             import.Controls.Add(im);
             stack.Controls.Add(import);
 
@@ -185,7 +180,7 @@ namespace LbIntegrations.Cxbx
             {
                 ["folder"] = _folder.Text.Trim(), ["limit_gb"] = limit, ["ramdisk"] = _ram.Checked ? "" : "off", ["attach_discs"] = _attach.Checked ? "" : "off",
                 ["ramdisk_below_gb"] = below, ["borderless"] = _borderless.Checked ? "" : "off",
-                ["import_clean"] = _importClean.Checked ? "" : "off", ["import_title"] = _importTitle.Checked ? "" : "off", ["import_by_name"] = _importByName.Checked ? "on" : "", ["import_region"] = _importRegion.Checked ? "" : "off",
+                ["import_clean"] = _importClean.Checked ? "" : "off", ["import_title"] = _importTitle.Checked ? "" : "off", ["import_by_name"] = "", ["import_region"] = _importRegion.Checked ? "" : "off",
             }) all[kv.Key] = kv.Value;
             foreach (var kv in _rows.Values()) all[kv.Key] = kv.Value;
             CxbxSettings.Write(all);

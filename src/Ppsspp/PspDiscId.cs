@@ -16,13 +16,21 @@
 //                 all four into the header by default, so the FLAC decoder is needed to open one
 //                 even when no hunk uses it (measured: removing it makes the read throw).
 //
-// Extraction is cached per (path, size, mtime) including failures, the way PCSX2's integration
-// caches its own serial lookups - GetSaves runs over the whole library and must not re-read discs.
+//   .zip          (Mehdi, 03/10: "si on met des iso dans un zip on assume") its .iso or .pbp, read as the entry is inflated -
+//                 a forward-only stream, so only up to the PARAM.SFO. A .cso / .chd in a zip is not read (a compressed image
+//                 in an archive: it would mean inflating it whole), the log says so.
+//
+// THE CACHE: <plugin data>\psp-sfo.tsv - the PARAM.SFO's bytes per (path, size, date), "looked, found nothing" included,
+// so a zip is inflated once, ever. A file MOVED (another folder, same name, size and date) is found again by those three.
+// GetSaves runs over the whole library: for a zip it asks the cache alone (Of(path, read: false)) - read at the import and
+// at launch, never while a page of the library draws.
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Text;
 using LbIntegrations.Psf;
 
@@ -33,53 +41,104 @@ namespace LbIntegrations.Ppsspp
         private const int SectorSize = 2048;
         private const long PvdOffset = 16 * SectorSize;       // ISO9660 puts the primary volume descriptor at sector 16
 
-        // An empty string memoises "looked, found nothing" so a failure costs one read, not one per scan.
-        private static readonly ConcurrentDictionary<string, string> Cache =
-            new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly string[] Readable = { ".pbp", ".iso", ".cso", ".zso", ".chd", ".zip" };
 
-        /// <summary>The 9-character disc id (ULUS10064), or null. Never throws.</summary>
-        public static string Of(string romPath)
+        /// <summary>The 9-character disc id (ULUS10064), or null. <paramref name="read"/> false: a .zip answered from the
+        /// cache alone (GetSaves). Never throws.</summary>
+        public static string Of(string romPath, bool read = true)
         {
-            if (string.IsNullOrWhiteSpace(romPath)) return null;
-            string key;
-            try
-            {
-                var fi = new FileInfo(romPath);
-                if (!fi.Exists) return null;
-                key = fi.FullName + "|" + fi.Length + "|" + fi.LastWriteTimeUtc.Ticks;
-            }
-            catch { return null; }
-
-            if (Cache.TryGetValue(key, out var cached)) return cached.Length == 0 ? null : cached;
-
-            string found = null;
-            try { found = Extract(romPath); }
-            catch (Exception ex) { Log.Warn("could not read a disc id from " + romPath, ex); }
-
-            Cache[key] = found ?? "";
-            if (found != null) Log.Info("disc id " + found + " <- " + Path.GetFileName(romPath));
-            return found;
+            var bytes = Cached(romPath, read);
+            if (bytes == null) return null;
+            var id = ParamSfo.Parse(bytes)?.GetString("DISC_ID");
+            if (string.IsNullOrWhiteSpace(id)) return null;
+            id = id.Trim().Replace("-", "").ToUpperInvariant();     // SAVEDATA folders drop the dash
+            return id.Length >= PspSaveUnits.DiscIdLength ? id.Substring(0, PspSaveUnits.DiscIdLength) : null;
         }
 
-        private static readonly ConcurrentDictionary<string, ParamSfo> SfoCache = new ConcurrentDictionary<string, ParamSfo>(StringComparer.OrdinalIgnoreCase);
-
         /// <summary>The whole PARAM.SFO of a PSP file - TITLE, CATEGORY, DISC_ID, DISC_VERSION, APP_VER - or null when the
-        /// container is not one this reads (.zip, .elf, .prx...) or holds none. Cached as Of is. For the import (PpssppLbImport)
-        /// and the game updates (PpssppUpdates). Never throws.</summary>
+        /// container is not one this reads (.elf, .prx...) or holds none. Cached - see the header. For the import
+        /// (PpssppLbImport) and the game updates (PpssppUpdates). Never throws.</summary>
         public static ParamSfo SfoOf(string romPath)
         {
+            try { var bytes = Cached(romPath, true); return bytes == null ? null : ParamSfo.Parse(bytes); }
+            catch (Exception ex) { Log.Warn("could not read the PARAM.SFO of " + romPath, ex); return null; }
+        }
+
+        // ── psp-sfo.tsv ──────────────────────────────────────────────────────
+
+        // Both keyed by size|date; the first adds the full path, the second the file's name (a file moved).
+        private static Dictionary<string, byte[]> _byPath, _byName;
+        private static readonly object Gate = new object();
+        internal static string CacheOverride;      // the probe's own file
+        private static string CachePath => CacheOverride ?? Path.Combine(PpssppSettings.Dir, "psp-sfo.tsv");
+        private static readonly byte[] Nothing = new byte[0];
+
+        private static byte[] Cached(string romPath, bool read)
+        {
+            if (string.IsNullOrWhiteSpace(romPath)) return null;
+            FileInfo fi;
             try
             {
-                var fi = new FileInfo(romPath);
-                if (!fi.Exists) return null;
-                var key = fi.FullName + "|" + fi.Length + "|" + fi.LastWriteTimeUtc.Ticks;
-                if (SfoCache.TryGetValue(key, out var cached)) return cached;
-                var bytes = SfoBytes(romPath);
-                var sfo = bytes == null ? null : ParamSfo.Parse(bytes);
-                SfoCache[key] = sfo;
-                return sfo;
+                fi = new FileInfo(romPath);
+                if (!fi.Exists || !Readable.Contains(fi.Extension.ToLowerInvariant())) return null;
             }
-            catch (Exception ex) { Log.Warn("could not read the PARAM.SFO of " + romPath, ex); return null; }
+            catch { return null; }
+            var stamp = fi.Length + "|" + fi.LastWriteTimeUtc.Ticks;
+            lock (Gate)
+            {
+                Load();
+                if (_byPath.TryGetValue(fi.FullName + "|" + stamp, out var hit)) return hit.Length == 0 ? null : hit;
+                if (_byName.TryGetValue(fi.Name + "|" + stamp, out hit))
+                {
+                    Log.Info("PARAM.SFO of " + fi.Name + " known from its old place (same name, size and date)");
+                    Remember(fi, hit);
+                    return hit.Length == 0 ? null : hit;
+                }
+            }
+            if (!read && fi.Extension.Equals(".zip", StringComparison.OrdinalIgnoreCase)) return null;
+
+            byte[] bytes;
+            try { bytes = SfoBytes(fi.FullName); }
+            catch (Exception ex) { Log.Warn("could not read the PARAM.SFO of " + romPath, ex); return null; }    // not kept: an error may pass
+            lock (Gate) Remember(fi, bytes ?? Nothing);
+            var id = bytes == null ? null : ParamSfo.Parse(bytes)?.GetString("DISC_ID");
+            Log.Info("PARAM.SFO " + (bytes == null ? "not found" : "read, disc id " + id) + " <- " + fi.Name);
+            return bytes;
+        }
+
+        private static void Load()
+        {
+            if (_byPath != null) return;
+            _byPath = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+            _byName = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                if (!File.Exists(CachePath)) return;
+                foreach (var line in File.ReadAllLines(CachePath))
+                {
+                    var c = line.Split('\t');
+                    if (c.Length < 4) continue;
+                    byte[] b;
+                    try { b = c[3].Length == 0 ? Nothing : Convert.FromBase64String(c[3]); } catch { continue; }
+                    _byPath[c[0] + "|" + c[1] + "|" + c[2]] = b;
+                    _byName[Path.GetFileName(c[0]) + "|" + c[1] + "|" + c[2]] = b;
+                }
+            }
+            catch (Exception ex) { Log.Warn("could not read " + CachePath, ex); }
+        }
+
+        private static void Remember(FileInfo fi, byte[] bytes)
+        {
+            var stamp = fi.Length + "|" + fi.LastWriteTimeUtc.Ticks;
+            _byPath[fi.FullName + "|" + stamp] = bytes;
+            _byName[fi.Name + "|" + stamp] = bytes;
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(CachePath));
+                File.AppendAllText(CachePath, string.Join("\t", fi.FullName, fi.Length, fi.LastWriteTimeUtc.Ticks,
+                                   bytes.Length == 0 ? "" : Convert.ToBase64String(bytes)) + "\r\n", new UTF8Encoding(false));
+            }
+            catch (Exception ex) { Log.Warn("could not write " + CachePath, ex); }
         }
 
         private static byte[] SfoBytes(string romPath)
@@ -92,19 +151,75 @@ namespace LbIntegrations.Ppsspp
                 ".iso" => SfoFromIso(romPath),
                 ".cso" or ".zso" => SfoFromCso(romPath),
                 ".chd" => SfoFromChd(romPath),
+                ".zip" => SfoFromZip(romPath),
                 _ => null,
             };
         }
 
-        private static string Extract(string romPath)
-        {
-            var sfo = SfoBytes(romPath);
-            if (sfo == null) return null;
+        // ── ZIP ──────────────────────────────────────────────────────────────
 
-            var id = ParamSfo.Parse(sfo)?.GetString("DISC_ID");
-            if (string.IsNullOrWhiteSpace(id)) return null;
-            id = id.Trim().Replace("-", "").ToUpperInvariant();     // SAVEDATA folders drop the dash
-            return id.Length >= PspSaveUnits.DiscIdLength ? id.Substring(0, PspSaveUnits.DiscIdLength) : null;
+        /// <summary>The zip's .iso, else its EBOOT.PBP, else another .pbp - the shortest path first - read through a
+        /// forward-only window on the inflating entry.</summary>
+        private static byte[] SfoFromZip(string path)
+        {
+            using var zip = ZipFile.OpenRead(path);
+            static int Rank(ZipArchiveEntry e)
+            {
+                var n = e.FullName.ToLowerInvariant();
+                return n.EndsWith(".iso") ? 0 : n.EndsWith("/eboot.pbp") || n == "eboot.pbp" ? 1 : n.EndsWith(".pbp") && !n.EndsWith("pboot.pbp") ? 2 : 9;
+            }
+            var entry = zip.Entries.Where(e => e.Length > 0 && Rank(e) < 9).OrderBy(Rank).ThenBy(e => e.FullName.Length).FirstOrDefault();
+            if (entry == null)
+            {
+                var image = zip.Entries.FirstOrDefault(e => e.FullName.EndsWith(".cso", StringComparison.OrdinalIgnoreCase) || e.FullName.EndsWith(".zso", StringComparison.OrdinalIgnoreCase) || e.FullName.EndsWith(".chd", StringComparison.OrdinalIgnoreCase));
+                if (image != null) Log.Info(Path.GetFileName(path) + ": " + image.FullName + " is a compressed image in an archive - not read");
+                return null;
+            }
+            using var window = new ForwardWindow(entry);
+            if (entry.FullName.EndsWith(".pbp", StringComparison.OrdinalIgnoreCase))
+            {
+                var header = window.Read(0, 40);
+                if (header == null || BitConverter.ToUInt32(header, 0) != 0x50425000u) return null;   // "\0PBP"
+                uint start = BitConverter.ToUInt32(header, 8), end = BitConverter.ToUInt32(header, 12);
+                if (end <= start || end > entry.Length || end - start > 1 << 20) return null;
+                return window.Read(start, (int)(end - start));
+            }
+            return SfoFromIso9660(window.Read, entry.Length);
+        }
+
+        /// <summary>Reads an entry that cannot seek: forward by skipping, backward by opening it again.</summary>
+        private sealed class ForwardWindow : IDisposable
+        {
+            private readonly ZipArchiveEntry _entry;
+            private Stream _s;
+            private long _pos;
+            public ForwardWindow(ZipArchiveEntry entry) { _entry = entry; }
+
+            public byte[] Read(long offset, int length)
+            {
+                if (length <= 0 || offset < 0 || offset >= _entry.Length) return null;
+                if (offset + length > _entry.Length) length = (int)(_entry.Length - offset);
+                if (_s == null || offset < _pos) { _s?.Dispose(); _s = _entry.Open(); _pos = 0; }
+                var skip = new byte[81920];
+                while (_pos < offset)
+                {
+                    int n = _s.Read(skip, 0, (int)Math.Min(skip.Length, offset - _pos));
+                    if (n <= 0) return null;
+                    _pos += n;
+                }
+                var buffer = new byte[length];
+                int done = 0;
+                while (done < length)
+                {
+                    int n = _s.Read(buffer, done, length - done);
+                    if (n <= 0) break;
+                    done += n;
+                }
+                _pos += done;
+                return done == length ? buffer : null;
+            }
+
+            public void Dispose() => _s?.Dispose();
         }
 
         // ── PBP ──────────────────────────────────────────────────────────────

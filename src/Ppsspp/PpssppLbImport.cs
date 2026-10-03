@@ -2,7 +2,7 @@
 // the rules the pack's PlayStation imports share:
 //
 //   THE LIST, while it is on show (before "Finish"): each line judged by its PARAM.SFO (PspDiscId.SfoOf - .iso .cso .zso .chd
-//   .pbp; a .zip .elf .prx .ppdmp has none to read and is KEPT, never judged by its name):
+//   .pbp, and the .iso or .pbp in a .zip; an .elf .prx .ppdmp has none to read and is KEPT, never judged by its name):
 //     a game - CATEGORY UG (UMD), EG (PSN), MG (memory stick, homebrew), ME (PlayStation classic) - stays
 //     a GAME UPDATE (PG) goes, and is NOTED for its game (PpssppUpdates): proposed in its options window, never installed
 //     a FIRMWARE update (MSTKUPDATE, "PSP Update ...") goes - PPSSPP needs no firmware

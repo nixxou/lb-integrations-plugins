@@ -12,6 +12,8 @@
 //
 // THE CACHE: <plugin data>\vita-scan.tsv, one line per entry, kept while its archive's size and date are the same. Looking
 // again walks the folder - cheap - and reads only what is new or changed; what is gone is dropped. Plain text, readable.
+// A file MOVED (Mehdi, 03/10) - in the cache under another folder with the same name, size and date - is taken from its
+// old lines, not read again.
 //
 // It replaces the four naming rules and the import's index (lbip-vita-extras.tsv, gone): a game's updates and DLC are
 // whatever the cache knows of its title id, wherever it was scanned - its folder, or an import's.
@@ -36,6 +38,15 @@ namespace LbIntegrations.Vita3k
 
         public string Archive => Path.Substring(0, Path.IndexOf('|'));
         public bool Invalid => Problem.Length > 0;
+
+        /// <summary>The same entry, for the same archive at another path - a file moved.</summary>
+        public VitaScanEntry MovedTo(string archive)
+        {
+            var c = (VitaScanEntry)MemberwiseClone();
+            c.Path = archive + Path.Substring(Path.IndexOf('|'));
+            c.Nested = new List<string>(Nested);
+            return c;
+        }
 
         /// <summary>The content as Vita3kContent described it, for installing and choosing.</summary>
         public VitaContent ToContent() => new VitaContent
@@ -104,6 +115,20 @@ namespace LbIntegrations.Vita3k
                 try { var fi = new FileInfo(path); size = fi.Length; ticks = fi.LastWriteTimeUtc.Ticks; } catch { continue; }
                 var prefix = path + "|";
                 var known = cache.Values.Where(e => e.Path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList();
+                if (known.Count == 0)
+                {
+                    // Moved: the same name, size and date under another folder.
+                    var name = System.IO.Path.GetFileName(path);
+                    var old = cache.Values.Where(e => e.Size == size && e.Ticks == ticks
+                                                      && string.Equals(System.IO.Path.GetFileName(e.Archive), name, StringComparison.OrdinalIgnoreCase))
+                                          .GroupBy(e => e.Archive, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
+                    if (old != null)
+                    {
+                        Log.Info("scan: " + name + " known from its old place, " + old.Key + " (same name, size and date)");
+                        known = old.Select(e => e.MovedTo(path)).ToList();
+                        foreach (var e in known) cache[e.Path] = e;
+                    }
+                }
                 if (known.Count > 0 && known.All(e => e.Size == size && e.Ticks == ticks))
                 {
                     result.AddRange(known);

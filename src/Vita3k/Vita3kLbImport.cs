@@ -162,7 +162,8 @@ namespace LbIntegrations.Vita3k
                     _platformPage = page;
                     if (Swapped) Undo(page, "back on the platform page");
                 }
-                else if (name == GameListPage && Swapped && !ReferenceEquals(_cleanedList, page) && Vita3kSettings.CleanImportList)
+                else if (name == GameListPage && Swapped && !ReferenceEquals(_cleanedList, page)
+                     && (Vita3kSettings.CleanImportList || Vita3kSettings.ImportTitle || Vita3kSettings.ImportRegionVersion))
                 {
                     _cleanedList = page;
                     WhenFilled(window, page);

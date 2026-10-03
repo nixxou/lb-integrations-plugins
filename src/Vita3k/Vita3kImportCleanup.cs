@@ -87,6 +87,8 @@ namespace LbIntegrations.Vita3k
             if (!Read(owner, findings)) { Log.Info("[import] the list was left as LaunchBox made it - reading cancelled"); return; }
 
             int renamed = 0, extras = 0, invalid = 0, unlicensed = 0;
+            // Three boxes of the Vita3K tab, each on its own (Mehdi, 03/10): the filter, the name, the region (Vita3kImportFinished).
+            bool clean = Vita3kSettings.CleanImportList, titles = Vita3kSettings.ImportTitle;
             if (Vita3kLicences.InstallDir == null) Vita3kLicences.InstallDir = Installs().FirstOrDefault();
             var games = findings.Where(f => f.Content != null && f.Content.IsGame).ToList();
             for (int i = list.Count - 1; i >= 0; i--)
@@ -96,12 +98,13 @@ namespace LbIntegrations.Vita3k
                 var name = System.IO.Path.GetFileName(f.Path ?? "");
                 if (f.Content == null)
                 {
-                    list.RemoveAt(i); invalid++;
-                    Log.Info("[import]   removed " + name + " - " + (f.Error ?? "not readable"));
+                    if (clean) { list.RemoveAt(i); invalid++; }
+                    Log.Info("[import]   " + (clean ? "removed " : "kept, though ") + name + " - " + (f.Error ?? "not readable"));
                     continue;
                 }
                 if (f.Content.IsPatch || f.Content.IsAddon)
                 {
+                    if (!clean) { Log.Info("[import]   kept, though " + name + " is an update or a DLC (filtering turned off)"); continue; }
                     list.RemoveAt(i); extras++;
                     var with = games.Where(g => string.Equals(g.Content.TitleId, f.Content.TitleId, StringComparison.OrdinalIgnoreCase)).ToList();
                     Log.Info("[import]   removed " + name + " - " + (f.Content.IsPatch ? "update " + f.Content.AppVer : "DLC " + (f.Content.Title ?? f.Content.ContentId))
@@ -110,11 +113,11 @@ namespace LbIntegrations.Vita3k
                 }
                 if (!f.Content.IsGame)
                 {
-                    list.RemoveAt(i); invalid++;
-                    Log.Info("[import]   removed " + name + " - category " + (f.Content.Category ?? "?") + " is not a game");
+                    if (clean) { list.RemoveAt(i); invalid++; }
+                    Log.Info("[import]   " + (clean ? "removed " : "kept, though ") + name + " - category " + (f.Content.Category ?? "?") + " is not a game");
                     continue;
                 }
-                if (Vita3kContent.IsPkg(f.Path) && Vita3kLicences.Find(f.Path, f.Content.ContentId, out _, out var noLicence) == null)
+                if (clean && Vita3kContent.IsPkg(f.Path) && Vita3kLicences.Find(f.Path, f.Content.ContentId, out _, out var noLicence) == null)
                 {
                     list.RemoveAt(i); unlicensed++;
                     Log.Info("[import]   removed " + name + " - " + noLicence);
@@ -129,7 +132,7 @@ namespace LbIntegrations.Vita3k
                 var title = LbIntegrations.Lbip.LbipImportTitle.Choose("Sony Playstation Vita", current, System.IO.Path.GetFileNameWithoutExtension(f.Path ?? ""),
                                                                        out var why, CleanTitle(f.Content.FullTitle), CleanTitle(f.Content.Title));
                 Log.Info("[import]   " + name + ": " + why);
-                if (!string.IsNullOrWhiteSpace(title) && !string.Equals(title, current, StringComparison.Ordinal)
+                if (titles && !string.IsNullOrWhiteSpace(title) && !string.Equals(title, current, StringComparison.Ordinal)
                     && SetProperty(f.Record, "Title", title))
                 {
                     // Out and back at its place: the grid redraws a line only when the list says it changed.

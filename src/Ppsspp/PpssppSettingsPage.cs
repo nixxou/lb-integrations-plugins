@@ -44,14 +44,15 @@ namespace LbIntegrations.Ppsspp
                 y += 70;
                 return c;
             }
-            _clean = Box("Put the list right, by what each file holds", PpssppSettings.On(s, "import_clean", true),
-                "A game's update is taken out of the list and offered in that game's options window (tab Updates), never installed "
-                + "unasked; a firmware update and what is not a PSP game are taken out. A .zip, .elf or .prx cannot be read: it stays.");
-            _title = Box("Name the games as LaunchBox's database knows them", PpssppSettings.On(s, "import_title", true),
-                "The file's name is kept when the database knows it; else the game's own title when the database knows that; "
-                + "else the file's name, unless it is a bare serial.");
-            _region = Box("Set each game's region from its serial", PpssppSettings.On(s, "import_region", true),
-                "ULUS / NPUH: North America, ULES / NPEH: Europe, ULJM / NPJH: Japan, Asia, Korea.");
+            _clean = Box("Filter out what is not a game", PpssppSettings.On(s, "import_clean", true),
+                "Each file's PARAM.SFO is read, zipped or not, before you click Finish: a game stays; a game update is noted for its "
+                + "game (its options window, tab Updates - never installed unasked); a firmware update and anything else goes. A .elf "
+                + "or .prx cannot be read: it stays.");
+            _title = Box("Rename games when their name is not in LaunchBox's database", PpssppSettings.On(s, "import_title", true),
+                "The file's name is kept when LaunchBox's database knows it on Sony PSP; else the PARAM.SFO's title, written as the "
+                + "database writes it - else the file's name, unless it is a bare serial. Shown in the list before you click Finish.");
+            _region = Box("Set each game's region after the import", PpssppSettings.On(s, "import_region", true),
+                "The region its serial says: ULUS / NPUH North America, ULES / NPEH Europe, ULJM / NPJH Japan, Asia, Korea.");
             Controls.Add(box);
         }
 

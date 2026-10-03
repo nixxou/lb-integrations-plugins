@@ -44,6 +44,17 @@ namespace LbIntegrations.Cxbx
         {
             try { var i = new FileInfo(path); return i.FullName + "|" + i.Length + "|" + i.LastWriteTimeUtc.Ticks; } catch { return path; }
         }
+
+        /// <summary>The stamp without its folder - name, size, date: a file MOVED is found again by it (Mehdi, 03/10).</summary>
+        public static string MovedStampOf(string path)
+        {
+            try { var i = new FileInfo(path); return i.Name + "|" + i.Length + "|" + i.LastWriteTimeUtc.Ticks; } catch { return path; }
+        }
+
+        /// <summary>A stamp kept for this file: its own, or its name, size and date in another folder.</summary>
+        public static bool IsStampOf(string kept, string path)
+            => string.Equals(kept, StampOf(path), StringComparison.OrdinalIgnoreCase)
+               || (kept ?? "").EndsWith("\\" + MovedStampOf(path), StringComparison.OrdinalIgnoreCase);
     }
 
     internal static class CxbxGame
@@ -189,10 +200,11 @@ namespace LbIntegrations.Cxbx
                 try
                 {
                     if (!File.Exists(CachePath)) return null;
-                    foreach (var line in File.ReadAllLines(CachePath))
+                    var all = File.ReadAllLines(CachePath).Select(l => l.Split('\t')).Where(c => c.Length >= 5).ToList();
+                    // Its own line, else the line of the same file in another folder - a game moved.
+                    foreach (var c in all.Where(c => string.Equals(c[0], stamp, StringComparison.OrdinalIgnoreCase))
+                                         .Concat(all.Where(c => CxbxRom.IsStampOf(c[0], rom))))
                     {
-                        var c = line.Split('\t');
-                        if (c.Length < 5 || !string.Equals(c[0], stamp, StringComparison.OrdinalIgnoreCase)) continue;
                         if (!Enum.TryParse<CxbxRomKind>(c[1], out var kind)) continue;
                         uint.TryParse(c[2], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var id);
                         long.TryParse(c[4], NumberStyles.Integer, CultureInfo.InvariantCulture, out var bytes);

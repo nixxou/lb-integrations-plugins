@@ -6,6 +6,7 @@
 //     import_title=on|off     the pack's rule for a game's name (LbipImportTitle): the original, else the PARAM.SFO's TITLE
 //     import_region=on|off    the region its DISC_ID says, set once it is in the library
 //   updates.tsv      the game updates found - see PpssppUpdates
+//   psp-sfo.tsv      each file's PARAM.SFO, read once - see PspDiscId
 
 using System;
 using System.Collections.Generic;

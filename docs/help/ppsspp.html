@@ -73,11 +73,12 @@
     <li><strong>A firmware update</strong> ("PSP Update ver ...") is taken out: PPSSPP needs no firmware.</li>
     <li><strong>The name:</strong> the file's name is kept when LaunchBox's database knows it, else the game's own title when the database knows that (written as the database writes it), else the file's name, unless it is only a serial like ULUS10041.</li>
     <li><strong>The region</strong> comes from the game's serial: ULUS / NPUH North America, ULES / NPEH Europe, ULJM / NPJH Japan, and Asia and Korea.</li>
-    <li>A <code>.zip</code>, <code>.elf</code> or <code>.prx</code> cannot be read: it stays in the list as it is.</li>
+    <li>A <code>.zip</code> is read too: the <code>.iso</code> or <code>.pbp</code> in it, decompressed only as far as its description, so the first time takes a moment. A <code>.cso</code> or <code>.chd</code> inside a zip, an <code>.elf</code> or a <code>.prx</code> cannot be read: it stays in the list as it is.</li>
+    <li>What was read is remembered, even when you move the file to another folder: importing the same games again is instant.</li>
   </ul>
-  <p>Each of these can be turned off in the <strong>PPSSPP</strong> tab of Tools &gt; Nixx Integration Plugins Configuration.</p>
+  <p>The three parts (filter, name, region) can each be turned off in the <strong>PPSSPP</strong> tab of Tools &gt; Nixx Integration Plugins Configuration.</p>
   <p><strong>Game updates</strong>: in a game's options window, tab Updates, pick an update and click <em>Install the selected</em>. It goes into PPSSPP's memory stick (<code>PSP\GAME\&lt;its id&gt;\PBOOT.PBP</code>), where PPSSPP starts it instead of the disc, when it is made for your disc's version (one for another version is shown in amber). <em>Remove the installed one</em> takes it out again; one you put there yourself is never touched.</p>
-  <div class="tip">For the best results use <code>.iso</code>, <code>.cso</code>, <code>.zso</code>, <code>.chd</code> or <code>.pbp</code>. The plugin can read the game's ID from these, which is what links a game to its saves, its save states and its own options.</div>
+  <div class="tip">For the best results use <code>.iso</code>, <code>.cso</code>, <code>.zso</code>, <code>.chd</code> or <code>.pbp</code> (or an <code>.iso</code> / <code>.pbp</code> in a <code>.zip</code>, once it has been imported or launched). The plugin can read the game's ID from these, which is what links a game to its saves, its save states and its own options.</div>
 </section>
 
 <section id="play"><h2>Playing a game</h2>
@@ -113,7 +114,7 @@
 
 <section id="options"><h2>Options</h2>
   <h3>Tools menu</h3>
-  <p><strong>Tools &gt; Nixx Integration Plugins Configuration...</strong> opens the pack's window. PPSSPP has <strong>no settings tab of its own</strong> there. The <strong>General</strong> tab has a button to open this guide and an <strong>Open the logs folder</strong> button.</p>
+  <p><strong>Tools &gt; Nixx Integration Plugins Configuration...</strong> opens the pack's window. The <strong>PPSSPP</strong> tab holds the import options; the game settings are per game. The <strong>General</strong> tab has a button to open this guide and an <strong>Open the logs folder</strong> button.</p>
   <h3>Right-click on a game: "Nixx-PPSSPP : Options..."</h3>
   <p>Right-click a PSP game (or select several) and choose <strong>Nixx-PPSSPP : Options...</strong>. The entry shows on games that run with Nixx-PPSSPP, or on games of a platform it is set up for. This window gives the game its <strong>own settings</strong>, used only while that game runs.</p>
   <p>Tabs:</p>
@@ -171,7 +172,7 @@
   <tr><td>Save states in LaunchBox</td><td class="partly">Partly</td><td>Slots 1 to 5 only. Restore refused when the game version cannot be worked out.</td></tr>
   <tr><td>Per-game options window</td><td class="partly">Partly</td><td>Needs the game's ID; without it only the Backend applies.</td></tr>
   <tr><td>Several games at once in the options window</td><td class="yes">Yes</td><td>Applied to all selected games after confirmation.</td></tr>
-  <tr><td>Settings tab in the Tools window</td><td class="no">No</td><td>PPSSPP has none; everything is per game.</td></tr>
+  <tr><td>Settings tab in the Tools window</td><td class="yes">Yes</td><td>The import options; the game settings are per game.</td></tr>
   <tr><td>Two PPSSPP games at the same time</td><td class="no">No</td><td>One launch at a time, on purpose.</td></tr>
   </table>
 </section>
@@ -179,7 +180,7 @@
 <section id="limits"><h2>Limits and things to know</h2>
   <ul>
     <li><strong>First launch of a fresh install:</strong> PPSSPP writes its key file only when it quits for the first time. So the very first session uses PPSSPP's defaults (Escape opens the menu, no save state key). From the second launch on, the plugin's keys are there.</li>
-    <li><strong>Game ID needed:</strong> the game ID can only be read from <code>.iso</code>, <code>.cso</code>, <code>.zso</code>, <code>.chd</code> and <code>.pbp</code>. For other files (a <code>.zip</code>, a homebrew), save states are not listed, saves are found only by exact title, and in the options window only the Backend applies.</li>
+    <li><strong>Game ID needed:</strong> the game ID can only be read from <code>.iso</code>, <code>.cso</code>, <code>.zso</code>, <code>.chd</code> and <code>.pbp</code>, and from the <code>.iso</code> or <code>.pbp</code> in a <code>.zip</code> once that zip has been imported or launched. For other files (a homebrew <code>.elf</code>, a <code>.cso</code> in a zip), save states are not listed, saves are found only by exact title, and in the options window only the Backend applies.</li>
     <li><strong>Five state slots:</strong> LaunchBox only sees slots 1 to 5, PPSSPP's default, even if you raised the number of slots in PPSSPP.</li>
     <li><strong>State restore and game version:</strong> PPSSPP names a state after the exact version of the game. If a backup does not say which version it is for, and the game has no other state to learn it from, the restore is refused with a message. Save one state in PPSSPP, then restore again.</li>
     <li><strong>Own options and in-game changes:</strong> while a game runs with options from this plugin, changes to PPSSPP's own per-game settings during that game are undone when it quits. Use <strong>Pause these settings</strong> to avoid this.</li>

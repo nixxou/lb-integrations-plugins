@@ -40,9 +40,10 @@ namespace LbIntegrations.Cxbx
 
         public static bool Clean => CxbxSettings.On(CxbxSettings.Read(), "import_clean", true);
         public static bool Title => CxbxSettings.On(CxbxSettings.Read(), "import_title", true);
-        /// <summary>A zip / 7z named as an Xbox game of LaunchBox's database is kept without being read (03/10) - off by
-        /// default (Mehdi): every file read is what the import is sure of.</summary>
-        public static bool TrustNames => CxbxSettings.On(CxbxSettings.Read(), "import_by_name", false);
+        /// <summary>A zip / 7z named as an Xbox game of LaunchBox's database kept without being read - NO LONGER OFFERED
+        /// (Mehdi, 03/10): every file is read, zipped or not; a game left unread would be half known until its first launch
+        /// (no listing, no title id for its saves, an options window without its compatibility). Kept false for ByName.</summary>
+        public static bool TrustNames => false;
         public static bool Region => CxbxSettings.On(CxbxSettings.Read(), "import_region", true);
 
         public static void Install()

@@ -110,7 +110,7 @@
     them from Windows. These can only be changed while Xenia is closed.</li>
     <li><b>LaunchBox's Import ROM Files wizard</b>: whether updates, DLC and what is not a game are taken out of the list, whether each
     game is named as Xenia's compatibility list names it, whether its region is set from what its executable declares (North America,
-    Japan, Europe... or World), and whether disc images inside archives are accepted.</li>
+    Japan, Europe... or World).</li>
     <li><b>Title updates and DLC</b>: the content folder, its size limit, the RAM disk and its threshold.</li>
     <li><b>Optimized settings</b>: whether each game gets the settings the community found it runs best on (xenia-manager's database) -
     Halo 3's gamma fix, for instance. They win over the options for every game; a game's own options win over them.</li>
@@ -152,9 +152,8 @@
   <tr><td>Disc images (.iso), extracted discs, .xex</td><td class="yes">Yes</td><td>Opened directly.</td></tr>
   <tr><td>Xbox Live Arcade and Games on Demand</td><td class="yes">Yes</td><td>Loose or in an archive (.zip, .7z, .rar - a RAR in several parts by its first).</td></tr>
   <tr><td>Zipped games</td><td class="yes">Yes</td><td>Unpacked by the plugin, to a RAM disk when possible.</td></tr>
-  <tr><td>Disc images (ISO) inside an archive</td><td class="partly">Partly</td><td>Off by default: taken out at import and refused at launch.
-  Tick "Accept disc images (ISO) inside archives" in the Xenia tab to use them - each one is decompressed up to its executable once
-  (seconds to minutes), and the whole disc at every launch. Better: keep the ISO as it is.</td></tr>
+  <tr><td>Disc images (ISO) inside an archive</td><td class="yes">Yes</td><td>Each one is decompressed up to its executable once, at import
+  (seconds to minutes) - remembered after that, even if you move the file - and the whole disc at every launch. Faster: keep the ISO as it is.</td></tr>
   <tr><td>Title updates</td><td class="yes">Yes</td><td>Found by their content, matched to the right version of the game; one per game, your choice.</td></tr>
   <tr><td>DLC</td><td class="yes">Yes</td><td>Ticked per game; the same DLC in two files counts once.</td></tr>
   <tr><td>Full versions of Arcade games</td><td class="yes">Yes</td><td>Always on - no trial mode.</td></tr>

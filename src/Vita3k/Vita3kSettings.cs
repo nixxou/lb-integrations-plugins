@@ -47,6 +47,16 @@ namespace LbIntegrations.Vita3k
             set => Write(CleanImportListKey, value ? "true" : "false");
         }
 
+        public const string ImportTitleKey = "ImportTitle";
+
+        /// <summary>In such an import, each game renamed by the pack's rule (LbipImportTitle) - its param.sfo's title when
+        /// LaunchBox's database does not know the file's name. ON unless turned off (Mehdi, 03/10: its own box).</summary>
+        public static bool ImportTitle
+        {
+            get => Bool(ImportTitleKey, true);
+            set => Write(ImportTitleKey, value ? "true" : "false");
+        }
+
         public const string ImportRegionVersionKey = "ImportRegionVersion";
 
         /// <summary>After such an import, each game's region from its param.sfo and its version from its file

@@ -1,5 +1,5 @@
 // A disc's listing, kept (Mehdi, 03/10): the partition, every folder, every file with its offset and length - a few KB
-// per game, <plugin data>\listings\<hash>.tsv, for the game file at this path, size and date.
+// per game, <plugin data>\listings\<hash>.tsv, for the game file of this name, size and date - wherever it is.
 //
 // What it buys: listing an image inside a zip costs a read of the stream as far as its last table; kept, the next
 // launches go straight to the one pass that unpacks (Xdvdfs.ExtractListed), and the RAM disk is sized exactly before
@@ -18,21 +18,26 @@ namespace LbIntegrations.Cxbx
 {
     internal static class CxbxListing
     {
-        private static string PathOf(string rom)
+        // Named by the file's name, size and date (Mehdi, 03/10): a game moved to another folder keeps its listing.
+        // Before, by its full path too - still read, so a listing kept then is not lost.
+        private static string PathOf(string rom) => Named(CxbxRom.MovedStampOf(rom));
+        private static string OldPathOf(string rom) => Named(CxbxRom.StampOf(rom));
+
+        private static string Named(string stamp)
         {
             using var sha = SHA1.Create();
-            var key = BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(CxbxRom.StampOf(rom).ToLowerInvariant()))).Replace("-", "").Substring(0, 20);
+            var key = BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(stamp.ToLowerInvariant()))).Replace("-", "").Substring(0, 20);
             return Path.Combine(CxbxSettings.Dir, "listings", key + ".tsv");
         }
 
         public static XdvdfsResult Load(string rom)
         {
-            var path = PathOf(rom);
+            var path = File.Exists(PathOf(rom)) ? PathOf(rom) : OldPathOf(rom);
             try
             {
                 if (!File.Exists(path)) return null;
                 var lines = File.ReadAllLines(path);
-                if (lines.Length < 2 || lines[0] != CxbxRom.StampOf(rom) || !lines[1].StartsWith("base=")) return null;
+                if (lines.Length < 2 || !CxbxRom.IsStampOf(lines[0], rom) || !lines[1].StartsWith("base=")) return null;
                 var r = new XdvdfsResult { PartitionBase = long.Parse(lines[1].Substring(5), NumberStyles.HexNumber, CultureInfo.InvariantCulture) };
                 foreach (var line in lines.Skip(2))
                 {
@@ -65,6 +70,7 @@ namespace LbIntegrations.Cxbx
         public static void Forget(string rom)
         {
             try { File.Delete(PathOf(rom)); } catch { }
+            try { File.Delete(OldPathOf(rom)); } catch { }
         }
     }
 }

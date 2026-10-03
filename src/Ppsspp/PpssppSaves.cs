@@ -146,7 +146,7 @@ namespace LbIntegrations.Ppsspp
         {
             if (game == null) return 0;
 
-            string discId = PspDiscId.Of(romPath);
+            string discId = PspDiscId.Of(romPath, read: false);
             if (discId == null) return 0;
 
             string gameId = Safe(() => game.Id) ?? "";
@@ -223,7 +223,7 @@ namespace LbIntegrations.Ppsspp
         /// scoring conflates "Grand", "Battle" and "War" across unrelated games.</summary>
         private static PspSaveUnit UnitFor(string saveDataDir, string romPath, IGame game)
         {
-            var discId = PspDiscId.Of(romPath);
+            var discId = PspDiscId.Of(romPath, read: false);
             if (discId != null) return PspSaveUnits.ForDiscId(saveDataDir, discId);
 
             string title = Safe(() => game.Title);

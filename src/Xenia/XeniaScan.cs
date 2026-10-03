@@ -26,7 +26,8 @@
 // THE CACHE: <plugin data>\xenia-scan.tsv, one line per file ever scanned, keyed by its full path, kept while its
 // size and its date are the same. Looking again at a folder walks it - cheap - and READS only what is new or changed;
 // what is gone is dropped. So the first scan of a big folder takes its time, and every later one is quick: the walk
-// and a lookup per file. Plain text, readable.
+// and a lookup per file. Plain text, readable. A file MOVED (Mehdi, 03/10) - not in the cache at its new path, but there
+// under another folder with the same name, size and date - is taken from its old line, not read again.
 
 using System;
 using System.Collections.Generic;
@@ -71,6 +72,9 @@ namespace LbIntegrations.Xenia
 
         public string VersionText => XeniaScan.VersionText(Version);
 
+        /// <summary>The same entry, for the same file at another path - a file moved.</summary>
+        public XeniaScanEntry MovedTo(string path) { var c = (XeniaScanEntry)MemberwiseClone(); c.Path = path; return c; }
+
         public override string ToString()
             => Kind + " " + TitleId + " " + (Kind == XeniaFileKind.Update ? XeniaScan.VersionText(PatchFrom) + " -> " + XeniaScan.VersionText(PatchTo) + " " : "") + Name
                + (Digest.Length > 0 ? " [" + Digest.Substring(0, 8) + "]" : "") + (Problem.Length > 0 ? " - " + Problem : "");
@@ -102,8 +106,7 @@ namespace LbIntegrations.Xenia
 
         /// <summary>Are disc images inside archives read (content.ini iso_in_archive=on)? Off by default: reading one means
         /// decompressing it up to its executable, hundreds of MB in, once per file.</summary>
-        public static bool IsoInArchiveAllowed
-            => XeniaExtras.ReadSettings().TryGetValue("iso_in_archive", out var v) && string.Equals(v, "on", StringComparison.OrdinalIgnoreCase);
+        public static bool IsoInArchiveAllowed => true;     // NO LONGER A CHOICE (Mehdi, 03/10): read, slow but once - the cache keeps it
 
         /// <summary>An archive entry that is a disc image: "...|game.iso".</summary>
         private static bool IsIsoEntry(XeniaScanEntry e)
@@ -171,6 +174,11 @@ namespace LbIntegrations.Xenia
                     // An archive is its entries, "<archive>|<entry>", all kept while the archive is the same.
                     var prefix = path + "|";
                     var known = cache.Values.Where(e => e.Path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList();
+                    if (known.Count == 0)
+                    {
+                        known = Moved(cache, path, size, ticks);
+                        foreach (var e in known) cache[e.Path] = e;
+                    }
                     // A disc image in it read again when the setting no longer says what it was read under.
                     bool allowed = IsoInArchiveAllowed;
                     if (known.Count > 0 && known.All(e => e.Size == size && e.Ticks == ticks)
@@ -194,6 +202,8 @@ namespace LbIntegrations.Xenia
 
                 seen.Add(path);
                 if (cache.TryGetValue(path, out var cached) && cached.Size == size && cached.Ticks == ticks) { result.Add(cached); continue; }
+                if (!cache.ContainsKey(path) && !Directory.Exists(path) && Moved(cache, path, size, ticks).FirstOrDefault() is XeniaScanEntry moved)
+                { cache[path] = moved; result.Add(moved); continue; }
                 progress?.Invoke("Reading " + System.IO.Path.GetFileName(path), (double)done / Math.Max(1, n));
                 var entry = Classify(path, size, ticks);
                 read++;
@@ -237,6 +247,39 @@ namespace LbIntegrations.Xenia
             try { return Scan(root, (step, fraction) => window?.Report(step, fraction)); }
             catch (Exception ex) { Log.Warn("scan of " + root, ex); return new List<XeniaScanEntry>(); }
             finally { window?.Dispose(); }
+        }
+
+        /// <summary>The cache's lines for a file that was elsewhere: the same name, size and date under another folder - its
+        /// entries ("archive|entry" for an archive) put at <paramref name="path"/>. Empty when none.</summary>
+        private static List<XeniaScanEntry> Moved(Dictionary<string, XeniaScanEntry> cache, string path, long size, long ticks)
+        {
+            var name = System.IO.Path.GetFileName(path);
+            var old = cache.Values
+                .Where(e => e.Size == size && e.Ticks == ticks)
+                .Select(e => (Entry: e, File: e.Path.Split('|')[0]))
+                .Where(x => !string.Equals(x.File, path, StringComparison.OrdinalIgnoreCase)
+                            && string.Equals(System.IO.Path.GetFileName(x.File), name, StringComparison.OrdinalIgnoreCase))
+                .GroupBy(x => x.File, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
+            if (old == null) return new List<XeniaScanEntry>();
+            Log.Info("scan: " + name + " known from its old place, " + old.Key + " (same name, size and date)");
+            return old.Select(x => x.Entry.MovedTo(path + x.Entry.Path.Substring(x.File.Length))).ToList();
+        }
+
+        /// <summary>What the cache knows of this one file - at its path, else from its old place (a file moved) - without
+        /// reading it. Empty when nothing.</summary>
+        public static List<XeniaScanEntry> CachedFile(string path)
+        {
+            try
+            {
+                var fi = new FileInfo(path);
+                if (!fi.Exists) return new List<XeniaScanEntry>();
+                var full = fi.FullName;
+                var cache = Load();
+                var own = cache.Values.Where(e => (e.Path.Equals(full, StringComparison.OrdinalIgnoreCase) || e.Path.StartsWith(full + "|", StringComparison.OrdinalIgnoreCase))
+                                                  && e.Size == fi.Length && e.Ticks == fi.LastWriteTimeUtc.Ticks).ToList();
+                return own.Count > 0 ? own : Moved(cache, full, fi.Length, fi.LastWriteTimeUtc.Ticks);
+            }
+            catch { return new List<XeniaScanEntry>(); }
         }
 
         /// <summary>Everything the cache knows, wherever it was scanned - an import's folders, every game's.</summary>

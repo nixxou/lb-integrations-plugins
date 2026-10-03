@@ -60,8 +60,9 @@ namespace LbIntegrations.Xenia
                 try
                 {
                     var full = Path.GetFullPath(path);
-                    var games = XeniaScan.Cached(Path.GetDirectoryName(full)).Where(e => e.Path.StartsWith(full + "|", StringComparison.OrdinalIgnoreCase)).ToList();
-                    if (games.Count == 0 || games.Any(e => e.Size != new FileInfo(full).Length)) games = XeniaScan.ClassifyArchive(full, new FileInfo(full).Length, new FileInfo(full).LastWriteTimeUtc.Ticks);
+                    // The scan's cache - this archive's lines, or those of the same archive in another folder (moved).
+                    var games = XeniaScan.CachedFile(full);
+                    if (games.Count == 0) games = XeniaScan.ClassifyArchive(full, new FileInfo(full).Length, new FileInfo(full).LastWriteTimeUtc.Ticks);
                     found = games.FirstOrDefault(e => e.Kind == XeniaFileKind.Game && e.TitleId.Length == 8)?.TitleId;
                 }
                 catch (Exception ex) { Log.Warn("could not read a title id from the archive " + path, ex); }
