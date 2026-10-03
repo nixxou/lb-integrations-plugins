@@ -108,13 +108,13 @@ namespace LbIntegrations.Cxbx
             public string Path;
         }
 
-        /// <summary>The tree of a loose image, nothing written.</summary>
+        /// <summary>The tree of a loose image - plain, CSO, CCI or CHD (DiscImages) - nothing written.</summary>
         public static XdvdfsResult List(string image)
         {
             try
             {
-                using var fs = File.OpenRead(image);
-                return List(() => File.OpenRead(image), true, fs.Length, null);
+                using var disc = LbIntegrations.Disc.DiscImages.Open(image);
+                return List(() => LbIntegrations.Disc.DiscImages.Shared(disc), true, disc.Length, null);
             }
             catch (Exception ex) { return new XdvdfsResult { Error = ex.Message }; }
         }
@@ -233,10 +233,10 @@ namespace LbIntegrations.Cxbx
             return ReadExact(s, (int)Math.Min(max, file.Length));
         }
 
-        /// <summary>A file's first bytes from a loose image - an XBE's header.</summary>
+        /// <summary>A file's first bytes from a loose image (plain, CSO, CCI or CHD) - an XBE's header.</summary>
         public static byte[] ReadHead(string image, XdvdfsFile file, int max)
         {
-            using var fs = File.OpenRead(image);
+            using var fs = LbIntegrations.Disc.DiscImages.Open(image);
             fs.Seek(file.Offset, SeekOrigin.Begin);
             var n = (int)Math.Min(max, file.Length);
             var buffer = new byte[n];

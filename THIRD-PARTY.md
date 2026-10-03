@@ -14,6 +14,7 @@ one non-framework entry — `Unbroken.LaunchBox.Plugins` — so there is nothing
 | Component | Licence | Used for |
 |---|---|---|
 | [SharpCompress](https://github.com/adamhathcock/sharpcompress) | MIT | reading the release archive - canary's Windows asset became a `.7z` in June 2026 |
+| [ZstdSharp](https://github.com/oleg-st/ZstdSharp) | MIT | the zstd of a ZArchive (`.zar`) - `src/Shared.Zar`, our reader of the [ZArchive](https://github.com/Exzap/ZArchive) format (MIT No Attribution) |
 | [Lib.Harmony](https://github.com/pardeike/Harmony) | MIT | the two postfixes that let LaunchBox read our emulator rows |
 
 ## Under its own licence inside `Xenia.dll`
@@ -28,7 +29,21 @@ that one file stays MPL and its source is in this repository, which is what the 
 | Component | Licence | Used for |
 |---|---|---|
 | [SharpCompress](https://github.com/adamhathcock/sharpcompress) | MIT | the release archive, the zips and 7z a game comes in, and the save files |
+| [ZstdSharp](https://github.com/oleg-st/ZstdSharp) | MIT | the zstd of a ZArchive (`.zar`), read by `src/Shared.Zar` |
+| [CHDSharp](https://github.com/purelogiccode/CHDSharp) | MIT | reading `.chd` disc images (`src/Shared.Disc`) |
+| VendoredLZMA (LZMA SDK) | public domain | a CHD codec |
+| VendoredZLib | zlib | a CHD codec |
+| VendoredZSTD | MIT | a CHD codec |
+| **VendoredFlac** | **LGPL-2.1** | a CHD codec - see "LGPL-2.1 and how it is satisfied" |
+| Microsoft.Extensions.Logging.Abstractions | MIT | a CHDSharp dependency |
+| Microsoft.Extensions.DependencyInjection.Abstractions | MIT | idem |
+| System.Diagnostics.DiagnosticSource | MIT | idem |
+| System.IO.Hashing | MIT | idem |
 | [Lib.Harmony](https://github.com/pardeike/Harmony) | MIT | the postfixes that let LaunchBox read our emulator row |
+
+The CSO and CCI readers (`src/Shared.Disc/SectorImage.cs`, with its LZ4 block decoder) are ours, written from
+the formats: CSO as [antangelo/ciso](https://github.com/antangelo/ciso) writes it, CCI as Team Resurgent's
+XboxToolkit reads it - its layout only, none of its (GPL-3.0) code.
 
 ## Under its own licence inside `Cxbx.dll`
 
@@ -138,6 +153,10 @@ one process would each keep their own state.
 | System.Diagnostics.DiagnosticSource | MIT | idem |
 | System.IO.Hashing | MIT | idem |
 
+CHDSharp's licence asks for its authors to be named where it is used: **CHDSharp by Peterson Fernandes
+(@purelogiccode) and Gordon Jefferyes (@gjefferyes)** - in the PPSSPP, Flycast and Cxbx plugins and the RAM
+disk helper.
+
 All four CHD codecs are needed to open a CHD, not just the one a given file uses: `chdman` writes
 its whole codec list into the header by default (`lzma, zlib, huff, flac`), and the codec table is
 built at open time. Removing the FLAC decoder makes reads throw — measured, not assumed.
@@ -156,6 +175,8 @@ Concretely, to relink with a different FLAC:
 dotnet tool restore                      # pins ILRepack, see dotnet-tools.json
 dotnet build src\Ppsspp\Ppsspp.csproj -c Release
 dotnet build src\Flycast\Flycast.csproj -c Release
+dotnet build src\Cxbx\Cxbx.csproj -c Release
+dotnet build tools\ramdisk-helper\RamDiskHelper.csproj -c Release   # embedded there, not merged: swap the resource
 ```
 
 The merge is the `MergePlugin` target at the end of `src\Ppsspp\Ppsspp.csproj`. Replace
@@ -270,8 +291,11 @@ every line of the installer is this repository's own work, and nobody is worse o
 GPL - and because "it is probably aggregation" is a poor thing to discover you were wrong about
 after publishing.
 
-`tools/ramdisk-helper` is this repository's own work and carries no third-party code: it reads a
-key-value file and shells to `imdisk.exe`. **ImDisk itself is never bundled** - not by this pack
+`tools/ramdisk-helper` is this repository's own work, but for what its Xbox view reads with (1.7+): it
+compiles `src/Cxbx/Xdvdfs.cs` (MPL-2.0, see above) and `src/Shared.Zar` / `src/Shared.Disc`, and EMBEDS
+ZstdSharp, CHDSharp and CHDSharp's codecs and dependencies - the components and licences of the `Cxbx.dll`
+table, VendoredFlac (LGPL-2.1) included, satisfied the same way. It reads a key-value file and shells to
+`imdisk.exe` / `aim_ll.exe`. **ImDisk itself is never bundled** - not by this pack
 and not by LiteBox. It is a separate free download the user installs, and the only thing either
 product does with it is check whether `System32\\imdisk.exe` is there.
 

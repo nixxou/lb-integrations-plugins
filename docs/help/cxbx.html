@@ -43,7 +43,7 @@
   <p>Cxbx-Reloaded is an emulator for the original Xbox. The plugin installs and updates it, and takes care of what it does not do
   on its own:</p>
   <ul>
-    <li>it plays your <b>disc images</b> (redump <code>.iso</code>, trimmed <code>.xiso</code>), even <b>zipped</b>. Cxbx-Reloaded on its own
+    <li>it plays your <b>disc images</b> (redump <code>.iso</code>, trimmed <code>.xiso</code>, compressed <code>.cso</code> / <code>.cci</code> / <code>.chd</code>), even <b>zipped</b>. Cxbx-Reloaded on its own
     only opens a game's executable, never an image or an archive;</li>
     <li>it starts the game <b>full screen in a window</b>, the safe kind of full screen;</li>
     <li>it puts each game's <b>saves</b> in LaunchBox's save management.</li>
@@ -63,7 +63,7 @@
 
   <h3>Importing games</h3>
   <p>Use LaunchBox's <b>Import &gt; ROM Files</b> with the platform <b>Microsoft Xbox</b>. Keep your games as they are: <code>.iso</code>,
-  <code>.xiso</code>, or the <code>.zip</code> / <code>.7z</code> they came in. A game already unpacked into a folder can be imported by
+  <code>.xiso</code>, <code>.cso</code>, <code>.cci</code>, <code>.chd</code>, <code>.zar</code>, or the <code>.zip</code> / <code>.7z</code> they came in. A <code>.cso</code> or <code>.cci</code> cut in parts (<code>Game.1.cso</code>, <code>Game.2.cso</code>...) is one game: its <code>.1</code> part. A game already unpacked into a folder can be imported by
   its <code>default.xbe</code>.</p>
 </section>
 
@@ -79,8 +79,10 @@
     never half) and get it back the next time you play them.</li>
   </ul>
   <p>Your own files, the zips and the ISOs, are never changed or deleted.</p>
-  <h3>ISO and XISO without a copy</h3>
-  <p>With the <b>Arsenal Image Mounter</b> installed, an ISO or XISO that is not zipped is not unpacked at all: for the session, the plugin
+  <h3>ISO, XISO, CSO, CCI, CHD and ZAR without a copy</h3>
+  <p>With the <b>Arsenal Image Mounter</b> installed, a disc image that is not zipped (ISO, XISO, or a compressed CSO, CCI or CHD,
+  decompressed as the game reads), or a <code>.zar</code> (a compressed archive of the game's files, read as the game asks for them), is not
+  unpacked at all: for the session, the plugin
   shows it to Windows as a read-only drive holding the game's files, and Cxbx-Reloaded plays from there. Nothing is copied, no RAM disk is
   used, and the game starts in a few seconds. The drive goes away when you quit. This is on by default; it can be turned off for every game
   or for one game.</p>
@@ -94,7 +96,7 @@
 
 <section id="options"><h2>Options</h2>
   <h3>For every game: the Cxbx-Reloaded tab</h3>
-  <p><b>Tools &gt; Nixx Integration Plugins Configuration...</b>, tab <b>Cxbx-Reloaded</b>: ISO and XISO mounted without a copy (Arsenal
+  <p><b>Tools &gt; Nixx Integration Plugins Configuration...</b>, tab <b>Cxbx-Reloaded</b>: disc images and ZArchives mounted without a copy (Arsenal
   Image Mounter), the folder games are unpacked into, its size limit,
   the RAM disk and its threshold, and the full screen in a window. The tab also shows which Cxbx-Reloaded is installed and where it keeps its
   data. The RAM disk itself is set in the <b>RamDisk &amp; VHDX</b> tab.</p>
@@ -123,6 +125,8 @@
   <tr><td>Install and update Cxbx-Reloaded</td><td class="yes">Yes</td><td>From Add Emulator, and LaunchBox's update button. Portable.</td></tr>
   <tr><td>Redump disc images (.iso)</td><td class="yes">Yes</td><td>Mounted without a copy with the Arsenal Image Mounter, else unpacked.</td></tr>
   <tr><td>Trimmed images (.xiso)</td><td class="yes">Yes</td><td>Mounted without a copy with the Arsenal Image Mounter, else unpacked.</td></tr>
+  <tr><td>Compressed images (.cso, .cci, .chd)</td><td class="yes">Yes</td><td>CSO and CCI (the Xbox homebrew formats, split in parts or not) and MAME's CHD. Mounted without a copy with the Arsenal Image Mounter (decompressed as the game reads), else unpacked.</td></tr>
+  <tr><td>ZArchive (.zar)</td><td class="yes">Yes</td><td>A compressed archive of the game's files. Mounted without a copy with the Arsenal Image Mounter (read and decompressed as the game asks), else unpacked.</td></tr>
   <tr><td>Zipped images (.zip, .7z)</td><td class="yes">Yes</td><td>Read straight from the archive, to a RAM disk when possible.</td></tr>
   <tr><td>Unpacked games (default.xbe)</td><td class="yes">Yes</td><td>Opened where they are, or from a zip.</td></tr>
   <tr><td>Full screen in a window</td><td class="yes">Yes</td><td>Can be turned off.</td></tr>

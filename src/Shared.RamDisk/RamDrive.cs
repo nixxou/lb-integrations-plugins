@@ -1164,12 +1164,20 @@ namespace LbIntegrations.RamDisk
         /// <summary>The helper that serves an Xbox disc as a FAT32 disk (view=xbox).</summary>
         public static readonly Version XboxViewProtocol = new Version(1, 7, 0, 0);
 
-        /// <summary>Can an Xbox disc be attached where it is: AIM there, the helper 1.7 and its task.</summary>
-        public static bool CanAttachXboxDisc(out string why)
+        /// <summary>The helper that serves a ZArchive (.zar) the same way (view=xbox).</summary>
+        public static readonly Version ZarViewProtocol = new Version(1, 8, 0, 0);
+
+        /// <summary>The helper that serves a compressed image the same way (view=xbox): CSO, CCI, CHD.</summary>
+        public static readonly Version CompressedViewProtocol = new Version(1, 9, 0, 0);
+
+        /// <summary>Can an Xbox disc be attached where it is: AIM there, the helper 1.7 and its task - 1.8 for a ZArchive,
+        /// 1.9 for a CSO, a CCI or a CHD. <paramref name="image"/>: the image (null: a plain one).</summary>
+        public static bool CanAttachXboxDisc(out string why, string image = null)
         {
             var v = HelperVersion;
+            var needed = image == null ? XboxViewProtocol : IsCompressedImage(image) ? CompressedViewProtocol : IsZar(image) ? ZarViewProtocol : XboxViewProtocol;
             why = !IsAimInstalled() ? "the Arsenal Image Mounter is not installed"
-                : v == null || v < XboxViewProtocol ? "the RAM disk helper is " + (v?.ToString() ?? "absent") + ", " + XboxViewProtocol + " is needed"
+                : v == null || v < needed ? "the RAM disk helper is " + (v?.ToString() ?? "absent") + ", " + needed + " is needed"
                 : InstalledTaskName() == null ? "the RAM disk helper's task is not installed"
                 : null;
             return why == null;
@@ -1183,8 +1191,8 @@ namespace LbIntegrations.RamDisk
             error = null;
             try
             {
-                if (!CanAttachXboxDisc(out error)) return null;
                 if (string.IsNullOrWhiteSpace(image) || !OneLine(image) || !Path.IsPathFullyQualified(image)) { error = "an image path must be absolute and on one line"; return null; }
+                if (!CanAttachXboxDisc(out error, image)) return null;
                 char letter = FreeDriveLetter();
                 if (letter == '\0') { error = "no free drive letter"; return null; }
                 var said = RunAndWait("image-attach", letter, image, new Dictionary<string, string> { { "view", "xbox" }, { "backend", "aim" } });
@@ -1194,6 +1202,36 @@ namespace LbIntegrations.RamDisk
                 return letter + ":\\";
             }
             catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; return null; }
+        }
+
+        /// <summary>A CSO ("CISO"), a CCI ("CCIM") or a CHD ("MComprHD"), by its first bytes.</summary>
+        private static bool IsCompressedImage(string path)
+        {
+            try
+            {
+                using var f = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                var head = new byte[8];
+                if (f.Read(head, 0, 8) != 8) return false;
+                var text = System.Text.Encoding.ASCII.GetString(head);
+                return text.StartsWith("CISO", StringComparison.Ordinal) || text.StartsWith("CCIM", StringComparison.Ordinal) || text == "MComprHD";
+            }
+            catch { return false; }
+        }
+
+        /// <summary>A ZArchive, by the magic its footer ends with (0x61BF3A01 0x169F52D6, big-endian) - read here and not
+        /// through src\Shared.Zar, which only the plugins with zstd carry.</summary>
+        private static bool IsZar(string path)
+        {
+            try
+            {
+                using var f = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                if (f.Length < 0x90) return false;
+                var tail = new byte[8];
+                f.Seek(-8, SeekOrigin.End);
+                return f.Read(tail, 0, 8) == 8 && tail[0] == 0x61 && tail[1] == 0xBF && tail[2] == 0x3A && tail[3] == 0x01
+                       && tail[4] == 0x16 && tail[5] == 0x9F && tail[6] == 0x52 && tail[7] == 0xD6;
+            }
+            catch { return false; }
         }
 
         /// <summary>Detach what AttachImage attached, by its root.</summary>

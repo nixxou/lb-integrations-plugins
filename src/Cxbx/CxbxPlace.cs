@@ -62,10 +62,15 @@ namespace LbIntegrations.Cxbx
             // A bare disc image read where it is, nothing copied (AIM) - first, when on and possible: the placement below
             // is where a game is UNPACKED, which an attached disc is not.
             string noAttach = null;
-            if (d.Kind == CxbxRomKind.Image)
+            if (d.Kind == CxbxRomKind.Image || d.Kind == CxbxRomKind.Zar)
             {
-                noAttach = CxbxRamSession.WhyNotDisc(installDir, choice);
-                if (noAttach == null) { p.Attach = true; p.Why = "read where it is: the disc attached as a disk through AIM, nothing copied"; return p; }
+                noAttach = CxbxRamSession.WhyNotDisc(installDir, choice, d.Path);
+                if (noAttach == null)
+                {
+                    p.Attach = true;
+                    p.Why = "read where it is: the " + (d.Kind == CxbxRomKind.Zar ? "ZArchive" : "disc") + " attached as a disk through AIM, nothing copied";
+                    return p;
+                }
             }
             if (p.Placement == "disk") { p.Why = "the game's options say: always the disk"; return p; }
             if (p.Placement == "auto" && p.OnDisk) { p.Why = "it is unpacked on the disk already - opened from there"; return p; }
@@ -126,7 +131,10 @@ namespace LbIntegrations.Cxbx
             {
                 window?.Report("Attaching " + name, null);
                 var root = CxbxRamSession.AttachDisc(installDir, rom);
-                var attached = root == null ? null : XbeIn(root, d);
+                // A ZArchive's default.xbe sits where it is in it (its shallowest - EntryKey), a disc's at its root.
+                var attached = root == null ? null
+                             : d.Kind == CxbxRomKind.Zar ? (File.Exists(Path.Combine(root, d.EntryKey.Replace('/', '\\'))) ? Path.Combine(root, d.EntryKey.Replace('/', '\\')) : null)
+                             : XbeIn(root, d);
                 if (attached != null) { Remember(d, attached); return attached; }
                 if (root != null) { Log.Info("the attached disc shows no default.xbe - unpacked instead"); CxbxRamSession.Release("no default.xbe on the attached disc"); }
                 // Unpacked, then: where Plan would have put it without the attach.
@@ -278,8 +286,10 @@ namespace LbIntegrations.Cxbx
             {
                 case CxbxRomKind.Image:
                 {
-                    long length = new FileInfo(d.Path).Length;
-                    return Xdvdfs.ExtractListed(listing, () => File.OpenRead(d.Path), true, target,
+                    // Plain, CSO, CCI or CHD: the disc's bytes, opened once.
+                    using var disc = Disc.DiscImages.Open(d.Path);
+                    long length = disc.Length;
+                    return Xdvdfs.ExtractListed(listing, () => Disc.DiscImages.Shared(disc), true, target,
                                                 (pos, pass) => progress("Unpacking", length > 0 ? (double)pos / length : (double?)null));
                 }
                 case CxbxRomKind.ImageInArchive:
@@ -292,6 +302,31 @@ namespace LbIntegrations.Cxbx
                                                      (pos, pass) => progress(pass > 1 ? "Unpacking (pass " + pass + ")" : "Unpacking", length > 0 ? (double)pos / length : (double?)null));
                     if (error == null && listing.Passes > 1) Log.Info("the image was read " + listing.Passes + " times to unpack: some files share their data");
                     return error;
+                }
+                case CxbxRomKind.Zar:
+                {
+                    // The game's files out of the ZArchive - those under its default.xbe's folder, that folder as the root.
+                    using var z = Zar.ZArchive.Open(d.Path);
+                    if (z == null) return "the ZArchive does not read";
+                    var prefix = CxbxGame.Folder(d.EntryKey);
+                    var root = Path.GetFullPath(target);
+                    var entries = z.Entries.Where(e => !e.IsDirectory && e.Path.Replace('\\', '/').StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList();
+                    long total = Math.Max(1, entries.Sum(e => e.Length)), done = 0;
+                    var buffer = new byte[1 << 20];
+                    foreach (var e in entries)
+                    {
+                        var rel = e.Path.Replace('\\', '/').Substring(prefix.Length).Replace('/', '\\');
+                        var path = Path.GetFullPath(Path.Combine(root, rel));
+                        if (!path.StartsWith(root + "\\", StringComparison.OrdinalIgnoreCase)) return "a ZArchive entry escapes the game's folder: " + e.Path;
+                        Directory.CreateDirectory(Path.GetDirectoryName(path));
+                        using (var s = z.OpenRead(e))
+                        using (var f = File.Create(path))
+                        {
+                            int n;
+                            while ((n = s.Read(buffer, 0, buffer.Length)) > 0) { f.Write(buffer, 0, n); done += n; progress("Unpacking", (double)done / total); }
+                        }
+                    }
+                    return null;
                 }
                 case CxbxRomKind.TreeInArchive:
                 {

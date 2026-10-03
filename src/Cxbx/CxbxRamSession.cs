@@ -78,27 +78,28 @@ namespace LbIntegrations.Cxbx
         }
 
         // ── an Xbox disc read where it is (03/10) ────────────────────────────
-        // A bare ISO / XISO attached as a disk by the helper (view=xbox, AIM): nothing unpacked, the game read from the
+        // A bare ISO / XISO (or CSO, CCI, CHD, ZAR) attached as a disk by the helper (view=xbox, AIM): nothing unpacked, the game read from the
         // image itself. WHERE IT IS: <plugin data>\disc.where. Released with the RAM disk, by the same calls.
 
         private static string DiscWherePath => Path.Combine(CxbxSettings.Dir, "disc.where");
 
         /// <summary>Why an Xbox disc would NOT be attached where it is - null when it would. <paramref name="game"/>: the
         /// game's options (its own choice wins over every game's).</summary>
-        public static string WhyNotDisc(string installDir, IDictionary<string, string> game)
+        public static string WhyNotDisc(string installDir, IDictionary<string, string> game, string image = null)
         {
             if (!CxbxSettings.AttachDiscs(game))
                 return game != null && game.TryGetValue("attach_discs", out var v) && v == "off" ? "off for this game" : "off in the settings";
-            return DiscSupport(installDir);
+            return DiscSupport(installDir, image);
         }
 
-        /// <summary>Why this machine cannot attach an Xbox disc - null when it can (AIM, the helper 1.7 and its task).</summary>
-        public static string DiscSupport(string installDir)
+        /// <summary>Why this machine cannot attach an Xbox disc - null when it can (AIM, the helper 1.7 and its task; 1.8 for
+        /// a ZArchive, 1.9 for a CSO, a CCI or a CHD - <paramref name="image"/>, null for a plain one).</summary>
+        public static string DiscSupport(string installDir, string image = null)
         {
             try
             {
                 UseRoot(installDir);
-                return RamDrive.CanAttachXboxDisc(out var why) ? null : why;
+                return RamDrive.CanAttachXboxDisc(out var why, image) ? null : why;
             }
             catch (Exception ex) { return ex.Message; }
         }

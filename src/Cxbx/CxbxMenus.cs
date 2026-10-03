@@ -99,13 +99,13 @@ namespace LbIntegrations.Cxbx
             stack.Controls.Add(import);
 
             var games = Group("Games");
-            // An ISO / XISO read where it is (03/10): attached as a disk through AIM by the RAM disk helper, nothing copied.
+            // An ISO / XISO / CSO / CCI / CHD / ZAR read where it is (03/10): attached as a disk through AIM by the RAM disk helper, nothing copied.
             var attachStack = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Location = new Point(8, 20) };
             var noSupport = CxbxRamSession.DiscSupport(exe != null ? Path.GetDirectoryName(exe) : null);
-            _attach = new CheckBox { Text = "Mount ISO / XISO directly through AIM - no copy, no RAM disk", AutoSize = true, Checked = CxbxSettings.On(s, "attach_discs", true), Enabled = noSupport == null };
+            _attach = new CheckBox { Text = "Mount ISO / XISO / CSO / CCI / CHD / ZAR directly through AIM - no copy, no RAM disk", AutoSize = true, Checked = CxbxSettings.On(s, "attach_discs", true), Enabled = noSupport == null };
             attachStack.Controls.Add(_attach);
             attachStack.Controls.Add(Explain(noSupport == null
-                ? "The disc image is attached as a read-only disk for the session and the game read from it - zips and 7z are still unpacked, "
+                ? "The disc image is attached as a read-only disk for the session and the game read from it (a compressed one decompressed as the game reads) - zips and 7z are still unpacked, "
                   + "as below. Needs the Arsenal Image Mounter."
                 : "Unavailable: " + noSupport + " (what is installed shows in the RamDisk & VHDX tab). Until then discs are unpacked, as below."));
             var t = new TableLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, Location = new Point(8, 20) };
@@ -297,13 +297,13 @@ namespace LbIntegrations.Cxbx
             var where = CxbxSettingsPage.Group("Where it is unpacked");
             var w = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Location = new Point(8, 20) };
             var placement = CxbxSettings.Placement(choice);
-            // Read where it is (AIM) - a bare ISO / XISO only. Three states: on, off, every game's (the grey square).
-            var noSupport = CxbxRamSession.DiscSupport(_exe != null ? Path.GetDirectoryName(_exe) : null);
-            bool bareImage = d == null || d.Kind == CxbxRomKind.Image;
+            // Read where it is (AIM) - a bare ISO / XISO / CSO / CCI / CHD, or a ZArchive. Three states: on, off, every game's (the grey square).
+            var noSupport = CxbxRamSession.DiscSupport(_exe != null ? Path.GetDirectoryName(_exe) : null, d?.Path);
+            bool bareImage = d == null || d.Kind == CxbxRomKind.Image || d.Kind == CxbxRomKind.Zar;
             choice.TryGetValue("attach_discs", out var own);
             _attachGame = new CheckBox
             {
-                Text = "Mount the ISO / XISO directly through AIM - no copy, no RAM disk", AutoSize = true, ThreeState = true,
+                Text = "Mount the ISO / XISO / CSO / CCI / CHD / ZAR directly through AIM - no copy, no RAM disk", AutoSize = true, ThreeState = true,
                 CheckState = own == "on" ? CheckState.Checked : own == "off" ? CheckState.Unchecked : CheckState.Indeterminate,
                 Enabled = noSupport == null && bareImage,
             };
@@ -314,7 +314,7 @@ namespace LbIntegrations.Cxbx
             {
                 AutoSize = true, MaximumSize = new Size(520, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(20, 0, 3, 8),
                 Text = noSupport != null ? "Unavailable: " + noSupport + "."
-                     : !bareImage ? "Only for a bare ISO / XISO - a zip or a 7z is unpacked."
+                     : !bareImage ? "Only for a bare disc image (ISO, XISO, CSO, CCI, CHD) or a .zar - a zip or a 7z is unpacked."
                      : "Grey: as every game. When it is mounted, the choice below is not used - nothing is unpacked.",
             });
             _auto = new RadioButton { Text = "Automatic - a RAM disk when it fits under the threshold, else the disk", AutoSize = true, Checked = placement == "auto" };
@@ -493,10 +493,11 @@ namespace LbIntegrations.Cxbx
             switch (k)
             {
                 case CxbxRomKind.Xbe: return "An Xbox executable, opened where it is";
-                case CxbxRomKind.Image: return "A disc image";
+                case CxbxRomKind.Image: return "A disc image";      // plain, CSO, CCI or CHD
                 case CxbxRomKind.ImageInArchive: return "A disc image in an archive";
                 case CxbxRomKind.TreeInArchive: return "An unpacked game in an archive";
                 case CxbxRomKind.Xbox360: return "An Xbox 360 game";
+                case CxbxRomKind.Zar: return "A ZArchive (.zar) of the game's files";
                 default: return "Not an Xbox game this plugin can read";
             }
         }

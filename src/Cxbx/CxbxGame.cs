@@ -3,7 +3,8 @@
 //
 //   an XBE                         launched where it is
 //   a disc image (.iso, .xiso)     an XDVDFS volume - trimmed (XISO) or redump (game partition at 0x18300000);
-//                                  unpacked, since Cxbx-Reloaded opens XBEs only
+//                                  unpacked, since Cxbx-Reloaded opens XBEs only - or attached through AIM (the helper)
+//   (.cso, .cci, .chd)             the same, compressed - read through its container (src\Shared.Disc)
 //   an archive (.zip, .7z...)      holding a disc image - unpacked from the stream, the image never written whole -
 //                                  or holding a game already unpacked (a default.xbe and the files beside it)
 //   an Xbox 360 disc               default.xex where default.xbe would be: refused, it is Xenia's
@@ -21,7 +22,9 @@ using SharpCompress.Archives;
 
 namespace LbIntegrations.Cxbx
 {
-    internal enum CxbxRomKind { Unknown, Xbe, Image, ImageInArchive, TreeInArchive, Xbox360 }
+    /// <summary>Zar (Mehdi, 03/10): a ZArchive holding the game's files - read where it is, as a disc image is
+    /// (src\Shared.Zar), attached through AIM like one (the helper 1.8), else unpacked.</summary>
+    internal enum CxbxRomKind { Unknown, Xbe, Image, ImageInArchive, TreeInArchive, Xbox360, Zar }
 
     internal sealed class CxbxRom
     {
@@ -64,6 +67,32 @@ namespace LbIntegrations.Cxbx
                     if (d.Xbe == null) d.Problem = "this file is not an Xbox executable";
                     return d;
                 }
+
+                // A ZArchive, by its footer: the game's files in it, read where they are - the shallowest default.xbe.
+                if (Zar.ZArchive.IsZar(rom))
+                {
+                    using var z = Zar.ZArchive.Open(rom);
+                    if (z == null) { d.Problem = "this ZArchive does not read"; return d; }
+                    var zxbe = z.Entries.Where(e => !e.IsDirectory && Leaf(e.Path.Replace('\\', '/')).Equals("default.xbe", StringComparison.OrdinalIgnoreCase))
+                                        .OrderBy(e => e.Path.Count(c => c == '\\')).FirstOrDefault();
+                    if (zxbe == null)
+                    {
+                        if (z.Entries.Any(e => !e.IsDirectory && Leaf(e.Path.Replace('\\', '/')).Equals("default.xex", StringComparison.OrdinalIgnoreCase)))
+                        { d.Kind = CxbxRomKind.Xbox360; d.Problem = "this is an Xbox 360 game (default.xex) - it is Xenia's, not Cxbx-Reloaded's"; return d; }
+                        d.Problem = "this ZArchive holds no default.xbe";
+                        return d;
+                    }
+                    d.Kind = CxbxRomKind.Zar;
+                    d.EntryKey = zxbe.Path.Replace('\\', '/');
+                    var zprefix = Folder(d.EntryKey);
+                    d.Bytes = z.Entries.Where(e => !e.IsDirectory && e.Path.Replace('\\', '/').StartsWith(zprefix, StringComparison.OrdinalIgnoreCase)).Sum(e => e.Length);
+                    d.Xbe = Xbe.Parse(z.ReadHead(zxbe, Xbe.HeadBytes));
+                    if (d.Xbe == null) d.Problem = "the default.xbe in this ZArchive is not an Xbox executable";
+                    return d;
+                }
+
+                // name.2.cso, name.3.cci: a part of a split image, read through its first part - no game of its own.
+                if (Disc.SectorImage.IsLaterPart(rom)) { d.Problem = "this is a later part of a split image - the game is its .1 part"; return d; }
 
                 // An image is told by its volume descriptor, whatever its extension - asked FIRST: an archive reader
                 // sniffing a disc's first sectors (zeros, mostly) is not a question worth its answer.

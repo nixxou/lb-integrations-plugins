@@ -30,11 +30,19 @@
     <Compile Include="..\Shared.Menu\**\*.cs" />
     <!-- The RAM disk a game is unpacked to - the one LiteBox, melonDS, Vita3K and Xenia mount. -->
     <Compile Include="..\Shared.RamDisk\**\*.cs" />
+    <!-- ZArchive (.zar) - the pack's one reader. -->
+    <Compile Include="..\Shared.Zar\**\*.cs" />
+    <!-- CSO, CCI, CHD (03/10) - the disc's bytes through its container. -->
+    <Compile Include="..\Shared.Disc\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Lib.Harmony" Version="2.4.2" />
     <PackageReference Include="SharpCompress" Version="0.41.0" />
+    <!-- zstd for ZArchive - the version SharpCompress already brings. -->
+    <PackageReference Include="ZstdSharp.Port" Version="0.8.6" />
+    <!-- CHD - the library the PPSSPP and Flycast plugins merge, its LGPL FLAC included: see THIRD-PARTY.md, "LGPL-2.1 and how it is satisfied". -->
+    <PackageReference Include="CHDSharp" Version="1.4.3" />
   </ItemGroup>
 
   <ItemGroup>

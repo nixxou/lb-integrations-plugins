@@ -166,6 +166,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 
 namespace RamDiskHelper
@@ -174,6 +175,21 @@ namespace RamDiskHelper
     {
         private static int Main(string[] argv)
         {
+            // 1.8: ZstdSharp (a .zar's zstd) is inside this exe, not beside it - loaded the first time a ZArchive needs it.
+            // 1.9: so are CHDSharp and what it needs (a CHD) - and a library beside the exe, should one ever be.
+            AppDomain.CurrentDomain.AssemblyResolve += (_, e) =>
+            {
+                var name = new System.Reflection.AssemblyName(e.Name).Name + ".dll";
+                using (var s = typeof(Program).Assembly.GetManifestResourceStream(name))
+                    if (s != null)
+                    {
+                        using var m = new MemoryStream();
+                        s.CopyTo(m);
+                        return System.Reflection.Assembly.Load(m.ToArray());
+                    }
+                var beside = Path.Combine(AppContext.BaseDirectory, name);
+                return File.Exists(beside) ? System.Reflection.Assembly.LoadFrom(beside) : null;
+            };
             // 1.7: the one command-line use - this exe serving an Xbox disc's view, started by itself (below).
             if (argv.Length == 2 && argv[0] == "--xbox-serve") return XboxServe(argv[1]);
             string dir = AppContext.BaseDirectory;
@@ -1029,9 +1045,32 @@ namespace RamDiskHelper
         {
             try
             {
-                var listing = LbIntegrations.Cxbx.Xdvdfs.List(image);
-                if (listing.Error != null) { Console.WriteLine("ERROR the disc could not be listed: " + listing.Error); return 1; }
-                var view = new LbIntegrations.Cxbx.XisoFatView(listing, new FileInfo(image).Length, "XBOXGAME");
+                // 1.8: a ZArchive (.zar) is the disc it holds - its files laid out as an image (ZArchiveImage), read through
+                // the archive, nothing unpacked. Else a disc image, listed.
+                LbIntegrations.Cxbx.XdvdfsResult listing;
+                Stream source;
+                long sourceLength;
+                if (LbIntegrations.Zar.ZArchive.IsZar(image))
+                {
+                    var zar = LbIntegrations.Zar.ZArchive.Open(image);
+                    if (zar == null) { Console.WriteLine("ERROR the ZArchive does not read"); return 1; }
+                    var flat = new LbIntegrations.Zar.ZArchiveImage(zar);
+                    listing = new LbIntegrations.Cxbx.XdvdfsResult { PartitionBase = 0 };
+                    listing.Dirs.AddRange(flat.Dirs);
+                    listing.Files.AddRange(flat.Files.Select(f => new LbIntegrations.Cxbx.XdvdfsFile { Path = f.Entry.Path, Offset = f.Offset, Length = f.Entry.Length }));
+                    source = flat;
+                    sourceLength = flat.Length;
+                }
+                else
+                {
+                    // 1.9: plain, CSO, CCI or CHD - the disc's bytes through its container (src\Shared.Disc), opened once.
+                    source = LbIntegrations.Disc.DiscImages.Open(image);
+                    var disc = source;
+                    listing = LbIntegrations.Cxbx.Xdvdfs.List(() => LbIntegrations.Disc.DiscImages.Shared(disc), true, disc.Length, null);
+                    if (listing.Error != null || !listing.Found) { Console.WriteLine("ERROR the disc could not be listed: " + (listing.Error ?? "no Xbox volume")); return 1; }
+                    sourceLength = source.Length;
+                }
+                var view = new LbIntegrations.Cxbx.XisoFatView(listing, sourceLength, "XBOXGAME");
                 var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
                 listener.Start();
                 Console.WriteLine("PORT " + ((System.Net.IPEndPoint)listener.LocalEndpoint).Port);
@@ -1044,7 +1083,7 @@ namespace RamDiskHelper
                 socket.NoDelay = true;
                 using var net = new System.Net.Sockets.NetworkStream(socket, true);
                 using var reader = new BinaryReader(net);
-                using var img = new FileStream(image, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, FileOptions.RandomAccess);
+                using var img = source;
                 var buffer = new byte[4 << 20];
                 var head = new byte[16];
                 while (true)

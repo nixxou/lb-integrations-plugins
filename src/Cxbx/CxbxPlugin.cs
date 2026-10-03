@@ -76,7 +76,7 @@ namespace LbIntegrations.Cxbx
         private static IEnumerable<LbCatalogEmulator> MetadataRows()
         {
             // Disc images, the archives they come in, and an XBE for a game already unpacked (CxbxGame).
-            const string extensions = ".iso; .xiso; .xbe; .zip; .7z";
+            const string extensions = ".iso; .xiso; .cso; .cci; .chd; .xbe; .zar; .zip; .7z";
             yield return new LbCatalogEmulator
             {
                 Name = PackName,

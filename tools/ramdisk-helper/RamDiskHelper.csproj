@@ -31,7 +31,7 @@
          disk is ABSENT OR OLDER and never when it is newer, and a caller checks this version
          before sending a key the older one would silently ignore. Bump it with the protocol,
          never with an ordinary fix. -->
-    <Version>1.7.0</Version>
+    <Version>1.9.0</Version>
 
     <Platforms>AnyCPU;x64</Platforms>
     <UseWindowsForms>false</UseWindowsForms>
@@ -42,6 +42,32 @@
   <ItemGroup>
     <Compile Include="..\..\src\Cxbx\Xdvdfs.cs" Link="Xbox\Xdvdfs.cs" />
     <Compile Include="..\..\src\Cxbx\XisoFatView.cs" Link="Xbox\XisoFatView.cs" />
+  </ItemGroup>
+
+  <!-- 1.8: a ZArchive (.zar) served as the disc it holds (view=xbox) - the pack's one reader. Its zstd, ZstdSharp, is EMBEDDED and
+       loaded on demand (Program.Main): no file more to deploy beside the helper, and none in the deps manifest, where a
+       missing one would stop the host before Main. -->
+  <ItemGroup>
+    <Compile Include="..\..\src\Shared.Zar\**\*.cs" LinkBase="Zar" />
+    <PackageReference Include="ZstdSharp.Port" Version="0.8.6" GeneratePathProperty="true" ExcludeAssets="runtime" PrivateAssets="all" />
+    <EmbeddedResource Include="$(PkgZstdSharp_Port)\lib\net9.0\ZstdSharp.dll" LogicalName="ZstdSharp.dll" Visible="false" />
+  </ItemGroup>
+
+  <!-- 1.9: a CSO, a CCI or a CHD served as the disc it holds (view=xbox) - src\Shared.Disc. CHDSharp and what it needs are EMBEDDED
+       like ZstdSharp, its LGPL FLAC too, as the PPSSPP and Flycast plugins merge it (THIRD-PARTY.md): still no file more beside the
+       helper, the four HelperFiles. -->
+  <ItemGroup>
+    <Compile Include="..\..\src\Shared.Disc\**\*.cs" LinkBase="Disc" />
+    <PackageReference Include="CHDSharp" Version="1.4.3" GeneratePathProperty="true" ExcludeAssets="runtime" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.11" GeneratePathProperty="true" ExcludeAssets="runtime" PrivateAssets="all" />
+    <PackageReference Include="System.IO.Hashing" Version="10.0.11" GeneratePathProperty="true" ExcludeAssets="runtime" PrivateAssets="all" />
+    <EmbeddedResource Include="$(PkgCHDSharp)\lib\net9.0\CHDSharpLib.dll" LogicalName="CHDSharpLib.dll" Visible="false" />
+    <EmbeddedResource Include="$(PkgCHDSharp)\lib\net9.0\VendoredLZMA.dll" LogicalName="VendoredLZMA.dll" Visible="false" />
+    <EmbeddedResource Include="$(PkgCHDSharp)\lib\net9.0\VendoredZLib.dll" LogicalName="VendoredZLib.dll" Visible="false" />
+    <EmbeddedResource Include="$(PkgCHDSharp)\lib\net9.0\VendoredZSTD.dll" LogicalName="VendoredZSTD.dll" Visible="false" />
+    <EmbeddedResource Include="$(PkgMicrosoft_Extensions_Logging_Abstractions)\lib\net9.0\Microsoft.Extensions.Logging.Abstractions.dll" LogicalName="Microsoft.Extensions.Logging.Abstractions.dll" Visible="false" />
+    <EmbeddedResource Include="$(PkgSystem_IO_Hashing)\lib\net9.0\System.IO.Hashing.dll" LogicalName="System.IO.Hashing.dll" Visible="false" />
+    <EmbeddedResource Include="$(PkgCHDSharp)\lib\net9.0\VendoredFlac.dll" LogicalName="VendoredFlac.dll" Visible="false" />
   </ItemGroup>
 
 </Project>
