@@ -82,7 +82,16 @@ namespace LbIntegrations.Cxbx
             var c = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 290, Margin = new Padding(3, 3, 0, 0) };
             c.Items.Add("<" + row.Fallback + ">");
             foreach (var ch in o.Choices) c.Items.Add(ch.Label);
-            c.SelectedIndex = 1 + o.Choices.FindIndex(x => string.Equals(x.Value, current, StringComparison.OrdinalIgnoreCase));
+            int at = o.Choices.FindIndex(x => string.Equals(x.Value, current, StringComparison.OrdinalIgnoreCase));
+            if (at < 0 && !string.IsNullOrWhiteSpace(current))
+            {
+                // Set, but no entry of the list any more (Mehdi, 04/10): shown as it is and kept - not read as unset, then
+                // emptied at the next OK.
+                c.Tag = current.Trim();
+                c.Items.Add(current.Trim() + " (not in this list)");
+                c.SelectedIndex = c.Items.Count - 1;
+            }
+            else c.SelectedIndex = 1 + at;
             return c;
         }
 
@@ -107,7 +116,9 @@ namespace LbIntegrations.Cxbx
             switch (row.Editor)
             {
                 case CheckBox c: return c.CheckState == CheckState.Indeterminate ? null : c.Checked ? "on" : "off";
-                case ComboBox b: return b.SelectedIndex <= 0 ? null : row.Option.Choices[b.SelectedIndex - 1].Value;
+                case ComboBox b:
+                    if (b.SelectedIndex <= 0) return null;
+                    return b.SelectedIndex - 1 < row.Option.Choices.Count ? row.Option.Choices[b.SelectedIndex - 1].Value : b.Tag as string;
             }
             return null;
         }

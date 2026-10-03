@@ -187,8 +187,10 @@ namespace LbIntegrations.MelonDs
 
         // ── a game's own values ──────────────────────────────────────────────
 
-        /// <summary>The game's own values, or null when it runs on melonDS's settings.</summary>
-        public static Dictionary<string, string> Load(string installDir, string gameId)
+        /// <summary>The game's own values, or null when it runs on melonDS's settings. <paramref name="asStored"/>: every
+        /// value as the store has it (Mehdi, 04/10) - a key this plugin no longer has, a number out of today's range - for
+        /// a save to keep them (LbipGameEdit); without, only what applies, as a session uses it.</summary>
+        public static Dictionary<string, string> Load(string installDir, string gameId, bool asStored = false)
         {
             try
             {
@@ -198,7 +200,7 @@ namespace LbIntegrations.MelonDs
                 {
                     var f = line.Split('\t');
                     if (f.Length < 2 || !string.Equals(f[0], gameId, StringComparison.OrdinalIgnoreCase)) continue;
-                    var values = Parse(f[1]);
+                    var values = Parse(f[1], asStored);
                     return values.Count > 0 ? values : null;
                 }
             }
@@ -744,9 +746,11 @@ namespace LbIntegrations.MelonDs
         /// <summary>Id=value;... in the order of Settings. A value is escaped (%XX), so a message may say
         /// anything: the numbers and true/false of the first version read back unchanged.</summary>
         internal static string Format(Dictionary<string, string> values)
-            => values == null ? "" : string.Join(";", Settings.Where(s => values.ContainsKey(s.Id)).Select(s => s.Id + "=" + Uri.EscapeDataString(values[s.Id] ?? "")));
+            => values == null ? "" : string.Join(";", Settings.Where(s => values.ContainsKey(s.Id)).Select(s => s.Id)
+                                                         .Concat(values.Keys.Where(k => Settings.All(s => s.Id != k)).OrderBy(k => k, StringComparer.Ordinal))   // kept, not ours any more
+                                                         .Select(id => id + "=" + Uri.EscapeDataString(values[id] ?? "")));
 
-        private static Dictionary<string, string> Parse(string text)
+        private static Dictionary<string, string> Parse(string text, bool asStored = false)
         {
             var values = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var part in (text ?? "").Trim().Split(';'))
@@ -756,6 +760,7 @@ namespace LbIntegrations.MelonDs
                 var s = Settings.FirstOrDefault(x => x.Id == part.Substring(0, eq).Trim());
                 string raw;
                 try { raw = Uri.UnescapeDataString(part.Substring(eq + 1)); } catch { continue; }
+                if (asStored) { values[part.Substring(0, eq).Trim()] = raw; continue; }
                 var v = s == null ? null : Normal(s, raw);
                 if (v != null) values[s.Id] = v;
             }

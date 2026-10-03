@@ -108,6 +108,14 @@ namespace LbIntegrations.Vita3k
             return v;
         }
 
+        /// <summary>Every attribute the tab shows - null for one on its default - for LbipGameEdit.</summary>
+        public Dictionary<string, string> Shown()
+        {
+            var v = Read();
+            foreach (var key in new[] { CpuKey, NgsKey, DelayKey }) if (!v.ContainsKey(key)) v[key] = null;
+            return v;
+        }
+
         public void SetEditable(bool value) { _enabled = value; Refresh_(); }
 
         /// <summary>Something shown changed - the window's bars follow it (OptionMarks).</summary>

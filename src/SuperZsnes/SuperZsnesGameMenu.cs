@@ -100,6 +100,7 @@ namespace LbIntegrations.SuperZsnes
             var current = exe != null ? SuperZsnesCurrent.Read(exe) : null;
             _page = new SuperZsnesSettingsPage(o => o.Scope == OptionScope.Game, saved, intro, deploy: false,
                                                where: _games.Count == 1 ? "Options file: " + SuperZsnesSettings.GamePath(first.Id) : "", running: current);
+            _atOpen = _page.Shown();
             _page.Dock = DockStyle.Fill;
 
             var ok = new Button { Text = "OK", Width = 90 };
@@ -132,23 +133,30 @@ namespace LbIntegrations.SuperZsnes
             catch { return null; }
         }
 
+        // What the page showed once built - see LbipGameEdit.
+        private readonly Dictionary<string, string> _atOpen;
+
         private void Apply()
         {
             var problem = _page.Problem();
             if (problem != null) { MessageBox.Show(this, problem, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
             if (_games.Count > 1
-                && MessageBox.Show(this, "These options will be applied to all " + _games.Count + " selected games.", Text,
+                && MessageBox.Show(this, "Your changes will be applied to all " + _games.Count + " selected games; what each one has of its own and you did not change stays as it is.", Text,
                                    MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) != DialogResult.OK)
                 return;
-            var values = _page.Values();
+            // OK changes only what was changed (LbipGameEdit, Mehdi 04/10): a key the page does not show, a choice no longer
+            // in its list, stays as the game has it.
+            var shown = _page.Shown();
             int changed = 0;
             foreach (var g in _games)
             {
-                if (Same(SuperZsnesSettings.ReadGame(g.Id), values)) continue;
+                var stored = SuperZsnesSettings.ReadGame(g.Id);
+                var values = LbIntegrations.Lbip.LbipGameEdit.Merge(stored, _atOpen, shown);
+                if (Same(stored, values)) continue;
                 SuperZsnesSettings.WriteGame(g.Id, values);
                 changed++;
             }
-            Log.Info("game options window: " + changed + " change(s), of " + _games.Count + " game(s) - " + (values.Count == 0 ? "none set" : string.Join(", ", values.Select(kv => kv.Key + "=" + kv.Value))));
+            Log.Info("game options window: " + changed + " change(s), of " + _games.Count + " game(s)");
             DialogResult = DialogResult.OK;
             Close();
         }

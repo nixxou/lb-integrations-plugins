@@ -449,6 +449,18 @@ namespace LbIntegrations.MelonDs
             _handText.Text = Lines(_handOn.Checked ? e.Advanced : Generated());
             _handLoading = false;
             HandChanged();
+            _atOpen = ShownValues();
+        }
+
+        // What the Video and Firmware tabs showed once filled from the source - see LbipGameEdit.
+        private Dictionary<string, string> _atOpen;
+
+        /// <summary>What the tabs set, every setting of ours present - null for one not set - for LbipGameEdit.</summary>
+        private Dictionary<string, string> ShownValues()
+        {
+            var shown = TabValues();
+            foreach (var s in MelonDsGameSettings.Settings) if (!shown.ContainsKey(s.Id)) shown[s.Id] = null;
+            return shown;
         }
 
         // ── Advanced ─────────────────────────────────────────────────────────
@@ -610,11 +622,15 @@ namespace LbIntegrations.MelonDs
                 }
             }
 
-            var own = TabValues();
-            var chosen = own.Count > 0 ? own : null;
+            // OK changes only what was changed (LbipGameEdit, Mehdi 04/10): a value kept for the game that this window does
+            // not show as it is - a key this plugin no longer has, a number out of its range - stays in its store.
+            var shown = ShownValues();
             foreach (var g in _games)
             {
-                if (SettingsKey(g.Settings) == SettingsKey(chosen)) continue;
+                var stored = MelonDsGameSettings.Load(g.InstallDir, g.GameId, asStored: true);
+                var merged = LbipGameEdit.Merge(stored, _atOpen, shown, StringComparer.Ordinal);
+                var chosen = merged.Count > 0 ? merged : null;
+                if (LbipGameEdit.Same(stored, chosen)) continue;
                 MelonDsGameSettings.Save(g.InstallDir, g.GameId, chosen);
                 settings++;
                 Log.Info("options of " + g.Title + ": " + (chosen == null ? "melonDS's settings" : "its own settings - " + SettingsKey(chosen)));

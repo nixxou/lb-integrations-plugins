@@ -166,9 +166,9 @@ namespace LbIntegrations.Xenia
                     var at = line.IndexOf('=');
                     if (at <= 0 || line.TrimStart().StartsWith("#")) continue;
                     var key = line.Substring(0, at).Trim();
-                    // A key no option has any more is dropped on read: never sent, gone at the next write. The plugin's own
-                    // switches (the optimized settings, on / off) are kept: they are not cvars, Flags never sends them.
-                    if (XeniaOptions.ByKey(key) != null || PluginKeys.Contains(key)) values[key] = line.Substring(at + 1).Trim();
+                    // Every key KEPT (Mehdi, 04/10), one no option has any more included: never sent - Flags walks the options,
+                    // not the file - and not lost either, for a version of this plugin that has it again.
+                    if (key.Length > 0) values[key] = line.Substring(at + 1).Trim();
                 }
             }
             catch (Exception ex) { Log.Warn("could not read " + path, ex); }

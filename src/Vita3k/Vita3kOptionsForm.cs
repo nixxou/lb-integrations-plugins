@@ -201,7 +201,12 @@ namespace LbIntegrations.Vita3k
             _handText.Text = Lines(_handOn.Checked ? e.Advanced : Generated());
             _handLoading = false;
             HandChanged();
+            _graphicsAtOpen = _graphics.Shown();
+            _compatAtOpen = _compat.Shown();
         }
+
+        // What the Graphics and Compatibility tabs showed once filled from the source - see LbipGameEdit.
+        private Dictionary<string, string> _graphicsAtOpen, _compatAtOpen;
 
         // ── the Advanced tab ─────────────────────────────────────────────────
 
@@ -628,7 +633,7 @@ namespace LbIntegrations.Vita3k
             if (!ApplyExtras()) return;   // the Updates & DLC tab: backed out of its warning, nothing applied
 
             if (_games.Count > 1
-                && MessageBox.Show(this, "These options will be applied to all " + _games.Count + " selected games.\n\n"
+                && MessageBox.Show(this, "Your changes will be applied to all " + _games.Count + " selected games; what each one has of its own and you did not change stays as it is.\n\n"
                                          + "Each game keeps the rest of its own command line; only this plugin's options change.",
                                    Text, MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) != DialogResult.OK)
                 return;
@@ -657,11 +662,13 @@ namespace LbIntegrations.Vita3k
                 systems++;
             }
 
-            // The Compatibility tab: what is not on default, by section.
-            var compat = _compat.Read();
-            if (compat.Count == 0) compat = null;
+            // The Compatibility tab: what is not on default, by section - only what the user changed (LbipGameEdit, 04/10):
+            // an attribute not shown, or a number past its slider, stays as the game has it.
+            var compatShown = _compat.Shown();
             foreach (var g in _games)
             {
+                var compat = LbIntegrations.Lbip.LbipGameEdit.Merge(g.Compat, _compatAtOpen, compatShown, StringComparer.Ordinal);
+                if (compat.Count == 0) compat = null;
                 if (g.Layout == null || Vita3kCompatFields.Key(g.Compat) == Vita3kCompatFields.Key(compat)) continue;
                 foreach (var section in new[] { Vita3kGameConfig.CpuSection, Vita3kGameConfig.AudioSection, Vita3kGameConfig.EmulatorSection })
                 {
@@ -672,11 +679,13 @@ namespace LbIntegrations.Vita3k
                 systems++;
             }
 
-            // The Graphics tab: what is not on default.
-            var graphics = _graphics.Read();
-            if (graphics.Count == 0) graphics = null;
+            // The Graphics tab: what is not on default - only what the user changed (LbipGameEdit, 04/10). V-Sync set for
+            // OpenGL stays when the renderer is Vulkan and the box is hidden; a number past its slider stays as it is.
+            var graphicsShown = _graphics.Shown();
             foreach (var g in _games)
             {
+                var graphics = LbIntegrations.Lbip.LbipGameEdit.Merge(g.Graphics, _graphicsAtOpen, graphicsShown, StringComparer.Ordinal);
+                if (graphics.Count == 0) graphics = null;
                 if (g.Layout == null || Vita3kGraphicsFields.Key(g.Graphics) == Vita3kGraphicsFields.Key(graphics)) continue;
                 Vita3kGameConfig.SaveSection(g.Layout, g.GameId, Vita3kGameConfig.GpuSection, graphics);
                 systems++;

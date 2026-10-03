@@ -36,6 +36,7 @@ namespace LbIntegrations.Xenia
         private readonly XeniaOptionRows _rows;
         private readonly TextBox _line;
         private readonly HashSet<string> _known;
+        private readonly Dictionary<string, string> _atOpen;
         private readonly TextBox _contentFolder, _contentLimit, _ramBelow;
         private readonly CheckBox _ram, _importClean, _importTitle, _optimized, _importRegion;
 
@@ -156,6 +157,7 @@ namespace LbIntegrations.Xenia
             stack.Controls.Add(new Label { Text = "Options for every game", AutoSize = true, Font = new Font("Segoe UI", 10f, FontStyle.Bold), Margin = new Padding(4, 8, 0, 2) });
             _known = exe != null ? XeniaSettings.KnownCvars(XeniaPaths.Resolve(exe).ConfigFile) : null;
             _rows = new XeniaOptionRows(XeniaSettings.Read(), o => "Xenia's own: " + o.LabelOf(own.TryGetValue(o.Key, out var v) ? v : o.Default), _known);
+            _atOpen = _rows.Shown();
             stack.Controls.Add(_rows);
 
             var bottom = new Panel { Dock = DockStyle.Bottom, Height = 104, Padding = new Padding(12, 4, 12, 8) };
@@ -193,8 +195,9 @@ namespace LbIntegrations.Xenia
             if (below.Length > 0 && (!double.TryParse(below, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var rg) || rg <= 0))
                 return "The RAM disk threshold is a number of GB.";
             _console?.Save();
-            var every = _rows.Values();
-            if (!_optimized.Checked) every[XeniaOptimized.SettingKey] = "off";
+            // Only what was changed (LbipGameEdit, 04/10): a key the tab does not show stays as it is in the file.
+            var every = LbIntegrations.Lbip.LbipGameEdit.Merge(XeniaSettings.Read(), _atOpen, _rows.Shown());
+            if (!_optimized.Checked) every[XeniaOptimized.SettingKey] = "off"; else every.Remove(XeniaOptimized.SettingKey);
             XeniaSettings.WriteAll(every);
             XeniaExtras.WriteSettings(new Dictionary<string, string> { ["folder"] = _contentFolder.Text.Trim(), ["limit_gb"] = limit,
                 ["ramdisk"] = _ram.Checked ? "" : "off", ["ramdisk_below_gb"] = below, ["import_clean"] = _importClean.Checked ? "" : "off", ["import_title"] = _importTitle.Checked ? "" : "off", ["import_region"] = _importRegion.Checked ? "" : "off" });

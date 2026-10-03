@@ -244,6 +244,17 @@ namespace LbIntegrations.Vita3k
             return v;
         }
 
+        /// <summary>Every attribute the tab SHOWS now - null for one on its default - for LbipGameEdit: one hidden for
+        /// the renderer (V-Sync under Vulkan, accuracy under OpenGL) is not in it, so it stays as stored.</summary>
+        public Dictionary<string, string> Shown()
+        {
+            var v = Read();
+            var shown = new List<string> { "backend-renderer", "screen-filter", "disable-surface-sync", "resolution-multiplier", "anisotropic-filtering", "fps-hack", "texture-cache" };
+            if (EffectiveBackend() == "OpenGL") shown.Add("v-sync"); else { shown.Add("high-accuracy"); shown.Add("async-pipeline-compilation"); }
+            foreach (var name in shown) if (!v.ContainsKey(name)) v[name] = null;
+            return v;
+        }
+
         /// <summary>A renderer as shown: ours by its name, Vulkan when not set; a name we do not know as it is.</summary>
         private static string Renderer(string v) => NotSet(v) ? "Vulkan" : Canonical(v, Backends);
 

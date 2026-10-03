@@ -172,6 +172,14 @@ namespace LbIntegrations.Xenia
             return null;
         }
 
+        /// <summary>Every row - null for one not set - for LbipGameEdit: OK changes only what changed.</summary>
+        public Dictionary<string, string> Shown()
+        {
+            var shown = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in _rows) shown[row.Option.Key] = ValueOf(row);
+            return shown;
+        }
+
         /// <summary>The rows that are set, by option key.</summary>
         public Dictionary<string, string> Values()
         {

@@ -139,6 +139,7 @@ namespace LbIntegrations.Xenia
             optionsStack.Controls.Add(optimizedBox);
             _known = XeniaSettings.KnownCvars(_configFile);
             _rows = new XeniaOptionRows(saved, Fallback, _known);
+            _atOpen = ShownNow();
             optionsStack.Controls.Add(_rows);
             scroll.Controls.Add(optionsStack);
             _optimized.CheckStateChanged += (_, _) => { ShowOptimized(null); ShowLine(); };
@@ -351,18 +352,32 @@ namespace LbIntegrations.Xenia
             _extrasTab?.Save(c => _sessionTab?.Apply(c));
             _sessionTab?.Saved();
             _patchesTab?.Save();
-            var values = _rows.Values();
-            if (_optimized.CheckState != CheckState.Indeterminate) values[XeniaOptimized.SettingKey] = _optimized.Checked ? "on" : "off";
+            // OK changes only what was changed (LbipGameEdit, Mehdi 04/10): a key this window does not show stays as the game
+            // has it; over several games, each keeps what it has of its own and the user did not change.
+            var shown = ShownNow();
             int changed = 0;
             foreach (var g in _games)
             {
-                if (Same(XeniaSettings.ReadGame(g.Id), values)) continue;
+                var stored = XeniaSettings.ReadGame(g.Id);
+                var values = LbIntegrations.Lbip.LbipGameEdit.Merge(stored, _atOpen, shown);
+                if (Same(stored, values)) continue;
                 XeniaSettings.WriteGame(g.Id, values);
                 changed++;
             }
-            Log.Info("game options window: " + changed + " change(s), of " + _games.Count + " game(s) - " + (values.Count == 0 ? "none set" : string.Join(", ", values.Select(kv => kv.Key + "=" + kv.Value))));
+            Log.Info("game options window: " + changed + " change(s), of " + _games.Count + " game(s)");
             DialogResult = DialogResult.OK;
             Close();
+        }
+
+        // What the window showed once built - see LbipGameEdit.
+        private readonly Dictionary<string, string> _atOpen;
+
+        /// <summary>The rows and the optimized settings' box, as shown - null for what is not set.</summary>
+        private Dictionary<string, string> ShownNow()
+        {
+            var shown = _rows.Shown();
+            shown[XeniaOptimized.SettingKey] = _optimized.CheckState == CheckState.Indeterminate ? null : _optimized.Checked ? "on" : "off";
+            return shown;
         }
 
         private static bool Same(IDictionary<string, string> a, IDictionary<string, string> b)

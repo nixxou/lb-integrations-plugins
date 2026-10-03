@@ -350,6 +350,7 @@ namespace LbIntegrations.Cxbx
                        + "They are written into Cxbx-Reloaded's settings for the time of the game, then put back.",
             });
             _rows = new CxbxOptionRows(choice, CxbxOptionRows.GameFallback(CxbxSettings.Read(), CxbxOwn.Read(_exe)));
+            _rowsAtOpen = _rows.Values();
             optionsStack.Controls.Add(CxbxOptionRows.Legend("Not set: every game's, else the default, else Cxbx-Reloaded's own"));
             var reset = new Button { Text = "Reset to defaults", AutoSize = true, Margin = new Padding(4, 0, 0, 6) };
             new ToolTip().SetToolTip(reset, "Every option of this game back to unset. Nothing is saved until OK.");
@@ -452,6 +453,10 @@ namespace LbIntegrations.Cxbx
             catch (Exception ex) { _plan.Text = "The next launch could not be worked out: " + ex.Message; }
         }
 
+        // What the option rows showed at opening: OK changes only what was changed (LbipGameEdit, Mehdi 04/10) - over
+        // several games, each keeps what it has of its own and the user did not change.
+        private Dictionary<string, string> _rowsAtOpen;
+
         private void SaveChoice()
         {
             foreach (var g in _games)
@@ -462,7 +467,8 @@ namespace LbIntegrations.Cxbx
                 values["placement"] = Placement == "auto" ? "" : Placement;
                 values["keep"] = _keep.Checked ? "on" : "";
                 values["attach_discs"] = AttachChoice;
-                foreach (var kv in _rows.Values()) values[kv.Key] = kv.Value;
+                foreach (var kv in _rows.Values())
+                    if (_rowsAtOpen == null || !_rowsAtOpen.TryGetValue(kv.Key, out var before) || before != kv.Value) values[kv.Key] = kv.Value;
                 CxbxSettings.WriteGame(id, values);
                 var rom = CxbxPlugin.ResolveFullPathForUi(CxbxPlugin.Safe(() => g.ApplicationPath));
                 if (_exe != null && rom != null) CxbxPlace.SetKeep(CxbxPlace.GameFolder(Path.GetDirectoryName(_exe), rom), _keep.Checked);

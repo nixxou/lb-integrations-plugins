@@ -8,7 +8,8 @@
 // the lines the game changes, and takes the user's own instead, "Edit by hand".
 //
 // A SELECTION THAT DOES NOT AGREE: grouped by identical settings, a combo box names each group and the one
-// chosen is what the window starts from; OK applies what is shown to every selected game, after asking.
+// chosen is what the window starts from; OK applies what the user CHANGED to every selected game, after asking
+// (LbipGameEdit, 04/10) - what is not shown, or not changed, stays each game's own.
 
 using System;
 using System.Collections.Generic;
@@ -348,6 +349,17 @@ namespace LbIntegrations.Ppsspp
             foreach (var n in _handNotes) n.Visible = hand;
         }
 
+        /// <summary>Every field as shown - null for one on its default - for LbipGameEdit: OK changes only what changed.</summary>
+        private Dictionary<string, string> ShownValues()
+        {
+            var shown = ReadValues();
+            foreach (var f in _fields) if (!shown.ContainsKey(f.Setting.Id)) shown[f.Setting.Id] = null;
+            return shown;
+        }
+
+        // What the window showed once filled from its source - see LbipGameEdit.
+        private Dictionary<string, string> _atOpen;
+
         /// <summary>Only what is not on default, Section/Key -> value.</summary>
         private Dictionary<string, string> ReadValues()
         {
@@ -463,6 +475,7 @@ namespace LbIntegrations.Ppsspp
             _handText.Text = Lines(_handOn.Checked ? e.Advanced : Generated());
             _loading = false;
             HandChanged();
+            _atOpen = ShownValues();
         }
 
         // ── OK ───────────────────────────────────────────────────────────────
@@ -479,16 +492,20 @@ namespace LbIntegrations.Ppsspp
                     return;
             }
             if (_games.Count > 1
-                && MessageBox.Show(this, "These settings will be applied to all " + _games.Count + " selected games.",
+                && MessageBox.Show(this, "Your changes will be applied to all " + _games.Count + " selected games. What each one has of its own and you did not change stays as it is.",
                                    Text, MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) != DialogResult.OK)
                 return;
 
             int changed = 0;
-            var own = ReadValues();
-            var chosen = own.Count > 0 ? own : null;
+            // OK changes only what was changed (LbipGameEdit, Mehdi 04/10): a value not shown - a key no longer offered, a
+            // number past its box's range - stays as stored. Over several games, the changes go to each of them; what each
+            // one had of its own, and the user did not change, stays its own.
+            var shown = ShownValues();
             var handText = _handOn.Checked ? _handText.Text.Trim() : _keptHand?.Trim();
             foreach (var g in _games)
             {
+                var merged = LbIntegrations.Lbip.LbipGameEdit.Merge(g.Own, _atOpen, shown);
+                var chosen = merged.Count > 0 ? merged : null;
                 if (Fragment(g.Own) != Fragment(chosen)) { PpssppGameSettings.Save(g.Layout, g.GameId, chosen); changed++; }
                 if (!(g.AdvancedOn == (_handOn.Checked && !string.IsNullOrEmpty(handText))
                       && string.Equals((g.Advanced ?? "").Trim(), handText ?? "", StringComparison.Ordinal)))

@@ -188,7 +188,15 @@ namespace LbIntegrations.SuperZsnes
                     var c = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200, Margin = new Padding(3, 3, 0, 0) };
                     c.Items.Add("<" + OwnOf(o) + ">");
                     c.Items.AddRange(o.Choices);
-                    c.SelectedIndex = 1 + Array.FindIndex(o.Choices, x => string.Equals(x, current, StringComparison.OrdinalIgnoreCase));
+                    int at = Array.FindIndex(o.Choices, x => string.Equals(x, current, StringComparison.OrdinalIgnoreCase));
+                    if (at < 0 && !string.IsNullOrWhiteSpace(current))
+                    {
+                        // Set, but no entry of the list any more (Mehdi, 04/10): shown as it is and kept, never read as unset.
+                        c.Tag = current.Trim();
+                        c.Items.Add(current.Trim() + " (not in this list)");
+                        c.SelectedIndex = c.Items.Count - 1;
+                    }
+                    else c.SelectedIndex = 1 + at;
                     return c;
                 }
                 default:
@@ -246,7 +254,8 @@ namespace LbIntegrations.SuperZsnes
                 case CheckBox c:
                     return c.Checked ? "true" : null;
                 case ComboBox b:
-                    return b.SelectedIndex <= 0 ? null : b.SelectedItem?.ToString();
+                    if (b.SelectedIndex <= 0) return null;
+                    return b.SelectedIndex > row.Option.Choices.Length && b.Tag is string kept ? kept : b.SelectedItem?.ToString();
                 case TextBox t:
                 {
                     var v = t.Text.Trim();
@@ -256,6 +265,14 @@ namespace LbIntegrations.SuperZsnes
                 }
             }
             return null;
+        }
+
+        /// <summary>Every row shown - null for one that passes nothing - for LbipGameEdit: OK changes only what changed.</summary>
+        public Dictionary<string, string> Shown()
+        {
+            var shown = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in _rows) shown[row.Option.IniKey] = ValueOf(row);
+            return shown;
         }
 
         /// <summary>What Save writes: the rows that pass something.</summary>

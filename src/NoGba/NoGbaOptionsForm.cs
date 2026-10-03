@@ -11,7 +11,9 @@
 // instead, "Edit by hand".
 //
 // A SELECTION THAT DOES NOT AGREE: grouped by identical settings, a combo box names each group and the
-// one chosen is what the window starts from; OK applies what is shown to every selected game, after asking.
+// one chosen is what the window starts from; OK applies what the user CHANGED to every selected game, after asking
+// (LbipGameEdit, 04/10) - what is not shown, or not changed, stays each game's own; a setting of another kind than the
+// game's is still not kept for it.
 
 using System;
 using System.Collections.Generic;
@@ -343,6 +345,27 @@ namespace LbIntegrations.NoGba
             return own;
         }
 
+        /// <summary>Every setting the tabs show for this kind - null for one on its default - for LbipGameEdit.</summary>
+        private Dictionary<string, string> ShownValues(NoGbaKind kind)
+        {
+            var shown = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var t in _tabs)
+            {
+                var set = ReadTab(t);
+                var keys = t.Combos.Keys.ToList();
+                if (t.Step50 != null) keys.Add(SizingKey);
+                foreach (var k in keys)
+                {
+                    var s = NoGbaGameSettings.Offered.FirstOrDefault(x => x.Key.Equals(k, StringComparison.OrdinalIgnoreCase));
+                    if (s != null && (s.Kinds & kind) != 0) shown[k] = set.TryGetValue(k, out var v) ? v : null;
+                }
+            }
+            return shown;
+        }
+
+        // What the window showed once filled from its source, per kind - see LbipGameEdit.
+        private readonly Dictionary<NoGbaKind, Dictionary<string, string>> _atOpen = new Dictionary<NoGbaKind, Dictionary<string, string>>();
+
         private Entry SourceGame() => _source != null ? _groups[_source.SelectedIndex][0] : _games[0];
 
         private string Generated() => NoGbaGameSettings.Fragment(TabValues(SourceGame().Kind));
@@ -400,6 +423,8 @@ namespace LbIntegrations.NoGba
             _handText.Text = Lines(_handOn.Checked ? e.Advanced : Generated());
             _loading = false;
             HandChanged();
+            _atOpen.Clear();
+            foreach (var kind in _games.Select(g => g.Kind).Distinct()) _atOpen[kind] = ShownValues(kind);
         }
 
         // ── OK ───────────────────────────────────────────────────────────────
@@ -416,7 +441,7 @@ namespace LbIntegrations.NoGba
                     return;
             }
             if (_games.Count > 1
-                && MessageBox.Show(this, "These settings will be applied to all " + _games.Count + " selected games - each keeping only what applies to its kind.",
+                && MessageBox.Show(this, "Your changes will be applied to all " + _games.Count + " selected games - each keeping only what applies to its kind. What each one has of its own and you did not change stays as it is.",
                                    Text, MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) != DialogResult.OK)
                 return;
 
@@ -424,8 +449,14 @@ namespace LbIntegrations.NoGba
             var handText = _handOn.Checked ? _handText.Text.Trim() : _keptHand?.Trim();
             foreach (var g in _games)
             {
-                var own = TabValues(g.Kind);
-                var chosen = own.Count > 0 ? own : null;
+                // OK changes only what was changed (LbipGameEdit, Mehdi 04/10); a known setting of another kind is not kept.
+                var merged = LbipGameEdit.Merge(g.Own, _atOpen.TryGetValue(g.Kind, out var before) ? before : null, ShownValues(g.Kind));
+                foreach (var k in merged.Keys.ToList())
+                {
+                    var s = NoGbaGameSettings.Offered.FirstOrDefault(x => x.Key.Equals(k, StringComparison.OrdinalIgnoreCase));
+                    if (s != null && (s.Kinds & g.Kind) == 0) merged.Remove(k);
+                }
+                var chosen = merged.Count > 0 ? merged : null;
                 if (Fragment(g.Own) != Fragment(chosen)) { NoGbaGameSettings.Save(g.Layout, g.GameId, chosen); changed++; }
                 if (!(g.AdvancedOn == (_handOn.Checked && !string.IsNullOrEmpty(handText))
                       && string.Equals((g.Advanced ?? "").Trim(), handText ?? "", StringComparison.Ordinal)))
