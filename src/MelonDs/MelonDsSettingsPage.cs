@@ -38,7 +38,9 @@ namespace LbIntegrations.MelonDs
     {
         private readonly MelonDsLayout _layout;
         private readonly Dictionary<string, string> _shown;
-        private readonly CheckBox _override;
+        private readonly CheckBox _dsiWare;
+        private readonly RadioButton _dumpMine, _dumpTheirs;
+        private readonly bool _dsiWareShown, _dumpMineShown;
         private readonly MelonDsFirmwareFields _fields;
 
         public MelonDsSettingsPage()
@@ -63,43 +65,71 @@ namespace LbIntegrations.MelonDs
             MelonDsGameSettings.Restore(_layout, "the configuration window is opened");
             _shown = MelonDsGameSettings.Current(_layout.ConfigFile);
 
-            var box = new GroupBox { Text = "Firmware settings - melonDS's own", Location = new Point(12, 12), Size = new Size(560, 384) };
-            _override = new CheckBox
+            // WHOSE CONSOLE EACH GAME SHOWS (Mehdi, 03/10) - see MelonDsFirmware: the override is the plugin's, by kind of game.
+            int y = 12;
+            var whose = new GroupBox { Text = "Whose console the games show", Location = new Point(12, y), Size = new Size(560, 10) };
+            int wy = 22;
+            _dsiWareShown = MelonDsFirmware.DsiWareOverride(_layout);
+            _dsiWare = new CheckBox { Text = "DSiWare: show your console, over each DSi console's own owner", AutoSize = true, Location = new Point(14, wy), Checked = _dsiWareShown };
+            whose.Controls.Add(_dsiWare);
+            whose.Controls.Add(Grey("The owner below, for the length of each session: a DSi console is never rewritten, and its saves keep its own "
+                                    + "settings. A language its region does not have stays the console's.", 34, wy + 22));
+            wy += 64;
+            var active = MelonDsFirmware.Active(_layout);
+            if (active != null)
             {
-                Text = "Override settings from external firmware", AutoSize = true, Location = new Point(14, 24),
-                Checked = _shown.TryGetValue(MelonDsGameSettings.OverrideId, out var o) && o == "true",
-            };
-            box.Controls.Add(_override);
-            box.Controls.Add(new Label
+                var a = active.Value;
+                whose.Controls.Add(new Label { Text = "DS games run on your firmware dump " + a.Dump + ". Its owner in melonDS:", AutoSize = true, Location = new Point(14, wy) });
+                wy += 22;
+                _dumpMineShown = a.Identity;
+                _dumpMine = new RadioButton { Text = "your console (\"Your console\" tab), written into melonDS's copy of the dump", AutoSize = true, Location = new Point(30, wy), Checked = a.Identity };
+                _dumpTheirs = new RadioButton { Text = "the dump's own: " + a.DumpOwner.Describe(), AutoSize = true, Location = new Point(30, wy + 22), Checked = !a.Identity };
+                whose.Controls.Add(_dumpMine);
+                whose.Controls.Add(_dumpTheirs);
+                whose.Controls.Add(Grey("Your dump in " + MelonDsBios.DirName.Replace("..\\", "") + " is never written: melonDS boots on its copy.", 48, wy + 46));
+                wy += 72;
+            }
+            else
             {
-                AutoSize = false, Location = new Point(32, 48), Size = new Size(516, 46), ForeColor = SystemColors.GrayText,
-                Text = "The console's name, language, birthday, colour and message for every game that has none of its own "
-                     + "(a game's own are in its Options window). On a DSiWare title the override does not reach its save: "
-                     + "the save keeps the console's own settings.",
-            });
-            _fields = new MelonDsFirmwareFields { Location = new Point(14, 104) };
+                whose.Controls.Add(Grey("DS games run on melonDS's own firmware, which always shows the owner below. DSi cartridges show your "
+                                        + "console too: it is written into the copy of the console they run on.", 14, wy));
+                wy += 40;
+            }
+            whose.Size = new Size(560, wy + 6);
+            Controls.Add(whose);
+            y += whose.Height + 10;
+
+            var box = new GroupBox { Text = "The owner melonDS shows - its Firmware settings, filled from \"Your console\"", Location = new Point(12, y), Size = new Size(560, 290) };
+            _fields = new MelonDsFirmwareFields { Location = new Point(14, 24) };
             _fields.ShowValues(_shown);
             box.Controls.Add(_fields);
+            Controls.Add(box);
+            y += box.Height + 8;
 
             var where = new Label
             {
-                AutoSize = false, Location = new Point(12, 404), Size = new Size(560, 34), ForeColor = SystemColors.GrayText,
+                AutoSize = false, Location = new Point(12, y), Size = new Size(560, 34), ForeColor = SystemColors.GrayText,
                 Text = "Written into " + _layout.ConfigFile + " - the same keys as melonDS's Config > Firmware settings.",
             };
-            Controls.Add(box);
             Controls.Add(where);
+            y += 40;
 
             // ANYTHING ELSE: melonDS's own file, opened as it is - melonDS.toml IS its settings, and its own
             // windows already edit it; a game's own, any key, are in that game's Options, Advanced tab.
-            var open = new Button { Text = "Open melonDS.toml...", AutoSize = true, Location = new Point(12, 444) };
+            var open = new Button { Text = "Open melonDS.toml...", AutoSize = true, Location = new Point(12, y) };
             open.Click += (_, _) => OpenToml();
             Controls.Add(open);
             Controls.Add(new Label
             {
-                AutoSize = true, Location = new Point(160, 449), ForeColor = SystemColors.GrayText,
+                AutoSize = true, Location = new Point(160, y + 5), ForeColor = SystemColors.GrayText,
                 Text = "every other setting - melonDS must be closed, it rewrites the file as it quits",
             });
         }
+
+        private static Label Grey(string text, int x, int y) => new Label
+        {
+            AutoSize = true, MaximumSize = new Size(530 - x, 0), Location = new Point(x, y), ForeColor = SystemColors.GrayText, Text = text,
+        };
 
         private void OpenToml()
         {
@@ -134,14 +164,25 @@ namespace LbIntegrations.MelonDs
                 var s = MelonDsGameSettings.Settings.First(x => x.Id == kv.Key);
                 chosen[kv.Key] = MelonDsGameSettings.Normal(s, kv.Value) ?? s.Default;
             }
-            chosen[MelonDsGameSettings.OverrideId] = _override.Checked ? "true" : "false";
+            // melonDS's own override is the plugin's now (set for each launch): its file keeps it off.
+            chosen[MelonDsGameSettings.OverrideId] = "false";
+
+            if (_dsiWare.Checked != _dsiWareShown) MelonDsFirmware.SetDsiWareOverride(_layout, _dsiWare.Checked);
 
             var changed = chosen.Where(kv => !_shown.TryGetValue(kv.Key, out var was) || was != kv.Value)
                                 .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
-            if (changed.Count == 0) return null;
-            var error = MelonDsGameSettings.WriteOwn(_layout, changed);
-            if (error != null) return "melonDS's firmware settings were not saved: " + error;
-            foreach (var kv in changed) _shown[kv.Key] = kv.Value;
+            if (changed.Count > 0)
+            {
+                var error = MelonDsGameSettings.WriteOwn(_layout, changed);
+                if (error != null) return "melonDS's firmware settings were not saved: " + error;
+                foreach (var kv in changed) _shown[kv.Key] = kv.Value;
+            }
+            // Then the dump's copy, from the settings just written - when its owner is set to yours, or that changed.
+            if (_dumpMine != null && (_dumpMine.Checked != _dumpMineShown || (_dumpMine.Checked && changed.Count > 0)))
+            {
+                var why = MelonDsFirmware.SetDumpOwner(_layout, _dumpMine.Checked);
+                if (why != null) return "the DS firmware's owner was not changed: " + why;
+            }
             return null;
         }
     }

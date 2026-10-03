@@ -133,7 +133,7 @@ namespace LbIntegrations.MelonDs
         /// <summary>The console built from the dump and, when the dump's owner is blank, set up as the pack's identity -
         /// then described. True when it is ready and the launch goes on; false, the copy taken away, when it could not be
         /// done: the window takes over.</summary>
-        private static bool Automatic(MelonDsLayout layout, NandDump dump, string bios7Path)
+        internal static bool Automatic(MelonDsLayout layout, NandDump dump, string bios7Path)
         {
             var name = Path.GetFileName(dump.Path);
             if (bios7Path == null || !File.Exists(bios7Path) || !DsiNand.IsUsable(out _)) return false;

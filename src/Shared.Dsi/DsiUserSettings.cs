@@ -57,13 +57,18 @@ namespace LbIntegrations.Dsi
             byte country = CountryFor(id, region);
             var name = id.DsNickname();
 
+            bool wasBlank = IsBlank(b);
             b[0x81] = (byte)((b[0x81] + 1) & 0x7F);
             b[0x88] |= 0x07;
             b[0x8D] = country;
             b[0x8E] = (byte)language;
-            for (int i = 0x94; i < 0x98; i++) b[i] = 0xFF;
-            b[0x98] = 0;
-            b[0xAC] = 3;
+            if (wasBlank)
+            {
+                // What the welcome sequence leaves besides the owner - measured twice; a set-up block has them already.
+                for (int i = 0x94; i < 0x98; i++) b[i] = 0xFF;
+                b[0x98] = 0;
+                b[0xAC] = 3;
+            }
             b[0xCC] = (byte)Math.Min(15, Math.Max(0, id.Colour));
             b[0xCE] = (byte)Math.Min(12, Math.Max(1, id.BirthMonth));
             b[0xCF] = (byte)Math.Min(31, Math.Max(1, id.BirthDay));
@@ -165,6 +170,15 @@ namespace LbIntegrations.Dsi
         /// its owner is blank. True when it was written; false with <paramref name="said"/> saying why not (not blank is not a
         /// failure: <paramref name="blank"/> false).</summary>
         public static bool SetUpBlank(string consolePath, string bios7Path, DsiRegion region, PackIdentity id, out bool blank, out string said)
+            => Write(consolePath, bios7Path, region, id, onlyBlank: true, out blank, out said);
+
+        /// <summary>The identity as the owner of <paramref name="scratchPath"/> WHATEVER IT HELD - for a scratch image alone
+        /// (dsi\work.bin, a DSi cartridge's: Mehdi, 03/10), never a console: a console's owner is in every save made on it.
+        /// The same fields as a blank's, its flags set if they were not.</summary>
+        public static bool SetUpScratch(string scratchPath, string bios7Path, DsiRegion region, PackIdentity id, out string said)
+            => Write(scratchPath, bios7Path, region, id, onlyBlank: false, out _, out said);
+
+        private static bool Write(string consolePath, string bios7Path, DsiRegion region, PackIdentity id, bool onlyBlank, out bool blank, out string said)
         {
             blank = false;
             said = null;
@@ -177,10 +191,16 @@ namespace LbIntegrations.Dsi
                 string s0 = Path.Combine(dir, "0"), s1 = Path.Combine(dir, "1"), hw = Path.Combine(dir, "hw");
                 if (!session.ExportFile(Settings0, s0, out error)) { said = "no " + Settings0 + " - " + error; return false; }
                 var settings = File.ReadAllBytes(s0);
-                if (!IsBlank(settings)) { said = "its owner is set already - left as it is"; return true; }
-                blank = true;
+                blank = IsBlank(settings);
+                if (onlyBlank && !blank) { said = "its owner is set already - left as it is"; return true; }
                 if (!HashOk(settings)) { said = Settings0 + " does not match its own hash - not written"; return false; }
-                uint mask = session.ExportFile(DsiRegions.HardwareInfoInNand, hw, out _) ? LanguageMask(File.ReadAllBytes(hw)) : 0x3E;
+                uint mask = 0x3E;
+                if (session.ExportFile(DsiRegions.HardwareInfoInNand, hw, out _))
+                {
+                    var info = File.ReadAllBytes(hw);
+                    mask = LanguageMask(info);
+                    region = DsiRegions.RegionIn(info) ?? region;     // the NAND's own region before the caller's guess
+                }
                 var set = SetUp(settings, id, region, mask, out said);
                 File.WriteAllBytes(s0, set);
                 File.WriteAllBytes(s1, set);

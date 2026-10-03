@@ -859,10 +859,13 @@ namespace LbIntegrations.MelonDs
                     var gameId = Safe(() => args?.GameBeingLaunched?.Id);
                     // Known before the session is prepared: a DSiWare image started with the console's
                     // settings forced holds them - see DsiWorkspace.MarkForced.
-                    bool forced = MelonDsGameSettings.ForcesFirmware(layout, gameId);
+                    // The override is the plugin's, by kind of launch (MelonDsFirmware): a DSiWare's or not.
+                    bool dsiWare = false;
+                    try { dsiWare = NdsHeader.Describe(ResolveFullPath(rom)).IsDSiWare; } catch { }
+                    bool forced = MelonDsGameSettings.ForcesFirmware(layout, gameId, dsiWare);
                     go = ChooseConsoleMode(layout, ResolveFullPath(rom), noRamDisk, forced);
                     // Then this game's own, for its session, taken back once melonDS has quit.
-                    if (go && MelonDsGameSettings.Apply(layout, gameId))
+                    if (go && MelonDsGameSettings.Apply(layout, gameId, dsiWare))
                         MelonDsGameSettings.RestoreWhenDone(layout);
                 }
             }
@@ -934,9 +937,10 @@ namespace LbIntegrations.MelonDs
             int wanted = 0;
             if (rom.IsDSi)
             {
-                PointCartridgeAtScratch(layout, rom);
+                var onCopy = PointCartridgeAtScratch(layout, rom, romPath);
                 var missing = MissingDsiFiles(layout);
-                if (missing.Count == 0) wanted = 1;
+                if (!onCopy) Log.Info("\"" + rom.AssetName + "\" is a DSi title but no working copy of a NAND could be made; starting in DS mode instead");
+                else if (missing.Count == 0) wanted = 1;
                 else
                     Log.Info("\"" + rom.AssetName + "\" is a DSi title but DSi mode needs "
                              + string.Join(", ", missing) + "; starting in DS mode instead");
@@ -1662,32 +1666,65 @@ namespace LbIntegrations.MelonDs
         /// selected" can be one: a cartridge session on it would change its identity and orphan
         /// every DSiWare save made on it. So the cartridge is handed a copy instead.
         ///
-        /// Only a path of OURS is moved - anything the user chose himself is his answer.</summary>
-        private static void PointCartridgeAtScratch(MelonDsLayout layout, NdsRom rom)
+        /// THE CONSOLE OF THE CARTRIDGE'S REGION (Mehdi, 03/10), not the last DSiWare's: a DSi title is region locked. Made
+        /// from its region's dump when there is none yet, without a window (MelonDsNandSetup.Automatic); the dump itself
+        /// when it cannot be - copied, never booted on. With no dump of that region, the NAND melonDS has is copied: ours or
+        /// one the user chose - a copy either way, so neither is written.
+        ///
+        /// AND THE OWNER melonDS SHOWS IS WRITTEN INTO THE COPY (its Firmware settings, filled from "Your console"): a
+        /// cartridge's save is its .sav, not the NAND, so the scratch image can carry any owner - no override is needed, and
+        /// a language or country its region does not have is replaced by one it has (DsiUserSettings).</summary>
+        private static bool PointCartridgeAtScratch(MelonDsLayout layout, NdsRom rom, string romPath)
         {
             try
             {
+                EnsureDsiFiles(layout);
+                var bios7 = AbsoluteTo(layout.ConfigDir, ValueOf(layout, "BIOS7Path"));
+                bool haveBios = !string.IsNullOrWhiteSpace(bios7) && File.Exists(bios7);
                 var current = AbsoluteTo(layout.ConfigDir, ValueOf(layout, "NANDPath"));
-                if (!DsiWorkspace.IsOurs(layout, current)) return;
 
-                var work = DsiWorkspace.HandToCartridge(layout, current, out var why);
+                string source = null;
+                NandDump dump = null;
+                if (haveBios)
+                {
+                    var regions = DsiRegions.RegionsFor(rom, romPath, out var how);
+                    dump = DsiDumps.NandFor(layout, regions, bios7, out _);
+                    if (dump != null)
+                    {
+                        source = DsiBase.ConsoleFor(layout, dump.Path);
+                        if (source == null && MelonDsNandSetup.Automatic(layout, dump, bios7)) source = DsiBase.ConsoleFor(layout, dump.Path);
+                        if (source == null) source = dump.Path;
+                        Log.Info(rom.AssetName + " is a " + DsiRegions.Names(regions) + " cartridge (" + how + "): it runs on a copy of "
+                                 + System.IO.Path.GetFileName(source));
+                    }
+                }
+                if (source == null) source = current;
+                if (string.IsNullOrWhiteSpace(source) || !File.Exists(source)) return true;     // no NAND at all: MissingDsiFiles says so
+
+                var work = DsiWorkspace.HandToCartridge(layout, source, out var why);
                 if (work == null)
                 {
-                    Log.Verbose("left " + rom.AssetName + " on the NAND it had - " + why);
-                    return;
+                    // NOT on the NAND it names instead - that may be a dump of the user's: DS mode this time, his path kept.
+                    Log.Warn(rom.AssetName + ": no working copy of the NAND - " + why + ". DSi mode is not used this time.");
+                    return false;
                 }
-                if (string.Equals(current, work, StringComparison.OrdinalIgnoreCase)) return;
 
+                if (haveBios && DsiUserSettings.SetUpScratch(work, bios7, dump?.Region ?? DsiRegion.Usa, MelonDsFirmware.WantedIdentity(layout), out var said))
+                    Log.Info(rom.AssetName + ": the working copy's owner - " + said);
+                else Log.Info(rom.AssetName + ": the working copy keeps its console's owner");
+
+                if (string.Equals(current, work, StringComparison.OrdinalIgnoreCase)) return true;
                 var error = MelonDsToml.Write(layout.ConfigFile, MelonDsPaths.DSiTable,
                     new Dictionary<string, string>(StringComparer.Ordinal)
                     {
                         ["NANDPath"] = MelonDsToml.Text(work),
                     }, force: true);
-                if (error != null) { Log.Warn("the cartridge's NAND was not set: " + error); return; }
+                if (error != null) { Log.Warn("the cartridge's NAND was not set: " + error); return false; }
                 Log.Info(rom.AssetName + " is a cartridge, not DSiWare - it runs on the working "
                          + "image, so the console it was copied from is left exactly as it is");
+                return true;
             }
-            catch (Exception ex) { Log.Warn("could not give the cartridge a NAND of its own", ex); }
+            catch (Exception ex) { Log.Warn("could not give the cartridge a NAND of its own", ex); return false; }
         }
 
         /// <summary>One key of the [DSi] table, as the configuration spells it.</summary>

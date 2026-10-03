@@ -244,7 +244,7 @@ namespace LbIntegrations.MelonDs
         /// <summary>Will this game's session start with the console's settings FORCED - its own firmware,
         /// or melonDS's override on? Asked before the session is prepared: a DSiWare image started that
         /// way has the forced settings written into it (DsiWorkspace.MarkForced).</summary>
-        public static bool ForcesFirmware(MelonDsLayout layout, string gameId)
+        public static bool ForcesFirmware(MelonDsLayout layout, string gameId, bool dsiWare = true)
         {
             try
             {
@@ -253,11 +253,11 @@ namespace LbIntegrations.MelonDs
                 {
                     var over = ParseHand(hand, out _)?.FirstOrDefault(k => k.Table == FirmwareTable && k.Key == "OverrideSettings");
                     if (over != null) return over.Token == "true";
-                    return GlobalOverride(layout);
+                    return SessionOverride(layout, dsiWare);
                 }
                 var own = Load(layout?.InstallDir, gameId);
                 if (own != null && own.TryGetValue(OverrideId, out var o)) return o == "true";
-                return GlobalOverride(layout);
+                return SessionOverride(layout, dsiWare);
             }
             catch { return false; }
         }
@@ -451,6 +451,10 @@ namespace LbIntegrations.MelonDs
             finally { try { File.Delete(copy); } catch { } }
         }
 
+        /// <summary>The override a launch with no firmware values of its own runs with - the plugin's, see MelonDsFirmware:
+        /// a DSiWare's is the melonDS tab's "show your console in DSiWare", anything else's is off.</summary>
+        internal static bool SessionOverride(MelonDsLayout layout, bool dsiWare) => dsiWare && layout != null && MelonDsFirmware.DsiWareOverride(layout);
+
         private static bool GlobalOverride(MelonDsLayout layout)
         {
             if (layout?.ConfigFile == null) return false;
@@ -462,23 +466,39 @@ namespace LbIntegrations.MelonDs
 
         /// <summary>Write the game's own values for its session, having written down the ones they
         /// replace. True when there were any - the caller then watches for melonDS to quit.</summary>
-        public static bool Apply(MelonDsLayout layout, string gameId)
+        public static bool Apply(MelonDsLayout layout, string gameId, bool dsiWare = false)
         {
-            // The DSi console's language when the override would force one its region does not have - in the same session.
-            var fix = DsiLanguageFix(layout, gameId);
+            // THE PLUGIN'S OVERRIDE for this launch (see MelonDsFirmware), when melonDS's file says otherwise - and the DSi
+            // console's language when that override would force one its region does not have: the same session as the game's.
+            var extra = new List<Raw>();
+            var over = OverrideFix(layout, dsiWare);
+            var fix = DsiLanguageFix(layout, gameId, dsiWare);
             var hand = LoadAdvanced(layout?.InstallDir, gameId, out var on);
             if (on && hand != null)
             {
                 var keys = ParseHand(hand, out var error);
-                if (keys == null) { Log.Warn("game settings: the settings set by hand cannot be read (" + error + ") - this game runs on melonDS's this time"); return fix != null && ApplyRaw(layout, new List<Raw> { fix }, "the DSi console's language"); }
+                if (keys == null) { Log.Warn("game settings: the settings set by hand cannot be read (" + error + ") - this game runs on melonDS's this time"); keys = new List<Raw>(); }
                 var left = keys.Where(k => IsManaged(k.Table, k.Key)).ToList();
                 if (left.Count > 0) Log.Info("game settings: left out of the settings set by hand, this plugin sets them - " + string.Join(", ", left.Select(k => "[" + k.Table + "] " + k.Key)));
-                return ApplyRaw(layout, WithFix(keys.Where(k => !IsManaged(k.Table, k.Key)).ToList(), fix), "this game's own settings, set by hand");
+                keys = keys.Where(k => !IsManaged(k.Table, k.Key)).ToList();
+                // A text set by hand that sets the override has the last word on it.
+                if (keys.Any(k => k.Table == FirmwareTable && k.Key == "OverrideSettings")) over = null;
+                keys = WithFix(WithFix(keys, over), fix);
+                return keys.Count > 0 && ApplyRaw(layout, keys, "this game's own settings, set by hand");
             }
             var own = Load(layout?.InstallDir, gameId);
-            if (own == null) return fix != null && ApplyRaw(layout, new List<Raw> { fix }, "the DSi console's language");
-            if (Has(own, Firmware)) own[OverrideId] = "true";
-            return fix == null ? ApplyValues(layout, own, "this game's own settings") : ApplyRaw(layout, WithFix(ToRaw(own), fix), "this game's own settings");
+            if (own != null && Has(own, Firmware)) { own[OverrideId] = "true"; over = null; }
+            var all = WithFix(WithFix(own == null ? new List<Raw>() : ToRaw(own), over), fix);
+            return all.Count > 0 && ApplyRaw(layout, all, own == null ? "the console's settings for this launch" : "this game's own settings");
+        }
+
+        /// <summary>OverrideSettings as this launch must have it, when melonDS's file holds the other value - else null.</summary>
+        private static Raw OverrideFix(MelonDsLayout layout, bool dsiWare)
+        {
+            if (layout?.ConfigFile == null) return null;
+            bool want = SessionOverride(layout, dsiWare);
+            if (GlobalOverride(layout) == want) return null;
+            return new Raw { Table = FirmwareTable, Key = "OverrideSettings", Token = want ? "true" : "false" };
         }
 
         private static List<Raw> WithFix(List<Raw> keys, Raw fix)
@@ -494,7 +514,7 @@ namespace LbIntegrations.MelonDs
         /// language mask). So for a DSi session with the override on, a language the console's region does not have is
         /// replaced, for that session, by the console's own - its TWLCFG0.dat, else English, else its first. Null when nothing
         /// is to change (a DS launch, no override, a language the console has, or the NAND unreadable).</summary>
-        internal static Raw DsiLanguageFix(MelonDsLayout layout, string gameId)
+        internal static Raw DsiLanguageFix(MelonDsLayout layout, string gameId, bool dsiWare = true)
         {
             string dir = null;
             try
@@ -502,7 +522,7 @@ namespace LbIntegrations.MelonDs
                 if (layout?.ConfigFile == null) return null;
                 var emu = MelonDsToml.Read(layout.ConfigFile, MelonDsPaths.EmuTable, "ConsoleType");
                 if (MelonDsToml.AsInt(emu.TryGetValue("ConsoleType", out var ct) ? ct : null, 0) != 1) return null;
-                if (!ForcesFirmware(layout, gameId)) return null;
+                if (!ForcesFirmware(layout, gameId, dsiWare)) return null;
 
                 // The language the session would force: set by hand, the game's own, else melonDS's.
                 int language = 1;

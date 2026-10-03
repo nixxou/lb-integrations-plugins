@@ -1,9 +1,7 @@
 // "Apply to my emulators" of the Nixx window's "Your console" tab, for melonDS - two rows:
-//   its Firmware settings   the identity's name, language, birthday and colour in [Instance0.Firmware] (MelonDsGameSettings
-//                           .WriteOwn): what the firmware melonDS makes itself always shows, and what the override shows
-//   the DS firmware dump    when melonDS boots on one: the identity written into OUR COPY of it as its owner (the dump in
-//                           RetroArch\system never), the override on (MelonDsFirmware.UseIdentity), and the answer kept as
-//                           the first launch on it would have left it
+//   ONE ROW, the owner melonDS shows: the identity's name, language, birthday and colour in [Instance0.Firmware]
+//   (MelonDsGameSettings.WriteOwn) - what its own firmware and DSiWare show - and, when it boots on a DS firmware dump, the
+//   same written into OUR COPY of it (MelonDsFirmware.UseIdentity; the dump in RetroArch\system never).
 // The DSi consoles are not in it: one made from a blank NAND was set up as the identity, one made from a set-up NAND keeps its
 // owner (Mehdi, 03/10). Found by the relay by its name, LbIntegrations.MelonDs.IdentityTarget.
 
@@ -53,15 +51,17 @@ namespace LbIntegrations.MelonDs
             var now = MelonDsGameSettings.Current(layout.ConfigFile);
             var next = new Dictionary<string, string>(now, System.StringComparer.Ordinal);
             foreach (var kv in Wanted(id)) next[kv.Key] = kv.Value;
-            var rows = new List<string[]> { PackIdentity.Row("melonds", "melonDS - its Firmware settings", Say(now), Say(next), running) };
+            // ONE ROW: the owner melonDS shows - its Firmware settings, and the copy of the DS firmware dump it boots on, which
+            // follows them when the dump's owner is set to yours (MelonDsFirmware).
             var active = MelonDsFirmware.Active(layout);
+            string label = "melonDS - the owner it shows", nowSaid = Say(now);
             if (active != null)
             {
                 var a = active.Value;
-                rows.Add(PackIdentity.Row("melonds-dump", "melonDS - copy of the DS firmware " + a.Dump,
-                    a.Owner.Describe(), MelonDsFirmware.DescribeIdentity(id), running));
+                label += " (and in its copy of " + a.Dump + ")";
+                if (!a.Identity || a.Owner.Describe() != MelonDsFirmware.Wanted(layout).Describe()) nowSaid += "; " + a.Dump + ": " + a.Owner.Describe();
             }
-            return rows.ToArray();
+            return new[] { PackIdentity.Row("melonds", label, nowSaid, Say(next), running) };
         }
 
         public static string Apply(string key)
@@ -71,8 +71,10 @@ namespace LbIntegrations.MelonDs
                 var id = PackIdentity.Load();
                 var layout = id == null ? null : Layout();
                 if (layout?.ConfigFile == null) return "no melonDS";
-                if (key == "melonds-dump") return MelonDsFirmware.UseIdentity(layout);
-                return MelonDsGameSettings.WriteOwn(layout, Wanted(id));
+                var error = MelonDsGameSettings.WriteOwn(layout, Wanted(id));
+                if (error != null) return error;
+                // Then the dump's copy, from those very settings - when melonDS boots on one.
+                return MelonDsFirmware.Active(layout) == null ? null : MelonDsFirmware.UseIdentity(layout);
             }
             catch (System.Exception ex) { Log.Warn("console identity: could not apply", ex); return ex.Message; }
         }
