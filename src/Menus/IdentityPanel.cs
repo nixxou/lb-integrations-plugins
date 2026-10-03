@@ -25,7 +25,9 @@ namespace LbIntegrations.Menus
         private static readonly string[] Months =
             { "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" };
 
-        public IdentityPanel(PackIdentity start = null)
+        /// <param name="applyToEmulators">The Nixx window's "Apply to my emulators..." (IdentityApply) - null in the installer,
+        /// where no plugin is loaded to say what it would change.</param>
+        public IdentityPanel(PackIdentity start = null, Action<IdentityPanel> applyToEmulators = null)
         {
             FlowDirection = FlowDirection.TopDown;
             WrapContents = false;
@@ -37,7 +39,7 @@ namespace LbIntegrations.Menus
 
             Controls.Add(Grey((saved ? "" : "Not set yet: filled in from this Windows. ")
                 + "Each plugin reads this when it sets up its emulator for the first time; an emulator already set up keeps "
-                + "its own settings. Not used by no$gba (its DSi is set up through its own welcome screens) nor SUPER ZSNES "
+                + "its own settings; a DSi console is set up with it when made from a blank NAND. Not used by SUPER ZSNES "
                 + "(it has no such settings).", 620, new Padding(0, 0, 0, 10)));
 
             var grid = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, Margin = Padding.Empty };
@@ -49,7 +51,7 @@ namespace LbIntegrations.Menus
             _nickRed = new Label { AutoSize = true, ForeColor = Color.Firebrick, MaximumSize = new Size(460, 0), Margin = new Padding(3, 2, 3, 0) };
             _nickXbox = Grey("", 460);
             Row(grid, "Nickname", _nickname, _nickRed, _nickXbox,
-                Applies("Xenia (the gamertag of the profile it creates), melonDS (the DS's name, 10 characters), "
+                Applies("Xenia (the gamertag of the profile it creates), melonDS and no$gba (the DS and DSi name, 10 characters), "
                       + "PPSSPP (the PSP's nickname, 32 characters)."));
 
             // ── language ──
@@ -57,7 +59,7 @@ namespace LbIntegrations.Menus
             _language.SelectedIndex = Math.Max(0, Array.FindIndex(PackIdentity.Languages, l => l.Culture.Equals(p.Language, StringComparison.OrdinalIgnoreCase)));
             _languageNot = new Label { AutoSize = true, ForeColor = Color.DarkGoldenrod, MaximumSize = new Size(460, 0), Margin = new Padding(3, 2, 3, 0) };
             Row(grid, "Language", _language, _languageNot,
-                Applies("Xenia, Vita3K, PPSSPP, melonDS, Flycast - and Cxbx-Reloaded at every launch (its Language option, "
+                Applies("Xenia, Vita3K, PPSSPP, melonDS, no$gba (its DSi consoles), Flycast - and Cxbx-Reloaded at every launch (its Language option, "
                       + "when left on its default)."));
 
             // ── date ──
@@ -82,7 +84,7 @@ namespace LbIntegrations.Menus
             var birthday = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty };
             birthday.Controls.Add(_month);
             birthday.Controls.Add(_day);
-            Row(grid, "Birthday", birthday, Applies("melonDS (DS and DSi: its Firmware settings, with \"Override settings\" ticked)."));
+            Row(grid, "Birthday", birthday, Applies("melonDS (DS games, and the DSi consoles made from a blank NAND), no$gba (the same DSi consoles)."));
 
             // ── colour ──
             _colour = Combo(PackIdentity.DsColours.Select(c => c.Name), 180);
@@ -102,9 +104,26 @@ namespace LbIntegrations.Menus
 
             Controls.Add(grid);
 
-            var windows = new Button { Text = "Take this Windows' values", AutoSize = true, Margin = new Padding(0, 10, 0, 0) };
+            var buttons = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 10, 0, 0) };
+            var windows = new Button { Text = "Take this Windows' values", AutoSize = true };
             windows.Click += (_, _) => Fill(PackIdentity.FromWindows(), keepNickname: _nickname.Text.Trim().Length > 0);
-            Controls.Add(windows);
+            buttons.Controls.Add(windows);
+            if (applyToEmulators != null)
+            {
+                // Saved first: each plugin reads identity.ini to say what it would change.
+                var apply = new Button { Text = "Save and apply to my emulators...", AutoSize = true, Margin = new Padding(12, 3, 3, 3) };
+                apply.Click += (_, _) =>
+                {
+                    var problem = Save();
+                    if (problem != null) { MessageBox.Show(this, problem, Title, MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+                    applyToEmulators(this);
+                };
+                buttons.Controls.Add(apply);
+                Controls.Add(buttons);
+                Controls.Add(Grey("Applies your console to the emulators already set up - each one listed with what it holds now and "
+                                + "what it would hold, for you to tick. The DSi consoles already made are never rewritten.", 620, new Padding(0, 4, 0, 0)));
+            }
+            else Controls.Add(buttons);
 
             _nickname.TextChanged += (_, _) => FollowNickname();
             _language.SelectedIndexChanged += (_, _) => FollowLanguage();

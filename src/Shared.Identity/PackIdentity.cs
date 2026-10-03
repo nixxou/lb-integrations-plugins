@@ -10,9 +10,9 @@
 //   PPSSPP    [SystemParam] NickName, GameLanguage, ParamDateFormat, ParamTimeFormat, ButtonPreference of
 //             ppsspp.ini - the keys it does not hold yet
 //   melonDS   [Instance0.Firmware] Username, Language, BirthdayMonth/Day, FavouriteColour of melonDS.toml, the keys
-//             it does not hold yet, and OverrideSettings on with them: the owner holds on melonDS's own firmware,
-//             over a firmware dump and in DSi mode (a forced DSi session keeps the save's own settings files -
-//             DsiWorkspace.MarkForced)
+//             it does not hold yet (the firmware melonDS makes itself always takes them); over a DS firmware dump, the
+//             first launch on it asks when the dump's owner is another (MelonDsFirmware); a DSi console made from a
+//             BLANK NAND is set up as this identity (Shared.Dsi\DsiUserSettings) - melonDS's and no$gba's alike
 //   Flycast   [config] Dreamcast.Language of emu.cfg, when there is no emu.cfg yet
 // and Cxbx-Reloaded, at EVERY launch: its "console.language" option's default (the pack's language, else Windows').
 // An emulator already set up keeps its own: nothing here is written over a value it has.
@@ -179,6 +179,18 @@ namespace LbIntegrations.Identity
         // ── on disk ──────────────────────────────────────────────────────────
 
         public static bool Exists() { try { return File.Exists(FilePath); } catch { return false; } }
+
+        /// <summary>LaunchBox's root for a plugin running inside it (&lt;root&gt;\Core\LaunchBox.exe), else null.</summary>
+        public static string LaunchBoxRoot()
+        {
+            try { var core = Path.GetDirectoryName(Environment.ProcessPath); return core == null ? null : Path.GetDirectoryName(core); }
+            catch { return null; }
+        }
+
+        /// <summary>A row of an emulator's IdentityTarget.Plan (the Nixx window's "Apply to my emulators"): its key for
+        /// Apply, what it is, what it holds now, what it would hold, and why it cannot be written now ("" when it can).</summary>
+        public static string[] Row(string key, string label, string now, string next, string problem = "")
+            => new[] { key ?? "", label ?? "", now ?? "", next ?? "", problem ?? "" };
 
         /// <summary>The identity set, or null when there is none yet - then a plugin does as it did, asks Windows.</summary>
         public static PackIdentity Load()

@@ -26,6 +26,12 @@
 // carry no recipe, so nothing can rebuild them anywhere else. Closing this window abandons the
 // launch instead.
 //
+// NOW THE CONSOLE IS MADE WITHOUT A WINDOW (Mehdi, 03/10): the copy is set up as the pack's console identity
+// ("Your console") by writing its owner straight into shared1/TWLCFG0.dat and TWLCFG1.dat - see DsiUserSettings - when
+// the dump's owner is blank, and copied as it is when the dump already has one (a real console's: never rewritten).
+// Then described, and the launch goes on: no melonDS opened on the menu, no "launch it again". The window below is
+// what is left when that cannot be done - the NAND library missing, the dump's settings unreadable.
+//
 // WITHOUT A WINDOW, NOTHING IS BUILT AND NOTHING IS REFUSED. With the dialog suppressed there is
 // nobody to ask, and a silent refusal would make DSiWare unplayable with no way to find out why -
 // so that one case still runs on the dump, and says so in the log. Turning the windows off is an
@@ -59,6 +65,9 @@ namespace LbIntegrations.MelonDs
                     Log.Verbose("the " + KillSwitch + " marker is there; no console will be built");
                     return false;
                 }
+
+                // The console made and set up without asking - see the head of this file.
+                if (Automatic(layout, dump, bios7Path)) return false;
 
                 if (!DsiDialog.Available)
                 {
@@ -119,6 +128,30 @@ namespace LbIntegrations.MelonDs
                 return true;
             }
             catch (Exception ex) { Log.Warn("could not build a console", ex); return false; }
+        }
+
+        /// <summary>The console built from the dump and, when the dump's owner is blank, set up as the pack's identity -
+        /// then described. True when it is ready and the launch goes on; false, the copy taken away, when it could not be
+        /// done: the window takes over.</summary>
+        private static bool Automatic(MelonDsLayout layout, NandDump dump, string bios7Path)
+        {
+            var name = Path.GetFileName(dump.Path);
+            if (bios7Path == null || !File.Exists(bios7Path) || !DsiNand.IsUsable(out _)) return false;
+            var console = DsiBase.BuildConsole(layout, dump.Path, out var error);
+            if (console == null) { Log.Warn("could not build a console from " + name + " - " + error); return false; }
+            var id = LbIntegrations.Identity.PackIdentity.Load() ?? LbIntegrations.Identity.PackIdentity.FromWindows();
+            if (!DsiUserSettings.SetUpBlank(console, bios7Path, dump.Region, id, out var blank, out var said)
+                || !Describe(layout, console, dump.Path, bios7Path, dump.Region))
+            {
+                Log.Warn("the console for " + name + " could not be made without a window - " + (said ?? "it could not be described"));
+                try { File.Delete(console); } catch { }
+                try { File.Delete(DsiBase.RecipeFor(console)); } catch { }
+                try { File.Delete(DsiBase.RecordFor(console)); } catch { }
+                return false;
+            }
+            Log.Info("the console for " + name + " is made: " + (blank ? "set up as your console - " + said : said)
+                     + ". The game starts on it.");
+            return true;
         }
 
         /// <summary>Write the recipe and the record beside a console. Safe to call on one that

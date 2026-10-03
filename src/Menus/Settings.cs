@@ -199,7 +199,7 @@ namespace LbIntegrations.Menus
             try
             {
                 var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(8) };
-                _identity = new IdentityPanel();
+                _identity = new IdentityPanel(null, _ => IdentityApply.Show(this));
                 scroll.Controls.Add(_identity);
                 _identityPage.Controls.Add(scroll);
             }

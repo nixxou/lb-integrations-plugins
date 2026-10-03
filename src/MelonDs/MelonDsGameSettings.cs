@@ -464,19 +464,89 @@ namespace LbIntegrations.MelonDs
         /// replace. True when there were any - the caller then watches for melonDS to quit.</summary>
         public static bool Apply(MelonDsLayout layout, string gameId)
         {
+            // The DSi console's language when the override would force one its region does not have - in the same session.
+            var fix = DsiLanguageFix(layout, gameId);
             var hand = LoadAdvanced(layout?.InstallDir, gameId, out var on);
             if (on && hand != null)
             {
                 var keys = ParseHand(hand, out var error);
-                if (keys == null) { Log.Warn("game settings: the settings set by hand cannot be read (" + error + ") - this game runs on melonDS's this time"); return false; }
+                if (keys == null) { Log.Warn("game settings: the settings set by hand cannot be read (" + error + ") - this game runs on melonDS's this time"); return fix != null && ApplyRaw(layout, new List<Raw> { fix }, "the DSi console's language"); }
                 var left = keys.Where(k => IsManaged(k.Table, k.Key)).ToList();
                 if (left.Count > 0) Log.Info("game settings: left out of the settings set by hand, this plugin sets them - " + string.Join(", ", left.Select(k => "[" + k.Table + "] " + k.Key)));
-                return ApplyRaw(layout, keys.Where(k => !IsManaged(k.Table, k.Key)).ToList(), "this game's own settings, set by hand");
+                return ApplyRaw(layout, WithFix(keys.Where(k => !IsManaged(k.Table, k.Key)).ToList(), fix), "this game's own settings, set by hand");
             }
             var own = Load(layout?.InstallDir, gameId);
-            if (own == null) return false;
+            if (own == null) return fix != null && ApplyRaw(layout, new List<Raw> { fix }, "the DSi console's language");
             if (Has(own, Firmware)) own[OverrideId] = "true";
-            return ApplyValues(layout, own, "this game's own settings");
+            return fix == null ? ApplyValues(layout, own, "this game's own settings") : ApplyRaw(layout, WithFix(ToRaw(own), fix), "this game's own settings");
+        }
+
+        private static List<Raw> WithFix(List<Raw> keys, Raw fix)
+        {
+            if (fix == null) return keys;
+            keys.RemoveAll(k => k.Table == fix.Table && k.Key == fix.Key);
+            keys.Add(fix);
+            return keys;
+        }
+
+        /// <summary>IN DSi MODE melonDS's firmware override writes its Language into the NAND at every boot (EmuInstance.cpp,
+        /// loadNAND) - unchecked: a French identity on a Japanese console, whose region has Japanese alone (HWINFO_S.dat's
+        /// language mask). So for a DSi session with the override on, a language the console's region does not have is
+        /// replaced, for that session, by the console's own - its TWLCFG0.dat, else English, else its first. Null when nothing
+        /// is to change (a DS launch, no override, a language the console has, or the NAND unreadable).</summary>
+        internal static Raw DsiLanguageFix(MelonDsLayout layout, string gameId)
+        {
+            string dir = null;
+            try
+            {
+                if (layout?.ConfigFile == null) return null;
+                var emu = MelonDsToml.Read(layout.ConfigFile, MelonDsPaths.EmuTable, "ConsoleType");
+                if (MelonDsToml.AsInt(emu.TryGetValue("ConsoleType", out var ct) ? ct : null, 0) != 1) return null;
+                if (!ForcesFirmware(layout, gameId)) return null;
+
+                // The language the session would force: set by hand, the game's own, else melonDS's.
+                int language = 1;
+                var hand = LoadAdvanced(layout.InstallDir, gameId, out var on);
+                var handKey = on && hand != null ? ParseHand(hand, out _)?.FirstOrDefault(k => k.Table == FirmwareTable && k.Key == "Language") : null;
+                var own = on ? null : Load(layout.InstallDir, gameId);
+                if (handKey != null) int.TryParse(handKey.Token, out language);
+                else if (own != null && own.TryGetValue("FwLanguage", out var ol)) int.TryParse(ol, out language);
+                else
+                {
+                    var fw = MelonDsToml.Read(layout.ConfigFile, FirmwareTable, "Language");
+                    language = MelonDsToml.AsInt(fw.TryGetValue("Language", out var gl) ? gl : null, 1);
+                }
+
+                var dsi = MelonDsToml.Read(layout.ConfigFile, MelonDsPaths.DSiTable, "NANDPath", "BIOS7Path");
+                string nand = dsi.TryGetValue("NANDPath", out var n) ? Absolute(layout, n) : null;
+                string bios7 = dsi.TryGetValue("BIOS7Path", out var b) ? Absolute(layout, b) : null;
+                if (nand == null || bios7 == null || !File.Exists(nand) || !File.Exists(bios7)) return null;
+
+                dir = Path.Combine(Path.GetTempPath(), "lbip-dsilang-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(dir);
+                uint mask;
+                int consoles;
+                using (var session = DsiNand.Open(nand, bios7, out _))
+                {
+                    if (session == null) return null;
+                    string hw = Path.Combine(dir, "hw"), cfg = Path.Combine(dir, "cfg");
+                    if (!session.ExportFile(DsiRegions.HardwareInfoInNand, hw, out _)) return null;
+                    mask = DsiUserSettings.LanguageMask(File.ReadAllBytes(hw));
+                    if ((mask & (1u << language)) != 0) return null;
+                    consoles = session.ExportFile(DsiUserSettings.Settings0, cfg, out _) ? File.ReadAllBytes(cfg)[0x8E] : -1;
+                }
+                int kept = consoles >= 0 && (mask & (1u << consoles)) != 0 ? consoles : (mask & 2u) != 0 ? 1 : Enumerable.Range(0, 8).FirstOrDefault(i => (mask & (1u << i)) != 0);
+                Log.Info("game settings: language " + language + " is not one of this DSi console's (mask 0x" + mask.ToString("X") + ") - "
+                         + "language " + kept + " for this session");
+                return new Raw { Table = FirmwareTable, Key = "Language", Token = kept.ToString(CultureInfo.InvariantCulture) };
+            }
+            catch (Exception ex) { Log.Verbose("game settings: the DSi console's languages could not be read - " + ex.Message); return null; }
+            finally { try { if (dir != null) Directory.Delete(dir, true); } catch { } }
+        }
+
+        private static string Absolute(MelonDsLayout layout, string path)
+        {
+            try { return Path.IsPathRooted(path) ? path : Path.GetFullPath(Path.Combine(layout.ConfigDir, path)); } catch { return path; }
         }
 
         /// <summary>Write <paramref name="values"/> until the next Restore - the note first. For a game's

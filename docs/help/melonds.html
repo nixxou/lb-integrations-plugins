@@ -77,7 +77,7 @@
   <ul>
     <li>RetroArch's names work too: <code>bios7.bin</code>, <code>bios9.bin</code>, <code>firmware.bin</code>, <code>dsi_bios7.bin</code>, <code>dsi_bios9.bin</code>, <code>dsi_firmware.bin</code>. Upper or lower case does not matter.</li>
     <li>A <b>NAND</b> is a copy of a DSi console's internal memory, about 240 MB. You can name it anything. The plugin opens each file of that size and reads which region it comes from (Japan, USA, Europe, Australia, China or Korea). You can put several, one per region you own.</li>
-    <li>The plugin never writes to your files in that folder. It only reads them and makes copies.</li>
+    <li>The plugin never writes to your files in that folder. It only reads them and makes copies. melonDS itself rewrites the firmware it starts on (when a game saves Wi-Fi settings), so it is pointed at a copy of your <code>dsfirmware.bin</code> and <code>dsifirmware.bin</code>, kept in <code>Emulators\Nixx-melonDS\lbip-firmware</code>.</li>
     <li>LaunchBox's BIOS check for this emulator lists these files, with the DS ones marked optional.</li>
     <li>If you already set a path to a file yourself in melonDS, the plugin leaves it alone.</li>
   </ul>
@@ -87,9 +87,11 @@
 <section id="play"><h2>Playing a game</h2>
   <h3>A DS game</h3>
   <p>Click Play. The plugin sets melonDS to DS mode (or DSi mode for a DSi-enhanced cartridge, when the DSi files and a NAND are set up), points it at your BIOS files if you have them, and the game starts straight away. To quit, press <kbd>Esc</kbd> (the plugin turns it into melonDS's own quit key, <kbd>Ctrl</kbd>+<kbd>Q</kbd>).</p>
+  <p><b>Whose DS it is.</b> DS games show the console's owner: a name, the language a game starts in, a birthday. Without your own firmware, melonDS uses yours from <b>Your console</b> (Tools &gt; Nixx Integration Plugins Configuration). With your own <code>dsfirmware.bin</code>, the first DS game asks once, when the dump belongs to somebody else: use your console instead, or keep the dump's owner. A blank dump simply gets yours. You can change it later in the melonDS tab (<i>Override settings</i>).</p>
 
   <h3>A DSiWare game: the first time with a new NAND</h3>
-  <p>A DSi has to be set up once (owner name, language, birthday, colour). The plugin does this on a copy of your NAND, never on your file. So the first time you launch a DSiWare game with a NAND that has never been used:</p>
+  <p>A DSi has to be set up once (owner name, language, birthday, colour). The plugin does this on a copy of your NAND, never on your file, and <b>by itself</b>: the copy is made in melonDS's <code>dsi</code> folder and, when your dump was never set up, it gets your console's name, language, country, birthday and colour (<b>Your console</b>; a language or country the NAND's region does not have is replaced by one it has). The game then starts. A NAND dumped from a console that was already set up keeps its own owner.</p>
+  <p>Only when that cannot be done (the DSi files are unreadable, for example) does the old way come back:</p>
   <ol>
     <li>A window says there is no console for this NAND yet. Click <b>Set one up now</b>.</li>
     <li>Your NAND is copied into melonDS's <code>dsi</code> folder and melonDS opens on that copy.</li>

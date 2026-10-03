@@ -36,6 +36,8 @@
          THIS IS WHY THIS PROJECT IS GPL-3.0: the engine P/Invokes melonds-nand.dll, which is built
          from melonDS sources. See THIRD-PARTY.md. -->
     <Compile Include="..\Shared.Dsi\**\*.cs" />
+    <!-- The pack's console identity ("Your console") - a blank NAND's owner (Shared.Dsi\DsiUserSettings). -->
+    <Compile Include="..\Shared.Identity\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>

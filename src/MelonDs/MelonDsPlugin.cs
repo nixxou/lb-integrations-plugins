@@ -526,11 +526,10 @@ namespace LbIntegrations.MelonDs
         /// belongs to whoever launched the emulator.</summary>
         /// <summary>The pack's console identity ("Your console", src\Shared.Identity, 03/10) as the DS's owner: name,
         /// language, birthday, favourite colour into [Instance0.Firmware] - each only when melonDS.toml does not hold it
-        /// yet, at a first install - and OverrideSettings TURNED ON with them (Mehdi, 03/10: "dans le cadre d'une install
-        /// propre"), so they hold everywhere: on the firmware melonDS makes itself (it always applies them there -
-        /// EmuInstance::generateFirmware), over a firmware dump's owner, and in DSi mode, where melonDS writes them into
-        /// the NAND's settings files at every boot - a forced session keeps the save's own files (DsiWorkspace.MarkForced),
-        /// so nothing of a DSiWare save is lost. Unticked in the melonDS tab, a dump's or a NAND's owner is back.</summary>
+        /// yet, at a first install. OverrideSettings IS LEFT OFF (Mehdi, 03/10): melonDS applies these to the firmware it
+        /// makes itself whatever it says (EmuInstance::generateFirmware); over a DS firmware DUMP it is the first launch on
+        /// that dump that asks, when the dump's owner is not this one (MelonDsFirmware); a DSi console made from a blank
+        /// NAND is set up as the identity itself (DsiUserSettings), and one made from a set-up NAND keeps its owner.</summary>
         private static void ApplyIdentity(MelonDsLayout layout)
         {
             try
@@ -546,9 +545,7 @@ namespace LbIntegrations.MelonDs
                 if (!have.ContainsKey("BirthdayMonth")) wanted["BirthdayMonth"] = id.BirthMonth.ToString(ci);
                 if (!have.ContainsKey("BirthdayDay")) wanted["BirthdayDay"] = id.BirthDay.ToString(ci);
                 if (!have.ContainsKey("FavouriteColour")) wanted["FavouriteColour"] = id.Colour.ToString(ci);
-                // On only when the whole owner is ours: a toml with any owner value of its own keeps its own choice too.
-                if (!have.ContainsKey("OverrideSettings") && wanted.Count == 5 - (id.DsNickname().Length > 0 ? 0 : 1)
-                    && !have.ContainsKey("Username")) wanted["OverrideSettings"] = "true";
+
                 if (wanted.Count == 0) { Log.Info("console identity: melonDS.toml has its own owner - left alone"); return; }
                 var error = MelonDsToml.Write(layout.ConfigFile, table, wanted);
                 Log.Info("console identity: " + (error ?? "the DS's owner set (" + string.Join(", ", wanted.Keys) + ")"));
@@ -1231,6 +1228,9 @@ namespace LbIntegrations.MelonDs
                 }
 
                 SetExternalBios(layout, complete, rom);
+                // On a dump: melonDS boots on a copy of it, never on the dump (it writes the firmware it boots on), and the
+                // dump's owner is settled once - see MelonDsFirmware.
+                if (complete) MelonDsFirmware.Settle(layout);
             }
             catch (Exception ex) { Log.Warn("could not set the DS files", ex); }
         }
@@ -1309,6 +1309,8 @@ namespace LbIntegrations.MelonDs
                     else Log.Info("pointed melonDS at " + string.Join(", ", wanted.Keys)
                                   + " in " + MelonDsBios.Dir(layout));
                 }
+                // The DSi firmware too is written by melonDS in DSi mode: it boots on a copy - see MelonDsFirmware.
+                if (!missing.Contains(MelonDsBios.DsiFirmware)) MelonDsFirmware.Protect(layout, MelonDsPaths.DSiTable);
             }
             catch (Exception ex) { Log.Warn("could not check the DSi files", ex); }
             return missing;

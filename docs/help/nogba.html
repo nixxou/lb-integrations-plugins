@@ -94,7 +94,8 @@
   <p>When you quit, the plugin notices no$gba has closed and keeps the progress of that session as the game's save.</p>
 
   <h3>The first DSiWare game of a region: setting up the console</h3>
-  <p>A DSi must be set up once (name, language, date, favourite colour), like a new console. The first time you launch a DSiWare game with a given NAND dump, a window asks <em>"no console for this NAND yet"</em>:</p>
+  <p>A DSi must be set up once (name, language, date, favourite colour), like a new console. The plugin does it <b>by itself</b> the first time you launch a DSiWare game with a given NAND dump: it makes a copy of your dump (your own file is never changed) and, when the dump was never set up, gives it your console's name, language, country, birthday and colour (<b>Your console</b>, in Tools &gt; Nixx Integration Plugins Configuration). The game then starts. A dump from a console that was already set up keeps its owner.</p>
+  <p>Only when that cannot be done does a window ask <em>"no console for this NAND yet"</em>:</p>
   <ul>
     <li><strong>Set one up now</strong>: the plugin makes a copy of your dump (your own file is never changed) and opens no$gba on the DSi menu. Go through the welcome screens, then quit no$gba.</li>
     <li>A second window asks whether it worked: <strong>Yes, keep it</strong> or <strong>No, throw it away</strong> (you will simply be asked again next time).</li>

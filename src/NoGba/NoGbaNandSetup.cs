@@ -48,6 +48,10 @@ namespace LbIntegrations.NoGba
                     return false;
                 }
 
+                // Made and set up without asking, as melonDS's (MelonDsNandSetup, DsiUserSettings): the window below is
+                // what is left when that cannot be done.
+                if (Automatic(layout, dump, bios7Path)) return false;
+
                 if (!DsiDialog.Available)
                 {
                     Log.Info(Path.GetFileName(dump.Path) + " has no configured console, and windows "
@@ -152,6 +156,30 @@ namespace LbIntegrations.NoGba
         /// what comes up is the DSi menu and not the game. It is the ROM whose launch asked for all
         /// this, unpacked first when it is an archive - no$gba cannot open one and answers with a
         /// modal that waits forever.</summary>
+        /// <summary>The console built from the dump and, when the dump's owner is blank, set up as the pack's identity
+        /// ("Your console") - then described. True when it is ready and the launch goes on; false, the copy taken away,
+        /// when it could not be done: the window takes over.</summary>
+        private static bool Automatic(NoGbaLayout layout, NandDump dump, string bios7Path)
+        {
+            DsiHost host = layout;
+            var name = Path.GetFileName(dump.Path);
+            if (bios7Path == null || !File.Exists(bios7Path) || !DsiNand.IsUsable(out _)) return false;
+            var console = DsiBase.BuildConsole(host, dump.Path, out var error);
+            if (console == null) { Log.Warn("could not build a console from " + name + " - " + error); return false; }
+            var id = LbIntegrations.Identity.PackIdentity.Load() ?? LbIntegrations.Identity.PackIdentity.FromWindows();
+            if (!DsiUserSettings.SetUpBlank(console, bios7Path, dump.Region, id, out var blank, out var said)
+                || !Describe(layout, console, dump.Path, bios7Path, dump.Region))
+            {
+                Log.Warn("the console for " + name + " could not be made without a window - " + (said ?? "it could not be described"));
+                try { File.Delete(console); } catch { }
+                try { File.Delete(DsiBase.RecipeFor(console)); } catch { }
+                try { File.Delete(DsiBase.RecordFor(console)); } catch { }
+                return false;
+            }
+            Log.Info("the console for " + name + " is made: " + (blank ? "set up as your console - " + said : said)
+                     + ". The game starts on it.");
+            return true;
+        }
         private static bool Configure(NoGbaLayout layout, string consolePath, string romPath)
         {
             var exe = NoGbaPaths.FindExecutable(layout.InstallDir);
