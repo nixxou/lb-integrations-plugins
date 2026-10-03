@@ -2,6 +2,9 @@
 // fields, shared by the Options window's "System" tab (a game's own, Vita3kGameConfig) and the pack's
 // configuration window (Vita3K's own, config.yml). The install's small window (Vita3kSystemSettingsForm)
 // asks the same four.
+//
+// A value no entry has (Mehdi, 04/10: a Vita3K update adding a language, a hand-edited config.yml) is shown as it is,
+// one more entry, and KEPT: reading the fields gives it back until another entry is chosen - never entry 0 written over it.
 
 using System.Drawing;
 using System.Windows.Forms;
@@ -44,20 +47,33 @@ namespace LbIntegrations.Vita3k
         {
             s ??= new VitaSystemSettings();
             _showing = true;
-            _language.SelectedIndex = Pick(s.Language, Vita3kConfig.Languages.Length);
-            _date.SelectedIndex = Pick(s.DateFormat, Vita3kConfig.DateFormats.Length);
-            _time.SelectedIndex = Pick(s.TimeFormat, Vita3kConfig.TimeFormats.Length);
-            _enter.SelectedIndex = Pick(s.EnterButton, Vita3kConfig.EnterButtons.Length);
+            Pick(_language, s.Language, Vita3kConfig.Languages);
+            Pick(_date, s.DateFormat, Vita3kConfig.DateFormats);
+            Pick(_time, s.TimeFormat, Vita3kConfig.TimeFormats);
+            Pick(_enter, s.EnterButton, Vita3kConfig.EnterButtons);
             _pstv.Checked = s.Pstv == true;
             _showing = false;
         }
 
-        private static int Pick(int value, int count) => value >= 0 && value < count ? value : 0;
+        /// <summary>The entry of <paramref name="value"/>, or - not one of ours - one more entry saying it, chosen.</summary>
+        private static void Pick(ComboBox box, int value, string[] entries)
+        {
+            while (box.Items.Count > entries.Length) box.Items.RemoveAt(box.Items.Count - 1);
+            box.Tag = null;
+            if (value >= 0 && value < entries.Length) { box.SelectedIndex = value; return; }
+            box.Tag = value;
+            box.Items.Add("As it is (" + value + ", not in this list)");
+            box.SelectedIndex = box.Items.Count - 1;
+        }
+
+        /// <summary>The chosen entry's value - the kept one for the "as it is" entry.</summary>
+        private static int Value(ComboBox box, string[] entries)
+            => box.SelectedIndex >= entries.Length && box.Tag is int kept ? kept : box.SelectedIndex;
 
         public VitaSystemSettings Read() => new VitaSystemSettings
         {
-            Language = _language.SelectedIndex, DateFormat = _date.SelectedIndex,
-            TimeFormat = _time.SelectedIndex, EnterButton = _enter.SelectedIndex, Pstv = _pstv.Checked,
+            Language = Value(_language, Vita3kConfig.Languages), DateFormat = Value(_date, Vita3kConfig.DateFormats),
+            TimeFormat = Value(_time, Vita3kConfig.TimeFormats), EnterButton = Value(_enter, Vita3kConfig.EnterButtons), Pstv = _pstv.Checked,
         };
 
         public void SetEditable(bool value)

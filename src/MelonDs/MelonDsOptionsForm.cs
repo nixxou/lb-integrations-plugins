@@ -83,7 +83,8 @@ namespace LbIntegrations.MelonDs
             _ware = games.Where(g => g.IsDSiWare).ToList();
             _groups = games.GroupBy(g => g.Key).Select(g => g.ToList()).ToList();
             var exe = games.Select(g => g.Exe).FirstOrDefault(e => !string.IsNullOrEmpty(e));
-            _global = MelonDsGameSettings.Current(exe == null ? null : MelonDsPaths.Resolve(exe)?.ConfigFile);
+            // As melonDS has them - a value out of our lists shown as it is, not as our default (only shown, never written).
+            _global = MelonDsGameSettings.Current(exe == null ? null : MelonDsPaths.Resolve(exe)?.ConfigFile, asWritten: true);
 
             Text = "Nixx-melonDS - Options" + (games.Count > 1 ? " (" + games.Count + " games)" : " - " + games[0].Title);
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -263,7 +264,7 @@ namespace LbIntegrations.MelonDs
         }
 
         private static string RendererName(string v)
-            => int.TryParse(v, out var n) && n >= 0 && n < Renderers.Length ? Renderers[n] : v;
+            => int.TryParse(v, out var n) && n >= 0 && n < Renderers.Length ? Renderers[n] : v + " (not in this list)";
 
         private static string ScaleName(string v)
             => int.TryParse(v, out var n) && n >= 1 && n <= 16 ? n + "x" + (n == 1 ? " native" : "") + " (" + (256 * n) + "x" + (192 * n) + ")" : v;

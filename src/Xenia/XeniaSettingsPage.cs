@@ -35,6 +35,7 @@ namespace LbIntegrations.Xenia
         private readonly XeniaConsolePanel _console;
         private readonly XeniaOptionRows _rows;
         private readonly TextBox _line;
+        private readonly HashSet<string> _known;
         private readonly TextBox _contentFolder, _contentLimit, _ramBelow;
         private readonly CheckBox _ram, _importClean, _importTitle, _optimized, _importRegion;
 
@@ -153,7 +154,8 @@ namespace LbIntegrations.Xenia
 
             var own = exe != null ? XeniaOptions.Own(XeniaPaths.Resolve(exe).ConfigFile) : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             stack.Controls.Add(new Label { Text = "Options for every game", AutoSize = true, Font = new Font("Segoe UI", 10f, FontStyle.Bold), Margin = new Padding(4, 8, 0, 2) });
-            _rows = new XeniaOptionRows(XeniaSettings.Read(), o => "Xenia's own: " + o.LabelOf(own.TryGetValue(o.Key, out var v) ? v : o.Default));
+            _known = exe != null ? XeniaSettings.KnownCvars(XeniaPaths.Resolve(exe).ConfigFile) : null;
+            _rows = new XeniaOptionRows(XeniaSettings.Read(), o => "Xenia's own: " + o.LabelOf(own.TryGetValue(o.Key, out var v) ? v : o.Default), _known);
             stack.Controls.Add(_rows);
 
             var bottom = new Panel { Dock = DockStyle.Bottom, Height = 104, Padding = new Padding(12, 4, 12, 8) };
@@ -176,7 +178,7 @@ namespace LbIntegrations.Xenia
 
         private void ShowLine()
         {
-            var flags = XeniaSettings.Flags(_rows.Values());
+            var flags = XeniaSettings.Flags(_rows.Values()).Where(f => _known == null || _known.Contains(XeniaSettings.CvarOf(f))).ToList();
             _line.Text = flags.Count == 0 ? "(nothing added to the command line for every game)" : string.Join(" ", flags);
         }
 

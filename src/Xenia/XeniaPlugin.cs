@@ -630,7 +630,8 @@ namespace LbIntegrations.Xenia
                 if (options.Count > 0) Log.Info("options passed: " + string.Join(" ", options));
                 XeniaOptimized.RefreshIndexSoon();
 
-                var rewritten = XeniaSettings.Append(current, added.Concat(options));
+                // Only the cvars this Xenia still has: one an update removed would stop it at start (XeniaSettings.OnlyKnown).
+                var rewritten = XeniaSettings.Append(current, XeniaSettings.OnlyKnown(added.Concat(options), XeniaSettings.KnownCvars(configFile)));
                 // A game the plugin unpacked (it came in an archive): Xenia is handed it by --target. LaunchBox still appends the
                 // archive's path after the line - measured 01/10, Xenia takes --target and leaves the second path unmatched.
                 // A game that is only a launcher for another (Minecraft's disc): the game it starts, directly - XeniaRelaunch.

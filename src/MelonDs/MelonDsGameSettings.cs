@@ -224,11 +224,13 @@ namespace LbIntegrations.MelonDs
         }
 
         /// <summary>melonDS's own values now - its default for a key the file does not hold.</summary>
-        public static Dictionary<string, string> Current(string configFile) => TryCurrent(configFile, out var v) ? v : v;
+        /// <paramref name="asWritten"/>: a number or a switch melonDS holds that is out of our range (Mehdi, 04/10: a melonDS
+        /// update adding a renderer) given as it is, not as our default - for SHOWING what melonDS runs on, never to write.
+        public static Dictionary<string, string> Current(string configFile, bool asWritten = false) => TryCurrent(configFile, out var v, asWritten) ? v : v;
 
         /// <summary>The same, FALSE when the file could not be read: then the values are only defaults,
         /// and must never be written down as somebody's own.</summary>
-        public static bool TryCurrent(string configFile, out Dictionary<string, string> values)
+        public static bool TryCurrent(string configFile, out Dictionary<string, string> values, bool asWritten = false)
         {
             bool known = true;
             values = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -236,7 +238,11 @@ namespace LbIntegrations.MelonDs
             {
                 if (!MelonDsToml.TryRead(configFile, group.Key, out var read, group.Select(s => s.Key).ToArray())) known = false;
                 foreach (var s in group)
-                    values[s.Id] = (read.TryGetValue(s.Key, out var v) ? Normal(s, v) : null) ?? s.Default;
+                {
+                    read.TryGetValue(s.Key, out var v);
+                    var normal = v == null ? null : Normal(s, v);
+                    values[s.Id] = normal ?? (asWritten && s.Kind != Kind.Text && !string.IsNullOrWhiteSpace(v) ? v.Trim() : s.Default);
+                }
             }
             return known;
         }

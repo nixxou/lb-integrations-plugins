@@ -5,6 +5,10 @@
 // it falls back to, and the control says so - a three-state box reading "Xenia's own: on" / "on" / "off", a list whose
 // first entry is "<Xenia's own: 1x (native, 720p)>", a field left empty whose grey hint says the value. The bar at the
 // left of a row: blue, passed on the command line; grey, not.
+//
+// AN EMULATOR UPDATE (Mehdi, 04/10): an option whose cvar this Xenia no longer has (not in its config.toml) is greyed,
+// with a note, never passed - and its value kept, for a Xenia that has it again. A value of ours no list entry has any
+// more (a choice taken out) is shown as it is and kept, never replaced by the fallback behind the user's back.
 
 using System;
 using System.Collections.Generic;
@@ -26,6 +30,8 @@ namespace LbIntegrations.Xenia
             public Control Editor;
             public Panel Bar;
             public string Fallback;     // what an unset row stands for, in words
+            public string Kept;         // the value of an option this Xenia does not have, or of a choice no longer listed
+            public bool Gone;           // this Xenia does not have the option
         }
 
         private readonly List<Row> _rows = new List<Row>();
@@ -35,7 +41,8 @@ namespace LbIntegrations.Xenia
 
         /// <param name="saved">The values set, by option key.</param>
         /// <param name="fallback">What an unset option stands for, in words - "Xenia's own: on", "every game's: 2x (1440p)".</param>
-        public XeniaOptionRows(IDictionary<string, string> saved, Func<XeniaOption, string> fallback)
+        /// <param name="known">The cvars this Xenia has (XeniaSettings.KnownCvars) - null: not known, every option shown.</param>
+        public XeniaOptionRows(IDictionary<string, string> saved, Func<XeniaOption, string> fallback, HashSet<string> known = null)
         {
             FlowDirection = FlowDirection.TopDown;
             WrapContents = false;
@@ -51,11 +58,22 @@ namespace LbIntegrations.Xenia
                 foreach (var o in group)
                 {
                     saved.TryGetValue(o.Key, out var current);
-                    var row = new Row { Option = o, Fallback = fallback(o) };
+                    var row = new Row { Option = o, Fallback = fallback(o), Gone = !XeniaSettings.Knows(known, o) };
                     row.Editor = Editor(row, current);
                     row.Bar = new Panel { Width = 4, Height = 18, Margin = new Padding(0, 6, 8, 0) };
                     var label = new Label { Text = o.Label, AutoSize = true, MaximumSize = new Size(206, 0), Margin = new Padding(0, 7, 4, 0) };
                     new ToolTip().SetToolTip(label, "--" + string.Join(", --", o.Sends ?? new[] { o.Key }));
+                    if (row.Gone)
+                    {
+                        row.Kept = string.IsNullOrWhiteSpace(current) ? null : current;
+                        row.Editor.Enabled = false;
+                        label.ForeColor = SystemColors.GrayText;
+                        var why = "This Xenia no longer has this setting (--" + string.Join(", --", o.Sends ?? new[] { o.Key }) + " is not in its config.toml): it is not passed."
+                                  + (row.Kept != null ? " Your choice is kept, for a Xenia that has it again." : "");
+                        new ToolTip().SetToolTip(label, why);
+                        new ToolTip().SetToolTip(row.Editor, why);
+                        label.Text = o.Label + " (not in this Xenia)";
+                    }
                     Hook(row.Editor, () => { Show(row); Changed?.Invoke(); });
                     Show(row);
 
@@ -93,7 +111,15 @@ namespace LbIntegrations.Xenia
                     var c = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260, Margin = new Padding(3, 3, 0, 0) };
                     c.Items.Add("<" + row.Fallback + ">");
                     foreach (var ch in o.Choices) c.Items.Add(ch.Label);
-                    c.SelectedIndex = 1 + Array.FindIndex(o.Choices, x => string.Equals(x.Value, current, StringComparison.OrdinalIgnoreCase));
+                    int at = Array.FindIndex(o.Choices, x => string.Equals(x.Value, current, StringComparison.OrdinalIgnoreCase));
+                    if (at < 0 && !string.IsNullOrWhiteSpace(current))
+                    {
+                        // Ours, but no entry of the list any more: shown as it is, the last entry, and kept.
+                        row.Kept = current.Trim();
+                        c.Items.Add(row.Kept + " (not in this list)");
+                        c.SelectedIndex = c.Items.Count - 1;
+                    }
+                    else c.SelectedIndex = 1 + at;
                     return c;
                 }
                 default:
@@ -126,15 +152,21 @@ namespace LbIntegrations.Xenia
         {
             if (row.Editor is CheckBox c)
                 c.Text = c.CheckState == CheckState.Indeterminate ? row.Fallback : c.Checked ? "on" : "off";
-            row.Bar.BackColor = ValueOf(row) != null ? Passed : NotPassed;
+            row.Bar.BackColor = !row.Gone && ValueOf(row) != null ? Passed : NotPassed;
         }
 
-        private static string ValueOf(Row row)
+        /// <summary>The row's value to keep. An option this Xenia does not have keeps what it had.</summary>
+        private static string ValueOf(Row row) => row.Gone ? row.Kept : Chosen(row);
+
+        /// <summary>What the editor says - for the bar too, which is grey for a row not passed.</summary>
+        private static string Chosen(Row row)
         {
             switch (row.Editor)
             {
                 case CheckBox c: return c.CheckState == CheckState.Indeterminate ? null : c.Checked ? "true" : "false";
-                case ComboBox b: return b.SelectedIndex <= 0 ? null : row.Option.Choices[b.SelectedIndex - 1].Value;
+                case ComboBox b:
+                    if (b.SelectedIndex <= 0) return null;
+                    return b.SelectedIndex - 1 < row.Option.Choices.Length ? row.Option.Choices[b.SelectedIndex - 1].Value : row.Kept;
                 case TextBox t: { var v = t.Text.Trim(); return v.Length == 0 ? null : v; }
             }
             return null;
@@ -157,7 +189,7 @@ namespace LbIntegrations.Xenia
         {
             foreach (var row in _rows)
             {
-                if (!(row.Editor is TextBox t)) continue;
+                if (!(row.Editor is TextBox t) || row.Gone) continue;
                 var v = t.Text.Trim();
                 if (v.Length == 0) continue;
                 var o = row.Option;

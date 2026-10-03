@@ -66,14 +66,16 @@ namespace LbIntegrations.Xenia
             var consoleBox = Group("Console (every game)");
             var ct = Table(150, 340);
 
+            // A value not in our lists (Mehdi, 04/10: a Xenia update, a code our tables lack) is shown as it is and KEPT -
+            // never the first entry written back behind the user's back. Only choosing another entry changes it.
             _language = Combo(XeniaConsole.Languages.Select(l => l.Name));
-            _language.SelectedIndex = Math.Max(0, Array.FindIndex(XeniaConsole.Languages, l => l.Value == _read.Language));
+            Select(_language, Array.FindIndex(XeniaConsole.Languages, l => l.Value == _read.Language), "language " + _read.Language);
             AddRow(ct, "Language", _language);
 
             _countries = XeniaConsole.Countries.Select(c => (c.Value, XeniaConsole.CountryName(c.Value) + " (" + c.Code + ")"))
                                                .OrderBy(c => c.Item2, StringComparer.CurrentCultureIgnoreCase).ToList();
             _country = Combo(_countries.Select(c => c.Name));
-            _country.SelectedIndex = Math.Max(0, _countries.FindIndex(c => c.Value == _read.Country));
+            Select(_country, _countries.FindIndex(c => c.Value == _read.Country), "country " + _read.Country);
             AddRow(ct, "Country", _country);
 
             _zone = Combo(XeniaConsole.TimeZones.Select(z => z.Name));
@@ -87,11 +89,11 @@ namespace LbIntegrations.Xenia
             AddRow(ct, "", _dstOff);
 
             _region = Combo(XeniaConsole.AvRegions.Select(r => r.Name));
-            _region.SelectedIndex = Math.Max(0, Array.FindIndex(XeniaConsole.AvRegions, r => r.Value == _read.AvRegion));
+            Select(_region, Array.FindIndex(XeniaConsole.AvRegions, r => r.Value == _read.AvRegion), "0x" + _read.AvRegion.ToString("X8"));
             AddRow(ct, "Video region", _region);
 
             _resolution = Combo(XeniaConsole.Resolutions.Select(XeniaConsole.ResolutionName));
-            _resolution.SelectedIndex = Math.Max(0, Array.IndexOf(XeniaConsole.Resolutions, _read.Resolution));
+            Select(_resolution, Array.IndexOf(XeniaConsole.Resolutions, _read.Resolution), XeniaConsole.ResolutionName(_read.Resolution));
             AddRow(ct, "Console resolution", _resolution);
 
             _volume = new TextBox { Width = 80, Text = _read.MusicVolume.ToString("0.##", CultureInfo.InvariantCulture), Margin = new Padding(3, 3, 0, 0) };
@@ -129,8 +131,10 @@ namespace LbIntegrations.Xenia
 
         private void Put(XeniaConsoleValues v)
         {
-            _language.SelectedIndex = Math.Max(0, Array.FindIndex(XeniaConsole.Languages, l => l.Value == v.Language));
-            _country.SelectedIndex = Math.Max(0, _countries.FindIndex(c => c.Value == v.Country));
+            int language = Array.FindIndex(XeniaConsole.Languages, l => l.Value == v.Language);
+            if (language >= 0) _language.SelectedIndex = language;
+            int country = _countries.FindIndex(c => c.Value == v.Country);
+            if (country >= 0) _country.SelectedIndex = country;
             if (v.TimeZone >= 0) _zone.SelectedIndex = v.TimeZone;
             _hour24.Checked = v.Hour24;
             _dstOff.Checked = v.DstOff;
@@ -142,13 +146,13 @@ namespace LbIntegrations.Xenia
             if (!float.TryParse(_volume.Text.Trim().Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var volume)) return null;
             return new XeniaConsoleValues
             {
-                Language = XeniaConsole.Languages[_language.SelectedIndex].Value,
-                Country = _countries[_country.SelectedIndex].Value,
+                Language = _language.SelectedIndex < XeniaConsole.Languages.Length ? XeniaConsole.Languages[_language.SelectedIndex].Value : _read.Language,
+                Country = _country.SelectedIndex < _countries.Count ? _countries[_country.SelectedIndex].Value : _read.Country,
                 // A zone not in the list reads -1 and shows London: only a change of the box writes one.
                 TimeZone = _read.TimeZone < 0 && !_zoneTouched ? -1 : _zone.SelectedIndex,
                 Hour24 = _hour24.Checked, DstOff = _dstOff.Checked,
-                AvRegion = XeniaConsole.AvRegions[_region.SelectedIndex].Value,
-                Resolution = XeniaConsole.Resolutions[_resolution.SelectedIndex],
+                AvRegion = _region.SelectedIndex < XeniaConsole.AvRegions.Length ? XeniaConsole.AvRegions[_region.SelectedIndex].Value : _read.AvRegion,
+                Resolution = _resolution.SelectedIndex < XeniaConsole.Resolutions.Length ? XeniaConsole.Resolutions[_resolution.SelectedIndex] : _read.Resolution,
                 MusicVolume = volume,
             };
         }
@@ -204,6 +208,15 @@ namespace LbIntegrations.Xenia
         }
 
         // ── layout ───────────────────────────────────────────────────────────
+
+        /// <summary>The entry at <paramref name="index"/> - or, when the file's value is in no entry (-1), one more entry
+        /// saying it, chosen: the value stays what it is until another entry is picked.</summary>
+        private static void Select(ComboBox box, int index, string raw)
+        {
+            if (index >= 0) { box.SelectedIndex = index; return; }
+            box.Items.Add("As it is (" + raw + ", not in this list)");
+            box.SelectedIndex = box.Items.Count - 1;
+        }
 
         private static ComboBox Combo(IEnumerable<string> items)
         {

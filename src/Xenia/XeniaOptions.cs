@@ -231,6 +231,31 @@ namespace LbIntegrations.Xenia
             return order.Select(n => byCvar[n]).ToList();
         }
 
+        /// <summary>The cvars this Xenia knows: the names in its TOML, which Xenia writes whole, every cvar it has, at each
+        /// start. Null when there is no TOML yet (Xenia never started) or a file too short to be a whole one: nothing can be
+        /// told then, and everything is passed as before.</summary>
+        public static HashSet<string> KnownCvars(string configFile)
+        {
+            var all = XeniaToml.ReadAll(configFile);
+            return all.Count < 20 ? null : new HashSet<string>(all.Keys, StringComparer.OrdinalIgnoreCase);
+        }
+
+        /// <summary>Does this Xenia still have this option - any of the cvars it sets. True when that cannot be told.</summary>
+        public static bool Knows(HashSet<string> known, XeniaOption o)
+            => known == null || (o.Sends ?? new[] { o.Key }).Any(known.Contains);
+
+        /// <summary>The flags whose cvar this Xenia knows (Mehdi, 04/10): an unknown cvar stops Xenia at start, so a cvar an
+        /// update removed or renamed is left out - and logged - rather than every game refusing to start.</summary>
+        public static List<string> OnlyKnown(IEnumerable<string> flags, HashSet<string> known)
+        {
+            var kept = new List<string>();
+            var dropped = new List<string>();
+            foreach (var f in flags)
+                if (known == null || known.Contains(CvarOf(f))) kept.Add(f); else dropped.Add(CvarOf(f));
+            if (dropped.Count > 0) Log.Info("not known to this Xenia (not in its config.toml), left out of the command line: " + string.Join(", ", dropped));
+            return kept;
+        }
+
         /// <summary>"--readback_resolve=full" or "\"--name=a b\"" -> its cvar.</summary>
         internal static string CvarOf(string flag)
         {

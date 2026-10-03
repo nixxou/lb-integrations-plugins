@@ -73,6 +73,7 @@ namespace LbIntegrations.Xenia
         private readonly FlowLayoutPanel _optimizedList;
         private readonly Dictionary<string, string> _every;
         private readonly string _configFile;
+        private readonly HashSet<string> _known;
         private List<XeniaOptimizedValue> _optimizedValues;
         private string _optimizedWhy;
 
@@ -136,7 +137,8 @@ namespace LbIntegrations.Xenia
             op.Controls.Add(_optimizedList);
             optimizedBox.Controls.Add(op);
             optionsStack.Controls.Add(optimizedBox);
-            _rows = new XeniaOptionRows(saved, Fallback);
+            _known = XeniaSettings.KnownCvars(_configFile);
+            _rows = new XeniaOptionRows(saved, Fallback, _known);
             optionsStack.Controls.Add(_rows);
             scroll.Controls.Add(optionsStack);
             _optimized.CheckStateChanged += (_, _) => { ShowOptimized(null); ShowLine(); };
@@ -246,7 +248,7 @@ namespace LbIntegrations.Xenia
                 foreach (var v in _optimizedValues) if (known.ContainsKey(v.Key) || XeniaOptions.All.Any(o => (o.Sends ?? new[] { o.Key }).Contains(v.Key, StringComparer.OrdinalIgnoreCase))) Put(XeniaOptimized.Flag(v));
             }
             foreach (var f in XeniaSettings.Flags(_rows.Values())) Put(f);
-            var flags = order.Select(n => byCvar[n]).ToList();
+            var flags = order.Select(n => byCvar[n]).Where(f => _known == null || _known.Contains(XeniaSettings.CvarOf(f))).ToList();
             _line.Text = flags.Count == 0 ? "(nothing added to the command line)" : "At launch: " + string.Join(" ", flags);
         }
 

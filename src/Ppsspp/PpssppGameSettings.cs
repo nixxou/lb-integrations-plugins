@@ -236,8 +236,9 @@ namespace LbIntegrations.Ppsspp
             var backend = layout?.ConfigFile == null ? null
                 : PpssppIni.Read(layout.ConfigFile, "Graphics", "GraphicsBackend").TryGetValue("GraphicsBackend", out var gb) ? gb : null;
             var number = (backend ?? "").Trim().Split(' ')[0];
+            // One this list does not know (a PPSSPP update's new backend) shown as PPSSPP wrote it, not as Vulkan.
             values[BackendId] = number == "0" ? "opengl" : number == "2" ? "d3d11" : number == "3" ? "vulkan"
-                              : number == "1" ? "Direct3D 9" : Offered.First(o => o.Id == BackendId).Builtin;
+                              : number == "1" ? "Direct3D 9" : !string.IsNullOrWhiteSpace(backend) ? backend.Trim() : Offered.First(o => o.Id == BackendId).Builtin;
             return values;
         }
 

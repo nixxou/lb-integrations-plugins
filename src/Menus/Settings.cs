@@ -154,42 +154,33 @@ namespace LbIntegrations.Menus
             Controls.Add(bottom);
         }
 
-        /// <summary>Every plugin's Save, in tab order. The first that refuses stops it: its tab is shown,
-        /// with its reason, and nothing after it is saved.</summary>
+        /// <summary>Every tab's Save, in tab order - EACH ONE, whatever the others say (Mehdi, 04/10: one tab refusing,
+        /// "Xenia is running", no longer leaves the tabs after it unsaved). When any refused: one message listing
+        /// them, the first one's tab shown, the window left open.</summary>
         private bool SaveAll()
         {
-            if (_identity != null)
+            var refused = new List<(TabPage Tab, string Title, string Problem)>();
+            void One(TabPage tab, string title, Func<string> save)
             {
-                var problem = _identity.Save();
-                if (problem != null)
-                {
-                    _tabs.SelectedTab = _identityPage;
-                    MessageBox.Show(this, problem, IdentityPanel.Title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return false;
-                }
-            }
-            if (_ramDisk != null)
-            {
-                var problem = _ramDisk.Save();
-                if (problem != null)
-                {
-                    _tabs.SelectedTab = _ramDiskPage;
-                    MessageBox.Show(this, problem, RamDiskTab.Title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return false;
-                }
-            }
-            foreach (var (provider, tab, page) in _plugins)
-            {
-                if (page == null) continue;   // its page could not be built: nothing to save
                 string problem;
-                try { problem = provider.Save(page); }
-                catch (Exception ex) { problem = (ex.InnerException ?? ex).Message; RelayLog.Warn(provider.Name + ".Save", ex); }
-                if (problem == null) continue;
-                _tabs.SelectedTab = tab;
-                MessageBox.Show(this, problem, provider.Title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return false;
+                try { problem = save(); }
+                catch (Exception ex) { problem = (ex.InnerException ?? ex).Message; RelayLog.Warn(title + ".Save", ex); }
+                if (problem != null) refused.Add((tab, title, problem));
             }
-            return true;
+            if (_identity != null) One(_identityPage, IdentityPanel.Title, _identity.Save);
+            if (_ramDisk != null) One(_ramDiskPage, RamDiskTab.Title, _ramDisk.Save);
+            foreach (var (provider, tab, page) in _plugins)
+                if (page != null)   // a page that could not be built has nothing to save
+                    One(tab, provider.Title, () => provider.Save(page));
+            if (refused.Count == 0) return true;
+
+            _tabs.SelectedTab = refused[0].Tab;
+            var text = refused.Count == 1
+                ? refused[0].Problem
+                : "These tabs were not saved:\n\n" + string.Join("\n\n", refused.Select(r => r.Title + ": " + r.Problem))
+                  + "\n\nEverything else was saved.";
+            MessageBox.Show(this, text, refused.Count == 1 ? refused[0].Title : "Some settings were not saved", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
         }
 
         /// <summary>The pack's one console identity, for every plugin - see IdentityPanel.</summary>
