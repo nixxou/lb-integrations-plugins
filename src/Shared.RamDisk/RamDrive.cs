@@ -1161,6 +1161,41 @@ namespace LbIntegrations.RamDisk
             catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; return null; }
         }
 
+        /// <summary>The helper that serves an Xbox disc as a FAT32 disk (view=xbox).</summary>
+        public static readonly Version XboxViewProtocol = new Version(1, 7, 0, 0);
+
+        /// <summary>Can an Xbox disc be attached where it is: AIM there, the helper 1.7 and its task.</summary>
+        public static bool CanAttachXboxDisc(out string why)
+        {
+            var v = HelperVersion;
+            why = !IsAimInstalled() ? "the Arsenal Image Mounter is not installed"
+                : v == null || v < XboxViewProtocol ? "the RAM disk helper is " + (v?.ToString() ?? "absent") + ", " + XboxViewProtocol + " is needed"
+                : InstalledTaskName() == null ? "the RAM disk helper's task is not installed"
+                : null;
+            return why == null;
+        }
+
+        /// <summary>An Xbox disc image (redump ISO, XISO) attached as a disk on a free letter, its game read where it
+        /// is - the helper's view=xbox, through AIM. Returns the root ("K:\"), or null with the reason. Detached by
+        /// DetachImage.</summary>
+        public static string AttachXboxDisc(string image, out string error)
+        {
+            error = null;
+            try
+            {
+                if (!CanAttachXboxDisc(out error)) return null;
+                if (string.IsNullOrWhiteSpace(image) || !OneLine(image) || !Path.IsPathFullyQualified(image)) { error = "an image path must be absolute and on one line"; return null; }
+                char letter = FreeDriveLetter();
+                if (letter == '\0') { error = "no free drive letter"; return null; }
+                var said = RunAndWait("image-attach", letter, image, new Dictionary<string, string> { { "view", "xbox" }, { "backend", "aim" } });
+                if (said == null) { error = "the helper never answered"; return null; }
+                if (!said.StartsWith("OK image-attach", StringComparison.Ordinal)) { error = said; RamDiskLog.Warn("xbox attach " + Path.GetFileName(image) + ": " + said); return null; }
+                RamDiskLog.Info("attached the Xbox disc " + Path.GetFileName(image) + " at " + letter + ":\\ - " + said);
+                return letter + ":\\";
+            }
+            catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; return null; }
+        }
+
         /// <summary>Detach what AttachImage attached, by its root.</summary>
         public static bool DetachImage(string root, out string error)
         {

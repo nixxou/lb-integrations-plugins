@@ -56,6 +56,41 @@ namespace LbIntegrations.Lbip
             catch (Exception ex) { why = "the database could not be read (" + ex.GetType().Name + ": " + ex.Message + ")"; return null; }
         }
 
+        /// <summary>The games of the database a FILE NAME names on <paramref name="platform"/> - that platform only, by
+        /// its name, else by an alternate title - compared as the database's own CompareName is made (ExtendDB's
+        /// PerformSanitize, measured 03/10: "Grand Theft Auto - San Andreas (Europe) (Rev 1)" is GRAND THEFT AUTO SAN
+        /// ANDREAS). Their names; empty when none; null when the database could not be asked, and why.</summary>
+        public static List<string> GamesNamed(string fileName, string platform, out string why)
+        {
+            why = null;
+            var value = LbipTitleNormalizer.PerformSanitize(fileName ?? "");
+            if (value.Length == 0 || string.IsNullOrEmpty(platform)) { why = "no name or no platform"; return null; }
+            try
+            {
+                using var db = Open(out why);
+                if (db == null) return null;
+                var names = Strings(db, "SELECT DISTINCT Name FROM Games WHERE CompareName = @v AND Platform = @p", value, platform);
+                if (names.Count > 0) { why = "by its name"; return names; }
+                names = Strings(db, "SELECT DISTINCT g.Name FROM GameAlternateTitles a JOIN Games g ON g.DatabaseID = a.DatabaseID "
+                                  + "WHERE a.AltNameCompareValue = @v AND g.Platform = @p", value, platform);
+                why = names.Count > 0 ? "by an alternate title" : "no game " + value + " on " + platform;
+                return names;
+            }
+            catch (Exception ex) { why = "the database could not be read (" + ex.GetType().Name + ": " + ex.Message + ")"; return null; }
+        }
+
+        private static List<string> Strings(DbConnection db, string sql, string value, string platform)
+        {
+            using var cmd = db.CreateCommand();
+            cmd.CommandText = sql;
+            Param(cmd, "@v", value);
+            Param(cmd, "@p", platform);
+            var list = new List<string>();
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read()) if (!reader.IsDBNull(0)) list.Add(Convert.ToString(reader.GetValue(0)));
+            return list;
+        }
+
         private static List<int> Ids(DbConnection db, string sql, string value, string platform)
         {
             using var cmd = db.CreateCommand();

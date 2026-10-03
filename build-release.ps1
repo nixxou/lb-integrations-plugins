@@ -35,6 +35,7 @@ $repo = Split-Path -Parent $MyInvocation.MyCommand.Path
 # Project -> the folder its files are staged under. These names ARE the plugin folder names the
 # installer creates.
 $Stage = [ordered]@{
+    'Cxbx'    = 'Nixx-Cxbx'
     'Flycast' = 'Nixx-Flycast'
     'MelonDs' = 'Nixx-melonDS'
     'NoGba'   = 'Nixx-nogba'

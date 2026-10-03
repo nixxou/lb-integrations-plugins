@@ -23,6 +23,21 @@ one non-framework entry — `Unbroken.LaunchBox.Plugins` — so there is nothing
 its partition-base probing order are sigil's work; the C# is ours. MPL-2.0 is file-scoped copyleft:
 that one file stays MPL and its source is in this repository, which is what the licence asks.
 
+## Merged into `Cxbx.dll`
+
+| Component | Licence | Used for |
+|---|---|---|
+| [SharpCompress](https://github.com/adamhathcock/sharpcompress) | MIT | the release archive, the zips and 7z a game comes in, and the save files |
+| [Lib.Harmony](https://github.com/pardeike/Harmony) | MIT | the postfixes that let LaunchBox read our emulator row |
+
+## Under its own licence inside `Cxbx.dll`
+
+`src/Cxbx/Xdvdfs.cs` is **MPL-2.0**: `src/Xenia/Xdvdfs.cs` (derived from sigil's `xdvdfs.c`, see above)
+extended to the whole tree. Same terms: that one file stays MPL and its source is in this repository.
+
+Nothing of Cxbx-Reloaded (GPL-2.0) is in here. The plugin downloads its builds from GitHub at the
+user's request and runs them; it links none of its code and carries none of its files.
+
 ## Merged into `SuperZsnes.dll`
 
 | Component | Licence | Used for |

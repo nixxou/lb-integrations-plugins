@@ -143,6 +143,12 @@
 // The umount and dismount actions tell the backend from the drive itself. An older helper reads the
 // image-* actions as a MOUNT: check FileVersion >= 1.6.
 //
+// -- added in 1.7 ------------------------------------------------------------------------------
+//   view     = xbox                on image-attach: an Xbox disc image (redump ISO, XISO) as a FAT32 disk
+//                                  whose files are the image's own sectors, AIM only - see XboxAttach. The
+//                                  one time this exe takes arguments: "--xbox-serve <image>", started by
+//                                  itself. An older helper ignores the key: check FileVersion >= 1.7.
+//
 // AIM, WHAT DIFFERS FROM IMDISK. aim_ll takes imdisk's arguments almost word for word, but its disks
 // are real SCSI disks: Windows' mount manager gives a new volume a letter of its own on top of the one
 // asked for, which is taken off again (only the mount point asked for is kept), and the disk goes the
@@ -166,8 +172,10 @@ namespace RamDiskHelper
 {
     internal static class Program
     {
-        private static int Main()
+        private static int Main(string[] argv)
         {
+            // 1.7: the one command-line use - this exe serving an Xbox disc's view, started by itself (below).
+            if (argv.Length == 2 && argv[0] == "--xbox-serve") return XboxServe(argv[1]);
             string dir = AppContext.BaseDirectory;
             string cfgPath = Path.Combine(dir, "ramdisk.cfg");
             string resultPath = Path.Combine(dir, "ramdisk.result");
@@ -284,6 +292,15 @@ namespace RamDiskHelper
                     return 1;
                 }
                 if (useAim && type.Length == 0) type = "vm";     // aim_ll wants a type, imdisk defaults one
+                // NEVER A LETTER THAT IS ALREADY SOMETHING (1.7): a mount formats what it mounts, and the format is run on
+                // the LETTER (imdisk and aim_ll hand "format.com <letter>" the mount point). The callers pick a free one;
+                // this makes sure of it here too, so that no mistake upstream can ever point a format at a disk that
+                // was there before.
+                if (token != "folder" && (DeviceOf(point) != null || Directory.Exists(point + "\\")))
+                {
+                    File.WriteAllText(resultPath, "FAIL mount " + token + " exit=-1 - " + point + " is already in use: nothing mounted, nothing formatted" + id);
+                    return 1;
+                }
                 if (token == "folder")
                 {
                     Directory.CreateDirectory(point);
@@ -793,6 +810,7 @@ namespace RamDiskHelper
             const string head = "image-attach";
             string image = Get(kv, "image", "");
             if (!SafeImage(image) || !File.Exists(image)) return "FAIL " + head + " exit=-1 - image is not an existing file with an absolute path of a plain shape";
+            if (Get(kv, "view", "").Equals("xbox", StringComparison.OrdinalIgnoreCase)) return XboxAttach(kv, dir, image);
             string ext = Path.GetExtension(image).ToLowerInvariant();
             bool iso = ext == ".iso";
             bool raw = Array.IndexOf(RawImages, ext) >= 0;
@@ -925,6 +943,144 @@ namespace RamDiskHelper
             }
             if (how == "aim") WriteAttached(dir, point, how, image, "");
             return "OK " + head + " " + token + " exit=0 backend=" + how + " at=" + point;
+        }
+
+        // ── an Xbox disc, read where it is (1.7) ─────────────────────────────
+        //
+        // view=xbox on image-attach: an Xbox disc image (redump ISO or XISO) attached as a disk holding one FAT32
+        // volume whose files ARE the image's sectors (XisoFatView, from the Cxbx plugin) - nothing copied, nothing
+        // in memory but the directories. Windows has no XDVDFS driver; it reads FAT32. Through AIM only, measured
+        // 03/10: Cxbx-Reloaded resolves its XBE with GetFinalPathNameByHandleW, which fails on every ImDisk volume
+        // (not the mount manager's), and then runs the game from an empty path.
+        //
+        // HOW: this exe again, "--xbox-serve <image>", started from here and so elevated too, lists the disc,
+        // listens on a loopback port it picks and says "PORT <n>" (or "ERROR <why>") on its output, then serves
+        // AIM's proxy protocol (the ImDisk one: INFO, READ, CLOSE) to the one client it takes - AIM's service,
+        // connecting when "aim_ll -a -t proxy -o ip,ro" asks it to. image-detach removes the disk the usual way:
+        // the connection closes and the server exits with it. A server nobody connects to within a minute exits.
+        //   OK image-attach <L> exit=0 backend=aim view=xbox at=<L:>
+        // An older helper ignores view= and attaches the ISO as a CD, which shows the video partition, not the
+        // game: check FileVersion >= 1.7.
+
+        private static string XboxAttach(Dictionary<string, string> kv, string dir, string image)
+        {
+            const string head = "image-attach";
+            if (!Aim.Available) return "FAIL " + head + " exit=-1 backend=aim view=xbox - an Xbox disc view needs the Arsenal Image Mounter";
+            if (Get(kv, "drive", "").Length == 0 && Get(kv, "mount", "").Length == 0)
+            {
+                char free = FreeLetter();
+                if (free == '\0') return "FAIL " + head + " exit=-1 - no free drive letter";
+                kv["drive"] = free.ToString();
+            }
+            if (!Point(kv, out string point, out string token, out string pointError)) return "FAIL " + head + " exit=-1 - " + pointError;
+            if (token == "folder")
+            {
+                Directory.CreateDirectory(point);
+                if (Directory.EnumerateFileSystemEntries(point).GetEnumerator().MoveNext()) return "FAIL " + head + " exit=-1 - the folder is not empty";
+            }
+            else if (Directory.Exists(point + "\\")) return "FAIL " + head + " exit=-1 - " + point + " is in use";
+
+            var unitsBefore = Aim.Units();
+            var psi = new ProcessStartInfo(Environment.ProcessPath) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
+            psi.ArgumentList.Add("--xbox-serve");
+            psi.ArgumentList.Add(image);
+            var server = Process.Start(psi);
+            string Fail(string why)
+            {
+                try { if (!server.HasExited) server.Kill(); } catch { }
+                DropNewAimDevices(unitsBefore);
+                return "FAIL " + head + " " + token + " exit=-1 backend=aim view=xbox - " + why;
+            }
+            // Listing a redump reads its tables across the image: seconds, a minute on a slow disk.
+            var first = server.StandardOutput.ReadLineAsync();
+            if (!first.Wait(120000)) return Fail("the disc was not listed within two minutes");
+            var line = first.Result ?? "";
+            if (!line.StartsWith("PORT ", StringComparison.Ordinal) || !int.TryParse(line.Substring(5), out int port))
+                return Fail(line.Length > 0 ? line : "the server stopped without a word");
+
+            var (code, said) = Run(Aim.LowLevel, "-a", "-t", "proxy", "-o", "ip,ro", "-f", "127.0.0.1:" + port);
+            if (code != 0) return Fail("aim_ll exit=" + code + " - " + LastWords(said));
+            // THE VOLUME OF THE DISK JUST MADE, by AIM's own word ("Contains volume ...") - never "the first volume that
+            // appeared": a USB stick plugged in meanwhile would lose its letters to us.
+            string unit = null, volume = null;
+            for (int i = 0; i < 120 && volume == null; i++)
+            {
+                var (_, list) = Run(Aim.LowLevel, "-l");
+                foreach (var block in list.Split(new[] { "Device number " }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    if (block.Length < 6 || unitsBefore.Contains(block.Substring(0, 6).ToUpperInvariant())) continue;
+                    if (block.IndexOf("127.0.0.1:" + port, StringComparison.Ordinal) < 0) continue;
+                    unit = block.Substring(0, 6);
+                    var m = System.Text.RegularExpressions.Regex.Match(block, @"Contains volume (\\\\\?\\Volume\{[0-9a-fA-F-]+\}\\)");
+                    if (m.Success) volume = m.Groups[1].Value;
+                }
+                if (volume == null) System.Threading.Thread.Sleep(250);
+            }
+            if (volume == null) return Fail((unit == null ? "AIM shows no disk for the server" : "the disk " + unit + " shows no volume") + " - " + Flat(said));
+            System.Threading.Thread.Sleep(500);
+            foreach (var other in PathsOf(volume)) DeleteVolumeMountPoint(other);
+            if (!SetVolumeMountPoint(point.TrimEnd('\\') + "\\", volume)) return Fail("attached, but " + point + " could not be given to it (error " + Marshal.GetLastWin32Error() + ")");
+            WriteAttached(dir, point, "aim", image, "");
+            return "OK " + head + " " + token + " exit=0 backend=aim view=xbox at=" + point;
+        }
+
+        /// <summary>--xbox-serve &lt;image&gt;: the disc's FAT32 view served to the one proxy client that connects.</summary>
+        private static int XboxServe(string image)
+        {
+            try
+            {
+                var listing = LbIntegrations.Cxbx.Xdvdfs.List(image);
+                if (listing.Error != null) { Console.WriteLine("ERROR the disc could not be listed: " + listing.Error); return 1; }
+                var view = new LbIntegrations.Cxbx.XisoFatView(listing, new FileInfo(image).Length, "XBOXGAME");
+                var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+                listener.Start();
+                Console.WriteLine("PORT " + ((System.Net.IPEndPoint)listener.LocalEndpoint).Port);
+                Console.Out.Flush();
+                Console.SetOut(TextWriter.Null);       // the attaching run is gone soon: nothing more is said
+                var accept = listener.AcceptSocketAsync();
+                if (!accept.Wait(60000)) return 2;
+                using var socket = accept.Result;
+                listener.Stop();
+                socket.NoDelay = true;
+                using var net = new System.Net.Sockets.NetworkStream(socket, true);
+                using var reader = new BinaryReader(net);
+                using var img = new FileStream(image, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, FileOptions.RandomAccess);
+                var buffer = new byte[4 << 20];
+                var head = new byte[16];
+                while (true)
+                {
+                    ulong request;
+                    try { request = reader.ReadUInt64(); } catch (EndOfStreamException) { break; } catch (IOException) { break; }
+                    if (request == 1)                   // INFO: size, alignment, flags (read-only)
+                    {
+                        var o = new byte[24];
+                        BitConverter.GetBytes((ulong)view.Length).CopyTo(o, 0);
+                        BitConverter.GetBytes(1UL).CopyTo(o, 8);
+                        BitConverter.GetBytes(1UL).CopyTo(o, 16);
+                        net.Write(o, 0, o.Length);
+                    }
+                    else if (request == 2)              // READ: offset, length -> errno, length, data
+                    {
+                        long offset = reader.ReadInt64();
+                        int n = (int)Math.Min(reader.ReadUInt64(), 64UL << 20);
+                        if (n > buffer.Length) buffer = new byte[n];
+                        // Always the length asked for, zeros past the end: a short answer is a disk error.
+                        int got = offset < 0 || offset >= view.Length ? 0 : view.Read(img, offset, buffer, (int)Math.Min(n, view.Length - offset));
+                        if (got < n) Array.Clear(buffer, got, n - got);
+                        BitConverter.GetBytes(0UL).CopyTo(head, 0);
+                        BitConverter.GetBytes((ulong)n).CopyTo(head, 8);
+                        net.Write(head, 0, 16);
+                        net.Write(buffer, 0, n);
+                    }
+                    else break;                         // CLOSE (5), or anything a read-only disk does not do
+                }
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                try { Console.WriteLine("ERROR " + ex.GetType().Name + ": " + ex.Message); } catch { }
+                return 1;
+            }
         }
 
         /// <summary>ISO through virtdisk.dll - the API Windows' own "Mount" uses. Win32 error codes back.</summary>

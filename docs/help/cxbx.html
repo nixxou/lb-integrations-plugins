@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cxbx-Reloaded - Nixx plugin guide</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#ffffff; --ink:#1d1d1f; --muted:#5f6368; --line:#e3e3e0; --accent:#0a6ed1; --ok:#1e8e3e; --warn:#b06000; --no:#c5221f; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17181a; --card:#1f2124; --ink:#e8e8e6; --muted:#a0a3a7; --line:#33363a; --accent:#5aa9ff; --ok:#5bc27a; --warn:#e3a34a; --no:#ff7b72; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 "Segoe UI", system-ui, sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 64px; }
+  header h1 { margin:0 0 4px; font-size:30px; }
+  header p { margin:0; color:var(--muted); }
+  nav { margin:20px 0 8px; display:flex; flex-wrap:wrap; gap:8px; }
+  nav a { font-size:14px; color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; background:var(--card); }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 24px; margin:18px 0; }
+  h2 { margin:0 0 10px; font-size:21px; }
+  h3 { margin:18px 0 6px; font-size:17px; }
+  ul { padding-left:22px; } li { margin:4px 0; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .yes { color:var(--ok); font-weight:600; } .partly { color:var(--warn); font-weight:600; } .no { color:var(--no); font-weight:600; }
+  .tip, .warn { border-left:4px solid var(--accent); padding:8px 14px; margin:12px 0; background:color-mix(in srgb, var(--accent) 8%, transparent); border-radius:0 8px 8px 0; }
+  .warn { border-color:var(--warn); background:color-mix(in srgb, var(--warn) 10%, transparent); }
+  code, kbd { font-family:Consolas, monospace; font-size:14px; background:color-mix(in srgb, var(--ink) 8%, transparent); padding:1px 5px; border-radius:4px; }
+  footer { color:var(--muted); font-size:13px; text-align:center; margin-top:30px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Cxbx-Reloaded</h1>
+  <p>What the Nixx plugin does for you, and what to expect.</p>
+</header>
+<nav>
+  <a href="#overview">In short</a><a href="#start">Getting started</a><a href="#play">Playing</a><a href="#options">Options</a>
+  <a href="#saves">Saves</a><a href="#support">What works</a><a href="#limits">Limits</a><a href="#trouble">If something goes wrong</a>
+</nav>
+
+<section id="overview"><h2>In short</h2>
+  <p>Cxbx-Reloaded is an emulator for the original Xbox. The plugin installs and updates it, and takes care of what it does not do
+  on its own:</p>
+  <ul>
+    <li>it plays your <b>disc images</b> (redump <code>.iso</code>, trimmed <code>.xiso</code>), even <b>zipped</b>. Cxbx-Reloaded on its own
+    only opens a game's executable, never an image or an archive;</li>
+    <li>it starts the game <b>full screen in a window</b>, the safe kind of full screen;</li>
+    <li>it puts each game's <b>saves</b> in LaunchBox's save management.</li>
+  </ul>
+</section>
+
+<section id="start"><h2>Getting started</h2>
+  <h3>Installing Cxbx-Reloaded</h3>
+  <p>In LaunchBox: <b>Tools &gt; Manage &gt; Emulators &gt; Add</b>, pick <b>Nixx-Cxbx</b> and let it download. It goes into
+  <code>Emulators\Nixx-Cxbx</code>, set up as <b>portable</b>: its settings and the Xbox's hard disk (with your saves) stay in that folder,
+  and Cxbx-Reloaded asks you nothing on its first start.</p>
+  <p>Cxbx-Reloaded only publishes test builds, one per change. The plugin always takes the newest, and LaunchBox's update button tells you
+  when there is a newer one.</p>
+  <div class="warn">Cxbx-Reloaded needs the <b>Microsoft Visual C++ 2015-2022 runtime, 32-bit (x86)</b>: <code>vc_redist.x86.exe</code> from
+  Microsoft. Many PCs already have it. If yours does not, the plugin tells you when you launch a game.</div>
+  <p>LaunchBox has a Cxbx-Reloaded entry of its own. It starts the wrong program and fails, so use <b>Nixx-Cxbx</b>.</p>
+
+  <h3>Importing games</h3>
+  <p>Use LaunchBox's <b>Import &gt; ROM Files</b> with the platform <b>Microsoft Xbox</b>. Keep your games as they are: <code>.iso</code>,
+  <code>.xiso</code>, or the <code>.zip</code> / <code>.7z</code> they came in. A game already unpacked into a folder can be imported by
+  its <code>default.xbe</code>.</p>
+</section>
+
+<section id="play"><h2>Playing a game</h2>
+  <p>When you click Play, the plugin reads the disc, <b>unpacks the game</b> and starts Cxbx-Reloaded on it. A zipped game is read straight out
+  of the zip: the disc image itself is never written to your drive. A window shows the progress.</p>
+  <ul>
+    <li>The <b>first</b> launch of a zipped game takes a while, about a minute for a full redump image. After that it starts at once.</li>
+    <li>If the game fits under a size you choose (4 GB by default), it is unpacked to a <b>RAM disk</b> for the session: nothing is written to
+    your drive, and it is gone when you quit.</li>
+    <li>Otherwise it is unpacked once into a folder on your drive (by default <code>Emulators\Nixx-Cxbx\lbip-games</code>) and reused at the
+    next launches. That folder can have a <b>size limit</b>: when it is full, the games you launched longest ago lose their copy (all of it,
+    never half) and get it back the next time you play them.</li>
+  </ul>
+  <p>Your own files, the zips and the ISOs, are never changed or deleted.</p>
+  <h3>ISO and XISO without a copy</h3>
+  <p>With the <b>Arsenal Image Mounter</b> installed, an ISO or XISO that is not zipped is not unpacked at all: for the session, the plugin
+  shows it to Windows as a read-only drive holding the game's files, and Cxbx-Reloaded plays from there. Nothing is copied, no RAM disk is
+  used, and the game starts in a few seconds. The drive goes away when you quit. This is on by default; it can be turned off for every game
+  or for one game.</p>
+  <div class="tip">The RAM disk needs a driver (ImDisk or the AIM Toolkit, both in the pack's installer) and the small helper the pack installs,
+  the same one LiteBox uses. Without them, games simply go to the drive.</div>
+  <h3>Full screen</h3>
+  <p>Once the game shows, the plugin presses Cxbx-Reloaded's own <kbd>Alt</kbd>+<kbd>Enter</kbd> for you: the game fills the screen in a
+  borderless window. Press <kbd>Alt</kbd>+<kbd>Enter</kbd> again to get a normal window back. Cxbx-Reloaded's other full screen, the
+  "exclusive" one in its Video settings, can freeze the screen on some PCs. If you turn it on anyway, the plugin leaves it alone.</p>
+</section>
+
+<section id="options"><h2>Options</h2>
+  <h3>For every game: the Cxbx-Reloaded tab</h3>
+  <p><b>Tools &gt; Nixx Integration Plugins Configuration...</b>, tab <b>Cxbx-Reloaded</b>: ISO and XISO mounted without a copy (Arsenal
+  Image Mounter), the folder games are unpacked into, its size limit,
+  the RAM disk and its threshold, and the full screen in a window. The tab also shows which Cxbx-Reloaded is installed and where it keeps its
+  data. The RAM disk itself is set in the <b>RamDisk &amp; VHDX</b> tab.</p>
+  <h3>For one game: its right-click menu</h3>
+  <p>Right-click a game &gt; <b>Nixx-Cxbx : Options...</b> shows what the game is (title, size, where its saves are), how it runs according to
+  Cxbx-Reloaded's <b>compatibility list</b> (your exact version, then the game's other versions, each with a link to its page), where the next
+  launch will unpack it and why, and lets you:</p>
+  <ul>
+    <li>turn the mounting without a copy on or off for this game (grey: as every game);</li>
+    <li>force <i>always a RAM disk</i> or <i>always the disk</i> for this game, when it is unpacked;</li>
+    <li>tick <i>Keep its copy on the disk</i> so the size limit never removes it;</li>
+    <li>delete its copy on the disk.</li>
+  </ul>
+  <p>Cxbx-Reloaded's own settings (graphics, controllers...) are set in Cxbx-Reloaded itself: open <code>cxbx.exe</code> in its folder.</p>
+</section>
+
+<section id="saves"><h2>Saves</h2>
+  <p>On an Xbox, each game keeps its saves in a folder of its own on the console's hard disk. The plugin shows that folder to LaunchBox as one
+  file per game: backups are made when you quit a game, and you can restore an older one from LaunchBox. Restoring <b>replaces</b> the game's
+  saves with the backup's.</p>
+  <p>Close Cxbx-Reloaded before restoring or deleting a save.</p>
+</section>
+
+<section id="support"><h2>What works</h2>
+  <table><tr><th>Feature</th><th></th><th>Notes</th></tr>
+  <tr><td>Install and update Cxbx-Reloaded</td><td class="yes">Yes</td><td>From Add Emulator, and LaunchBox's update button. Portable.</td></tr>
+  <tr><td>Redump disc images (.iso)</td><td class="yes">Yes</td><td>Mounted without a copy with the Arsenal Image Mounter, else unpacked.</td></tr>
+  <tr><td>Trimmed images (.xiso)</td><td class="yes">Yes</td><td>Mounted without a copy with the Arsenal Image Mounter, else unpacked.</td></tr>
+  <tr><td>Zipped images (.zip, .7z)</td><td class="yes">Yes</td><td>Read straight from the archive, to a RAM disk when possible.</td></tr>
+  <tr><td>Unpacked games (default.xbe)</td><td class="yes">Yes</td><td>Opened where they are, or from a zip.</td></tr>
+  <tr><td>Full screen in a window</td><td class="yes">Yes</td><td>Can be turned off.</td></tr>
+  <tr><td>Saves in LaunchBox</td><td class="yes">Yes</td><td>Backups and restore, one save per game.</td></tr>
+  <tr><td>Compatibility information</td><td class="yes">Yes</td><td>From cxbx-reloaded.co.uk, matched to your exact disc. Most reports date from 2020 and 2021, so a game may run better today.</td></tr>
+  <tr><td>Xbox 360 games</td><td class="no">No</td><td>Refused with a message: they are for Xenia.</td></tr>
+  <tr><td>RetroAchievements</td><td class="no">No</td><td>Cxbx-Reloaded does not support them.</td></tr>
+  </table>
+</section>
+
+<section id="limits"><h2>Limits and things to know</h2>
+  <ul>
+    <li>How well a game runs is up to Cxbx-Reloaded, not the plugin, and many games are still far from perfect.</li>
+    <li>Some games <b>restart themselves</b> (a second disc, some menus). Cxbx-Reloaded then starts again in a new window, and LaunchBox may
+    think the game is over. The plugin waits until Cxbx-Reloaded is really gone before it cleans up and backs up the save.</li>
+    <li>One game at a time.</li>
+    <li>What a game stores on the console besides its saves (its cache, some settings) is not part of the backups.</li>
+    <li>On the RAM disk, the unpacked game disappears when the session ends. That is the point: your saves are elsewhere and are kept.</li>
+  </ul>
+</section>
+
+<section id="trouble"><h2>If something goes wrong</h2>
+  <ul>
+    <li><b>Nothing starts</b>: check the Visual C++ x86 runtime (the Cxbx-Reloaded tab says if it is missing).</li>
+    <li><b>"cannot be launched"</b>: the message says why (not an Xbox disc, an Xbox 360 game, a damaged image).</li>
+    <li><b>The screen freezes on start</b>: turn off "Full screen" in Cxbx-Reloaded's Video settings and let the plugin's full screen in a
+    window do the job.</li>
+    <li>The plugin's log: <code>%LOCALAPPDATA%\lb-integrations-plugins\cxbx.log</code> (General tab: "Open the logs folder").</li>
+  </ul>
+</section>
+
+<footer>Nixx integration plugins for LaunchBox</footer>
+</main>
+</body>
+</html>

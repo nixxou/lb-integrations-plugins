@@ -12,6 +12,7 @@ is published by Unbroken Software), so these are installed by hand.
 |---|---|---|---|
 | `src/Ppsspp` | PPSSPP | Sony PSP | download / update, BIOS, RetroAchievements, launch, save management |
 | `src/Xenia` | Xenia (canary) | Microsoft Xbox 360 | download / update, launch fixes, save management |
+| `src/Cxbx` | Cxbx-Reloaded | Microsoft Xbox | download / update (CI builds), **disc images unpacked by the plugin**, full screen in a window, save management |
 | `src/Flycast` | Flycast | Sega Dreamcast, Sega Naomi, Sega Naomi 2, Sammy Atomiswave | download / update, BIOS, RetroAchievements, launch, save management |
 | `src/MelonDs` | melonDS | Nintendo DS | download / update, BIOS, DS/DSi mode, per-title DSi NAND, save management (GPL-3.0) |
 | `src/NoGba` | no$gba | Nintendo Game Boy Advance, Nintendo DS | download / update, BIOS, **raw save format**, save management |
@@ -137,7 +138,7 @@ NixxIntegrations.exe --uninstall "G:\LB1326"
 
 ### The RAM disk, shared with LiteBox
 
-Optional. melonDS (DSiWare NAND), Vita3K and Xenia play a session on it when it is there and fits, and on
+Optional. melonDS (DSiWare NAND), Vita3K, Xenia and Cxbx-Reloaded play a session on it when it is there and fits, and on
 the disk otherwise. **Two drivers, Arsenal Image Mounter first**: the helper 1.6 mounts through AIM when
 it is installed and through ImDisk otherwise (`backend=` in the cfg; the NixxMenu's RAM disk tab can force
 one). The installer installs either: ImDisk 2.1.2 as its own driver package does (the driver alone), or
@@ -262,6 +263,7 @@ file is there. Before LaunchBox 14, `Plugins\` is the only option. `<Name>` is t
 
 | project | plugin folder, and manifest `Name` | catalogue row | emulator installed into |
 |---|---|---|---|
+| `src/Cxbx` | `Nixx-Cxbx` | `Nixx-Cxbx` | `Emulators\Nixx-Cxbx` |
 | `src/Flycast` | `Nixx-Flycast` | `Nixx-Flycast` | `Emulators\Nixx-Flycast` |
 | `src/MelonDs` | `Nixx-melonDS` | `Nixx-melonDS` | `Emulators\Nixx-melonDS` |
 | `src/NoGba` | `Nixx-nogba` | `Nixx-nogba` | `Emulators\Nixx-nogba` |
@@ -520,6 +522,56 @@ key he already uses is never taken, and the emulator's AutoHotkey fields quote w
 really says — a script naming a key the emulator ignores would fail silently, which is worse than no
 script. Those fields are used by LaunchBox's and BigBox's pause screen; LiteBox stores them but has
 no pause screen yet.
+
+## Notes on Cxbx-Reloaded
+
+**Only the loader is launched.** `cxbx.exe` is the GUI; given `/load`, it answers "Emulation must be
+launched from cxbxr-ldr.exe!", which is what LaunchBox's own Cxbx-Reloaded row does today. The plugin
+claims and creates `cxbxr-ldr.exe` only.
+
+**The loader opens an XBE and nothing else**, so the plugin unpacks the disc (`CxbxPlace`, `Xdvdfs`). The GUI
+can mount a loose ISO since April 2026 (commit 535c8c9) through the Dokany driver - the same XDVDFS reading,
+exposed as a drive - and is not used: one more driver, the GUI around the game, nothing gained for a zip. A loose
+image is read by seeking; an image inside a zip or a 7z is read as a stream, front to back, and never
+written whole. Two steps: LIST (the probes and the tables in ascending offset, nothing written; every
+skipped sector that looks like a table is kept in memory, 64 MB at most, so a table lying behind the read
+position rarely costs another pass), then EXTRACT every file in one pass, the volume descriptor checked
+first. The listing gives the exact size before the RAM disk is sized, and is kept (`CxbxListing`, by path,
+size and date): the next launches extract at once. Measured on a real redump (GTA San Andreas, 7.8 GB
+image in a 6.3 GB zip, 2.9 GB in 371 files): list 12.8 s in 1 pass (9 tables from memory) + extract
+13.6 s, against 3 passes and 39.5 s for one walk doing both; 13.6 s from the second launch. Then the RAM
+disk under a threshold (4 GB by default), else `lbip-games\<game>`, reused while the source keeps its
+size and date, with Xenia's size limit and "keep".
+
+**The line is `/load "<xbe>" /df`.** Cxbx-Reloaded's parser (`cliConverter.cpp`) throws the whole line
+away at a bare word after the first, so the game's path - should the host append it - must land as a
+key's value: `/df` (the debug file) is read only with `/dm`, and absent it is ignored. Measured: the real
+loader started on that line with a path after it.
+
+**Portable, no question asked.** An empty `settings.ini` beside the executables is exactly what "Yes"
+to "Use Cxbx-Reloaded in Portable Mode?" writes; Cxbx-Reloaded fills in its defaults. Measured: EmuDisk
+created beside the exe, no dialog.
+
+**Versions are CI tags.** Only prereleases are published (`CI-<sha7>`, one asset
+`CxbxReloaded-Release.zip`), `/releases/latest` answers 404, so the newest is picked by `published_at`.
+No version is readable from the binaries: the tag is written to `lbip-version.txt` at install.
+
+**Full screen in a window** is Cxbx-Reloaded's own Alt+Enter (`ToggleFauxFullscreen`), posted to the
+`CxbxRender` window once it shows - there is no setting for it. Not sent when `[video] FullScreen` is on.
+
+**A session ends when no loader has been seen for 6 s**, not when the first one exits: a game that
+reboots makes Cxbx-Reloaded start a new `cxbxr-ldr` and the old one quit.
+
+**Compatibility** comes from cxbx-reloaded.co.uk/compatibility (`CxbxCompat`): 2,163 entries for 1,182 games,
+one per disc version, matched by serial and version computed from the certificate (`TT-164 v1.0`).
+Reports are mostly 2020-2021. No file, no API, a Livewire list paginated by 25 on the server: the whole
+list is 42 GETs (a copy embedded at build, `src/Cxbx/compat.json`, refreshed at install and update), and
+one game is the component's search, which matches the serial (one GET for the session, one POST), when
+its options window opens and at its launch, in the background, at most every 6 hours.
+
+**Saves** are `E:\UDATA\<title id>` (`<data>\EmuDisk\Partition1\UDATA`), the title id read from the XBE
+certificate, shown to the host as one deterministic zip per game, `<data>\lbip-saves\<id>.cxbxsave` -
+the file arm, not the container one. A restore replaces the folder. `TDATA` is left out until measured.
 
 ## Notes on Xenia
 

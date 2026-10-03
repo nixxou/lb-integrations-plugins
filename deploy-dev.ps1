@@ -46,6 +46,7 @@ $repo = Split-Path -Parent $MyInvocation.MyCommand.Path
 #
 # Keep this in step with src\Installer\Payload.cs. They are the two places a folder name is decided.
 $Pack = @{
+    'Cxbx'    = @{ Folder = 'Nixx-Cxbx';    Old = @() }
     'Flycast' = @{ Folder = 'Nixx-Flycast'; Old = @('Flycast Integration') }
     'MelonDs' = @{ Folder = 'Nixx-melonDS'; Old = @('MelonDs Integration', 'melonDS Integration') }
     'NoGba'   = @{ Folder = 'Nixx-nogba';   Old = @('NoGba Integration', 'no$gba Integration', 'Nixx-no$gba') }
@@ -56,7 +57,7 @@ $Pack = @{
 }
 
 if ($All) {
-    foreach ($name in @('Flycast', 'MelonDs', 'NoGba', 'Ppsspp', 'SuperZsnes', 'Vita3k', 'Xenia')) {
+    foreach ($name in @('Cxbx', 'Flycast', 'MelonDs', 'NoGba', 'Ppsspp', 'SuperZsnes', 'Vita3k', 'Xenia')) {
         Write-Host ""
         Write-Host ("=== " + $name) -ForegroundColor Magenta
         & $MyInvocation.MyCommand.Path -Plugin $name -LbRoot $LbRoot -Configuration $Configuration -SuperZsnesDir $SuperZsnesDir

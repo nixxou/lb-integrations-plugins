@@ -31,11 +31,17 @@
          disk is ABSENT OR OLDER and never when it is newer, and a caller checks this version
          before sending a key the older one would silently ignore. Bump it with the protocol,
          never with an ordinary fix. -->
-    <Version>1.6.0</Version>
+    <Version>1.7.0</Version>
 
     <Platforms>AnyCPU;x64</Platforms>
     <UseWindowsForms>false</UseWindowsForms>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
   </PropertyGroup>
+
+  <!-- 1.7: an Xbox disc's FAT32 view (view=xbox) - the Cxbx plugin's reader and view, the same files. -->
+  <ItemGroup>
+    <Compile Include="..\..\src\Cxbx\Xdvdfs.cs" Link="Xbox\Xdvdfs.cs" />
+    <Compile Include="..\..\src\Cxbx\XisoFatView.cs" Link="Xbox\XisoFatView.cs" />
+  </ItemGroup>
 
 </Project>

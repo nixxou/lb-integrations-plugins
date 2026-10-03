@@ -92,6 +92,13 @@
       <LogicalName>payload/Nixx-Vita3K/manifest.json</LogicalName>
     </EmbeddedResource>
 
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-Cxbx\Cxbx.dll">
+      <LogicalName>payload/Nixx-Cxbx/Cxbx.dll</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-Cxbx\manifest.json">
+      <LogicalName>payload/Nixx-Cxbx/manifest.json</LogicalName>
+    </EmbeddedResource>
+
     <EmbeddedResource Include="$(PayloadDir)\Nixx-Xenia\Xenia.dll">
       <LogicalName>payload/Nixx-Xenia/Xenia.dll</LogicalName>
     </EmbeddedResource>

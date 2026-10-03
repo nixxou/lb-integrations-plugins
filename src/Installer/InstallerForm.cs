@@ -155,7 +155,7 @@ internal sealed class InstallerForm : Form
         drivers.Controls.Add(_legacy, 0, 0);
         drivers.Controls.Add(_modern, 1, 0);
         right.Controls.Add(Card("RAM disk", _ramTag, RightW, drivers, _ramRows, Buttons(_ram),
-            Note(RightW, "Optional. melonDS, Vita3K and Xenia play a session in memory instead of on your disk when it fits. "
+            Note(RightW, "Optional. melonDS, Vita3K, Xenia and Cxbx-Reloaded play a session in memory instead of on your disk when it fits. "
                + "Shared with LiteBox (same helper, same scheduled task); setting it up asks for administrator rights once.")));
 
         // VHDX
@@ -545,6 +545,7 @@ internal sealed class InstallerForm : Form
 
     private static string What(string folder) => folder switch
     {
+        Payload.Cxbx => "Xbox",
         Payload.Flycast => "Dreamcast, Naomi",
         Payload.MelonDs => "DS, DSi",
         Payload.NoGba => "DS, DSi",

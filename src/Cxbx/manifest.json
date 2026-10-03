@@ -1,0 +1,19 @@
+{
+  "SchemaVersion": 1,
+  "PluginId": "9b0138fb-62bf-4f60-9e2b-578b9fe89720",
+  "UserId": 0,
+  "Name": "Nixx-Cxbx",
+  "Developer": "nixxou",
+  "Description": "Download, update, game unpacking and save management for the Cxbx-Reloaded emulator (Microsoft Xbox).",
+  "Credits": "Many thanks to the developers of Cxbx-Reloaded!",
+  "OperatingSystemFamily": "Windows",
+  "InstalledVersion": "1.0",
+  "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
+  "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
+  "HomePageUrl": "https://cxbx-reloaded.co.uk/",
+  "TipJarUrl": "",
+  "SourceKind": "Local",
+  "Tags": [
+    "5aae585f-ffc5-42bc-9f95-e5e190ef99e2"
+  ]
+}

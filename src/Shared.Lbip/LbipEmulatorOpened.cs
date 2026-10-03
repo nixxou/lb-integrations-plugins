@@ -56,6 +56,15 @@ namespace LbIntegrations.Lbip
                 if (string.IsNullOrWhiteSpace(exe) || !exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) return;
                 if (!FromTheMenu()) return;
                 exe = Full(exe, si.WorkingDirectory);
+                // Another executable to open in its place, when a plugin says so (LbEmulatorRedirect, 03/10).
+                var to = Redirect(exe);
+                if (to != null && File.Exists(to))
+                {
+                    LbipLog.Info("opened in place of " + exe + ": " + to);
+                    si.FileName = to;
+                    si.WorkingDirectory = Path.GetDirectoryName(to);
+                    exe = to;
+                }
                 __state = exe;
                 LbipLog.Info("an emulator is opened without a game: " + exe);
                 LbEmulatorOpened.Opening(exe);
@@ -74,6 +83,17 @@ namespace LbIntegrations.Lbip
                 LbEmulatorOpened.Exited(exe);
             });
         }
+
+        /// <summary>NOT INLINED, under a try: LbEmulatorRedirect is newer than a Catalog a host may carry - its
+        /// absence costs the redirection, never the opening.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static string Redirect(string exe)
+        {
+            try { return RedirectCore(exe); } catch { return null; }
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static string RedirectCore(string exe) => LbEmulatorRedirect.Redirect(exe);
 
         private static bool FromTheMenu()
         {

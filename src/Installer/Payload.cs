@@ -18,6 +18,7 @@ internal sealed record PayloadFile(string Resource, string Folder, string Relati
 
 internal static class Payload
 {
+    public const string Cxbx    = "Nixx-Cxbx";
     public const string Flycast = "Nixx-Flycast";
     public const string MelonDs = "Nixx-melonDS";
     public const string NoGba   = "Nixx-nogba";
@@ -27,7 +28,7 @@ internal static class Payload
     public const string SuperZsnes = "Nixx-SuperZSNES";
 
     public static readonly string[] Folders =
-        { Flycast, MelonDs, NoGba, Ppsspp, SuperZsnes, Vita3k, Xenia };
+        { Cxbx, Flycast, MelonDs, NoGba, Ppsspp, SuperZsnes, Vita3k, Xenia };
 
     /// <summary>Every folder name this pack has been installed under before the rename. They are
     /// swept on install, because PluginLoader dedupes by FILE NAME across plugin roots: a stale
@@ -55,7 +56,7 @@ internal static class Payload
     /// deleting it on the strength of its name alone is how an installer destroys something it was
     /// never told about.</summary>
     public static readonly string[] Assemblies =
-        { "Flycast.dll", "MelonDs.dll", "NoGba.dll", "Ppsspp.dll", "SuperZsnes.dll", "Vita3k.dll", "Xenia.dll", "NixxMenus.dll" };
+        { "Cxbx.dll", "Flycast.dll", "MelonDs.dll", "NoGba.dll", "Ppsspp.dll", "SuperZsnes.dll", "Vita3k.dll", "Xenia.dll", "NixxMenus.dll" };
 
     /// <summary>The menu relay: the pack's right-click entries on games, shown for the plugins.
     ///
@@ -102,6 +103,10 @@ internal static class Payload
     // The plugin reaches it by path, through a DllImport resolver.
     public static readonly PayloadFile[] Files =
     {
+        new("payload/Nixx-Cxbx/Cxbx.dll",           Cxbx,    "Cxbx.dll"),
+        new("payload/Nixx-Cxbx/manifest.json",      Cxbx,    "manifest.json"),
+        new(Contract,                               Cxbx,    "LbIntegrations.Catalog.dll"),
+
         new("payload/Nixx-Flycast/Flycast.dll",     Flycast, "Flycast.dll"),
         new("payload/Nixx-Flycast/manifest.json",   Flycast, "manifest.json"),
         new(Contract,                               Flycast, "LbIntegrations.Catalog.dll"),

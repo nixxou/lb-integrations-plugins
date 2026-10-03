@@ -91,6 +91,22 @@ namespace LbIntegrations.Probe
             // One launch at a time (LbipLaunchGate): off for the probe, whose launches start no emulator - but for --launch-gate.
             try { asm.GetType("LbIntegrations.Lbip.LbipLaunchGate")?.GetField("Off", BindingFlags.NonPublic | BindingFlags.Static)?.SetValue(null, true); } catch { }
             if (Has(args, "--launch-gate")) return LaunchGateCheck.Run(asm) ? 0 : 1;
+            // Cxbx-Reloaded: --cxbx-selftest (discs made here), --cxbx-describe <file>, --cxbx-releases (online).
+            if (Has(args, "--cxbx-selftest")) return CxbxCheck.Run(asm) ? 0 : 1;
+            if (Has(args, "--cxbx-describe")) return CxbxCheck.Describe(asm, Path.GetFullPath(Arg(args, "--cxbx-describe"))) ? 0 : 1;
+            if (Has(args, "--cxbx-releases")) return CxbxCheck.Releases(asm) ? 0 : 1;
+            if (Has(args, "--cxbx-prepare")) return CxbxCheck.Prepare(asm, Path.GetFullPath(emuPath), Path.GetFullPath(Arg(args, "--rom")), Arg(args, "--folder"), Has(args, "--ram")) ? 0 : 1;
+            if (Has(args, "--cxbx-compat-snapshot")) return CxbxCheck.CompatSnapshot(asm, Path.GetFullPath(Arg(args, "--cxbx-compat-snapshot"))) ? 0 : 1;
+            if (Has(args, "--cxbx-gui-session")) return CxbxCheck.GuiSession(asm, Path.GetFullPath(emuPath), Path.GetFullPath(Arg(args, "--rom"))) ? 0 : 1;
+            if (Has(args, "--cxbx-open-redirect")) return CxbxCheck.OpenRedirect(asm) ? 0 : 1;
+            if (Has(args, "--cxbx-identify")) return CxbxCheck.Identify(asm, Path.GetFullPath(Arg(args, "--cxbx-identify"))) ? 0 : 1;
+            if (Has(args, "--cxbx-cdview-write")) return CxbxCheck.CdViewWrite(asm, Path.GetFullPath(Arg(args, "--cxbx-cdview-write")), Arg(args, "--rom")) ? 0 : 1;
+            if (Has(args, "--cxbx-cdview-serve")) return CxbxCheck.CdViewServe(asm, Path.GetFullPath(Arg(args, "--rom")), int.Parse(Arg(args, "--port"))) ? 0 : 1;
+            if (Has(args, "--cxbx-cdview-verify")) return CxbxCheck.CdViewVerify(asm, Path.GetFullPath(Arg(args, "--rom")), Arg(args, "--drive")) ? 0 : 1;
+            if (Has(args, "--cxbx-cdview-dump")) return CxbxCheck.CdViewDump(asm, Path.GetFullPath(Arg(args, "--rom"))) ? 0 : 1;
+            if (Has(args, "--cxbx-apply")) return CxbxCheck.ApplyOptions(asm, Path.GetFullPath(emuPath), Path.GetFullPath(Arg(args, "--rom"))) ? 0 : 1;
+            if (Has(args, "--cxbx-restore")) return CxbxCheck.RestoreOptions(asm, Path.GetFullPath(emuPath)) ? 0 : 1;
+            if (Has(args, "--cxbx-shot")) return CxbxCheck.Shot(asm, Path.GetFullPath(Arg(args, "--cxbx-shot")), emuPath) ? 0 : 1;
             // Xenia's compatibility list: --xenia-compat [--online].
             if (Has(args, "--xenia-compat")) return XeniaCompatCheck.Run(asm, Has(args, "--online")) ? 0 : 1;
             // What a first install of Xenia sets up, and the options at launch: --xenia-setup [--xconfig f] [--account f] [--toml f].

@@ -162,6 +162,53 @@ namespace LbIntegrations.Catalog
         }
     }
 
+    // ── AN EMULATOR OPENED WITHOUT A GAME: ANOTHER EXECUTABLE ───────────────────────────────────
+    //
+    // Added 03/10, never to be changed (see the header). Beside the listeners above, and fed by the same
+    // Process.Start patch: a plugin may say that the executable the host opens on its own is not the one
+    // to open. What for, first: Cxbx-Reloaded, whose entry may name its loader (cxbxr-ldr.exe, which does
+    // nothing without a game) - opening it from LaunchBox's menu should open its window (cxbx.exe).
+    // The first answer that is not null wins; a host or patch that does not know this section opens
+    // what it was going to open.
+
+    /// <summary>A plugin that may want another executable opened in place of its emulator's.</summary>
+    public interface ILbEmulatorRedirect
+    {
+        /// <summary>The full path to open instead of <paramref name="exePath"/>, or null to leave it. On the
+        /// host's thread: quick, and never throwing.</summary>
+        string RedirectOpen(string exePath);
+    }
+
+    /// <summary>The redirections, asked by the same patch as LbEmulatorOpened.</summary>
+    public static class LbEmulatorRedirect
+    {
+        private static readonly object Gate = new object();
+        private static readonly List<ILbEmulatorRedirect> Redirects = new List<ILbEmulatorRedirect>();
+
+        /// <summary>Register one - once per type.</summary>
+        public static void Register(ILbEmulatorRedirect redirect)
+        {
+            if (redirect == null) return;
+            lock (Gate)
+            {
+                if (Redirects.Exists(r => r.GetType().FullName == redirect.GetType().FullName)) return;
+                Redirects.Add(redirect);
+            }
+        }
+
+        /// <summary>What to open in place of <paramref name="exePath"/>, or null for itself.</summary>
+        public static string Redirect(string exePath)
+        {
+            List<ILbEmulatorRedirect> all;
+            lock (Gate) all = new List<ILbEmulatorRedirect>(Redirects);
+            foreach (var r in all)
+            {
+                try { var to = r.RedirectOpen(exePath); if (!string.IsNullOrWhiteSpace(to)) return to; } catch { }
+            }
+            return null;
+        }
+    }
+
     // ── AFTER AN IMPORT: THE GAMES ARE IN ───────────────────────────────────────────────────────
     //
     // Added 30/09, never to be changed (see the header). Once a host has put the games of an import
