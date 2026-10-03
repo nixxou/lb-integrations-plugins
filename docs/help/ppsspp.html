@@ -67,6 +67,16 @@
   <p>When a newer PPSSPP release is out, LaunchBox shows an update for the emulator. The update unpacks over the existing folder: your memory stick (saves, states, settings) is kept. If the installed version cannot be read, no update is offered rather than one forever.</p>
   <h3>Import your games</h3>
   <p>Import your PSP games into the <strong>Sony PSP</strong> platform as usual. Accepted files: <code>.iso</code>, <code>.cso</code>, <code>.zso</code>, <code>.chd</code>, <code>.pbp</code>, <code>.elf</code>, <code>.prx</code>, <code>.zip</code>, <code>.ppdmp</code>. Files are not extracted by LaunchBox: PPSSPP opens them directly.</p>
+  <p>While the list of the import wizard is on show, the plugin reads each game's own description (its PARAM.SFO) and puts the list right:</p>
+  <ul>
+    <li><strong>A game update</strong> is taken out of the list: it is not a game. It is noted for its game and offered in that game's options window, tab <strong>Updates</strong>. Nothing is installed unless you ask.</li>
+    <li><strong>A firmware update</strong> ("PSP Update ver ...") is taken out: PPSSPP needs no firmware.</li>
+    <li><strong>The name:</strong> the file's name is kept when LaunchBox's database knows it, else the game's own title when the database knows that (written as the database writes it), else the file's name, unless it is only a serial like ULUS10041.</li>
+    <li><strong>The region</strong> comes from the game's serial: ULUS / NPUH North America, ULES / NPEH Europe, ULJM / NPJH Japan, and Asia and Korea.</li>
+    <li>A <code>.zip</code>, <code>.elf</code> or <code>.prx</code> cannot be read: it stays in the list as it is.</li>
+  </ul>
+  <p>Each of these can be turned off in the <strong>PPSSPP</strong> tab of Tools &gt; Nixx Integration Plugins Configuration.</p>
+  <p><strong>Game updates</strong>: in a game's options window, tab Updates, pick an update and click <em>Install the selected</em>. It goes into PPSSPP's memory stick (<code>PSP\GAME\&lt;its id&gt;\PBOOT.PBP</code>), where PPSSPP starts it instead of the disc, when it is made for your disc's version (one for another version is shown in amber). <em>Remove the installed one</em> takes it out again; one you put there yourself is never touched.</p>
   <div class="tip">For the best results use <code>.iso</code>, <code>.cso</code>, <code>.zso</code>, <code>.chd</code> or <code>.pbp</code>. The plugin can read the game's ID from these, which is what links a game to its saves, its save states and its own options.</div>
 </section>
 

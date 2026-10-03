@@ -61,12 +61,32 @@ namespace LbIntegrations.Ppsspp
             return found;
         }
 
-        private static string Extract(string romPath)
+        private static readonly ConcurrentDictionary<string, ParamSfo> SfoCache = new ConcurrentDictionary<string, ParamSfo>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The whole PARAM.SFO of a PSP file - TITLE, CATEGORY, DISC_ID, DISC_VERSION, APP_VER - or null when the
+        /// container is not one this reads (.zip, .elf, .prx...) or holds none. Cached as Of is. For the import (PpssppLbImport)
+        /// and the game updates (PpssppUpdates). Never throws.</summary>
+        public static ParamSfo SfoOf(string romPath)
+        {
+            try
+            {
+                var fi = new FileInfo(romPath);
+                if (!fi.Exists) return null;
+                var key = fi.FullName + "|" + fi.Length + "|" + fi.LastWriteTimeUtc.Ticks;
+                if (SfoCache.TryGetValue(key, out var cached)) return cached;
+                var bytes = SfoBytes(romPath);
+                var sfo = bytes == null ? null : ParamSfo.Parse(bytes);
+                SfoCache[key] = sfo;
+                return sfo;
+            }
+            catch (Exception ex) { Log.Warn("could not read the PARAM.SFO of " + romPath, ex); return null; }
+        }
+
+        private static byte[] SfoBytes(string romPath)
         {
             string ext;
             try { ext = (Path.GetExtension(romPath) ?? "").ToLowerInvariant(); } catch { return null; }
-
-            byte[] sfo = ext switch
+            return ext switch
             {
                 ".pbp" => SfoFromPbp(romPath),
                 ".iso" => SfoFromIso(romPath),
@@ -74,6 +94,11 @@ namespace LbIntegrations.Ppsspp
                 ".chd" => SfoFromChd(romPath),
                 _ => null,
             };
+        }
+
+        private static string Extract(string romPath)
+        {
+            var sfo = SfoBytes(romPath);
             if (sfo == null) return null;
 
             var id = ParamSfo.Parse(sfo)?.GetString("DISC_ID");

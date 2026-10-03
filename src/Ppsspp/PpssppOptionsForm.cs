@@ -112,6 +112,8 @@ namespace LbIntegrations.Ppsspp
                 tabs.TabPages.Add(SettingsTab(name));
             var advanced = AdvancedTab();
             tabs.TabPages.Add(advanced);
+            // The game's updates (PpssppUpdates) - one game with its disc id: they are installed for that id.
+            if (games.Count == 1 && !string.IsNullOrEmpty(games[0].DiscId) && games[0].Layout != null) tabs.TabPages.Add(UpdatesTab(games[0]));
             tabs.SelectedIndexChanged += (_, _) => { if (tabs.SelectedTab == advanced && !_handOn.Checked) ShowGenerated(); };
 
             var ok = new Button { Text = "OK", Width = 90 };
@@ -129,6 +131,63 @@ namespace LbIntegrations.Ppsspp
 
             if (_source != null) _source.SelectedIndex = 0;
             else LoadFrom(_groups[0][0]);
+        }
+
+        // ── the game's updates ───────────────────────────────────────────────
+
+        /// <summary>The updates found for the game, and the one installed - installed or removed at once, by its buttons:
+        /// nothing is installed unasked (Mehdi, 03/10). See PpssppUpdates.</summary>
+        private TabPage UpdatesTab(Entry g)
+        {
+            var page = new TabPage("Updates") { UseVisualStyleBackColor = true };
+            string rom = null;
+            try { rom = LbIntegrations.Lbip.LbipImportWatch.Full(g.Game?.ApplicationPath); } catch { }
+            var discVersion = rom == null ? null : PspDiscId.SfoOf(rom)?.GetString("DISC_VERSION")?.Trim();
+            page.Controls.Add(new Label
+            {
+                AutoSize = false, Location = new Point(12, 8), Size = new Size(560, 48), ForeColor = SystemColors.GrayText,
+                Text = "A game update is a PBOOT.PBP that PPSSPP starts in place of the disc's executable, when it is made for this disc's "
+                     + "version (" + (discVersion ?? "?") + "). Installed into the memory stick (PSP\\GAME\\" + g.DiscId + ") once, and kept there: "
+                     + "never installed unasked.",
+            });
+            var installed = new Label { AutoSize = false, Location = new Point(12, 60), Size = new Size(560, 34) };
+            var list = new ListView { Location = new Point(12, 98), Size = new Size(560, 200), View = View.Details, FullRowSelect = true, MultiSelect = false, HideSelection = false };
+            list.Columns.Add("Update", 250);
+            list.Columns.Add("For disc version", 110);
+            list.Columns.Add("File", 190);
+            var install = new Button { Text = "Install the selected", AutoSize = true, Location = new Point(12, 306) };
+            var remove = new Button { Text = "Remove the installed one", AutoSize = true, Location = new Point(170, 306) };
+            void Show()
+            {
+                list.Items.Clear();
+                foreach (var u in PpssppUpdates.For(g.DiscId, rom))
+                {
+                    var item = new ListViewItem(new[] { (u.Title ?? "update") + " - version " + (u.AppVer ?? "?"), u.DiscVersion ?? "?", System.IO.Path.GetFileName(u.Path) }) { Tag = u };
+                    if (discVersion != null && u.DiscVersion != null && u.DiscVersion != discVersion) { item.ForeColor = Color.DarkGoldenrod; item.ToolTipText = "made for another version of the disc: PPSSPP would not start it"; }
+                    list.Items.Add(item);
+                }
+                if (list.Items.Count == 0) list.Items.Add(new ListViewItem(new[] { "No update found for " + g.DiscId, "", "" }) { ForeColor = SystemColors.GrayText });
+                var now = PpssppUpdates.Installed(g.Layout, g.DiscId);
+                installed.Text = now == null ? "Installed: none - the game runs as on its disc."
+                    : "Installed: " + now.Value.Update + (now.Value.Ours ? "" : " - put there by hand: this window leaves it alone.");
+                remove.Enabled = now != null && now.Value.Ours;
+            }
+            install.Click += (_, _) =>
+            {
+                if (list.SelectedItems.Count == 0 || !(list.SelectedItems[0].Tag is PspUpdate u)) return;
+                var why = PpssppUpdates.Install(g.Layout, u);
+                if (why != null) MessageBox.Show(this, why, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                Show();
+            };
+            remove.Click += (_, _) =>
+            {
+                var why = PpssppUpdates.Remove(g.Layout, g.DiscId);
+                if (why != null) MessageBox.Show(this, why, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                Show();
+            };
+            page.Controls.AddRange(new Control[] { installed, list, install, remove });
+            Show();
+            return page;
         }
 
         // ── a tab of settings ────────────────────────────────────────────────

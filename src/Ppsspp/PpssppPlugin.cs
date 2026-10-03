@@ -78,6 +78,10 @@ namespace LbIntegrations.Ppsspp
             // LbipImportWatch. Under a try, as above: LbImportFinished is newer still.
             try { ListenForImports(); }
             catch (Exception ex) { Log.Info("an import's end is not seen here (" + ex.GetType().Name + ": " + ex.Message + ")"); }
+
+            // The import wizard's list for the PSP put right - see PpssppLbImport.
+            try { PpssppLbImport.Install(); }
+            catch (Exception ex) { Log.Info("the import wizard is not watched (" + ex.GetType().Name + ": " + ex.Message + ")"); }
         }
 
         /// <summary>NOT INLINED, and called under a try, for the reason ListenForOpening is: a Catalog
