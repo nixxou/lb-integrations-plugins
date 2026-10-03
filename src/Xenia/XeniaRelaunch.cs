@@ -11,6 +11,11 @@
 //   launch_data.bin: u16 length + host path, u16 length + launch path, u32 flags, u16 length + launch data (all
 //   little-endian, as SaveLoaderData fwrites them). Launch data a launcher hands its game is lost - Xenia keeps it only
 //   in that file; none was seen on Minecraft's.
+//
+// relaunch.tsv: the launcher's path, the package, the module - then its size and date. A launcher MOVED (Mehdi, 04/10:
+// Minecraft.zar from Downloads to G:\360\Iso - its title id fell back to the launcher's, 4D530A81, and its patches were
+// not found) is found again by its name, size and date - or, for a line written before those were kept, by its name
+// when the old path is gone. The line then follows it to its new path.
 
 using System;
 using System.Collections.Generic;
@@ -57,7 +62,7 @@ namespace LbIntegrations.Xenia
             {
 
                 var map = Load();
-                if (!map.TryGetValue(rom, out var r)) return null;
+                if (!Find(map, rom, out var r)) return null;
                 if (!File.Exists(r.Host) && !Directory.Exists(r.Host))
                 {
                     Log.Info("relaunch: " + rom + " was redirected to " + r.Host + ", which is gone - the launcher runs again");
@@ -79,7 +84,7 @@ namespace LbIntegrations.Xenia
             {
                 if (string.IsNullOrEmpty(rom)) return null;
                 var map = Load();
-                return map.TryGetValue(rom, out var r) && (File.Exists(r.Host) || Directory.Exists(r.Host)) ? r.Host : null;
+                return Find(map, rom, out var r) && (File.Exists(r.Host) || Directory.Exists(r.Host)) ? r.Host : null;
             }
             catch { return null; }
         }
@@ -139,26 +144,72 @@ namespace LbIntegrations.Xenia
             }
         }
 
+        /// <summary>The launcher's line: at its path, else the same launcher moved - see the header - the line then moved
+        /// to the new path (saved).</summary>
+        private static bool Find(Dictionary<string, (string Host, string Module)> map, string rom, out (string Host, string Module) r)
+        {
+            if (map.TryGetValue(rom, out r)) return true;
+            try
+            {
+                var fi = new FileInfo(rom);
+                if (!fi.Exists) return false;
+                var stamp = Stamp(rom);
+                Dictionary<string, string> stamps;
+                lock (Gate) stamps = _stamps ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                var old = map.Keys.FirstOrDefault(k => !string.Equals(k, rom, StringComparison.OrdinalIgnoreCase)
+                              && string.Equals(Path.GetFileName(k), fi.Name, StringComparison.OrdinalIgnoreCase)
+                              && (stamps.TryGetValue(k, out var s) && s.Length > 0 ? s == stamp : !File.Exists(k)));
+                if (old == null) return false;
+                r = map[old];
+                map.Remove(old);
+                map[rom] = r;
+                Save(map);
+                Log.Info("relaunch: " + fi.Name + " moved (" + old + " -> " + rom + ") - its redirection follows it");
+                return true;
+            }
+            catch (Exception ex) { Log.Info("relaunch: " + ex.Message); return false; }
+        }
+
+        private static string Stamp(string path)
+        {
+            try { var i = new FileInfo(path); return i.Exists ? i.Length + "|" + i.LastWriteTimeUtc.Ticks : ""; } catch { return ""; }
+        }
+
+        // Each line's size|date as read - written back as it was for a launcher no longer there.
+        private static Dictionary<string, string> _stamps;
+
         private static Dictionary<string, (string Host, string Module)> Load()
         {
             var map = new Dictionary<string, (string, string)>(StringComparer.OrdinalIgnoreCase);
+            var stamps = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             try
             {
                 if (File.Exists(MapPath))
                     foreach (var line in File.ReadAllLines(MapPath, Encoding.UTF8))
                     {
                         var c = line.Split('\t');
-                        if (c.Length >= 2 && c[0].Length > 0) map[c[0]] = (c[1], c.Length > 2 && c[2].Length > 0 ? c[2] : null);
+                        if (c.Length < 2 || c[0].Length == 0) continue;
+                        map[c[0]] = (c[1], c.Length > 2 && c[2].Length > 0 ? c[2] : null);
+                        if (c.Length > 4 && c[3].Length > 0) stamps[c[0]] = c[3] + "|" + c[4];
                     }
             }
             catch (Exception ex) { Log.Warn("relaunch: " + MapPath, ex); }
+            lock (Gate) _stamps = stamps;
             return map;
         }
 
         private static void Save(Dictionary<string, (string Host, string Module)> map)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(MapPath));
-            File.WriteAllLines(MapPath, map.OrderBy(kv => kv.Key).Select(kv => kv.Key + "\t" + kv.Value.Host + "\t" + (kv.Value.Module ?? "")), new UTF8Encoding(false));
+            Dictionary<string, string> stamps;
+            lock (Gate) stamps = _stamps ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            string StampOf(string k)
+            {
+                var now = Stamp(k);
+                if (now.Length > 0) return now.Replace('|', '\t');
+                return stamps.TryGetValue(k, out var s) ? s.Replace('|', '\t') : "\t";
+            }
+            File.WriteAllLines(MapPath, map.OrderBy(kv => kv.Key).Select(kv => kv.Key + "\t" + kv.Value.Host + "\t" + (kv.Value.Module ?? "") + "\t" + StampOf(kv.Key)), new UTF8Encoding(false));
         }
     }
 }
