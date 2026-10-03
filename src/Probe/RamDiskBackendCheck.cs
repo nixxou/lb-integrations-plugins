@@ -61,7 +61,7 @@ namespace LbIntegrations.Probe
                     Case(b, folder: false, removable: false, awe: true);
                 }
                 Options("auto", false, true, false);
-                Check("auto picks " + (RamDrive.IsImDiskInstalled() ? "imdisk" : "aim"), RamDrive.ActiveBackend() == (RamDrive.IsImDiskInstalled() ? "imdisk" : "aim"), RamDrive.ActiveBackend());
+                Check("auto picks " + (RamDrive.IsAimInstalled() ? "aim" : "imdisk"), RamDrive.ActiveBackend() == (RamDrive.IsAimInstalled() ? "aim" : "imdisk"), RamDrive.ActiveBackend());
 
                 if (!string.IsNullOrEmpty(images)) Images(images);
             }

@@ -1,4 +1,4 @@
-﻿// The optional RAM disk, reported and switched on from this installer.
+// The optional RAM disk, reported and switched on from this installer.
 //
 // NOTHING HERE IS OURS ALONE, and that is the design. LiteBox already ships this machinery: the
 // ImDisk driver the user installs once, a small elevated helper under
@@ -32,7 +32,7 @@ internal sealed record RamDiskState(bool Known, bool Driver, bool Runtime, strin
 
 internal static class RamDiskSetup
 {
-    /// <summary>Is the ImDisk driver on this machine? Asked without a LaunchBox: a driver is installed
+    /// <summary>Is a RAM disk driver (AIM or ImDisk) on this machine? Asked without a LaunchBox: a driver is installed
     /// once per machine.</summary>
     public static bool DriverInstalled() => RamDrive.IsDriverInstalled();
 
@@ -72,7 +72,7 @@ internal static class RamDiskSetup
             return "RAM disk ready - shared with LiteBox: same folder, same scheduled task.";
 
         var lines = new List<string>();
-        if (!s.Driver) lines.Add("ImDisk not installed");
+        if (!s.Driver) lines.Add("no RAM disk driver (the AIM Toolkit, or ImDisk)");
         if (!s.Runtime) lines.Add(".NET 9+ runtime missing");
         if (s.Known && !s.Helper) lines.Add("helper not deployed");
         if (s.HelperOld) lines.Add("helper " + s.HelperVersion + " older than " + s.BundledVersion);

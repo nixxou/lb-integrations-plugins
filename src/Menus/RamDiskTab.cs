@@ -77,7 +77,7 @@ namespace LbIntegrations.Menus
                 Status(nativeVhdx, "Windows virtual disks", nativeVhdx ? "virtdisk.dll and vhdmp.sys - VHDX without any driver of ours" : "missing")));
 
             // ── RAM disk ──
-            _auto = new RadioButton { Text = "Automatic: ImDisk when it is installed, Arsenal Image Mounter otherwise", AutoSize = true, Checked = o.Backend == "auto" };
+            _auto = new RadioButton { Text = "Automatic: Arsenal Image Mounter when it is installed, ImDisk otherwise (recommended)", AutoSize = true, Checked = o.Backend == "auto" };
             _aim = new RadioButton { Text = "Arsenal Image Mounter" + (_aimThere ? "" : "  (not installed)"), AutoSize = true, Checked = o.Backend == "aim" };
             _imdisk = new RadioButton { Text = "ImDisk" + (_imdiskThere ? "" : "  (not installed)"), AutoSize = true, Checked = o.Backend == "imdisk" };
             var driver = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, Margin = Padding.Empty };

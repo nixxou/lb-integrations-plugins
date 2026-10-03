@@ -57,9 +57,10 @@ internal sealed class InstallerForm : Form
     private readonly Button _install, _uninstall, _choose, _ram, _identityButton;
     private readonly Label _identitySummary = new() { AutoSize = true, Margin = new Padding(0, 0, 0, 6) };
 
-    // THE TWO DRIVERS, side by side (Mehdi, 02/10): ImDisk, the legacy one the RAM disk uses, and the AIM
-    // Toolkit, its successor - each checked and installed on its own, one or the other or both. A driver
-    // belongs to the machine, so neither needs a LaunchBox to be installed.
+    // THE TWO DRIVERS, side by side (Mehdi, 02/10): the AIM Toolkit FIRST and recommended (Mehdi, 04/10: the RAM disk's
+    // first choice, and what mounts the compressed disc images without a copy), ImDisk, the older one LiteBox began with,
+    // beside it - each checked and installed on its own, one or the other or both. A driver belongs to the machine, so
+    // neither needs a LaunchBox to be installed; with one, its Install also sets up the helper and the task.
     private readonly DriverPanel _legacy, _modern;
 
     private sealed record Snapshot(Layout? Layout, bool Installed, string? Running,
@@ -137,7 +138,7 @@ internal sealed class InstallerForm : Form
         _ram = MakeButton("Set up", primary: false);
         _ram.Click += (_, _) =>
         {
-            // The helper and the task, once ImDisk is there. The drivers have their own buttons, below.
+            // The helper and the task, once a driver (AIM or ImDisk) is there. The drivers have their own buttons, below.
             if (!RamDiskSetup.DriverInstalled()) { Refresh_(); return; }
             Run(RamDiskSetup.Enable, "RAM disk");
         };
@@ -145,7 +146,7 @@ internal sealed class InstallerForm : Form
 
         int half = (Inner(RightW) - 10) / 2;
         _legacy = new DriverPanel(this, "ImDisk", half,
-            "A RAM disk driver, also used by LiteBox. Installs the ImDisk " + (ImDiskSetup.Bundled()?.ToString(3) ?? "")
+            "The older RAM disk driver, used when AIM is not installed. Installs the ImDisk " + (ImDiskSetup.Bundled()?.ToString(3) ?? "")
             + " driver alone (LTR Data), not the ImDisk Toolkit, with its control panel.");
         _legacy.Action.Click += (_, _) => RunMachine(() => ImDiskSetup.SetUpWithPrompt(_root == null ? null : InstallerCore.Resolve(_root), RamDriver.ImDisk), "ImDisk");
         _legacy.Second.Text = "Control panel";
@@ -155,9 +156,9 @@ internal sealed class InstallerForm : Form
             catch (Exception ex) { MessageBox.Show(this, "Could not open imdisk.cpl: " + ex.Message, "ImDisk", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
         };
         _modern = new DriverPanel(this, "AIM Toolkit", half,
-            "Arsenal Image Mounter, a RAM disk and disk image driver, with its tools: mounts images, VHD, VHDX, VMDK... from "
-            + "Explorer's right-click menu, and RamDiskUI. Installed whole, build " + AimSetup.Build + ".");
-        _modern.Action.Click += (_, _) => RunMachine(() => ImDiskSetup.SetUpWithPrompt(null, RamDriver.Aim), "AIM Toolkit");
+            "Arsenal Image Mounter, the RAM disk's first choice: it also mounts Xbox disc images (ISO, CSO, CCI, CHD, ZAR) without a copy, "
+            + "and VHD, VHDX, VMDK... from Explorer's right-click menu, with RamDiskUI. Installed whole, build " + AimSetup.Build + ".");
+        _modern.Action.Click += (_, _) => RunMachine(() => ImDiskSetup.SetUpWithPrompt(_root == null ? null : InstallerCore.Resolve(_root), RamDriver.Aim), "AIM Toolkit");
         _modern.Second.Text = "RamDiskUI";
         _modern.Second.Click += (_, _) =>
         {
@@ -167,8 +168,8 @@ internal sealed class InstallerForm : Form
         var drivers = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, Margin = new Padding(0, 0, 0, 8) };
         drivers.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, half + 10));
         drivers.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, half));
-        drivers.Controls.Add(_legacy, 0, 0);
-        drivers.Controls.Add(_modern, 1, 0);
+        drivers.Controls.Add(_modern, 0, 0);
+        drivers.Controls.Add(_legacy, 1, 0);
         right.Controls.Add(Card("RAM disk", _ramTag, RightW, drivers, _ramRows, Buttons(_ram),
             Note(RightW, "Optional. melonDS, Vita3K, Xenia and Cxbx-Reloaded play a session in memory instead of on your disk when it fits. "
                + "Shared with LiteBox (same helper, same scheduled task); setting it up asks for administrator rights once.")));
@@ -565,7 +566,7 @@ internal sealed class InstallerForm : Form
         else
         {
             // ONE BUTTON, SAYING THE ONE NEXT THING TO DO - LiteBox's row does the same.
-            // The helper and the task: only once ImDisk is there - before that, its panel's Install does all three.
+            // The helper and the task: only once a driver is there - before that, its panel's Install does all three.
             _ram.Visible = r.Known && r.Driver;
             _ram.Enabled = l != null && r.Runtime;
             _ram.Text = r.Helper && r.HelperOld && r.Task != null ? "Update the helper" : "Set up the helper and task";
@@ -575,9 +576,9 @@ internal sealed class InstallerForm : Form
         var v = s.Vhdx;
         // LBIP_PREVIEW_NO_VHDX=1: the window as a machine without Windows' virtual disk support sees it - for looking only.
         if (Environment.GetEnvironmentVariable("LBIP_PREVIEW_NO_VHDX") == "1") v = v with { Api = false };
-        // ImDisk is the recommendation; the AIM Toolkit only where Windows cannot attach a VHDX, since it can.
-        _legacy.Tag.Visible = true;
-        _modern.Tag.Visible = !v.Ready;
+        // The AIM Toolkit is the recommendation (Mehdi, 04/10).
+        _modern.Tag.Visible = true;
+        _legacy.Tag.Visible = false;
         var lacks = new List<string>();
         if (!v.Windows8) lacks.Add("Windows 8 or later");
         if (!v.Api) lacks.Add("virtdisk.dll");

@@ -3,7 +3,7 @@
 // written by that tab.
 //
 //   %LOCALAPPDATA%\lb-integrations-plugins\ramdisk.ini
-//     backend   = auto | aim | imdisk     RAM disks. auto (default): ImDisk when it is installed, Arsenal Image Mounter else
+//     backend   = auto | aim | imdisk     RAM disks. auto (default): Arsenal Image Mounter when it is installed, ImDisk else
 //     removable = 1 | 0                   removable media - what indexers leave alone (default 1, measured
 //                                         30/09: a fixed drive is held open by Everything)
 //     memory    = auto | vm | awe         virtual memory, or physical memory through AWEAlloc. auto (default):
@@ -96,7 +96,7 @@ namespace LbIntegrations.RamDisk
             var e = (RamDiskOptions)MemberwiseClone();
             if (Backend == "aim" && !aimThere) { e.Backend = imdiskThere ? "imdisk" : null; n.Add("AIM was chosen but is not installed - " + (imdiskThere ? "ImDisk instead" : "no RAM disk")); }
             else if (Backend == "imdisk" && !imdiskThere) { e.Backend = aimThere ? "aim" : null; n.Add("ImDisk was chosen but is not installed - " + (aimThere ? "AIM instead" : "no RAM disk")); }
-            else if (Backend == "auto") e.Backend = imdiskThere ? "imdisk" : aimThere ? "aim" : null;   // ImDisk first (Mehdi, 02/10)
+            else if (Backend == "auto") e.Backend = aimThere ? "aim" : imdiskThere ? "imdisk" : null;   // AIM first (Mehdi, 04/10 - ImDisk first since 02/10 until then)
             if (Vhdx == "aim" && !aimThere) { e.Vhdx = "windows"; n.Add("VHDX through AIM, which is not installed - Windows' own instead"); }
             notes = string.Join("; ", n);
             return e;

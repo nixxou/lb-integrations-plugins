@@ -365,7 +365,7 @@ namespace LbIntegrations.RamDisk
         // ── what is available ────────────────────────────────────────────────
 
         /// <summary>Is there a RAM disk driver - Arsenal Image Mounter or ImDisk? (LiteBox asks for ImDisk
-        /// alone, by its CLI; this pack takes either, ImDisk first - see RamDiskOptions.)</summary>
+        /// alone, by its CLI; this pack takes either, AIM first - see RamDiskOptions.)</summary>
         public static bool IsDriverInstalled() => IsImDiskInstalled() || IsAimInstalled();
 
         /// <summary>True when the ImDisk CLI is present, which is how LiteBox decides the driver is installed.</summary>
