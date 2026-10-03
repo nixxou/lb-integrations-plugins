@@ -653,8 +653,9 @@ namespace LbIntegrations.NoGba
                     {
                         NoGbaDsi.SetMode(layout, dsi: false);
                         NotPlaying();
-                        // The owner its DS games show, in its copy of the firmware dump - see NoGbaFirmware.
-                        NoGbaFirmware.Settle(layout);
+                        // The owner its DS games show, in its copy of the firmware dump - see NoGbaFirmware. A DS cartridge
+                        // only: a GBA game has no owner, and is not the moment to be asked about one.
+                        if (header.Known) NoGbaFirmware.Settle(layout);
                     }
 
                     // Then this game's own, for its session, taken back once no$gba has quit.
