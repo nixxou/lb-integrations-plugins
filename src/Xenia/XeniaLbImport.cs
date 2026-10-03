@@ -9,8 +9,9 @@
 //     holds it, and a launch, or the game's options window, finds it there by its title id and its digest;
 //   - a file that is not Xbox 360 content goes, and the log says why.
 // The list is LaunchBox's - Caliburn's BindableCollection, the one the grid shows: a record removed from it is gone
-// from the grid and from the import. No title is changed: the file's name (No-Intro's, usually) reads better than a
-// package's own, often in capitals.
+// from the grid and from the import. A game's title, when Xenia's compatibility list has its title id, is the list's
+// (Mehdi, 03/10, as the Cxbx plugin does - import_title=off keeps LaunchBox's); never the package's own, often in
+// capitals.
 //
 // WHEN: the platform page said "Microsoft Xbox 360", by its platform or its scrape-as. On by default, turned off in the
 // Nixx window's Xenia tab (content.ini, import_clean=off).
@@ -52,6 +53,14 @@ namespace LbIntegrations.Xenia
 
         public static bool Wanted
             => !(XeniaExtras.ReadSettings().TryGetValue("import_clean", out var v) && string.Equals(v, "off", StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>Each game named as Xenia's compatibility list names its title id, when the list has it (Mehdi, 03/10 - as
+        /// the Cxbx plugin does); else LaunchBox's name stays. On by default (content.ini, import_title=off).</summary>
+        public static bool Titles
+            => !(XeniaExtras.ReadSettings().TryGetValue("import_title", out var v) && string.Equals(v, "off", StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>Is the list read at all: to clean it, or to name its games.</summary>
+        private static bool Active => Wanted || Titles;
 
         public static void Install()
         {
@@ -115,7 +124,7 @@ namespace LbIntegrations.Xenia
                     _cleanedList = null;
                     if (Swapped) Undo(page, "back on the platform page");
                 }
-                else if (name == GameListPage && !ReferenceEquals(_cleanedList, page) && IsXbox360() && Wanted)
+                else if (name == GameListPage && !ReferenceEquals(_cleanedList, page) && IsXbox360() && Active)
                 {
                     _cleanedList = page;
                     WhenFilled(window, page);
@@ -177,14 +186,21 @@ namespace LbIntegrations.Xenia
                     found.AddRange(XeniaScan.Scan(folders[i], (step, f) => window?.Report("(" + (n + 1) + "/" + folders.Count + ") " + step, f)));
                 }
 
-            int games = 0, extras = 0, invalid = 0;
+            int games = 0, extras = 0, invalid = 0, renamed = 0;
+            bool clean = Wanted, titles = Titles;
             for (int i = list.Count - 1; i >= 0; i--)
             {
                 var path = records.FirstOrDefault(r => ReferenceEquals(r.Record, list[i])).Path;
                 if (path == null) continue;
                 var of = found.Where(e => string.Equals(e.Path, path, StringComparison.OrdinalIgnoreCase) || e.Path.StartsWith(path + "|", StringComparison.OrdinalIgnoreCase)).ToList();
                 var name = Path.GetFileName(path);
-                if (of.Any(e => e.Kind == XeniaFileKind.Game || e.Kind == XeniaFileKind.GameNoId)) { games++; continue; }
+                if (of.Any(e => e.Kind == XeniaFileKind.Game || e.Kind == XeniaFileKind.GameNoId))
+                {
+                    games++;
+                    if (titles && Rename(list, i, of)) renamed++;
+                    continue;
+                }
+                if (!clean) continue;
                 list.RemoveAt(i);
                 if (of.Any(e => e.Kind == XeniaFileKind.Update || e.Kind == XeniaFileKind.Dlc || e.Kind == XeniaFileKind.Other))
                 {
@@ -200,7 +216,33 @@ namespace LbIntegrations.Xenia
                 }
             }
             try { gameList.GetType().GetMethod("NotifyOfPropertyChange", new[] { typeof(string) })?.Invoke(gameList, new object[] { "GameCount" }); } catch { }
-            Log.Info("[import] the list put right: " + games + " game(s) kept, " + extras + " title update(s)/DLC removed (kept for their game), " + invalid + " file(s) that are not Xbox 360 games removed");
+            Log.Info("[import] the list put right: " + games + " game(s) kept, " + renamed + " named from the compatibility list, "
+                     + (clean ? extras + " title update(s)/DLC removed (kept for their game), " + invalid + " file(s) that are not Xbox 360 games removed" : "nothing removed (cleaning turned off)"));
+        }
+
+        /// <summary>Line <paramref name="i"/>, a game, named as Xenia's compatibility list names its title id - when the list
+        /// has it and the name differs. Out and back at its place, as Vita3K does: the grid redraws a line only when the
+        /// list says it changed.</summary>
+        private static bool Rename(IList list, int i, List<XeniaScanEntry> of)
+        {
+            try
+            {
+                var id = of.Where(e => e.Kind == XeniaFileKind.Game && e.TitleId.Length == 8).Select(e => e.TitleId).FirstOrDefault();
+                if (id == null) return false;
+                var title = XeniaCompat.Lookup(id)?.Select(e => e.Title).FirstOrDefault(t => !string.IsNullOrWhiteSpace(t))?.Trim();
+                if (title == null) return false;
+                var record = list[i];
+                var p = record.GetType().GetProperty("Title", BindingFlags.Public | BindingFlags.Instance);
+                if (p == null || !p.CanWrite || p.PropertyType != typeof(string)) return false;
+                var before = p.GetValue(record) as string;
+                if (string.Equals(before, title, StringComparison.Ordinal)) return false;
+                p.SetValue(record, title);
+                list.RemoveAt(i);
+                list.Insert(i, record);
+                Log.Info("[import]   " + id + ": \"" + before + "\" -> \"" + title + "\" (compatibility list)");
+                return true;
+            }
+            catch (Exception ex) { Log.Warn("[import] could not rename a line of the list", ex); return false; }
         }
 
         // ── the swap (Mehdi, 01/10: LaunchBox may filter an Xbox 360 import - as Vita3kLbImport, a stand-in for the scan) ──
@@ -226,7 +268,7 @@ namespace LbIntegrations.Xenia
         {
             _cleanedList = null;                    // the scan fills the list again
             var page = _platformPage;
-            if (page == null || Swapped || !Wanted) return;
+            if (page == null || Swapped || !Active) return;
             var platform = Get(page, "Platform");
             var scrapeAs = Get(page, "ScrapeAs");
             bool byName = Is360(platform), byScrape = Is360(scrapeAs);

@@ -36,7 +36,7 @@ namespace LbIntegrations.Xenia
         private readonly XeniaOptionRows _rows;
         private readonly TextBox _line;
         private readonly TextBox _contentFolder, _contentLimit, _ramBelow;
-        private readonly CheckBox _ram, _importClean;
+        private readonly CheckBox _ram, _importClean, _importTitle;
 
         public XeniaSettingsPage()
         {
@@ -65,6 +65,30 @@ namespace LbIntegrations.Xenia
                     Text = "No Xenia Canary in the library yet: its profile and console settings show here once it is installed (Add Emulator).",
                 });
 
+            // LaunchBox's Import ROM Files wizard, for Microsoft Xbox 360 (XeniaLbImport) - its own group, first, as the Cxbx and
+            // Vita3K tabs have it.
+            var import = XeniaConsolePanel.Group("LaunchBox's Import ROM Files wizard (Microsoft Xbox 360)");
+            var im = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Location = new Point(8, 20) };
+            _importClean = new CheckBox { Text = "Take updates, DLC and what is not a game out of the list", AutoSize = true, Checked = XeniaLbImport.Wanted };
+            im.Controls.Add(_importClean);
+            im.Controls.Add(new Label
+            {
+                AutoSize = true, MaximumSize = new Size(500, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(18, 0, 0, 6),
+                Text = "Each file is read for what it holds, not its name: a game stays - a disc, an extracted disc, an Arcade, Indie or Games on "
+                       + "Demand package, loose or in an archive; a title update, a DLC, a theme or anything else goes, before you click Finish. Updates "
+                       + "and DLC are not lost: a launch finds them by their game.",
+            });
+            _importTitle = new CheckBox { Text = "Name each game as Xenia's compatibility list does", AutoSize = true, Checked = XeniaLbImport.Titles };
+            im.Controls.Add(_importTitle);
+            im.Controls.Add(new Label
+            {
+                AutoSize = true, MaximumSize = new Size(500, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(18, 0, 0, 6),
+                Text = "The name the list gives the game's title id (\"PDC World Championship Darts\"), shown in the list before you click Finish; "
+                       + "a game the list does not have keeps the name LaunchBox gave it.",
+            });
+            import.Controls.Add(im);
+            stack.Controls.Add(import);
+
             // Where a game's title update and DLC are put down for Xenia, and how much room they may take (XeniaExtras).
             var content = XeniaExtras.ReadSettings();
             var cbox = XeniaConsolePanel.Group("Title updates and DLC");
@@ -89,10 +113,6 @@ namespace LbIntegrations.Xenia
             ramRow.Controls.Add(new Label { Text = "GB of content for the game", AutoSize = true, Margin = new Padding(4, 7, 0, 0) });
             ct.Controls.Add(_ram, 0, 2);
             ct.Controls.Add(ramRow, 1, 2);
-            _importClean = new CheckBox { Text = "Take updates, DLC and what is not a game out of LaunchBox's import list", AutoSize = true, Margin = new Padding(0, 6, 0, 0),
-                                          Checked = XeniaLbImport.Wanted };
-            ct.Controls.Add(_importClean, 0, 3);
-            ct.SetColumnSpan(_importClean, 2);
             var help = new Label
             {
                 AutoSize = true, MaximumSize = new Size(480, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 4, 0, 4),
@@ -101,7 +121,7 @@ namespace LbIntegrations.Xenia
                        + "none of it is on the disk yet, else here, once, then linked into place. Over the size limit, the games launched longest ago lose "
                        + "theirs, whole - they come back at their next launch. Your own files are never changed.",
             };
-            ct.Controls.Add(help, 0, 4);
+            ct.Controls.Add(help, 0, 3);
             ct.SetColumnSpan(help, 2);
             cbox.Controls.Add(ct);
             stack.Controls.Add(cbox);
@@ -147,7 +167,7 @@ namespace LbIntegrations.Xenia
             _console?.Save();
             XeniaSettings.WriteAll(_rows.Values());
             XeniaExtras.WriteSettings(new Dictionary<string, string> { ["folder"] = _contentFolder.Text.Trim(), ["limit_gb"] = limit,
-                ["ramdisk"] = _ram.Checked ? "" : "off", ["ramdisk_below_gb"] = below, ["import_clean"] = _importClean.Checked ? "" : "off" });
+                ["ramdisk"] = _ram.Checked ? "" : "off", ["ramdisk_below_gb"] = below, ["import_clean"] = _importClean.Checked ? "" : "off", ["import_title"] = _importTitle.Checked ? "" : "off" });
             return null;
         }
     }
