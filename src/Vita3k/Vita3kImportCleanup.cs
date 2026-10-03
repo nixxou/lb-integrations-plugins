@@ -122,8 +122,14 @@ namespace LbIntegrations.Vita3k
                 }
                 // Its region and version, set once it is in the library - see Vita3kImportFinished.
                 Vita3kImportFinished.Prepare(f.Path, f.Content.ContentId, f.Content.TitleId);
-                var title = CleanTitle(f.Content.FullTitle ?? f.Content.Title);
-                if (!string.IsNullOrWhiteSpace(title) && !string.Equals(title, GetProperty(f.Record, "Title") as string, StringComparison.Ordinal)
+                // The pack's rule (LbipImportTitle): the original kept when LaunchBox's database knows it, else the param.sfo's
+                // TITLE (its full one, then its short one) when the database knows that, else the original - unless it is no
+                // name at all (a serial, a store's code): then the param.sfo's.
+                var current = GetProperty(f.Record, "Title") as string;
+                var title = LbIntegrations.Lbip.LbipImportTitle.Choose("Sony Playstation Vita", current, System.IO.Path.GetFileNameWithoutExtension(f.Path ?? ""),
+                                                                       out var why, CleanTitle(f.Content.FullTitle), CleanTitle(f.Content.Title));
+                Log.Info("[import]   " + name + ": " + why);
+                if (!string.IsNullOrWhiteSpace(title) && !string.Equals(title, current, StringComparison.Ordinal)
                     && SetProperty(f.Record, "Title", title))
                 {
                     // Out and back at its place: the grid redraws a line only when the list says it changed.
@@ -134,7 +140,7 @@ namespace LbIntegrations.Vita3k
             }
             Notify(gameList, "GameCount");
 
-            Log.Info("[import] the list put right: " + games.Count + " game(s), " + renamed + " renamed from their param.sfo, "
+            Log.Info("[import] the list put right: " + games.Count + " game(s), " + renamed + " renamed (from their param.sfo), "
                      + extras + " update(s)/DLC removed (found by their game at launch), " + invalid + " file(s) that are not Vita games removed, "
                      + unlicensed + " .pkg game(s) without a licence removed");
         }

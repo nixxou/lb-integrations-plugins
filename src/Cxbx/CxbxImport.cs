@@ -167,7 +167,7 @@ namespace LbIntegrations.Cxbx
                     verdicts[record] = d;
                     if (d.Problem == null && d.Xbe != null)
                     {
-                        var title = CxbxImportFinished.Prepare(path, d.Xbe);
+                        var title = CxbxImportFinished.Prepare(path, d.Xbe, Get(record, "Title"));
                         // The name shown in the list too (03/10: "...(It).xiso.iso" showed as "Commandos 2: Men of Courage .xiso"
                         // until Finish) - LaunchBox then matches its metadata on the right name. Set again after the import.
                         if (Title && title != null && SetTitle(record, title)) renamed.Add(record);
@@ -263,19 +263,26 @@ namespace LbIntegrations.Cxbx
         private static readonly object Gate = new object();
         private static readonly Dictionary<string, (string Title, string Region)> Prepared = new Dictionary<string, (string, string)>(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>The title and region this game gets after the import, worked out and kept. Returns the title.</summary>
-        internal static string Prepare(string path, XbeInfo xbe)
+        /// <summary>The title and region this game gets after the import, worked out and kept. Returns the title - null when
+        /// its name is kept (LbipImportTitle: the original, then the compatibility site's name, then the certificate's, the
+        /// first LaunchBox's database knows).</summary>
+        internal static string Prepare(string path, XbeInfo xbe, string current = null)
         {
             var full = LbipImportWatch.Full(path);
             if (full == null) return null;
             var (exact, others) = CxbxCompat.For(xbe);
-            var title = exact?.Title ?? others.FirstOrDefault()?.Title;
-            if (string.IsNullOrWhiteSpace(title)) title = string.IsNullOrWhiteSpace(xbe.TitleName) ? null : xbe.TitleName;
+            var site = exact?.Title ?? others.FirstOrDefault()?.Title;
+            var certificate = string.IsNullOrWhiteSpace(xbe.TitleName) ? null : xbe.TitleName;
+            var file = System.IO.Path.GetFileNameWithoutExtension(path);
+            foreach (var inner in new[] { ".xiso", ".iso" })
+                if (file.EndsWith(inner, StringComparison.OrdinalIgnoreCase)) { file = file.Substring(0, file.Length - inner.Length); break; }
+            var title = LbipImportTitle.Choose("Microsoft Xbox", current, file, out var why, site, certificate);
+            Log.Info("[import]   " + System.IO.Path.GetFileName(path) + ": " + why);
             var region = exact != null && exact.Version == CxbxCompat.VersionOf(xbe.Version) ? RegionOfSite(exact.Region) : null;
             region ??= RegionOf(xbe.Region);
             lock (Gate) Prepared[full] = (title, region);
             Log.Info("[import]   " + System.IO.Path.GetFileName(path) + ": " + CxbxCompat.SerialOf(xbe.TitleId) + " " + CxbxCompat.VersionOf(xbe.Version)
-                     + " -> title \"" + (title ?? "?") + "\"" + (exact != null ? " (compatibility list)" : " (certificate)") + ", region " + (region ?? "?"));
+                     + " -> title " + (title == null ? "kept" : "\"" + title + "\"" + (title == site ? " (compatibility list)" : " (certificate)")) + ", region " + (region ?? "?"));
             return title;
         }
 

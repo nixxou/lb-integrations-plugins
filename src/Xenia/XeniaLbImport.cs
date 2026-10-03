@@ -224,7 +224,7 @@ namespace LbIntegrations.Xenia
                 }
             }
             try { gameList.GetType().GetMethod("NotifyOfPropertyChange", new[] { typeof(string) })?.Invoke(gameList, new object[] { "GameCount" }); } catch { }
-            Log.Info("[import] the list put right: " + games + " game(s) kept, " + renamed + " named from the compatibility list, "
+            Log.Info("[import] the list put right: " + games + " game(s) kept, " + renamed + " renamed, "
                      + (clean ? extras + " title update(s)/DLC removed (kept for their game), " + invalid + " file(s) that are not Xbox 360 games removed" : "nothing removed (cleaning turned off)"));
         }
 
@@ -235,19 +235,25 @@ namespace LbIntegrations.Xenia
         {
             try
             {
-                var id = of.Where(e => e.Kind == XeniaFileKind.Game && e.TitleId.Length == 8).Select(e => e.TitleId).FirstOrDefault();
-                if (id == null) return false;
-                var title = XeniaCompat.Lookup(id)?.Select(e => e.Title).FirstOrDefault(t => !string.IsNullOrWhiteSpace(t))?.Trim();
-                if (title == null) return false;
+                var game = of.FirstOrDefault(e => e.Kind == XeniaFileKind.Game && e.TitleId.Length == 8);
+                var id = game?.TitleId;
+                var listed = id == null ? null : XeniaCompat.Lookup(id)?.Select(e => e.Title).FirstOrDefault(t => !string.IsNullOrWhiteSpace(t))?.Trim();
+                var own = of.Where(e => e.Kind == XeniaFileKind.Game || e.Kind == XeniaFileKind.GameNoId).Select(e => e.Name).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n))?.Trim();
                 var record = list[i];
                 var p = record.GetType().GetProperty("Title", BindingFlags.Public | BindingFlags.Instance);
                 if (p == null || !p.CanWrite || p.PropertyType != typeof(string)) return false;
                 var before = p.GetValue(record) as string;
+                // The pack's rule (LbipImportTitle): the original, then the compatibility list's name, then the game's own -
+                // the first LaunchBox's database knows.
+                var file = Path.GetFileNameWithoutExtension(of.FirstOrDefault()?.Path?.Split('|')[0] ?? "");
+                var title = LbIntegrations.Lbip.LbipImportTitle.Choose("Microsoft Xbox 360", before, file, out var why, listed, own);
+                Log.Info("[import]   " + (id ?? file) + ": " + why);
+                if (title == null) return false;
                 if (string.Equals(before, title, StringComparison.Ordinal)) return false;
                 p.SetValue(record, title);
                 list.RemoveAt(i);
                 list.Insert(i, record);
-                Log.Info("[import]   " + id + ": \"" + before + "\" -> \"" + title + "\" (compatibility list)");
+                Log.Info("[import]   " + (id ?? file) + ": \"" + before + "\" -> \"" + title + "\"" + (title == listed ? " (compatibility list)" : " (the game itself)"));
                 return true;
             }
             catch (Exception ex) { Log.Warn("[import] could not rename a line of the list", ex); return false; }
