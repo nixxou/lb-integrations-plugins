@@ -105,7 +105,7 @@ namespace LbIntegrations.Xenia
         {
             // A disc image, an executable, Xenia's own archive - and the archives No-Intro's digital sets come in, which
             // this plugin unpacks for Xenia, which reads none (XeniaExtras.Prepare).
-            const string extensions = ".iso; .xex; .zar; .zip; .7z";        // LaunchBox's own separator: "; "
+            const string extensions = ".iso; .xex; .zar; .zip; .7z; .rar";  // LaunchBox's own separator: "; "
 
             yield return new LbCatalogEmulator
             {
@@ -563,6 +563,20 @@ namespace LbIntegrations.Xenia
                         LbipNotice.Show("Nixx-Xenia", Path.GetFileNameWithoutExtension(rom) + " is an Xbox Live Indie game. These are XNA programs, and Xenia cannot run them.");
                         return new PrepareForLaunchResponse(success: false);
                     }
+                    // A disc image inside an archive, not accepted (XeniaScan.IsoInArchiveAllowed): refused with a word - Xenia
+                    // would be handed an archive it cannot read.
+                    if (folder != null && XeniaScan.IsArchive(rom))
+                    {
+                        var inside = XeniaScan.Cached(folder).Where(e => e.Path.StartsWith(rom + "|", StringComparison.OrdinalIgnoreCase)).ToList();
+                        if (inside.Any(e => e.Problem == XeniaScan.IsoInArchiveProblem) && !inside.Any(e => e.Kind == XeniaFileKind.Game))
+                        {
+                            Log.Info("launch refused: " + rom + " holds a disc image, and disc images inside archives are not accepted");
+                            LbipNotice.Show("Nixx-Xenia", Path.GetFileName(rom) + " holds a disc image (ISO). Disc images inside an archive are not accepted: "
+                                            + "keep the ISO as it is, or convert it to .zar, Xenia's own compressed format. To use it anyway, tick "
+                                            + "\"Accept disc images (ISO) inside archives\" in the Xenia tab of the Nixx window - slow, see why there.");
+                            return new PrepareForLaunchResponse(success: false);
+                        }
+                    }
                     // Then its title update and DLC, as chosen, where Xenia looks for them (XeniaExtras).
                     var exe = ResolveFullPath(args?.EmulatorBeingLaunched?.ApplicationPath);
                     string launchedId = null;
@@ -579,10 +593,42 @@ namespace LbIntegrations.Xenia
 
                 // The options of the Nixx window (every game) and of the game's own window, the game's over every game's
                 // - on the command line, so never saved into Xenia's config (XeniaOptions).
+                // With the game's optimized settings between the two when they are on for it (XeniaOptimized) - from the copy,
+                // a few seconds' wait only when there is none.
                 string gameId = null;
                 try { gameId = args?.GameBeingLaunched?.Id; } catch { }
-                var options = XeniaSettings.Flags(XeniaSettings.ForGame(gameId));
+                string launchTitleId = null, configFile = null;
+                try
+                {
+                    var rom = ResolveFullPath(args?.GameBeingLaunched?.ApplicationPath);
+                    launchTitleId = string.IsNullOrEmpty(rom) ? null : XeniaTitleId.Of(rom);
+                    var exe = ResolveFullPath(args?.EmulatorBeingLaunched?.ApplicationPath);
+                    if (!string.IsNullOrEmpty(exe)) configFile = XeniaPaths.Resolve(exe, args?.CurrentCommandLine).ConfigFile;
+                }
+                catch { }
+                var options = XeniaSettings.LaunchFlags(gameId, launchTitleId, configFile, TimeSpan.FromSeconds(4), out var optimizedNote);
+                if (optimizedNote != null) Log.Info("optimized settings of " + launchTitleId + ": " + optimizedNote);
+                // Its patches (XeniaPatches): applied by Xenia itself from its folder - made sure of when one is on for the game,
+                // and what the launch applied read off Xenia's log once it is over.
+                try
+                {
+                    var exe = ResolveFullPath(args?.EmulatorBeingLaunched?.ApplicationPath);
+                    if (launchTitleId != null && !string.IsNullOrEmpty(exe) && XeniaPaths.ForkOf(exe) == XeniaFork.Canary)
+                    {
+                        var layout = XeniaPaths.Resolve(exe, args?.CurrentCommandLine);
+                        var on = XeniaPatches.ForTitle(layout, launchTitleId).SelectMany(f => f.Patches.Where(p => p.Enabled).Select(p => p.Name)).ToList();
+                        if (on.Count > 0)
+                        {
+                            Log.Info("patches on for " + launchTitleId + ": " + string.Join(", ", on));
+                            if (!XeniaSettings.IsTrue(XeniaToml.Read(layout.ConfigFile, "apply_patches") ?? "true") && !HasOption(current, "apply_patches"))
+                                options.Add("--apply_patches=true");
+                        }
+                        XeniaPatches.WatchAfter(exe, layout, launchTitleId);
+                    }
+                }
+                catch (Exception ex) { Log.Info("patches at launch: " + ex.Message); }
                 if (options.Count > 0) Log.Info("options passed: " + string.Join(" ", options));
+                XeniaOptimized.RefreshIndexSoon();
 
                 var rewritten = XeniaSettings.Append(current, added.Concat(options));
                 // A game the plugin unpacked (it came in an archive): Xenia is handed it by --target. LaunchBox still appends the

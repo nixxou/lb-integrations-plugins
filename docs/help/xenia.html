@@ -108,14 +108,23 @@
     <li><b>Profile</b>: your gamertag (rename it, or create the profile).</li>
     <li><b>Console</b>: language, country, time zone, 24-hour clock, video region, console resolution, music volume, and a button to take
     them from Windows. These can only be changed while Xenia is closed.</li>
-    <li><b>Title updates and DLC</b>: the content folder, its size limit, the RAM disk and its threshold, and whether the import list is cleaned.</li>
+    <li><b>LaunchBox's Import ROM Files wizard</b>: whether updates, DLC and what is not a game are taken out of the list, whether each
+    game is named as Xenia's compatibility list names it, whether its region is set from what its executable declares (North America,
+    Japan, Europe... or World), and whether disc images inside archives are accepted.</li>
+    <li><b>Title updates and DLC</b>: the content folder, its size limit, the RAM disk and its threshold.</li>
+    <li><b>Optimized settings</b>: whether each game gets the settings the community found it runs best on (xenia-manager's database) -
+    Halo 3's gamma fix, for instance. They win over the options for every game; a game's own options win over them.</li>
     <li><b>Options for every game</b>: graphics backend, rendering resolution (1x to 3x), VSync, frame-rate limit, gamma, anti-aliasing,
     sharpening (CAS / FSR), dithering, aspect ratio, vibration, mute, audio backend.</li>
   </ul>
   <h3>For one game: its right-click menu</h3>
-  <p>Right-click a game &gt; <b>Nixx-Xenia : Options...</b> opens three tabs:</p>
+  <p>Right-click a game &gt; <b>Nixx-Xenia : Options...</b> opens these tabs:</p>
   <ul>
-    <li><b>Options</b> - the same list, for this game only. Left unset, an option follows the Xenia tab, then Xenia's own setting.</li>
+    <li><b>Options</b> - the same list, for this game only, and the game's optimized settings with what each one fixes (on, off, or as
+    every game). Left unset, an option follows the optimized settings, then the Xenia tab, then Xenia's own setting.</li>
+    <li><b>Patches</b> - the game's patches from xenia-canary/game-patches (widescreen, 60 FPS, effects off...): download them, then tick
+    the ones you want. Xenia only applies a patch file made for <i>your</i> version of the game, which depends on its title update: after
+    one launch, the tab says file by file whether it is for your version, and which patches Xenia actually applied.</li>
     <li><b>Updates &amp; DLC</b> - choose the title update (one, or <i>None</i> for the game as released) and tick the DLC you want.
     By default: the most recent update and every DLC. Updates made for another version of the game (another region, for instance) are
     shown greyed out and cannot be picked.</li>
@@ -141,15 +150,20 @@
   <table><tr><th>Feature</th><th></th><th>Notes</th></tr>
   <tr><td>Install and update Xenia Canary</td><td class="yes">Yes</td><td>From Add Emulator, and LaunchBox's update button.</td></tr>
   <tr><td>Disc images (.iso), extracted discs, .xex</td><td class="yes">Yes</td><td>Opened directly.</td></tr>
-  <tr><td>Xbox Live Arcade and Games on Demand</td><td class="yes">Yes</td><td>Loose or zipped (.zip, .7z).</td></tr>
+  <tr><td>Xbox Live Arcade and Games on Demand</td><td class="yes">Yes</td><td>Loose or in an archive (.zip, .7z, .rar - a RAR in several parts by its first).</td></tr>
   <tr><td>Zipped games</td><td class="yes">Yes</td><td>Unpacked by the plugin, to a RAM disk when possible.</td></tr>
+  <tr><td>Disc images (ISO) inside an archive</td><td class="partly">Partly</td><td>Off by default: taken out at import and refused at launch.
+  Tick "Accept disc images (ISO) inside archives" in the Xenia tab to use them - each one is decompressed up to its executable once
+  (seconds to minutes), and the whole disc at every launch. Better: keep the ISO as it is.</td></tr>
   <tr><td>Title updates</td><td class="yes">Yes</td><td>Found by their content, matched to the right version of the game; one per game, your choice.</td></tr>
   <tr><td>DLC</td><td class="yes">Yes</td><td>Ticked per game; the same DLC in two files counts once.</td></tr>
   <tr><td>Full versions of Arcade games</td><td class="yes">Yes</td><td>Always on - no trial mode.</td></tr>
   <tr><td>Per-game options</td><td class="yes">Yes</td><td>Never written into Xenia's configuration.</td></tr>
+  <tr><td>Optimized settings per game</td><td class="yes">Yes</td><td>From xenia-manager's database; can be turned off for every game or one game.</td></tr>
+  <tr><td>Game patches</td><td class="yes">Yes</td><td>From xenia-canary/game-patches; checked against your version of the game after a launch.</td></tr>
   <tr><td>Compatibility information</td><td class="yes">Yes</td><td>From Xenia's community list.</td></tr>
   <tr><td>Saves in LaunchBox</td><td class="yes">Yes</td><td>Backups and restore.</td></tr>
-  <tr><td>Xenia's own archive format (.zar)</td><td class="partly">Partly</td><td>The game runs, but the plugin cannot read it yet: no saves, updates, DLC or compatibility for it.</td></tr>
+  <tr><td>Xenia's own archive format (.zar)</td><td class="yes">Yes</td><td>Read by Xenia as it is, nothing unpacked; the plugin reads the game in it, so its saves, updates, DLC, patches and compatibility work. The best way to keep a disc compressed.</td></tr>
   <tr><td>Updates for Games on Demand</td><td class="partly">Partly</td><td>Offered, but without the version check: pick the right one yourself.</td></tr>
   <tr><td>Xbox Live Indie Games</td><td class="no">No</td><td>Xenia cannot run them; they are left out at import and refused at launch.</td></tr>
   <tr><td>RetroAchievements</td><td class="no">No</td><td>Xenia keeps its own Xbox 360 achievements instead.</td></tr>

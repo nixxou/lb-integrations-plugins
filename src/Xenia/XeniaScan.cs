@@ -9,7 +9,7 @@
 //     update's names, "TU_..." (XboxUnity) and "tu<8 hex>_<8 hex>"; or, whatever its name, when it sits where the
 //     console puts one: <title id>\<content type>\<file>;
 //   - an "extension" holding a digit - the names XboxUnity gives title updates, "TU_10ID8B4_0000014000000.00000000000O4";
-//   - .zip and .7z: No-Intro's digital sets ship each package zipped with the console's tree around it -
+//   - .zip, .7z and .rar (a RAR in volumes by its first, read with all of them - Archives.Open): No-Intro's digital sets ship each package zipped with the console's tree around it -
 //     "Real Steel (World) (XBLA).zip" holds 584111E0/000D0000/62939F79...58. Every entry the same rule takes is read
 //     WITHOUT EXTRACTING: its first 0x1711 bytes decompressed, no further, nothing written. A disc image in an archive
 //     is noted and not read (Mehdi: nobody zips an ISO).
@@ -66,6 +66,8 @@ namespace LbIntegrations.Xenia
         public uint PatchFrom, PatchTo;
         /// <summary>A package's content id: two files holding the same package have the same one.</summary>
         public string ContentId = "";
+        /// <summary>A game's executable's region flags (XexInfo.Region) - 0 when unknown.</summary>
+        public uint Region;
 
         public string VersionText => XeniaScan.VersionText(Version);
 
@@ -86,7 +88,7 @@ namespace LbIntegrations.Xenia
 
         public static string CachePath => CacheOverride ?? System.IO.Path.Combine(XeniaSettings.Dir, "xenia-scan.tsv");
 
-        private static readonly string[] ArchiveExtensions = { ".zip", ".7z" };
+        private static readonly string[] ArchiveExtensions = { ".zip", ".7z", ".rar" };
         private static readonly System.Text.RegularExpressions.Regex PackageName =
             new System.Text.RegularExpressions.Regex("^([0-9A-Fa-f]{40,42}|TU_.+|tu[0-9A-Fa-f]{8}_[0-9A-Fa-f]{8})$");
         private static readonly System.Text.RegularExpressions.Regex Hex8 = new System.Text.RegularExpressions.Regex("^[0-9A-Fa-f]{8}$");
@@ -94,6 +96,18 @@ namespace LbIntegrations.Xenia
         /// <summary>The Indie games' common title id - see the header.</summary>
         public const string IndieTitleId = "584E07D2";
         public const string XnaProblem = "an Xbox Live Indie game (XNA): Xenia cannot run these";
+
+        /// <summary>A disc image inside an archive, refused (Mehdi, 03/10): "Accept disc images inside archives" is off.</summary>
+        public const string IsoInArchiveProblem = "a disc image inside an archive - tick \"Accept disc images (ISO) inside archives\" (Xenia tab), or keep the ISO as it is";
+
+        /// <summary>Are disc images inside archives read (content.ini iso_in_archive=on)? Off by default: reading one means
+        /// decompressing it up to its executable, hundreds of MB in, once per file.</summary>
+        public static bool IsoInArchiveAllowed
+            => XeniaExtras.ReadSettings().TryGetValue("iso_in_archive", out var v) && string.Equals(v, "on", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>An archive entry that is a disc image: "...|game.iso".</summary>
+        private static bool IsIsoEntry(XeniaScanEntry e)
+            => e.Path.Contains('|') && e.Path.EndsWith(".iso", StringComparison.OrdinalIgnoreCase);
 
         /// <summary>Is this a file the rule looks at? By its name - and, for a name with no extension, where it sits:
         /// <paramref name="path"/> is a file path or an archive entry's, "/" or "\" alike.</summary>
@@ -110,7 +124,9 @@ namespace LbIntegrations.Xenia
             return ext.Skip(1).Any(char.IsDigit);
         }
 
-        internal static bool IsArchive(string path) => ArchiveExtensions.Contains(System.IO.Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
+        /// <summary>A .zip, .7z or .rar - a RAR set's later volumes (game.part2.rar) excepted: the first stands for the set.</summary>
+        internal static bool IsArchive(string path)
+            => ArchiveExtensions.Contains(System.IO.Path.GetExtension(path), StringComparer.OrdinalIgnoreCase) && !Archives.IsLaterVolume(path);
 
         /// <summary>xex2_version: major.minor.build.qfe, from the top bits down.</summary>
         public static string VersionText(uint v)
@@ -155,7 +171,10 @@ namespace LbIntegrations.Xenia
                     // An archive is its entries, "<archive>|<entry>", all kept while the archive is the same.
                     var prefix = path + "|";
                     var known = cache.Values.Where(e => e.Path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList();
-                    if (known.Count > 0 && known.All(e => e.Size == size && e.Ticks == ticks))
+                    // A disc image in it read again when the setting no longer says what it was read under.
+                    bool allowed = IsoInArchiveAllowed;
+                    if (known.Count > 0 && known.All(e => e.Size == size && e.Ticks == ticks)
+                        && !known.Any(e => IsIsoEntry(e) && (allowed ? e.Problem == IsoInArchiveProblem : e.Problem != IsoInArchiveProblem)))
                     {
                         result.AddRange(known);
                         foreach (var e in known) seen.Add(e.Path);
@@ -266,10 +285,34 @@ namespace LbIntegrations.Xenia
                     return FromExecutable(e, info);
                 }
                 if (size < 4) return Invalid(e, "empty");
+                // A ZArchive (Xenia's own .zar): its default.xex read inside it, at any offset (Mehdi, 03/10) - by the footer's
+                // magic, whatever the name.
+                if (Zar.ZArchive.IsZar(path)) return FromZar(e, path);
                 using var file = File.OpenRead(path);
                 return FromContent(e, XeniaPackageRead.Reader(file), System.IO.Path.GetExtension(path), () => Directory.Exists(path + ".data"), disc: true);
             }
             catch (Exception ex) { return Invalid(e, "could not be read: " + ex.Message); }
+        }
+
+        /// <summary>A .zar: the disc it holds is a game when its default.xex reads - at the root, or one folder down.</summary>
+        private static XeniaScanEntry FromZar(XeniaScanEntry e, string path)
+        {
+            using var z = Zar.ZArchive.Open(path);
+            if (z == null) return Invalid(e, "a ZArchive that does not read");
+            var xex = z.Find("default.xex")
+                      ?? z.Entries.Where(x => !x.IsDirectory && x.Path.Count(c => c == '\\') == 1
+                                              && x.Path.EndsWith("\\default.xex", StringComparison.OrdinalIgnoreCase)).FirstOrDefault();
+            if (xex == null) { e.Kind = XeniaFileKind.GameNoId; e.Problem = "a ZArchive with no default.xex in it"; return e; }
+            var info = Xex.Info((offset, length) =>
+            {
+                if (offset < 0 || length <= 0 || offset >= xex.Length) return null;
+                var b = new byte[(int)Math.Min(length, xex.Length - offset)];
+                int n = z.Read(xex, offset, b, 0, b.Length);
+                if (n < b.Length) Array.Resize(ref b, n);
+                return n == 0 ? null : b;
+            });
+            if (info == null || !info.HasExecutionInfo) { e.Kind = XeniaFileKind.GameNoId; e.Problem = "its default.xex does not read"; return e; }
+            return FromExecutable(e, info);
         }
 
         /// <summary>What a file's content makes of an entry - a file on disk or an archive's entry, read through
@@ -295,7 +338,7 @@ namespace LbIntegrations.Xenia
                 else if (e.Kind == XeniaFileKind.Game && info.VolumeType == 0)
                 {
                     var xex = XeniaPackageRead.GameExecutable(read);
-                    if (xex != null) e.Digest = xex.SignatureDigest;
+                    if (xex != null) { e.Digest = xex.SignatureDigest; e.Region = xex.Region; }
                 }
                 return e;
             }
@@ -320,6 +363,7 @@ namespace LbIntegrations.Xenia
             e.TitleId = Xex.Format(info.TitleId);
             e.MediaId = info.MediaId; e.Version = info.Version; e.BaseVersion = info.BaseVersion; e.Disc = info.DiscNumber;
             e.Digest = info.SignatureDigest;
+            e.Region = info.Region;
             return e;
         }
         /// <summary>What a package's header makes of an entry - a file's or an archive entry's. <paramref name="hasData"/>:
@@ -361,7 +405,7 @@ namespace LbIntegrations.Xenia
             var found = new List<XeniaScanEntry>();
             try
             {
-                using var archive = SharpCompress.Archives.ArchiveFactory.Open(path);
+                using var archive = Archives.Open(path);
                 var entries = archive.Entries.Where(x => !x.IsDirectory && x.Key != null).ToList();
                 var keys = new HashSet<string>(entries.Select(x => x.Key.Replace('\\', '/')), StringComparer.OrdinalIgnoreCase);
                 foreach (var entry in entries)
@@ -378,8 +422,18 @@ namespace LbIntegrations.Xenia
                     {
                         if (System.IO.Path.GetExtension(key).Equals(".iso", StringComparison.OrdinalIgnoreCase))
                         {
-                            e.Kind = XeniaFileKind.GameNoId;
-                            e.Problem = "a disc image inside an archive: not read";
+                            if (!IsoInArchiveAllowed) Invalid(e, IsoInArchiveProblem);
+                            else
+                            {
+                                // Read for real (Mehdi, 03/10): decompressed up to its executable, as far as it takes - once,
+                                // the scan keeps what was found.
+                                var watch = System.Diagnostics.Stopwatch.StartNew();
+                                var entryRef = entry;
+                                using var reader = new ReopeningRead(() => entryRef.OpenEntryStream(), entry.Size);
+                                FromContent(e, reader.Read, ".iso", () => false, disc: true);
+                                Log.Info("scan: the disc image " + key + " in " + System.IO.Path.GetFileName(path) + " read - " + (reader.Decompressed >> 20) + " MB decompressed, "
+                                         + reader.Opened + " pass(es), " + watch.Elapsed.TotalSeconds.ToString("0.0") + " s: " + (e.Kind == XeniaFileKind.Game ? e.TitleId : e.Problem));
+                            }
                         }
                         else
                         {
@@ -432,7 +486,7 @@ namespace LbIntegrations.Xenia
         // ── the cache file ───────────────────────────────────────────────────
 
         /// <summary>The first line - and the format's version: a cache written by an older one is read again from the files.</summary>
-        private const string Header = "v2\tpath\tsize\tticks\tkind\ttitle_id\tcontent_type\tmedia_id\tversion\tbase_version\tdisc\tname\tproblem\tdigest\tpatch_from\tpatch_to\tcontent_id";
+        private const string Header = "v3\tpath\tsize\tticks\tkind\ttitle_id\tcontent_type\tmedia_id\tversion\tbase_version\tdisc\tname\tproblem\tdigest\tpatch_from\tpatch_to\tcontent_id\tregion";
 
         private static Dictionary<string, XeniaScanEntry> Load()
         {
@@ -453,6 +507,7 @@ namespace LbIntegrations.Xenia
                             Path = c[0], Size = L(c[1]), Ticks = L(c[2]), Kind = kind, TitleId = c[4],
                             ContentType = U(c[5]), MediaId = U(c[6]), Version = U(c[7]), BaseVersion = U(c[8]), Disc = (byte)L(c[9]),
                             Name = c[10], Problem = c[11], Digest = c[12], PatchFrom = U(c[13]), PatchTo = U(c[14]), ContentId = c[15],
+                            Region = c.Length > 16 ? U(c[16]) : 0,
                         };
                     }
                 }
@@ -472,7 +527,7 @@ namespace LbIntegrations.Xenia
                     lines.AddRange(map.Values.OrderBy(e => e.Path, StringComparer.OrdinalIgnoreCase).Select(e => string.Join("\t",
                         e.Path, e.Size.ToString(CultureInfo.InvariantCulture), e.Ticks.ToString(CultureInfo.InvariantCulture), e.Kind, e.TitleId,
                         e.ContentType.ToString("X8"), e.MediaId.ToString("X8"), e.Version.ToString("X8"), e.BaseVersion.ToString("X8"),
-                        e.Disc.ToString(CultureInfo.InvariantCulture), Clean(e.Name), Clean(e.Problem), e.Digest, e.PatchFrom.ToString("X8"), e.PatchTo.ToString("X8"), e.ContentId)));
+                        e.Disc.ToString(CultureInfo.InvariantCulture), Clean(e.Name), Clean(e.Problem), e.Digest, e.PatchFrom.ToString("X8"), e.PatchTo.ToString("X8"), e.ContentId, e.Region.ToString("X8"))));
                     var tmp = CachePath + ".tmp";
                     File.WriteAllLines(tmp, lines, new UTF8Encoding(false));
                     File.Move(tmp, CachePath, overwrite: true);

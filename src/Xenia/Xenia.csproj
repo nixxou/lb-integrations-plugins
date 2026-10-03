@@ -49,6 +49,8 @@
     <Compile Include="..\Shared.Menu\**\*.cs" />
     <!-- The RAM disk a game's unpacked content goes to - the one LiteBox, melonDS and Vita3K mount. See src\Shared.RamDisk\RamDrive.cs. -->
     <Compile Include="..\Shared.RamDisk\**\*.cs" />
+    <!-- ZArchive (.zar), Xenia's own format - the pack's one reader. -->
+    <Compile Include="..\Shared.Zar\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -76,6 +78,8 @@
 
   <ItemGroup>
     <PackageReference Include="SharpCompress" Version="0.41.0" />
+    <!-- zstd for ZArchive - the version SharpCompress already brings. -->
+    <PackageReference Include="ZstdSharp.Port" Version="0.8.6" />
   </ItemGroup>
 
   <!-- Fold every dependency INTO Ppsspp.dll, internalized.

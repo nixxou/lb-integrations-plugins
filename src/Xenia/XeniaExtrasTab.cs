@@ -72,8 +72,23 @@ namespace LbIntegrations.Xenia
             // ── the update ──
             var ub = XeniaConsolePanel.Group("Title update (one at most - each holds every earlier one)");
             var uf = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Location = new Point(8, 20) };
+            // What the Patches tab has for each version (XeniaPatches.FileFor) - from the files and copies already here.
+            List<XeniaPatchFile> patchFiles;
+            try { patchFiles = XeniaPatches.Known(_layout, _extras.Game.TitleId); } catch { patchFiles = new List<XeniaPatchFile>(); }
+            Label Patches(string version)
+            {
+                if (patchFiles.Count == 0) return null;
+                var (file, sure) = XeniaPatches.FileFor(patchFiles, _extras.Game.TitleId, version);
+                var names = file?.Patches.Where(p => p.Name != null).Select(p => p.Name).Distinct().ToList() ?? new List<string>();
+                var text = names.Count == 0 ? (sure ? "No patch for this version." : "No patch named for this version.")
+                         : names.Count + " patch" + (names.Count > 1 ? "es" : "") + " for this version in the Patches tab: " + string.Join(", ", names)
+                           + (sure ? "" : " (by the file's name)") + ".";
+                return new Label { Text = text, AutoSize = true, MaximumSize = new Size(520, 0), ForeColor = names.Count > 0 ? SystemColors.ControlText : SystemColors.GrayText, Margin = new Padding(20, 0, 0, 4) };
+            }
+
             var none = new RadioButton { Text = "None: the game as released", AutoSize = true, Checked = update == null, Margin = new Padding(3, 3, 0, 3) };
             uf.Controls.Add(none);
+            if (Patches("") is Label np) uf.Controls.Add(np);
             _updates.Add((none, null));
             foreach (var u in _extras.Updates.OrderBy(x => x.Matches ? 0 : 1).ThenByDescending(x => x.Entry.PatchTo))
             {
@@ -83,6 +98,7 @@ namespace LbIntegrations.Xenia
                 new ToolTip().SetToolTip(r, string.Join("\n", u.Copies.Select(c => c.Path)) + (u.Entry.Problem.Length > 0 ? "\n" + u.Entry.Problem : ""));
                 uf.Controls.Add(r);
                 uf.Controls.Add(new Label { Text = Source(u), AutoSize = true, ForeColor = SystemColors.GrayText, Margin = new Padding(20, 0, 0, 4) });
+                if (u.Matches && Patches(XeniaScan.VersionText(u.Entry.PatchTo)) is Label up) uf.Controls.Add(up);
                 _updates.Add((r, u));
             }
             if (_extras.Updates.Count == 0) uf.Controls.Add(Line("No title update for this game in its folder."));

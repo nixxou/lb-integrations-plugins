@@ -36,7 +36,7 @@ namespace LbIntegrations.Xenia
         private readonly XeniaOptionRows _rows;
         private readonly TextBox _line;
         private readonly TextBox _contentFolder, _contentLimit, _ramBelow;
-        private readonly CheckBox _ram, _importClean, _importTitle;
+        private readonly CheckBox _ram, _importClean, _importTitle, _optimized, _isoInArchive, _importRegion;
 
         public XeniaSettingsPage()
         {
@@ -86,6 +86,25 @@ namespace LbIntegrations.Xenia
                 Text = "The name the list gives the game's title id (\"PDC World Championship Darts\"), shown in the list before you click Finish; "
                        + "a game the list does not have keeps the name LaunchBox gave it.",
             });
+            _importRegion = new CheckBox { Text = "After the import, set each game's region", AutoSize = true, Checked = XeniaLbImport.Regions };
+            im.Controls.Add(_importRegion);
+            im.Controls.Add(new Label
+            {
+                AutoSize = true, MaximumSize = new Size(500, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(18, 0, 0, 6),
+                Text = "The region the game's executable declares - North America, Japan, Europe, Asia, Australia, or World when it plays on "
+                       + "several - on the game, or on the version LaunchBox filed it as.",
+            });
+            // A disc image inside an archive (Mehdi, 03/10): refused unless asked for - XeniaScan.IsoInArchiveAllowed.
+            _isoInArchive = new CheckBox { Text = "Accept disc images (ISO) inside archives (.zip, .7z, .rar)", AutoSize = true, Checked = XeniaScan.IsoInArchiveAllowed };
+            im.Controls.Add(_isoInArchive);
+            im.Controls.Add(new Label
+            {
+                AutoSize = true, MaximumSize = new Size(500, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(18, 0, 0, 6),
+                Text = "Arcade and Games on Demand games, title updates and DLC are fine in a .zip, .7z or .rar: they are read in an instant. A disc "
+                       + "image in an archive is a bad idea: to know which game it is, the plugin has to decompress it up to its executable - "
+                       + "hundreds of MB, seconds to minutes per game, once - and every launch unpacks the whole disc again. Keep ISOs as they are, "
+                       + "or convert them to .zar, Xenia's own compressed format. Unticked, they are taken out at import and refused at launch.",
+            });
             import.Controls.Add(im);
             stack.Controls.Add(import);
 
@@ -125,6 +144,22 @@ namespace LbIntegrations.Xenia
             ct.SetColumnSpan(help, 2);
             cbox.Controls.Add(ct);
             stack.Controls.Add(cbox);
+            // The optimized settings of each game (XeniaOptimized): between every game's options and the game's own.
+            var optimized = XeniaConsolePanel.Group("Optimized settings (xenia-manager)");
+            var op = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Location = new Point(8, 20) };
+            _optimized = new CheckBox { Text = "Apply each game's optimized settings", AutoSize = true,
+                                        Checked = XeniaOptimized.On(null, XeniaSettings.Read()) };
+            op.Controls.Add(_optimized);
+            op.Controls.Add(new Label
+            {
+                AutoSize = true, MaximumSize = new Size(500, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(18, 0, 0, 6),
+                Text = "The settings the community found a game runs best on (xenia-manager's database, from A1eNaz's wiki) - Halo 3's gamma "
+                       + "fix, a game's resolution scale... They win over the options for every game below, and a game's own options win over "
+                       + "them; each game's options window shows them, and can turn them off for that game.",
+            });
+            optimized.Controls.Add(op);
+            stack.Controls.Add(optimized);
+
             var own = exe != null ? XeniaOptions.Own(XeniaPaths.Resolve(exe).ConfigFile) : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             stack.Controls.Add(new Label { Text = "Options for every game", AutoSize = true, Font = new Font("Segoe UI", 10f, FontStyle.Bold), Margin = new Padding(4, 8, 0, 2) });
             _rows = new XeniaOptionRows(XeniaSettings.Read(), o => "Xenia's own: " + o.LabelOf(own.TryGetValue(o.Key, out var v) ? v : o.Default));
@@ -165,9 +200,11 @@ namespace LbIntegrations.Xenia
             if (below.Length > 0 && (!double.TryParse(below, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var rg) || rg <= 0))
                 return "The RAM disk threshold is a number of GB.";
             _console?.Save();
-            XeniaSettings.WriteAll(_rows.Values());
+            var every = _rows.Values();
+            if (!_optimized.Checked) every[XeniaOptimized.SettingKey] = "off";
+            XeniaSettings.WriteAll(every);
             XeniaExtras.WriteSettings(new Dictionary<string, string> { ["folder"] = _contentFolder.Text.Trim(), ["limit_gb"] = limit,
-                ["ramdisk"] = _ram.Checked ? "" : "off", ["ramdisk_below_gb"] = below, ["import_clean"] = _importClean.Checked ? "" : "off", ["import_title"] = _importTitle.Checked ? "" : "off" });
+                ["ramdisk"] = _ram.Checked ? "" : "off", ["ramdisk_below_gb"] = below, ["import_clean"] = _importClean.Checked ? "" : "off", ["import_title"] = _importTitle.Checked ? "" : "off", ["iso_in_archive"] = _isoInArchive.Checked ? "on" : "", ["import_region"] = _importRegion.Checked ? "" : "off" });
             return null;
         }
     }

@@ -8,9 +8,8 @@
 //                   these are games Argosy cannot identify and we can.
 //   .xex            the executable itself, or a folder holding default.xex.
 //   disc image      XDVDFS - NOT ISO9660. Find default.xex at the root, then read its header.
-//   .zar            NOT SUPPORTED. ZArchive carries its magic in a FOOTER and holds no metadata;
-//                   reading one needs a ZArchive decoder. Canary can create these from its own UI,
-//                   so they will turn up. Those entries fall back to matching on the title.
+//   .zar            ZArchive, Xenia's own compressed format (Mehdi, 03/10): its magic in a FOOTER, the
+//                   disc's files inside - default.xex read there at any offset (src\Shared.Zar).
 //
 // Detection is by CONTENT, never by extension - Xenia itself sniffs the file and will happily launch
 // a disc image named anything at all. Results are cached per (path, size, mtime), failures included:
@@ -80,6 +79,13 @@ namespace LbIntegrations.Xenia
 
         private static string Extract(string path)
         {
+            // A ZArchive: its default.xex, read inside it (XeniaScan.FromZar).
+            if (Zar.ZArchive.IsZar(path))
+            {
+                var fi = new FileInfo(path);
+                var z = XeniaScan.Classify(path, fi.Length, fi.LastWriteTimeUtc.Ticks);
+                return z.TitleId.Length == 8 ? z.TitleId : null;
+            }
             byte[] head;
             try
             {

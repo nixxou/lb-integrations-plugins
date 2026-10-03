@@ -208,7 +208,7 @@ namespace LbIntegrations.Xenia
             {
                 if (!e.Path.Contains('|')) return new FileInfo(e.Path).Length;
                 var (archive, key) = Split(e.Path);
-                using var a = SharpCompress.Archives.ArchiveFactory.Open(archive);
+                using var a = Archives.Open(archive);
                 return a.Entries.FirstOrDefault(x => x.Key != null && x.Key.Replace('\\', '/') == key)?.Size ?? 0;
             }
             catch { return 0; }
@@ -457,7 +457,7 @@ namespace LbIntegrations.Xenia
             try
             {
                 var (archive, key) = Split(game.Path);
-                using var a = SharpCompress.Archives.ArchiveFactory.Open(archive);
+                using var a = Archives.Open(archive);
                 return a.Entries.Where(e => e.Key != null && !e.IsDirectory && Belongs(e.Key, key)).Sum(e => e.Size);
             }
             catch { return 0; }
@@ -480,7 +480,7 @@ namespace LbIntegrations.Xenia
             var done = Path.Combine(dir, ".done");
             if (File.Exists(target) && File.Exists(done) && File.ReadAllText(done).Trim() == game.Path + "|" + game.Size + "|" + game.Ticks) return target;
             Directory.CreateDirectory(dir);
-            using var a = SharpCompress.Archives.ArchiveFactory.Open(archive);
+            using var a = Archives.Open(archive);
             var entries = a.Entries.Where(e => e.Key != null && !e.IsDirectory && Belongs(e.Key, key)).ToList();
             long total = Math.Max(1, entries.Sum(e => e.Size)), copied = 0;
             var prefix = key.Contains('/') ? key.Substring(0, key.LastIndexOf('/') + 1) : "";
@@ -538,7 +538,7 @@ namespace LbIntegrations.Xenia
                 if (e.Path.Contains('|'))
                 {
                     var (archive, key) = Split(e.Path);
-                    using var a = SharpCompress.Archives.ArchiveFactory.Open(archive);
+                    using var a = Archives.Open(archive);
                     var entry = a.Entries.First(x => x.Key != null && x.Key.Replace('\\', '/') == key);
                     long size = Math.Max(1, entry.Size);
                     Copy(entry, target, n => progress("Unpacking " + e.Name, (double)n / size));

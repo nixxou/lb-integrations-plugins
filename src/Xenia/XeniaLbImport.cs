@@ -59,8 +59,13 @@ namespace LbIntegrations.Xenia
         public static bool Titles
             => !(XeniaExtras.ReadSettings().TryGetValue("import_title", out var v) && string.Equals(v, "off", StringComparison.OrdinalIgnoreCase));
 
-        /// <summary>Is the list read at all: to clean it, or to name its games.</summary>
-        private static bool Active => Wanted || Titles;
+        /// <summary>Each game's region set after the import from its executable's region flags (XeniaImportFinished) - on by
+        /// default, as the Cxbx plugin's (content.ini, import_region=off).</summary>
+        public static bool Regions
+            => !(XeniaExtras.ReadSettings().TryGetValue("import_region", out var v) && string.Equals(v, "off", StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>Is the list read at all: to clean it, to name its games, or to know their regions.</summary>
+        private static bool Active => Wanted || Titles || Regions;
 
         public static void Install()
         {
@@ -197,6 +202,9 @@ namespace LbIntegrations.Xenia
                 if (of.Any(e => e.Kind == XeniaFileKind.Game || e.Kind == XeniaFileKind.GameNoId))
                 {
                     games++;
+                    // Its region, from its executable - set once it is in the library (XeniaImportFinished).
+                    var region = Xex.RegionName(of.Where(e => e.Kind == XeniaFileKind.Game).Select(e => e.Region).FirstOrDefault(r => r != 0));
+                    if (region != null) XeniaImportFinished.Prepare(path, region);
                     if (titles && Rename(list, i, of)) renamed++;
                     continue;
                 }

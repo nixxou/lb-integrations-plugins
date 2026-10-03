@@ -12,6 +12,7 @@
 // than fill the memory.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
@@ -103,5 +104,84 @@ namespace LbIntegrations.Xenia
 
         /// <summary>How far it had to decompress.</summary>
         public int Decompressed => _length;
+    }
+
+    /// <summary>A disc image inside an archive read at any offset (Mehdi, 03/10: "accept ISO in archive"): the entry
+    /// decompressed forward as far as asked, by 64 KB blocks, the blocks asked for kept (the last 256 - 16 MB) so that a
+    /// look back within an executable costs nothing; a look further back opens the entry again from its start. Disc
+    /// images are not made to be read this way - the executable sits hundreds of MB in - so it is slow, once: the scan
+    /// keeps what it found.</summary>
+    internal sealed class ReopeningRead : IDisposable
+    {
+        private const int Block = 64 * 1024, Kept = 256;
+        private readonly Func<Stream> _open;
+        private readonly long _length;
+        private readonly Dictionary<long, byte[]> _blocks = new Dictionary<long, byte[]>();
+        private readonly Queue<long> _order = new Queue<long>();
+        private Stream _stream;
+        private long _position;
+        private readonly byte[] _skip = new byte[1024 * 1024];
+
+        public long Decompressed { get; private set; }
+        public int Opened { get; private set; }
+
+        public ReopeningRead(Func<Stream> open, long length)
+        {
+            _open = open;
+            _length = length;
+        }
+
+        public byte[] Read(long offset, int length)
+        {
+            if (offset < 0 || length <= 0 || offset >= _length) return null;
+            length = (int)Math.Min(length, _length - offset);
+            var result = new byte[length];
+            int done = 0;
+            while (done < length)
+            {
+                long at = offset + done, start = at / Block * Block;
+                var block = BlockAt(start);
+                if (block == null) break;
+                int inBlock = (int)(at - start), n = Math.Min(length - done, block.Length - inBlock);
+                if (n <= 0) break;
+                Array.Copy(block, inBlock, result, done, n);
+                done += n;
+            }
+            if (done == 0) return null;
+            if (done < length) Array.Resize(ref result, done);
+            return result;
+        }
+
+        private byte[] BlockAt(long start)
+        {
+            if (_blocks.TryGetValue(start, out var kept)) return kept;
+            if (_stream == null || start < _position)
+            {
+                _stream?.Dispose();
+                _stream = _open();
+                _position = 0;
+                Opened++;
+            }
+            while (_position < start)
+            {
+                int n = _stream.Read(_skip, 0, (int)Math.Min(_skip.Length, start - _position));
+                if (n <= 0) return null;
+                _position += n;
+                Decompressed += n;
+            }
+            var block = new byte[(int)Math.Min(Block, _length - start)];
+            int got = 0, r;
+            while (got < block.Length && (r = _stream.Read(block, got, block.Length - got)) > 0) got += r;
+            _position += got;
+            Decompressed += got;
+            if (got == 0) return null;
+            if (got < block.Length) Array.Resize(ref block, got);
+            _blocks[start] = block;
+            _order.Enqueue(start);
+            while (_order.Count > Kept) _blocks.Remove(_order.Dequeue());
+            return block;
+        }
+
+        public void Dispose() => _stream?.Dispose();
     }
 }

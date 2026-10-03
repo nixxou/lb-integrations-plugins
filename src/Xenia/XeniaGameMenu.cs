@@ -68,6 +68,13 @@ namespace LbIntegrations.Xenia
         private readonly string _titleId;
         private readonly XeniaExtrasTab _extrasTab;
         private readonly XeniaSessionTab _sessionTab;
+        private readonly XeniaPatchesTab _patchesTab;
+        private readonly CheckBox _optimized;
+        private readonly FlowLayoutPanel _optimizedList;
+        private readonly Dictionary<string, string> _every;
+        private readonly string _configFile;
+        private List<XeniaOptimizedValue> _optimizedValues;
+        private string _optimizedWhy;
 
         public XeniaGameOptionsForm(List<IGame> games)
         {
@@ -85,12 +92,21 @@ namespace LbIntegrations.Xenia
             ClientSize = new Size(620, 720);
             MinimumSize = new Size(560, 400);
 
-            // What an unset row falls back to: every game's value when the Xenia tab sets one, else Xenia's own.
+            // What an unset row falls back to: the game's optimized setting when they are on and set it, else every game's
+            // value when the Xenia tab sets one, else Xenia's own.
             var every = XeniaSettings.Read();
             var exe = ExecutableFor(games.FirstOrDefault());
             var own = exe != null ? XeniaOptions.Own(XeniaPaths.Resolve(exe).ConfigFile) : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            _titleId = TitleIdOf(games.FirstOrDefault());
+            _every = every;
+            _configFile = exe != null ? XeniaPaths.Resolve(exe).ConfigFile : null;
+            _optimizedValues = XeniaOptimized.For(_titleId, TimeSpan.Zero, out _optimizedWhy);     // the copy: nothing waited on here
             string Fallback(XeniaOption o)
-                => every.TryGetValue(o.Key, out var e) ? "every game's: " + o.LabelOf(e) : "Xenia's own: " + o.LabelOf(own.TryGetValue(o.Key, out var v) ? v : o.Default);
+            {
+                var opt = XeniaOptimized.On(saved, every) ? _optimizedValues.FirstOrDefault(v => (o.Sends ?? new[] { o.Key }).Contains(v.Key, StringComparer.OrdinalIgnoreCase)) : null;
+                if (opt != null) return "optimized: " + o.LabelOf(opt.Value);
+                return every.TryGetValue(o.Key, out var e) ? "every game's: " + o.LabelOf(e) : "Xenia's own: " + o.LabelOf(own.TryGetValue(o.Key, out var v) ? v : o.Default);
+            }
 
             var tabs = new TabControl { Dock = DockStyle.Fill };
 
@@ -104,8 +120,27 @@ namespace LbIntegrations.Xenia
                        + "at launch, never into Xenia's config.",
             };
             var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(6) };
+            var optionsStack = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
+            // The game's optimized settings (XeniaOptimized): on, off, or as every game (the grey square).
+            var optimizedBox = new GroupBox { Text = "Optimized settings (xenia-manager)", AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(8, 4, 8, 8), Margin = new Padding(4, 4, 4, 10), MinimumSize = new Size(500, 0) };
+            var op = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Location = new Point(8, 20) };
+            saved.TryGetValue(XeniaOptimized.SettingKey, out var optimizedOwn);
+            _optimized = new CheckBox
+            {
+                Text = "Apply this game's optimized settings", AutoSize = true, ThreeState = true,
+                CheckState = optimizedOwn == "on" ? CheckState.Checked : optimizedOwn == "off" ? CheckState.Unchecked : CheckState.Indeterminate,
+            };
+            new ToolTip().SetToolTip(_optimized, "Grey: as every game (the Nixx window's Xenia tab, now " + (XeniaOptimized.On(null, every) ? "on" : "off") + ").");
+            op.Controls.Add(_optimized);
+            _optimizedList = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Margin = new Padding(18, 2, 0, 0) };
+            op.Controls.Add(_optimizedList);
+            optimizedBox.Controls.Add(op);
+            optionsStack.Controls.Add(optimizedBox);
             _rows = new XeniaOptionRows(saved, Fallback);
-            scroll.Controls.Add(_rows);
+            optionsStack.Controls.Add(_rows);
+            scroll.Controls.Add(optionsStack);
+            _optimized.CheckStateChanged += (_, _) => { ShowOptimized(null); ShowLine(); };
+            ShowOptimized(null);
             var bottom = new Panel { Dock = DockStyle.Bottom, Height = 84, Padding = new Padding(10, 2, 10, 4) };
             _line = new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Font = new Font("Consolas", 9f), BackColor = SystemColors.Window };
             bottom.Controls.Add(_line);
@@ -128,6 +163,16 @@ namespace LbIntegrations.Xenia
                                                     Text = "A game's title update and DLC are chosen one game at a time: open this window on one game." });
             tabs.TabPages.Add(extrasTab);
 
+            // ── Patches: Xenia's game patches for it, on or off one by one (XeniaPatchesTab) - one game at a time ──
+            if (_games.Count == 1)
+            {
+                var patchesTab = new TabPage("Patches") { UseVisualStyleBackColor = true };
+                _patchesTab = new XeniaPatchesTab(_titleId, exe, XeniaPlugin.ResolveFullPathForUi(Safe(() => games[0].ApplicationPath)), first.Id, () => _extrasTab?.Values());
+                patchesTab.Controls.Add(_patchesTab);
+                tabs.TabPages.Add(patchesTab);
+                tabs.SelectedIndexChanged += (_, _) => { if (tabs.SelectedTab == patchesTab) _patchesTab.Showing(); };
+            }
+
             // ── Session: what the next launch unpacks, where, and this game's say in it (XeniaSessionTab) ──
             if (_games.Count == 1)
             {
@@ -143,7 +188,6 @@ namespace LbIntegrations.Xenia
             _compat = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
             compatTab.Controls.Add(_compat);
             tabs.TabPages.Add(compatTab);
-            _titleId = TitleIdOf(games.FirstOrDefault());
             ShowCompat(XeniaCompat.IsFresh() ? null : "Bringing the list up to date...");
 
             var ok = new Button { Text = "OK", Width = 90 };
@@ -160,6 +204,21 @@ namespace LbIntegrations.Xenia
 
             Shown += (_, _) =>
             {
+                // The game's optimized settings asked for in the background when the copy is old or missing.
+                if (_titleId != null)
+                    Task.Run(() =>
+                    {
+                        var values = XeniaOptimized.For(_titleId, TimeSpan.FromSeconds(15), out var why);
+                        return (Values: values, Why: why);
+                    }).ContinueWith(t =>
+                    {
+                        try
+                        {
+                            if (IsDisposed || !IsHandleCreated || t.Status != TaskStatus.RanToCompletion) return;
+                            BeginInvoke(new Action(() => { _optimizedValues = t.Result.Values; _optimizedWhy = t.Result.Why; ShowOptimized(null); ShowLine(); }));
+                        }
+                        catch { }
+                    });
                 if (XeniaCompat.IsFresh()) return;
                 Task.Run(() => XeniaCompat.Fetch(TimeSpan.FromSeconds(20))).ContinueWith(t =>
                 {
@@ -175,11 +234,50 @@ namespace LbIntegrations.Xenia
 
         private void ShowLine()
         {
-            var values = XeniaSettings.Read();
-            foreach (var kv in _rows.Values()) values[kv.Key] = kv.Value;
-            var flags = XeniaSettings.Flags(values);
+            if (_line == null || _rows == null) return;
+            // As LaunchFlags builds it: every game's, the optimized settings when on, the game's own - one flag per cvar.
+            var byCvar = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var order = new List<string>();
+            void Put(string f) { var n = XeniaSettings.CvarOf(f); if (!byCvar.ContainsKey(n)) order.Add(n); byCvar[n] = f; }
+            foreach (var f in XeniaSettings.Flags(_every)) Put(f);
+            if (OptimizedOn)
+            {
+                var known = XeniaToml.ReadAll(_configFile);
+                foreach (var v in _optimizedValues) if (known.ContainsKey(v.Key) || XeniaOptions.All.Any(o => (o.Sends ?? new[] { o.Key }).Contains(v.Key, StringComparer.OrdinalIgnoreCase))) Put(XeniaOptimized.Flag(v));
+            }
+            foreach (var f in XeniaSettings.Flags(_rows.Values())) Put(f);
+            var flags = order.Select(n => byCvar[n]).ToList();
             _line.Text = flags.Count == 0 ? "(nothing added to the command line)" : "At launch: " + string.Join(" ", flags);
         }
+
+        private bool OptimizedOn
+            => _optimized.CheckState == CheckState.Checked || (_optimized.CheckState == CheckState.Indeterminate && XeniaOptimized.On(null, _every));
+
+        /// <summary>The game's optimized settings, listed with what each fixes - greyed when they are off for it.</summary>
+        private void ShowOptimized(string note)
+        {
+            if (_optimizedList == null) return;
+            _optimizedList.SuspendLayout();
+            _optimizedList.Controls.Clear();
+            var on = OptimizedOn;
+            Label Line(string text, bool strong) => new Label
+            {
+                Text = text, AutoSize = true, MaximumSize = new Size(470, 0), Margin = new Padding(0, 1, 0, 1),
+                ForeColor = on && strong ? SystemColors.ControlText : SystemColors.GrayText,
+            };
+            if (_titleId == null) _optimizedList.Controls.Add(Line("This game's title id could not be read off its file.", false));
+            else if (_optimizedValues.Count == 0) _optimizedList.Controls.Add(Line(Capital(_optimizedWhy ?? "nothing known yet") + ".", false));
+            else
+            {
+                foreach (var v in _optimizedValues)
+                    _optimizedList.Controls.Add(Line("[" + v.Section + "] " + v.Key + " = " + v.Raw + (v.Why.Length > 0 ? "  - " + v.Why : ""), true));
+                _optimizedList.Controls.Add(Line(on ? "Applied at launch, unless this game's own options set the same thing." : "Not applied: turned off.", false));
+            }
+            if (note != null) _optimizedList.Controls.Add(Line(note, false));
+            _optimizedList.ResumeLayout();
+        }
+
+        private static string Capital(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpperInvariant(s[0]) + s.Substring(1);
 
         private void ShowCompat(string note)
         {
@@ -250,7 +348,9 @@ namespace LbIntegrations.Xenia
                 return;
             _extrasTab?.Save(c => _sessionTab?.Apply(c));
             _sessionTab?.Saved();
+            _patchesTab?.Save();
             var values = _rows.Values();
+            if (_optimized.CheckState != CheckState.Indeterminate) values[XeniaOptimized.SettingKey] = _optimized.Checked ? "on" : "off";
             int changed = 0;
             foreach (var g in _games)
             {

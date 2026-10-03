@@ -35,6 +35,9 @@ namespace LbIntegrations.Xenia
         /// its delta descriptor. Xenia applies a title update when the two are equal (KernelState::IsPatchSignatureProper).</summary>
         public string SignatureDigest = "", PatchDigestSource = "";
         public byte DiscNumber, DiscCount;
+        /// <summary>An XEX2's region flags (security info +0x178, xex2_region_flags): 0xFF North America, 0xFF00 Asia
+        /// (0x100 Japan, 0x200 China), 0xFF0000 PAL (0x10000 Australia / New Zealand), 0xFFFFFFFF all. 0 when unknown.</summary>
+        public uint Region;
     }
     internal static class Xex
     {
@@ -105,6 +108,12 @@ namespace LbIntegrations.Xenia
                 var signature = read(BeUInt32(header, 0x10) + 8, 0x100);
                 if (signature != null && signature.Length == 0x100)
                     using (var sha = System.Security.Cryptography.SHA1.Create()) info.SignatureDigest = Convert.ToHexString(sha.ComputeHash(signature));
+                // Its region (xex2_security_info.region, +0x178) - XEX2 only: the older layouts put other things there.
+                if (header[3] == '2')
+                {
+                    var region = read(BeUInt32(header, 0x10) + 0x178, 4);
+                    if (region != null && region.Length == 4) info.Region = BeUInt32(region, 0);
+                }
                 for (uint i = 0; i < count; i++)
                 {
                     var entry = read(MinHeaderSize + (long)i * 8, 8);
@@ -140,6 +149,20 @@ namespace LbIntegrations.Xenia
 
         /// <summary>The 8 uppercase hex digits everything - the console, Xenia, Argosy - uses.</summary>
         public static string Format(uint titleId) => titleId.ToString("X8");
+
+        /// <summary>LaunchBox's region for an XEX's region flags (xex2_region_flags, Xenia's xex2_info.h): one zone named,
+        /// several "World"; null when unknown.</summary>
+        public static string RegionName(uint flags)
+        {
+            if (flags == 0) return null;
+            if (flags == 0xFFFFFFFF) return "World";
+            bool us = (flags & 0x000000FF) != 0, asia = (flags & 0x0000FF00) != 0, pal = (flags & 0x00FF0000) != 0, other = (flags & 0xFF000000) != 0;
+            if ((us ? 1 : 0) + (asia ? 1 : 0) + (pal ? 1 : 0) + (other ? 1 : 0) > 1) return "World";
+            if (us) return "North America";
+            if (asia) return (flags & 0x0000FF00) == 0x00000100 ? "Japan" : (flags & 0x0000FF00) == 0x00000200 ? "China" : "Asia";
+            if (pal) return (flags & 0x00FF0000) == 0x00010000 ? "Australia" : "Europe";
+            return null;
+        }
 
         /// <summary>Convenience for a bare .xex on disk.</summary>
         public static uint? TitleIdOfFile(string path)

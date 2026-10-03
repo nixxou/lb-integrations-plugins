@@ -166,8 +166,9 @@ namespace LbIntegrations.Xenia
                     var at = line.IndexOf('=');
                     if (at <= 0 || line.TrimStart().StartsWith("#")) continue;
                     var key = line.Substring(0, at).Trim();
-                    // A key no option has any more is dropped on read: never sent, gone at the next write.
-                    if (XeniaOptions.ByKey(key) != null) values[key] = line.Substring(at + 1).Trim();
+                    // A key no option has any more is dropped on read: never sent, gone at the next write. The plugin's own
+                    // switches (the optimized settings, on / off) are kept: they are not cvars, Flags never sends them.
+                    if (XeniaOptions.ByKey(key) != null || PluginKeys.Contains(key)) values[key] = line.Substring(at + 1).Trim();
                 }
             }
             catch (Exception ex) { Log.Warn("could not read " + path, ex); }
@@ -187,7 +188,60 @@ namespace LbIntegrations.Xenia
             Log.Info("options written: " + (lines.Count - 2) + " set -> " + path);
         }
 
+        /// <summary>Keys of the plugin's own, stored beside the options: not cvars, never on the command line.</summary>
+        internal static readonly HashSet<string> PluginKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { XeniaOptimized.SettingKey };
+
         // ── the command line ─────────────────────────────────────────────────
+
+        /// <summary>A launch's flags, the most specific winning (Mehdi, 03/10): every game's, then the game's optimized
+        /// settings when they are on for it (XeniaOptimized), then the game's own - one flag per cvar. An optimized
+        /// setting this Xenia does not know (not in its TOML, nor one of this pack's options) is left out: an unknown
+        /// cvar would stop Xenia at start. <paramref name="note"/>: what the optimized settings gave, for the log.</summary>
+        public static List<string> LaunchFlags(string gameId, string titleId, string configFile, TimeSpan timeout, out string note)
+        {
+            note = null;
+            var every = Read();
+            var own = ReadGame(gameId);
+            var byCvar = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var order = new List<string>();
+            void Put(string flag)
+            {
+                var name = CvarOf(flag);
+                if (!byCvar.ContainsKey(name)) order.Add(name);
+                byCvar[name] = flag;
+            }
+            foreach (var f in Flags(every)) Put(f);
+            if (titleId != null && XeniaOptimized.On(own, every))
+            {
+                var values = XeniaOptimized.For(titleId, timeout, out var why);
+                var known = XeniaToml.ReadAll(configFile);
+                var used = new List<string>();
+                var unknown = new List<string>();
+                foreach (var v in values)
+                {
+                    if (!known.ContainsKey(v.Key) && !IsOptionCvar(v.Key)) { unknown.Add(v.Key); continue; }
+                    Put(XeniaOptimized.Flag(v));
+                    used.Add(v.Key + "=" + v.Value);
+                }
+                note = why + (used.Count > 0 ? ": " + string.Join(", ", used) : "")
+                       + (unknown.Count > 0 ? " - not known to this Xenia, left out: " + string.Join(", ", unknown) : "");
+            }
+            else if (titleId != null) note = "off for this game";
+            foreach (var f in Flags(own)) Put(f);
+            return order.Select(n => byCvar[n]).ToList();
+        }
+
+        /// <summary>"--readback_resolve=full" or "\"--name=a b\"" -> its cvar.</summary>
+        internal static string CvarOf(string flag)
+        {
+            var f = flag.Trim().Trim('"');
+            if (f.StartsWith("--")) f = f.Substring(2);
+            int eq = f.IndexOf('=');
+            return eq < 0 ? f : f.Substring(0, eq);
+        }
+
+        private static bool IsOptionCvar(string cvar)
+            => XeniaOptions.All.Any(o => (o.Sends ?? new[] { o.Key }).Any(s => string.Equals(s, cvar, StringComparison.OrdinalIgnoreCase)));
 
         /// <summary>Every game's values with this game's over them.</summary>
         public static Dictionary<string, string> ForGame(string gameId)
