@@ -173,7 +173,8 @@ namespace LbIntegrations.Xenia
             bool decided = mine != null || sure;       // sure and no file: no patch is for this version
 
             _stack.Controls.Add(Line("Tick a patch and Xenia applies it each time the game starts. A game has one patch file per version (per title "
-                                     + "update): they all go to Xenia's folder, and Xenia uses the one for the version you play. Title id " + _titleId + "."));
+                                     + "update): they all go to Xenia's folder, and Xenia uses the one for the version you play. Title id " + _titleId
+                                     + (XeniaLauncherDisc.IsDeduced(_titleId) ? XeniaLauncherDisc.DeducedNote : "") + "."));
             if (files.Count == 0)
             {
                 _stack.Controls.Add(Line(_remote == null ? (_note ?? "Looking at xenia-canary/game-patches...") : "There is no patch for this game in xenia-canary/game-patches.",

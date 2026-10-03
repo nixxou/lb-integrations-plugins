@@ -42,7 +42,8 @@ namespace LbIntegrations.Xenia
                 if (Directory.Exists(path))
                 {
                     var inner = FindDefaultXex(path);
-                    return inner == null ? null : Of(inner);
+                    var own = inner == null ? null : Of(inner);
+                    return own == null ? null : XeniaLauncherDisc.GameOf(path, own) ?? own;
                 }
                 var fi = new FileInfo(path);
                 if (!fi.Exists) return null;
@@ -72,6 +73,9 @@ namespace LbIntegrations.Xenia
             }
             try { found = Extract(path); }
             catch (Exception ex) { Log.Warn("could not read a title id from " + path, ex); }
+            // A disc that only launches the game it carries (Minecraft's): that game's id - XeniaLauncherDisc. A note of a real
+            // launch (XeniaRelaunch, above) has already won when there is one.
+            if (found != null) { var game = XeniaLauncherDisc.GameOf(path, found); if (game != null) found = game; }
 
             Cache[key] = found ?? "";
             if (found != null) Log.Info("title id " + found + " <- " + Path.GetFileName(path));

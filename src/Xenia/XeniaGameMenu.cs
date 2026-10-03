@@ -294,7 +294,7 @@ namespace LbIntegrations.Xenia
                 stack.Controls.Add(Line("This game's title id could not be read off its file, so it cannot be looked up in Xenia's compatibility list.", false));
             else
             {
-                stack.Controls.Add(Line("Title id " + _titleId));
+                stack.Controls.Add(Line("Title id " + _titleId + (XeniaLauncherDisc.IsDeduced(_titleId) ? XeniaLauncherDisc.DeducedNote : "")));
                 var found = XeniaCompat.Lookup(_titleId);
                 if (found.Count == 0)
                     stack.Controls.Add(Line(XeniaCompat.Asked() == null ? "No compatibility list yet." : "Not in Xenia's compatibility list: nobody has reported this game yet.", false));

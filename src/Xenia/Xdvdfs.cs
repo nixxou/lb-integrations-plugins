@@ -81,12 +81,37 @@ namespace LbIntegrations.Xenia
         /// <summary>Every entry in the root directory. Empty when this is not an XDVDFS image.</summary>
         public static List<XdvdfsEntry> RootEntries(Func<long, int, byte[]> read)
         {
-            var found = new List<XdvdfsEntry>();
             if (!TryFindPartition(read, out long partitionBase, out uint rootSector, out uint rootSize))
-                return found;
+                return new List<XdvdfsEntry>();
+            return Table(read, partitionBase, partitionBase + (long)rootSector * SectorSize, rootSize);
+        }
 
-            long tableOffset = partitionBase + (long)rootSector * SectorSize;
-            var table = read(tableOffset, (int)rootSize);
+        /// <summary>Every FILE of the disc, its path from the root ('\' separated) - the tree walked, directories at
+        /// most 12 deep and 20 000 entries in all (a corrupt table cannot run away). Empty when this is not XDVDFS.</summary>
+        public static List<(string Path, long Length)> AllFiles(Func<long, int, byte[]> read)
+        {
+            var files = new List<(string, long)>();
+            if (!TryFindPartition(read, out long partitionBase, out uint rootSector, out uint rootSize)) return files;
+            int budget = 20000;
+            void Walk(long offset, uint size, string prefix, int depth)
+            {
+                foreach (var e in Table(read, partitionBase, offset, size))
+                {
+                    if (--budget < 0) return;
+                    if (!e.IsDirectory) files.Add((prefix + e.Name, e.Length));
+                    else if (depth < 12 && e.Length > 0) Walk(e.Offset, e.Length, prefix + e.Name + "\\", depth + 1);
+                }
+            }
+            Walk(partitionBase + (long)rootSector * SectorSize, rootSize, "", 0);
+            return files;
+        }
+
+        /// <summary>The entries of one directory table, at <paramref name="tableOffset"/>.</summary>
+        private static List<XdvdfsEntry> Table(Func<long, int, byte[]> read, long partitionBase, long tableOffset, uint size)
+        {
+            var found = new List<XdvdfsEntry>();
+            if (size < 0x0E || size > 32 * 1024 * 1024) return found;
+            var table = read(tableOffset, (int)size);
             if (table == null) return found;
 
             // The tree is sorted, but its collation is not ours, so every node is walked rather than
