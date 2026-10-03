@@ -653,6 +653,8 @@ namespace LbIntegrations.NoGba
                     {
                         NoGbaDsi.SetMode(layout, dsi: false);
                         NotPlaying();
+                        // The owner its DS games show, in its copy of the firmware dump - see NoGbaFirmware.
+                        NoGbaFirmware.Settle(layout);
                     }
 
                     // Then this game's own, for its session, taken back once no$gba has quit.

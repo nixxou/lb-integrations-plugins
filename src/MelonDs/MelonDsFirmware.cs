@@ -36,23 +36,13 @@ using System.Text;
 using LbIntegrations.Dsi;
 using LbIntegrations.Identity;
 
+using Owner = LbIntegrations.Dsi.DsOwner;
 namespace LbIntegrations.MelonDs
 {
     internal static class MelonDsFirmware
     {
         private const string CopyDir = "lbip-firmware", IndexName = "lbip-firmware.tsv";
 
-        internal sealed class Owner
-        {
-            public bool Blank;
-            public string Name = "";
-            public int Language, Month, Day, Colour;
-            public bool MacBlank;
-            public string Describe() => Blank ? "nobody (blank)"
-                : "\"" + Name + "\" (" + Lang(Language) + ", " + Month + "/" + Day + ", " + MelonDsGameSettings.Colours[Math.Min(15, Math.Max(0, Colour))].ToLowerInvariant() + ")";
-        }
-
-        private static string Lang(int l) => l >= 0 && l < MelonDsGameSettings.Languages.Length ? MelonDsGameSettings.Languages[l] : "language " + l;
 
         // ── the copies ───────────────────────────────────────────────────────
 
@@ -256,114 +246,14 @@ namespace LbIntegrations.MelonDs
         /// answer kept as the first launch's would be. Null, or why not.</summary>
         public static string UseIdentity(MelonDsLayout layout) => SetDumpOwner(layout, identity: true);
 
-        /// <summary>The identity as the owner of a firmware COPY of ours: name, colour, birthday, language in both user-settings
-        /// copies, each with its CRC16 (GBATEK "DS Firmware User Settings": 0x02 colour, 0x03 month, 0x04 day, 0x06 name in
-        /// UTF-16 and 0x1A its length, 0x64 bits 0-2 the language, 0x70 counter, 0x72 CRC of 0x00-0x6F). The newer copy keeps
-        /// its counter, the older one gets the next and becomes the newer: both are the identity. The extended block
-        /// (0x74-0xFF, its own CRC) is not touched. Null, or why not.</summary>
-        internal static string WriteOwner(string copy, Owner id)
-        {
-            var fw = File.ReadAllBytes(copy);
-            if (fw.Length < 0x200) return "too small to be a firmware";
-            int at = BitConverter.ToUInt16(fw, 0x20) * 8;
-            if (at <= 0 || at + 0x200 > fw.Length) at = fw.Length - 0x200;
-            int a = at, b = at + 0x100;
-            bool va = CrcOk(fw, a), vb = CrcOk(fw, b);
-            int newer = va && vb ? (((BitConverter.ToUInt16(fw, b + 0x70) - BitConverter.ToUInt16(fw, a + 0x70)) & 0x7F) is int d && d > 0 && d < 0x40 ? b : a)
-                      : vb ? b : a;
-            int older = newer == a ? b : a;
-            // A blank block (no valid copy at all) is made out of the first one's bytes, version 5 as melonDS's own.
-            if (!va && !vb) { fw[newer] = 5; BitConverter.GetBytes((ushort)0).CopyTo(fw, newer + 0x70); }
-            int counter = BitConverter.ToUInt16(fw, newer + 0x70);
-            var name = (id.Name ?? "").Length > 10 ? id.Name.Substring(0, 10) : id.Name ?? "";
-            foreach (var slot in new[] { newer, older })
-            {
-                if (slot == older) Buffer.BlockCopy(fw, newer, fw, older, 0x100);      // the whole block, extended part and its CRC too
-                fw[slot + 0x02] = (byte)Math.Min(15, Math.Max(0, id.Colour));
-                fw[slot + 0x03] = (byte)Math.Min(12, Math.Max(1, id.Month));
-                fw[slot + 0x04] = (byte)Math.Min(31, Math.Max(1, id.Day));
-                if (name.Length > 0)
-                {
-                    Array.Clear(fw, slot + 0x06, 20);
-                    var utf16 = Encoding.Unicode.GetBytes(name);
-                    Buffer.BlockCopy(utf16, 0, fw, slot + 0x06, Math.Min(20, utf16.Length));
-                    BitConverter.GetBytes((ushort)Math.Min(10, name.Length)).CopyTo(fw, slot + 0x1A);
-                }
-                fw[slot + 0x64] = (byte)((fw[slot + 0x64] & ~0x07) | (id.Language & 0x07));
-                BitConverter.GetBytes((ushort)(slot == newer ? counter : (counter + 1) & 0x7F)).CopyTo(fw, slot + 0x70);
-                BitConverter.GetBytes((ushort)Crc16(fw, slot, 0x70, 0xFFFF)).CopyTo(fw, slot + 0x72);
-            }
-            var tmp = copy + ".tmp";
-            File.WriteAllBytes(tmp, fw);
-            File.Copy(tmp, copy, overwrite: true);
-            File.Delete(tmp);
-            return null;
-        }
 
-        /// <summary>The identity in the words of Owner.Describe - for "Apply to my emulators".</summary>
-        public static string DescribeIdentity(PackIdentity id) => OwnerOf(id).Describe();
-
-        public static Owner OwnerOf(PackIdentity id)
-            => new Owner { Blank = false, Name = id.DsNickname(), Language = id.DsLanguage(), Month = id.BirthMonth, Day = id.BirthDay, Colour = id.Colour };
-
-        private static bool Same(Owner o, Owner w)
-            => !o.Blank && o.Name == w.Name && o.Language == w.Language && o.Month == w.Month && o.Day == w.Day && o.Colour == w.Colour;
-
-        /// <summary>A DS firmware's owner: the newer of its two user-settings copies whose CRC holds.</summary>
-        public static Owner Read(byte[] fw)
-        {
-            var o = new Owner { Blank = true };
-            try
-            {
-                if (fw == null || fw.Length < 0x200) return o;
-                int at = BitConverter.ToUInt16(fw, 0x20) * 8;
-                if (at <= 0 || at + 0x200 > fw.Length) at = fw.Length - 0x200;
-                int a = at, b = at + 0x100;
-                bool va = CrcOk(fw, a), vb = CrcOk(fw, b);
-                int use;
-                if (va && vb) use = ((BitConverter.ToUInt16(fw, b + 0x70) - BitConverter.ToUInt16(fw, a + 0x70)) & 0x7F) is int d && d > 0 && d < 0x40 ? b : a;
-                else if (va) use = a;
-                else if (vb) use = b;
-                else return o;
-                int len = Math.Min(10, (int)fw[use + 0x1A]);
-                o.Name = Encoding.Unicode.GetString(fw, use + 6, len * 2);
-                o.Colour = fw[use + 2] & 0x0F;
-                o.Month = fw[use + 3];
-                o.Day = fw[use + 4];
-                o.Language = fw[use + 0x64] & 0x07;
-                o.Blank = len == 0 || o.Month == 0 || o.Day == 0;
-                o.MacBlank = fw.Length > 0x3B && fw.Skip(0x36).Take(6).All(x => x == 0xFF) || fw.Skip(0x36).Take(6).All(x => x == 0);
-            }
-            catch { }
-            return o;
-        }
-
-        private static bool CrcOk(byte[] fw, int at) => Crc16(fw, at, 0x70, 0xFFFF) == BitConverter.ToUInt16(fw, at + 0x72);
-
-        /// <summary>The firmware's CRC16 (GBATEK "DS Firmware Header", the BIOS's GetCRC16).</summary>
-        private static int Crc16(byte[] d, int start, int len, int crc)
-        {
-            int[] table = { 0xC0C1, 0xC181, 0xC301, 0xC601, 0xCC01, 0xD801, 0xF001, 0xA001 };
-            for (int i = 0; i < len; i++)
-            {
-                crc ^= d[start + i];
-                for (int j = 0; j < 8; j++)
-                {
-                    bool carry = (crc & 1) != 0;
-                    crc >>= 1;
-                    if (carry) crc ^= table[j] << (7 - j);
-                }
-            }
-            return crc & 0xFFFF;
-        }
-
-        private static string NewMac()
-        {
-            var r = new byte[3];
-            RandomNumberGenerator.Fill(r);
-            return "00:09:BF:" + r[0].ToString("X2") + ":" + r[1].ToString("X2") + ":" + r[2].ToString("X2");
-        }
-
+        // The owner's reading and writing are the pack's (src\Shared.Dsi\DsFirmwareOwner.cs) - no$gba's copy uses them too.
+        public static Owner Read(byte[] fw) => DsFirmwareOwner.Read(fw);
+        internal static string WriteOwner(string copy, Owner id) => DsFirmwareOwner.WriteOwner(copy, id);
+        public static Owner OwnerOf(PackIdentity id) => DsOwner.Of(id);
+        public static string DescribeIdentity(PackIdentity id) => DsOwner.Of(id).Describe();
+        private static bool Same(Owner o, Owner w) => o.Same(w);
+        internal static bool CrcOk(byte[] fw, int at) => DsFirmwareOwner.CrcOk(fw, at);
         // ── lbip-firmware.tsv ────────────────────────────────────────────────
 
         private sealed class Row { public string Copy, Source, SourceSha, Answer; }

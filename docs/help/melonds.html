@@ -87,7 +87,12 @@
 <section id="play"><h2>Playing a game</h2>
   <h3>A DS game</h3>
   <p>Click Play. The plugin sets melonDS to DS mode (or DSi mode for a DSi-enhanced cartridge, when the DSi files and a NAND are set up), points it at your BIOS files if you have them, and the game starts straight away. To quit, press <kbd>Esc</kbd> (the plugin turns it into melonDS's own quit key, <kbd>Ctrl</kbd>+<kbd>Q</kbd>).</p>
-  <p><b>Whose DS it is.</b> DS games show the console's owner: a name, the language a game starts in, a birthday. Without your own firmware, melonDS uses yours from <b>Your console</b> (Tools &gt; Nixx Integration Plugins Configuration). With your own <code>dsfirmware.bin</code>, the first DS game asks once, when the dump belongs to somebody else: use your console instead, or keep the dump's owner. A blank dump simply gets yours. You can change it later in the melonDS tab (<i>Override settings</i>).</p>
+  <p><b>Whose name the games show.</b> Games show the console's owner: a name, the language a game starts in, a birthday. melonDS's tab in the Nixx window (Tools &gt; Nixx Integration Plugins Configuration) sets it, filled from <b>Your console</b>:</p>
+  <ul>
+    <li><b>DS games:</b> without your own firmware, always yours. With your own <code>dsfirmware.bin</code>, the first DS game asks once, when the dump belongs to somebody else: your console, or the dump's owner. A blank dump simply gets yours. Yours is written into melonDS's copy of the dump, never into the dump.</li>
+    <li><b>DSi cartridges:</b> always yours, written into the copy of the console they run on (the one of their region).</li>
+    <li><b>DSiWare:</b> yours, over each DSi console's own owner, unless you untick it in the tab. The console itself is never rewritten.</li>
+  </ul>
 
   <h3>A DSiWare game: the first time with a new NAND</h3>
   <p>A DSi has to be set up once (owner name, language, birthday, colour). The plugin does this on a copy of your NAND, never on your file, and <b>by itself</b>: the copy is made in melonDS's <code>dsi</code> folder and, when your dump was never set up, it gets your console's name, language, country, birthday and colour (<b>Your console</b>; a language or country the NAND's region does not have is replaced by one it has). The game then starts. A NAND dumped from a console that was already set up keeps its own owner.</p>
