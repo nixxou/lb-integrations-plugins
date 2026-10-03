@@ -442,6 +442,35 @@ namespace LbIntegrations.Ppsspp
 
         // ── installation ─────────────────────────────────────────────────────
 
+        /// <summary>The pack's console identity ("Your console", src\Shared.Identity, 03/10) as the PSP's system settings: its
+        /// nickname, language, date and time formats and confirm button into ppsspp.ini's [SystemParam] (Core/Config.cpp:
+        /// NickName, GameLanguage - PSP_SYSTEMPARAM_LANGUAGE_*, ParamDateFormat - 0 YYYYMMDD 1 MMDDYYYY 2 DDMMYYYY,
+        /// ParamTimeFormat - 0 24-hour 1 12-hour, ButtonPreference - 0 circle 1 cross), each only when the file does not
+        /// hold it yet, at a first install. A game's own options (PpssppGameSettings) still go over them for its session.</summary>
+        private static void ApplyIdentity(PpssppLayout layout)
+        {
+            try
+            {
+                var id = LbIntegrations.Identity.PackIdentity.Load();
+                if (id == null || string.IsNullOrEmpty(layout?.ConfigFile)) return;
+                var keys = new[] { "NickName", "GameLanguage", "ParamDateFormat", "ParamTimeFormat", "ButtonPreference" };
+                var have = PpssppIni.Read(layout.ConfigFile, "SystemParam", keys);
+                var all = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["GameLanguage"] = id.PspLanguage().ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["ParamDateFormat"] = id.DateOrder == "mdy" ? "1" : id.DateOrder == "dmy" ? "2" : "0",
+                    ["ParamTimeFormat"] = id.Clock24 ? "0" : "1",
+                    ["ButtonPreference"] = id.Confirm == "circle" ? "0" : "1",
+                };
+                if (id.PspNickname().Length > 0) all["NickName"] = id.PspNickname();
+                var wanted = all.Where(kv => !have.ContainsKey(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+                if (wanted.Count == 0) { Log.Info("console identity: ppsspp.ini has its own system settings - left alone"); return; }
+                Directory.CreateDirectory(Path.GetDirectoryName(layout.ConfigFile));
+                var error = PpssppIni.Write(layout.ConfigFile, "SystemParam", wanted);
+                Log.Info("console identity: " + (error ?? "the PSP's system settings set (" + string.Join(", ", wanted.Keys) + ")"));
+            }
+            catch (Exception ex) { Log.Warn("console identity: could not set the PSP's system settings", ex); }
+        }
         public override EmulatorInstallResponse InstallEmulator(InstallEmulatorArgs args)
         {
             string archive = null;
@@ -497,6 +526,8 @@ namespace LbIntegrations.Ppsspp
                 var layout = PpssppPaths.Resolve(exe);
                 Log.Info("installed to " + targetDir + " — memstick: " + layout.MemStickDir
                          + " (" + layout.Reason + ")");
+
+                if (!reinstall) ApplyIdentity(layout);
 
                 if (reinstall)
                 {

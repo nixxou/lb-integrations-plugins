@@ -1,4 +1,4 @@
-﻿// The window: which LaunchBox, what is installed in it, and what the machine offers the optional half.
+// The window: which LaunchBox, what is installed in it, and what the machine offers the optional half.
 // Everything it knows how to do is in InstallerCore, RamDiskSetup and VhdxSetup; this only asks and shows.
 //
 // It tries to answer the folder question itself first, because the common case is the exe dropped
@@ -54,7 +54,8 @@ internal sealed class InstallerForm : Form
     private readonly Label _lbPath = new() { AutoSize = true };
     private readonly Label _ramTag = new() { AutoSize = true, Margin = new Padding(0, 4, 0, 0) };
     private readonly Label _vhdxTag = new() { AutoSize = true, Margin = new Padding(0, 4, 0, 0) };
-    private readonly Button _install, _uninstall, _choose, _ram;
+    private readonly Button _install, _uninstall, _choose, _ram, _identityButton;
+    private readonly Label _identitySummary = new() { AutoSize = true, Margin = new Padding(0, 0, 0, 6) };
 
     // THE TWO DRIVERS, side by side (Mehdi, 02/10): ImDisk, the legacy one the RAM disk uses, and the AIM
     // Toolkit, its successor - each checked and installed on its own, one or the other or both. A driver
@@ -110,13 +111,27 @@ internal sealed class InstallerForm : Form
         // Plugins
         _install = MakeButton("Install", primary: true);
         _uninstall = MakeButton("Uninstall", primary: false);
-        _install.Click += (_, _) => Run(InstallerCore.Install, "Install");
+        _install.Click += (_, _) =>
+        {
+            Run(InstallerCore.Install, "Install");
+            // Asked at the pack's install (Mehdi, 03/10): the plugins read it when they set up their emulators.
+            if (LbIntegrations.Identity.PackIdentity.Exists() == false) EditIdentity();
+        };
         _uninstall.Click += (_, _) => Run(InstallerCore.Uninstall, "Uninstall");
         _pluginRows = new TableLayoutPanel { AutoSize = true, ColumnCount = 6, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 6) };
         left.Controls.Add(Card("Plugins", null, LeftW, _pluginRows,
             Buttons(_install, _uninstall),
             Note(LeftW, "Installs the plugin folders only. Your emulators, games, saves and NAND dumps are never touched, "
                + "and no emulator entry is created or changed.")));
+
+        // Your console - the pack's one identity, read by each plugin as it sets up its emulator.
+        _identityButton = MakeButton("Set…", primary: false);
+        _identityButton.Click += (_, _) => EditIdentity();
+        _identitySummary.MaximumSize = new Size(Inner(LeftW), 0);
+        left.Controls.Add(Card("Your console", null, LeftW, _identitySummary, Buttons(_identityButton),
+            Note(LeftW, "Your nickname, language, date and time formats, confirm button and birthday, asked once for every "
+               + "emulator: each plugin uses them when it sets up its emulator for the first time.")));
+        ShowIdentity();
 
         // RAM disk
         _ram = MakeButton("Set up", primary: false);
@@ -172,6 +187,54 @@ internal sealed class InstallerForm : Form
         else if (InstallerCore.LooksLikeRoot(here)) _root = here;
         else if (InstallerCore.LooksLikeRoot(Path.GetDirectoryName(here))) _root = Path.GetDirectoryName(here);
         Refresh_();
+    }
+
+    // ── your console ─────────────────────────────────────────────────────────
+
+    private void ShowIdentity()
+    {
+        var p = LbIntegrations.Identity.PackIdentity.Load();
+        if (p == null)
+        {
+            _identitySummary.Text = "Not set yet - until it is, the plugins take this Windows' values.";
+            _identitySummary.ForeColor = Warn;
+            return;
+        }
+        var language = LbIntegrations.Identity.PackIdentity.Languages.FirstOrDefault(l => l.Culture == p.Language).Name ?? p.Language;
+        var date = p.DateOrder == "dmy" ? "03/10/2026" : p.DateOrder == "mdy" ? "10/03/2026" : "2026/10/03";
+        _identitySummary.Text = (p.Nickname.Length > 0 ? p.Nickname : "(no nickname)") + "  ·  " + language + "  ·  " + date + "  ·  "
+                              + (p.Clock24 ? "24-hour" : "12-hour") + "  ·  " + (p.Confirm == "circle" ? "○" : "✕") + " confirms";
+        _identitySummary.ForeColor = Ink;
+    }
+
+    private void EditIdentity()
+    {
+        using var form = new Form
+        {
+            Text = "Your console", StartPosition = FormStartPosition.CenterParent, FormBorderStyle = FormBorderStyle.FixedDialog,
+            MinimizeBox = false, MaximizeBox = false, ShowInTaskbar = false, Font = _body,
+            AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(10),
+        };
+        var panel = new LbIntegrations.Menus.IdentityPanel();
+        var ok = new Button { Text = "OK", Width = 90 };
+        var cancel = new Button { Text = "Cancel", Width = 90, DialogResult = DialogResult.Cancel };
+        ok.Click += (_, _) =>
+        {
+            var problem = panel.Save();
+            if (problem != null) { MessageBox.Show(form, problem, form.Text, MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+            form.DialogResult = DialogResult.OK;
+        };
+        var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 0) };
+        buttons.Controls.Add(cancel);
+        buttons.Controls.Add(ok);
+        var stack = new TableLayoutPanel { AutoSize = true, ColumnCount = 1 };
+        stack.Controls.Add(panel);
+        stack.Controls.Add(buttons);
+        form.Controls.Add(stack);
+        form.AcceptButton = ok;
+        form.CancelButton = cancel;
+        form.ShowDialog(this);
+        ShowIdentity();
     }
 
     // ── building blocks ──────────────────────────────────────────────────────

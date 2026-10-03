@@ -77,9 +77,10 @@ namespace LbIntegrations.Cxbx
                              Help = "The game's: the console takes a region the game accepts - no question at start. Another one: Cxbx-Reloaded "
                                     + "warns before starting a game that does not accept it." },
             new CxbxOption { Key = "console.language", Group = "Console", Label = "Language", Default = "windows",
-                             Choices = { ("windows", "Windows' language"), ("1", "English"), ("4", "French"), ("3", "German"), ("5", "Spanish"),
+                             Choices = { ("windows", "Your console's language (else Windows')"), ("1", "English"), ("4", "French"), ("3", "German"), ("5", "Spanish"),
                                          ("6", "Italian"), ("9", "Portuguese"), ("2", "Japanese"), ("7", "Korean"), ("8", "Chinese"), Own },
-                             Help = "A game with several languages starts in the console's." },
+                             Help = "A game with several languages starts in the console's. Your console's: the one set in the Nixx window's "
+                                    + "\"Your console\" tab, else Windows' display language." },
             new CxbxOption { Key = "console.video", Group = "Console", Label = "Video standard", Default = "follow",
                              Choices = { ("follow", "Follow the game's region"), ("pal50", "PAL 50 Hz"), ("pal60", "PAL 60 Hz"),
                                          ("ntsc", "NTSC"), ("ntsc-hd", "NTSC + 480p/720p/1080i"), Own },

@@ -34,6 +34,9 @@
          write to the same folder and look for the same task. See src\Shared.RamDisk\RamDisk.cs for
          the protocol, and RamDiskLog.cs for how it reaches a log without naming one. -->
     <Compile Include="..\Shared.RamDisk\**\*.cs" />
+    <!-- "Your console": the pack's one identity and the panel that edits it - the Nixx window's tab, the same file. -->
+    <Compile Include="..\Shared.Identity\**\*.cs" />
+    <Compile Include="..\Menus\IdentityPanel.cs" Link="Identity\IdentityPanel.cs" />
   </ItemGroup>
 
   <!-- THE PAYLOAD, staged by build-release.ps1 and handed over as a property.

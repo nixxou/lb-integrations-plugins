@@ -21,6 +21,8 @@
     <!-- The RAM disk options and what the machine has, for the RAM disk tab (RamDiskTab.cs): the shared
          sources compiled in, as the plugins and the installer do. -->
     <Compile Include="..\Shared.RamDisk\**\*.cs" />
+    <!-- The pack's console identity - the "Your console" tab (IdentityPanel). -->
+    <Compile Include="..\Shared.Identity\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>

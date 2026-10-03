@@ -139,11 +139,13 @@ namespace LbIntegrations.Cxbx
             WriteAtomically(path, b);
         }
 
-        /// <summary>Windows' language, as the Xbox numbers its own: English 1, Japanese 2, German 3, French 4, Spanish 5,
-        /// Italian 6, Korean 7, Chinese 8, Portuguese 9 - English for any other.</summary>
+        /// <summary>The pack's console identity's language ("Your console", 03/10), else Windows', as the Xbox numbers its own:
+        /// English 1, Japanese 2, German 3, French 4, Spanish 5, Italian 6, Korean 7, Chinese 8, Portuguese 9 - English for
+        /// any other. The option's value stays "windows", what it was saved as before there was an identity.</summary>
         public static uint WindowsLanguage()
         {
-            switch (System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName)
+            var culture = LbIntegrations.Identity.PackIdentity.Load()?.Culture ?? System.Globalization.CultureInfo.CurrentUICulture;
+            switch (culture.TwoLetterISOLanguageName)
             {
                 case "ja": return 2;
                 case "de": return 3;

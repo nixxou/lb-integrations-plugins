@@ -3,6 +3,8 @@
 //     the folder has none (a folder installed into again keeps its own);
 //   - the console set as this Windows is: language, country, time zone, clock (XeniaConsole.FromWindows) - when
 //     xconfig.settings is not there yet, which is the case of a new folder: an existing one is the user's.
+//   - THE PACK'S CONSOLE IDENTITY FIRST when there is one (src\Shared.Identity, 03/10): its nickname makes the gamertag,
+//     its language and clock go over Windows' - country and time zone stay Windows', it has none.
 // Then a notification says what was used and asks whether it is right; "Change..." opens the same panel as the Nixx
 // window's Xenia tab. AN UPDATE SETS NOTHING UP: it goes over an install the user has already made his.
 
@@ -27,9 +29,11 @@ namespace LbIntegrations.Xenia
 
                 var profiles = XeniaProfile.Find(layout.ContentRoot);
                 var signed = XeniaProfile.SignedIn(layout.ConfigFile);
+                // The pack's console identity ("Your console", 03/10) first, this Windows for what it does not say.
+                var identity = LbIntegrations.Identity.PackIdentity.Load();
                 if (profiles.Count == 0)
                 {
-                    var tag = XeniaProfile.GamertagFrom();
+                    var tag = XeniaProfile.GamertagFrom(identity != null && identity.Nickname.Length > 0 ? identity.Nickname : null);
                     var xuid = XeniaProfile.Create(layout.ContentRoot, tag);
                     XeniaProfile.SignInAtStart(layout.ConfigFile, xuid);
                     said.Add("profile \"" + tag + "\", signed in at start");
@@ -45,8 +49,9 @@ namespace LbIntegrations.Xenia
                 if (!XeniaConsole.Exists(layout.StorageRoot))
                 {
                     console = XeniaConsole.FromWindows(XeniaConsole.Read(layout.StorageRoot));
+                    if (identity != null) console = XeniaConsole.WithIdentity(console, identity);
                     XeniaConsole.Write(layout.StorageRoot, console);
-                    said.Add("the console as this Windows is: " + console.Describe());
+                    said.Add((identity != null ? "the console as your console identity and this Windows say: " : "the console as this Windows is: ") + console.Describe());
                 }
                 else
                 {

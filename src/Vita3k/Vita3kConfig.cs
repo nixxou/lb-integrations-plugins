@@ -93,7 +93,7 @@ namespace LbIntegrations.Vita3k
         /// run once on its own, and it wrote its own default, false - measured on a delete and re-add.</summary>
         public static void ApplyInstallDefaults(Vita3kLayout layout, bool fresh = false)
         {
-            Put(layout, InstallDefaults.Concat(Pairs(FromWindows())).ToArray(), onlyMissing: true);
+            Put(layout, InstallDefaults.Concat(Pairs(FromIdentity() ?? FromWindows())).ToArray(), onlyMissing: true);
             if (fresh) Put(layout, new[] { ("boot-apps-full-screen", "true") }, onlyMissing: false);
             QuietExitConfirm(layout);
         }
@@ -136,6 +136,19 @@ namespace LbIntegrations.Vita3k
                 Log.Info("turned off Vita3K's exit confirmation (gui-configs\\CurrentSettings.ini)");
             }
             catch (Exception ex) { Log.Warn("could not turn off Vita3K's exit confirmation", ex); }
+        }
+
+        /// <summary>The four settings from the pack's console identity ("Your console", src\Shared.Identity, 03/10) - null
+        /// when there is none: then Windows says, as before.</summary>
+        public static VitaSystemSettings FromIdentity()
+        {
+            var id = LbIntegrations.Identity.PackIdentity.Load();
+            if (id == null) return null;
+            var s = FromCultures(id.Culture, id.Culture);
+            s.DateFormat = id.DateOrder == "ymd" ? 0 : id.DateOrder == "dmy" ? 1 : 2;
+            s.TimeFormat = id.Clock24 ? 1 : 0;
+            s.EnterButton = id.Confirm == "circle" ? 0 : 1;
+            return s;
         }
 
         /// <summary>The four settings from Windows - see the header.

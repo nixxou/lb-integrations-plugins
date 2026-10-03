@@ -51,6 +51,8 @@
     <Compile Include="..\Shared.RamDisk\**\*.cs" />
     <!-- ZArchive (.zar), Xenia's own format - the pack's one reader. -->
     <Compile Include="..\Shared.Zar\**\*.cs" />
+    <!-- The pack's console identity ("Your console"): the first install's gamertag, language and clock. -->
+    <Compile Include="..\Shared.Identity\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>

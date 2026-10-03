@@ -126,17 +126,8 @@ namespace LbIntegrations.Xenia
         public static string GamertagFrom(string name = null)
         {
             try { name ??= Environment.UserName; } catch { }
-            var normalized = (name ?? "").Normalize(NormalizationForm.FormD);
-            var sb = new StringBuilder();
-            foreach (var c in normalized)
-            {
-                if (c < 128 && char.IsLetterOrDigit(c)) sb.Append(c);
-                else if ((c == ' ' || c == '_' || c == '-' || c == '.') && sb.Length > 0 && sb[sb.Length - 1] != ' ') sb.Append(' ');
-            }
-            var tag = sb.ToString().Trim();
-            while (tag.Length > 0 && !char.IsLetter(tag[0])) tag = tag.Substring(1).TrimStart();
-            if (tag.Length > 15) tag = tag.Substring(0, 15).TrimEnd();
-            return IsValidGamertag(tag) ? tag : "Player";
+            // The pack's one conversion (src\Shared.Identity): the "Your console" tab shows the very gamertag made here.
+            return LbIntegrations.Identity.PackIdentity.Gamertag(name);
         }
 
         // ── on disk ──────────────────────────────────────────────────────────

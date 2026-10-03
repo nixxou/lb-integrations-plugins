@@ -428,6 +428,31 @@ namespace LbIntegrations.Flycast
 
         // ── installation ─────────────────────────────────────────────────────
 
+        /// <summary>The pack's console identity's language ("Your console", src\Shared.Identity, 03/10) as the Dreamcast's:
+        /// [config] Dreamcast.Language of emu.cfg (core/cfg/option.cpp - 0 Japanese, 1 English, 2 German, 3 French,
+        /// 4 Spanish, 5 Italian; English for any other), only when emu.cfg does not hold it yet, at a first install. A game's
+        /// own Language option still goes over it for its session.</summary>
+        private static void ApplyIdentity(FlycastLayout layout)
+        {
+            try
+            {
+                var id = LbIntegrations.Identity.PackIdentity.Load();
+                if (id == null || string.IsNullOrEmpty(layout?.ConfigFile)) return;
+                var lines = File.Exists(layout.ConfigFile) ? File.ReadAllLines(layout.ConfigFile).ToList() : new List<string>();
+                int section = lines.FindIndex(l => l.Trim().Equals("[config]", StringComparison.OrdinalIgnoreCase));
+                int end = section < 0 ? -1 : lines.FindIndex(section + 1, l => l.TrimStart().StartsWith("["));
+                if (section >= 0 && end < 0) end = lines.Count;
+                if (section >= 0 && lines.Skip(section + 1).Take(end - section - 1)
+                        .Any(l => l.Split('=')[0].Trim().Equals("Dreamcast.Language", StringComparison.OrdinalIgnoreCase)))
+                { Log.Info("console identity: emu.cfg has its own Dreamcast language - left alone"); return; }
+                var line = "Dreamcast.Language = " + id.DreamcastLanguage().ToString(System.Globalization.CultureInfo.InvariantCulture);
+                if (section < 0) { if (lines.Count > 0 && lines[lines.Count - 1].Trim().Length > 0) lines.Add(""); lines.Add("[config]"); lines.Add(line); }
+                else lines.Insert(section + 1, line);
+                File.WriteAllText(layout.ConfigFile, string.Join("\r\n", lines) + "\r\n");
+                Log.Info("console identity: the Dreamcast's language set (" + line + ")");
+            }
+            catch (Exception ex) { Log.Warn("console identity: could not set the Dreamcast's language", ex); }
+        }
         public override EmulatorInstallResponse InstallEmulator(InstallEmulatorArgs args)
         {
             string archive = null;
@@ -485,6 +510,7 @@ namespace LbIntegrations.Flycast
 
                 var layout = FlycastPaths.Resolve(exe);
                 Log.Info("installed to " + targetDir + " - data: " + layout.DataDir + " (" + layout.Reason + ")");
+                if (!reinstall) ApplyIdentity(layout);
 
                 // Flycast ships with no key bound to saving a state, loading one, or quitting. This
                 // is the moment to fix that: the install is ours, and a mapping written now is in

@@ -374,6 +374,21 @@ namespace LbIntegrations.Xenia
             return v;
         }
 
+        /// <summary>The language and the clock of the pack's console identity over <paramref name="start"/>; a language
+        /// Xenia does not have leaves the one there.</summary>
+        public static XeniaConsoleValues WithIdentity(XeniaConsoleValues start, LbIntegrations.Identity.PackIdentity identity)
+        {
+            var v = start.Copy();
+            try
+            {
+                var lang = LanguageOf(identity.Culture);
+                if (lang != 0) v.Language = lang;
+                v.Hour24 = identity.Clock24;
+            }
+            catch { }
+            return v;
+        }
+
         private static uint LanguageOf(CultureInfo c)
         {
             switch (c.TwoLetterISOLanguageName.ToLowerInvariant())

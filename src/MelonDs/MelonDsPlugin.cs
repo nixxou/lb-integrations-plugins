@@ -479,6 +479,7 @@ namespace LbIntegrations.MelonDs
                 Log.Info("installed to " + targetDir + " - configuration: " + layout.ConfigFile
                          + " (" + layout.Reason + ")");
                 RedirectSavePaths(layout);
+                if (!reinstall) ApplyIdentity(layout);
 
                 if (reinstall)
                 {
@@ -523,6 +524,38 @@ namespace LbIntegrations.MelonDs
         /// The paths are written ABSOLUTE: getAssetPath uses the configured value as a directory
         /// directly, so a relative one would resolve against the process's working directory, which
         /// belongs to whoever launched the emulator.</summary>
+        /// <summary>The pack's console identity ("Your console", src\Shared.Identity, 03/10) as the DS's owner: name,
+        /// language, birthday, favourite colour into [Instance0.Firmware] - each only when melonDS.toml does not hold it
+        /// yet, at a first install - and OverrideSettings TURNED ON with them (Mehdi, 03/10: "dans le cadre d'une install
+        /// propre"), so they hold everywhere: on the firmware melonDS makes itself (it always applies them there -
+        /// EmuInstance::generateFirmware), over a firmware dump's owner, and in DSi mode, where melonDS writes them into
+        /// the NAND's settings files at every boot - a forced session keeps the save's own files (DsiWorkspace.MarkForced),
+        /// so nothing of a DSiWare save is lost. Unticked in the melonDS tab, a dump's or a NAND's owner is back.</summary>
+        private static void ApplyIdentity(MelonDsLayout layout)
+        {
+            try
+            {
+                var id = LbIntegrations.Identity.PackIdentity.Load();
+                if (id == null || layout?.ConfigFile == null) return;
+                var table = MelonDsGameSettings.FirmwareTable;
+                MelonDsToml.TryRead(layout.ConfigFile, table, out var have, "OverrideSettings", "Username", "Language", "BirthdayMonth", "BirthdayDay", "FavouriteColour");
+                var ci = System.Globalization.CultureInfo.InvariantCulture;
+                var wanted = new Dictionary<string, string>(StringComparer.Ordinal);
+                if (!have.ContainsKey("Username") && id.DsNickname().Length > 0) wanted["Username"] = MelonDsToml.Text(id.DsNickname());
+                if (!have.ContainsKey("Language")) wanted["Language"] = id.DsLanguage().ToString(ci);
+                if (!have.ContainsKey("BirthdayMonth")) wanted["BirthdayMonth"] = id.BirthMonth.ToString(ci);
+                if (!have.ContainsKey("BirthdayDay")) wanted["BirthdayDay"] = id.BirthDay.ToString(ci);
+                if (!have.ContainsKey("FavouriteColour")) wanted["FavouriteColour"] = id.Colour.ToString(ci);
+                // On only when the whole owner is ours: a toml with any owner value of its own keeps its own choice too.
+                if (!have.ContainsKey("OverrideSettings") && wanted.Count == 5 - (id.DsNickname().Length > 0 ? 0 : 1)
+                    && !have.ContainsKey("Username")) wanted["OverrideSettings"] = "true";
+                if (wanted.Count == 0) { Log.Info("console identity: melonDS.toml has its own owner - left alone"); return; }
+                var error = MelonDsToml.Write(layout.ConfigFile, table, wanted);
+                Log.Info("console identity: " + (error ?? "the DS's owner set (" + string.Join(", ", wanted.Keys) + ")"));
+            }
+            catch (Exception ex) { Log.Warn("console identity: could not set the DS's owner", ex); }
+        }
+
         private static void RedirectSavePaths(MelonDsLayout layout)
         {
             try

@@ -113,6 +113,8 @@ namespace LbIntegrations.Menus
         private readonly TabControl _tabs;
         private RamDiskTab _ramDisk;
         private TabPage _ramDiskPage;
+        private IdentityPanel _identity;
+        private TabPage _identityPage;
 
         public NixxSettingsForm(List<SettingsProvider> providers)
         {
@@ -128,6 +130,7 @@ namespace LbIntegrations.Menus
 
             _tabs = new TabControl { Dock = DockStyle.Fill };
             _tabs.TabPages.Add(GeneralTab(providers));
+            _tabs.TabPages.Add(IdentityPage());
             _tabs.TabPages.Add(RamDiskPage());
             foreach (var provider in providers) _tabs.TabPages.Add(PluginTab(provider));
 
@@ -155,6 +158,16 @@ namespace LbIntegrations.Menus
         /// with its reason, and nothing after it is saved.</summary>
         private bool SaveAll()
         {
+            if (_identity != null)
+            {
+                var problem = _identity.Save();
+                if (problem != null)
+                {
+                    _tabs.SelectedTab = _identityPage;
+                    MessageBox.Show(this, problem, IdentityPanel.Title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return false;
+                }
+            }
             if (_ramDisk != null)
             {
                 var problem = _ramDisk.Save();
@@ -177,6 +190,25 @@ namespace LbIntegrations.Menus
                 return false;
             }
             return true;
+        }
+
+        /// <summary>The pack's one console identity, for every plugin - see IdentityPanel.</summary>
+        private TabPage IdentityPage()
+        {
+            _identityPage = new TabPage(IdentityPanel.Title) { UseVisualStyleBackColor = true };
+            try
+            {
+                var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(8) };
+                _identity = new IdentityPanel();
+                scroll.Controls.Add(_identity);
+                _identityPage.Controls.Add(scroll);
+            }
+            catch (Exception ex)
+            {
+                RelayLog.Warn("the identity tab", ex);
+                _identityPage.Controls.Add(new Label { Dock = DockStyle.Fill, Padding = new Padding(12), ForeColor = Color.Firebrick, Text = "Your console could not be shown:\n\n" + ex.Message });
+            }
+            return _identityPage;
         }
 
         /// <summary>One RAM disk section for every plugin of the pack - see RamDiskTab.</summary>
