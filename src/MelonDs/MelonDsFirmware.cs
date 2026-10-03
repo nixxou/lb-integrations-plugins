@@ -127,7 +127,7 @@ namespace LbIntegrations.MelonDs
 
                 if (answer == "identity")
                 {
-                    var error = WriteIdentity(layout, owner, id, force: true);
+                    var error = WriteIdentity(layout, copy, owner, id, force: true);
                     if (error != null) { Log.Warn("firmware: your console could not be set - " + error); return; }
                 }
                 else if (answer == "dump")
@@ -145,9 +145,16 @@ namespace LbIntegrations.MelonDs
         }
 
         /// <summary>The identity as melonDS's firmware settings, the override on - and a MAC when the dump's is blank and none
-        /// is set. Null, or why not.</summary>
-        private static string WriteIdentity(MelonDsLayout layout, Owner owner, PackIdentity id, bool force)
+        /// is set - AND INTO THE COPY melonDS boots on (Mehdi, 03/10): its own owner then is the identity too, override or
+        /// not. Null, or why not.</summary>
+        private static string WriteIdentity(MelonDsLayout layout, string copy, Owner owner, PackIdentity id, bool force)
         {
+            if (copy != null && File.Exists(copy) && IsInside(copy, Path.Combine(layout.InstallDir, CopyDir)))
+            {
+                var why = WriteOwner(copy, id);
+                if (why != null) Log.Warn("firmware: your console could not be written into " + Path.GetFileName(copy) + " - " + why);
+                else Log.Info("firmware: your console written into the copy " + Path.GetFileName(copy) + " - " + Read(File.ReadAllBytes(copy)).Describe());
+            }
             var values = new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["OverrideSettings"] = "true",
@@ -167,7 +174,7 @@ namespace LbIntegrations.MelonDs
 
         /// <summary>The DS firmware dump melonDS boots on - external BIOS on - with its owner and whether the override puts the
         /// identity over it. Null when melonDS boots on its own firmware.</summary>
-        public static (string Dump, Owner Owner, bool Override)? Active(MelonDsLayout layout)
+        public static (string Dump, Owner Owner, bool Override, bool Copied)? Active(MelonDsLayout layout)
         {
             try
             {
@@ -181,13 +188,14 @@ namespace LbIntegrations.MelonDs
                                                              && IsInside(path, Path.Combine(layout.InstallDir, CopyDir)));
                 var fw = MelonDsToml.Read(layout.ConfigFile, MelonDsGameSettings.FirmwareTable, "OverrideSettings");
                 bool over = fw.TryGetValue("OverrideSettings", out var o) && o.Trim() == "true";
-                return (Path.GetFileName(row?.Source ?? path), Read(File.ReadAllBytes(path)), over);
+                return (Path.GetFileName(row?.Source ?? path), Read(File.ReadAllBytes(path)), over, row != null);
             }
             catch { return null; }
         }
 
-        /// <summary>"Apply to my emulators": the identity over the DS dump - melonDS pointed at its copy first, the override on,
-        /// and the answer kept as the first launch's would be. Null, or why not.</summary>
+        /// <summary>"Apply to my emulators": the identity as the DS dump's owner - melonDS pointed at its copy first, the
+        /// identity written into the copy (the dump never), the override on, and the answer kept as the first launch's would
+        /// be. Null, or why not.</summary>
         public static string UseIdentity(MelonDsLayout layout)
         {
             if (DsiNand.EmulatorRunning()) return "melonDS is running - close it first";
@@ -195,13 +203,61 @@ namespace LbIntegrations.MelonDs
             MelonDsGameSettings.Restore(layout, "your console is being applied");
             var copy = Protect(layout, MelonDsPaths.DsTable);
             var owner = copy == null ? null : Read(File.ReadAllBytes(copy));
-            var error = WriteIdentity(layout, owner, PackIdentity.Load() ?? PackIdentity.FromWindows(), force: false);
+            var error = WriteIdentity(layout, copy, owner, PackIdentity.Load() ?? PackIdentity.FromWindows(), force: false);
             if (error != null) return error;
             var index = ReadIndex(layout);
             var row = copy == null ? null : index.FirstOrDefault(r => string.Equals(r.Copy, Path.GetFileName(copy), StringComparison.OrdinalIgnoreCase));
             if (row != null) { row.Answer = "identity"; WriteIndex(layout, index); }
             return null;
         }
+
+        /// <summary>The identity as the owner of a firmware COPY of ours: name, colour, birthday, language in both user-settings
+        /// copies, each with its CRC16 (GBATEK "DS Firmware User Settings": 0x02 colour, 0x03 month, 0x04 day, 0x06 name in
+        /// UTF-16 and 0x1A its length, 0x64 bits 0-2 the language, 0x70 counter, 0x72 CRC of 0x00-0x6F). The newer copy keeps
+        /// its counter, the older one gets the next and becomes the newer: both are the identity. The extended block
+        /// (0x74-0xFF, its own CRC) is not touched. Null, or why not.</summary>
+        internal static string WriteOwner(string copy, PackIdentity id)
+        {
+            var fw = File.ReadAllBytes(copy);
+            if (fw.Length < 0x200) return "too small to be a firmware";
+            int at = BitConverter.ToUInt16(fw, 0x20) * 8;
+            if (at <= 0 || at + 0x200 > fw.Length) at = fw.Length - 0x200;
+            int a = at, b = at + 0x100;
+            bool va = CrcOk(fw, a), vb = CrcOk(fw, b);
+            int newer = va && vb ? (((BitConverter.ToUInt16(fw, b + 0x70) - BitConverter.ToUInt16(fw, a + 0x70)) & 0x7F) is int d && d > 0 && d < 0x40 ? b : a)
+                      : vb ? b : a;
+            int older = newer == a ? b : a;
+            // A blank block (no valid copy at all) is made out of the first one's bytes, version 5 as melonDS's own.
+            if (!va && !vb) { fw[newer] = 5; BitConverter.GetBytes((ushort)0).CopyTo(fw, newer + 0x70); }
+            int counter = BitConverter.ToUInt16(fw, newer + 0x70);
+            var name = id.DsNickname();
+            foreach (var slot in new[] { newer, older })
+            {
+                if (slot == older) Buffer.BlockCopy(fw, newer, fw, older, 0x100);      // the whole block, extended part and its CRC too
+                fw[slot + 0x02] = (byte)Math.Min(15, Math.Max(0, id.Colour));
+                fw[slot + 0x03] = (byte)Math.Min(12, Math.Max(1, id.BirthMonth));
+                fw[slot + 0x04] = (byte)Math.Min(31, Math.Max(1, id.BirthDay));
+                if (name.Length > 0)
+                {
+                    Array.Clear(fw, slot + 0x06, 20);
+                    var utf16 = Encoding.Unicode.GetBytes(name);
+                    Buffer.BlockCopy(utf16, 0, fw, slot + 0x06, Math.Min(20, utf16.Length));
+                    BitConverter.GetBytes((ushort)Math.Min(10, name.Length)).CopyTo(fw, slot + 0x1A);
+                }
+                fw[slot + 0x64] = (byte)((fw[slot + 0x64] & ~0x07) | (id.DsLanguage() & 0x07));
+                BitConverter.GetBytes((ushort)(slot == newer ? counter : (counter + 1) & 0x7F)).CopyTo(fw, slot + 0x70);
+                BitConverter.GetBytes((ushort)Crc16(fw, slot, 0x70, 0xFFFF)).CopyTo(fw, slot + 0x72);
+            }
+            var tmp = copy + ".tmp";
+            File.WriteAllBytes(tmp, fw);
+            File.Copy(tmp, copy, overwrite: true);
+            File.Delete(tmp);
+            return null;
+        }
+
+        /// <summary>The identity in the words of Owner.Describe - for "Apply to my emulators".</summary>
+        public static string DescribeIdentity(PackIdentity id)
+            => new Owner { Blank = false, Name = id.DsNickname(), Language = id.DsLanguage(), Month = id.BirthMonth, Day = id.BirthDay, Colour = id.Colour }.Describe();
 
         private static bool Same(Owner o, PackIdentity id)
             => !o.Blank && o.Name == id.DsNickname() && o.Language == id.DsLanguage() && o.Month == id.BirthMonth && o.Day == id.BirthDay && o.Colour == id.Colour;

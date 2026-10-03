@@ -1,8 +1,9 @@
 // "Apply to my emulators" of the Nixx window's "Your console" tab, for melonDS - two rows:
 //   its Firmware settings   the identity's name, language, birthday and colour in [Instance0.Firmware] (MelonDsGameSettings
 //                           .WriteOwn): what the firmware melonDS makes itself always shows, and what the override shows
-//   the DS firmware dump    when melonDS boots on one: the identity over its owner - the override on (MelonDsFirmware
-//                           .UseIdentity), the dump's copy and its answer as the first launch on it would have left them
+//   the DS firmware dump    when melonDS boots on one: the identity written into OUR COPY of it as its owner (the dump in
+//                           RetroArch\system never), the override on (MelonDsFirmware.UseIdentity), and the answer kept as
+//                           the first launch on it would have left it
 // The DSi consoles are not in it: one made from a blank NAND was set up as the identity, one made from a set-up NAND keeps its
 // owner (Mehdi, 03/10). Found by the relay by its name, LbIntegrations.MelonDs.IdentityTarget.
 
@@ -57,9 +58,8 @@ namespace LbIntegrations.MelonDs
             if (active != null)
             {
                 var a = active.Value;
-                rows.Add(PackIdentity.Row("melonds-dump", "melonDS - DS firmware dump " + a.Dump,
-                    (a.Override ? "your console shown over its owner, " : "its owner shown, ") + a.Owner.Describe(),
-                    "your console shown over its owner", running));
+                rows.Add(PackIdentity.Row("melonds-dump", "melonDS - copy of the DS firmware " + a.Dump,
+                    a.Owner.Describe(), MelonDsFirmware.DescribeIdentity(id), running));
             }
             return rows.ToArray();
         }
