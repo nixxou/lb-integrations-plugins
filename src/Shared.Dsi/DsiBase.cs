@@ -129,6 +129,27 @@ namespace LbIntegrations.Dsi
                 ? null : Path.Combine(dir, identity + ".bin");
         }
 
+        /// <summary>A dump given another name (DsiBiosImport copies DSi_Nand_EUR_1.4.5.bin as DSi_Nand_EUR.bin): its console
+        /// and the console's recipe and record renamed with it, since THE NAME IS THE LINK (ConsoleFor). Only what exists
+        /// under the old name and nothing under the new; never throws. A save finds its original by hash (FindOriginal), so
+        /// it does not care; the identity cache is keyed on the path and simply reads the moved file again.</summary>
+        public static void RenameConsole(DsiHost layout, string oldName, string newName)
+        {
+            try
+            {
+                var dir = DsiWorkspace.DsiDir(layout);
+                if (dir == null || string.IsNullOrEmpty(oldName) || string.IsNullOrEmpty(newName)
+                    || string.Equals(oldName, newName, StringComparison.OrdinalIgnoreCase)) return;
+                var from = Path.Combine(dir, oldName);
+                var to = Path.Combine(dir, newName);
+                if (!File.Exists(from) || File.Exists(to)) return;
+                foreach (var suffix in new[] { "", RecipeSuffix, RecordSuffix })
+                    if (File.Exists(from + suffix) && !File.Exists(to + suffix)) File.Move(from + suffix, to + suffix);
+                DsiLog.Info("the console built from " + oldName + " follows it as " + newName);
+            }
+            catch (Exception ex) { DsiLog.Warn("could not rename the console of " + oldName, ex); }
+        }
+
         /// <summary>The console configured from this dump, or null when there is none.
         ///
         /// THE NAME IS THE LINK. dsi\<the dump's file name> is that dump's console, and nothing

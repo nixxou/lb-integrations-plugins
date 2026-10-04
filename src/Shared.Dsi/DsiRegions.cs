@@ -283,9 +283,26 @@ namespace LbIntegrations.Dsi
             return parts.Count == 0 ? "(none)" : string.Join(" or ", parts);
         }
 
-        /// <summary>The name this plugin would give a NAND file of this region, used when telling
-        /// somebody what to go and find. Any name works - the region is read from inside.</summary>
+        /// <summary>The name this plugin gives a NAND file of this region: what it is copied as when it comes from
+        /// another folder (DsiBiosImport), and what is shown when telling somebody what to go and find. DSi_Nand_EUR.bin -
+        /// the shape of the dumps in circulation, without their firmware version (Mehdi, 04/10). Any name works in bios\:
+        /// the region is read from inside.</summary>
         public static string SuggestedFileName(DsiRegion region)
-            => "dsinand_" + Name(region).ToLowerInvariant() + ".bin";
+            => "DSi_Nand_" + Code(region) + ".bin";
+
+        /// <summary>The three letters the dumps in circulation carry: DSi_Nand_EUR_1.4.5.bin.</summary>
+        public static string Code(DsiRegion region)
+        {
+            switch (region)
+            {
+                case DsiRegion.Japan: return "JPN";
+                case DsiRegion.Usa: return "USA";
+                case DsiRegion.Europe: return "EUR";
+                case DsiRegion.Australia: return "AUS";
+                case DsiRegion.China: return "CHN";
+                case DsiRegion.Korea: return "KOR";
+                default: return "UNK";
+            }
+        }
     }
 }

@@ -137,7 +137,9 @@ namespace LbIntegrations.MelonDs
         {
             var dir = Dir(layout);
             if (dir == null) return new List<string>();
-            return DsiBiosImport.Import(dir, new[] { RetroArchDir(layout) }, Wanted(), nands: true, report, cancelled);
+            return DsiBiosImport.Import(dir, new[] { RetroArchDir(layout) }, Wanted(), nands: true, report, cancelled,
+                bios7: () => Find(layout, DsiBios7),
+                renamed: (from, to) => DsiBase.RenameConsole(MelonDsHost.For(layout), from, to));
         }
 
         /// <summary>Make the folder and leave a note in it saying what belongs there. Called at the

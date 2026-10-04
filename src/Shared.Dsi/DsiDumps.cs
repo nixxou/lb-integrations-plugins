@@ -141,8 +141,14 @@ namespace LbIntegrations.Dsi
             return found;
         }
 
-        /// <summary>A file the first-use flow put beside a NAND, and which must never be taken for
-        /// a NAND itself.</summary>
+        /// <summary>The region of one dump, read out of it (a decrypt and a mount, about 150 ms), or null. Not remembered:
+        /// for DsiBiosImport, which names a dump it copies after its region.</summary>
+        public static DsiRegion? RegionOf(string nandPath, string bios7Path)
+        {
+            try { return string.IsNullOrEmpty(bios7Path) || !File.Exists(bios7Path) ? null : ReadRegion(nandPath, bios7Path, out _); }
+            catch { return null; }
+        }
+
         /// <summary>Cheap: a file that LOOKS like a DSi NAND dump - in the size range, not one of our own leftovers, and
         /// ending with no$gba's "DSi eMMC CID/CPU" footer in its last 64 bytes. Nothing decrypted: for copying the user's
         /// dumps between folders (DsiBiosImport), where the region does not matter yet.</summary>
@@ -164,6 +170,8 @@ namespace LbIntegrations.Dsi
             catch { return false; }
         }
 
+        /// <summary>A file the first-use flow put beside a NAND, and which must never be taken for
+        /// a NAND itself.</summary>
         private static bool IsNotANand(string path)
         {
             foreach (var suffix in NotNands)

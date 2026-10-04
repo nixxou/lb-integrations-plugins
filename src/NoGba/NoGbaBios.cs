@@ -64,7 +64,10 @@ namespace LbIntegrations.NoGba
                 if (!string.IsNullOrEmpty(m)) sources.Add(Path.Combine(m, "bios"));
             var wanted = new List<DsiBiosImport.Wanted>();
             foreach (var file in Files) wanted.Add(new DsiBiosImport.Wanted { Name = file.OurName, Aliases = file.AlsoKnownAs ?? Array.Empty<string>() });
-            return DsiBiosImport.Import(dir, sources, wanted, nands: true, report, cancelled);
+            var arm7 = Array.Find(Files, f => string.Equals(f.OurName, "biosdsi7.bin", StringComparison.OrdinalIgnoreCase));
+            return DsiBiosImport.Import(dir, sources, wanted, nands: true, report, cancelled,
+                bios7: () => arm7 == null ? null : Find(layout, arm7),
+                renamed: (from, to) => DsiBase.RenameConsole(NoGbaHost.For(layout), from, to));
         }
 
         /// <summary>Where no$gba looks: its own folder. Declared as "." rather than the empty string

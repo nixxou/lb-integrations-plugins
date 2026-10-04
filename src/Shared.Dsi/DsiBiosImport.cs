@@ -10,8 +10,10 @@
 // MISSING: a file already in bios\ under any of its names is never replaced, so the user's own choice wins and a second
 // install costs nothing. The sources are left as they are - a copy, not a move: RetroArch may still want its own.
 //
-// A NAND IS TAKEN ON WHAT IT LOOKS LIKE (DsiDumps.LooksLikeNand: size range and the "DSi eMMC CID/CPU" footer), under its
-// own name: that name is what ties a configured console (dsi\<the same name>) to its original - see DsiBase.
+// A NAND IS TAKEN ON WHAT IT LOOKS LIKE (DsiDumps.LooksLikeNand: size range and the "DSi eMMC CID/CPU" footer), and NAMED
+// AFTER WHAT IT IS (Mehdi, 04/10): DSi_Nand_EUR.bin, its region read out of it, when that name is free - its own name
+// otherwise. The name ties a configured console (dsi\<the same name>) to its original, so the console is renamed with it
+// (DsiBase.RenameConsole). Files already in bios\ are never renamed: any name works there.
 
 using System;
 using System.Collections.Generic;
@@ -31,9 +33,16 @@ namespace LbIntegrations.Dsi
         }
 
         /// <summary>Copy into <paramref name="target"/> what it is missing, from <paramref name="sources"/> in order. What
-        /// was copied, one line each. Never throws; a file that cannot be copied is logged and skipped.</summary>
+        /// was copied, one line each. Never throws; a file that cannot be copied is logged and skipped.
+        ///
+        /// A NAND IS COPIED UNDER A FIXED NAME, DSi_Nand_EUR.bin (Mehdi, 04/10) - its region read out of it with the DSi ARM7
+        /// BIOS <paramref name="bios7"/> gives once the BIOS files are in (so they go first) - when that name is free in
+        /// target; under its own otherwise, or when its region cannot be read. <paramref name="renamed"/> is told
+        /// (old name, new name), for the console built from it to follow (DsiBase.RenameConsole). A dump already in target
+        /// - same size and write time, which File.Copy keeps - is not copied twice under another name.</summary>
         public static List<string> Import(string target, IEnumerable<string> sources, IEnumerable<Wanted> files, bool nands,
-                                          Action<string> report = null, Func<bool> cancelled = null)
+                                          Action<string> report = null, Func<bool> cancelled = null,
+                                          Func<string> bios7 = null, Action<string, string> renamed = null)
         {
             var copied = new List<string>();
             try
@@ -47,8 +56,8 @@ namespace LbIntegrations.Dsi
                 Directory.CreateDirectory(full);
                 var wanted = (files ?? Enumerable.Empty<Wanted>()).ToList();
 
+                // The BIOS and firmware first, from every source: the DSi ARM7 BIOS is what reads a NAND's region below.
                 foreach (var source in from)
-                {
                     foreach (var file in wanted)
                     {
                         if (cancelled?.Invoke() == true) return copied;
@@ -57,19 +66,66 @@ namespace LbIntegrations.Dsi
                         if (found == null) continue;
                         if (Copy(found, Path.Combine(full, file.Name), report)) copied.Add(Path.GetFileName(found) + " -> " + file.Name);
                     }
-                    if (!nands) continue;
-                    foreach (var path in Directory.EnumerateFiles(source))
-                    {
-                        if (cancelled?.Invoke() == true) return copied;
-                        var name = Path.GetFileName(path);
-                        if (File.Exists(Path.Combine(full, name)) || !DsiDumps.LooksLikeNand(path)) continue;
-                        if (Copy(path, Path.Combine(full, name), report)) copied.Add(name);
-                    }
+
+                if (nands)
+                {
+                    string arm7 = null;
+                    try { arm7 = bios7?.Invoke(); } catch { }
+                    foreach (var source in from)
+                        foreach (var path in Directory.EnumerateFiles(source))
+                        {
+                            if (cancelled?.Invoke() == true) return copied;
+                            if (!DsiDumps.LooksLikeNand(path) || AlreadyIn(full, path)) continue;
+                            var own = Path.GetFileName(path);
+                            var region = DsiDumps.RegionOf(path, arm7);
+                            var fixedName = region != null ? DsiRegions.SuggestedFileName(region.Value) : null;
+                            var name = fixedName != null && !File.Exists(Path.Combine(full, fixedName)) ? fixedName
+                                     : !File.Exists(Path.Combine(full, own)) ? own : null;
+                            if (name == null) { DsiLog.Info("bios: " + own + " not copied - " + (fixedName ?? own) + " and " + own + " are both taken in " + full); continue; }
+                            if (!Copy(path, Path.Combine(full, name), report)) continue;
+                            copied.Add(own == name ? own : own + " -> " + name);
+                            if (own != name) try { renamed?.Invoke(own, name); } catch { }
+                        }
                 }
                 if (copied.Count > 0) DsiLog.Info("bios: " + copied.Count + " file(s) copied into " + full + " - " + string.Join(", ", copied));
             }
             catch (Exception ex) { DsiLog.Warn("bios: could not copy the user's files into " + target, ex); }
             return copied;
+        }
+
+        /// <summary>The same dump already in <paramref name="dir"/>, under any name: same size and same last 64 bytes - the
+        /// "DSi eMMC CID/CPU" footer, which carries the console's own CID. NOT the write time: measured 04/10, six dumps of
+        /// six regions sharing one size and one date were all taken for the first one copied.</summary>
+        private static bool AlreadyIn(string dir, string path)
+        {
+            try
+            {
+                var length = new FileInfo(path).Length;
+                var tail = Tail(path);
+                if (tail == null) return false;
+                foreach (var other in Directory.EnumerateFiles(dir))
+                {
+                    if (new FileInfo(other).Length != length) continue;
+                    var t = Tail(other);
+                    if (t != null && t.SequenceEqual(tail)) return true;
+                }
+                return false;
+            }
+            catch { return false; }
+        }
+
+        private static byte[] Tail(string path)
+        {
+            try
+            {
+                var tail = new byte[64];
+                using (var f = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    f.Seek(-tail.Length, SeekOrigin.End);
+                    return f.Read(tail, 0, tail.Length) == tail.Length ? tail : null;
+                }
+            }
+            catch { return null; }
         }
 
         private static string SafeFull(string path)
