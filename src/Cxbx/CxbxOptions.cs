@@ -4,9 +4,18 @@
 //
 // WHERE THEY GO. Cxbx-Reloaded has no command line for any of them: they are read from its settings.ini and its
 // EEPROM.bin when the loader starts (a game that restarts itself reads them again - still ours). So for the time of a
-// session the plugin WRITES them there, and puts both files back as they were once the session is over: a copy of each
-// in <data>\lbip-session\, taken before anything is written. Left behind (the host killed mid-game), the copy is put
-// back at the next launch or the host's next start. An option left unset is not written: Cxbx-Reloaded's own value - the
+// session the plugin WRITES them there, and puts them back once the session is over: a copy of each in
+// <data>\lbip-session\, taken before anything is written. Left behind (the host killed mid-game), they are put back at
+// the next launch or the host's next start.
+//
+// PUT BACK WHAT WE CHANGED, NOT THE WHOLE FILE (Mehdi, 04/10). A session left behind, then cxbx.exe opened on its own and
+// a setting changed in it: copying the old settings.ini back would wipe that change without a word. So keys.tsv notes
+// each line written - its value before, the value written - and only a line still holding what was written goes back;
+// a line changed since is the user's (or Cxbx-Reloaded's) and stays, as every line not touched. EEPROM.bin, a few bytes
+// under a checksum, goes back whole - but only while it is still exactly what the session wrote (eeprom.sha): changed
+// since, it is kept. A settings.ini nobody touched since the session wrote it (settings.sha) goes back whole, as before;
+// a line is "still what was written" also when Cxbx-Reloaded wrote the same value its own way (0x8 for 8, True for
+// true). A session from before keys.tsv is put back whole, as it was. An option left unset is not written: Cxbx-Reloaded's own value - the
 // one its window (right-click a game, "Open Nixx-Cxbx...") sets - stays.
 //
 // What each one is, read in Cxbx-Reloaded's source (master of April 2026):
@@ -145,15 +154,25 @@ namespace LbIntegrations.Cxbx
                 if (CxbxPaths.LoaderRunning()) { Log.Info("options: Cxbx-Reloaded is running - its files are put back once it has quit"); return; }
                 // paths.tsv: each copy and where it came from - written with the copies, so a restore never guesses.
                 var list = Path.Combine(dir, "paths.tsv");
+                var keys = Path.Combine(dir, KeysFile);
+                var sha = Path.Combine(dir, EepromHash);
+                var done = new List<string>();
                 if (File.Exists(list))
                     foreach (var line in File.ReadAllLines(list))
                     {
                         var c = line.Split('\t');
                         var copy = c.Length == 2 ? Path.Combine(dir, c[0]) : null;
-                        if (copy != null && File.Exists(copy)) File.Copy(copy, c[1], overwrite: true);
+                        if (copy == null || !File.Exists(copy)) continue;
+                        bool isSettings = c[0].Equals(CxbxPaths.SettingsFile, StringComparison.OrdinalIgnoreCase);
+                        var settingsSha = Path.Combine(dir, SettingsHash);
+                        bool untouched = File.Exists(settingsSha) && File.Exists(c[1]) && Sha(c[1]) == File.ReadAllText(settingsSha).Trim();
+                        if (isSettings && !untouched && File.Exists(keys) && File.Exists(c[1])) done.Add(PutKeysBack(c[1], keys));
+                        else if (!isSettings && File.Exists(sha) && File.Exists(c[1]) && Sha(c[1]) != File.ReadAllText(sha).Trim())
+                            done.Add("EEPROM.bin changed since the session - kept as it is");
+                        else { File.Copy(copy, c[1], overwrite: true); done.Add(c[0] + " put back"); }
                     }
                 Directory.Delete(dir, recursive: true);
-                Log.Info("options: settings.ini and EEPROM.bin put back as they were (" + why + ")");
+                Log.Info("options: " + (done.Count == 0 ? "nothing to put back" : string.Join("; ", done)) + " (" + why + ")");
             }
             catch (Exception ex) { Log.Warn("options: could not put Cxbx-Reloaded's files back", ex); }
         }
@@ -184,21 +203,62 @@ namespace LbIntegrations.Cxbx
 
                 var v = Effective(gameId);
                 var said = new List<string>();
-                WriteSettings(settings, v, said);
+                var written = WriteSettings(settings, v, said);
+                File.WriteAllLines(Path.Combine(dir, KeysFile), written.Select(w => string.Join("\t", w.Section, w.Key, w.Before ?? Absent, w.After)), new UTF8Encoding(false));
+                File.WriteAllText(Path.Combine(dir, SettingsHash), Sha(settings));
                 // The region first: the video standard that follows it reads it (CxbxEeprom.ApplyOptions).
                 if (v.TryGetValue("console.region", out var region) && region == "follow") CxbxEeprom.MatchRegion(exe, xbe);
                 if (File.Exists(eeprom)) CxbxEeprom.ApplyOptions(eeprom, data, v, said);
+                if (File.Exists(eeprom)) File.WriteAllText(Path.Combine(dir, EepromHash), Sha(eeprom));
                 Log.Info("options: " + (said.Count == 0 ? "nothing to write" : string.Join(", ", said)));
             }
             catch (Exception ex) { Log.Warn("options: could not be written - Cxbx-Reloaded's own settings apply", ex); }
         }
 
+        private const string KeysFile = "keys.tsv", EepromHash = "eeprom.sha", SettingsHash = "settings.sha", Absent = "\u0001absent";
+
+        /// <summary>The same value, however written: true / True, 8 / 0x8.</summary>
+        private static bool SameValue(string a, string b)
+            => string.Equals((a ?? "").Trim(), (b ?? "").Trim(), StringComparison.OrdinalIgnoreCase)
+               || (CxbxOwn.Long(a) is long x && CxbxOwn.Long(b) is long y && x == y);
+
+        /// <summary>The lines a session wrote put back to what they held - only those still holding what was written.</summary>
+        private static string PutKeysBack(string settings, string keys)
+        {
+            var ini = new IniLines(settings);
+            int back = 0, kept = 0;
+            foreach (var line in File.ReadAllLines(keys))
+            {
+                var c = line.Split('\t');
+                if (c.Length < 4) continue;
+                var now = ini.Get(c[0], c[1]);
+                if (!SameValue(now, c[3])) { kept++; continue; }       // changed since: the user's
+                if (c[2] == Absent) ini.Remove(c[0], c[1]); else ini.Set(c[0], c[1], c[2]);
+                back++;
+            }
+            ini.Save();
+            return "settings.ini: " + back + " line(s) put back" + (kept > 0 ? ", " + kept + " changed since the session kept" : "");
+        }
+
+        private static string Sha(string path)
+        {
+            using var s = File.OpenRead(path);
+            using var h = System.Security.Cryptography.SHA256.Create();
+            return Convert.ToHexString(h.ComputeHash(s));
+        }
+
         // ── settings.ini ─────────────────────────────────────────────────────
 
-        private static void WriteSettings(string path, Dictionary<string, string> v, List<string> said)
+        private static List<(string Section, string Key, string Before, string After)> WriteSettings(string path, Dictionary<string, string> v, List<string> said)
         {
             var ini = new IniLines(path);
-            void Set(string section, string key, string value, string what) { ini.Set(section, key, value); said.Add(what); }
+            var written = new List<(string, string, string, string)>();
+            void Set(string section, string key, string value, string what)
+            {
+                if (!written.Any(w => w.Item1 == section && w.Item2 == key)) written.Add((section, key, ini.Get(section, key), value));
+                ini.Set(section, key, value);
+                said.Add(what);
+            }
             string Bool(string x) => x == "on" ? "true" : "false";
 
             if (v.TryGetValue("video.adapter", out var adapter) && adapter == "main") Set("video", "adapter", "0", "main screen");
@@ -228,6 +288,7 @@ namespace LbIntegrations.Cxbx
             if (lle != was || v.Keys.Any(k => k.StartsWith("lle."))) Set("core", "FlagsLLE", lle.ToString(CultureInfo.InvariantCulture), "LLE " + lle);
 
             ini.Save();
+            return written;
         }
 
         /// <summary>"2560 x 1440 32bit x8r8g8b8 (144 hz)": the main screen's mode now, as Cxbx-Reloaded's window writes one.</summary>
@@ -313,6 +374,14 @@ namespace LbIntegrations.Cxbx
                     while (end > s + 1 && _lines[end - 1].Trim().Length == 0) end--;
                     _lines.Insert(end, key + " = " + value);
                 }
+            }
+
+            public void Remove(string section, string key)
+            {
+                int s = SectionAt(section);
+                if (s < 0) return;
+                int k = KeyAt(s, key);
+                if (k >= 0) _lines.RemoveAt(k);
             }
 
             public void Save()
