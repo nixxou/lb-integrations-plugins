@@ -2697,16 +2697,16 @@ namespace LbIntegrations.Probe
             form.Show();
             var tabs = form.Controls.OfType<System.Windows.Forms.TabControl>().First();
             var shots = new List<System.Drawing.Bitmap>();
-            foreach (var name in new[] { "Graphics", "Compatibility", "Advanced" })
+            // Every tab the window has (Session, Updates & DLC since 04/10).
+            foreach (var page in tabs.TabPages.Cast<System.Windows.Forms.TabPage>().ToList())
             {
-                tabs.SelectedTab = tabs.TabPages.Cast<System.Windows.Forms.TabPage>().First(p => p.Text == name);
+                tabs.SelectedTab = page;
                 System.Windows.Forms.Application.DoEvents();
                 var bmp = new System.Drawing.Bitmap(form.Width, form.Height);
                 form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, bmp.Width, bmp.Height));
                 shots.Add(bmp);
             }
-            // LBIP_SHOT_RESET=1: "Reset to defaults" pressed once the pictures are taken - see PpssppCheck.CheckReset.
-            if (Environment.GetEnvironmentVariable("LBIP_SHOT_RESET") == "1") PpssppCheck.CheckReset(form, "_handText");
+
             form.Close();
             using var all = new System.Drawing.Bitmap(shots[0].Width, shots.Sum(s => s.Height));
             using (var g = System.Drawing.Graphics.FromImage(all))

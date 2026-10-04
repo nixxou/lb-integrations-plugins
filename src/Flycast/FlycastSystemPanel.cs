@@ -6,7 +6,7 @@
 //   SHOWN    each value as emu.cfg holds it now, else Flycast's built-in default; one no entry has is shown as it is.
 //   WRITTEN  at OK, only what the user changed (LbipGameEdit), key by key (FlycastIni.Write: the rest of the file as it
 //            was) - refused while Flycast runs: it rewrites emu.cfg when it quits.
-//   OVER IT  a game's own options (its right-click menu) and a game's own Flycast game config ([<product>] of emu.cfg)
+//   OVER IT  a game's own Flycast game config ("Make Game Config" in Flycast, [<product>] of emu.cfg)
 //            win for that game; "Your console" (Apply to my emulators) writes Dreamcast Language here too.
 
 using System;
@@ -39,7 +39,7 @@ namespace LbIntegrations.Flycast
             {
                 AutoSize = true, MaximumSize = new Size(width - 30, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 0, 0, 8),
                 Text = "Flycast's own settings (emu.cfg), what every game runs on - the same as in Flycast's Settings window. "
-                     + "A game's own options (right-click it, Nixx-Flycast : Options...) and a game's own Flycast config win over them for that game. "
+                     + "A game's own Flycast config (Make Game Config, in Flycast's settings while the game runs) wins over them for that game. "
                      + "\"Your console\" sets the Dreamcast language here too.",
             });
             if (_layout == null || string.IsNullOrEmpty(_layout.ConfigFile))

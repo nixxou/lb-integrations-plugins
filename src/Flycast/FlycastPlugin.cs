@@ -756,7 +756,7 @@ namespace LbIntegrations.Flycast
         /// <summary>One launch at a time for this plugin - see LbipLaunchGate: a launch while the last one is on is refused,
         /// silently in its first 5 seconds (a double click).</summary>
         public override PrepareForLaunchResponse PrepareEmulatorForLaunch(PrepareForLaunchArgs args)
-            => LbipLaunchGate.Run("Nixx-Flycast", args, PrepareCore, () => !FlycastGameConfigSession.Pending(FlycastPaths.Resolve(ResolveFullPath(Safe(() => args?.EmulatorBeingLaunched?.ApplicationPath)))));
+            => LbipLaunchGate.Run("Nixx-Flycast", args, PrepareCore);   // nothing of ours to wait for at a session's end any more (04/10)
 
         private PrepareForLaunchResponse PrepareCore(PrepareForLaunchArgs args)
         {
@@ -819,52 +819,16 @@ namespace LbIntegrations.Flycast
                 }
                 catch { }
 
-                // THE GAME'S OWN SETTINGS (the Options window): given on the command line, -config, for this
-                // session only - nothing of Flycast's is written. See FlycastGameSettings.
+                // A GAME'S OWN SETTINGS ARE FLYCAST'S OWN (Mehdi, 04/10): its "Make Game Config", in its settings while the game
+                // runs - the plugin's Options window, its -config line and its taking keys out of a game's section are gone.
+                // What a session of before took out of a game's section is still put back - see FlycastGameConfigSession.
                 try
                 {
                     var exePath = Safe(() => args?.EmulatorBeingLaunched?.ApplicationPath);
                     if (!string.IsNullOrWhiteSpace(exePath))
-                    {
-                        var layout = FlycastPaths.Resolve(ResolveFullPath(exePath));
-                        // A session left behind put back first - see FlycastGameConfigSession.
-                        FlycastGameConfigSession.Restore(layout, "left behind by a session that did not end");
-                        var games = FlycastGameMenu.KindOf(Safe(() => args?.GameBeingLaunched?.Platform));
-                        var keys = FlycastGameSettings.KeysOf(layout, Safe(() => args?.GameBeingLaunched?.Id), games, out var why);
-                        if (why != null) Log.Warn("game settings: " + why + " - this game runs without its own settings this time");
-                        var current = Safe(() => args?.CurrentCommandLine);
-                        if (string.IsNullOrWhiteSpace(current)) current = Safe(() => args?.EmulatorBeingLaunched?.CommandLine) ?? "";
-
-                        // OVER THE GAME'S OWN FLYCAST CONFIG TOO (this plugin's > the game's own > Flycast's): its id -
-                        // a Dreamcast disc's read here, an arcade game's asked of flycast-id.exe - and, when there is
-                        // none, learned from Flycast's log this once. Only for a game with settings of its own here.
-                        string product = null, logArgument = null;
-                        FlycastGameIdentity.Learning learning = null;
-                        bool restore = false;
-                        if (keys != null)
-                        {
-                            var rom = ResolveFullPath(Safe(() => args?.GameBeingLaunched?.ApplicationPath));
-                            // flycast-id.exe first - Flycast's own reading, disc or cartridge; a Dreamcast disc's
-                            // IP.BIN read here when it has no answer.
-                            product = FlycastGameIdentity.Of(layout, rom, 15000, out var idWhy);
-                            if (product == null && games == FlycastGameSettings.Games.Dreamcast)
-                                try { product = FlycastGameId.Of(rom); } catch { }
-                            if (product == null) Log.Info("game id of " + Path.GetFileName(rom) + ": none read (" + idWhy + ") - learned from Flycast's log this time");
-                            if (product == null) learning = FlycastGameIdentity.BeforeLaunch(layout, rom, out logArgument);
-
-                            // The section's own copies of our keys taken out for the session, whatever its id - never given
-                            // in its section on the command line: Flycast would save them as the user's (30/09, see
-                            // FlycastGameConfigSession). Ours go global only, which Flycast never saves.
-                            var overGame = FlycastGameSettings.SetByGame(layout, product, keys);
-                            if (overGame.Count > 0) restore = FlycastGameConfigSession.Apply(layout, product, overGame);
-                            newLine = FlycastGameSettings.WithSettings(current, keys);
-                        }
-                        if (logArgument != null) newLine = "-config " + logArgument + " " + (newLine ?? current).Trim();
-                        FlycastGameConfigSession.WhenDone(layout, restore, learning);
-                        if (newLine != null) Log.Info("this game's own settings, for its session - command line: " + newLine);
-                    }
+                        FlycastGameConfigSession.Restore(FlycastPaths.Resolve(ResolveFullPath(exePath)), "left behind by a session that did not end");
                 }
-                catch (Exception ex) { Log.Warn("the game's own settings", ex); }
+                catch (Exception ex) { Log.Warn("a session left behind", ex); }
             }
             catch (Exception ex) { Log.Warn("PrepareEmulatorForLaunch", ex); }
 

@@ -588,8 +588,6 @@ namespace LbIntegrations.Probe
             // The options window, a fake game, one picture per tab: --vita3k-options-shot <out.png>. Nothing on screen.
             // melonDS's options window, a fake game, one picture per tab: --melonds-options-shot <out.png>.
             // PPSSPP's options window, a fake game, one picture per tab: --ppsspp-options-shot <out.png>.
-            // Flycast's options window, two fake games, one picture per tab: --flycast-options-shot <out.png>.
-            if (Has(args, "--flycast-options-shot")) return FlycastSettingsCheck.OptionsShot(asm, Arg(args, "--flycast-options-shot")) ? 0 : 1;
             // What a launch of a game WOULD write as its PPSSPP config, on a real install - read only, nothing
             // written: --ppsspp-preview --emu <PPSSPPWindows64.exe> --disc <DISC_ID> --set Section/Key=value
             if (Has(args, "--ppsspp-preview")) return PpssppCheck.PreviewReal(asm, emuPath, Arg(args, "--disc"), Arg(args, "--set")) ? 0 : 1;
@@ -713,7 +711,7 @@ namespace LbIntegrations.Probe
             if (flycast) wroteTo.Add("a forged Flycast in the temp folder");
             if (melonds) wroteTo.Add("a forged melonDS in the temp folder");
             if (nogba) wroteTo.Add("a forged no$gba in the temp folder");
-            if (flycastSettings) wroteTo.Add("a forged Flycast in the temp folder (a game's settings)");
+            if (flycastSettings) wroteTo.Add("a forged Flycast in the temp folder (its settings, a game's id)");
             if (ppsspp) wroteTo.Add("a forged PPSSPP in the temp folder (a game's settings)");
             if (superzsnes) wroteTo.Add("a forged SUPER ZSNES in the temp folder");
             if (Has(args, "--superzsnes-deploy-real")) wroteTo.Add("BepInEx, the plugin and its docs into the SUPER ZSNES folder given (downloaded)");

@@ -48,7 +48,7 @@ namespace LbIntegrations.Probe
             _asm = pluginAssembly;
             _bad = 0;
             Console.WriteLine();
-            Console.WriteLine("-- Flycast, a game's own settings, on a FORGED install  [WRITES, in the temp folder] --");
+            Console.WriteLine("-- Flycast, its settings read and a game's id, on a FORGED install  [WRITES, in the temp folder] --");
             var root = Path.Combine(Path.GetTempPath(), "lbip-flycast-" + Guid.NewGuid().ToString("N"));
             try
             {
@@ -57,89 +57,26 @@ namespace LbIntegrations.Probe
                 var exe = Path.Combine(install, "flycast.exe");
                 File.WriteAllText(exe, "not really an executable");
                 var cfgPath = Path.Combine(install, "emu.cfg");
-                var cfg = "[T-8120N]\r\nconfig.rend.Resolution = 1440\r\n\r\n[achievements]\r\nEnabled = yes\r\n\r\n[config]\r\nrend.Resolution = 960\r\nrend.vsync = no\r\n\r\n[window]\r\nfullscreen = no\r\n";
+                var cfg = "[T-8120N]\r\nconfig.Dreamcast.Region = 0\r\n\r\n[achievements]\r\nEnabled = yes\r\n\r\n[config]\r\nDreamcast.Region = 2\r\nUseReios = yes\r\n\r\n[window]\r\nfullscreen = no\r\n";
                 File.WriteAllText(cfgPath, cfg);
                 var layout = Call("FlycastPaths", "Resolve", exe);
                 Console.WriteLine("  install " + install);
 
-                var own = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                {
-                    ["config:rend.Resolution"] = "1920", ["config:rend.vsync"] = "yes", ["config:Dreamcast.Cable"] = "0", ["config:ForceFreePlay"] = "no",
-                };
-                Call("FlycastGameSettings", "Save", layout, "g1", own);
-                var loaded = (Dictionary<string, string>)Call("FlycastGameSettings", "Load", layout, "g1");
-                Check("kept, and read back", loaded != null && loaded.Count == 4 && loaded["config:rend.Resolution"] == "1920");
-
-                // What a launch gives.
-                var a = new object[] { layout, "g1", Kind("Dreamcast"), null };
-                var dc = Call("FlycastGameSettings", "KeysOf", a);
-                Console.WriteLine("            Dreamcast: " + Ids(dc));
-                Check("a Dreamcast game: its cable, not the Naomi free play", Ids(dc) == "config:Dreamcast.Cable,config:rend.Resolution,config:rend.vsync");
-                var b = new object[] { layout, "g1", Kind("Arcade"), null };
-                var arcade = Call("FlycastGameSettings", "KeysOf", b);
-                Check("an arcade game: its free play, not the Dreamcast's cable", Ids(arcade) == "config:ForceFreePlay,config:rend.Resolution,config:rend.vsync", Ids(arcade));
-                var line = (string)Call("FlycastGameSettings", "WithSettings", "-config window:fullscreen=yes", dc);
-                Console.WriteLine("            " + line);
-                Check("-config in front, the line's own after it - so a key the line names wins",
-                      line == "-config config:Dreamcast.Cable=0,config:rend.Resolution=1920,config:rend.vsync=yes -config window:fullscreen=yes", line);
-                Check("nothing set: the line stays as it is", Call("FlycastGameSettings", "WithSettings", "-config window:fullscreen=yes", null) == null);
+                // What every game runs on (the Nixx window's system settings), and a game's own config over it.
+                var d = new object[] { layout, null, null };
+                var every = (Dictionary<string, string>)Call("FlycastGameSettings", "DefaultsOf", d);
+                Check("every game: emu.cfg's Europe and HLE BIOS, Flycast's own 200 MHz", every["config:Dreamcast.Region"] == "2" && every["config:UseReios"] == "yes" && every["config:Sh4Clock"] == "200");
+                var g = new object[] { layout, "T-8120N", null };
+                var game = (Dictionary<string, string>)Call("FlycastGameSettings", "DefaultsOf", g);
+                Check("a game with its own config: its Japan over it, that key known", game["config:Dreamcast.Region"] == "0" && ((HashSet<string>)g[2]).Contains("config:Dreamcast.Region"));
                 Check("emu.cfg not touched", File.ReadAllText(cfgPath) == cfg);
-
-                // What the game runs on without them.
-                var d = new object[] { layout, "T-8120N", null };
-                var defaults = (Dictionary<string, string>)Call("FlycastGameSettings", "DefaultsOf", d);
-                var wins = (HashSet<string>)d[2];
-                Check("'default': its game config's 1440, emu.cfg's VSync off, Flycast's own fog on",
-                      defaults["config:rend.Resolution"] == "1440" && defaults["config:rend.vsync"] == "no" && defaults["config:rend.Fog"] == "yes");
-                Check("its game config's keys are known: ours must be given over them", wins.Count == 1 && wins.Contains("config:rend.Resolution"));
-                var d2 = new object[] { layout, "OTHER-1", null };
-                var other = (Dictionary<string, string>)Call("FlycastGameSettings", "DefaultsOf", d2);
-                Check("another game: emu.cfg's 960", other["config:rend.Resolution"] == "960" && ((HashSet<string>)d2[2]).Count == 0);
-
-                // Set by hand.
-                Call("FlycastGameSettings", "SaveAdvanced", layout, "g1", "[config]\r\nrend.Resolution = 2880\r\n[audio]\r\nbackend = auto\r\n[achievements]\r\nEnabled = no\r\n", true);
-                var h = new object[] { layout, "g1", Kind("Arcade"), null };
-                var hand = Call("FlycastGameSettings", "KeysOf", h);
-                Check("set by hand, in use: its keys, not the tabs' - [achievements] left out", Ids(hand) == "config:rend.Resolution,audio:backend", Ids(hand));
-                var p = new object[] { layout, "T-8120N", "-config window:fullscreen=yes", hand, Kind("All"), null, null };
-                var preview = (string)Call("FlycastGameSettings", "Preview", p);
-                Console.WriteLine("            " + (preview ?? (string)p[6]).Replace("\r\n", " | "));
-                Check("the preview: its game config sets the resolution - taken out for the session, ours given globally only",
-                      preview != null && preview.Contains("-config config:rend.Resolution=2880,audio:backend=auto -config window:fullscreen=yes")
-                      && !preview.Contains("T-8120N:") && preview.Contains("taken out of its own game config for the session") && ((string)p[5]).Contains("rend.Resolution = 1440"), preview);
-
-                // This plugin's > the game's own config > Flycast's: the keys its section sets, given there too.
-                var over = Call("FlycastGameSettings", "SetByGame", layout, "T-8120N", hand);
-                Check("of the keys, the ones its own [T-8120N] sets: the resolution only", Ids(over) == "config:rend.Resolution", Ids(over));
-                var launch = (string)Call("FlycastGameSettings", "WithSettings", "", hand);
-                Check("the launch line never names a game's section (Flycast would save it as the user's - 30/09)",
-                      launch == "-config config:rend.Resolution=2880,audio:backend=auto", launch);
-                Check("a game with no section of its own: its section never named (Flycast's per-game mode stays off)",
-                      Ids(Call("FlycastGameSettings", "SetByGame", layout, "OTHER-1", hand)) == "(none)" || ((IEnumerable)Call("FlycastGameSettings", "SetByGame", layout, "OTHER-1", hand)).Cast<object>().Count() == 0);
-
-                // Values with a space, and what cannot go on a command line.
-                var sp = new object[] { "[config]\r\nrend.Foo = a b\r\n", null };
-                var spaced = Call("FlycastGameSettings", "ParseHand", sp);
-                Check("a value with a space: the whole -config quoted", (string)Call("FlycastGameSettings", "Argument", spaced) == "-config \"config:rend.Foo=a b\"");
-                foreach (var (text, what) in new[] { ("[config]\r\nrend.Foo = a,b", "a comma"), ("[config]\r\nrend.Foo = \"x\"", "a quote"), ("rend.Foo = 1", "a key before any section"), ("[T 8120]\r\nx = 1", "a section with a space") })
-                {
-                    var e = new object[] { text, null };
-                    Check(what + ": refused", Call("FlycastGameSettings", "ParseHand", e) == null && e[1] != null, e[1] as string);
-                }
-                var c = new object[] { layout, "[config]\r\nrend.vsync = maybe\r\nrend.Resolution = 1000\r\nrend.ScreenStretching = 400\r\nNoSuchKey = 1\r\nrend.Resolution2 = 1\r\n[achievements]\r\nToken = x", null };
-                var w = (List<string>)Call("FlycastGameSettings", "CheckHand", c);
-                Console.WriteLine("            " + string.Join(" | ", w));
-                Check("said: a bool not yes/no, a choice out of the list, a number out of range, an unknown key, a section kept elsewhere",
-                      c[2] == null && w.Count == 6 && w.Any(x => x.Contains("vsync")) && w.Any(x => x.Contains("= 1000")) && w.Any(x => x.Contains("ScreenStretching"))
-                      && w.Any(x => x.Contains("NoSuchKey")) && w.Any(x => x.Contains("achievements")));
-                Check("emu.cfg still not touched", File.ReadAllText(cfgPath) == cfg);
 
                 Identity(layout, install, cfgPath);
             }
             catch (Exception ex) { Console.WriteLine("  EXCEPTION: " + ex); _bad++; }
             finally { try { Directory.Delete(root, true); } catch { } }
             Console.WriteLine();
-            Console.WriteLine(_bad == 0 ? "  OK - a game's settings go on Flycast's command line, and nothing is written" : "  " + _bad + " FAILURE(S) - see above");
+            Console.WriteLine(_bad == 0 ? "  OK - Flycast's settings read, a game's id found" : "  " + _bad + " FAILURE(S) - see above");
             return _bad == 0;
         }
 
@@ -233,24 +170,7 @@ namespace LbIntegrations.Probe
             return _bad == 0;
         }
 
-        private static object Raws(params string[] ids)
-        {
-            var raw = T("FlycastGameSettings").GetNestedType("Raw", BindingFlags.NonPublic | BindingFlags.Public);
-            var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(raw));
-            foreach (var id in ids)
-            {
-                var r = Activator.CreateInstance(raw);
-                int at = id.IndexOf(':'), eq = id.IndexOf('=');
-                raw.GetField("Section").SetValue(r, id.Substring(0, at));
-                raw.GetField("Key").SetValue(r, id.Substring(at + 1, eq - at - 1));
-                raw.GetField("Value").SetValue(r, id.Substring(eq + 1));
-                list.Add(r);
-            }
-            return list;
-        }
-
-        /// <summary>An arcade game's id (flycast-id.exe, else Flycast's log) and this plugin's keys over its own
-        /// config when the command line cannot name it.</summary>
+        /// <summary>An arcade game's id (flycast-id.exe, else Flycast's log).</summary>
         private static void Identity(object layout, string install, string cfgPath)
         {
             Console.WriteLine("  -- the game's id, and over its own config when its id has a space --");
@@ -285,43 +205,6 @@ namespace LbIntegrations.Probe
                 Environment.SetEnvironmentVariable("LBIP_FLYCAST_ID_TOOL", null);
             }
             else Console.WriteLine("    (flycast-id.exe or the test set is not here: the tool is not run)");
-
-            // Over a game's own config - whatever its id (30/09: never named on the command line).
-            var mine = "[  18WHEELER]\r\nconfig.rend.Fog = no\r\nconfig.rend.Resolution = 1440\r\n\r\n[config]\r\nrend.Resolution = 960\r\n";
-            File.WriteAllText(cfgPath, mine);
-            var keys = Raws("config:rend.Resolution=2880");
-            var note = Path.Combine(install, "lbip-gameconfig.restore");
-            Check("taken out: the note first, then only that key - the section and its other key stay",
-                  (bool)Call("FlycastGameConfigSession", "Apply", layout, "  18WHEELER", keys) && File.Exists(note)
-                  && File.ReadAllText(cfgPath).Contains("[  18WHEELER]") && File.ReadAllText(cfgPath).Contains("config.rend.Fog = no")
-                  && !File.ReadAllText(cfgPath).Contains("config.rend.Resolution = 1440"), File.ReadAllText(cfgPath));
-            Call("FlycastGameConfigSession", "Restore", layout, "the session is over");
-            var back = File.ReadAllText(cfgPath);
-            Check("once over: the key back in its section, the note gone", back.Contains("config.rend.Resolution = 1440") && !File.Exists(note)
-                  && back.IndexOf("config.rend.Resolution = 1440") < back.IndexOf("[config]"), back);
-
-            Call("FlycastGameConfigSession", "Apply", layout, "  18WHEELER", keys);
-            Call("FlycastIni", "Write", cfgPath, "  18WHEELER", new Dictionary<string, string> { ["config.rend.Resolution"] = "720" });
-            Call("FlycastGameConfigSession", "Restore", layout, "the session is over");
-            Check("set again in Flycast during the session: the user's kept, not ours put back", File.ReadAllText(cfgPath).Contains("config.rend.Resolution = 720")
-                  && !File.ReadAllText(cfgPath).Contains("= 1440"), File.ReadAllText(cfgPath));
-
-            File.WriteAllText(cfgPath, mine);
-            Call("FlycastGameConfigSession", "Apply", layout, "  18WHEELER", keys);
-            File.WriteAllText(cfgPath, "[config]\r\nrend.Resolution = 960\r\n");   // "Delete Game Config" in Flycast
-            Call("FlycastGameConfigSession", "Restore", layout, "the session is over");
-            Check("the section deleted in Flycast during the session: not brought back", !File.ReadAllText(cfgPath).Contains("18WHEELER") && !File.Exists(note));
-
-            // A late watcher (adversarial review, 30/09): a later launch's session is not its to put back.
-            File.WriteAllText(cfgPath, mine);
-            Call("FlycastGameConfigSession", "Apply", layout, "  18WHEELER", keys);
-            var later = (string)T("FlycastGameConfigSession").GetField("LastId", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
-            Call("FlycastGameConfigSession", "Restore", layout, "a late watcher", "not-this-session");
-            Check("a late watcher: the later session left as it is", File.Exists(note) && !File.ReadAllText(cfgPath).Contains("= 1440"));
-            Check("  ...pending while it is on", (bool)Call("FlycastGameConfigSession", "Pending", layout));
-            Call("FlycastGameConfigSession", "Restore", layout, "the session is over", later);
-            Check("  ...then its own end: the key back", File.ReadAllText(cfgPath).Contains("config.rend.Resolution = 1440") && !File.Exists(note)
-                  && !(bool)Call("FlycastGameConfigSession", "Pending", layout), File.ReadAllText(cfgPath));
 
             // "Delete game config": the section whole, the rest byte for byte.
             File.WriteAllText(cfgPath, "[config]\r\nrend.Resolution = 960\r\n\r\n[  18WHEELER]\r\nconfig.rend.Fog = no\r\n\r\n[audio]\r\nbackend = auto\r\n");
@@ -410,58 +293,5 @@ namespace LbIntegrations.Probe
             return _bad == 0;
         }
 
-        /// <summary>The options window, fed two fake games (a Dreamcast disc and a Naomi board), one picture
-        /// per tab. Nothing written.</summary>
-        public static bool OptionsShot(Assembly pluginAssembly, string outPath)
-        {
-            _asm = pluginAssembly;
-            System.Windows.Forms.Application.EnableVisualStyles();
-            var formType = T("FlycastOptionsForm");
-            var entryType = formType.GetNestedType("Entry", BindingFlags.NonPublic | BindingFlags.Public);
-            var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(entryType));
-            var only = Environment.GetEnvironmentVariable("LBIP_SHOT_ONE") == "1";
-            foreach (var (title, product, kind) in only ? new[] { ("Soulcalibur", "T-1401N", "Dreamcast") } : new[] { ("Soulcalibur", "T-1401N", "Dreamcast"), ("Marvel vs. Capcom 2", (string)null, "Arcade") })
-            {
-                var e = Activator.CreateInstance(entryType);
-                void Set(string f, object v) => entryType.GetField(f).SetValue(e, v);
-                Set("Title", title); Set("GameId", title); Set("Product", product); Set("Games", Kind(kind)); Set("Line", "-config window:fullscreen=yes");
-                var d = new object[] { null, product, null };
-                Set("Defaults", Call("FlycastGameSettings", "DefaultsOf", d));
-                // The Dreamcast one as if its own Flycast game config set the resolution (ours then loses: red) and the fog (amber).
-                Set("GameConfig", product == null ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                                                  : new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "config:rend.Resolution", "config:rend.Fog" });
-                Set("Own", new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["config:rend.Resolution"] = "1440", ["config:pvr.rend"] = "4" });
-                list.Add(e);
-            }
-            using var form = (System.Windows.Forms.Form)Activator.CreateInstance(formType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new object[] { list }, null);
-            form.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
-            form.Location = new System.Drawing.Point(-3000, -3000);
-            form.Show();
-            var tabs = form.Controls.OfType<System.Windows.Forms.TabControl>().First();
-            IEnumerable<System.Windows.Forms.Control> All(System.Windows.Forms.Control c) => new[] { c }.Concat(c.Controls.Cast<System.Windows.Forms.Control>().SelectMany(All));
-            foreach (var bar in All(form).Where(c => c is System.Windows.Forms.Panel && c.Width == 4))
-                Console.WriteLine("  bar " + bar.BackColor.Name + " at " + bar.Bounds + " visible=" + bar.Visible + " in " + bar.Parent?.GetType().Name + " " + bar.Parent?.Text);
-            var shots = new List<System.Drawing.Bitmap>();
-            foreach (System.Windows.Forms.TabPage page in tabs.TabPages)
-            {
-                tabs.SelectedTab = page;
-                System.Windows.Forms.Application.DoEvents();
-                var bmp = new System.Drawing.Bitmap(form.Width, form.Height);
-                form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, bmp.Width, bmp.Height));
-                shots.Add(bmp);
-            }
-            // LBIP_SHOT_RESET=1: "Reset to defaults" pressed once the pictures are taken - see PpssppCheck.CheckReset.
-            if (Environment.GetEnvironmentVariable("LBIP_SHOT_RESET") == "1") PpssppCheck.CheckReset(form, "_handText");
-            form.Close();
-            using var all = new System.Drawing.Bitmap(shots.Count * shots[0].Width, shots[0].Height);
-            using (var g = System.Drawing.Graphics.FromImage(all))
-            {
-                int x = 0;
-                foreach (var s in shots) { g.DrawImage(s, x, 0); x += s.Width; s.Dispose(); }
-            }
-            all.Save(outPath, System.Drawing.Imaging.ImageFormat.Png);
-            Console.WriteLine("  " + outPath);
-            return true;
-        }
     }
 }

@@ -83,7 +83,7 @@ namespace LbIntegrations.Vita3k
             ShowInTaskbar = false;
             AutoScaleMode = AutoScaleMode.Dpi;
             Font = new Font("Segoe UI", 9f);
-            ClientSize = new Size(680, 708);
+            ClientSize = new Size(680, 600);
 
             // ── the top: which games, and where to start from
             var top = new Panel { Dock = DockStyle.Top, Height = _groups.Count > 1 ? 86 : 58, Padding = new Padding(12, 10, 12, 0) };
