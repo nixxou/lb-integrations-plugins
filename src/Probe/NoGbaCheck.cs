@@ -97,6 +97,10 @@ namespace LbIntegrations.Probe
             // "invented what was not". Right sizes, so no amber badge muddies the result.
             File.WriteAllBytes(Path.Combine(shared, "biosnds7.bin"), new byte[16 * 1024]);
             File.WriteAllBytes(Path.Combine(shared, "gba_bios.bin"), new byte[16 * 1024]);
+            // And one in melonDS's bios\ beside it (04/10: the second source of no$gba's own bios\ at install).
+            var melonBios = Path.Combine(root, "Nixx-melonDS", "bios");
+            Directory.CreateDirectory(melonBios);
+            File.WriteAllBytes(Path.Combine(melonBios, "biosdsi7.bin"), new byte[64 * 1024]);
 
             // A ROM in a zip, because that is how a LaunchBox library usually holds one, and because
             // the save is named after the entry INSIDE it.
@@ -372,13 +376,26 @@ namespace LbIntegrations.Probe
             Console.WriteLine("  -- the BIOS files, which no$gba can only read from its own folder");
 
             var install = Path.GetDirectoryName(exe);
+            bool ok = true;
+            // Nothing read from RetroArch\system at launch any more (04/10): only no$gba's own bios\.
+            Sync(exe);
+            ok &= Check("before the install's copy: nothing taken from RetroArch\\system", !File.Exists(Path.Combine(install, "BIOSNDS7.ROM")));
+            // What the install does: the originals into bios\, from RetroArch\system and melonDS's bios\.
+            var import = TypeIn("NoGbaBios").GetMethod("Import", BindingFlags.Public | BindingFlags.Static);
+            var copied = (System.Collections.Generic.List<string>)import.Invoke(null, new object[] { Layout(exe), null, null, null });
+            var bios = Path.Combine(install, "bios");
+            ok &= Check("the install copies the originals into bios\\, under our names, from both sources",
+                        File.Exists(Path.Combine(bios, "biosnds7.bin")) && File.Exists(Path.Combine(bios, "biosgba.bin")) && File.Exists(Path.Combine(bios, "biosdsi7.bin")),
+                        string.Join(", ", copied));
+            ok &= Check("  ...and leaves the sources where they were", File.Exists(Path.Combine(Path.GetDirectoryName(install), "RetroArch", "system", "biosnds7.bin")));
+            ok &= Check("  ...and a second pass copies nothing", ((System.Collections.Generic.List<string>)import.Invoke(null, new object[] { Layout(exe), null, null, null })).Count == 0);
             Sync(exe);
 
-            bool ok = true;
-            ok &= Check("a DS ARM7 BIOS in RetroArch\\system is copied as BIOSNDS7.ROM",
+            ok &= Check("a DS ARM7 BIOS in bios\\ is copied as BIOSNDS7.ROM",
                         File.Exists(Path.Combine(install, "BIOSNDS7.ROM")));
             ok &= Check("and RetroArch's own gba_bios.bin name is recognised too",
                         File.Exists(Path.Combine(install, "BIOSGBA.ROM")));
+            ok &= Check("and the one from melonDS's bios\\ as BIOSDSI7.ROM", File.Exists(Path.Combine(install, "BIOSDSI7.ROM")));
             ok &= Check("a file nobody has is NOT invented",
                         !File.Exists(Path.Combine(install, "BIOSNDS9.ROM"))
                         && !File.Exists(Path.Combine(install, "FIRMWARE.BIN")));

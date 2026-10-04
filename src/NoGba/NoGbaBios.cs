@@ -5,10 +5,11 @@
 // So this plugin cannot do what the melonDS one does, which is point the emulator at files wherever
 // the user keeps them. It has to put a copy where no$gba will look.
 //
-// SO IT COPIES, from the folder this repository already asks for - Emulators\RetroArch\system, where
-// the melonDS plugin declares the same seven files. Somebody who set up either plugin, or who ever
-// configured a DS core in RetroArch, has them there already and does nothing. The copy costs about
-// 600 KB and is refreshed when the original changes size.
+// SO IT COPIES, from no$gba's own bios\ (Mehdi, 04/10 - RetroArch's system folder until then): the user's
+// originals, never written by the pack, as melonDS keeps its own in its bios\. That folder is filled at
+// install (and at the first start-up check of an installation from before 04/10) from RetroArch's system
+// folder and from melonDS's bios\, when they have the files - Import. The copy beside the executable
+// costs about 600 KB and is refreshed when the original changes size.
 //
 // AND IT ASKS FOR NOTHING. On Game Boy Advance and DS these files are OPTIONAL: no$gba's default is
 // to start the cartridge directly without running the boot code at all, and the emulator runs games
@@ -40,11 +41,31 @@ namespace LbIntegrations.NoGba
 
     internal static class NoGbaBios
     {
-        /// <summary>Where the user's copies live, relative to the emulator. The same folder the
-        /// melonDS plugin declares, on purpose: one folder for one set of files.</summary>
-        public const string SourceDirName = ".." + SEP + "RetroArch" + SEP + "system";
+        /// <summary>Where the user's originals live, relative to the emulator: its own bios\ (04/10), the only one read.</summary>
+        public const string SourceDirName = "bios";
 
         private const string SEP = "\\";
+
+        /// <summary>Where they are copied from at install, relative to the emulator: RetroArch's system folder (where they
+        /// were read until 04/10) and melonDS's bios\ beside it.</summary>
+        private static readonly string[] ImportDirNames = { ".." + SEP + "RetroArch" + SEP + "system", ".." + SEP + "Nixx-melonDS" + SEP + "bios" };
+
+        /// <summary>The user's files copied into bios\ - the BIOS and firmware under any of their names, and every NAND
+        /// dump - from RetroArch's system folder, melonDS's bios\ beside it and that of every other melonDS of the library
+        /// (<paramref name="melonDsDirs"/>), when bios\ does not have them yet. See DsiBiosImport.</summary>
+        public static List<string> Import(NoGbaLayout layout, IEnumerable<string> melonDsDirs = null, Action<string> report = null, Func<bool> cancelled = null)
+        {
+            var dir = SourceDir(layout);
+            if (dir == null) return new List<string>();
+            var sources = new List<string>();
+            foreach (var name in ImportDirNames)
+                try { sources.Add(Path.GetFullPath(Path.Combine(layout.InstallDir, name))); } catch { }
+            foreach (var m in melonDsDirs ?? Array.Empty<string>())
+                if (!string.IsNullOrEmpty(m)) sources.Add(Path.Combine(m, "bios"));
+            var wanted = new List<DsiBiosImport.Wanted>();
+            foreach (var file in Files) wanted.Add(new DsiBiosImport.Wanted { Name = file.OurName, Aliases = file.AlsoKnownAs ?? Array.Empty<string>() });
+            return DsiBiosImport.Import(dir, sources, wanted, nands: true, report, cancelled);
+        }
 
         /// <summary>Where no$gba looks: its own folder. Declared as "." rather than the empty string
         /// so the dependency window shows something a person can read.</summary>
@@ -104,17 +125,15 @@ namespace LbIntegrations.NoGba
             },
         };
 
-        /// <summary>Everywhere a NAND dump may be, best first. The same folder melonDS reads, which
-        /// is what lets the two emulators share one set of dumps while each keeps its own
-        /// consoles.</summary>
+        /// <summary>Where a NAND dump is looked for: no$gba's bios\, the only one read (04/10). Each emulator keeps its
+        /// own consoles, built from its own copy of the originals.</summary>
         public static IEnumerable<string> SearchFolders(NoGbaLayout layout)
         {
             var dir = SourceDir(layout);
             if (dir != null) yield return dir;
         }
 
-        /// <summary>The folder the user's copies are read from, absolute and normalised so a message
-        /// names G:\...\RetroArch\system rather than G:\...\no$gba\..\RetroArch\system.</summary>
+        /// <summary>The folder the user's originals are read from, absolute: &lt;no$gba&gt;\bios.</summary>
         public static string SourceDir(NoGbaLayout layout)
         {
             try

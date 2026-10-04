@@ -86,7 +86,7 @@ namespace LbIntegrations.MelonDs
                 _dumpTheirs = new RadioButton { Text = "the dump's own: " + a.DumpOwner.Describe(), AutoSize = true, Location = new Point(30, wy + 22), Checked = !a.Identity };
                 whose.Controls.Add(_dumpMine);
                 whose.Controls.Add(_dumpTheirs);
-                whose.Controls.Add(Grey("Your dump in " + MelonDsBios.DirName.Replace("..\\", "") + " is never written: melonDS boots on its copy.", 48, wy + 46));
+                whose.Controls.Add(Grey("Your dump in melonDS's bios folder is never written: melonDS boots on its copy.", 48, wy + 46));
                 wy += 72;
             }
             else

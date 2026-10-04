@@ -3,7 +3,7 @@
 // MELONDS WRITES THE FIRMWARE FILE IT BOOTS ON. When a game writes the firmware (the Wi-Fi settings, Nintendo WFC), it
 // flushes the WHOLE in-memory firmware to DS.FirmwarePath - DSi.FirmwarePath in DSi mode (Platform::WriteFirmware,
 // EmuInstance::getEffectiveFirmwareSavePath) - its owner as the override left it included. Those paths are the user's
-// own dumps in RetroArch\system (MelonDsBios.DirName). So melonDS is pointed at a COPY of each, in
+// own dumps in melonDS's bios\ (MelonDsBios.DirName). So melonDS is pointed at a COPY of each, in
 // <install>\lbip-firmware\, as a NAND is copied into dsi\: the dump is read once and never opened for writing again.
 // lbip-firmware.tsv says which copy came from which dump (path, sha256): a dump replaced by another is copied again.
 //

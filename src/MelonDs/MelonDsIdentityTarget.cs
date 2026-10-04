@@ -1,7 +1,7 @@
 // "Apply to my emulators" of the Nixx window's "Your console" tab, for melonDS - two rows:
 //   ONE ROW, the owner melonDS shows: the identity's name, language, birthday and colour in [Instance0.Firmware]
 //   (MelonDsGameSettings.WriteOwn) - what its own firmware and DSiWare show - and, when it boots on a DS firmware dump, the
-//   same written into OUR COPY of it (MelonDsFirmware.UseIdentity; the dump in RetroArch\system never).
+//   same written into OUR COPY of it (MelonDsFirmware.UseIdentity; the dump in bios\ never).
 // The DSi consoles are not in it: one made from a blank NAND was set up as the identity, one made from a set-up NAND keeps its
 // owner (Mehdi, 03/10). Found by the relay by its name, LbIntegrations.MelonDs.IdentityTarget.
 

@@ -125,7 +125,16 @@ namespace LbIntegrations.NoGba
                         {
                             var exe = ResolveFullPath(Safe(() => emu?.ApplicationPath));
                             if (string.IsNullOrEmpty(exe) || !NoGbaPaths.IsNoGbaExecutable(exe) || !seen.Add(exe)) continue;
-                            NoGbaGameSettings.Restore(NoGbaPaths.Resolve(exe), "left behind by a session that did not end");
+                            // An installation from before 04/10, whose files were read in RetroArch's folder: bios\ made
+                            // and filled once, then the copies beside the executable refreshed from it.
+                            var startLayout = NoGbaPaths.Resolve(exe);
+                            if (NoGbaBios.SourceDir(startLayout) is string bios && !Directory.Exists(bios))
+                            {
+                                Directory.CreateDirectory(bios);
+                                NoGbaBios.Import(startLayout, MelonDsDirs());
+                                NoGbaBios.Sync(startLayout);
+                            }
+                            NoGbaGameSettings.Restore(startLayout, "left behind by a session that did not end");
                         }
                     }
                     catch (Exception ex) { Log.Warn("start-up check", ex); }
@@ -148,10 +157,9 @@ namespace LbIntegrations.NoGba
         /// the two installs apart.
         ///
         /// AND IT IS A PREFIX, NOT A PARENT FOLDER. Emulators\Nixx\&lt;name&gt; would have been tidier
-        /// and is wrong: the DSi BIOS and the user's NAND dumps are read at ..\RetroArch\system,
-        /// one level up from the emulator, which resolves to Emulators\RetroArch\system today and
-        /// would become Emulators\Nixx\RetroArch\system under a parent folder - a share with
-        /// RetroArch that would quietly stop being a share.</summary>
+        /// and is wrong: at install the user's BIOS and NAND dumps are copied from ..\RetroArch\system
+        /// and ..\Nixx-melonDS\bios, one level up from the emulator - under a parent folder they would
+        /// become Emulators\Nixx\RetroArch\system, a source that would quietly stop being found.</summary>
         /// <summary>WITHOUT THE DOLLAR, where the emulator's own name has one. no$gba spells
         /// itself that way and this plugin says so everywhere it speaks to a person; the dollar is
         /// kept out of the one name that becomes a PATH, an INI key and a row in somebody else's
@@ -482,6 +490,11 @@ namespace LbIntegrations.NoGba
 
                 // The point of the whole plugin, applied before anybody launches anything.
                 NoGbaConfig.Apply(layout);
+                // THE USER'S ORIGINALS into bios\, from RetroArch's system folder and melonDS's bios\ when they have
+                // them (Mehdi, 04/10) - so LaunchBox's BIOS check finds them at once. Then the copies no$gba reads.
+                try { Directory.CreateDirectory(NoGbaBios.SourceDir(layout)); } catch { }
+                NoGbaBios.Import(layout, MelonDsDirs(), m => Report(args, m, null),
+                    () => { try { return args?.ShouldCancelFunc?.Invoke() ?? false; } catch { return false; } });
                 NoGbaBios.Sync(layout);
 
                 if (reinstall)
@@ -559,6 +572,25 @@ namespace LbIntegrations.NoGba
         public override IEnumerable<EmulatorBiosFile> GetBiosFilesForPlatform(string platform)
             => BiosFiles(platform);
 
+        /// <summary>The folder of every melonDS of the library - its bios\ is a source for ours at install (NoGbaBios.Import).
+        /// By the executable's name: this assembly does not know the melonDS plugin. Empty without a data manager.</summary>
+        private static List<string> MelonDsDirs()
+        {
+            var dirs = new List<string>();
+            try
+            {
+                foreach (var emu in PluginHelper.DataManager?.GetAllEmulators() ?? new IEmulator[0])
+                {
+                    var exe = ResolveFullPath(Safe(() => emu?.ApplicationPath));
+                    if (string.IsNullOrEmpty(exe) || !string.Equals(Path.GetFileName(exe), "melonDS.exe", StringComparison.OrdinalIgnoreCase)) continue;
+                    var dir = Path.GetDirectoryName(exe);
+                    if (!string.IsNullOrEmpty(dir) && !dirs.Contains(dir, StringComparer.OrdinalIgnoreCase)) dirs.Add(dir);
+                }
+            }
+            catch (Exception ex) { Log.Verbose("could not list the melonDS emulators - " + ex.Message); }
+            return dirs;
+        }
+
         /// <summary>The overload the host actually calls. The command line is ignored: no$gba has no
         /// cores and no switches, so nothing in it changes which files apply.</summary>
         public override IEnumerable<EmulatorBiosFile> GetBiosFilesForPlatform(
@@ -592,7 +624,7 @@ namespace LbIntegrations.NoGba
 
                     var complaint = layout == null ? null : NoGbaBios.SizeComplaint(layout, file);
                     var what = file.What + " - optional, no$gba runs without it"
-                             + (complaint == null ? "" : " (the copy in RetroArch\\system " + complaint + ")");
+                             + (complaint == null ? "" : " (the original in bios\\ " + complaint + ")");
 
                     files.Add(new EmulatorBiosFile(NoGbaBios.TargetDirName, file.TheirName,
                                                    false, what, null, null));

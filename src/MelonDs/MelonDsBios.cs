@@ -31,6 +31,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using LbIntegrations.Dsi;
 
 namespace LbIntegrations.MelonDs
@@ -38,24 +39,20 @@ namespace LbIntegrations.MelonDs
 
     internal static class MelonDsBios
     {
-        /// <summary>The folder these files are DECLARED in, and the one an install creates:
-        /// RetroArch's system folder, beside this emulator.
+        /// <summary>The folder these files are DECLARED in, made at install, and the ONLY one read: melonDS's own bios\
+        /// (Mehdi, 04/10 - it was RetroArch's system folder until then). The user's originals and nothing else: BIOS,
+        /// firmware and NAND dumps as dumped, never written by the pack - what is derived from them lives in dsi\ and
+        /// lbip-firmware\.
         ///
-        /// WHY SOMEBODY ELSE'S FOLDER. Nearly everybody running LaunchBox already has RetroArch, and
-        /// anybody who has ever set up a DS core there already has these seven files sitting in it.
-        /// Asking for a second copy, in a second folder, under a second set of names, would be
-        /// inventing work for the sake of owning a directory.
-        ///
-        /// It is created at install time when it is not there, so declaring it is safe even for
-        /// somebody who has no RetroArch at all - they get an empty folder with a note in it, which
-        /// is exactly what the old private one gave them.</summary>
-        public const string DirName = ".." + SEP + "RetroArch" + SEP + "system";
+        /// FILLED AT INSTALL from RetroArch's system folder when it holds them (ImportFromRetroArch), so the BIOS check
+        /// finds them at once; an installation from before 04/10 is filled the same way at its first start-up check.
+        /// RetroArch's folder is a SOURCE for that copy, never read at launch.</summary>
+        public const string DirName = "bios";
 
         private const string SEP = "\\";
 
-        /// <summary>Where this plugin used to ask for them. Still searched, so an installation set
-        /// up before the move keeps working without anybody touching it.</summary>
-        public const string LegacyDirName = "bios";
+        /// <summary>Where they were asked for until 04/10, relative to this emulator: copied from at install.</summary>
+        public const string RetroArchDirName = ".." + SEP + "RetroArch" + SEP + "system";
 
         /// <summary>The names this plugin asks for. They are the ones melonDS's own community uses,
         /// so somebody who already has these files already has them under these names.
@@ -101,8 +98,7 @@ namespace LbIntegrations.MelonDs
         private const string NoteName = "WHICH-FILES-GO-HERE.txt";
 
 
-        /// <summary>The folder to put things in and to name in a message. Absolute, and normalised
-        /// so a message says G:\...\RetroArch\system rather than G:\...\melonDS\..\RetroArch\system.</summary>
+        /// <summary>The folder to put things in and to name in a message, absolute.</summary>
         public static string Dir(MelonDsLayout layout)
         {
             try
@@ -113,31 +109,35 @@ namespace LbIntegrations.MelonDs
             catch { return null; }
         }
 
-        /// <summary>The folder this plugin used to make, if it is still there.</summary>
-        public static string LegacyDir(MelonDsLayout layout)
-            => layout?.InstallDir == null ? null : Path.Combine(layout.InstallDir, LegacyDirName);
+        /// <summary>RetroArch's system folder beside this emulator, absolute - a source at install, nothing more.</summary>
+        public static string RetroArchDir(MelonDsLayout layout)
+        {
+            try { return layout?.InstallDir == null ? null : Path.GetFullPath(Path.Combine(layout.InstallDir, RetroArchDirName)); }
+            catch { return null; }
+        }
 
-        /// <summary>Everywhere a file may be, best first.
-        ///
-        /// OURS IS FIRST AND IS THE ONE DECLARED, because it is the one that always exists - this
-        /// plugin makes it at install time. RetroArch's system folder is looked in as well when it
-        /// is there, which costs nothing and saves somebody a second copy of seven files under seven
-        /// other names: RetroArch's melonDS cores declare exactly these, and anybody who set that up
-        /// already has them.
-        ///
-        /// It is looked in, NOT declared, and that distinction is deliberate. The declaration is a
-        /// path relative to the emulator, and whether a "..\RetroArch\system" resolves in that field
-        /// is something this plugin cannot test without the host's own dependency window - so it is
-        /// not bet on. Nor should a melonDS depend on RetroArch being installed at all.</summary>
+        /// <summary>Where a file is looked for: bios\, and only it (Mehdi, 04/10) - the declared folder is the read one.</summary>
         public static IEnumerable<string> SearchFolders(MelonDsLayout layout)
         {
-            var shared = Dir(layout);
-            if (shared != null) yield return shared;
+            var dir = Dir(layout);
+            if (dir != null) yield return dir;
+        }
 
-            // The folder this plugin used to ask for. Searched second so the declared one wins, and
-            // searched at all so nobody has to move files because we changed our mind.
-            var old = LegacyDir(layout);
-            if (old != null) yield return old;
+        /// <summary>What melonDS may want, under the name it is copied as and the others it circulates under.</summary>
+        public static IEnumerable<DsiBiosImport.Wanted> Wanted()
+        {
+            foreach (var name in DsiFiles.Concat(DsFiles))
+                yield return new DsiBiosImport.Wanted { Name = name, Aliases = AlsoKnownAs.TryGetValue(name, out var a) ? a : Array.Empty<string>() };
+        }
+
+        /// <summary>The user's files copied into bios\ from RetroArch's system folder - the BIOS and firmware melonDS
+        /// wants, under any of their names, and every NAND dump - when bios\ does not have them yet. At install, and at the
+        /// first start-up check of an installation from before 04/10 (bios\ not there yet). See DsiBiosImport.</summary>
+        public static List<string> ImportFromRetroArch(MelonDsLayout layout, Action<string> report = null, Func<bool> cancelled = null)
+        {
+            var dir = Dir(layout);
+            if (dir == null) return new List<string>();
+            return DsiBiosImport.Import(dir, new[] { RetroArchDir(layout) }, Wanted(), nands: true, report, cancelled);
         }
 
         /// <summary>Make the folder and leave a note in it saying what belongs there. Called at the
@@ -159,10 +159,12 @@ namespace LbIntegrations.MelonDs
                     "Files melonDS needs and cannot generate. Drop them here and the plugin points",
                     "melonDS at them; you do not have to configure anything.",
                     "",
-                    "THIS IS RETROARCH'S SYSTEM FOLDER, on purpose: if you have ever set up a DS core",
-                    "there, these files are already here and there is nothing to do. Both naming",
-                    "conventions are accepted - RetroArch's dsi_bios7.bin and melonDS's biosdsi7.bin",
-                    "are the same file to this plugin.",
+                    "YOUR ORIGINALS ONLY: the pack never writes in this folder. It works on copies",
+                    "(dsi\\ for the consoles, lbip-firmware\\ for the firmware).",
+                    "",
+                    "At install, the plugin copies them here from RetroArch's system folder when they",
+                    "are there. Both naming conventions are accepted - RetroArch's dsi_bios7.bin and",
+                    "melonDS's biosdsi7.bin are the same file to this plugin.",
                     "",
                     "FOR DSiWARE, all four are required:",
                     "",
@@ -242,7 +244,7 @@ namespace LbIntegrations.MelonDs
             return path;
         }
 
-        /// <summary>One file by name, case-insensitively        /// <summary>One file by name, case-insensitively - a dump named DSI_bios7.bin is the file
+        /// <summary>One file by name, case-insensitively - a dump named DSI_bios7.bin is the file
         /// that was asked for, and refusing it over a capital letter would be theatre.</summary>
         public static string Find(MelonDsLayout layout, string fileName)
         {
@@ -266,18 +268,11 @@ namespace LbIntegrations.MelonDs
             catch { return null; }
         }
 
-        /// <summary>The name to SHOW for a file: the one actually sitting in a search folder when
-        /// there is one, otherwise RetroArch's.
-        ///
-        /// RetroArch's is the fallback because the folder is RetroArch's - somebody sent there by a
-        /// dependency list should read a name that fits what else is in it. Both conventions are
-        /// accepted either way; this only decides what the list says when nothing is there yet.</summary>
+        /// <summary>The name to SHOW for a file: the one actually sitting in bios\ when there is one, otherwise ours
+        /// (melonDS's own convention, since the folder is melonDS's - 04/10). Both conventions are accepted either way;
+        /// this only decides what the list says when nothing is there yet.</summary>
         public static string PreferredName(MelonDsLayout layout, string ourName)
         {
-            // ONLY THE DECLARED FOLDER IS LOOKED AT. A file sitting in the legacy one still works -
-            // it is searched at launch - but naming it here would point the host's own check at a
-            // folder that does not hold it, which is the defect this whole arrangement exists to
-            // avoid rather than to move around.
             var here = Dir(layout);
             if (here != null && Directory.Exists(here))
             {
@@ -288,8 +283,7 @@ namespace LbIntegrations.MelonDs
                         if (string.Equals(Path.GetFileName(path), name, StringComparison.OrdinalIgnoreCase))
                             return name;
             }
-            return AlsoKnownAs.TryGetValue(ourName, out var others) && others.Length > 0
-                ? others[0] : ourName;
+            return ourName;
         }
 
         /// <summary>Which of the files a DSiWare launch needs are not in the folder.</summary>

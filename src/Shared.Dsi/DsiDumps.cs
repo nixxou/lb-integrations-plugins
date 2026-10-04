@@ -51,7 +51,7 @@ namespace LbIntegrations.Dsi
         /// both had to be named here. Nothing writes them any more - and they are kept in the list
         /// precisely because somebody upgrading still has them on disk.</summary>
         private static readonly string[] NotNands =
-            { ".lock", ".bak", DsiBase.RecipeSuffix, DsiBase.RecordSuffix };
+            { ".lock", ".bak", DsiBase.RecipeSuffix, DsiBase.RecordSuffix, ".copying" /* a DsiBiosImport copy cut short */ };
 
 
         /// <summary>Every NAND dump in the folder, with the region each came from.
@@ -143,6 +143,27 @@ namespace LbIntegrations.Dsi
 
         /// <summary>A file the first-use flow put beside a NAND, and which must never be taken for
         /// a NAND itself.</summary>
+        /// <summary>Cheap: a file that LOOKS like a DSi NAND dump - in the size range, not one of our own leftovers, and
+        /// ending with no$gba's "DSi eMMC CID/CPU" footer in its last 64 bytes. Nothing decrypted: for copying the user's
+        /// dumps between folders (DsiBiosImport), where the region does not matter yet.</summary>
+        public static bool LooksLikeNand(string path)
+        {
+            try
+            {
+                if (IsNotANand(path)) return false;
+                var length = new FileInfo(path).Length;
+                if (length < NandLeast || length > NandMost) return false;
+                var tail = new byte[64];
+                using (var f = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    f.Seek(-tail.Length, SeekOrigin.End);
+                    if (f.Read(tail, 0, tail.Length) != tail.Length) return false;
+                }
+                return System.Text.Encoding.ASCII.GetString(tail).Contains("DSi eMMC CID/CPU");
+            }
+            catch { return false; }
+        }
+
         private static bool IsNotANand(string path)
         {
             foreach (var suffix in NotNands)

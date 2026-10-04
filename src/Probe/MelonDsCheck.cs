@@ -1169,12 +1169,11 @@ namespace LbIntegrations.Probe
 
             try { Directory.Delete(bios, true); } catch { }
 
-            // 3b-bis. RETROARCH'S FOLDER AND RETROARCH'S NAMES. Two conventions exist for the same
-            //     seven files - RetroArch imposes its own through its cores' .info files - and
-            //     somebody who set that up already has them. Making them copy seven files under
-            //     seven other names would be inventing work.
+            // 3b-bis. RETROARCH'S NAMES. Two conventions exist for the same seven files - RetroArch
+            //     imposes its own through its cores' .info files - and somebody who set that up has
+            //     them under those names; copied into bios\ at install (04/10), they keep them.
             try { Directory.Delete(bios, true); } catch { }
-            string shared = bios;                          // the declared folder IS RetroArch's now
+            string shared = bios;                          // melonDS's own bios\ since 04/10
             Directory.CreateDirectory(shared);
             Write(shared, "bios7.bin", 0x4000);           // RetroArch's name for biosnds7.bin
             Write(shared, "bios9.bin", 0x1000);
@@ -1183,7 +1182,7 @@ namespace LbIntegrations.Probe
             File.WriteAllText(toml, "[Emu]\r\nConsoleType = 0\r\n");
             Call(choose, new[] { Call(resolve, new object[] { exe }),
                                         Path.Combine(romDir, PlainRom) });
-            ok &= Check("a BIOS in RetroArch's system folder, under RetroArch's name, is found",
+            ok &= Check("a BIOS in bios\\, under RetroArch's name, is found",
                         (TomlValues(toml, "DS").TryGetValue("BIOS7Path", out var ra) ? ra : "")
                             .Replace('/', Path.DirectorySeparatorChar).Contains(shared));
             try { Directory.Delete(shared, true); } catch { }

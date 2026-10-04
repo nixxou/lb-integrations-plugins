@@ -142,6 +142,13 @@ namespace LbIntegrations.MelonDs
                             var exe = ResolveFullPath(Safe(() => emu?.ApplicationPath));
                             if (string.IsNullOrEmpty(exe) || !MelonDsPaths.IsMelonDsExecutable(exe) || !seen.Add(exe)) continue;
                             var layout = MelonDsPaths.Resolve(exe);
+                            // An installation from before 04/10, whose files were read in RetroArch's folder: bios\
+                            // made and filled from there once - first, since what follows reads the DSi BIOS.
+                            if (MelonDsBios.Dir(layout) is string bios && !Directory.Exists(bios))
+                            {
+                                MelonDsBios.Prepare(layout);
+                                MelonDsBios.ImportFromRetroArch(layout);
+                            }
                             MelonDsRamDisk.StartUp(layout, Bios7Of(layout));
                             MelonDsGameSettings.Restore(layout, "left behind by a session that did not end");
                         }
@@ -166,10 +173,10 @@ namespace LbIntegrations.MelonDs
         /// the two installs apart.
         ///
         /// AND IT IS A PREFIX, NOT A PARENT FOLDER. Emulators\Nixx\&lt;name&gt; would have been tidier
-        /// and is wrong: the DSi BIOS and the user's NAND dumps are read at ..\RetroArch\system,
+        /// and is wrong: at install the user's BIOS and NAND dumps are copied from ..\RetroArch\system,
         /// one level up from the emulator, which resolves to Emulators\RetroArch\system today and
-        /// would become Emulators\Nixx\RetroArch\system under a parent folder - a share with
-        /// RetroArch that would quietly stop being a share.</summary>
+        /// would become Emulators\Nixx\RetroArch\system under a parent folder - a source that would
+        /// quietly stop being found.</summary>
         private const string PackName = "Nixx-melonDS";
 
         public override string EmulatorName => PackName;
@@ -483,6 +490,11 @@ namespace LbIntegrations.MelonDs
                          + " (" + layout.Reason + ")");
                 RedirectSavePaths(layout);
                 if (!reinstall) ApplyIdentity(layout);
+
+                // THE USER'S ORIGINALS into bios\, from RetroArch's system folder when it has them - so LaunchBox's BIOS
+                // check finds them at once (Mehdi, 04/10). Only what bios\ is missing; see MelonDsBios.ImportFromRetroArch.
+                MelonDsBios.ImportFromRetroArch(layout, m => Report(args, m, null),
+                    () => { try { return args?.ShouldCancelFunc?.Invoke() ?? false; } catch { return false; } });
 
                 if (reinstall)
                 {

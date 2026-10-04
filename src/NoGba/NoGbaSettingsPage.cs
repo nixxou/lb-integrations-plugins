@@ -73,8 +73,8 @@ namespace LbIntegrations.NoGba
             }
             else
             {
-                box.Controls.Add(Grey("DS games: no$gba has no copy of a DS firmware dump of yours (dsfirmware.bin in "
-                                      + NoGbaBios.SourceDirName.Replace("..\\", "") + "), so they show whatever FIRMWARE.BIN holds, or none.", 14, y));
+                box.Controls.Add(Grey("DS games: no$gba has no copy of a DS firmware dump of yours (dsfirmware.bin in no$gba's bios folder), "
+                                      + "so they show whatever FIRMWARE.BIN holds, or none.", 14, y));
                 y += 44;
             }
             box.Controls.Add(new Label { Text = "DSiWare:", AutoSize = true, Location = new Point(14, y) });

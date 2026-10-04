@@ -1,6 +1,6 @@
 // The owner no$gba's DS games show (Mehdi, 03/10) - and its DSi cartridges, which no$gba runs as DS games (NoGbaDsi.SetMode):
 // the name, birthday, colour and language of <install>\FIRMWARE.BIN. That file is ALREADY A COPY: no$gba has no path setting,
-// so NoGbaBios.Sync copies the user's dump there (dsfirmware.bin from RetroArch\system). So the owner is written into it, as
+// so NoGbaBios.Sync copies the user's dump there (dsfirmware.bin from no$gba's bios\). So the owner is written into it, as
 // into melonDS's copy - and never when there is no dump to copy from: a FIRMWARE.BIN put there by hand is the user's own file.
 //
 // no$gba has no override and no firmware settings of its own: the owner wanted is the pack's identity ("Your console").

@@ -42,9 +42,8 @@ namespace LbIntegrations.Dsi
         /// before (see DsiWorkspace.MarkForced). Null for a host with nothing of the kind.</summary>
         public string[] HeldWhenForced;
 
-        /// <summary>Where the user keeps NAND dumps, best first. Both plugins happen to read the
-        /// same folder today - ..\RetroArch\system - which is what lets two emulators share one set
-        /// of dumps while each keeps its own consoles.</summary>
+        /// <summary>Where the user keeps NAND dumps, best first: each emulator's own bios\ since 04/10 (filled at
+        /// install from RetroArch's system folder - DsiBiosImport), each keeping its own consoles.</summary>
         public Func<IEnumerable<string>> DumpFolders;
 
         /// <summary>Is the emulator running? The process name differs, and the answer matters twice:
