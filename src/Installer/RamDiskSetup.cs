@@ -10,7 +10,8 @@
 // products share one. Which also means the helper is written only when it is absent or OLDER than the
 // one carried here - see RamDrive.DeployHelper, and Payload.SharedFiles.
 //
-// IT IS OPTIONAL: Vita3K and Xenia use it when it is there, and fall back to the disk when it is not.
+// THE SETUP ASKS FOR IT before the plugins (Mehdi, 04/10: Install stays off until it is ready - InstallerForm.Show). The plugins
+// themselves still fall back to the disk when it is not there (a machine set up by hand, a driver gone).
 // Each part is reported on its own because each one is repaired differently, and a single
 // "not ready" would hide which.
 
@@ -87,7 +88,7 @@ internal static class RamDiskSetup
         if (s.Known && !s.Helper) lines.Add("helper not deployed");
         if (s.HelperOld) lines.Add("helper " + s.HelperVersion + " older than " + s.BundledVersion);
         if (s.Known && s.Task == null) lines.Add("elevated task not registered");
-        return "RAM disk (optional): " + string.Join(", ", lines) + ".";
+        return "RAM disk (needed before the plugins): " + string.Join(", ", lines) + ".";
     }
 
     /// <summary>Deploy the helper if it is absent or older, then register the elevated task. One UAC
