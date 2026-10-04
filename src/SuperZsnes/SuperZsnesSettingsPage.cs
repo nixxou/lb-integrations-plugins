@@ -139,7 +139,7 @@ namespace LbIntegrations.SuperZsnes
                 stack.Controls.Add(box);
             }
 
-            if (deploy) stack.Controls.Add(DeployBox());
+            if (deploy) { stack.Controls.Add(DeployBox()); stack.Controls.Add(DspBox()); }
 
             var bottom = new Panel { Dock = DockStyle.Bottom, Height = 132, Padding = new Padding(12, 4, 12, 8) };
             var legend = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 22, WrapContents = false };
@@ -385,6 +385,45 @@ namespace LbIntegrations.SuperZsnes
                 table.Controls.Add(status, 0, s);
                 table.Controls.Add(button, 1, s);
             }
+            box.Controls.Add(table);
+            return box;
+        }
+
+        /// <summary>The DSP-1 ROM (Mehdi, 04/10): what the pack keeps, and a button to give it one - any name, taken on its
+        /// CRC32 - put at once beside every SUPER ZSNES of the library. See SuperZsnesBios. Acts at once, like the
+        /// BepInEx button: nothing of it goes through the page's Save.</summary>
+        private static GroupBox DspBox()
+        {
+            var exes = KnownExecutables();
+            foreach (var exe in exes) SuperZsnesBios.Adopt(System.IO.Path.GetDirectoryName(exe));
+
+            var box = Group("DSP-1 ROM (" + SuperZsnesBios.FileName + ")");
+            var table = Table(340, 136);
+            var status = new Label { Text = SuperZsnesBios.Status(), AutoSize = true, MaximumSize = new Size(330, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 6, 0, 6) };
+            var button = new Button { Text = SuperZsnesBios.IsKept ? "Replace the file..." : "Choose the file...", AutoSize = true, Margin = new Padding(3, 4, 0, 4) };
+            button.Click += (_, _) =>
+            {
+                using (var pick = new OpenFileDialog { Title = "The DSP-1B ROM (8 KB, often called dsp1b.rom)", Filter = "ROM files (*.rom;*.bin)|*.rom;*.bin|All files (*.*)|*.*" })
+                {
+                    if (pick.ShowDialog(button.FindForm()) != DialogResult.OK) return;
+                    var why = SuperZsnesBios.Keep(pick.FileName);
+                    if (why != null)
+                    {
+                        MessageBox.Show(button.FindForm(), "This is not the DSP-1B ROM SUPER ZSNES wants: " + why + ".", "DSP-1 ROM", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+                    foreach (var exe in exes) SuperZsnesBios.PutInPlace(System.IO.Path.GetDirectoryName(exe));
+                    status.Text = SuperZsnesBios.Status();
+                    button.Text = "Replace the file...";
+                }
+            };
+            var what = new Label { Text = "Nintendo's code, never shipped: give the pack yours once, it puts it back beside SUPER ZSNES - after a reinstall too.", AutoSize = true, MaximumSize = new Size(470, 0), Margin = new Padding(0, 6, 0, 0) };
+            int top = table.RowCount++;
+            table.Controls.Add(what, 0, top);
+            table.SetColumnSpan(what, 2);
+            int r = table.RowCount++;
+            table.Controls.Add(status, 0, r);
+            table.Controls.Add(button, 1, r);
             box.Controls.Add(table);
             return box;
         }

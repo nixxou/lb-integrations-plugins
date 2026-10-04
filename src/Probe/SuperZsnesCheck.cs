@@ -298,8 +298,11 @@ namespace LbIntegrations.Probe
                 Check("supports the SNES", plugin.IsPlatformSupported(Snes).Supported && plugin.IsPlatformSupported(Snes).Recommended);
                 Check("and nothing else", !plugin.IsPlatformSupported("Nintendo 64").Supported
                                           && !plugin.IsPlatformSupported("Nintendo Entertainment System").Supported);
-                Check("declares no BIOS", !plugin.GetBiosFilesForPlatform(Snes).Any()
-                                          && !plugin.GetBiosFilesForPlatform(exe, Snes, "").Any());
+                var bios = plugin.GetBiosFilesForPlatform(Snes).ToList();
+                Check("declares dsp1b.rom alone, optional, beside the executable, with its MD5 (04/10)",
+                      bios.Count == 1 && bios[0].FileName == "dsp1b.rom" && !bios[0].Required && bios[0].Md5 == "332273cc0df5775d3803f2fd88e95d18"
+                      && plugin.GetBiosFilesForPlatform(exe, Snes, "").Count() == 1 && !plugin.GetBiosFilesForPlatform("Nintendo 64").Any(),
+                      string.Join(", ", bios.Select(b => b.FileName + (b.Required ? " required" : "") + " " + b.Md5)));
                 Check("RetroAchievements: not by the plugin", !plugin.SupportsRetroAchievements(exe).IsSupported);
                 Check("save management is on: the cartridge save and the states", plugin.SupportsSaveManagement());
                 Check("the launch gets the primary display alone - on by default since 04/10",

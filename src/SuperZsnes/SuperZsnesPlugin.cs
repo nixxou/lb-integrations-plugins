@@ -403,6 +403,10 @@ namespace LbIntegrations.SuperZsnes
                     else { Log.Warn("bepinex: " + deployed.Problem); note = " BepInEx could not be installed (" + deployed.Problem + "); the emulator works without it, and the Nixx window can retry."; }
                 }
 
+                // THE DSP-1 ROM the user gave the pack, back beside the executable - see SuperZsnesBios.
+                SuperZsnesBios.Adopt(Path.GetDirectoryName(exe));
+                SuperZsnesBios.PutInPlace(Path.GetDirectoryName(exe));
+
                 if (reinstall)
                 {
                     try { args.ExistingEmulator.ApplicationPath = MakeRelativeToLaunchBox(exe); } catch { }
@@ -477,19 +481,17 @@ namespace LbIntegrations.SuperZsnes
 
         // ── BIOS ─────────────────────────────────────────────────────────────
 
-        /// <summary>None declared, and not because there is nothing. The About box lists six
-        /// coprocessor firmware files a user can provide - dsp2.rom, dsp3.rom, dsp4.rom, st010.rom,
-        /// st011.rom, st018.rom, for the handful of games built around those chips - but WHERE the
-        /// emulator looks for them has not been measured, and a declared BIOS is a folder the host
-        /// then checks. Pointing that check at a folder we cannot name is the defect the other
-        /// plugins went to some trouble to avoid (README, melonDS). Optional in any case: the SNES
-        /// itself needs none.</summary>
+        /// <summary>dsp1b.rom, beside the executable, optional - see SuperZsnesBios: SUPER ZSNES's message names that folder
+        /// among the three it looks in, and it is where the pack puts the one it keeps (Mehdi, 04/10). Only it: the scene
+        /// (level0) also lists dsp2/3/4.rom and st010/011/018.rom with their CRC32s, left out by Mehdi's choice - the
+        /// handful of games built around those chips.</summary>
         public override IEnumerable<EmulatorBiosFile> GetBiosFilesForPlatform(string platform)
-            => Array.Empty<EmulatorBiosFile>();
+            => !string.Equals(platform, SnesPlatform, StringComparison.OrdinalIgnoreCase) ? Array.Empty<EmulatorBiosFile>()
+             : new[] { new EmulatorBiosFile(".", SuperZsnesBios.FileName, false, "DSP-1 ROM - optional, for Super Mario Kart, Pilotwings and the other DSP-1 games", SuperZsnesBios.Md5, null) };
 
         public override IEnumerable<EmulatorBiosFile> GetBiosFilesForPlatform(
             string emulatorApplicationPath, string platform, string commandLine)
-            => Array.Empty<EmulatorBiosFile>();
+            => GetBiosFilesForPlatform(platform);
 
         // ── RetroAchievements ────────────────────────────────────────────────
 
@@ -533,6 +535,12 @@ namespace LbIntegrations.SuperZsnes
                     string launched = null;
                     try { launched = args?.EmulatorBeingLaunched?.ApplicationPath; } catch { }
                     var exe = ResolveFullPath(launched);
+                    // The DSP-1 ROM, adopted from the emulator's folder the first time, then kept there - SuperZsnesBios.
+                    if (!string.IsNullOrEmpty(exe) && File.Exists(exe))
+                    {
+                        SuperZsnesBios.Adopt(Path.GetDirectoryName(exe));
+                        SuperZsnesBios.PutInPlace(Path.GetDirectoryName(exe));
+                    }
                     if (SuperZsnesSettings.BepInExWanted && !string.IsNullOrEmpty(exe) && File.Exists(exe))
                     {
                         var exeDir = Path.GetDirectoryName(exe);
