@@ -7,7 +7,8 @@
 //
 // WHAT IT HOLDS (Mehdi, 29/09: what sets the emulator up and does not move - not its graphics): how LaunchBox's
 // Import ROM Files wizard is sorted for each platform Flycast runs - see FlycastLbImport; and whether the arcade
-// sets LaunchBox leaves out of such an import are put back afterwards - see FlycastImportFinished.
+// sets LaunchBox leaves out of such an import are put back afterwards - see FlycastImportFinished. And Flycast's own
+// system settings for every game (Mehdi, 04/10) - see FlycastSystemPanel.
 
 using System;
 using System.Collections.Generic;
@@ -35,6 +36,8 @@ namespace LbIntegrations.Flycast
                     if (FlycastSettings.CrcCheck(system) != crc) FlycastSettings.SetCrcCheck(system, crc);
                 }
                 if (FlycastSettings.RepairImport != ours.Repair) FlycastSettings.SetRepairImport(ours.Repair);
+                var notWritten = ours.System?.Save();
+                if (notWritten != null) return notWritten;
             }
             catch (Exception ex) { return "the settings could not be written: " + ex.Message; }
             return null;
@@ -50,6 +53,8 @@ namespace LbIntegrations.Flycast
         public (bool Quick, bool Crc) Checks(string system) => (_checks[system].Quick.Checked, _checks[system].Crc.Checked);
 
         public bool Repair => _repair.Checked;
+
+        public FlycastSystemPanel System { get; }
 
         public FlycastSettingsPage()
         {
@@ -104,9 +109,11 @@ namespace LbIntegrations.Flycast
             });
             import.Height = y + 124;
             Controls.Add(import);
+            System = new FlycastSystemPanel(560) { Location = new Point(12, import.Bottom + 10) };
+            Controls.Add(System);
             Controls.Add(new Label
             {
-                AutoSize = false, Location = new Point(12, import.Bottom + 8), Size = new Size(560, 20), ForeColor = SystemColors.GrayText,
+                AutoSize = false, Location = new Point(12, System.Bottom + 8), Size = new Size(560, 20), ForeColor = SystemColors.GrayText,
                 Text = "Settings file: " + FlycastSettings.SettingsPath,
             });
         }

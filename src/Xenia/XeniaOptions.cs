@@ -1,5 +1,6 @@
-// The options this pack passes to Xenia at launch - for every game (the Nixx window's Xenia tab) and for one game (its
-// right-click "Nixx-Xenia : Options..."), the game's own winning over every game's.
+// The options this pack passes to Xenia at launch - for one game (its right-click "Nixx-Xenia : Options..."). Every
+// game's were set in the Nixx window's Xenia tab until 04/10 (Mehdi: too much to keep up with) - what every game runs on
+// is Xenia's own config now; values saved then stay in settings.ini and are no longer passed.
 //
 // ALL ON THE COMMAND LINE, NEVER IN THE TOML (Mehdi, 01/10). Measured in Xenia's code (config.cc): a cvar given on the
 // command line takes the command line's value for the run, and only the CONFIG value is written back to the TOML at
@@ -210,7 +211,8 @@ namespace LbIntegrations.Xenia
                 if (!byCvar.ContainsKey(name)) order.Add(name);
                 byCvar[name] = flag;
             }
-            foreach (var f in Flags(every)) Put(f);
+            // Every game's options are no longer passed (Mehdi, 04/10): the Nixx window has no such section any more - what
+            // every game runs on is Xenia's own config. Only the optimized settings' switch is read from that file.
             if (titleId != null && XeniaOptimized.On(own, every))
             {
                 var values = XeniaOptimized.For(titleId, timeout, out var why);

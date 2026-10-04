@@ -45,6 +45,10 @@ namespace LbIntegrations.Cxbx
         public string Default;
         public string Help;
 
+        /// <summary>Set game by game only (Mehdi, 04/10): audio, the hacks and the experimental LLE parts are not in the Nixx
+        /// window's tab - a value it once saved for every game is no longer used.</summary>
+        public bool PerGameOnly => Group == "Audio" || Group == "Hacks" || Group == "Experimental (LLE)";
+
         public string LabelOf(string value)
             => Bool ? (value == "on" ? "on" : "off") : Choices.FirstOrDefault(c => c.Value == value).Label ?? value;
     }
@@ -115,7 +119,7 @@ namespace LbIntegrations.Cxbx
             var v = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var o in All)
             {
-                var value = Get(game, o.Key) ?? Get(every, o.Key) ?? o.Default;
+                var value = Get(game, o.Key) ?? (o.PerGameOnly ? null : Get(every, o.Key)) ?? o.Default;
                 if (value != null && value != OwnValue) v[o.Key] = value;
             }
             return v;

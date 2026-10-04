@@ -30,7 +30,8 @@ namespace LbIntegrations.Cxbx
 
         /// <param name="saved">this level's values (keys "opt.&lt;key&gt;")</param>
         /// <param name="fallback">what an unset option stands for, in words - "Cxbx-Reloaded's own: on", "every game's: 2x"</param>
-        public CxbxOptionRows(IDictionary<string, string> saved, Func<CxbxOption, string> fallback)
+        /// <param name="everyGame">the Nixx window's tab: the options set game by game only (CxbxOption.PerGameOnly) left out</param>
+        public CxbxOptionRows(IDictionary<string, string> saved, Func<CxbxOption, string> fallback, bool everyGame = false)
         {
             FlowDirection = FlowDirection.TopDown;
             WrapContents = false;
@@ -38,7 +39,7 @@ namespace LbIntegrations.Cxbx
             AutoSizeMode = AutoSizeMode.GrowAndShrink;
             Margin = Padding.Empty;
 
-            foreach (var group in CxbxOptions.All.GroupBy(o => o.Group))
+            foreach (var group in CxbxOptions.All.Where(o => !everyGame || !o.PerGameOnly).GroupBy(o => o.Group))
             {
                 var box = new GroupBox { Text = group.Key, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(8, 4, 8, 8), Margin = new Padding(4, 4, 4, 10) };
                 var table = new TableLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 3, Location = new Point(8, 20) };
@@ -159,7 +160,8 @@ namespace LbIntegrations.Cxbx
 
         /// <summary>One game's level: every game's value, else as above.</summary>
         public static Func<CxbxOption, string> GameFallback(IDictionary<string, string> every, CxbxOwn own)
-            => o => CxbxOptions.Get(every, o.Key) is string v && v != CxbxOptions.OwnValue ? "every game's: " + o.LabelOf(v)
+            => o => o.PerGameOnly ? EveryGameFallback(own)(o)
+                  : CxbxOptions.Get(every, o.Key) is string v && v != CxbxOptions.OwnValue ? "every game's: " + o.LabelOf(v)
                   : CxbxOptions.Get(every, o.Key) == CxbxOptions.OwnValue ? "every game's: Cxbx-Reloaded's own: " + own.Label(o)
                   : EveryGameFallback(own)(o);
     }

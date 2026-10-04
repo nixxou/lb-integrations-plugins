@@ -93,8 +93,8 @@ namespace LbIntegrations.Xenia
             ClientSize = new Size(620, 720);
             MinimumSize = new Size(560, 400);
 
-            // What an unset row falls back to: the game's optimized setting when they are on and set it, else every game's
-            // value when the Xenia tab sets one, else Xenia's own.
+            // What an unset row falls back to: the game's optimized setting when they are on and set it, else Xenia's own
+            // (every game's options are no longer set in the Nixx window - Mehdi, 04/10).
             var every = XeniaSettings.Read();
             var exe = ExecutableFor(games.FirstOrDefault());
             var own = exe != null ? XeniaOptions.Own(XeniaPaths.Resolve(exe).ConfigFile) : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -106,7 +106,7 @@ namespace LbIntegrations.Xenia
             {
                 var opt = XeniaOptimized.On(saved, every) ? _optimizedValues.FirstOrDefault(v => (o.Sends ?? new[] { o.Key }).Contains(v.Key, StringComparer.OrdinalIgnoreCase)) : null;
                 if (opt != null) return "optimized: " + o.LabelOf(opt.Value);
-                return every.TryGetValue(o.Key, out var e) ? "every game's: " + o.LabelOf(e) : "Xenia's own: " + o.LabelOf(own.TryGetValue(o.Key, out var v) ? v : o.Default);
+                return "Xenia's own: " + o.LabelOf(own.TryGetValue(o.Key, out var v) ? v : o.Default);
             }
 
             var tabs = new TabControl { Dock = DockStyle.Fill };
@@ -117,7 +117,7 @@ namespace LbIntegrations.Xenia
             {
                 Dock = DockStyle.Top, Height = 52, Padding = new Padding(10, 8, 10, 0), ForeColor = SystemColors.GrayText,
                 Text = (_games.Count == 1 ? first.Title + "'s own options" : _games.Count + " games" + (differ ? " - their options differ: shown from " + first.Title : ", all with the same options"))
-                       + ". Unset, an option is every game's (the Nixx window's Xenia tab) or Xenia's own; set, it goes on the game's command line "
+                       + ". Unset, an option is Xenia's own (its config, set in Xenia); set, it goes on the game's command line "
                        + "at launch, never into Xenia's config.",
             };
             var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(6) };
@@ -242,7 +242,6 @@ namespace LbIntegrations.Xenia
             var byCvar = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var order = new List<string>();
             void Put(string f) { var n = XeniaSettings.CvarOf(f); if (!byCvar.ContainsKey(n)) order.Add(n); byCvar[n] = f; }
-            foreach (var f in XeniaSettings.Flags(_every)) Put(f);
             if (OptimizedOn)
             {
                 var known = XeniaToml.ReadAll(_configFile);

@@ -33,10 +33,7 @@ namespace LbIntegrations.Xenia
     internal sealed class XeniaSettingsPage : UserControl
     {
         private readonly XeniaConsolePanel _console;
-        private readonly XeniaOptionRows _rows;
-        private readonly TextBox _line;
-        private readonly HashSet<string> _known;
-        private readonly Dictionary<string, string> _atOpen;
+
         private readonly TextBox _contentFolder, _contentLimit, _ramBelow;
         private readonly CheckBox _ram, _importClean, _importTitle, _optimized, _importRegion;
 
@@ -153,40 +150,24 @@ namespace LbIntegrations.Xenia
             optimized.Controls.Add(op);
             stack.Controls.Add(optimized);
 
-            var own = exe != null ? XeniaOptions.Own(XeniaPaths.Resolve(exe).ConfigFile) : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            stack.Controls.Add(new Label { Text = "Options for every game", AutoSize = true, Font = new Font("Segoe UI", 10f, FontStyle.Bold), Margin = new Padding(4, 8, 0, 2) });
-            _known = exe != null ? XeniaSettings.KnownCvars(XeniaPaths.Resolve(exe).ConfigFile) : null;
-            _rows = new XeniaOptionRows(XeniaSettings.Read(), o => "Xenia's own: " + o.LabelOf(own.TryGetValue(o.Key, out var v) ? v : o.Default), _known);
-            _atOpen = _rows.Shown();
-            stack.Controls.Add(_rows);
-
-            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 104, Padding = new Padding(12, 4, 12, 8) };
-            _line = new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Font = new Font("Consolas", 9f), BackColor = SystemColors.Window };
+            // NO "OPTIONS FOR EVERY GAME" ANY MORE (Mehdi, 04/10: too much to keep up with): what every game runs on is Xenia's
+            // own config, set in Xenia itself; a game's own options are in its right-click menu. Values saved here before are
+            // left in the file and no longer passed.
             var file = new TextBox { Dock = DockStyle.Bottom, ReadOnly = true, BorderStyle = BorderStyle.None, BackColor = SystemColors.Control,
                                      ForeColor = SystemColors.GrayText, Text = "Settings file: " + XeniaSettings.SettingsPath, TabStop = false };
-            bottom.Controls.Add(_line);
-            bottom.Controls.Add(XeniaOptionRows.Legend());
-            bottom.Controls.Add(file);
 
             Controls.Add(scroll);
             Controls.Add(top);
-            Controls.Add(bottom);
-            _rows.Changed += ShowLine;
-            ShowLine();
+            Controls.Add(file);
         }
 
         [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
         private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, string lParam);
 
-        private void ShowLine()
-        {
-            var flags = XeniaSettings.Flags(_rows.Values()).Where(f => _known == null || _known.Contains(XeniaSettings.CvarOf(f))).ToList();
-            _line.Text = flags.Count == 0 ? "(nothing added to the command line for every game)" : string.Join(" ", flags);
-        }
 
         public string Save()
         {
-            var problem = _rows.Problem() ?? _console?.Problem();
+            var problem = _console?.Problem();
             if (problem != null) return problem;
             var limit = _contentLimit.Text.Trim().Replace(',', '.');
             if (limit.Length > 0 && (!double.TryParse(limit, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var gb) || gb < 0))
@@ -195,8 +176,7 @@ namespace LbIntegrations.Xenia
             if (below.Length > 0 && (!double.TryParse(below, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var rg) || rg <= 0))
                 return "The RAM disk threshold is a number of GB.";
             _console?.Save();
-            // Only what was changed (LbipGameEdit, 04/10): a key the tab does not show stays as it is in the file.
-            var every = LbIntegrations.Lbip.LbipGameEdit.Merge(XeniaSettings.Read(), _atOpen, _rows.Shown());
+            var every = XeniaSettings.Read();
             if (!_optimized.Checked) every[XeniaOptimized.SettingKey] = "off"; else every.Remove(XeniaOptimized.SettingKey);
             XeniaSettings.WriteAll(every);
             XeniaExtras.WriteSettings(new Dictionary<string, string> { ["folder"] = _contentFolder.Text.Trim(), ["limit_gb"] = limit,

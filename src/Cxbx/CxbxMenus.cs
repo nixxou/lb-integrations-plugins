@@ -154,9 +154,10 @@ namespace LbIntegrations.Cxbx
             {
                 AutoSize = true, MaximumSize = new Size(560, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(4, 2, 0, 4),
                 Text = "Written into Cxbx-Reloaded's settings for the time of a game, then put back. Unset, Cxbx-Reloaded's own setting applies - "
-                       + "the one its window sets (right-click a game, \"Open Nixx-Cxbx...\"). A game's own options win over these.",
+                       + "the one its window sets (right-click a game, \"Open Nixx-Cxbx...\"). A game's own options win over these. "
+                       + "Audio, the hacks and the experimental LLE parts are set game by game, in its right-click menu.",
             });
-            _rows = new CxbxOptionRows(s, CxbxOptionRows.EveryGameFallback(CxbxOwn.Read(exe)));
+            _rows = new CxbxOptionRows(s, CxbxOptionRows.EveryGameFallback(CxbxOwn.Read(exe)), everyGame: true);
             stack.Controls.Add(CxbxOptionRows.Legend("Not set: the default, else Cxbx-Reloaded's own (read from its settings)"));
             stack.Controls.Add(_rows);
 
