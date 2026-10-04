@@ -298,6 +298,21 @@ namespace LbIntegrations.Probe
             uint lang = (uint)Ec("IdentityLanguage");
             Check("the console language is one the Xbox knows", lang >= 1 && lang <= 9, "" + lang);
 
+            var packKey = Enumerable.Repeat((byte)0x11, 16).ToArray();
+            Check("new: the pack's HDD key (16 x 0x11)", ((byte[])Get(f, "HddKey")).SequenceEqual(packKey));
+            if (real != null && File.Exists(real))
+            {
+                // xemu's own console, its key drawn at random: the session gets the pack's - or keeps its own when asked.
+                File.Copy(real, baseFile, overwrite: true);
+                var theirs = (byte[])Get(Ec("Open", File.ReadAllBytes(real)), "HddKey");
+                var withPack = Session(Game(1), new Dictionary<string, string>(), out var sk);
+                Check("xemu's console: the session gets the pack's HDD key", withPack != null && ((byte[])Get(withPack, "HddKey")).SequenceEqual(packKey) && sk.Contains("HDD key the pack's"), string.Join(", ", sk));
+                var withOwn = Session(Game(1), new Dictionary<string, string> { ["console.hddkey"] = "xemu" }, out _);
+                Check("... console.hddkey=xemu keeps its own", withOwn != null && ((byte[])Get(withOwn, "HddKey")).SequenceEqual(theirs));
+                Check("... its serial kept either way", withPack != null && (string)Get(withPack, "Serial") == (string)Get(Ec("Open", File.ReadAllBytes(real)), "Serial"));
+                Check("... the base never written", File.ReadAllBytes(baseFile).SequenceEqual(File.ReadAllBytes(real)));
+            }
+
             File.Delete(baseFile);
             Session(Game(4), new Dictionary<string, string>(), out var s2);
             Check("no eeprom.bin: one made first", File.Exists(baseFile) && Ec("Open", File.ReadAllBytes(baseFile)) != null, string.Join(", ", s2));
@@ -470,6 +485,133 @@ namespace LbIntegrations.Probe
             File.Delete(Path.Combine(settings, "settings.ini"));
         }
 
+        /// <summary>--xemu-saves --console &lt;qcow2&gt; [--title &lt;id&gt;] [--out &lt;zip&gt;]: what E: holds - its root, UDATA's titles and,
+        /// for one title, its files - and its save packed as Cxbx's plugin packs one. Reads only (but --out).</summary>
+        public static bool Saves(Assembly asm, string console, string titleId, string outZip)
+        {
+            _asm = asm;
+            var qt = _asm.GetType("LbIntegrations.Xemu.Saves.Qcow2Image", true);
+            var ft = _asm.GetType("LbIntegrations.Xemu.Saves.FatxVolume", true);
+            using var disk = (IDisposable)qt.GetMethod("Open", Any).Invoke(null, new object[] { console });
+            Console.WriteLine("  " + Path.GetFileName(console) + ": " + Get(disk, "Length") + " bytes virtual, backing " + Get(disk, "BackingPath"));
+            foreach (var (letter, off, size) in new[] { ("X", 0x00080000L, 0x2EE00000L), ("Y", 0x2EE80000L, 0x2EE00000L), ("Z", 0x5DC80000L, 0x2EE00000L), ("C", 0x8CA80000L, 0x1F400000L), ("E", 0xABE80000L, 0x1312D6000L) })
+            {
+                object v;
+                try { v = ft.GetMethod("Open", Any).Invoke(null, new object[] { disk, off, size }); } catch (TargetInvocationException ex) { Console.WriteLine("  " + letter + ": " + ex.InnerException?.Message); continue; }
+                if (v == null) { Console.WriteLine("  " + letter + ": no FATX"); continue; }
+                var list = (System.Collections.IEnumerable)ft.GetMethod("List", Any).Invoke(v, new object[] { (uint)Get(v, "RootCluster") });
+                Console.WriteLine("  " + letter + ": FATX" + ((bool)Get(v, "Fat32") ? "32" : "16") + ", cluster " + Get(v, "ClusterSize") + ", " + Get(v, "ClusterCount") + " clusters; root: "
+                                  + string.Join(", ", list.Cast<object>().Select(x => x.ToString())));
+                var problems = ((System.Collections.IEnumerable)ft.GetMethod("Check", Any).Invoke(v, null)).Cast<string>().ToList();
+                Console.WriteLine("     check: " + (problems.Count == 0 ? "clean" : problems.Count + " problem(s): " + string.Join("; ", problems.Take(6))));
+                if (letter != "E") continue;
+                var udata = ft.GetMethod("Find", Any).Invoke(v, new object[] { "UDATA" });
+                if (udata != null)
+                    Console.WriteLine("  E:\\UDATA: " + string.Join(", ", ((System.Collections.IEnumerable)ft.GetMethod("List", Any).Invoke(v, new object[] { (uint)Get(udata, "FirstCluster") })).Cast<object>().Select(x => x.ToString())));
+            }
+            if (titleId == null) return true;
+            var st = _asm.GetType("LbIntegrations.Xemu.Saves.XemuSaveStore", true);
+            var files = ((System.Collections.IEnumerable)st.GetMethod("Extract", Any).Invoke(null, new object[] { console, titleId })).Cast<object>().ToList();
+            Console.WriteLine("  UDATA\\" + titleId + ": " + files.Count + " file(s)");
+            foreach (var f in files)
+            {
+                var name = (string)f.GetType().GetField("Item1").GetValue(f); var data = (byte[])f.GetType().GetField("Item2").GetValue(f);
+                using var sha = System.Security.Cryptography.SHA1.Create();
+                Console.WriteLine("    " + name + "  " + data.Length + "  " + BitConverter.ToString(sha.ComputeHash(data)).Replace("-", "").Substring(0, 12).ToLowerInvariant());
+            }
+            if (outZip != null && files.Count > 0)
+            {
+                st.GetMethod("Capture", Any).Invoke(null, new object[] { console, titleId, outZip });
+                Console.WriteLine("  packed -> " + outZip + " (" + new FileInfo(outZip).Length + " bytes)");
+            }
+            return true;
+        }
+
+        /// <summary>--xemu-insert --console &lt;qcow2&gt; --base &lt;base.qcow2&gt; --title &lt;id&gt; --zip &lt;save&gt;: the save laid into the console
+        /// (made when absent) - WRITES the console: give it a copy.</summary>
+        public static bool Insert(Assembly asm, string console, string baseDisk, string titleId, string zip)
+        {
+            _asm = asm;
+            var st = _asm.GetType("LbIntegrations.Xemu.Saves.XemuSaveStore", true);
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            try { st.GetMethod("Insert", Any).Invoke(null, new object[] { console, baseDisk, titleId, zip }); }
+            catch (TargetInvocationException ex) { Console.WriteLine("  insert FAILED: " + ex.InnerException); return false; }
+            Console.WriteLine("  inserted in " + watch.ElapsedMilliseconds + " ms -> " + console + " (" + new FileInfo(console).Length + " bytes)");
+            return true;
+        }
+
+        /// <summary>A whole save cycle on consoles over a copy of <paramref name="realBase"/>: a new console made holding a save, the
+        /// save read back the same bytes; a richer save over it (folders, a file across clusters, an empty file) read back file
+        /// for file; the first one back, the same bytes; removed, nothing left - and the volume clean after each step.</summary>
+        private static void SavesCycle(string work, string realBase)
+        {
+            if (realBase == null || !File.Exists(realBase)) { Console.WriteLine("    (no dashboard disk at hand - LBIP_XEMU_BASE - the cycle skipped)"); return; }
+            var hdd = Path.Combine(work, "hdd"); Directory.CreateDirectory(Path.Combine(hdd, "games"));
+            var baseDisk = Path.Combine(hdd, "base.qcow2");
+            File.Copy(realBase, baseDisk, overwrite: true);
+            var console = Path.Combine(hdd, "games", "4d530004.qcow2");
+            var st = _asm.GetType("LbIntegrations.Xemu.Saves.XemuSaveStore", true);
+            object S(string m, params object[] a) { try { return st.GetMethods(Any).First(x => x.Name == m && x.GetParameters().Length == a.Length).Invoke(null, a); } catch (TargetInvocationException ex) { throw ex.InnerException ?? ex; } }
+            List<string> Problems()
+            {
+                var qt = _asm.GetType("LbIntegrations.Xemu.Saves.Qcow2Image", true); var ft = _asm.GetType("LbIntegrations.Xemu.Saves.FatxVolume", true);
+                using var disk = (IDisposable)qt.GetMethod("Open", Any).Invoke(null, new object[] { console });
+                var all = new List<string>();
+                foreach (var (off, size) in new[] { (0x00080000L, 0x2EE00000L), (0x2EE80000L, 0x2EE00000L), (0x5DC80000L, 0x2EE00000L), (0x8CA80000L, 0x1F400000L), (0xABE80000L, 0x1312D6000L) })
+                {
+                    var v = ft.GetMethod("Open", Any).Invoke(null, new object[] { disk, off, size });
+                    if (v == null) { all.Add("no FATX at 0x" + off.ToString("X")); continue; }
+                    all.AddRange(((System.Collections.IEnumerable)ft.GetMethod("Check", Any).Invoke(v, null)).Cast<string>());
+                }
+                return all;
+            }
+            Dictionary<string, string> Hashes(IEnumerable<object> files)
+            {
+                using var sha = System.Security.Cryptography.SHA1.Create();
+                return files.ToDictionary(f => (string)f.GetType().GetField("Item1").GetValue(f), f => BitConverter.ToString(sha.ComputeHash((byte[])f.GetType().GetField("Item2").GetValue(f))));
+            }
+            var r = new Random(11);
+            byte[] Bytes(int n) { var b = new byte[n]; r.NextBytes(b); return b; }
+            var first = new List<(string, byte[])> { ("TitleMeta.xbx", Encoding.Unicode.GetBytes("﻿TitleName=Probe Game\r\n")), ("TitleImage.xbx", Bytes(10240)), ("ABCDEF012345/SaveMeta.xbx", Bytes(40)), ("ABCDEF012345/game.sav", Bytes(1442)) };
+            var firstZip = Path.Combine(work, "first.cxbxsave");
+            st.GetMethod("Pack", Any).Invoke(null, new object[] { first, firstZip });
+
+            S("Insert", console, baseDisk, "4d530004", firstZip);
+            var backing = File.Exists(console) ? (string)_asm.GetType("LbIntegrations.Xemu.Qcow2Overlay", true).GetMethod("BackingName", Any).Invoke(null, new object[] { console }) : null;
+            Check("a new console made, over the base (../base.qcow2)", backing == "../base.qcow2", backing);
+            Check("... its five partitions clean", Problems().Count == 0, string.Join("; ", Problems().Take(4)));
+            var back = Path.Combine(work, "back.cxbxsave");
+            Check("... the save captured", (bool)S("Capture", console, "4d530004", back));
+            Check("... the same bytes as the packed save", File.ReadAllBytes(back).SequenceEqual(File.ReadAllBytes(firstZip)));
+            Check("... another title has none", ((System.Collections.IEnumerable)S("Extract", console, "41560003")).Cast<object>().Count() == 0);
+
+            var rich = new List<(string, byte[])>(first) { ("ABCDEF012345/big.bin", Bytes(16384 * 3 + 5)), ("ABCDEF012345/deep/x/y.dat", Bytes(300)), ("FEDCBA987654/SaveMeta.xbx", Bytes(90)), ("FEDCBA987654/empty.dat", new byte[0]) };
+            var richZip = Path.Combine(work, "rich.cxbxsave");
+            st.GetMethod("Pack", Any).Invoke(null, new object[] { rich, richZip });
+            S("Insert", console, baseDisk, "4d530004", richZip);
+            var got = Hashes(((System.Collections.IEnumerable)S("Extract", console, "4d530004")).Cast<object>());
+            var want = Hashes(rich.Select(x => (object)x));
+            Check("a richer save over it: file for file", got.Count == want.Count && want.All(kv => got.TryGetValue(kv.Key, out var h) && h == kv.Value), got.Count + " vs " + want.Count);
+            Check("... the volume clean", Problems().Count == 0, string.Join("; ", Problems().Take(4)));
+
+            S("Insert", console, baseDisk, "4d530004", firstZip);
+            S("Capture", console, "4d530004", back);
+            Check("the first save back: the same bytes, nothing left of the richer", File.ReadAllBytes(back).SequenceEqual(File.ReadAllBytes(firstZip)));
+            Check("... the volume clean (the freed clusters not leaked)", Problems().Count == 0, string.Join("; ", Problems().Take(4)));
+
+            Check("removed", (bool)S("Remove", console, "4d530004"));
+            Check("... no save left", !(bool)S("Capture", console, "4d530004", Path.Combine(work, "none.cxbxsave")) && !File.Exists(Path.Combine(work, "none.cxbxsave")));
+            Check("... the volume clean", Problems().Count == 0, string.Join("; ", Problems().Take(4)));
+            Check("... removing again: nothing to do", !(bool)S("Remove", console, "4d530004"));
+
+            var escape = Path.Combine(work, "escape.cxbxsave");
+            st.GetMethod("Pack", Any).Invoke(null, new object[] { new List<(string, byte[])> { ("../outside.bin", new byte[] { 1 }) }, escape });
+            bool refused = false;
+            try { S("Insert", console, baseDisk, "4d530004", escape); } catch (InvalidDataException) { refused = true; }
+            Check("a save that would leave its folder: refused", refused);
+            Check("the base never written", File.ReadAllBytes(baseDisk).SequenceEqual(File.ReadAllBytes(realBase)));
+        }
+
         public static bool Run(Assembly asm)
         {
             _asm = asm;
@@ -633,6 +775,10 @@ namespace LbIntegrations.Probe
                 var eepromWork = Path.Combine(work, "eeprom");
                 Directory.CreateDirectory(eepromWork);
                 Eeprom(eepromWork, Environment.GetEnvironmentVariable("LBIP_XEMU_EEPROM"));
+
+                // 7c. the saves, in Cxbx's format, on a copy of xemu's dashboard disk (not shipped: LBIP_XEMU_BASE)
+                Console.WriteLine("  saves (Cxbx's format)");
+                SavesCycle(work, Environment.GetEnvironmentVariable("LBIP_XEMU_BASE"));
 
                 // 8. whose install it is
                 Console.WriteLine("  ours");

@@ -15,8 +15,9 @@
 // EEPROM window and does not trigger the question.
 //
 // NO EEPROM.bin YET (the first game of a fresh install): Cxbx-Reloaded would make one, NTSC. One is made here instead,
-// as EmuEEPROMReset makes it - random serial, MAC (00:50:F2 + 3 random), online key and HDD key, NTSC-M 60 Hz video,
-// English - with the game's region. Cxbx-Reloaded then loads it as its own.
+// as EmuEEPROMReset makes it - random serial, MAC (00:50:F2 + 3 random) and online key, NTSC-M 60 Hz video, English - with
+// the game's region, and the pack's HDD key (PackIdentity.XboxHddKey), which the session's options also write (console.hddkey).
+// Cxbx-Reloaded then loads it as its own.
 
 using System;
 using System.Collections.Generic;
@@ -131,6 +132,15 @@ namespace LbIntegrations.Cxbx
                 said.Add("sound " + audio);
             }
 
+            // The HDD key: the pack's (PackIdentity.XboxHddKey) unless Cxbx-Reloaded's own is chosen - a key the header's HMAC
+            // covers, signed again below.
+            if (!v.TryGetValue("console.hddkey", out var hddKey) || hddKey == "pack")
+            {
+                var key = LbIntegrations.Identity.PackIdentity.XboxHddKey();
+                bool same = true; for (int i = 0; i < 16; i++) if (b[0x1C + i] != key[i]) same = false;
+                if (!same) { key.CopyTo(b, 0x1C); said.Add("HDD key the pack's"); }
+            }
+
             // Never a game refused by parental controls: no restriction, whatever was set.
             W(ParentalGamesAt, 0);
             W(ParentalMoviesAt, 0);
@@ -170,9 +180,9 @@ namespace LbIntegrations.Cxbx
             for (int i = 3; i < 6; i++) b[0x40 + i] = Next();
             for (int i = 0; i < 16; i++) b[0x48 + i] = Next();
             BitConverter.GetBytes(0x00400100u).CopyTo(b, 0x58);
-            // Encrypted: the region, an HDD key.
+            // Encrypted: the region, the pack's HDD key (PackIdentity.XboxHddKey - the same on every console of the pack).
             BitConverter.GetBytes(region).CopyTo(b, RegionAt);
-            for (int i = 0; i < 16; i++) b[0x1C + i] = Next();
+            LbIntegrations.Identity.PackIdentity.XboxHddKey().CopyTo(b, 0x1C);
             // User: English; everything else zero, as Cxbx-Reloaded leaves it.
             BitConverter.GetBytes(1u).CopyTo(b, 0x90);
             return b;

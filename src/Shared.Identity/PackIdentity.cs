@@ -35,6 +35,13 @@ namespace LbIntegrations.Identity
 {
     internal sealed class PackIdentity
     {
+        /// <summary>THE HDD KEY OF EVERY XBOX CONSOLE OF THE PACK (Mehdi, 04/10): sixteen 0x11, written into each console's
+        /// EEPROM by the Cxbx and xemu plugins (a new one, and the session's copy) - so a save a game signs with the console's
+        /// key (a few games) is valid on all of them, and stays so after any reinstall. Not zeros: Xbox Live's libraries, and
+        /// Insignia by design, refuse a null key (Cxbx-Reloaded PR #1944; ConsoleMods). A console already registered with
+        /// Insignia loses that registration when its key changes - the option "own" keeps the emulator's.</summary>
+        public static byte[] XboxHddKey() => Enumerable.Repeat((byte)0x11, 16).ToArray();
+
         public string Nickname = "";
         /// <summary>A culture name of <see cref="Languages"/>.</summary>
         public string Language = "en-US";

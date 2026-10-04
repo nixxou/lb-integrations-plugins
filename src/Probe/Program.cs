@@ -113,6 +113,8 @@ namespace LbIntegrations.Probe
             if (Has(args, "--cxbx-shot")) return CxbxCheck.Shot(asm, Path.GetFullPath(Arg(args, "--cxbx-shot")), emuPath) ? 0 : 1;
             // xemu: --xemu (discs, a game's console, xemu.toml and the launch line, all made here).
             if (Has(args, "--xdvdfs-diff")) { int at = Array.IndexOf(args, "--xdvdfs-diff"); return XemuCheck.Diff(asm, Path.GetFullPath(args[at + 1]), Path.GetFullPath(args[at + 2])) ? 0 : 1; }
+            if (Has(args, "--xemu-insert")) return XemuCheck.Insert(asm, Path.GetFullPath(Arg(args, "--console")), Path.GetFullPath(Arg(args, "--base")), Arg(args, "--title"), Path.GetFullPath(Arg(args, "--zip"))) ? 0 : 1;
+            if (Has(args, "--xemu-saves")) return XemuCheck.Saves(asm, Path.GetFullPath(Arg(args, "--console")), Arg(args, "--title"), Arg(args, "--out") is string z ? Path.GetFullPath(z) : null) ? 0 : 1;
             if (Has(args, "--xemu-console")) return XemuCheck.Console_(asm, Path.GetFullPath(Arg(args, "--base")), Path.GetFullPath(Arg(args, "--out")), Path.GetFullPath(Arg(args, "--rom"))) ? 0 : 1;
             if (Has(args, "--xemu")) return XemuCheck.Run(asm) ? 0 : 1;
             // Xenia's compatibility list: --xenia-compat [--online].

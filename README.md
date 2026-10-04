@@ -549,8 +549,23 @@ Tzu's redump stayed on a black screen; an XISO of it from another source ran, th
 `-mp`), never into the user's file; an XISO that needs it is served (or copied) instead of handed over as it is.
 
 **One console per game** (`Qcow2Overlay`): `hdd\games\<title id>.qcow2`, an empty qcow2 v3 whose backing file is
-`hdd\base.qcow2` - xemu's dashboard disk, downloaded at install, read-only. That file is the game's save for the
-host. Between games `xemu.toml` points at `hdd\standalone.qcow2`, never at the base.
+`hdd\base.qcow2` - xemu's dashboard disk, downloaded at install, read-only. Between games `xemu.toml` points at
+`hdd\standalone.qcow2`, never at the base.
+
+**The save is Cxbx's** (`Saves\`): the host sees `<xemu>\lbip-saves\<title id>.cxbxsave` - `E:\UDATA\<title id>` of the
+game's console packed exactly as the Cxbx plugin packs its own (sorted, 1980-01-01, stored), so a save moves between the
+two emulators as one file. Read through the qcow2 chain (`Qcow2Image`) and FATX (`Fatx`); captured after each session and
+when the console changed. Restore lays it into the console (made over the base when the game has none) - the folder
+replaced, the rest of the console kept - by writing a NEW console from the old one's clusters and the changed ones,
+through a temporary file, refused when the FATX check of the result finds anything wrong. A save of the group
+`cxbx:<title id>` restores too. Measured 04/10: the five partitions of four real consoles read and check clean; a Cxbx
+save of Batman restored then captured again gives the Cxbx plugin's file byte for byte; xemu boots and writes into a
+rebuilt console, which stays clean. Not handled yet: saves a game signs with the console's key (see the HDD key below).
+
+**One HDD key for every console** (`PackIdentity.XboxHddKey`, sixteen 0x11): written into xemu's session EEPROM and
+Cxbx's (and into a new console of either), so a save signed with the console's key moves between them and survives a
+reinstall. Not zeros: Xbox Live's libraries and Insignia refuse a null key. `console.hddkey=xemu` (Cxbx: its option set
+to Cxbx-Reloaded's own) keeps the emulator's - for a console registered with Insignia, which a new key would lose.
 
 **The line is `-full-screen -dvd_path "<xiso>" -L`**: `-L` (QEMU's firmware folder, unused by xemu) takes the game's
 path the host appends - a bare path would be a hard disk to QEMU. Measured 04/10: the game boots. Alt+F4 quits at once.

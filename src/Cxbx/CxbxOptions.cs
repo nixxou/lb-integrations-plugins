@@ -99,6 +99,11 @@ namespace LbIntegrations.Cxbx
                                          ("ntsc", "NTSC"), ("ntsc-hd", "NTSC + 480p/720p/1080i"), Own },
                              Help = "Follow: a European game gets PAL with 60 Hz allowed, an American or Japanese one NTSC with its HD modes. "
                                     + "A European game's HD modes, when it has any, only show on NTSC." },
+            new CxbxOption { Key = "console.hddkey", Group = "Console", Label = "HDD key", Default = "pack",
+                             Choices = { ("pack", "The pack's (the same on every console)"), Own },
+                             Help = "The console's key, which a few games sign their saves with. The pack's: every console of the pack - Cxbx-Reloaded's "
+                                    + "and xemu's - has the same, so those saves move between them. Cxbx-Reloaded's own: the one in its EEPROM window "
+                                    + "(keep it if this console is registered with Insignia: a new key loses the registration)." },
             new CxbxOption { Key = "console.screen", Group = "Console", Label = "Picture", Choices = { ("normal", "Normal (4:3)"), ("widescreen", "Widescreen (16:9)"), ("letterbox", "Letterbox") } },
             new CxbxOption { Key = "console.audio", Group = "Console", Label = "Sound", Choices = { ("stereo", "Stereo"), ("mono", "Mono"), ("surround", "Surround") } },
 

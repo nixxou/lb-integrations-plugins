@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 
 namespace LbIntegrations.Cxbx
@@ -100,6 +101,11 @@ namespace LbIntegrations.Cxbx
                 }
                 case "console.screen": { uint f = E(0x94); return (f & 0x10000) != 0 ? "Widescreen (16:9)" : (f & 0x100000) != 0 ? "Letterbox" : "Normal (4:3)"; }
                 case "console.audio": { uint a = E(0x98) & 3; return a == 1 ? "Mono" : a == 2 ? "Surround" : "Stereo"; }
+                case "console.hddkey":
+                {
+                    var k = new byte[16]; Array.Copy(_eeprom, 0x1C, k, 0, 16);
+                    return k.SequenceEqual(LbIntegrations.Identity.PackIdentity.XboxHddKey()) ? "the pack's" : "its own (" + BitConverter.ToString(k, 0, 4).Replace("-", "") + "...)";
+                }
             }
             return "?";
         }

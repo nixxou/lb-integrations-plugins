@@ -1,5 +1,6 @@
 // xemu's console, set for a game before it starts (Mehdi, 04/10): its region and video standard following the game, its
-// language the pack's ("Your console", else Windows'), its time zone Windows'. Measured on GTA San Andreas (Europe), 04/10:
+// language the pack's ("Your console", else Windows'), its time zone Windows', its HDD key the pack's (PackIdentity.XboxHddKey,
+// the same on every console: a save a game signs with the console's key moves between them). Measured on GTA San Andreas (Europe), 04/10:
 // on the console xemu makes (North America, NTSC) the game stays on a black screen; on a copy turned Europe / PAL it plays.
 //
 // THE FILE IS A REAL XBOX'S, unlike Cxbx-Reloaded's (which keeps its EEPROM.bin in clear - CxbxEeprom): 256 bytes,
@@ -52,7 +53,7 @@ namespace LbIntegrations.Xemu.Eeprom
             public uint AvRegion { get => BitConverter.ToUInt32(Data, AvRegionAt); set => BitConverter.GetBytes(value).CopyTo(Data, AvRegionAt); }
             public uint Language { get => BitConverter.ToUInt32(Data, LanguageAt); set => BitConverter.GetBytes(value).CopyTo(Data, LanguageAt); }
             public uint VideoFlags { get => BitConverter.ToUInt32(Data, VideoFlagsAt); set => BitConverter.GetBytes(value).CopyTo(Data, VideoFlagsAt); }
-            public byte[] HddKey => Data.Skip(0x1C).Take(16).ToArray();
+            public byte[] HddKey { get => Data.Skip(0x1C).Take(16).ToArray(); set { if (value?.Length != 16) throw new ArgumentException("an HDD key is 16 bytes"); value.CopyTo(Data, 0x1C); } }
             public string Serial => Encoding.ASCII.GetString(Data, 0x34, 12);
             public string Zone { get => ZoneName(Data); set => SetZone(Data, value); }
         }
@@ -109,15 +110,15 @@ namespace LbIntegrations.Xemu.Eeprom
         }
 
         /// <summary>A new console, as XboxEepromEditor makes one: a 1.0 kernel's (the version of the EEPROM xemu makes itself),
-        /// North America, NTSC-M, English, London; a random serial (ending in 9, as its marks its own), MAC with a Microsoft
-        /// prefix, online key, HDD key and confounder.</summary>
+        /// North America, NTSC-M, English, London; a random serial (ending in 9, as it marks its own), MAC with a Microsoft
+        /// prefix, online key and confounder - but the pack's HDD key.</summary>
         public static byte[] Fresh()
         {
             var e = new Opened { Version = EepromVersion.RetailFirst, Data = new byte[Size] };
             var r = RandomNumberGenerator.Create();
             byte[] Random(int n) { var b = new byte[n]; r.GetBytes(b); return b; }
             Random(8).CopyTo(e.Data, 0x14);                     // confounder
-            Random(16).CopyTo(e.Data, 0x1C);                    // HDD key
+            LbIntegrations.Identity.PackIdentity.XboxHddKey().CopyTo(e.Data, 0x1C);   // HDD key: the pack's, the same on every console
             e.Region = 1;
             var digits = Random(11);
             Encoding.ASCII.GetBytes(new string(digits.Select(d => (char)('0' + d % 10)).ToArray()) + "9").CopyTo(e.Data, 0x34);
@@ -135,7 +136,7 @@ namespace LbIntegrations.Xemu.Eeprom
         /// <summary>The console a launch of <paramref name="game"/> runs on, written to <paramref name="sessionPath"/> from
         /// <paramref name="basePath"/> (made when absent): the options of <paramref name="v"/> - console.region (follow, 1,
         /// 2, 4, xemu), console.video (follow, pal50, pal60, ntsc, ntsc-hd, xemu), console.language (windows, 1..9, xemu),
-        /// console.timezone (windows, xemu). Null when the base cannot be read - the launch then uses it as it is.</summary>
+        /// console.timezone (windows, xemu), console.hddkey (pack, xemu). Null when the base cannot be read - the launch then uses it as it is.</summary>
         public static string Prepare(string basePath, string sessionPath, XbeInfo game, IDictionary<string, string> v, List<string> said)
         {
             if (!File.Exists(basePath))
@@ -191,6 +192,13 @@ namespace LbIntegrations.Xemu.Eeprom
             }
 
             if (O("console.timezone", "windows") == "windows" && WindowsZone() is string zone) { e.Zone = zone; said.Add("time zone " + zone); }
+
+            // The HDD key: the pack's (PackIdentity.XboxHddKey), unless console.hddkey=xemu keeps the console's own.
+            if (O("console.hddkey", "pack") != "xemu")
+            {
+                var key = LbIntegrations.Identity.PackIdentity.XboxHddKey();
+                if (!e.HddKey.SequenceEqual(key)) { e.HddKey = key; said.Add("HDD key the pack's"); }
+            }
 
             // Never a game refused by parental controls (CxbxEeprom's rule): no restriction, whatever was set.
             BitConverter.GetBytes(0u).CopyTo(e.Data, ParentalGamesAt);

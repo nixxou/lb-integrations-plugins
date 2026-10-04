@@ -338,6 +338,7 @@ namespace LbIntegrations.Probe
                     Check("made with the game's region (PAL)", BitConverter.ToUInt32(e1, 0x2C) == 4, "" + BitConverter.ToUInt32(e1, 0x2C));
                     Check("made as Cxbx-Reloaded makes one: English, NTSC-M 60 Hz, a Microsoft MAC", BitConverter.ToUInt32(e1, 0x90) == 1 && BitConverter.ToUInt32(e1, 0x58) == 0x00400100 && e1[0x41] == 0x50 && e1[0x42] == 0xF2);
                     Check("its checksum right", Signed(e1));
+                    Check("made with the pack's HDD key (16 x 0x11)", e1.Skip(0x1C).Take(16).All(x => x == 0x11));
                     var na = (byte[])e1.Clone(); BitConverter.GetBytes(1u).CopyTo(na, 0x2C); File.WriteAllBytes(eeprom, na);
                     Call("CxbxEeprom", "MatchRegion", exe, Info(4));
                     var e2 = File.ReadAllBytes(eeprom);
@@ -355,6 +356,14 @@ namespace LbIntegrations.Probe
                 var ini = Path.Combine(emuDir, "settings.ini");
                 File.WriteAllText(ini, "[gui]\r\nDataStorageToggle = 1\r\n\r\n[video]\r\nadapter = 1\r\nVSync = true\r\n\r\n[core]\r\nFlagsLLE = 8\r\n");
                 if (!File.Exists(eeprom)) Call("CxbxEeprom", "MatchRegion", exe, Info(1), false);
+                {
+                    // A console with a key of its own (Cxbx-Reloaded draws one): the session must get the pack's.
+                    var ownKey = File.ReadAllBytes(eeprom);
+                    for (int i = 0; i < 16; i++) ownKey[0x1C + i] = (byte)(0xA0 + i);
+                    using var h = new System.Security.Cryptography.HMACSHA1(new byte[16]);
+                    h.ComputeHash(ownKey, 0x14, 28).CopyTo(ownKey, 0);
+                    File.WriteAllBytes(eeprom, ownKey);
+                }
                 var iniBefore = File.ReadAllBytes(ini); var eepBefore = File.ReadAllBytes(eeprom);
                 Call("CxbxSettings", "Write", new Dictionary<string, string> { ["ramdisk"] = "off", ["opt.video.render"] = "2", ["opt.lle.gpu"] = "on" });
                 Call("CxbxSettings", "WriteGame", "game-opt", new Dictionary<string, string> { ["opt.video.render"] = "3", ["opt.console.video"] = "ntsc-hd", ["opt.console.language"] = "4", ["opt.console.screen"] = "widescreen",
@@ -373,6 +382,7 @@ namespace LbIntegrations.Probe
                 Check("console: NTSC + HD modes", BitConverter.ToUInt32(e, 0x58) == 0x00400100 && (BitConverter.ToUInt32(e, 0x94) & 0xE0000) == 0xE0000, BitConverter.ToUInt32(e, 0x58).ToString("X8") + " " + BitConverter.ToUInt32(e, 0x94).ToString("X8"));
                 Check("console: French, widescreen", BitConverter.ToUInt32(e, 0x90) == 4 && (BitConverter.ToUInt32(e, 0x94) & 0x10000) != 0);
                 Check("console: the game's region (PAL), checksum right", BitConverter.ToUInt32(e, 0x2C) == 4 && Signed(e));
+                Check("console: the pack's HDD key over its own, checksum right", e.Skip(0x1C).Take(16).All(x => x == 0x11) && Signed(e));
                 Call("CxbxOptions", "Restore", exe, "the probe's session is over");
                 Check("after the session: settings.ini as it was, byte for byte", File.ReadAllBytes(ini).SequenceEqual(iniBefore));
                 Check("after the session: EEPROM.bin as it was, byte for byte", File.ReadAllBytes(eeprom).SequenceEqual(eepBefore));

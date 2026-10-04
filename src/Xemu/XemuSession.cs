@@ -39,7 +39,14 @@ namespace LbIntegrations.Xemu
                     Log.Info("session: over");
                 }
                 catch (Exception ex) { Log.Warn("session watch", ex); }
-                finally { Standalone(exe, "its game is over"); XemuDisc.Release(disc); }
+                finally
+                {
+                    Standalone(exe, "its game is over");
+                    XemuDisc.Release(disc);
+                    // The save the host sees, brought up to date with the console the game just wrote (XemuSaves).
+                    try { XemuSaveFiles.Capture(exe, System.IO.Path.GetFileNameWithoutExtension(gameHdd)); }
+                    catch (Exception ex) { Log.Warn("session: the save could not be captured", ex); }
+                }
             });
         }
 
