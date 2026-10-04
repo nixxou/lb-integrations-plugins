@@ -597,12 +597,16 @@ namespace LbIntegrations.NoGba
             string emulatorApplicationPath, string platform, string commandLine)
             => BiosFiles(platform, emulatorApplicationPath);
 
-        /// <summary>Declared OPTIONAL, every one of them.
+        /// <summary>GBA and DS: declared OPTIONAL, every one of them.
         ///
         /// no$gba's default is to start a cartridge directly without running any boot code, and it
         /// runs games with none of these present. They buy accuracy - real BIOS call behaviour, the
         /// boot animation - not function. Marking them Required would put a red badge on a working
-        /// installation and teach people to ignore the badge.</summary>
+        /// installation and teach people to ignore the badge.
+        ///
+        /// DSiWARE IS THE OTHER REGIME (Mehdi, 04/10 - nothing was declared for it, a leftover of before the DSi support):
+        /// the two DSi BIOS halves are REQUIRED - without them no$gba cannot enter DSi mode (NoGbaDsi) - and a NAND of the
+        /// game's region, one entry per region and none required, as melonDS declares them (DsiNandFiles).</summary>
         private static IEnumerable<EmulatorBiosFile> BiosFiles(string platform, string appPath = null)
         {
             var files = new List<EmulatorBiosFile>();
@@ -611,11 +615,25 @@ namespace LbIntegrations.NoGba
                 var name = (platform ?? "").Trim();
                 bool gba = string.Equals(name, GbaPlatform, StringComparison.InvariantCultureIgnoreCase);
                 bool ds = string.Equals(name, DsPlatform, StringComparison.InvariantCultureIgnoreCase);
-                if (!gba && !ds) return files;
+                bool dsiware = string.Equals(name, DsiWarePlatform, StringComparison.InvariantCultureIgnoreCase);
+                if (!gba && !ds && !dsiware) return files;
 
                 NoGbaLayout layout = null;
                 if (NoGbaPaths.IsNoGbaExecutable(appPath))
                     layout = NoGbaPaths.Resolve(ResolveFullPath(appPath));
+
+                if (dsiware)
+                {
+                    foreach (var file in NoGbaBios.Files.Where(f => f.TheirName.StartsWith("BIOSDSI", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        var complaint = layout == null ? null : NoGbaBios.SizeComplaint(layout, file);
+                        files.Add(new EmulatorBiosFile(NoGbaBios.TargetDirName, file.TheirName, true,
+                                                       file.What + " - required for DSiWare, copied here from bios\\" + file.OurName
+                                                       + (complaint == null ? "" : " (the original " + complaint + ")"), null, null));
+                    }
+                    files.AddRange(DsiNandFiles(layout));
+                    return files;
+                }
 
                 foreach (var file in NoGbaBios.Files)
                 {
@@ -631,6 +649,32 @@ namespace LbIntegrations.NoGba
                 }
             }
             catch (Exception ex) { Log.Warn("could not list the BIOS files", ex); }
+            return files;
+        }
+
+        /// <summary>One NAND entry per DSi region, in bios\ - named after the dump there when there is one (its region read
+        /// out of it), DSi_Nand_&lt;region&gt;.bin otherwise. None required: only the game's region is needed. melonDS's NandFiles.</summary>
+        private static IEnumerable<EmulatorBiosFile> DsiNandFiles(NoGbaLayout layout)
+        {
+            var have = new Dictionary<DsiRegion, string>();
+            try
+            {
+                var bios = layout == null ? null : NoGbaBios.SourceDir(layout);
+                var arm7File = NoGbaBios.Files.FirstOrDefault(f => string.Equals(f.OurName, "biosdsi7.bin", StringComparison.OrdinalIgnoreCase));
+                var arm7 = layout == null || arm7File == null ? null : NoGbaBios.Find(layout, arm7File);
+                if (bios != null && arm7 != null)
+                    foreach (var dump in DsiDumps.Nands(NoGbaHost.For(layout), arm7))
+                        if (string.Equals(Path.GetFullPath(Path.GetDirectoryName(dump.Path)), bios, StringComparison.OrdinalIgnoreCase)
+                            && !have.ContainsKey(dump.Region))
+                            have[dump.Region] = Path.GetFileName(dump.Path);
+            }
+            catch { }
+
+            var files = new List<EmulatorBiosFile>();
+            foreach (DsiRegion region in Enum.GetValues(typeof(DsiRegion)))
+                files.Add(new EmulatorBiosFile(NoGbaBios.SourceDirName,
+                                               have.TryGetValue(region, out var actual) ? actual : DsiRegions.SuggestedFileName(region),
+                                               false, "DSi NAND, " + DsiRegions.Name(region) + " - any file name", null, null));
             return files;
         }
 

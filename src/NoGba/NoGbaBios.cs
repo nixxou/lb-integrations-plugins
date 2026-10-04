@@ -17,8 +17,8 @@
 // boot animation - not function. Declaring them Required would put a red badge on a working
 // installation, so they are declared optional and their absence is not an event.
 //
-// That changes for DSi, where the BIOS and the NAND are not optional at all. When that arrives it
-// brings the missing-files window with it; it has no business here.
+// That changes for DSiWare, where the DSi BIOS and a NAND are not optional at all: declared required
+// there (NoGbaPlugin.BiosFiles), and a launch without them says so (NoGbaDsi).
 
 using System;
 using System.Collections.Generic;
@@ -74,8 +74,8 @@ namespace LbIntegrations.NoGba
         /// so the dependency window shows something a person can read.</summary>
         public const string TargetDirName = ".";
 
-        /// <summary>The Game Boy Advance and Nintendo DS files. The DSi ones are deliberately absent
-        /// until the DSi support that needs them exists - see the header.
+        /// <summary>The Game Boy Advance, Nintendo DS and DSi files - the last two required on DSiWare
+        /// (NoGbaPlugin.BiosFiles), optional elsewhere.
         ///
         /// Names on the right are no$gba's own, read from its installation notes (GBATEK,
         /// "File Locations and Names"); the sizes are the real chips'.</summary>
