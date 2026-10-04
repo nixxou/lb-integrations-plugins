@@ -11,8 +11,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
-    <!-- The pack's version, shown in the window's header - the same as the plugins' manifests (InstalledVersion). -->
+    <!-- The pack's version - the same as the plugins' manifests (InstalledVersion). The SETUP's own, shown in the window's
+         header, may run ahead of it when only the setup changed: 1.1.1b (Mehdi, 04/10 - the self-contained RAM disk helper,
+         the uninstall that removes it). Version stays numeric (the file version needs it); the header reads
+         InformationalVersion, cut at its "+". -->
     <Version>1.1.1</Version>
+    <InformationalVersion>1.1.1b</InformationalVersion>
     <!-- Drawn by tools\installer-icon. The window takes it from the exe (Icon.ExtractAssociatedIcon). -->
     <ApplicationIcon>nixx.ico</ApplicationIcon>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
