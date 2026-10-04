@@ -83,12 +83,29 @@ namespace LbIntegrations.Dsi
                             if (cancelled?.Invoke() == true) return copied;
                             if (!DsiDumps.LooksLikeNand(path) || AlreadyIn(full, path)) continue;
                             var own = Path.GetFileName(path);
-                            var region = DsiDumps.RegionOf(path, arm7);
+                            // THE REGION IS READ ON OUR COPY, NEVER ON THE SOURCE (measured 04/10): the NAND reader opens
+                            // its file for writing - the user's original must not be, and melonDS and no$gba importing at
+                            // the same start-up stopped each other on it ("cannot open ... for writing"). So: copied under a
+                            // temporary name, read there, then named.
+                            var tmp = Path.Combine(full, own + ".copying");
+                            try
+                            {
+                                report?.Invoke("Copying " + own + "...");
+                                File.Copy(path, tmp, overwrite: true);
+                            }
+                            catch (Exception ex) { DsiLog.Warn("bios: could not copy " + path, ex); try { if (File.Exists(tmp)) File.Delete(tmp); } catch { } continue; }
+                            var region = DsiDumps.RegionOf(tmp, arm7);
                             var fixedName = region != null ? DsiRegions.SuggestedFileName(region.Value) : null;
                             var name = fixedName != null && !File.Exists(Path.Combine(full, fixedName)) ? fixedName
                                      : !File.Exists(Path.Combine(full, own)) ? own : null;
-                            if (name == null) { DsiLog.Info("bios: " + own + " not copied - " + (fixedName ?? own) + " and " + own + " are both taken in " + full); continue; }
-                            if (!Copy(path, Path.Combine(full, name), report)) continue;
+                            if (name == null)
+                            {
+                                DsiLog.Info("bios: " + own + " not copied - " + (fixedName ?? own) + " and " + own + " are both taken in " + full);
+                                try { File.Delete(tmp); } catch { }
+                                continue;
+                            }
+                            try { File.Move(tmp, Path.Combine(full, name)); }
+                            catch (Exception ex) { DsiLog.Warn("bios: could not name " + own + " " + name, ex); try { File.Delete(tmp); } catch { } continue; }
                             copied.Add(own == name ? own : own + " -> " + name);
                             if (own != name) try { renamed?.Invoke(own, name); } catch { }
                         }
