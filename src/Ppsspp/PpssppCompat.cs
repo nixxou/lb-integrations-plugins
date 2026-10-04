@@ -16,6 +16,12 @@
 //
 // <plugin data>\ppsspp-compat.tsv: ID_VER, rating, title, when it was read (UTC ticks). Never throws, never waits for the
 // network on the window's thread.
+//
+// WRITTEN ONLY WHEN IT IS ALL THERE, AND STILL WANTED (Mehdi, 04/10): ONE build at a time (a second asked meanwhile is
+// that one); nothing is written before every page is read - a page missing keeps the list as it was; and at the
+// moment of writing, the PPSSPP it was built for must still be there (its executable) and this plugin too (its own
+// folder) - an emulator removed meanwhile, or the pack uninstalled, writes nothing and creates no folder. Added again
+// meanwhile, it is there again: the list is written. The same checks for a game's line.
 
 using System;
 using System.Collections.Generic;
@@ -73,8 +79,9 @@ namespace LbIntegrations.Ppsspp
         }
 
         /// <summary>The game's line read again from its own page when it is older than a week (or missing). Blocking: call it
-        /// off the window's thread. The fresh line, else what was known.</summary>
-        public static PspCompat Refresh(string discId, string discVersion)
+        /// off the window's thread. The fresh line, else what was known. <paramref name="exe"/>: the PPSSPP it is for - see
+        /// the header.</summary>
+        public static PspCompat Refresh(string discId, string discVersion, string exe)
         {
             var k = Key(discId, discVersion);
             if (k == null) return null;
@@ -86,7 +93,7 @@ namespace LbIntegrations.Ppsspp
                 if (response.StatusCode == HttpStatusCode.NotFound)
                 {
                     var none = new PspCompat { Key = k, Rating = "", Title = known?.Title ?? "", Read = DateTime.UtcNow };
-                    Save(new[] { none });
+                    Save(new[] { none }, exe);
                     return none;
                 }
                 if (!response.IsSuccessStatusCode) { Log.Info("compatibility: " + k + " - " + (int)response.StatusCode + ", kept as known"); return known; }
@@ -94,7 +101,7 @@ namespace LbIntegrations.Ppsspp
                 var rating = BestOfReports(html);
                 if (rating == null) { Log.Info("compatibility: " + k + " - its page holds no report this plugin can read, kept as known"); return known; }
                 var fresh = new PspCompat { Key = k, Rating = rating, Title = known?.Title ?? "", Read = DateTime.UtcNow };
-                Save(new[] { fresh });
+                Save(new[] { fresh }, exe);
                 Log.Info("compatibility: " + k + " - " + rating + " (its page)");
                 return fresh;
             }
@@ -121,29 +128,30 @@ namespace LbIntegrations.Ppsspp
 
         // ── the whole list ───────────────────────────────────────────────────
 
-        /// <summary>The whole list read again, in the background - at PPSSPP's install or update, and once when there is none.</summary>
-        public static void RebuildSoon(string why)
+        /// <summary>The whole list read again, in the background - at PPSSPP's install or update, and once when there is none.
+        /// <paramref name="exe"/>: the PPSSPP it is for, still there when it is written - see the header.</summary>
+        public static void RebuildSoon(string why, string exe)
         {
-            if (Interlocked.Exchange(ref _building, 1) == 1) return;
+            if (Interlocked.Exchange(ref _building, 1) == 1) { Log.Info("compatibility list: already being read - this request is that one (" + why + ")"); return; }
             new Thread(() =>
             {
-                try { Rebuild(why); }
+                try { Rebuild(why, exe); }
                 catch (Exception ex) { Log.Warn("compatibility list: not read", ex); }
                 finally { Interlocked.Exchange(ref _building, 0); }
             }) { IsBackground = true, Name = "PPSSPP compatibility list" }.Start();
         }
 
         /// <summary>No database yet: built once, in the background.</summary>
-        public static void EnsureBuilt()
+        public static void EnsureBuilt(string exe)
         {
-            if (!File.Exists(DbPath)) RebuildSoon("none yet");
+            if (!File.Exists(DbPath)) RebuildSoon("none yet", exe);
         }
 
         // One row each: the label looked for before its </tr> only - a row without one never takes the next row's.
         private static readonly Regex Row = new Regex("<a href=\"/game/([^\"]+)\" class=\"title\">([^<]*)</a>(?:(?!</tr>).)*?<span class=\"label[^\"]*\">([^<]+)</span>", RegexOptions.Singleline);
         private static readonly Regex Last = new Regex("<li class=\"[^\"]*last[^\"]*\"><a href=\"/games\\?page=(\\d+)\">");
 
-        private static void Rebuild(string why)
+        private static void Rebuild(string why, string exe)
         {
             var started = DateTime.UtcNow;
             var found = new List<PspCompat>();
@@ -168,7 +176,7 @@ namespace LbIntegrations.Ppsspp
                 if (found.Count == before) { Log.Info("compatibility list: page " + page + " holds no game this plugin can read - the list kept as it was"); return; }
                 Thread.Sleep(400);
             }
-            Save(found, replace: true);
+            if (!Save(found, exe, replace: true)) return;
             Log.Info("compatibility list: " + found.Count + " games and versions from " + last + " page(s), " + (int)(DateTime.UtcNow - started).TotalSeconds + " s (" + why + ")");
         }
 
@@ -198,12 +206,28 @@ namespace LbIntegrations.Ppsspp
             catch (Exception ex) { Log.Warn("could not read " + DbPath, ex); return _db ?? new Dictionary<string, PspCompat>(); }
         }
 
-        private static void Save(IEnumerable<PspCompat> lines, bool replace = false)
+        /// <summary>Why it may not be written now - null when it may: the PPSSPP it was read for still there, and this plugin.</summary>
+        private static string NotNow(string exe)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(exe) || !File.Exists(exe)) return "the PPSSPP it was read for is gone (" + (exe ?? "none") + ")";
+                var own = Path.GetDirectoryName(typeof(PpssppCompat).Assembly.Location);
+                if (string.IsNullOrEmpty(own) || !Directory.Exists(own)) return "this plugin is gone";
+                return null;
+            }
+            catch (Exception ex) { return ex.Message; }
+        }
+
+        /// <summary>The lines written - false, and nothing written nor created, when they may not be (NotNow).</summary>
+        private static bool Save(IEnumerable<PspCompat> lines, string exe, bool replace = false)
         {
             lock (Gate)
             {
                 try
                 {
+                    var notNow = NotNow(exe);
+                    if (notNow != null) { Log.Info("compatibility: not written - " + notNow); return false; }
                     var db = replace ? new Dictionary<string, PspCompat>(StringComparer.OrdinalIgnoreCase) : new Dictionary<string, PspCompat>(Load(), StringComparer.OrdinalIgnoreCase);
                     foreach (var l in lines) db[l.Key] = l;
                     Directory.CreateDirectory(PpssppSettings.Dir);
@@ -212,8 +236,9 @@ namespace LbIntegrations.Ppsspp
                         .Select(c => string.Join("\t", c.Key, c.Rating ?? "", (c.Title ?? "").Replace('\t', ' '), c.Read.Ticks.ToString(CultureInfo.InvariantCulture))), new UTF8Encoding(false));
                     File.Move(tmp, DbPath, overwrite: true);
                     _db = null;
+                    return true;
                 }
-                catch (Exception ex) { Log.Warn("could not write " + DbPath, ex); }
+                catch (Exception ex) { Log.Warn("could not write " + DbPath, ex); return false; }
             }
         }
     }

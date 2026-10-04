@@ -28,7 +28,7 @@ namespace LbIntegrations.Ppsspp
             try { rom = LbIntegrations.Lbip.LbipImportWatch.Full(game?.ApplicationPath); } catch { }
             var discVersion = rom == null ? null : PspDiscId.SfoOf(rom)?.GetString("DISC_VERSION")?.Trim();
             Controls.Add(new Label { AutoSize = false, Location = new Point(12, 10), Size = new Size(560, 20), Text = title + "   (" + discId + (discVersion != null ? " " + discVersion : "") + ")" });
-            Controls.Add(CompatRow(discId, discVersion, new Point(12, 32)));
+            Controls.Add(CompatRow(discId, discVersion, new Point(12, 32), layout));
             Controls.Add(new Label { AutoSize = false, Location = new Point(12, 60), Size = new Size(560, 20), Text = "Updates", Font = new Font(Font, FontStyle.Bold) });
             Controls.Add(new Label
             {
@@ -80,7 +80,7 @@ namespace LbIntegrations.Ppsspp
 
         /// <summary>"● PPSSPP compatibility: Perfect   report page" - the database's at once, the game's page read in the
         /// background when its line is a week old. The link is there whatever is known.</summary>
-        private Control CompatRow(string discId, string discVersion, Point at)
+        private Control CompatRow(string discId, string discVersion, Point at, PpssppLayout layout)
         {
             var row = new FlowLayoutPanel { Location = at, Size = new Size(560, 24), WrapContents = false, Margin = Padding.Empty };
             var dot = new Label { Text = "●", AutoSize = true, Margin = new Padding(0, 2, 2, 0) };
@@ -105,11 +105,13 @@ namespace LbIntegrations.Ppsspp
                 };
             }
             Put(PpssppCompat.Of(discId, discVersion));
-            PpssppCompat.EnsureBuilt();
+            string exe = null;
+            try { exe = string.IsNullOrEmpty(layout?.InstallDir) ? null : PpssppPaths.FindExecutable(layout.InstallDir); } catch { }
+            PpssppCompat.EnsureBuilt(exe);
             if (discVersion != null)
                 new System.Threading.Thread(() =>
                 {
-                    var fresh = PpssppCompat.Refresh(discId, discVersion);
+                    var fresh = PpssppCompat.Refresh(discId, discVersion, exe);
                     try { if (IsHandleCreated && !IsDisposed) BeginInvoke(new Action(() => Put(fresh))); } catch { }
                 }) { IsBackground = true, Name = "PPSSPP compatibility of " + discId }.Start();
             return row;
