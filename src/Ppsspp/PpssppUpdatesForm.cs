@@ -1,7 +1,8 @@
 // A PSP game's window, from its right-click entry (Mehdi, 04/10: all that is left of the PPSSPP options window - a game's
 // own settings are PPSSPP's own, its "Game settings", <ID>_ppsspp.ini):
 //   - under the title, its state in PPSSPP's compatibility reports and the link to its page (PpssppCompat): what the
-//     database knows at once, then the game's own page read in the background when its line is a week old;
+//     database knows at once (none at all: nothing - the list is built at PPSSPP's install or update, or from the PPSSPP
+//     tab), then the game's own page read in the background when its line is a week old;
 //   - its UPDATES: the ones found and the one installed, installed or removed at once by their buttons - nothing is
 //     installed unasked (Mehdi, 03/10). See PpssppUpdates.
 
@@ -107,7 +108,6 @@ namespace LbIntegrations.Ppsspp
             Put(PpssppCompat.Of(discId, discVersion));
             string exe = null;
             try { exe = string.IsNullOrEmpty(layout?.InstallDir) ? null : PpssppPaths.FindExecutable(layout.InstallDir); } catch { }
-            PpssppCompat.EnsureBuilt(exe);
             if (discVersion != null)
                 new System.Threading.Thread(() =>
                 {
