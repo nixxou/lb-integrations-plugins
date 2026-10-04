@@ -100,5 +100,34 @@ namespace LbIntegrations.Flycast
         private static EmulatorBiosFile File_(string fileName, string description, bool required,
                                               string md5, EmulatorBiosGroup group)
             => new EmulatorBiosFile(Location, fileName, required, description, md5, group);
+
+        /// <summary>The arcade BIOS sets declared above - the ones a folder of arcade romsets is asked for.</summary>
+        private static readonly string[] ArcadeSets =
+            { "naomi.zip", "naomi2.zip", "awbios.zip", "hod2bios.zip", "f355bios.zip", "f355dlx.zip", "airlbios.zip", "naomigd.zip", "naomidev.zip" };
+
+        /// <summary>THE USER'S FILES COPIED INTO data\ AT INSTALL (Mehdi, 04/10), so LaunchBox's BIOS check finds them at
+        /// once: what is declared above, when data\ does not have it yet, from
+        ///   - RetroArch's system folder beside this emulator, with its sub-folders (the flycast core keeps them in
+        ///     system\dc\) - every file;
+        ///   - the folders of the library's arcade games run by MAME or RetroArch's FBNeo / FB Alpha / MAME cores
+        ///     (LbipBiosImport.ArcadeRomDirs), not their sub-folders - the BIOS sets only, which sit beside the romsets.
+        /// A MAME set is copied as it is: Flycast opens a set's members by CRC, so one that lacks a revision Flycast
+        /// wants says so at launch. See LbipBiosImport.</summary>
+        public static List<string> Import(FlycastLayout layout, Action<string> report = null, Func<bool> cancelled = null)
+        {
+            if (layout?.DataDir == null || layout.InstallDir == null) return new List<string>();
+            var wanted = new List<LbIntegrations.Lbip.LbipBiosImport.Wanted>
+            {
+                new LbIntegrations.Lbip.LbipBiosImport.Wanted { Name = "dc_boot.bin", Aliases = new[] { "dc_bios.bin" } },
+            };
+            wanted.AddRange(ArcadeSets.Select(n => new LbIntegrations.Lbip.LbipBiosImport.Wanted { Name = n }));
+
+            var sources = new List<LbIntegrations.Lbip.LbipBiosImport.Source>();
+            try { sources.Add(new LbIntegrations.Lbip.LbipBiosImport.Source { Dir = System.IO.Path.GetFullPath(System.IO.Path.Combine(layout.InstallDir, "..", "RetroArch", "system")), Recursive = true }); } catch { }
+            var sets = new HashSet<string>(ArcadeSets, StringComparer.OrdinalIgnoreCase);
+            foreach (var dir in LbIntegrations.Lbip.LbipBiosImport.ArcadeRomDirs())
+                sources.Add(new LbIntegrations.Lbip.LbipBiosImport.Source { Dir = dir, Recursive = false, Only = sets });
+            return LbIntegrations.Lbip.LbipBiosImport.Import(layout.DataDir, sources, wanted, report, cancelled);
+        }
     }
 }

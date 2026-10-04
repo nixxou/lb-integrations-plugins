@@ -518,6 +518,11 @@ namespace LbIntegrations.Flycast
                 // Flycast's own defaults as well as ours.
                 FlycastHotkeys.Ensure(layout, mayEditExisting: true);
 
+                // THE USER'S BIOS into data\, from RetroArch's system folder and the arcade games' folders (Mehdi, 04/10) -
+                // only what data\ is missing. See FlycastBios.Import.
+                FlycastBios.Import(layout, m => Report(args, m, null),
+                    () => { try { return args?.ShouldCancelFunc?.Invoke() ?? false; } catch { return false; } });
+
                 if (reinstall)
                 {
                     try { args.ExistingEmulator.ApplicationPath = MakeRelativeToLaunchBox(exe); } catch { }
