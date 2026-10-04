@@ -149,6 +149,14 @@
 //                                  one time this exe takes arguments: "--xbox-serve <image>", started by
 //                                  itself. An older helper ignores the key: check FileVersion >= 1.7.
 //
+// -- added in 1.10 -----------------------------------------------------------------------------
+//   view     = xiso                on image-attach: an Xbox disc image (redump ISO, XISO, CSO, CCI, CHD) as a disk holding one
+//                                  exFAT volume holding ONE file, game.iso - the disc's XISO, its game partition read where it
+//                                  is (ExfatOneFileView, from the xemu plugin), AIM only. For xemu, which opens a disc image and
+//                                  not a folder, and cannot open a raw disk unelevated. Self-started as "--xiso-serve <image>".
+//                                  The result gains " file=<the file's path>". A ZArchive is refused (it holds files, no disc).
+//                                  An older helper reads view=xiso as no view and attaches the ISO as a CD: check >= 1.10.
+//
 // AIM, WHAT DIFFERS FROM IMDISK. aim_ll takes imdisk's arguments almost word for word, but its disks
 // are real SCSI disks: Windows' mount manager gives a new volume a letter of its own on top of the one
 // asked for, which is taken off again (only the mount point asked for is kept), and the disk goes the
@@ -192,6 +200,8 @@ namespace RamDiskHelper
             };
             // 1.7: the one command-line use - this exe serving an Xbox disc's view, started by itself (below).
             if (argv.Length == 2 && argv[0] == "--xbox-serve") return XboxServe(argv[1]);
+            // 1.10: the same, the disc's XISO as one file on an exFAT volume.
+            if (argv.Length == 2 && argv[0] == "--xiso-serve") return XisoServe(argv[1]);
             string dir = AppContext.BaseDirectory;
             string cfgPath = Path.Combine(dir, "ramdisk.cfg");
             string resultPath = Path.Combine(dir, "ramdisk.result");
@@ -826,7 +836,8 @@ namespace RamDiskHelper
             const string head = "image-attach";
             string image = Get(kv, "image", "");
             if (!SafeImage(image) || !File.Exists(image)) return "FAIL " + head + " exit=-1 - image is not an existing file with an absolute path of a plain shape";
-            if (Get(kv, "view", "").Equals("xbox", StringComparison.OrdinalIgnoreCase)) return XboxAttach(kv, dir, image);
+            if (Get(kv, "view", "").Equals("xbox", StringComparison.OrdinalIgnoreCase)) return XboxAttach(kv, dir, image, "xbox");
+            if (Get(kv, "view", "").Equals("xiso", StringComparison.OrdinalIgnoreCase)) return XboxAttach(kv, dir, image, "xiso");
             string ext = Path.GetExtension(image).ToLowerInvariant();
             bool iso = ext == ".iso";
             bool raw = Array.IndexOf(RawImages, ext) >= 0;
@@ -978,10 +989,10 @@ namespace RamDiskHelper
         // An older helper ignores view= and attaches the ISO as a CD, which shows the video partition, not the
         // game: check FileVersion >= 1.7.
 
-        private static string XboxAttach(Dictionary<string, string> kv, string dir, string image)
+        private static string XboxAttach(Dictionary<string, string> kv, string dir, string image, string viewName)
         {
             const string head = "image-attach";
-            if (!Aim.Available) return "FAIL " + head + " exit=-1 backend=aim view=xbox - an Xbox disc view needs the Arsenal Image Mounter";
+            if (!Aim.Available) return "FAIL " + head + " exit=-1 backend=aim view=" + viewName + " - an Xbox disc view needs the Arsenal Image Mounter";
             if (Get(kv, "drive", "").Length == 0 && Get(kv, "mount", "").Length == 0)
             {
                 char free = FreeLetter();
@@ -998,14 +1009,14 @@ namespace RamDiskHelper
 
             var unitsBefore = Aim.Units();
             var psi = new ProcessStartInfo(Environment.ProcessPath) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
-            psi.ArgumentList.Add("--xbox-serve");
+            psi.ArgumentList.Add("--" + viewName + "-serve");
             psi.ArgumentList.Add(image);
             var server = Process.Start(psi);
             string Fail(string why)
             {
                 try { if (!server.HasExited) server.Kill(); } catch { }
                 DropNewAimDevices(unitsBefore);
-                return "FAIL " + head + " " + token + " exit=-1 backend=aim view=xbox - " + why;
+                return "FAIL " + head + " " + token + " exit=-1 backend=aim view=" + viewName + " - " + why;
             }
             // Listing a redump reads its tables across the image: seconds, a minute on a slow disk.
             var first = server.StandardOutput.ReadLineAsync();
@@ -1037,7 +1048,8 @@ namespace RamDiskHelper
             foreach (var other in PathsOf(volume)) DeleteVolumeMountPoint(other);
             if (!SetVolumeMountPoint(point.TrimEnd('\\') + "\\", volume)) return Fail("attached, but " + point + " could not be given to it (error " + Marshal.GetLastWin32Error() + ")");
             WriteAttached(dir, point, "aim", image, "");
-            return "OK " + head + " " + token + " exit=0 backend=aim view=xbox at=" + point;
+            return "OK " + head + " " + token + " exit=0 backend=aim view=" + viewName + " at=" + point
+                   + (viewName == "xiso" ? " file=" + point.TrimEnd('\\') + "\\" + XisoFileName : "");
         }
 
         /// <summary>--xbox-serve &lt;image&gt;: the disc's FAT32 view served to the one proxy client that connects.</summary>
@@ -1071,6 +1083,46 @@ namespace RamDiskHelper
                     sourceLength = source.Length;
                 }
                 var view = new LbIntegrations.Cxbx.XisoFatView(listing, sourceLength, "XBOXGAME");
+                return Serve(source, view.Length, view.Read);
+            }
+            catch (Exception ex)
+            {
+                try { Console.WriteLine("ERROR " + ex.GetType().Name + ": " + ex.Message); } catch { }
+                return 1;
+            }
+        }
+
+        /// <summary>The name of the one file on view=xiso's volume.</summary>
+        private const string XisoFileName = "game.iso";
+
+        /// <summary>--xiso-serve &lt;image&gt; (1.10): the disc's XISO - from its game partition on, through its container - as the
+        /// one file of an exFAT volume, served to the one proxy client that connects.</summary>
+        private static int XisoServe(string image)
+        {
+            try
+            {
+                if (LbIntegrations.Zar.ZArchive.IsZar(image)) { Console.WriteLine("ERROR a ZArchive holds the game's files, not a disc - no XISO to serve"); return 1; }
+                var source = LbIntegrations.Disc.DiscImages.Open(image);
+                var disc = source;
+                var listing = LbIntegrations.Cxbx.Xdvdfs.List(() => LbIntegrations.Disc.DiscImages.Shared(disc), true, disc.Length, null);
+                if (listing.Error != null || !listing.Found) { source.Dispose(); Console.WriteLine("ERROR the disc could not be listed: " + (listing.Error ?? "no Xbox volume")); return 1; }
+                var view = new LbIntegrations.Xemu.ExfatOneFileView(listing.PartitionBase, source.Length - listing.PartitionBase, XisoFileName, "XBOXDISC");
+                return Serve(source, view.Length, view.Read);
+            }
+            catch (Exception ex)
+            {
+                try { Console.WriteLine("ERROR " + ex.GetType().Name + ": " + ex.Message); } catch { }
+                return 1;
+            }
+        }
+
+        /// <summary>A read-only disk of <paramref name="length"/> bytes that <paramref name="read"/> gives from
+        /// <paramref name="source"/>: "PORT n" said, then AIM's proxy protocol to the one client that connects (a minute at
+        /// most for it to come). The source closed at the end.</summary>
+        private static int Serve(Stream source, long length, Func<Stream, long, byte[], int, int> read)
+        {
+            try
+            {
                 var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
                 listener.Start();
                 Console.WriteLine("PORT " + ((System.Net.IPEndPoint)listener.LocalEndpoint).Port);
@@ -1093,7 +1145,7 @@ namespace RamDiskHelper
                     if (request == 1)                   // INFO: size, alignment, flags (read-only)
                     {
                         var o = new byte[24];
-                        BitConverter.GetBytes((ulong)view.Length).CopyTo(o, 0);
+                        BitConverter.GetBytes((ulong)length).CopyTo(o, 0);
                         BitConverter.GetBytes(1UL).CopyTo(o, 8);
                         BitConverter.GetBytes(1UL).CopyTo(o, 16);
                         net.Write(o, 0, o.Length);
@@ -1104,7 +1156,7 @@ namespace RamDiskHelper
                         int n = (int)Math.Min(reader.ReadUInt64(), 64UL << 20);
                         if (n > buffer.Length) buffer = new byte[n];
                         // Always the length asked for, zeros past the end: a short answer is a disk error.
-                        int got = offset < 0 || offset >= view.Length ? 0 : view.Read(img, offset, buffer, (int)Math.Min(n, view.Length - offset));
+                        int got = offset < 0 || offset >= length ? 0 : read(img, offset, buffer, (int)Math.Min(n, length - offset));
                         if (got < n) Array.Clear(buffer, got, n - got);
                         BitConverter.GetBytes(0UL).CopyTo(head, 0);
                         BitConverter.GetBytes((ulong)n).CopyTo(head, 8);

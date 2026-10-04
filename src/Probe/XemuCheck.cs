@@ -71,12 +71,161 @@ namespace LbIntegrations.Probe
             return true;
         }
 
+        /// <summary>A stream of <paramref name="length"/> bytes that are a function of their position - a big disc without the disk.</summary>
+        private sealed class Pattern : Stream
+        {
+            private readonly long _length; private long _at;
+            public Pattern(long length) { _length = length; }
+            public static byte At(long p) => (byte)((p * 2654435761L >> 13) ^ (p >> 20));
+            public override bool CanRead => true; public override bool CanSeek => true; public override bool CanWrite => false;
+            public override long Length => _length;
+            public override long Position { get => _at; set => _at = value; }
+            public override long Seek(long offset, SeekOrigin origin) => _at = origin == SeekOrigin.Begin ? offset : origin == SeekOrigin.Current ? _at + offset : _length + offset;
+            public override int Read(byte[] buffer, int offset, int count)
+            {
+                int n = (int)Math.Max(0, Math.Min(count, _length - _at));
+                for (int i = 0; i < n; i++) buffer[offset + i] = At(_at + i);
+                _at += n;
+                return n;
+            }
+            public override void Flush() { }
+            public override void SetLength(long value) => throw new NotSupportedException();
+            public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        }
+
+        /// <summary>The exFAT view over <paramref name="source"/>, read back the way a file system driver would - every structure
+        /// and checksum recomputed here from the specification, not from the view's code - and its one file compared with the
+        /// source's bytes (all of them with <paramref name="sameAs"/>, else a few places and the end).</summary>
+        private static void ExfatVolume(Stream source, long fileBase, long fileLength, string name, string sameAs)
+        {
+            var type = T("ExfatOneFileView");
+            object view;
+            try { view = Activator.CreateInstance(type, Any, null, new object[] { fileBase, fileLength, name, "XBOXDISC" }, null); }
+            catch (TargetInvocationException ex) { throw ex.InnerException ?? ex; }
+            var read = type.GetMethod("Read", Any);
+            long length = (long)Get(view, "Length");
+            byte[] At(long offset, int n)
+            {
+                var b = new byte[n];
+                int got = (int)read.Invoke(view, new object[] { source, offset, b, n });
+                if (got != n) throw new Exception("short read at " + offset + ": " + got + " of " + n);
+                return b;
+            }
+            ulong U64(byte[] b, int o) => BitConverter.ToUInt64(b, o);
+            uint U32(byte[] b, int o) => BitConverter.ToUInt32(b, o);
+
+            var mbr = At(0, 512);
+            Check("MBR signed, one exFAT partition at 1 MB", mbr[510] == 0x55 && mbr[511] == 0xAA && mbr[446 + 4] == 0x07 && U32(mbr, 446 + 8) == 2048 && mbr[462 + 4] == 0);
+            long lba = U32(mbr, 446 + 8), sectors = U32(mbr, 446 + 12);
+            var region = At(lba * 512, 12 * 512);
+            Check("boot sector: EXFAT, 55AA, revision 1.00, 512-byte sectors, one FAT",
+                  Encoding.ASCII.GetString(region, 3, 8) == "EXFAT   " && region[510] == 0x55 && region[511] == 0xAA
+                  && BitConverter.ToUInt16(region, 104) == 0x0100 && region[108] == 9 && region[110] == 1 && region.Skip(11).Take(53).All(b => b == 0));
+            ulong partitionOffset = U64(region, 64), volumeLength = U64(region, 72);
+            uint fatOffset = U32(region, 80), fatLength = U32(region, 84), heapOffset = U32(region, 88), clusterCount = U32(region, 92), rootCluster = U32(region, 96);
+            int spc = 1 << region[109], clusterBytes = 512 * spc;
+            Check("partition offset and length = the MBR's", partitionOffset == (ulong)lba && volumeLength == (ulong)sectors, partitionOffset + "/" + volumeLength);
+            Check("the disk ends with the volume", length == (long)(lba + (long)volumeLength) * 512, length + "");
+            Check("FAT after the boot regions, heap after the FAT", fatOffset >= 24 && heapOffset >= fatOffset + fatLength && fatLength * 512L >= (clusterCount + 2L) * 4);
+            Check("volume = heap + clusters", (long)volumeLength == heapOffset + (long)clusterCount * spc);
+            Check("heap on a 1 MB boundary of the disk", (lba + heapOffset) * 512 % (1 << 20) == 0);
+            Check("extended boot sectors signed", Enumerable.Range(1, 8).All(s => region[s * 512 + 508] == 0 && region[s * 512 + 509] == 0 && region[s * 512 + 510] == 0x55 && region[s * 512 + 511] == 0xAA));
+            uint sum = 0;
+            for (int i = 0; i < 11 * 512; i++) { if (i == 106 || i == 107 || i == 112) continue; sum = ((sum & 1) != 0 ? 0x80000000 : 0) + (sum >> 1) + region[i]; }
+            Check("boot checksum", Enumerable.Range(0, 128).All(k => U32(region, 11 * 512 + k * 4) == sum));
+            Check("backup boot region = the main one", At((lba + 12) * 512, 12 * 512).SequenceEqual(region));
+
+            long fatAt = (lba + fatOffset) * 512, heapAt = (lba + heapOffset) * 512;
+            uint Fat(uint c) => U32(At(fatAt + c * 4L, 4), 0);
+            Check("FAT entries 0 and 1", Fat(0) == 0xFFFFFFF8 && Fat(1) == 0xFFFFFFFF);
+            byte[] Chain(uint first, long bytes)
+            {
+                var list = new List<byte>();
+                uint c = first;
+                for (int guard = 0; c >= 2 && c < clusterCount + 2 && list.Count < bytes + clusterBytes && guard < 100000; guard++)
+                {
+                    list.AddRange(At(heapAt + (c - 2L) * clusterBytes, clusterBytes));
+                    uint next = Fat(c);
+                    if (next == 0xFFFFFFFF) break;
+                    c = next;
+                }
+                return list.Take((int)Math.Min(bytes, list.Count)).ToArray();
+            }
+
+            var root = Chain(rootCluster, 1 << 20);
+            Check("root directory read through the FAT", root.Length >= clusterBytes, root.Length + "");
+            int label = -1, bitmap = -1, upcase = -1, file = -1;
+            for (int i = 0; i + 32 <= root.Length && root[i] != 0; i += 32)
+            {
+                if (root[i] == 0x83) label = i; else if (root[i] == 0x81) bitmap = i; else if (root[i] == 0x82) upcase = i; else if (root[i] == 0x85 && file < 0) file = i;
+            }
+            Check("label, bitmap, up-case and file entries", label >= 0 && bitmap >= 0 && upcase >= 0 && file >= 0, label + "," + bitmap + "," + upcase + "," + file);
+            if (label < 0 || bitmap < 0 || upcase < 0 || file < 0) return;
+            Check("label XBOXDISC", Encoding.Unicode.GetString(root, label + 2, root[label + 1] * 2) == "XBOXDISC");
+
+            var table = Chain(U32(root, upcase + 20), (long)U64(root, upcase + 24));
+            uint tsum = 0; foreach (var b in table) tsum = ((tsum & 1) != 0 ? 0x80000000 : 0) + (tsum >> 1) + b;
+            Check("up-case table checksum", tsum == U32(root, upcase + 4) && table.Length == (int)U64(root, upcase + 24));
+            char Up(char c) => (int)c * 2 + 1 < table.Length ? (char)BitConverter.ToUInt16(table, c * 2) : c;
+            Check("up-case: a-z to A-Z, the rest itself", Up('a') == 'A' && Up('z') == 'Z' && Up('A') == 'A' && Up('0') == '0' && Up('é') == 'é');
+
+            var bits = Chain(U32(root, bitmap + 20), (long)U64(root, bitmap + 24));
+            Check("bitmap covers every cluster", bits.Length == (int)((clusterCount + 7) / 8), bits.Length + " vs " + (clusterCount + 7) / 8);
+            Check("every cluster in use", Enumerable.Range(0, (int)clusterCount).All(c => (bits[c / 8] & (1 << (c % 8))) != 0));
+
+            int secondaries = root[file + 1];
+            var set = root.Skip(file).Take(32 * (1 + secondaries)).ToArray();
+            ushort ssum = 0; for (int i = 0; i < set.Length; i++) { if (i == 2 || i == 3) continue; ssum = (ushort)(((ssum & 1) != 0 ? 0x8000 : 0) + (ssum >> 1) + set[i]); }
+            Check("entry set checksum", ssum == BitConverter.ToUInt16(set, 2));
+            Check("read-only file", (BitConverter.ToUInt16(set, 4) & 0x11) == 0x01);
+            int st = 32;
+            Check("stream extension: contiguous, allocation possible", set[st] == 0xC0 && set[st + 1] == 0x03);
+            int nameLength = set[st + 3];
+            var sb = new StringBuilder();
+            for (int e = 2; e <= secondaries && sb.Length < nameLength; e++)
+                if (set[e * 32] == 0xC1) sb.Append(Encoding.Unicode.GetString(set, e * 32 + 2, 30));
+            var fileName = sb.ToString().Substring(0, Math.Min(nameLength, sb.Length));
+            Check("file name " + name, fileName == name, fileName);
+            ushort hash = 0;
+            foreach (var c in fileName.Select(Up)) { hash = (ushort)(((hash & 1) != 0 ? 0x8000 : 0) + (hash >> 1) + (c & 0xFF)); hash = (ushort)(((hash & 1) != 0 ? 0x8000 : 0) + (hash >> 1) + (c >> 8)); }
+            Check("name hash, through the volume's own up-case table", hash == BitConverter.ToUInt16(set, st + 4));
+            long dataLength = (long)U64(set, st + 24);
+            Check("length = the game partition's", dataLength == fileLength && (long)U64(set, st + 8) == fileLength, dataLength + "");
+            uint first = U32(set, st + 20);
+            long fileAt = heapAt + (first - 2L) * clusterBytes;
+            Check("the file's clusters inside the heap", first >= 2 && first - 2L + (dataLength + clusterBytes - 1) / clusterBytes <= clusterCount);
+            Check("the file starts on a 1 MB boundary of the disk", fileAt % (1 << 20) == 0);
+
+            if (sameAs != null)
+            {
+                var whole = new byte[dataLength];
+                for (long p = 0; p < dataLength; p += 1 << 20) { var part = At(fileAt + p, (int)Math.Min(1 << 20, dataLength - p)); part.CopyTo(whole, p); }
+                Check("the file = the XISO, byte for byte", whole.SequenceEqual(File.ReadAllBytes(sameAs)));
+            }
+            else
+            {
+                bool ok = true;
+                foreach (long p in new[] { 0L, 0x10000, 1L << 32, (1L << 32) + 77, dataLength - 1_000_000 })
+                {
+                    var part = At(fileAt + p, 1_000_000 - (p == dataLength - 1_000_000 ? 0 : 1));
+                    for (int i = 0; i < part.Length && ok; i++) if (part[i] != Pattern.At(fileBase + p + i)) ok = false;
+                }
+                Check("the file = the disc at 0, 64 KB, 4 GB and its end", ok);
+                var tail = At(fileAt + dataLength - 3, 8);
+                Check("past the file's end: zeros", tail[3] == 0 && tail[7] == 0 && tail[0] == Pattern.At(fileBase + dataLength - 3));
+            }
+            var again = Activator.CreateInstance(type, Any, null, new object[] { fileBase, fileLength, name, "XBOXDISC" }, null);
+            var mbr2 = new byte[512]; read.Invoke(again, new object[] { source, 0L, mbr2, 512 });
+            Check("a new disk signature at every view", BitConverter.ToUInt32(mbr2, 440) != BitConverter.ToUInt32(mbr, 440));
+        }
+
         public static bool Run(Assembly asm)
         {
             _asm = asm;
             var work = Path.Combine(Path.GetTempPath(), "lbip-xemu-" + Guid.NewGuid().ToString("N").Substring(0, 8));
             Directory.CreateDirectory(work);
             T("XemuSettings").GetField("DirOverride", Any).SetValue(null, Path.Combine(work, "settings"));
+            T("XemuDisc").GetField("AttachOff", Any).SetValue(null, true);     // never a disk attached here: the copies
             Console.WriteLine("  work folder " + work);
             try
             {
@@ -111,6 +260,14 @@ namespace LbIntegrations.Probe
                 Check("the second launch finds it again", again == p, again + " / " + problem);
                 var cutTitle = (string)Call("XemuDisc", "TitleIdOf", redump, exe);
                 Check("title id of the redump", cutTitle == "4d530004", cutTitle);
+
+                // 2b. the same redump as one file on an exFAT volume, read by a reader written from the specification
+                Console.WriteLine("  exFAT view of the redump");
+                using (var src = File.OpenRead(redump))
+                    ExfatVolume(src, 0x18300000, src.Length - 0x18300000, "Probe Game (Europe).iso", xiso);
+                Console.WriteLine("  exFAT view of a 7.5 GB disc (made up)");
+                using (var big = new Pattern(0x18300000 + 7_500_000_123L))
+                    ExfatVolume(big, 0x18300000, 7_500_000_123L, "game.iso", null);
 
                 // 3. the XISO in a zip: unpacked, then handed over
                 var zip = Path.Combine(work, "Probe Game (Japan).zip");

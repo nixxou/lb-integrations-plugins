@@ -340,12 +340,12 @@ namespace LbIntegrations.Xemu
 
                 // ITS OWN CONSOLE: made over the pristine one at the game's first launch.
                 var titleId = info.Xbe?.TitleId > 0 ? info.Xbe.TitleIdText : null;
-                if (titleId == null) return Refuse(Path.GetFileName(rom) + " cannot be launched: its title id could not be read.");
+                if (titleId == null) { XemuDisc.Release(info); return Refuse(Path.GetFileName(rom) + " cannot be launched: its title id could not be read."); }
                 var hdd = XemuPaths.GameHdd(exe, titleId);
                 if (!File.Exists(hdd))
                 {
                     var error = Qcow2Overlay.Create(base_, hdd);
-                    if (error != null) return Refuse("The console of " + Path.GetFileName(rom) + " could not be made: " + error + ".");
+                    if (error != null) { XemuDisc.Release(info); return Refuse("The console of " + Path.GetFileName(rom) + " could not be made: " + error + "."); }
                 }
 
                 var toml = XemuPaths.TomlOf(exe);
@@ -358,7 +358,7 @@ namespace LbIntegrations.Xemu
 
                 var line = CommandLineFor(Safe(() => args?.CurrentCommandLine) ?? "", dvd, rom);
                 Log.Info("command line: " + line);
-                XemuSession.Watch(exe, hdd);
+                XemuSession.Watch(exe, hdd, info);
                 return new PrepareForLaunchResponse(success: true) { NewCommandLine = line };
             }
             catch (Exception ex)

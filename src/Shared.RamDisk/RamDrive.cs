@@ -1234,6 +1234,46 @@ namespace LbIntegrations.RamDisk
             catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; return null; }
         }
 
+        /// <summary>The helper that serves an Xbox disc's XISO as the one file of an exFAT volume (view=xiso), for xemu.</summary>
+        public static readonly Version XisoViewProtocol = new Version(1, 10, 0, 0);
+
+        /// <summary>Can an Xbox disc's XISO be served where it is (view=xiso): AIM there, the helper 1.10 and its task. A
+        /// ZArchive cannot: it holds files, not a disc.</summary>
+        public static bool CanAttachXiso(out string why, string image = null)
+        {
+            var v = HelperVersion;
+            why = image != null && IsZar(image) ? "a ZArchive holds the game's files, not a disc"
+                : !IsAimInstalled() ? "the Arsenal Image Mounter is not installed"
+                : v == null || v < XisoViewProtocol ? "the RAM disk helper is " + (v?.ToString() ?? "absent") + ", " + XisoViewProtocol + " is needed"
+                : InstalledTaskName() == null ? "the RAM disk helper's task is not installed"
+                : null;
+            return why == null;
+        }
+
+        /// <summary>An Xbox disc image (redump ISO, XISO, CSO, CCI, CHD) served as ONE FILE, its XISO, on a disk attached on a
+        /// free letter - the helper's view=xiso, through AIM; the game partition read where it is. Returns the file's path
+        /// ("K:\game.iso"), or null with the reason. <paramref name="root"/>: what DetachImage takes back.</summary>
+        public static string AttachXiso(string image, out string root, out string error)
+        {
+            error = null; root = null;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(image) || !OneLine(image) || !Path.IsPathFullyQualified(image)) { error = "an image path must be absolute and on one line"; return null; }
+                if (!CanAttachXiso(out error, image)) return null;
+                char letter = FreeDriveLetter();
+                if (letter == '\0') { error = "no free drive letter"; return null; }
+                var said = RunAndWait("image-attach", letter, image, new Dictionary<string, string> { { "view", "xiso" }, { "backend", "aim" } });
+                if (said == null) { error = "the helper never answered"; return null; }
+                if (!said.StartsWith("OK image-attach", StringComparison.Ordinal)) { error = said; RamDiskLog.Warn("xiso attach " + Path.GetFileName(image) + ": " + said); return null; }
+                var m = System.Text.RegularExpressions.Regex.Match(said, @" file=(.+?)(?= id=|$)");
+                root = letter + ":\\";
+                var file = m.Success ? m.Groups[1].Value.Trim() : root + "game.iso";
+                RamDiskLog.Info("attached the XISO of " + Path.GetFileName(image) + " at " + file + " - " + said);
+                return file;
+            }
+            catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; return null; }
+        }
+
         /// <summary>A CSO ("CISO"), a CCI ("CCIM") or a CHD ("MComprHD"), by its first bytes.</summary>
         private static bool IsCompressedImage(string path)
         {

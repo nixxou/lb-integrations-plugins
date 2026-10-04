@@ -3,7 +3,7 @@
 // THE END IS WHEN XEMU HAS GONE, by name and folder: one process for the whole game (no reboot into a new one, unlike
 // Cxbx-Reloaded's loader). Then [sys.files] hdd_path goes back to hdd\standalone.qcow2: xemu opened on its own afterwards
 // boots its own console, never the last game's - and never the pristine base.qcow2. The launch gate stays shut until this
-// is done (LbipLaunchGate.HoldOpen).
+// is done (LbipLaunchGate.HoldOpen). A disc served where it is (RamDrive.AttachXiso) is detached then too.
 
 using System;
 using System.Diagnostics;
@@ -17,7 +17,7 @@ namespace LbIntegrations.Xemu
     {
         private const int AppearSeconds = 60, GoneSeconds = 2;
 
-        public static void Watch(string exe, string gameHdd)
+        public static void Watch(string exe, string gameHdd, XemuDiscInfo disc = null)
         {
             var hold = LbipLaunchGate.HoldOpen();
             Task.Run(() =>
@@ -38,7 +38,7 @@ namespace LbIntegrations.Xemu
                     Log.Info("session: over");
                 }
                 catch (Exception ex) { Log.Warn("session watch", ex); }
-                finally { Standalone(exe, "its game is over"); }
+                finally { Standalone(exe, "its game is over"); XemuDisc.Release(disc); }
             });
         }
 

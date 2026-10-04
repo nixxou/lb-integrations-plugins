@@ -34,12 +34,19 @@ namespace LbIntegrations.Xemu
         public string EntryKey;
         public long EntrySize;
         public string Problem;
+        /// <summary>Set when the disc is served where it is (RamDrive.AttachXiso): the root to detach at the session's end.</summary>
+        public string AttachedRoot;
     }
 
     internal static class XemuDisc
     {
         private static readonly string[] ImageExtensions = { ".iso", ".xiso" };
         public const long DefaultCacheBytes = 40L << 30;
+
+#pragma warning disable CS0649
+        /// <summary>For the probe: never attach a disc, always the copy. Set by reflection.</summary>
+        internal static bool AttachOff;
+#pragma warning restore CS0649
 
         public static XemuDiscInfo Describe(string rom)
         {
@@ -102,6 +109,20 @@ namespace LbIntegrations.Xemu
             if (info.Problem != null) { problem = info.Problem; return null; }
             if (info.Kind == XemuDiscKind.Xiso) { Log.Info("disc: " + System.IO.Path.GetFileName(rom) + " is an XISO - opened as it is"); return rom; }
 
+            // WHERE IT IS FIRST (Mehdi, 04/10: "sans copie d'abord"): a redump or a compressed image served by the RAM disk helper
+            // as the one file of an exFAT volume - its XISO, read in place. Else (no AIM, an older helper, a failure) the copy.
+            if (!AttachOff && (info.Kind == XemuDiscKind.Redump || info.Kind == XemuDiscKind.Compressed))
+            {
+                if (RamDisk.RamDrive.CanAttachXiso(out var why, rom))
+                {
+                    var file = RamDisk.RamDrive.AttachXiso(rom, out var root, out var error);
+                    if (file != null && File.Exists(file)) { info.AttachedRoot = root; Log.Info("disc: " + System.IO.Path.GetFileName(rom) + " served where it is - " + file); return file; }
+                    if (file != null) { info.AttachedRoot = root; Release(info); }
+                    Log.Warn("disc: " + System.IO.Path.GetFileName(rom) + " could not be served where it is (" + (error ?? "the file did not appear") + ") - copied instead");
+                }
+                else Log.Info("disc: not served where it is (" + why + ") - copied");
+            }
+
             var cache = XemuPaths.DiscCache(exe);
             if (cache == null) { problem = "the emulator's folder is not known"; return null; }
             Directory.CreateDirectory(cache);
@@ -153,6 +174,20 @@ namespace LbIntegrations.Xemu
                 return null;
             }
             finally { try { if (File.Exists(part)) File.Delete(part); } catch { } }
+        }
+
+        /// <summary>The disc served where it is, detached - at the session's end, or when the launch goes no further.</summary>
+        public static void Release(XemuDiscInfo info)
+        {
+            var root = info?.AttachedRoot;
+            if (root == null) return;
+            info.AttachedRoot = null;
+            try
+            {
+                if (RamDisk.RamDrive.DetachImage(root, out var error)) Log.Info("disc: " + root + " detached");
+                else Log.Warn("disc: " + root + " could not be detached - " + error);
+            }
+            catch (Exception ex) { Log.Warn("disc: detaching " + root, ex); }
         }
 
         private static string Done(string rom, string target, System.Diagnostics.Stopwatch watch)
