@@ -173,6 +173,17 @@ namespace LbIntegrations.Xenia
                 var real = XeniaScan.Classify(started, fi.Exists ? fi.Length : 0, fi.Exists ? fi.LastWriteTimeUtc.Ticks : 0);
                 if (real.Kind == XeniaFileKind.Game && real.TitleId.Length > 0) { real.Path = game?.Path ?? rom; game = real; }
             }
+            else if (game != null && XeniaLauncherDisc.GameOf(rom, game.TitleId) is string carried)
+            {
+                // A launcher whose game Xenia has not unpacked (yet, or no more - Xenia installed again: its content folder
+                // went, 04/10 on Minecraft): the game the disc carries is told by the disc (XeniaLauncherDisc), its
+                // executable is not - its updates and DLC go by its title id, every update taken, as for a Games on Demand
+                // package. The first launch unpacks it, the redirection is learnt again, and the digest is checked again.
+                var byDisc = game.MovedTo(game.Path);
+                byDisc.TitleId = carried;
+                byDisc.Digest = "";
+                game = byDisc;
+            }
             if (game == null || game.TitleId.Length == 0) return null;
 
             var x = new XeniaGameExtras { Game = game, Folder = GameFolder(layout, rom, game.TitleId) };
