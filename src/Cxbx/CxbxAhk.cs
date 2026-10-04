@@ -53,11 +53,11 @@ namespace LbIntegrations.Cxbx
             + "    WinClose, ahk_exe cxbxr-ldr.exe\r\n"
             + "}";
 
-        public const string Running =
+        /// <summary>In the game's window only, and ending by itself once the loader has gone (Mehdi, 04/10) - see LbipAhk.</summary>
+        public static readonly string Running = LbIntegrations.Lbip.LbipAhk.EscapeScript(
             "; Cxbx-Reloaded's Escape only leaves its full screen; Escape is what a frontend's Exit sends, so it closes the game's\r\n"
-            + "; window - once no save has been written for 5 s.\r\n"
-            + "$Esc::CxbxQuit()\r\n"
-            + Quit;
+            + "; window - once no save has been written for 5 s.",
+            new[] { CxbxPaths.Loader }, "CxbxQuit()", Quit);
 
         public const string Exit =
             "; Cxbx-Reloaded quits by closing its window (what its F6 and Alt+F4 do) - once no save has been written for 5 s.\r\n"
@@ -70,6 +70,10 @@ namespace LbIntegrations.Cxbx
         {
             "; Cxbx-Reloaded's Escape only leaves its full screen; Escape is what a frontend's Exit sends, so it closes the game's window.\r\n"
             + "$Esc::WinClose, ahk_exe cxbxr-ldr.exe",
+            "; Cxbx-Reloaded's Escape only leaves its full screen; Escape is what a frontend's Exit sends, so it closes the game's\r\n"
+            + "; window - once no save has been written for 5 s.\r\n"
+            + "$Esc::CxbxQuit()\r\n"
+            + Quit,
         };
 
         public static readonly string[] PreviousExit =

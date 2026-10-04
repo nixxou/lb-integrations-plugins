@@ -218,14 +218,17 @@ namespace LbIntegrations.Xenia
         {
             try
             {
-                if (!IsBlank(() => emu.AutoHotkeyScript)
+                // The running script also when it is still one this plugin wrote before (04/10: the old one sent
+                // Alt+F4 to whichever window had the focus) - see LbipAhk.
+                bool oldRunning = false;
+                try { oldRunning = LbIntegrations.Lbip.LbipAhk.Ours(emu.AutoHotkeyScript, XeniaAhk.Running, XeniaAhk.PreviousRunning); } catch { }
+                if (!oldRunning
                     && !IsBlank(() => emu.ExitAutoHotkeyScript)
                     && !IsBlank(() => emu.SaveStateAutoHotkeyScript)
                     && !IsBlank(() => emu.LoadStateAutoHotkeyScript)) return;
 
                 var set = new List<string>();
-                if (Fill(() => emu.AutoHotkeyScript, v => emu.AutoHotkeyScript = v, XeniaAhk.Running))
-                    set.Add("running");
+                if (oldRunning) { emu.AutoHotkeyScript = XeniaAhk.Running; set.Add("running"); }
                 if (Fill(() => emu.ExitAutoHotkeyScript, v => emu.ExitAutoHotkeyScript = v, XeniaAhk.Exit))
                     set.Add("exit");
                 if (Fill(() => emu.SaveStateAutoHotkeyScript,

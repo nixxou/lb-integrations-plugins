@@ -581,7 +581,8 @@ namespace LbIntegrations.Vita3k
             try
             {
                 var set = new List<string>();
-                if (string.IsNullOrWhiteSpace(emu.AutoHotkeyScript)) { emu.AutoHotkeyScript = Vita3kAhk.Running; set.Add("running"); }
+                // Also when it is still one this plugin wrote before (04/10) - see LbipAhk.
+                if (LbIntegrations.Lbip.LbipAhk.Ours(emu.AutoHotkeyScript, Vita3kAhk.Running, Vita3kAhk.PreviousRunning)) { emu.AutoHotkeyScript = Vita3kAhk.Running; set.Add("running"); }
                 if (string.IsNullOrWhiteSpace(emu.ExitAutoHotkeyScript)) { emu.ExitAutoHotkeyScript = Vita3kAhk.Exit; set.Add("exit"); }
                 if (set.Count > 0) Log.Info("hotkey scripts set: " + string.Join(", ", set));
             }

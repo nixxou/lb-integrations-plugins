@@ -30,11 +30,22 @@ namespace LbIntegrations.MelonDs
         /// every frontend's Exit button sends Escape.
         ///
         /// The $ prefix matters: without it the hotkey would fire on the keystroke the script itself
-        /// sends and loop. Unbroken's own Xemu plugin uses the same trick.</summary>
-        public const string Running =
+        /// sends and loop. Unbroken's own Xemu plugin uses the same trick.
+        ///
+        /// In melonDS's window only, and ending by itself once melonDS has gone (Mehdi, 04/10: one left
+        /// running turned every Escape of the machine into Ctrl+Q) - see LbipAhk.</summary>
+        public static readonly string Running = LbIntegrations.Lbip.LbipAhk.EscapeScript(
+            "; melonDS quits with Ctrl+Q (Qt's standard Quit shortcut, Window.cpp:401).\r\n"
+            + "; Escape is what a frontend's Exit sends, so map it across.",
+            new[] { MelonDsPaths.ExecutableName }, "Send, ^q");
+
+        /// <summary>What this plugin wrote before: a field still holding one of these is brought up to date.</summary>
+        public static readonly string[] PreviousRunning =
+        {
             "; melonDS quits with Ctrl+Q (Qt's standard Quit shortcut, Window.cpp:401).\r\n"
             + "; Escape is what a frontend's Exit sends, so map it across.\r\n"
-            + "$Esc::Send, ^q";
+            + "$Esc::Send, ^q",
+        };
 
         public const string Exit =
             "; melonDS quits with Ctrl+Q - Qt's standard Quit key, bound in Window.cpp:401.\r\n"

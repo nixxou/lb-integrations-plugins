@@ -15,9 +15,17 @@ namespace LbIntegrations.Vita3k
 {
     internal static class Vita3kAhk
     {
-        public const string Running =
+        /// <summary>In Vita3K's window only, and ending by itself once Vita3K has gone (Mehdi, 04/10) - see LbipAhk.</summary>
+        public static readonly string Running = LbIntegrations.Lbip.LbipAhk.EscapeScript(
+            "; Vita3K binds no quit key; Escape is what a frontend's Exit sends, so it closes Vita3K's window.",
+            Vita3kPaths.ExecutableNames, "WinClose, ahk_exe Vita3K.exe");
+
+        /// <summary>What this plugin wrote before: a field still holding one of these is brought up to date.</summary>
+        public static readonly string[] PreviousRunning =
+        {
             "; Vita3K binds no quit key; Escape is what a frontend's Exit sends, so it closes Vita3K's window.\r\n"
-            + "$Esc::WinClose, ahk_exe Vita3K.exe";
+            + "$Esc::WinClose, ahk_exe Vita3K.exe",
+        };
 
         public const string Exit =
             "; Vita3K quits by closing its window - the game stops, and the plugin ends a Vita3K still there 5 s later.\r\n"

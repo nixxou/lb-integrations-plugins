@@ -305,14 +305,17 @@ namespace LbIntegrations.MelonDs
         {
             try
             {
-                if (!IsBlank(() => emu.AutoHotkeyScript)
+                // The running script also when it is still one this plugin wrote before (04/10: the old one held
+                // Escape on the whole machine) - see LbipAhk.
+                bool oldRunning = false;
+                try { oldRunning = LbIntegrations.Lbip.LbipAhk.Ours(emu.AutoHotkeyScript, MelonDsAhk.Running, MelonDsAhk.PreviousRunning); } catch { }
+                if (!oldRunning
                     && !IsBlank(() => emu.ExitAutoHotkeyScript)
                     && !IsBlank(() => emu.SaveStateAutoHotkeyScript)
                     && !IsBlank(() => emu.LoadStateAutoHotkeyScript)) return;
 
                 var set = new List<string>();
-                if (Fill(() => emu.AutoHotkeyScript, v => emu.AutoHotkeyScript = v, MelonDsAhk.Running))
-                    set.Add("running");
+                if (oldRunning) { emu.AutoHotkeyScript = MelonDsAhk.Running; set.Add("running"); }
                 if (Fill(() => emu.ExitAutoHotkeyScript, v => emu.ExitAutoHotkeyScript = v, MelonDsAhk.Exit))
                     set.Add("exit");
                 if (Fill(() => emu.SaveStateAutoHotkeyScript,

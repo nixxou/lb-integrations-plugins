@@ -26,11 +26,21 @@ namespace LbIntegrations.Xenia
     internal static class XeniaAhk
     {
         /// <summary>Runs alongside the emulator. Makes Escape close Xenia, because Xenia leaves
-        /// Escape to fullscreen and a front-end's Exit button sends Escape.</summary>
-        public const string Running =
+        /// Escape to fullscreen and a front-end's Exit button sends Escape. In Xenia's window only, and
+        /// ending by itself once Xenia has gone (Mehdi, 04/10: an Alt+F4 sent to whichever window has the
+        /// focus could close anything) - see LbipAhk.</summary>
+        public static readonly string Running = LbIntegrations.Lbip.LbipAhk.EscapeScript(
+            "; Xenia quits with Alt+F4 (its own File menu says so) and leaves Escape to fullscreen.\r\n"
+            + "; Escape is what a frontend's Exit sends, so map it across.",
+            XeniaPaths.ExecutableNames, "Send, !{F4}");
+
+        /// <summary>What this plugin wrote before: a field still holding one of these is brought up to date.</summary>
+        public static readonly string[] PreviousRunning =
+        {
             "; Xenia quits with Alt+F4 (its own File menu says so) and leaves Escape to fullscreen.\r\n"
             + "; Escape is what a frontend's Exit sends, so map it across.\r\n"
-            + "$Esc::Send, !{F4}";
+            + "$Esc::Send, !{F4}",
+        };
 
         public const string Exit =
             "; Xenia quits with Alt+F4 - see its File menu, \"E&xit  Alt+F4\".\r\n"
