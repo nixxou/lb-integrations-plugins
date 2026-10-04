@@ -130,10 +130,12 @@ internal static class RamDiskSetup
                     + "LiteBox uses this same task, so its ROM extractor will find it too.");
     }
 
-    /// <summary>THE UNINSTALL'S PART (Mehdi, 04/10): the helper and its elevated task taken away - unless LiteBox is in
-    /// this LaunchBox, which shares both (same folder, same task) and would lose its RAM disk. The drivers (AIM, ImDisk)
-    /// are left: they are the machine's, with their own entry in Programs and Features. What happened, for the message.</summary>
-    public static string Remove(Layout l)
+    /// <summary>THE UNINSTALL'S PART (Mehdi, 04/10): the helper and its elevated task taken away. When LiteBox is in this
+    /// LaunchBox it shares both (same folder, same task): <paramref name="askShared"/> is asked then - the window's Yes/No,
+    /// No by default - and without it (the command line) they stay. LiteBox puts the helper back at its next start
+    /// (NativeInstaller.EnsureDeployed), not the task: its ROM options offer that, one prompt. The drivers (AIM, ImDisk) are
+    /// left: they are the machine's, with their own entry in Programs and Features. What happened, for the message.</summary>
+    public static string Remove(Layout l, Func<bool>? askShared = null)
     {
         try
         {
@@ -142,7 +144,12 @@ internal static class RamDiskSetup
             bool helper = RamDrive.IsHelperInstalled(), task = RamDrive.InstalledTaskName() != null;
             if (!helper && !task) return "";
             if (LiteBoxIsHere(l))
-                return "\n\nThe RAM disk helper and its scheduled task are LiteBox's too (it is installed here): left in place.";
+            {
+                bool remove = false;
+                try { remove = askShared?.Invoke() == true; } catch { }
+                if (!remove)
+                    return "\n\nThe RAM disk helper and its scheduled task are LiteBox's too (it is installed here): left in place.";
+            }
 
             var said = new List<string>();
             if (task) said.Add(RamDrive.RemoveTask() ? "its scheduled task removed" : "its scheduled task NOT removed (the Windows prompt was refused?) - schtasks /delete can do it");

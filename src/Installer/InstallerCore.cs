@@ -367,7 +367,10 @@ internal static class InstallerCore
     /// working - the plugins claim an emulator by its executable path, never by name), the plugins'
     /// data folders under .data\&lt;PluginId&gt;\, the emulators themselves, the NAND dumps and every
     /// save ever made.</summary>
-    public static (bool ok, string message) Uninstall(Layout l)
+    public static (bool ok, string message) Uninstall(Layout l) => Uninstall(l, null);
+
+    /// <summary><paramref name="askShared"/>: asked when LiteBox shares the RAM disk helper and its task - RamDiskSetup.Remove.</summary>
+    public static (bool ok, string message) Uninstall(Layout l, Func<bool>? askShared)
     {
         var running = RunningHost();
         if (running != null) return (false, "Close " + running + " first, then try again.");
@@ -391,7 +394,7 @@ internal static class InstallerCore
                          + string.Join("\n", problems));
 
         // The RAM disk helper and its elevated task, when no LiteBox shares them (Mehdi, 04/10) - RamDiskSetup.Remove.
-        var ramdisk = RamDiskSetup.Remove(l);
+        var ramdisk = RamDiskSetup.Remove(l, askShared);
 
         return (true, (gone == 0 ? "Nothing of this pack was installed here." : gone + " plugin folder(s) removed.")
                     + ramdisk

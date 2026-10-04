@@ -118,7 +118,12 @@ internal sealed class InstallerForm : Form
             // Asked at the pack's install (Mehdi, 03/10): the plugins read it when they set up their emulators.
             if (LbIntegrations.Identity.PackIdentity.Exists() == false) EditIdentity();
         };
-        _uninstall.Click += (_, _) => Run(InstallerCore.Uninstall, "Uninstall");
+        // LiteBox shares the RAM disk helper and its task: asked, No by default (Mehdi, 04/10) - RamDiskSetup.Remove.
+        _uninstall.Click += (_, _) => Run(l => InstallerCore.Uninstall(l, () => MessageBox.Show(this,
+            "LiteBox is installed here and uses the same RAM disk helper and scheduled task.\n\n"
+            + "Remove them anyway? LiteBox puts the helper back when it starts, but you will have to set up its RAM disk "
+            + "task again in LiteBox's ROM options.",
+            "Uninstall", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) == DialogResult.Yes), "Uninstall");
         _pluginRows = new TableLayoutPanel { AutoSize = true, ColumnCount = 6, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 6) };
         left.Controls.Add(Card("Plugins", null, LeftW, _pluginRows,
             Buttons(_install, _uninstall),
