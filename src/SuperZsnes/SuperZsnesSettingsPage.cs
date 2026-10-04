@@ -14,8 +14,9 @@
 //   - the emulator's options: until set here, they are SUPER ZSNES's own, and the control says so - a
 //     three-state box reading "SUPER ZSNES's own" / "on" / "off", a list whose first entry is
 //     "<SUPER ZSNES's own>", a field left empty (its grey hint says so). Anything else goes on the
-//     command line at every launch. A switch that is nothing unless sent (--loadstate, -popupwindow, the
-//     primary display) is a plain on/off box.
+//     command line at every launch. A switch that is nothing unless sent (--loadstate, -popupwindow) is a plain on/off box.
+// THE PRIMARY DISPLAY (04/10) is one of the pack's own, on by default; a game's Window group says, in red once it is so,
+// that a screen option set there keeps it off that game's line (SuperZsnesSettings.ForLaunch).
 // The bar at the left of each row says it at a glance: blue, passed on the command line; grey, not. The
 // command line the page adds up to is shown live at the bottom, so what will be passed is never a guess.
 
@@ -79,6 +80,7 @@ namespace LbIntegrations.SuperZsnes
         private static string OwnOf(Option o) => _current.TryGetValue(o.IniKey, out var v) && !string.IsNullOrEmpty(v) ? Own + ": " + v : Own;
         private readonly TextBox _line;
         private readonly Label _count;
+        private readonly Label _screenNote;
 
         /// <summary>The options <paramref name="show"/> picks, with <paramref name="saved"/>'s values; the in-process plugin's
         /// box under them when <paramref name="deploy"/>; <paramref name="where"/> at the bottom.</summary>
@@ -99,6 +101,16 @@ namespace LbIntegrations.SuperZsnes
                 // is sized on the box - neither had a width, and each group came out a sliver (01/10).
                 var box = Group(group.Key);
                 var table = Table(12, 240, 214);
+                // A game's screen options and the pack's primary display (Mehdi, 04/10): one of these set, and the tab's
+                // "Always full screen on the primary display" is not passed for this game - said here, in red once it is so.
+                if (group.Any(o => SuperZsnesOptions.ScreenKeys.Contains(o.IniKey, StringComparer.OrdinalIgnoreCase))
+                    && SuperZsnesSettings.DisplayWanted(SuperZsnesSettings.Read()))
+                {
+                    _screenNote = new Label { AutoSize = true, MaximumSize = new Size(450, 0), Margin = new Padding(0, 2, 0, 8) };
+                    int n = table.RowCount++;
+                    table.Controls.Add(_screenNote, 1, n);
+                    table.SetColumnSpan(_screenNote, 2);
+                }
                 foreach (var o in group)
                 {
                     saved.TryGetValue(o.IniKey, out var current);
@@ -158,7 +170,7 @@ namespace LbIntegrations.SuperZsnes
 
         private static Shape ShapeOf(Option o)
         {
-            if (o.Family == OptionFamily.Plugin && o.Key != "display") return Shape.Ours;
+            if (o.Family == OptionFamily.Plugin) return Shape.Ours;
             if (o.Kind == OptionKind.Bool)
                 return o.Family == OptionFamily.Setting || o.Family == OptionFamily.Game ? Shape.Tri : Shape.Switch;
             return o.Kind == OptionKind.Choice ? Shape.Choice : Shape.Field;
@@ -310,6 +322,19 @@ namespace LbIntegrations.SuperZsnes
         {
             if (_line == null) return;
             var flags = SuperZsnesSettings.Flags(Values());
+            // The primary display is passed when ON, its default - a value the page does not write, so added here.
+            var display = _rows.FirstOrDefault(r => string.Equals(r.Option.IniKey, "plugin.display", StringComparison.OrdinalIgnoreCase));
+            flags.RemoveAll(f => f.Name == SuperZsnesSettings.DisplayFlag.Name);
+            if (display?.Editor is CheckBox shown && shown.Checked) flags.Add(SuperZsnesSettings.DisplayFlag);
+            if (_screenNote != null)
+            {
+                var set = _rows.Where(r => SuperZsnesOptions.ScreenKeys.Contains(r.Option.IniKey, StringComparer.OrdinalIgnoreCase) && ValueOf(r) != null)
+                               .Select(r => r.Option.Label).ToList();
+                _screenNote.ForeColor = set.Count > 0 ? Color.Firebrick : SystemColors.GrayText;
+                _screenNote.Text = set.Count > 0
+                    ? "Overridden: \"Always full screen on the primary display\" (the SUPER ZSNES tab) is not passed for this game - " + string.Join(", ", set) + " set here."
+                    : "Set any of these, and \"Always full screen on the primary display\" (the SUPER ZSNES tab) is not passed for this game.";
+            }
             _count.Text = flags.Count == 0 ? "Nothing added to the command line." : flags.Count + " option(s) added to the command line, before the ROM path:";
             _line.Text = string.Join(" ", flags.Select(f => f.Text));
         }

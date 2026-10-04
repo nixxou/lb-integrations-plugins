@@ -302,8 +302,8 @@ namespace LbIntegrations.Probe
                                           && !plugin.GetBiosFilesForPlatform(exe, Snes, "").Any());
                 Check("RetroAchievements: not by the plugin", !plugin.SupportsRetroAchievements(exe).IsSupported);
                 Check("save management is on: the cartridge save and the states", plugin.SupportsSaveManagement());
-                Check("the launch is passed through untouched",
-                      plugin.PrepareEmulatorForLaunch(new PrepareForLaunchArgs(mine, null, "", null, null))?.NewCommandLine == null);
+                Check("the launch gets the primary display alone - on by default since 04/10",
+                      plugin.PrepareEmulatorForLaunch(new PrepareForLaunchArgs(mine, null, "", null, null))?.NewCommandLine == "--nixx-display=primary");
 
                 Console.WriteLine("  the catalogue row");
                 var source = plugin as LbIntegrations.Catalog.ILbCatalogSource;
@@ -437,6 +437,7 @@ namespace LbIntegrations.Probe
                         Check("  ...and the game's own options", nl.Contains("--nixx-set:gfxMode=Scanlines") && nl.Contains("-screen-width 1280"));
                         Check("  ...but no option shown nowhere (srmPath, overclock), and nothing of the wrong scope (the game's quit-confirm)",
                               !nl.Contains("srmPath") && !nl.Contains("overclock") && !nl.Contains("--nixx-quit-confirm=on") && !nl.Contains("-screen-fullscreen") && !nl.Contains("--loadstate"));
+                        Check("  ...and a game that sets its own width: no primary display, though the tab has it on", !nl.Contains("--nixx-display"));
                         // A game with a Window option: the registry's screen values written down, put back at its end.
                         var pending = screen.GetProperty("Pending", flags);
                         var lastId = (string)screen.GetField("LastId", flags).GetValue(null);
@@ -462,6 +463,18 @@ namespace LbIntegrations.Probe
                         Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(@"Software\lbip-probe", false);
                         var otherGame = plugin.PrepareEmulatorForLaunch(new PrepareForLaunchArgs(mine, StubGame.Create("g-other", "Other", Path.Combine(root, "other.sfc")), "", null, null));
                         Check("another game: not this one's options", otherGame?.NewCommandLine == null || !otherGame.NewCommandLine.Contains("gfxMode"));
+                        Check("  ...and, with no screen option of its own, the primary display", otherGame?.NewCommandLine?.Contains("--nixx-display=primary") == true);
+                        // A game file still holding plugin.display (it was per game until 04/10): not sent from there.
+                        File.WriteAllLines(Path.Combine(gamesDir, "g-old.ini"), new[] { "plugin.display=true", "unity.screen-fullscreen=windowed" });
+                        var oldGame = plugin.PrepareEmulatorForLaunch(new PrepareForLaunchArgs(mine, StubGame.Create("g-old", "Old", Path.Combine(root, "old.sfc")), "", null, null));
+                        Check("  ...a game file's old plugin.display=true is not sent: its windowed mode wins", oldGame?.NewCommandLine?.Contains("--nixx-display") == false
+                              && oldGame.NewCommandLine.Contains("-screen-fullscreen 0"));
+                        // The tab turned it off: no game gets it.
+                        var savedIni = File.ReadAllText(ini);
+                        File.AppendAllText(ini, "plugin.display=false\r\n");
+                        var offGame = plugin.PrepareEmulatorForLaunch(new PrepareForLaunchArgs(mine, StubGame.Create("g-other", "Other", Path.Combine(root, "other.sfc")), "", null, null));
+                        Check("  ...and the tab's box off: not passed at all", offGame?.NewCommandLine == null || !offGame.NewCommandLine.Contains("--nixx-display"));
+                        File.WriteAllText(ini, savedIni);
 
                         // The window's tab, built and saved the way Nixx-Menus does it - on an STA thread,
                         // since WinForms wants one and the probe's main thread is not.
@@ -497,7 +510,7 @@ namespace LbIntegrations.Probe
 
                         File.WriteAllText(ini, "# nothing ticked\r\n");
                         var untouched = plugin.PrepareEmulatorForLaunch(new PrepareForLaunchArgs(mine, null, "", null, null));
-                        Check("with nothing ticked, the launch is passed through untouched", untouched?.NewCommandLine == null);
+                        Check("with nothing ticked, the launch gets the primary display alone", untouched?.NewCommandLine == "--nixx-display=primary");
                     }
                     finally { pathField.SetValue(null, null); }
                 }

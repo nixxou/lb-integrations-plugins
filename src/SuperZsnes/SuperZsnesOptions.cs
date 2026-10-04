@@ -91,7 +91,7 @@ namespace LbIntegrations.SuperZsnes
             Bool(OptionFamily.Plugin, "version-popup", "Integration", "Show the \"a new version is out\" dialog",
                  "Off hides it; the pack's own update check still runs in LaunchBox.", "off"),
             Bool(OptionFamily.Plugin, "display", "Window", "Always full screen on the primary display",
-                 "The display holding the desktop's origin, whatever number Unity gives it: the window is moved there over the first frames, then put in a borderless full screen window at its resolution. Beats -monitor and the remembered display. Needs the BepInEx plugin."),
+                 "The display holding the desktop's origin, whatever number Unity gives it: the window is moved there over the first frames, then put in a borderless full screen window at its resolution. Beats -monitor and the remembered display. Needs the BepInEx plugin. A game whose own options set its display mode, size, borderless window or monitor is left to them.", "on"),
             Bool(OptionFamily.Plugin, "persist", "Integration", "Write the overrides into the emulator's settings file",
                  "Normally every --nixx-set / --nixx-game value is applied in memory and taken out again around each save, so the file keeps the user's own values. On: they are saved for good.", "off"),
 
@@ -170,16 +170,21 @@ namespace LbIntegrations.SuperZsnes
             Int(OptionFamily.Game, "aspectOverride", "Widescreen (this game)", "Aspect override", "The emulator's own index.", 0, 8),
         };
 
-        /// <summary>Mehdi's choice of 01/10: these for every game, those per game, the others nowhere.</summary>
+        /// <summary>Mehdi's choice of 01/10: these for every game, those per game, the others nowhere. The primary display
+        /// moved to every game on 04/10, on by default - and given up by a game that sets one of its ScreenKeys.</summary>
         private static readonly HashSet<string> GlobalKeys = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase)
         {
             "plugin.bepinex", "plugin.quit-confirm", "plugin.menu-key", "plugin.portable", "plugin.data-folders", "plugin.support-popup",
-            "plugin.version-popup", "plugin.persist",
+            "plugin.version-popup", "plugin.persist", "plugin.display",
         };
+
+        /// <summary>A game's own screen options: one of them set, and "Always full screen on the primary display" is not
+        /// applied to that game (Mehdi, 04/10) - see SuperZsnesSettings.ForLaunch.</summary>
+        public static readonly string[] ScreenKeys = { "unity.screen-fullscreen", "unity.screen-width", "unity.screen-height", "unity.popupwindow", "unity.monitor" };
 
         private static readonly HashSet<string> GameKeys = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase)
         {
-            "plugin.display", "unity.screen-fullscreen", "unity.screen-width", "unity.screen-height", "unity.popupwindow", "unity.monitor",
+            "unity.screen-fullscreen", "unity.screen-width", "unity.screen-height", "unity.popupwindow", "unity.monitor",
             "native.loadstate",
             "setting.gfxMode", "setting.scanlineStrength", "setting.interpolationMode", "setting.noBilinearFiltering",
             "setting.maxBrightness", "setting.use87aspect",

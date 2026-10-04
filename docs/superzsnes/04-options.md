@@ -8,7 +8,7 @@ Choix de Mehdi : le catalogue garde les 67 options, mesurées et rendues, mais c
 | portée | où | options |
 |---|---|---|
 | Global | onglet SUPER ZSNES de la fenêtre Nixx, `settings.ini` | `plugin.bepinex`, `quit-confirm`, `menu-key`, `portable`, `support-popup`, `version-popup`, `persist` |
-| Game | clic droit sur un jeu, « Nixx-SuperZSNES : Options... », `games\<id LaunchBox>.ini` à côté de `settings.ini` | fenêtre (`plugin.display`, `unity.screen-*`, `popupwindow`, `monitor`), `native.loadstate`, affichage (`gfxMode`, `scanlineStrength`, `interpolationMode`, `noBilinearFiltering`, `maxBrightness`, `use87aspect`), `rewindDisabled`, `snesRumble`, `rightStickGameSpeed`, `swapAcceptCancel`, les trois volumes |
+| Game | clic droit sur un jeu, « Nixx-SuperZSNES : Options... », `games\<id LaunchBox>.ini` à côté de `settings.ini` | fenêtre (`unity.screen-*`, `popupwindow`, `monitor`), `native.loadstate`, affichage (`gfxMode`, `scanlineStrength`, `interpolationMode`, `noBilinearFiltering`, `maxBrightness`, `use87aspect`), `rewindDisabled`, `snesRumble`, `rightStickGameSpeed`, `swapAcceptCancel`, les trois volumes |
 | Hidden | nulle part, jamais envoyée | tout le reste (dossiers, `game.*`, le reste du gameplay et de l'affichage, `plugin.log`) |
 
 Au lancement, `SuperZsnesSettings.ForLaunch` envoie les options Global de `settings.ini` et les
@@ -67,7 +67,7 @@ surcharge envoyée.
 | plugin.portable | `--nixx-portable=on\|off` | on | P1 |
 | plugin.support-popup | `--nixx-support-popup=on\|off` | off | popup Patreon |
 | plugin.version-popup | `--nixx-version-popup=on\|off` | off (01/10) | popup nouvelle version |
-| plugin.display | `--nixx-display=primary` | off | écran principal, P7 |
+| plugin.display | `--nixx-display=primary` | on (04/10) | écran principal, P7 ; réglage pour tous les jeux, pas passé pour un jeu qui règle lui-même `screen-fullscreen`, `screen-width`, `screen-height`, `popupwindow` ou `monitor` |
 | plugin.persist | `--nixx-persist=on\|off` | off | écrire les surcharges dans le fichier |
 
 Non exposé dans la fenêtre, mais accepté : `--nixx-dump-options`.

@@ -147,10 +147,30 @@ namespace LbIntegrations.SuperZsnes
         /// older version, or typed by hand - is not sent.</summary>
         public static List<Flag> ForLaunch(string gameId)
         {
-            var flags = Flags(Read(), OptionScope.Global);
-            flags.AddRange(Flags(ReadGame(gameId), OptionScope.Game));
+            var global = Read();
+            var game = ReadGame(gameId);
+            var flags = Flags(global, OptionScope.Global);
+            flags.AddRange(Flags(game, OptionScope.Game));
+
+            // THE PRIMARY DISPLAY (Mehdi, 04/10): on unless the tab turned it off - and not passed for a game whose own
+            // options say how its window is to be (display mode, size, borderless, monitor): the finer choice wins. The
+            // box stays ticked; this game just does without it.
+            flags.RemoveAll(f => f.Name == DisplayFlag.Name);
+            if (DisplayWanted(global))
+            {
+                var own = SuperZsnesOptions.ScreenKeys.Where(k => game.TryGetValue(k, out var v) && !string.IsNullOrEmpty(v)).ToList();
+                if (own.Count == 0) flags.Add(DisplayFlag);
+                else Log.Info("primary display not passed: this game's own options set " + string.Join(", ", own));
+            }
             return flags;
         }
+
+        internal static Flag DisplayFlag => new Flag { Name = "--nixx-display=", Text = "--nixx-display=primary" };
+
+        /// <summary>"Always full screen on the primary display" as the tab has it: on unless written off.</summary>
+        public static bool DisplayWanted(IDictionary<string, string> global)
+            => global != null && global.TryGetValue("plugin.display", out var v) && !string.IsNullOrEmpty(v)
+                ? IsTrue(v) : IsTrue(SuperZsnesOptions.Find("plugin.display")?.Default);
 
         /// <summary>Every flag these values ask for, whatever the scope - the renderer, as the probe tests it.</summary>
         public static List<Flag> Flags(IDictionary<string, string> values) => Flags(values, null);
@@ -181,7 +201,7 @@ namespace LbIntegrations.SuperZsnes
                 case OptionFamily.Plugin:
                     // "display" is a switch with one meaning: on is --nixx-display=primary, off is nothing.
                     if (o.Key == "display")
-                        return IsTrue(value) ? new Flag { Name = "--nixx-display=", Text = "--nixx-display=primary" } : null;
+                        return IsTrue(value) ? DisplayFlag : null;
                     // "bepinex" is read by the LaunchBox side (deploy or not) and never sent.
                     if (o.Key == "bepinex") return null;
                     // "log" is a bare switch: --nixx-log or nothing.
