@@ -4,7 +4,8 @@
 //
 // THE LIST IS VITA3K'S: portable\cache\app_compat_db.xml, downloaded and kept up to date by Vita3K itself
 // (compat/src/compat.cpp) - one <app title_id=".."> per game, its issue number on github.com/Vita3K/
-// compatibility and the ids of that issue's labels. Nothing is fetched for it here.
+// compatibility and the ids of that issue's labels. It is also fetched HERE, from the same place, at every
+// install and update and when there is none at start-up (Mehdi, 04/10: a Vita3K just installed had none) - Download.
 //
 // THE LIST HOLDS NUMBERS ONLY - a label's id, never its name. So, IT RUNS OFFLINE (Mehdi, 29/09):
 //   - THE STATE, as Vita3K reads it: its seven state label ids (compat/src/compat.cpp, LabelId), the LAST
@@ -154,6 +155,70 @@ namespace LbIntegrations.Vita3k
                 if (db == null || !File.Exists(db)) return;
                 if (File.Exists(labels) && File.GetLastWriteTimeUtc(labels) >= File.GetLastWriteTimeUtc(db)) return;
                 RefreshLabelsLater(layout, File.Exists(labels) ? "Vita3K's compatibility list is newer than its labels" : "no labels yet");
+            }
+            catch { }
+        }
+
+        private const string DbUrl = "https://github.com/Vita3K/compatibility/releases/download/compat_db/app_compat_db.xml";
+
+        /// <summary>THE LIST ITSELF, from where Vita3K takes it (compat.cpp), into portable\cache where Vita3K reads it -
+        /// at every install and update (Mehdi, 04/10: a Vita3K just installed had none, so no game had a state), then its
+        /// labels. Written only once read whole as Vita3K's list (a &lt;compatibility&gt; root, at least one &lt;app&gt;):
+        /// a cut download or an error page never takes the place of a good list. Never throws: a list that does not
+        /// come is logged and the install goes on. Returns what to add to the install's message, "" when all went well.</summary>
+        public static string Download(Vita3kLayout layout, Func<bool> cancelled = null)
+        {
+            if (NoNetwork) return "";
+            var db = DbPath(layout);
+            if (db == null) return "";
+            var tmp = db + ".tmp";
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(db));
+                using (var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(60) })
+                {
+                    http.DefaultRequestHeaders.UserAgent.ParseAdd("lbip-vita3k");
+                    var bytes = http.GetByteArrayAsync(DbUrl).GetAwaiter().GetResult();
+                    if (cancelled?.Invoke() == true) return "";
+                    File.WriteAllBytes(tmp, bytes);
+                }
+                int apps = 0;
+                string updated = null;
+                using (var reader = XmlReader.Create(tmp, new XmlReaderSettings { IgnoreComments = true, IgnoreWhitespace = true }))
+                {
+                    reader.MoveToContent();
+                    if (reader.Name != "compatibility") throw new InvalidDataException("not Vita3K's list (root <" + reader.Name + ">)");
+                    updated = reader.GetAttribute("db_updated_at");
+                    while (reader.ReadToFollowing("app")) apps++;
+                }
+                if (apps == 0) throw new InvalidDataException("the list names no game");
+                File.Move(tmp, db, overwrite: true);
+                Log.Info("compatibility list: " + apps + " game(s), updated " + (updated ?? "?") + " - downloaded to " + db);
+                // Its labels' names, now that the list is newer than them.
+                try { RefreshLabels(layout, "the compatibility list was just downloaded"); }
+                catch (Exception ex) { Log.Info("compatibility list: the labels' names could not be asked of GitHub (" + ex.GetType().Name + ": " + ex.Message + ") - the state is shown without them"); }
+                return "";
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("compatibility list: could not download it", ex);
+                return File.Exists(db) ? "" : " Vita3K's compatibility list could not be downloaded: games show no state until it is.";
+            }
+            finally { try { if (File.Exists(tmp)) File.Delete(tmp); } catch { } }
+        }
+
+        private static int _downloading;
+
+        /// <summary>The list when there is none at all - in the background, for the plugin's start-up check (an install
+        /// made before the list was downloaded at install, or one whose download failed). Once per start.</summary>
+        public static void DownloadIfMissing(Vita3kLayout layout)
+        {
+            try
+            {
+                var db = DbPath(layout);
+                if (NoNetwork || db == null || File.Exists(db) || !Directory.Exists(layout?.InstallDir)) return;
+                if (System.Threading.Interlocked.Exchange(ref _downloading, 1) == 1) return;
+                System.Threading.Tasks.Task.Run(() => Download(layout));
             }
             catch { }
         }

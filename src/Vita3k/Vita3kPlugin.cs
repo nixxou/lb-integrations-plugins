@@ -128,7 +128,8 @@ namespace LbIntegrations.Vita3k
                         foreach (var exe in KnownExecutables())
                         {
                             Vita3kWorkspace.CleanUpAtStart(Vita3kPaths.Resolve(exe));
-                            // The compatibility list's labels, asked of GitHub when Vita3K's list is newer.
+                            // The compatibility list when there is none, and its labels, asked of GitHub when Vita3K's list is newer.
+                            Vita3kCompat.DownloadIfMissing(Vita3kPaths.Resolve(exe));
                             Vita3kCompat.RefreshIfStale(Vita3kPaths.Resolve(exe));
                         }
                     }
@@ -417,6 +418,10 @@ namespace LbIntegrations.Vita3k
                 // THE DOCUMENTATION, last: nothing when Vita3kDocs.Urls is empty, and never a reason to
                 // fail the install - a document that does not come is logged and skipped.
                 firmware += Vita3kDocs.Fetch(targetDir, (step, p) => Report(args, step, p), () => Cancelled(args));
+
+                // THE COMPATIBILITY LIST, at every install and update (Mehdi, 04/10) - see Vita3kCompat.Download.
+                Report(args, "Downloading Vita3K's compatibility list...", null);
+                firmware += Vita3kCompat.Download(layout, () => Cancelled(args));
 
                 // THE EMULATOR'S OWN SETTINGS: full screen on, its own update check off, and the language,
                 // date, time and enter button from Windows - each only where config.yml does not say yet, so
