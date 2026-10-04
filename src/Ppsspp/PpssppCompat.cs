@@ -8,10 +8,12 @@
 // ONE PAGE PER GAME AND DISC VERSION: /game/<DISC_ID>_<DISC_VERSION> (ULES00972_1.00), both read off the PARAM.SFO. No API:
 // the HTML is read, as little of it as can be - so a page laid out otherwise gives no rating, and the link stays.
 //
-//   THE WHOLE LIST   /games?page=1..N (100 a page, 89 pages and 8740 games and versions on 04/10, the last page named by the pager): <a href="/game/ID_VER" class="title">,
-//                    then <span class="label ...">Rating</span>, within its row. Built again when PPSSPP is installed or updated
-//                    (InstallEmulator), and by the PPSSPP tab's button, in the background, a page every 400 ms. LaunchBox
-//                    closed meanwhile: nothing written - a game's window reads its own page, that is all (Mehdi, 04/10).
+//   ONE GAME, BY DEFAULT   its own page, when its window opens - see below. That is all the plugin reads unasked.
+//   THE WHOLE LIST   ONLY WHEN ASKED, the PPSSPP tab's "Build the list" (Mehdi, 04/10: nothing started by the plugin itself,
+//                    at an install, an update or anywhere else): /games?page=1..N (100 a page, 89 pages and 8740 games and
+//                    versions on 04/10, the last page named by the pager): <a href="/game/ID_VER" class="title">,
+//                    then <span class="label ...">Rating</span>, within its row - in the background, a page every 400 ms.
+//                    LaunchBox closed meanwhile: nothing written, that is all. Built, it answers a game's window at once.
 //   ONE GAME         its own page, when its window opens and its line is older than a week: the best label of its
 //                    reports table (a <tbody class="reports"> per report) - the "related game versions" above it carry labels too.
 //
@@ -135,7 +137,7 @@ namespace LbIntegrations.Ppsspp
 
         // ── the whole list ───────────────────────────────────────────────────
 
-        /// <summary>The whole list read again, in the background - at PPSSPP's install or update, and once when there is none.
+        /// <summary>The whole list read again, in the background - only from the PPSSPP tab's button.
         /// <paramref name="exe"/>: the PPSSPP it is for, still there when it is written - see the header.</summary>
         public static void RebuildSoon(string why, string exe)
         {
@@ -160,7 +162,7 @@ namespace LbIntegrations.Ppsspp
                 int count;
                 lock (Gate) count = Load().Count(kv => kv.Value.Read > DateTime.MinValue);
                 var said = !File.Exists(DbPath) || count == 0
-                    ? "Not built yet: a game's rating is read from its own page when its window opens."
+                    ? "Not built: a game's rating is read from its own page when its window opens - which is enough."
                     : count + " games and versions, read " + File.GetLastWriteTime(DbPath).ToString("g", CultureInfo.CurrentCulture) + ".";
                 var problem = _problem;
                 return said + (problem != null ? "  Last attempt: " + problem : "");

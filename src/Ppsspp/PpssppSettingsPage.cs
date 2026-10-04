@@ -67,8 +67,8 @@ namespace LbIntegrations.Ppsspp
             group.Controls.Add(new Label
             {
                 AutoSize = false, Location = new Point(14, 22), Size = new Size(530, 50), ForeColor = SystemColors.GrayText,
-                Text = "Each game's rating, shown in its right-click window with a link to its page. The whole list is read when PPSSPP is "
-                     + "installed or updated; without it, a game's own page is read when its window opens.",
+                Text = "Each game's rating, shown in its right-click window with a link to its page: its own page is read when its window "
+                     + "opens. Built here, the whole list (89 pages, under a minute) answers at once, and works when the site does not.",
             });
             var status = new Label { AutoSize = false, Location = new Point(14, 74), Size = new Size(530, 34) };
             var read = new Button { AutoSize = true, Location = new Point(14, 110) };
