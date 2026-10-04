@@ -314,6 +314,32 @@ namespace LbIntegrations.Probe
                 Check("the GUI is not there: left on the loader", Mode(@"Emulators\Nixx-Cxbx\cxbxr-ldr.exe", true) == null);
                 Check("another emulator: never touched", Mode(@"Emulators\Xenia\xenia_canary.exe", true) == null);
 
+                // 8b. the active save (lbip-saves\<id>.cxbxsave, Mehdi 04/10): a file put there is laid out at launch; the folder after
+                // a session is packed into it; the plugin's own file is never laid back over a newer folder.
+                Console.WriteLine("  active save");
+                var udataDir = (string)Call("CxbxPaths", "UdataDir", exe);
+                if (udataDir == null) Check("Cxbx-Reloaded's UDATA folder known", false, "none for " + exe);
+                else
+                {
+                    var activeLive = Path.Combine(udataDir, "4d530005");
+                    var activePack = (string)Call("CxbxSaves", "PackPath", exe, "4d530005");
+                    Directory.CreateDirectory(Path.GetDirectoryName(activePack));
+                    File.Copy(p1, activePack, overwrite: true);
+                    Check("a file put in lbip-saves: laid out at launch", Call("CxbxSaves", "SyncIn", exe, "4d530005") is string a1 && a1.Contains("laid"));
+                    Check("... the folder holds it", File.Exists(Path.Combine(activeLive, "ABCDEF012345", "save.dat")));
+                    Check("... the next launch: nothing to do", Call("CxbxSaves", "SyncIn", exe, "4d530005") == null);
+                    System.Threading.Thread.Sleep(50);
+                    File.WriteAllBytes(Path.Combine(activeLive, "ABCDEF012345", "save.dat"), Noise(9100, 6));     // the game saving
+                    var before = File.ReadAllBytes(activePack);
+                    Check("after a session: the folder packed into the file", (string)Call("CxbxSaves", "Capture", exe, "4d530005") == activePack && !File.ReadAllBytes(activePack).SequenceEqual(before));
+                    Check("... the file the plugin wrote not laid back at launch", Call("CxbxSaves", "SyncIn", exe, "4d530005") == null && new FileInfo(Path.Combine(activeLive, "ABCDEF012345", "save.dat")).Length == 9100);
+                    File.Copy(p1, activePack, overwrite: true);                                                        // a Restore
+                    Check("a file put back: not packed over before the launch", (string)Call("CxbxSaves", "Capture", exe, "4d530005") == activePack && File.ReadAllBytes(activePack).SequenceEqual(File.ReadAllBytes(p1)));
+                    Check("... laid out at launch", Call("CxbxSaves", "SyncIn", exe, "4d530005") is string a2 && a2.Contains("laid") && new FileInfo(Path.Combine(activeLive, "ABCDEF012345", "save.dat")).Length == 9000);
+                    File.Delete(activePack);
+                    Check("the file removed: the folder taken out at launch", Call("CxbxSaves", "SyncIn", exe, "4d530005") is string a3 && a3.Contains("taken out") && !Directory.Exists(activeLive));
+                }
+
                 // 9. the compatibility list, embedded: GTA San Andreas Europe (Classics), title id 545400a4, version 1
                 Console.WriteLine("  compatibility (embedded list)");
                 Check("serial as Cxbx-Reloaded writes it: TT-164", (string)Call("CxbxCompat", "SerialOf", 0x545400A4u) == "TT-164");

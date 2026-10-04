@@ -604,6 +604,41 @@ namespace LbIntegrations.Probe
             Check("... the volume clean", Problems().Count == 0, string.Join("; ", Problems().Take(4)));
             Check("... removing again: nothing to do", !(bool)S("Remove", console, "4d530004"));
 
+            // THE ACTIVE SAVE (lbip-saves\<id>.cxbxsave, Mehdi 04/10): a file put there goes into the console at launch; the
+            // console after a session goes into the file; the file the plugin wrote is never laid back over a newer console.
+            var exe = Path.Combine(work, "xemu.exe");
+            File.WriteAllBytes(exe, new byte[0]);
+            var files = _asm.GetType("LbIntegrations.Xemu.XemuSaveFiles", true);
+            object F(string m, params object[] a) { try { return files.GetMethod(m, Any).Invoke(null, a); } catch (TargetInvocationException ex) { throw ex.InnerException ?? ex; } }
+            var active = (string)F("PackPath", exe, "4d530004");
+            File.Delete(console);
+            Check("no file, no console: nothing to do at launch", F("SyncIn", exe, "4d530004", baseDisk) == null);
+            Directory.CreateDirectory(Path.GetDirectoryName(active));
+            File.Copy(firstZip, active, overwrite: true);
+            Check("a file put in lbip-saves: laid into the console at launch", F("SyncIn", exe, "4d530004", baseDisk) is string s1 && s1.Contains("laid"));
+            S("Capture", console, "4d530004", back);
+            Check("... the console now holds it, byte for byte", File.ReadAllBytes(back).SequenceEqual(File.ReadAllBytes(firstZip)));
+            Check("... the next launch: nothing to do", F("SyncIn", exe, "4d530004", baseDisk) == null);
+            Check("... listed: the same file, not packed over", (string)F("Capture", exe, "4d530004") == active && File.ReadAllBytes(active).SequenceEqual(File.ReadAllBytes(firstZip)));
+            System.Threading.Thread.Sleep(50);
+            S("Insert", console, baseDisk, "4d530004", richZip);                // the game saving during a session
+            Check("after a session: the console captured into the file", (string)F("Capture", exe, "4d530004") == active && !File.ReadAllBytes(active).SequenceEqual(File.ReadAllBytes(firstZip))
+                  && Hashes(((System.Collections.IEnumerable)S("Extract", console, "4d530004")).Cast<object>()).Count == rich.Count);
+            Check("... the file the plugin wrote is not laid back at the next launch", F("SyncIn", exe, "4d530004", baseDisk) == null);
+            File.Copy(firstZip, active, overwrite: true);                        // a Restore: an older save put back
+            Check("a file put back: not packed over before the launch", (string)F("Capture", exe, "4d530004") == active && File.ReadAllBytes(active).SequenceEqual(File.ReadAllBytes(firstZip)));
+            Check("... laid into the console at launch", F("SyncIn", exe, "4d530004", baseDisk) is string s2 && s2.Contains("laid"));
+            S("Capture", console, "4d530004", back);
+            Check("... the console holds the restored save", File.ReadAllBytes(back).SequenceEqual(File.ReadAllBytes(firstZip)));
+            File.Delete(active);
+            Check("the file removed: the console's save taken out at launch", F("SyncIn", exe, "4d530004", baseDisk) is string s3 && s3.Contains("taken out")
+                  && ((System.Collections.IEnumerable)S("Extract", console, "4d530004")).Cast<object>().Count() == 0);
+            Check("... the console clean", Problems().Count == 0, string.Join("; ", Problems().Take(4)));
+            var legacy = (string)F("PackPath", exe, "4d530004");
+            File.Copy(firstZip, legacy, overwrite: true); File.WriteAllText(Path.ChangeExtension(legacy, ".stamp"), "older");
+            Check("a file from before the notes (captured, its stamp there): the plugin's own, not laid in", F("SyncIn", exe, "4d530004", baseDisk) == null);
+            File.Delete(legacy); File.Delete(Path.ChangeExtension(legacy, ".stamp"));
+
             var escape = Path.Combine(work, "escape.cxbxsave");
             st.GetMethod("Pack", Any).Invoke(null, new object[] { new List<(string, byte[])> { ("../outside.bin", new byte[] { 1 }) }, escape });
             bool refused = false;

@@ -411,6 +411,13 @@ namespace LbIntegrations.Cxbx
                 // The game's options (CxbxOptions) written for its session into settings.ini and EEPROM.bin - put back once it
                 // is over - and the console's region made the game's, or Cxbx-Reloaded stops on a question first (CxbxEeprom).
                 CxbxOptions.Apply(exe, Safe(() => args?.GameBeingLaunched?.Id), described?.Xbe ?? Xbe.Read(xbe));
+                // Its save file is the active save: put in lbip-saves\ since the last session, it is laid out now (CxbxSaves.SyncIn).
+                var launchTitle = (described?.Xbe ?? Xbe.Read(xbe))?.TitleId > 0 ? (described?.Xbe ?? Xbe.Read(xbe)).TitleIdText : null;
+                if (launchTitle != null)
+                {
+                    try { if (CxbxSaves.SyncIn(exe, launchTitle) is string synced) Log.Info("saves: " + launchTitle + " - " + synced); }
+                    catch (Exception ex) { return Refuse("The save of " + Path.GetFileName(rom) + " could not be laid out: " + ex.Message + "\n\nNothing was changed. Move or remove its file in " + Path.GetDirectoryName(CxbxSaves.PackPath(exe, launchTitle)) + " to start without it."); }
+                }
                 // Full screen: a sub-option of the window's (Mehdi, 03/10); the loader alone always starts full screen.
                 bool borderless = CxbxSettings.On(settings, "borderless", true) && !CxbxSession.ExclusiveFullScreen(exe);
                 CxbxSession.Watch(exe, described?.Xbe?.TitleId > 0 ? described.Xbe.TitleIdText : null, borderless,

@@ -9,8 +9,11 @@
 // rules, with subfolders). A file and not the folder because the host's folder arm is the one every save defect of
 // this pack came from (memory: save-container-vs-file) - IsSaveContainer answers false, the file is copied as it is.
 //
-// THE FOLDER IS THE TRUTH, the file follows it: packed again after each session (CxbxSession) and whenever the host
-// lists saves and the folder has changed (a stamp: files, bytes, newest date). A folder gone takes its file with it.
+// THE FILE IS THE ACTIVE SAVE (Mehdi, 04/10: "dans lbip-saves\ je veux avoir les saves actives", for both Xbox emulators):
+// packed from the folder after each session (CxbxSession) and whenever the host lists saves and the folder has changed (a
+// stamp: files, bytes, newest date); and at a launch, a file put there since the two last agreed (by hand, by LaunchBox) is
+// laid out as the folder, a file removed takes the folder with it (SyncIn). Which side changed is told by <title id>.synced,
+// the file's SHA-1 when they last agreed - so a file the plugin wrote itself is never laid back over a newer folder.
 // RESTORE writes the file and lays it out as the folder at once - the folder's content REPLACED, not merged: a save
 // slot the backup does not hold must not survive it.
 // TDATA (E:\TDATA\<title id>, the game's own cache and settings) is NOT part of the save: to be measured on real games
@@ -67,11 +70,13 @@ namespace LbIntegrations.Cxbx
                 if (pack == null) return null;
                 var live = FindLive(exe, titleId);
                 var stampFile = Path.ChangeExtension(pack, ".stamp");
+                // A file put there since the last agreement wins: it is laid out at the next launch, never packed over nor removed.
+                if (Pending(pack)) return pack;
                 if (live == null || !Directory.EnumerateFiles(live, "*", SearchOption.AllDirectories).Any())
                 {
                     if (File.Exists(pack) && !CxbxPaths.LoaderRunning())
                     {
-                        try { File.Delete(pack); File.Delete(stampFile); Log.Info("saves: " + titleId + " has no save any more - its file removed"); } catch { }
+                        try { File.Delete(pack); File.Delete(stampFile); File.Delete(SyncedPath(pack)); Log.Info("saves: " + titleId + " has no save any more - its file removed"); } catch { }
                     }
                     return null;
                 }
@@ -80,8 +85,60 @@ namespace LbIntegrations.Cxbx
                 if (CxbxPaths.LoaderRunning()) return File.Exists(pack) ? pack : null;
                 if (!Pack(live, pack, out var error)) { Log.Warn("saves: could not pack " + live + ": " + error); return File.Exists(pack) ? pack : null; }
                 File.WriteAllText(stampFile, now);
+                File.WriteAllText(SyncedPath(pack), Hash(pack));
                 Log.Info("saves: " + titleId + " packed -> " + pack);
                 return pack;
+            }
+        }
+
+        private static string SyncedPath(string pack) => Path.ChangeExtension(pack, ".synced");
+
+        private static string Hash(string file)
+        {
+            using var sha = System.Security.Cryptography.SHA1.Create();
+            using var s = File.OpenRead(file);
+            return BitConverter.ToString(sha.ComputeHash(s)).Replace("-", "");
+        }
+
+        /// <summary>Is the file one put there since it and the folder last agreed? Changed since the SHA-1 noted then - or, with
+        /// no note at all, never seen: a file packed before these notes (it has its stamp) is the plugin's own, not pending.</summary>
+        internal static bool Pending(string pack)
+        {
+            try
+            {
+                if (!File.Exists(pack)) return false;
+                var synced = SyncedPath(pack);
+                if (File.Exists(synced)) return File.ReadAllText(synced).Trim() != Hash(pack);
+                return !File.Exists(Path.ChangeExtension(pack, ".stamp"));
+            }
+            catch { return false; }
+        }
+
+        /// <summary>AT LAUNCH: the file is the active save. Put there since the last agreement, it is laid out as the folder (its
+        /// content replaced); removed since, the folder goes. What it did, or null.</summary>
+        public static string SyncIn(string exe, string titleId)
+        {
+            lock (Gate)
+            {
+                var pack = PackPath(exe, titleId);
+                var live = LiveFolder(exe, titleId);
+                if (pack == null || live == null) return null;
+                if (Pending(pack))
+                {
+                    var folder = FindLive(exe, titleId) ?? live;
+                    if (!Unpack(pack, folder, out var error)) throw new IOException("the save file could not be laid out: " + error);
+                    File.WriteAllText(SyncedPath(pack), Hash(pack));
+                    File.WriteAllText(Path.ChangeExtension(pack, ".stamp"), StampOf(folder));
+                    return "the save file laid out -> " + folder;
+                }
+                if (!File.Exists(pack) && File.Exists(SyncedPath(pack)))
+                {
+                    var folder = FindLive(exe, titleId);
+                    if (folder != null && Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
+                    try { File.Delete(SyncedPath(pack)); File.Delete(Path.ChangeExtension(pack, ".stamp")); } catch { }
+                    return folder != null ? "the save file removed - its folder taken out" : "the save file removed";
+                }
+                return null;
             }
         }
 
@@ -146,6 +203,9 @@ namespace LbIntegrations.Cxbx
             catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; return false; }
             finally { try { if (Directory.Exists(fresh)) Directory.Delete(fresh, recursive: true); } catch { } }
         }
+
+        /// <summary>The file and the folder agree now (a restore laid it out).</summary>
+        public static void MarkSynced(string pack) { try { File.WriteAllText(SyncedPath(pack), Hash(pack)); } catch { } }
 
         public static bool IsZip(string path)
         {
@@ -256,6 +316,7 @@ namespace LbIntegrations.Cxbx
                 Directory.CreateDirectory(Path.GetDirectoryName(pack));
                 if (!same) File.Copy(source, pack, overwrite: true);
                 if (!CxbxSaves.Unpack(pack, live, out var error)) return new AddSaveResponse("Could not lay the save out: " + error);
+                CxbxSaves.MarkSynced(pack);
                 var refreshed = CxbxSaves.Capture(exe, titleId) ?? pack;
                 Log.Info("restored the save of " + titleId + " -> " + live);
                 var info = new FileInfo(refreshed);

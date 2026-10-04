@@ -353,6 +353,10 @@ namespace LbIntegrations.Xemu
                 var titleId = info.Xbe?.TitleId > 0 ? info.Xbe.TitleIdText : null;
                 if (titleId == null) { XemuDisc.Release(info); return Refuse(Path.GetFileName(rom) + " cannot be launched: its title id could not be read."); }
                 var hdd = XemuPaths.GameHdd(exe, titleId);
+                // ITS SAVE FILE FIRST: lbip-saves\<title id>.cxbxsave is what counts - put there since the last session, it goes into
+                // the console now (XemuSaveFiles.SyncIn).
+                try { if (XemuSaveFiles.SyncIn(exe, titleId, base_) is string synced) Log.Info("saves: " + titleId + " - " + synced); }
+                catch (Exception ex) { XemuDisc.Release(info); return Refuse("The save of " + Path.GetFileName(rom) + " could not be put into its console: " + ex.Message + "\n\nNothing was changed. Move or remove its file in " + Path.GetDirectoryName(XemuSaveFiles.PackPath(exe, titleId)) + " to start without it."); }
                 if (!File.Exists(hdd))
                 {
                     var error = Qcow2Overlay.Create(base_, hdd);
