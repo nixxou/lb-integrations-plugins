@@ -13,7 +13,7 @@ is published by Unbroken Software), so these are installed by hand.
 | `src/Ppsspp` | PPSSPP | Sony PSP | download / update, BIOS, RetroAchievements, launch, save management |
 | `src/Xenia` | Xenia (canary) | Microsoft Xbox 360 | download / update, launch fixes, save management |
 | `src/Cxbx` | Cxbx-Reloaded | Microsoft Xbox | download / update (CI builds), **disc images unpacked by the plugin**, full screen in a window, save management |
-| `src/Xemu` | xemu | Microsoft Xbox | download / update, BIOS, **redump / CSO / CCI / CHD / zipped discs cut to an XISO**, **a console of its own per game** (qcow2 over the dashboard), save management |
+| `src/Xemu` | xemu | Microsoft Xbox | download / update, BIOS, **redump / CSO / CCI / CHD served as an XISO without a copy** (else cut to one), **a console of its own per game** (qcow2 over the dashboard), region and video following the game, save management (GPL-2.0) |
 | `src/Flycast` | Flycast | Sega Dreamcast, Sega Naomi, Sega Naomi 2, Sammy Atomiswave | download / update, BIOS, RetroAchievements, launch, save management |
 | `src/MelonDs` | melonDS | Nintendo DS | download / update, BIOS, DS/DSi mode, per-title DSi NAND, save management (GPL-3.0) |
 | `src/NoGba` | no$gba | Nintendo Game Boy Advance, Nintendo DS | download / update, BIOS, **raw save format**, save management |
@@ -532,15 +532,30 @@ no pause screen yet.
 
 **xemu opens an XISO and nothing else** (xemu.app/docs/disc-images). An XISO is handed over as it is; a redump image
 (its game partition, after the video one), a CSO / CCI / CHD (through `src/Shared.Disc`) or an image in a zip / 7z is cut
-to its XISO once, into `<xemu>\discs`, and kept (40 GB by default, the copies used longest ago go first). Measured
-04/10: Batman's CSO cut in 8 s to the byte-identical XISO. A ZArchive or a game unpacked in a zip is refused for now.
+to its XISO - served where it is first, else copied. SERVED: with AIM and the RAM disk helper 1.10 (`view=xiso`), a
+disk holding one exFAT volume holding one file, `game.iso`, whose bytes are the image's game partition read in place
+(`ExfatOneFileView`). Not the raw disk: xemu, not elevated, is refused `\\.\PhysicalDriveN` (measured). Measured 04/10:
+mounted in 1.7 s, read unelevated, byte-identical, ~800 MB/s in sequence and 0.24 ms per random 2 KB read; Street Hoops
+and GTA San Andreas run from it. COPIED (no AIM, an older helper, an image in a zip / 7z): once, into `<xemu>\discs`,
+and kept (40 GB by default, the copies used longest ago go first) - Batman's CSO in 8 s, byte-identical. A ZArchive or a
+game unpacked in a zip is refused for now.
 
 **One console per game** (`Qcow2Overlay`): `hdd\games\<title id>.qcow2`, an empty qcow2 v3 whose backing file is
 `hdd\base.qcow2` - xemu's dashboard disk, downloaded at install, read-only. That file is the game's save for the
 host. Between games `xemu.toml` points at `hdd\standalone.qcow2`, never at the base.
 
 **The line is `-full-screen -dvd_path "<xiso>" -L`**: `-L` (QEMU's firmware folder, unused by xemu) takes the game's
-path the host appends - a bare path would be a hard disk to QEMU. To be measured with a real BIOS.
+path the host appends - a bare path would be a hard disk to QEMU. Measured 04/10: the game boots. Alt+F4 quits at once.
+
+**The console follows the game** (`Eeprom/XemuEeprom`), as Cxbx's does: an original Xbox refuses a game of another
+region, and xemu's own EEPROM is North America / NTSC - GTA San Andreas (Europe) stayed on a black screen on it, and played
+on a copy turned Europe / PAL (measured 04/10). At each launch `eeprom-session.bin` is made from `eeprom.bin` - region and
+video standard following the game (Europe: PAL 50 Hz with 60 Hz allowed; Japan: NTSC-J; else NTSC with the HD modes), the
+language of "Your console" (else Windows'), Windows' time zone, no parental lock - and `xemu.toml` points at it for the
+game, back at `eeprom.bin` after. The user's file is never written. Unlike Cxbx-Reloaded's, the file is a real Xbox's,
+its region encrypted: XboxEepromEditor's code does it, **which makes `src/Xemu` GPL-2.0-or-later** (`src/Xemu/LICENSE.md`).
+Options in settings.ini: `console.region` (follow, 1, 2, 4, xemu), `console.video` (follow, pal50, pal60, ntsc, ntsc-hd,
+xemu), `console.language` (windows, 1-9, xemu), `console.timezone` (windows, xemu) - `xemu` leaves the user's value.
 
 ## Notes on Cxbx-Reloaded
 
@@ -1756,8 +1771,9 @@ MIT for most of it, see `LICENSE`.
 **Four directories are GPL-3.0-or-later**, and they are the ones that touch melonDS's NAND code:
 `tools/melonds-nand`, `src/Shared.Dsi`, `src/MelonDs` and `src/NoGba`. The shared DSi engine calls
 that library through P/Invoke, and both plugins compile the engine in, so the licence follows it.
-**Two more are GPL-2.0-or-later**, for the same reason with a different emulator: `tools/vita3k-install`
-is built from Vita3K's own install code, and `src/Vita3k` loads it into its process.
+**Three more are GPL-2.0-or-later**, for the same reason with a different emulator: `tools/vita3k-install`
+is built from Vita3K's own install code, and `src/Vita3k` loads it into its process; `src/Xemu` compiles
+in XboxEepromEditor's EEPROM crypto (see `src/Xemu/LICENSE.md`).
 Flycast, Xenia and PPSSPP touch none of either and remain MIT. `THIRD-PARTY.md` sets out the whole of
 it, including the LGPL-2.1 component the shipped binary statically links and how the relinking
 requirement is met.

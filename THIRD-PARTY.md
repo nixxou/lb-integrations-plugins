@@ -60,6 +60,17 @@ Lib.Harmony), under the same licences, VendoredFlac's LGPL-2.1 satisfied the sam
 compiled in (MPL-2.0, see above). Nothing of xemu (GPL-2.0) is in here: the plugin downloads its builds and xemu's
 dashboard disk (xemu-project/xemu-dashboard) from GitHub at the user's request.
 
+## Under its own licence inside `Xemu.dll` - GPL-2.0-or-later
+
+| Component | Licence | Used for |
+|---|---|---|
+| [XboxEepromEditor](https://github.com/Ernegien/XboxEepromEditor) (fork: [nixxou/XboxEepromEditor](https://github.com/nixxou/XboxEepromEditor)) - `Cryptography/HmacSha1.cs`, `Cryptography/RC4.cs`, `Types/EepromVersion.cs`, the time zone table of `Eeprom.cs` | GPL-2.0-or-later | opening and sealing an original Xbox's EEPROM: its security section (the game region) is RC4-encrypted under an HMAC-SHA1 key with the Xbox's own constants |
+
+Copied into `src/Xemu/Eeprom/` with their notices, the namespace changed and nothing else; the licence text is
+`src/Xemu/Eeprom/LICENSE.txt`. Compiled into the plugin, they make **`src/Xemu` GPL-2.0-or-later** - see
+`src/Xemu/LICENSE.md`. The installer that carries `Xemu.dll` is GPL-3.0-or-later already (below), which GPL-2.0-or-later
+allows.
+
 ## Merged into `SuperZsnes.dll`
 
 | Component | Licence | Used for |

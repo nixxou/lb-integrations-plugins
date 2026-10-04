@@ -112,6 +112,7 @@ namespace LbIntegrations.Probe
             if (Has(args, "--cxbx-restore")) return CxbxCheck.RestoreOptions(asm, Path.GetFullPath(emuPath)) ? 0 : 1;
             if (Has(args, "--cxbx-shot")) return CxbxCheck.Shot(asm, Path.GetFullPath(Arg(args, "--cxbx-shot")), emuPath) ? 0 : 1;
             // xemu: --xemu (discs, a game's console, xemu.toml and the launch line, all made here).
+            if (Has(args, "--xemu-console")) return XemuCheck.Console_(asm, Path.GetFullPath(Arg(args, "--base")), Path.GetFullPath(Arg(args, "--out")), Path.GetFullPath(Arg(args, "--rom"))) ? 0 : 1;
             if (Has(args, "--xemu")) return XemuCheck.Run(asm) ? 0 : 1;
             // Xenia's compatibility list: --xenia-compat [--online].
             if (Has(args, "--xenia-compat")) return XeniaCompatCheck.Run(asm, Has(args, "--online")) ? 0 : 1;

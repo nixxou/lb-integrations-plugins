@@ -59,8 +59,8 @@ namespace LbIntegrations.Menus
             _language.SelectedIndex = Math.Max(0, Array.FindIndex(PackIdentity.Languages, l => l.Culture.Equals(p.Language, StringComparison.OrdinalIgnoreCase)));
             _languageNot = new Label { AutoSize = true, ForeColor = Color.DarkGoldenrod, MaximumSize = new Size(460, 0), Margin = new Padding(3, 2, 3, 0) };
             Row(grid, "Language", _language, _languageNot,
-                Applies("Xenia, Vita3K, PPSSPP, melonDS, no$gba (its DSi consoles), Flycast - and Cxbx-Reloaded at every launch (its Language option, "
-                      + "when left on its default)."));
+                Applies("Xenia, Vita3K, PPSSPP, melonDS, no$gba (its DSi consoles), Flycast - and Cxbx-Reloaded and xemu at every launch (their Language "
+                      + "option, when left on its default)."));
 
             // ── date ──
             _date = Combo(new[] { "2026/10/03 - year, month, day", "03/10/2026 - day, month, year", "10/03/2026 - month, day, year" }, 220);

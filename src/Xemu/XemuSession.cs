@@ -2,7 +2,8 @@
 //
 // THE END IS WHEN XEMU HAS GONE, by name and folder: one process for the whole game (no reboot into a new one, unlike
 // Cxbx-Reloaded's loader). Then [sys.files] hdd_path goes back to hdd\standalone.qcow2: xemu opened on its own afterwards
-// boots its own console, never the last game's - and never the pristine base.qcow2. The launch gate stays shut until this
+// boots its own console, never the last game's - and never the pristine base.qcow2; eeprom_path back on eeprom.bin, the
+// user's, from the session's copy that carried the game's region (Eeprom\XemuEeprom). The launch gate stays shut until this
 // is done (LbipLaunchGate.HoldOpen). A disc served where it is (RamDrive.AttachXiso) is detached then too.
 
 using System;
@@ -57,8 +58,11 @@ namespace LbIntegrations.Xemu
                     var error = Qcow2Overlay.Create(base_, standalone);
                     if (error != null) { Log.Warn("console: the stand-alone one could not be made - " + error); return; }
                 }
-                if (XemuToml.Set(toml, "sys.files", "hdd_path", XemuToml.Literal(standalone)))
-                    Log.Info("xemu.toml: back on the stand-alone console (" + why + ")");
+                bool hddBack = XemuToml.Set(toml, "sys.files", "hdd_path", XemuToml.Literal(standalone));
+                // The console's settings back on the user's own file; the session's copy (Eeprom\XemuEeprom) waits for the next.
+                var eeprom = XemuPaths.Eeprom(exe);
+                bool eepromBack = eeprom != null && System.IO.File.Exists(eeprom) && XemuToml.Set(toml, "sys.files", "eeprom_path", XemuToml.Literal(eeprom));
+                if (hddBack || eepromBack) Log.Info("xemu.toml: back on the stand-alone console (" + why + ")");
             }
             catch (Exception ex) { Log.Warn("xemu.toml: could not point it back at the stand-alone console", ex); }
         }

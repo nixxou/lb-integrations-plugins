@@ -219,6 +219,104 @@ namespace LbIntegrations.Probe
             Check("a new disk signature at every view", BitConverter.ToUInt32(mbr2, 440) != BitConverter.ToUInt32(mbr, 440));
         }
 
+        /// <summary>The console's EEPROM: XboxEepromEditor's crypto both ways, a new console, and a session's settings - region and
+        /// video following the game, language, time zone - on a copy, the base never written. With <paramref name="real"/> (an
+        /// EEPROM xemu made), opening and sealing it unchanged must give back its very bytes.</summary>
+        private static void Eeprom(string work, string real)
+        {
+            Type E() => _asm.GetType("LbIntegrations.Xemu.Eeprom.XemuEeprom", true);
+            object Ec(string m, params object[] a)
+            {
+                var mi = E().GetMethods(Any).First(x => x.Name == m && x.GetParameters().Length == a.Length);
+                try { return mi.Invoke(null, a); } catch (TargetInvocationException ex) { throw ex.InnerException ?? ex; }
+            }
+            uint U(byte[] b, int at) => BitConverter.ToUInt32(b, at);
+            bool Sums(byte[] b) => (uint)Ec("Checksum", b, 0x30, 0x30) == 0xFFFFFFFF && (uint)Ec("Checksum", b, 0x60, 0x60) == 0xFFFFFFFF;
+
+            if (real != null && File.Exists(real))
+            {
+                var bytes = File.ReadAllBytes(real);
+                var o = Ec("Open", bytes);
+                Check("xemu's own EEPROM opens (" + Path.GetFileName(real) + ")", o != null);
+                if (o != null)
+                {
+                    Check("a 1.0 kernel's, North America, NTSC-M", Get(o, "Version").ToString() == "RetailFirst" && (uint)Get(o, "Region") == 1 && (uint)Get(o, "AvRegion") == 0x00400100,
+                          Get(o, "Version") + " / " + Get(o, "Region") + " / " + Get(o, "AvRegion"));
+                    Check("sealed unchanged = its very bytes", ((byte[])Ec("Seal", o)).SequenceEqual(bytes));
+                }
+            }
+            else Console.WriteLine("    (no EEPROM made by xemu at hand - the byte-for-byte check skipped)");
+
+            var fresh = (byte[])Ec("Fresh");
+            var f = Ec("Open", fresh);
+            Check("a new console opens", f != null);
+            if (f == null) return;
+            Check("new: 1.0 kernel, North America, NTSC-M, English, London",
+                  Get(f, "Version").ToString() == "RetailFirst" && (uint)Get(f, "Region") == 1 && (uint)Get(f, "AvRegion") == 0x00400100 && (uint)Get(f, "Language") == 1 && (string)Get(f, "Zone") == "London",
+                  Get(f, "Version") + " " + Get(f, "Region") + " " + Get(f, "AvRegion") + " " + Get(f, "Language") + " " + Get(f, "Zone"));
+            Check("new: both section checksums right", Sums(fresh));
+            Check("new: serial of 12 digits ending in 9", System.Text.RegularExpressions.Regex.IsMatch((string)Get(f, "Serial"), "^[0-9]{11}9$"), (string)Get(f, "Serial"));
+            Check("two new consoles differ", !((byte[])Ec("Fresh")).SequenceEqual(fresh));
+
+            var baseFile = Path.Combine(work, "eeprom.bin");
+            var session = Path.Combine(work, "eeprom-session.bin");
+            File.WriteAllBytes(baseFile, fresh);
+            var xbeType = _asm.GetType("LbIntegrations.Cxbx.XbeInfo", true);
+            object Game(uint regions) { var g = Activator.CreateInstance(xbeType, true); xbeType.GetField("Region").SetValue(g, regions); return g; }
+            object Session(object game, Dictionary<string, string> v, out List<string> said)
+            {
+                said = new List<string>();
+                var path = (string)Ec("Prepare", baseFile, session, game, v, said);
+                return path == null ? null : Ec("Open", File.ReadAllBytes(path));
+            }
+
+            var europe = Session(Game(4), new Dictionary<string, string>(), out var s1);
+            Check("a European game: region Europe", europe != null && (uint)Get(europe, "Region") == 4, europe == null ? "none" : "" + Get(europe, "Region"));
+            Check("... PAL-I 50 Hz with 60 Hz allowed", europe != null && (uint)Get(europe, "AvRegion") == 0x00800300 && ((uint)Get(europe, "VideoFlags") & 0x00400000) != 0);
+            Check("... same console: HDD key and serial kept", europe != null && ((byte[])Get(europe, "HddKey")).SequenceEqual((byte[])Get(f, "HddKey")) && (string)Get(europe, "Serial") == (string)Get(f, "Serial"));
+            Check("... checksums right", Sums(File.ReadAllBytes(session)));
+            Check("... the base never written", File.ReadAllBytes(baseFile).SequenceEqual(fresh));
+            Console.WriteLine("      said: " + string.Join(", ", s1));
+
+            var usa = Session(Game(3), new Dictionary<string, string>(), out _);
+            Check("an American + Japanese game on a North American console: region kept, NTSC with HD modes",
+                  usa != null && (uint)Get(usa, "Region") == 1 && (uint)Get(usa, "AvRegion") == 0x00400100 && ((uint)Get(usa, "VideoFlags") & 0xE0000) == 0xE0000);
+            var japan = Session(Game(2), new Dictionary<string, string>(), out _);
+            Check("a Japanese game: Japan, NTSC-J", japan != null && (uint)Get(japan, "Region") == 2 && (uint)Get(japan, "AvRegion") == 0x00400200);
+            var forced = Session(Game(4), new Dictionary<string, string> { ["console.region"] = "1", ["console.video"] = "pal50", ["console.language"] = "4", ["console.timezone"] = "xemu" }, out _);
+            Check("chosen: North America, PAL 50, French, its own time zone",
+                  forced != null && (uint)Get(forced, "Region") == 1 && (uint)Get(forced, "AvRegion") == 0x00800300 && ((uint)Get(forced, "VideoFlags") & 0x00400000) == 0
+                  && (uint)Get(forced, "Language") == 4 && (string)Get(forced, "Zone") == "London");
+            var own = Session(Game(4), new Dictionary<string, string> { ["console.region"] = "xemu", ["console.video"] = "xemu", ["console.language"] = "xemu", ["console.timezone"] = "xemu" }, out _);
+            Check("all its own: nothing but the parental controls changed", own != null && ((byte[])Get(own, "Data")).SequenceEqual((byte[])Get(f, "Data")));
+
+            Check("Windows' Paris (Romance) = the Xbox's Paris", (string)Ec("WindowsZone", TimeZoneInfo.FindSystemTimeZoneById("Romance Standard Time")) == "Paris");
+            Check("Windows' Tokyo = the Xbox's Tokyo", (string)Ec("WindowsZone", TimeZoneInfo.FindSystemTimeZoneById("Tokyo Standard Time")) == "Tokyo");
+            var odd = TimeZoneInfo.CreateCustomTimeZone("Probe +9", TimeSpan.FromHours(9), "Probe", "Probe");
+            Check("an unknown zone at +9 without DST: one at that offset", new[] { "Seoul", "Tokyo" }.Contains((string)Ec("WindowsZone", odd)), "" + Ec("WindowsZone", odd));
+            Check("this machine's zone found", Ec("WindowsZone", TimeZoneInfo.Local) != null, TimeZoneInfo.Local.Id);
+            uint lang = (uint)Ec("IdentityLanguage");
+            Check("the console language is one the Xbox knows", lang >= 1 && lang <= 9, "" + lang);
+
+            File.Delete(baseFile);
+            Session(Game(4), new Dictionary<string, string>(), out var s2);
+            Check("no eeprom.bin: one made first", File.Exists(baseFile) && Ec("Open", File.ReadAllBytes(baseFile)) != null, string.Join(", ", s2));
+        }
+
+        /// <summary>--xemu-console --base &lt;eeprom.bin&gt; --out &lt;session file&gt; --rom &lt;game&gt;: the session's console the plugin would
+        /// make for that game, with the settings' defaults - for a launch by hand.</summary>
+        public static bool Console_(Assembly asm, string basePath, string outPath, string rom)
+        {
+            _asm = asm;
+            var info = Call("XemuDisc", "Describe", rom);
+            Console.WriteLine("  " + Path.GetFileName(rom) + ": " + Get(info, "Kind") + ", regions " + Get(Get(info, "Xbe"), "Region"));
+            var said = new List<string>();
+            var mi = _asm.GetType("LbIntegrations.Xemu.Eeprom.XemuEeprom", true).GetMethod("Prepare", Any);
+            var path = (string)mi.Invoke(null, new object[] { basePath, outPath, Get(info, "Xbe"), new Dictionary<string, string>(), said });
+            Console.WriteLine("  -> " + (path ?? "none") + ": " + string.Join(", ", said));
+            return path != null;
+        }
+
         public static bool Run(Assembly asm)
         {
             _asm = asm;
@@ -372,6 +470,12 @@ namespace LbIntegrations.Probe
                 Check("the game's own path dropped", Line("-full-screen \"G:\\Xbox\\My Game.iso\"", @"G:\Xbox\My Game.iso") == "-full-screen -dvd_path \"C:\\d\\g.iso\" -L", Line("-full-screen \"G:\\Xbox\\My Game.iso\"", @"G:\Xbox\My Game.iso"));
                 Check("an -L already there not doubled", Line("-full-screen -dvd_path -L") == "-full-screen -dvd_path \"C:\\d\\g.iso\" -L", Line("-full-screen -dvd_path -L"));
                 Check("a valued option with spaces requoted", Line("-config_path \"C:\\my cfg\\x.toml\"") == "-full-screen -config_path \"C:\\my cfg\\x.toml\" -dvd_path \"C:\\d\\g.iso\" -L", Line("-config_path \"C:\\my cfg\\x.toml\""));
+
+                // 7b. the console's EEPROM
+                Console.WriteLine("  EEPROM");
+                var eepromWork = Path.Combine(work, "eeprom");
+                Directory.CreateDirectory(eepromWork);
+                Eeprom(eepromWork, Environment.GetEnvironmentVariable("LBIP_XEMU_EEPROM"));
 
                 // 8. whose install it is
                 Console.WriteLine("  ours");

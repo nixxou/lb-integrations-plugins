@@ -352,7 +352,14 @@ namespace LbIntegrations.Xemu
                 XemuToml.Set(toml, "general", "show_welcome", "false");
                 XemuToml.Set(toml, "sys.files", "bootrom_path", XemuToml.Literal(mcpx));
                 XemuToml.Set(toml, "sys.files", "flashrom_path", XemuToml.Literal(flash));
-                XemuToml.Set(toml, "sys.files", "eeprom_path", XemuToml.Literal(XemuPaths.Eeprom(exe)));
+                // ITS CONSOLE'S SETTINGS: region and video following the game, the pack's language, Windows' time zone - on a
+                // copy of eeprom.bin for the session (Eeprom\XemuEeprom).
+                var said = new List<string>();
+                string eeprom = null;
+                try { eeprom = Eeprom.XemuEeprom.Prepare(XemuPaths.Eeprom(exe), XemuPaths.SessionEeprom(exe), info.Xbe, XemuSettings.Read(), said); }
+                catch (Exception ex) { Log.Warn("console: its settings could not be made", ex); }
+                Log.Info("console: " + (said.Count == 0 ? "as it is" : string.Join(", ", said)));
+                XemuToml.Set(toml, "sys.files", "eeprom_path", XemuToml.Literal(eeprom ?? XemuPaths.Eeprom(exe)));
                 XemuToml.Set(toml, "sys.files", "hdd_path", XemuToml.Literal(hdd));
                 Log.Info("launch: " + Path.GetFileName(rom) + " (" + titleId + " \"" + info.Xbe?.TitleName + "\", " + info.Kind + ") on " + Path.GetFileName(hdd));
 

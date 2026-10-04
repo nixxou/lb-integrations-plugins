@@ -47,6 +47,8 @@ namespace LbIntegrations.Xemu
         public static string GameHdd(string exe, string titleId) => HddDir(exe) is string d ? Path.Combine(d, "games", titleId + ".qcow2") : null;
         public static string DiscCache(string exe) => Dir(exe) is string d ? Path.Combine(d, "discs") : null;
         public static string Eeprom(string exe) => Dir(exe) is string d ? Path.Combine(d, "eeprom.bin") : null;
+        /// <summary>The console of a game's session, made from eeprom.bin at each launch (Eeprom\XemuEeprom).</summary>
+        public static string SessionEeprom(string exe) => Dir(exe) is string d ? Path.Combine(d, "eeprom-session.bin") : null;
 
         public static string InstalledTag(string exe)
         {

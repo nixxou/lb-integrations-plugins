@@ -14,7 +14,8 @@
 //             first launch on it asks when the dump's owner is another (MelonDsFirmware); a DSi console made from a
 //             BLANK NAND is set up as this identity (Shared.Dsi\DsiUserSettings) - melonDS's and no$gba's alike
 //   Flycast   [config] Dreamcast.Language of emu.cfg, when there is no emu.cfg yet
-// and Cxbx-Reloaded, at EVERY launch: its "console.language" option's default (the pack's language, else Windows').
+// and Cxbx-Reloaded and xemu, at EVERY launch: their "console.language" option's default (the pack's language, else
+// Windows') - xemu's on the session's copy of its EEPROM (src\Xemu\Eeprom\XemuEeprom).
 // An emulator already set up keeps its own: nothing here is written over a value it has.
 //
 // THE LANGUAGE IS A CULTURE NAME ("fr-FR", "pt-BR", "zh-TW"), so each plugin keeps its own table of what its console
