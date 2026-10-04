@@ -108,7 +108,7 @@ namespace LbIntegrations.SuperZsnes.Mod
             try
             {
                 var ui = MasterExecutor.Instance?.gameStateUI;
-                if (ui != null) ui.SetGameUIString(text ?? "");
+                if (ui != null) { ui.SetGameUIString(text ?? ""); if (!string.IsNullOrEmpty(text)) Logger.LogInfo("said: " + text); }
                 else Logger.LogWarning("no GameStateUI to say: " + text);
             }
             catch (Exception ex) { Logger.LogWarning("Say failed - " + ex.Message); }
@@ -161,6 +161,12 @@ namespace LbIntegrations.SuperZsnes.Mod
                 var executor = MasterExecutor.Instance;
                 var menu = executor?.mainMenuManager ?? MainMenuManager.Instance;
                 bool inGame = menu != null && executor != null && menu.gameRunning && !menu.IsInMenu();
+                // One line per REAL press (Mehdi, 04/10: Escape did nothing at all and the log said nothing) - what
+                // the plugin sees then, so the next "it does nothing" can be read rather than guessed.
+                if (__result && _lastPressFrame != frame)
+                    Plugin.Logger.LogInfo("Escape: executor=" + (executor != null) + " menu=" + (menu != null)
+                        + " gameRunning=" + (menu != null && menu.gameRunning) + " inMenu=" + (menu != null && menu.IsInMenu())
+                        + " quitting=" + _quitting + " armed=" + (_armedUntil > 0f) + " frame=" + frame + " t=" + now.ToString("0.00"));
                 if (!inGame || _quitting) return;
 
                 // The menu key: what Escape used to do. Once per frame, whichever question comes first.
