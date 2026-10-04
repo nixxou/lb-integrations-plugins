@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>xemu - Nixx plugin guide</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#ffffff; --ink:#1d1d1f; --muted:#5f6368; --line:#e3e3e0; --accent:#0a6ed1; --ok:#1e8e3e; --warn:#b06000; --no:#c5221f; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17181a; --card:#1f2124; --ink:#e8e8e6; --muted:#a0a3a7; --line:#33363a; --accent:#5aa9ff; --ok:#5bc27a; --warn:#e3a34a; --no:#ff7b72; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 "Segoe UI", system-ui, sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 64px; }
+  header h1 { margin:0 0 4px; font-size:30px; }
+  header p { margin:0; color:var(--muted); }
+  nav { margin:20px 0 8px; display:flex; flex-wrap:wrap; gap:8px; }
+  nav a { font-size:14px; color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; background:var(--card); }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 24px; margin:18px 0; }
+  h2 { margin:0 0 10px; font-size:21px; }
+  h3 { margin:18px 0 6px; font-size:17px; }
+  ul { padding-left:22px; } li { margin:4px 0; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .yes { color:var(--ok); font-weight:600; } .partly { color:var(--warn); font-weight:600; } .no { color:var(--no); font-weight:600; }
+  .tip, .warn { border-left:4px solid var(--accent); padding:8px 14px; margin:12px 0; background:color-mix(in srgb, var(--accent) 8%, transparent); border-radius:0 8px 8px 0; }
+  .warn { border-color:var(--warn); background:color-mix(in srgb, var(--warn) 10%, transparent); }
+  code, kbd { font-family:Consolas, monospace; font-size:14px; background:color-mix(in srgb, var(--ink) 8%, transparent); padding:1px 5px; border-radius:4px; }
+  footer { color:var(--muted); font-size:13px; text-align:center; margin-top:30px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>xemu</h1>
+  <p>What the Nixx plugin does for you, and what to expect.</p>
+</header>
+<nav>
+  <a href="#overview">In short</a><a href="#start">Getting started</a><a href="#play">Playing</a>
+  <a href="#saves">Saves</a><a href="#support">What works</a><a href="#limits">Limits</a><a href="#trouble">If something goes wrong</a>
+</nav>
+
+<section id="overview"><h2>In short</h2>
+  <p>xemu plays games of the first Xbox. This plugin installs it and keeps it up to date. It also opens discs xemu cannot open on its own, and gives every game its own console, so your saves stay with the game.</p>
+</section>
+
+<section id="start"><h2>Getting started</h2>
+  <ul>
+    <li>In LaunchBox, go to <b>Add Emulator</b>, pick <b>Nixx-Xemu</b> and click <b>Download</b>. It goes into <code>Emulators\Nixx-Xemu</code>.</li>
+    <li>xemu needs two files from a real Xbox, and the plugin can not give them to you: <code>mcpx_1.0.bin</code> (the boot ROM, 512 bytes) and a flash BIOS (a modified one, like <code>Complex_4627.bin</code>). Put them in <code>Emulators\Nixx-Xemu\bios</code>. If you already have them for the other Xemu plugin or in RetroArch's <code>system</code> folder, the plugin copies them for you at install.</li>
+    <li>The plugin also downloads the Xbox dashboard made by the xemu team. That is the base of every console.</li>
+  </ul>
+</section>
+
+<section id="play"><h2>Playing a game</h2>
+  <ul>
+    <li><b>An XISO</b> starts as it is.</li>
+    <li><b>A redump ISO, a CSO, a CCI, a CHD, or an ISO in a zip or a 7z</b>: xemu can not open these. The plugin makes an XISO from it the first time, in <code>Emulators\Nixx-Xemu\discs</code>. That can take a minute. The next time, the game starts at once. The oldest copies are deleted when the folder gets too big.</li>
+    <li>Each game runs on <b>its own console</b>. To quit, press <kbd>Escape</kbd>.</li>
+  </ul>
+</section>
+
+<section id="saves"><h2>Saves</h2>
+  <p>A game's console is one small file, <code>hdd\games\&lt;game id&gt;.qcow2</code>. It holds everything the game saved. LaunchBox's <b>Backup</b> and <b>Restore</b> work with that file. Deleting the save gives the game a fresh console next time.</p>
+</section>
+
+<section id="support"><h2>What works</h2>
+  <table><tr><th>Feature</th><th></th><th>Notes</th></tr>
+  <tr><td>XISO</td><td class="yes">Yes</td><td>As it is.</td></tr>
+  <tr><td>Redump ISO, CSO, CCI, CHD, ISO in zip / 7z</td><td class="yes">Yes</td><td>An XISO is made once, then kept.</td></tr>
+  <tr><td>ZArchive (.zar), game files in a zip</td><td class="no">Not yet</td><td>The game is refused with a message.</td></tr>
+  <tr><td>One console per game, Backup / Restore</td><td class="yes">Yes</td><td></td></tr>
+  <tr><td>Xbox 360 discs</td><td class="no">No</td><td>Those are for Xenia.</td></tr></table>
+</section>
+
+<section id="limits"><h2>Limits and things to know</h2>
+  <ul>
+    <li>A game does not see the saves of another game, because each one has its own console. On the Xbox, very few games need that.</li>
+    <li>The other Xemu plugin, the one that comes with LaunchBox, keeps working with its own emulator entry. This plugin only looks after <b>Nixx-Xemu</b>.</li>
+  </ul>
+</section>
+
+<section id="trouble"><h2>If something goes wrong</h2>
+  <ul><li>The plugin's log: <code>%LOCALAPPDATA%\lb-integrations-plugins\xemu.log</code> (General tab: "Open the logs folder").</li></ul>
+</section>
+
+<footer>Nixx integration plugins for LaunchBox</footer>
+</main>
+</body>
+</html>

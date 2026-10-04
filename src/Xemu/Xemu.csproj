@@ -1,0 +1,79 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A copy of Cxbx.csproj: the same references for the same reasons - see the notes there and in Xenia.csproj. -->
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Platforms>AnyCPU;x64</Platforms>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <!-- WPF: Shared.Lbip watches LaunchBox's import wizard. WinForms: LbipNotice. -->
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>Xemu</AssemblyName>
+    <RootNamespace>LbIntegrations.Xemu</RootNamespace>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <MSBuildWarningsAsMessages>MSB3277</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The catalogue contract, shipped beside the plugin rather than merged - see Xenia.csproj. -->
+    <ProjectReference Include="..\Catalog\Catalog.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared.Lbip\**\*.cs" />
+    <Compile Include="..\Shared.Identity\**\*.cs" />
+    <Compile Include="..\Shared.Menu\**\*.cs" />
+    <Compile Include="..\Shared.RamDisk\**\*.cs" />
+    <Compile Include="..\Shared.Zar\**\*.cs" />
+    <!-- CSO, CCI, CHD - the disc's bytes through its container. -->
+    <Compile Include="..\Shared.Disc\**\*.cs" />
+    <!-- The Cxbx plugin's Xbox readers, the SAME files (as tools\ramdisk-helper links them): the XBE certificate, the
+         XDVDFS listing (MPL-2.0, see THIRD-PARTY.md), GitHub's releases, archives. Their LbIntegrations.Cxbx.Log is
+         answered by CxbxLog.cs here. -->
+    <Compile Include="..\Cxbx\Xbe.cs" Link="Cxbx\Xbe.cs" />
+    <Compile Include="..\Cxbx\Xdvdfs.cs" Link="Cxbx\Xdvdfs.cs" />
+    <Compile Include="..\Cxbx\GitHubReleases.cs" Link="Cxbx\GitHubReleases.cs" />
+    <Compile Include="..\Cxbx\Archives.cs" Link="Cxbx\Archives.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Lib.Harmony" Version="2.4.2" />
+    <PackageReference Include="SharpCompress" Version="0.41.0" />
+    <PackageReference Include="ZstdSharp.Port" Version="0.8.6" />
+    <PackageReference Include="CHDSharp" Version="1.4.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Unbroken.LaunchBox.Plugins">
+      <HintPath>..\..\vendor\Unbroken.LaunchBox.Plugins.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Every dependency folded INTO Xemu.dll, internalized - see Xenia.csproj. -->
+  <Target Name="MergePlugin" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <PropertyGroup>
+      <MergedDir>$(OutDir)merged\</MergedDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <MergeInput Include="$(OutDir)$(AssemblyName).dll" />
+      <MergeInput Include="$(OutDir)*.dll" Exclude="$(OutDir)$(AssemblyName).dll;$(OutDir)LbIntegrations.Catalog.dll" />
+      <MergeLib Include="@(ReferencePath->'%(RootDir)%(Directory).')" />
+    </ItemGroup>
+    <MakeDir Directories="$(MergedDir)" />
+    <Exec Command="dotnet ilrepack /out:&quot;$(MergedDir)$(AssemblyName).dll&quot; /internalize @(MergeLib->Distinct()->'/lib:&quot;%(Identity)&quot;', ' ') @(MergeInput->'&quot;%(FullPath)&quot;', ' ')"
+          WorkingDirectory="$(MSBuildProjectDirectory)" StandardOutputImportance="low" />
+    <Message Importance="high" Text="  merged -> $(MergedDir)$(AssemblyName).dll" />
+  </Target>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\docs\help\xemu.html" LogicalName="help.html" />
+  </ItemGroup>
+
+</Project>

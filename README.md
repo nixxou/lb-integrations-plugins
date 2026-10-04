@@ -13,6 +13,7 @@ is published by Unbroken Software), so these are installed by hand.
 | `src/Ppsspp` | PPSSPP | Sony PSP | download / update, BIOS, RetroAchievements, launch, save management |
 | `src/Xenia` | Xenia (canary) | Microsoft Xbox 360 | download / update, launch fixes, save management |
 | `src/Cxbx` | Cxbx-Reloaded | Microsoft Xbox | download / update (CI builds), **disc images unpacked by the plugin**, full screen in a window, save management |
+| `src/Xemu` | xemu | Microsoft Xbox | download / update, BIOS, **redump / CSO / CCI / CHD / zipped discs cut to an XISO**, **a console of its own per game** (qcow2 over the dashboard), save management |
 | `src/Flycast` | Flycast | Sega Dreamcast, Sega Naomi, Sega Naomi 2, Sammy Atomiswave | download / update, BIOS, RetroAchievements, launch, save management |
 | `src/MelonDs` | melonDS | Nintendo DS | download / update, BIOS, DS/DSi mode, per-title DSi NAND, save management (GPL-3.0) |
 | `src/NoGba` | no$gba | Nintendo Game Boy Advance, Nintendo DS | download / update, BIOS, **raw save format**, save management |
@@ -264,6 +265,7 @@ file is there. Before LaunchBox 14, `Plugins\` is the only option. `<Name>` is t
 | project | plugin folder, and manifest `Name` | catalogue row | emulator installed into |
 |---|---|---|---|
 | `src/Cxbx` | `Nixx-Cxbx` | `Nixx-Cxbx` | `Emulators\Nixx-Cxbx` |
+| `src/Xemu` | `Nixx-Xemu` | `Nixx-Xemu` | `Emulators\Nixx-Xemu` |
 | `src/Flycast` | `Nixx-Flycast` | `Nixx-Flycast` | `Emulators\Nixx-Flycast` |
 | `src/MelonDs` | `Nixx-melonDS` | `Nixx-melonDS` | `Emulators\Nixx-melonDS` |
 | `src/NoGba` | `Nixx-nogba` | `Nixx-nogba` | `Emulators\Nixx-nogba` |
@@ -522,6 +524,23 @@ key he already uses is never taken, and the emulator's AutoHotkey fields quote w
 really says — a script naming a key the emulator ignores would fail silently, which is worse than no
 script. Those fields are used by LaunchBox's and BigBox's pause screen; LiteBox stores them but has
 no pause screen yet.
+
+## Notes on xemu
+
+**An install of ours only.** Unbroken's own Xemu plugin (shipped with LaunchBox) claims any emulator named like
+`xemu.exe`; this one claims an install carrying `lbip-xemu-build.txt` beside it - the one it made.
+
+**xemu opens an XISO and nothing else** (xemu.app/docs/disc-images). An XISO is handed over as it is; a redump image
+(its game partition, after the video one), a CSO / CCI / CHD (through `src/Shared.Disc`) or an image in a zip / 7z is cut
+to its XISO once, into `<xemu>\discs`, and kept (40 GB by default, the copies used longest ago go first). Measured
+04/10: Batman's CSO cut in 8 s to the byte-identical XISO. A ZArchive or a game unpacked in a zip is refused for now.
+
+**One console per game** (`Qcow2Overlay`): `hdd\games\<title id>.qcow2`, an empty qcow2 v3 whose backing file is
+`hdd\base.qcow2` - xemu's dashboard disk, downloaded at install, read-only. That file is the game's save for the
+host. Between games `xemu.toml` points at `hdd\standalone.qcow2`, never at the base.
+
+**The line is `-full-screen -dvd_path "<xiso>" -L`**: `-L` (QEMU's firmware folder, unused by xemu) takes the game's
+path the host appends - a bare path would be a hard disk to QEMU. To be measured with a real BIOS.
 
 ## Notes on Cxbx-Reloaded
 

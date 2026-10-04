@@ -53,6 +53,13 @@ extended to the whole tree. Same terms: that one file stays MPL and its source i
 Nothing of Cxbx-Reloaded (GPL-2.0) is in here. The plugin downloads its builds from GitHub at the
 user's request and runs them; it links none of its code and carries none of its files.
 
+## Merged into `Xemu.dll`
+
+The same components as `Cxbx.dll` above (SharpCompress, ZstdSharp, CHDSharp and its codecs and dependencies,
+Lib.Harmony), under the same licences, VendoredFlac's LGPL-2.1 satisfied the same way. `src/Cxbx/Xdvdfs.cs` is
+compiled in (MPL-2.0, see above). Nothing of xemu (GPL-2.0) is in here: the plugin downloads its builds and xemu's
+dashboard disk (xemu-project/xemu-dashboard) from GitHub at the user's request.
+
 ## Merged into `SuperZsnes.dll`
 
 | Component | Licence | Used for |

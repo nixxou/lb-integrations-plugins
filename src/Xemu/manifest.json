@@ -1,0 +1,19 @@
+{
+  "SchemaVersion": 1,
+  "PluginId": "c54b75ab-94aa-4a1e-b36c-b6af7115c51c",
+  "UserId": 0,
+  "Name": "Nixx-Xemu",
+  "Developer": "nixxou",
+  "Description": "Download, update, disc formats (redump, CSO, CCI, CHD) and one console per game for the xemu emulator (Microsoft Xbox).",
+  "Credits": "Many thanks to the developers of xemu!",
+  "OperatingSystemFamily": "Windows",
+  "InstalledVersion": "1.1.1",
+  "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
+  "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
+  "HomePageUrl": "https://xemu.app/",
+  "TipJarUrl": "",
+  "SourceKind": "Local",
+  "Tags": [
+    "5aae585f-ffc5-42bc-9f95-e5e190ef99e2"
+  ]
+}

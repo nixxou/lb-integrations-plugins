@@ -51,13 +51,14 @@ $Pack = @{
     'MelonDs' = @{ Folder = 'Nixx-melonDS'; Old = @('MelonDs Integration', 'melonDS Integration') }
     'NoGba'   = @{ Folder = 'Nixx-nogba';   Old = @('NoGba Integration', 'no$gba Integration', 'Nixx-no$gba') }
     'Ppsspp'  = @{ Folder = 'Nixx-PPSSPP';  Old = @('Ppsspp Integration', 'PPSSPP Integration') }
+    'Xemu'    = @{ Folder = 'Nixx-Xemu';    Old = @() }
     'Xenia'   = @{ Folder = 'Nixx-Xenia';   Old = @('Xenia Integration') }
     'Vita3k'  = @{ Folder = 'Nixx-Vita3K';  Old = @() }
     'SuperZsnes' = @{ Folder = 'Nixx-SuperZSNES'; Old = @() }
 }
 
 if ($All) {
-    foreach ($name in @('Cxbx', 'Flycast', 'MelonDs', 'NoGba', 'Ppsspp', 'SuperZsnes', 'Vita3k', 'Xenia')) {
+    foreach ($name in @('Cxbx', 'Flycast', 'MelonDs', 'NoGba', 'Ppsspp', 'SuperZsnes', 'Vita3k', 'Xemu', 'Xenia')) {
         Write-Host ""
         Write-Host ("=== " + $name) -ForegroundColor Magenta
         & $MyInvocation.MyCommand.Path -Plugin $name -LbRoot $LbRoot -Configuration $Configuration -SuperZsnesDir $SuperZsnesDir

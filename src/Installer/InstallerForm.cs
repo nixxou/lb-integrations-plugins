@@ -649,6 +649,7 @@ internal sealed class InstallerForm : Form
         Payload.Ppsspp => "PSP",
         Payload.SuperZsnes => "Super Nintendo",
         Payload.Vita3k => "PS Vita",
+        Payload.Xemu => "Xbox",
         Payload.Xenia => "Xbox 360",
         Payload.Menus => "right-click menus",
         _ => "",
