@@ -82,7 +82,10 @@ namespace LbIntegrations.Vita3k
         {
             var list = GetProperty(gameList, "Games") as IList;
             if (list == null || list.Count == 0) return;
-            var findings = list.Cast<object>().Select(r => new Finding { Record = r, Path = GetProperty(r, "ApplicationPath") as string }).ToList();
+            // The path RESOLVED (Mehdi, 04/10): on LaunchBox's own drive the list holds it relative to LaunchBox's folder
+            // ("..\LB\FakeCatalog\Sony Playstation Vita\x.zip") - compared as it is with the scan's full paths, every file was
+            // "not read" and taken out of the list.
+            var findings = list.Cast<object>().Select(r => new Finding { Record = r, Path = LbIntegrations.Lbip.LbipImportWatch.Full(GetProperty(r, "ApplicationPath") as string) }).ToList();
 
             if (!Read(owner, findings)) { Log.Info("[import] the list was left as LaunchBox made it - reading cancelled"); return; }
 

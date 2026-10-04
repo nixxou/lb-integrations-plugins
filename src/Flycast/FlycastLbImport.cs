@@ -372,7 +372,9 @@ namespace LbIntegrations.Flycast
             var timing = System.Diagnostics.Stopwatch.StartNew();
             var list = GetProperty(gameList, "Games") as IList;
             if (list == null || list.Count == 0) return false;
-            var findings = list.Cast<object>().Select(r => new Finding { Record = r, Path = GetProperty(r, "ApplicationPath") as string ?? "" }).ToList();
+            // The path RESOLVED (Mehdi, 04/10, as Vita3K's): on LaunchBox's own drive the list holds it relative to LaunchBox's
+            // folder - and flycast-id.exe, another process, does not run from there.
+            var findings = list.Cast<object>().Select(r => new Finding { Record = r, Path = LbIntegrations.Lbip.LbipImportWatch.Full(GetProperty(r, "ApplicationPath") as string) ?? "" }).ToList();
             bool arcade = system != "Dreamcast";
             Dictionary<string, FlycastGameIdentity.ArcadeSet> sets = null;
             if (arcade)
