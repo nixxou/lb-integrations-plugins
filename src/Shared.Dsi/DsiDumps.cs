@@ -211,7 +211,7 @@ namespace LbIntegrations.Dsi
                              + Path.GetFileName(chosen.Path)
                              + ". Every save is tied to the console it was made on, so this choice "
                              + "must not drift between launches - a dump that already has a console "
-                             + "wins, and the name breaks a tie.");
+                             + "wins, then " + DsiRegions.SuggestedFileName(region) + ", then the name.");
 
                 return chosen;
             }
@@ -230,8 +230,11 @@ namespace LbIntegrations.Dsi
         /// happens to hand back, and it changes when files are added, renamed or defragmented.
         ///
         /// So: a dump that ALREADY HAS A CONSOLE wins. That is the one somebody actually set up,
-        /// which makes it the one the saves came from. Failing that, the name, ordinally -
-        /// arbitrary, but the same arbitrary answer every time.</summary>
+        /// which makes it the one the saves came from. Failing that - the console about to be made -
+        /// the one under the region's own name, DSi_Nand_EUR.bin (Mehdi, 04/10: the name an import
+        /// gives, so the one the user meant; DsiRegions.SuggestedFileName). Failing that, the name,
+        /// ordinally - arbitrary, but the same arbitrary answer every time. The own name never
+        /// outranks a console: that would move the saves onto another one.</summary>
         public static NandDump Steadiest(List<NandDump> matching)
         {
             NandDump best = null;
@@ -242,11 +245,18 @@ namespace LbIntegrations.Dsi
                 bool mine = dump.HasConsole, theirs = best.HasConsole;
                 if (mine != theirs) { if (mine) best = dump; continue; }
 
+                bool named = OwnName(dump), bestNamed = OwnName(best);
+                if (named != bestNamed) { if (named) best = dump; continue; }
+
                 if (string.Compare(dump.Path, best.Path, StringComparison.OrdinalIgnoreCase) < 0)
                     best = dump;
             }
             return best;
         }
+
+        /// <summary>Is this dump under its region's own name, DSi_Nand_EUR.bin?</summary>
+        private static bool OwnName(NandDump dump)
+            => string.Equals(Path.GetFileName(dump.Path), DsiRegions.SuggestedFileName(dump.Region), StringComparison.OrdinalIgnoreCase);
 
         private static string Describe(List<NandDump> dumps)
         {

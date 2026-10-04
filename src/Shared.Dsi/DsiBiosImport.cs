@@ -56,13 +56,19 @@ namespace LbIntegrations.Dsi
                 Directory.CreateDirectory(full);
                 var wanted = (files ?? Enumerable.Empty<Wanted>()).ToList();
 
+                // EVERY SOURCE IS SEARCHED RECURSIVELY (Mehdi, 04/10): a RetroArch system folder sorted into sub-folders
+                // (system\nds\, system\melonDS DS\...) still gives its files. One listing per source, nearest first.
+                var listed = from.ToDictionary(s => s, Listing, StringComparer.OrdinalIgnoreCase);
+
                 // The BIOS and firmware first, from every source: the DSi ARM7 BIOS is what reads a NAND's region below.
                 foreach (var source in from)
                     foreach (var file in wanted)
                     {
                         if (cancelled?.Invoke() == true) return copied;
                         if (file.Names.Any(n => File.Exists(Path.Combine(full, n)))) continue;
-                        var found = file.Names.Select(n => Path.Combine(source, n)).FirstOrDefault(File.Exists);
+                        // The declared name before an alias, then the nearest folder: the file the user meant.
+                        var found = file.Names.Select(n => listed[source].FirstOrDefault(p => string.Equals(Path.GetFileName(p), n, StringComparison.OrdinalIgnoreCase)))
+                                              .FirstOrDefault(p => p != null);
                         if (found == null) continue;
                         if (Copy(found, Path.Combine(full, file.Name), report)) copied.Add(Path.GetFileName(found) + " -> " + file.Name);
                     }
@@ -72,7 +78,7 @@ namespace LbIntegrations.Dsi
                     string arm7 = null;
                     try { arm7 = bios7?.Invoke(); } catch { }
                     foreach (var source in from)
-                        foreach (var path in Directory.EnumerateFiles(source))
+                        foreach (var path in listed[source])
                         {
                             if (cancelled?.Invoke() == true) return copied;
                             if (!DsiDumps.LooksLikeNand(path) || AlreadyIn(full, path)) continue;
@@ -126,6 +132,20 @@ namespace LbIntegrations.Dsi
                 }
             }
             catch { return null; }
+        }
+
+        /// <summary>Every file under <paramref name="dir"/>, sub-folders included, the shallowest first (then by path, so the
+        /// order never drifts). A folder that cannot be read is skipped, not fatal.</summary>
+        private static List<string> Listing(string dir)
+        {
+            try
+            {
+                var options = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint };
+                return Directory.EnumerateFiles(dir, "*", options)
+                    .OrderBy(p => p.Count(c => c == Path.DirectorySeparatorChar))
+                    .ThenBy(p => p, StringComparer.OrdinalIgnoreCase).ToList();
+            }
+            catch (Exception ex) { DsiLog.Warn("bios: could not list " + dir, ex); return new List<string>(); }
         }
 
         private static string SafeFull(string path)
