@@ -1,6 +1,9 @@
-// A PSP game's UPDATES, from its right-click entry (Mehdi, 04/10: all that is left of the PPSSPP options window - a game's
-// own settings are PPSSPP's own, its "Game settings", <ID>_ppsspp.ini). The updates found for the game and the one
-// installed, installed or removed at once by their buttons: nothing is installed unasked (Mehdi, 03/10). See PpssppUpdates.
+// A PSP game's window, from its right-click entry (Mehdi, 04/10: all that is left of the PPSSPP options window - a game's
+// own settings are PPSSPP's own, its "Game settings", <ID>_ppsspp.ini):
+//   - under the title, its state in PPSSPP's compatibility reports and the link to its page (PpssppCompat): what the
+//     database knows at once, then the game's own page read in the background when its line is a week old;
+//   - its UPDATES: the ones found and the one installed, installed or removed at once by their buttons - nothing is
+//     installed unasked (Mehdi, 03/10). See PpssppUpdates.
 
 using System;
 using System.Drawing;
@@ -13,33 +16,35 @@ namespace LbIntegrations.Ppsspp
     {
         public PpssppUpdatesForm(IGame game, string title, string discId, PpssppLayout layout)
         {
-            Text = "Nixx-PPSSPP - Updates - " + title;
+            Text = "Nixx-PPSSPP - " + title;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MinimizeBox = MaximizeBox = false;
             StartPosition = FormStartPosition.CenterParent;
             ShowInTaskbar = false;
             Font = new Font("Segoe UI", 9f);
-            ClientSize = new Size(584, 400);
+            ClientSize = new Size(584, 428);
 
             string rom = null;
             try { rom = LbIntegrations.Lbip.LbipImportWatch.Full(game?.ApplicationPath); } catch { }
             var discVersion = rom == null ? null : PspDiscId.SfoOf(rom)?.GetString("DISC_VERSION")?.Trim();
-            Controls.Add(new Label { AutoSize = false, Location = new Point(12, 10), Size = new Size(560, 20), Text = title + "   (" + discId + ")" });
+            Controls.Add(new Label { AutoSize = false, Location = new Point(12, 10), Size = new Size(560, 20), Text = title + "   (" + discId + (discVersion != null ? " " + discVersion : "") + ")" });
+            Controls.Add(CompatRow(discId, discVersion, new Point(12, 32)));
+            Controls.Add(new Label { AutoSize = false, Location = new Point(12, 60), Size = new Size(560, 20), Text = "Updates", Font = new Font(Font, FontStyle.Bold) });
             Controls.Add(new Label
             {
-                AutoSize = false, Location = new Point(12, 32), Size = new Size(560, 48), ForeColor = SystemColors.GrayText,
+                AutoSize = false, Location = new Point(12, 80), Size = new Size(560, 48), ForeColor = SystemColors.GrayText,
                 Text = "A game update is a PBOOT.PBP that PPSSPP starts in place of the disc's executable, when it is made for this disc's "
                      + "version (" + (discVersion ?? "?") + "). Installed into the memory stick (PSP\\GAME\\" + discId + ") once, and kept there: "
                      + "never installed unasked.",
             });
-            var installed = new Label { AutoSize = false, Location = new Point(12, 84), Size = new Size(560, 34) };
-            var list = new ListView { Location = new Point(12, 122), Size = new Size(560, 200), View = View.Details, FullRowSelect = true, MultiSelect = false, HideSelection = false, ShowItemToolTips = true };
+            var installed = new Label { AutoSize = false, Location = new Point(12, 130), Size = new Size(560, 20) };
+            var list = new ListView { Location = new Point(12, 152), Size = new Size(560, 196), View = View.Details, FullRowSelect = true, MultiSelect = false, HideSelection = false, ShowItemToolTips = true };
             list.Columns.Add("Update", 250);
             list.Columns.Add("For disc version", 110);
             list.Columns.Add("File", 190);
-            var install = new Button { Text = "Install the selected", AutoSize = true, Location = new Point(12, 330) };
-            var remove = new Button { Text = "Remove the installed one", AutoSize = true, Location = new Point(170, 330) };
-            var close = new Button { Text = "Close", Width = 90, Location = new Point(482, 364), DialogResult = DialogResult.OK };
+            var install = new Button { Text = "Install the selected", AutoSize = true, Location = new Point(12, 356) };
+            var remove = new Button { Text = "Remove the installed one", AutoSize = true, Location = new Point(170, 356) };
+            var close = new Button { Text = "Close", Width = 90, Location = new Point(482, 392), DialogResult = DialogResult.OK };
             void Show_()
             {
                 list.Items.Clear();
@@ -71,6 +76,43 @@ namespace LbIntegrations.Ppsspp
             Controls.AddRange(new Control[] { installed, list, install, remove, close });
             AcceptButton = CancelButton = close;
             Show_();
+        }
+
+        /// <summary>"● PPSSPP compatibility: Perfect   report page" - the database's at once, the game's page read in the
+        /// background when its line is a week old. The link is there whatever is known.</summary>
+        private Control CompatRow(string discId, string discVersion, Point at)
+        {
+            var row = new FlowLayoutPanel { Location = at, Size = new Size(560, 24), WrapContents = false, Margin = Padding.Empty };
+            var dot = new Label { Text = "●", AutoSize = true, Margin = new Padding(0, 2, 2, 0) };
+            var what = new Label { Text = "PPSSPP compatibility:", AutoSize = true, Margin = new Padding(0, 3, 4, 0) };
+            var rating = new Label { AutoSize = true, Font = new Font(Font, FontStyle.Bold), Margin = new Padding(0, 3, 12, 0) };
+            var link = new LinkLabel { Text = "report page", AutoSize = true, Margin = new Padding(0, 3, 0, 0) };
+            var url = PpssppCompat.PageOf(discId, discVersion);
+            new ToolTip().SetToolTip(link, url);
+            link.LinkClicked += (_, _) => { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); } catch (Exception ex) { Log.Warn("could not open " + url, ex); } };
+            row.Controls.AddRange(new Control[] { dot, what, rating, link });
+
+            void Put(PspCompat c)
+            {
+                var r = c?.Rating;
+                bool known = !string.IsNullOrEmpty(r);
+                rating.Text = known ? r : c == null ? (discVersion == null ? "unknown (no disc version)" : "not known yet") : "not reported yet";
+                rating.ForeColor = known ? SystemColors.ControlText : SystemColors.GrayText;
+                dot.ForeColor = r switch
+                {
+                    "Perfect" => Color.FromArgb(70, 136, 71), "Playable" => Color.FromArgb(58, 135, 173), "Ingame" => Color.FromArgb(248, 148, 6),
+                    "Menu/Intro" => Color.FromArgb(153, 102, 0), "Doesn't Boot" => Color.FromArgb(185, 74, 72), _ => Color.FromArgb(175, 175, 175),
+                };
+            }
+            Put(PpssppCompat.Of(discId, discVersion));
+            PpssppCompat.EnsureBuilt();
+            if (discVersion != null)
+                new System.Threading.Thread(() =>
+                {
+                    var fresh = PpssppCompat.Refresh(discId, discVersion);
+                    try { if (IsHandleCreated && !IsDisposed) BeginInvoke(new Action(() => Put(fresh))); } catch { }
+                }) { IsBackground = true, Name = "PPSSPP compatibility of " + discId }.Start();
+            return row;
         }
     }
 }

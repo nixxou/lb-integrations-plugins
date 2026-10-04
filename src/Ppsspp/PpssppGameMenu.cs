@@ -20,7 +20,7 @@ namespace LbIntegrations.Ppsspp
 {
     internal static class PpssppGameMenu
     {
-        public const string Caption = "Nixx-PPSSPP : Updates...";
+        public const string Caption = "Nixx-PPSSPP : Compatibility & updates...";
 
         /// <summary>The emulator's own icon, taken from its executable - see LbipMenuIcon.</summary>
         public static Image Icon => LbIntegrations.Lbip.LbipMenuIcon.Of(PpssppPaths.IsPpssppExecutable, PpssppPlugin.ResolveFullPathOf);
@@ -55,8 +55,8 @@ namespace LbIntegrations.Ppsspp
             {
                 var ours = games.Where(IsOurs).ToList();
                 if (ours.Count == 0) return;
-                const string caption = "Nixx-PPSSPP - Updates";
-                if (ours.Count > 1) { MessageBox.Show(OwnerWindow(), "A game's updates are shown one game at a time: select only one.", caption, MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+                const string caption = "Nixx-PPSSPP";
+                if (ours.Count > 1) { MessageBox.Show(OwnerWindow(), "A game's compatibility and updates are shown one game at a time: select only one.", caption, MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
                 var g = ours[0];
                 PpssppLayout layout = null;
                 try
@@ -70,7 +70,7 @@ namespace LbIntegrations.Ppsspp
                 if (layout == null || string.IsNullOrEmpty(discId))
                 {
                     MessageBox.Show(OwnerWindow(), layout == null ? "No PPSSPP of this pack runs this game."
-                                    : "The game's id could not be read from its file (an .elf, a homebrew, a .cso inside a zip...): its updates cannot be found.",
+                                    : "The game's id could not be read from its file (an .elf, a homebrew, a .cso inside a zip...): its compatibility and updates cannot be found.",
                                     caption, MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }

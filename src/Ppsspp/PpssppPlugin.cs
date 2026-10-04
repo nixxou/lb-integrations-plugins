@@ -530,6 +530,8 @@ namespace LbIntegrations.Ppsspp
                 var layout = PpssppPaths.Resolve(exe);
                 Log.Info("installed to " + targetDir + " — memstick: " + layout.MemStickDir
                          + " (" + layout.Reason + ")");
+                // PPSSPP's compatibility reports read again, in the background (Mehdi, 04/10: at an install or update only).
+                PpssppCompat.RebuildSoon(reinstall ? "PPSSPP updated" : "PPSSPP installed");
 
                 if (!reinstall) ApplyIdentity(layout);
 
