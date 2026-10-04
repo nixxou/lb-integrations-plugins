@@ -155,6 +155,8 @@
 //                                  is (ExfatOneFileView, from the xemu plugin), AIM only. For xemu, which opens a disc image and
 //                                  not a folder, and cannot open a raw disk unelevated. Self-started as "--xiso-serve <image>".
 //                                  The result gains " file=<the file's path>". A ZArchive is refused (it holds files, no disc).
+//                                  patch=media: extract-xiso's "media enable" patch served in every .xbe that has its pattern
+//                                  (XboxMediaPatch, from the xemu plugin) - the image itself untouched.
 //                                  An older helper reads view=xiso as no view and attaches the ISO as a CD: check >= 1.10.
 //
 // AIM, WHAT DIFFERS FROM IMDISK. aim_ll takes imdisk's arguments almost word for word, but its disks
@@ -201,7 +203,7 @@ namespace RamDiskHelper
             // 1.7: the one command-line use - this exe serving an Xbox disc's view, started by itself (below).
             if (argv.Length == 2 && argv[0] == "--xbox-serve") return XboxServe(argv[1]);
             // 1.10: the same, the disc's XISO as one file on an exFAT volume.
-            if (argv.Length == 2 && argv[0] == "--xiso-serve") return XisoServe(argv[1]);
+            if ((argv.Length == 2 || argv.Length == 3) && argv[0] == "--xiso-serve") return XisoServe(argv[1], argv.Length == 3 && argv[2] == "media");
             string dir = AppContext.BaseDirectory;
             string cfgPath = Path.Combine(dir, "ramdisk.cfg");
             string resultPath = Path.Combine(dir, "ramdisk.result");
@@ -1011,6 +1013,7 @@ namespace RamDiskHelper
             var psi = new ProcessStartInfo(Environment.ProcessPath) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
             psi.ArgumentList.Add("--" + viewName + "-serve");
             psi.ArgumentList.Add(image);
+            if (viewName == "xiso" && Get(kv, "patch", "").Equals("media", StringComparison.OrdinalIgnoreCase)) psi.ArgumentList.Add("media");
             var server = Process.Start(psi);
             string Fail(string why)
             {
@@ -1097,7 +1100,7 @@ namespace RamDiskHelper
 
         /// <summary>--xiso-serve &lt;image&gt; (1.10): the disc's XISO - from its game partition on, through its container - as the
         /// one file of an exFAT volume, served to the one proxy client that connects.</summary>
-        private static int XisoServe(string image)
+        private static int XisoServe(string image, bool mediaPatch)
         {
             try
             {
@@ -1106,7 +1109,9 @@ namespace RamDiskHelper
                 var disc = source;
                 var listing = LbIntegrations.Cxbx.Xdvdfs.List(() => LbIntegrations.Disc.DiscImages.Shared(disc), true, disc.Length, null);
                 if (listing.Error != null || !listing.Found) { source.Dispose(); Console.WriteLine("ERROR the disc could not be listed: " + (listing.Error ?? "no Xbox volume")); return 1; }
-                var view = new LbIntegrations.Xemu.ExfatOneFileView(listing.PartitionBase, source.Length - listing.PartitionBase, XisoFileName, "XBOXDISC");
+                // patch=media: extract-xiso's media enable patch, served - one byte per .xbe that has its pattern (XboxMediaPatch).
+                var patches = mediaPatch ? LbIntegrations.Xemu.XboxMediaPatch.Find(source, listing) : null;
+                var view = new LbIntegrations.Xemu.ExfatOneFileView(listing.PartitionBase, source.Length - listing.PartitionBase, XisoFileName, "XBOXDISC", patches);
                 return Serve(source, view.Length, view.Read);
             }
             catch (Exception ex)

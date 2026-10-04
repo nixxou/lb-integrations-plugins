@@ -11,13 +11,13 @@ namespace LbIntegrations.Probe
 {
     internal static class XisoAttachCheck
     {
-        public static bool Attach(string lb, string rom, string baseHex)
+        public static bool Attach(string lb, string rom, string baseHex, bool mediaPatch = false)
         {
             RamDiskHost.UseRoot(lb);
             Console.WriteLine("  helper " + (RamDrive.HelperVersion?.ToString() ?? "absent") + ", task " + (RamDrive.InstalledTaskName() ?? "none"));
             if (!RamDrive.CanAttachXiso(out var why, rom)) { Console.WriteLine("  cannot: " + why); return false; }
             var watch = System.Diagnostics.Stopwatch.StartNew();
-            var file = RamDrive.AttachXiso(rom, out var root, out var error);
+            var file = RamDrive.AttachXiso(rom, out var root, out var error, mediaPatch);
             Console.WriteLine("  attach: " + (file ?? "FAILED - " + error) + " in " + watch.ElapsedMilliseconds + " ms (root " + root + ")");
             if (file == null) return false;
             bool elevated = new System.Security.Principal.WindowsPrincipal(System.Security.Principal.WindowsIdentity.GetCurrent()).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);

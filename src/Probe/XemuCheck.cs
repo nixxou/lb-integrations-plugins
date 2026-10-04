@@ -100,7 +100,7 @@ namespace LbIntegrations.Probe
         {
             var type = T("ExfatOneFileView");
             object view;
-            try { view = Activator.CreateInstance(type, Any, null, new object[] { fileBase, fileLength, name, "XBOXDISC" }, null); }
+            try { view = Activator.CreateInstance(type, Any, null, new object[] { fileBase, fileLength, name, "XBOXDISC", null }, null); }
             catch (TargetInvocationException ex) { throw ex.InnerException ?? ex; }
             var read = type.GetMethod("Read", Any);
             long length = (long)Get(view, "Length");
@@ -214,7 +214,7 @@ namespace LbIntegrations.Probe
                 var tail = At(fileAt + dataLength - 3, 8);
                 Check("past the file's end: zeros", tail[3] == 0 && tail[7] == 0 && tail[0] == Pattern.At(fileBase + dataLength - 3));
             }
-            var again = Activator.CreateInstance(type, Any, null, new object[] { fileBase, fileLength, name, "XBOXDISC" }, null);
+            var again = Activator.CreateInstance(type, Any, null, new object[] { fileBase, fileLength, name, "XBOXDISC", null }, null);
             var mbr2 = new byte[512]; read.Invoke(again, new object[] { source, 0L, mbr2, 512 });
             Check("a new disk signature at every view", BitConverter.ToUInt32(mbr2, 440) != BitConverter.ToUInt32(mbr, 440));
         }
@@ -317,6 +317,159 @@ namespace LbIntegrations.Probe
             return path != null;
         }
 
+        /// <summary>--xdvdfs-diff &lt;a&gt; &lt;b&gt;: two Xbox discs side by side - partition, size, where the volume's last file ends,
+        /// the files only one has, those whose size or bytes differ (SHA-1 of each file both have). Reads only.</summary>
+        public static bool Diff(Assembly asm, string a, string b)
+        {
+            _asm = asm;
+            var xd = _asm.GetType("LbIntegrations.Cxbx.Xdvdfs", true).GetMethods(Any).First(m => m.Name == "List" && m.GetParameters().Length == 1);
+            var la = xd.Invoke(null, new object[] { a }); var lb = xd.Invoke(null, new object[] { b });
+            IEnumerable<object> Files(object l) => ((System.Collections.IEnumerable)Get(l, "Files")).Cast<object>();
+            void Show(string p, object l)
+            {
+                long pb = (long)Get(l, "PartitionBase"), len = new FileInfo(p).Length;
+                long end = Files(l).Select(f => (long)Get(f, "Offset") + (long)Get(f, "Length")).DefaultIfEmpty(0).Max();
+                Console.WriteLine("  " + Path.GetFileName(p) + ": " + len.ToString("N0") + " bytes, partition at 0x" + pb.ToString("X") + ", "
+                                  + Files(l).Count() + " files, the last ends at " + end.ToString("N0") + " - " + (len - end).ToString("N0") + " bytes after it; in the partition: "
+                                  + (len - pb).ToString("N0") + ", up to the last file: " + (end - pb).ToString("N0"));
+            }
+            Show(a, la); Show(b, lb);
+            var fa = Files(la).ToDictionary(f => ((string)Get(f, "Path")).ToLowerInvariant());
+            var fb = Files(lb).ToDictionary(f => ((string)Get(f, "Path")).ToLowerInvariant());
+            foreach (var k in fa.Keys.Except(fb.Keys).OrderBy(x => x)) Console.WriteLine("  only in the first: " + k + " (" + Get(fa[k], "Length") + ")");
+            foreach (var k in fb.Keys.Except(fa.Keys).OrderBy(x => x)) Console.WriteLine("  only in the second: " + k + " (" + Get(fb[k], "Length") + ")");
+            string Sha(string p, object f)
+            {
+                using var s = File.OpenRead(p); s.Seek((long)Get(f, "Offset"), SeekOrigin.Begin);
+                using var h = System.Security.Cryptography.SHA1.Create();
+                var buf = new byte[1 << 20]; long left = (long)Get(f, "Length"); int n;
+                while (left > 0 && (n = s.Read(buf, 0, (int)Math.Min(buf.Length, left))) > 0) { h.TransformBlock(buf, 0, n, null, 0); left -= n; }
+                h.TransformFinalBlock(buf, 0, 0);
+                return BitConverter.ToString(h.Hash).Replace("-", "").ToLowerInvariant();
+            }
+            int same = 0, differ = 0;
+            foreach (var k in fa.Keys.Intersect(fb.Keys).OrderBy(x => x))
+            {
+                if ((long)Get(fa[k], "Length") != (long)Get(fb[k], "Length")) { Console.WriteLine("  size differs: " + k + " " + Get(fa[k], "Length") + " vs " + Get(fb[k], "Length")); differ++; continue; }
+                var ha = Sha(a, fa[k]); var hb = Sha(b, fb[k]);
+                if (ha != hb)
+                {
+                    Console.WriteLine("  bytes differ: " + k + " (" + Get(fa[k], "Length") + ")"); differ++;
+                    byte[] Bytes(string p, object f) { using var s = File.OpenRead(p); s.Seek((long)Get(f, "Offset"), SeekOrigin.Begin); var d = new byte[(int)(long)Get(f, "Length")]; int got = 0, n; while (got < d.Length && (n = s.Read(d, got, d.Length - got)) > 0) got += n; return d; }
+                    var da = Bytes(a, fa[k]); var db = Bytes(b, fb[k]);
+                    if (k.EndsWith(".xbe")) { File.WriteAllBytes(Path.Combine(Path.GetTempPath(), "lbip-diff-a-" + Path.GetFileName(k)), da); File.WriteAllBytes(Path.Combine(Path.GetTempPath(), "lbip-diff-b-" + Path.GetFileName(k)), db); }
+                    int runs = 0;
+                    for (int i = 0; i < da.Length && runs < 40; i++)
+                    {
+                        if (da[i] == db[i]) continue;
+                        int j = i; while (j < da.Length && j - i < 64 && da[j] != db[j]) j++;
+                        Console.WriteLine("    0x" + i.ToString("X6") + " [" + (j - i) + "]: " + BitConverter.ToString(da, i, Math.Min(j - i, 16)) + "  vs  " + BitConverter.ToString(db, i, Math.Min(j - i, 16)));
+                        runs++; i = j;
+                    }
+                }
+                else same++;
+                if (k == "default.xbe") Console.WriteLine("  default.xbe sha1: " + ha + " / " + hb);
+            }
+            Console.WriteLine("  files the same: " + same + ", different: " + differ);
+            return true;
+        }
+
+        private static readonly byte[] MediaPattern = { 0xE8, 0xCA, 0xFD, 0xFF, 0xFF, 0x85, 0xC0, 0x7D };
+
+        /// <summary>An XBE holding the media check's pattern at <paramref name="at"/> - patched already when <paramref name="done"/>.</summary>
+        private static byte[] XbeWithCheck(uint titleId, int at, bool done = false)
+        {
+            var b = CxbxCheck.XbeBytes(titleId, "Media Game");
+            MediaPattern.CopyTo(b, at);
+            if (done) b[at + 7] = 0xEB;
+            return b;
+        }
+
+        private static CxbxCheck.Node MediaGame(bool done = false) => CxbxCheck.Dir("",
+            CxbxCheck.File_("default.xbe", XbeWithCheck(0x4D530005, 0x2000, done)),
+            CxbxCheck.File_("readme.txt", Encoding.ASCII.GetBytes("hello")),
+            CxbxCheck.Dir("tools", CxbxCheck.File_("dash.xbe", XbeWithCheck(0x4D530005, 0x1804, done))),
+            CxbxCheck.File_("big.bin", Noise(2 * 1024 * 1024 + 5, 4)));
+
+        private static byte[] Noise(int n, int seed) => CxbxCheck.Noise(n, seed);
+
+        private static void MediaPatch(string work, string exe)
+        {
+            var xiso = Path.Combine(work, "Media Game (USA).xiso");
+            CxbxCheck.WriteImage(xiso, 0, MediaGame());
+            var patches = (long[])Call("XemuDisc", "PatchesOf", xiso);
+            Check("two places found, one per .xbe", patches.Length == 2, string.Join(",", patches));
+            var original = File.ReadAllBytes(xiso);
+            Check("each one the pattern's 8th byte, 7D", patches.All(p => original[p] == 0x7D && original.Skip((int)p - 7).Take(8).SequenceEqual(MediaPattern)));
+
+            var p1 = Present(xiso, exe, out var problem, out _);
+            Check("an XISO to patch is not handed over as it is: a copy", p1 != null && p1 != xiso && File.Exists(p1), p1 + " / " + problem);
+            Check("... named apart (-mp)", p1 != null && p1.EndsWith("-mp.iso"));
+            if (p1 != null && File.Exists(p1))
+            {
+                var copy = File.ReadAllBytes(p1);
+                Check("... EB at both places", patches.All(p => copy[p] == 0xEB));
+                Check("... every other byte the XISO's", copy.Length == original.Length && Enumerable.Range(0, copy.Length).All(i => copy[i] == original[i] || patches.Contains(i)));
+            }
+            Check("the user's XISO never written", File.ReadAllBytes(xiso).SequenceEqual(original));
+
+            var done = Path.Combine(work, "Media Game Done (USA).xiso");
+            CxbxCheck.WriteImage(done, 0, MediaGame(done: true));
+            Check("an XISO patched already: nothing to do", ((long[])Call("XemuDisc", "PatchesOf", done)).Length == 0);
+            Check("... handed over as it is", Present(done, exe, out _, out _) == done);
+
+            var redump = Path.Combine(work, "Media Game (Europe).iso");
+            CxbxCheck.WriteImage(redump, 0x18300000, MediaGame());
+            var rp = (long[])Call("XemuDisc", "PatchesOf", redump);
+            Check("a redump: the places counted from its game partition", rp.SequenceEqual(patches), string.Join(",", rp));
+            var p2 = Present(redump, exe, out problem, out _);
+            Check("... its cut patched like the XISO's copy", p2 != null && p1 != null && File.ReadAllBytes(p2).SequenceEqual(File.ReadAllBytes(p1)), p2 + " / " + problem);
+
+            // The view: the patch served over the bytes read, whatever the read's bounds.
+            var type = _asm.GetType("LbIntegrations.Xemu.ExfatOneFileView", true);
+            var view = Activator.CreateInstance(type, Any, null, new object[] { 0L, (long)original.Length, "game.iso", "XBOXDISC", patches }, null);
+            var read = type.GetMethod("Read", Any);
+            long fileAt;
+            {
+                // the file's first cluster: found as the reader does - the first byte of the volume's heap that is the XISO's
+                var probeBuf = new byte[0x10000];
+                long heap = -1;
+                for (long at = 0; at < (long)Get(view, "Length") && heap < 0; at += 0x100000)
+                {
+                    read.Invoke(view, new object[] { new MemoryStream(original), at, probeBuf, probeBuf.Length });
+                    if (probeBuf.Take(0x10000).SequenceEqual(original.Take(0x10000))) heap = at;
+                }
+                fileAt = heap;
+            }
+            Check("the view's file found", fileAt >= 0);
+            if (fileAt >= 0)
+            {
+                bool ok = true;
+                foreach (var p in patches)
+                    foreach (var (from, len) in new[] { (p - 100, 200), (p, 1), (p - 3, 4), (p, 50) })
+                    {
+                        var buf = new byte[len];
+                        read.Invoke(view, new object[] { new MemoryStream(original), fileAt + from, buf, len });
+                        for (int i = 0; i < len; i++)
+                        {
+                            byte want = patches.Contains(from + i) ? (byte)0xEB : original[from + i];
+                            if (buf[i] != want) ok = false;
+                        }
+                    }
+                Check("the view serves EB there, whatever the read's bounds, the rest as it is", ok);
+            }
+
+            // Turned off: the discs as they are.
+            var settings = Path.Combine(work, "settings");
+            Directory.CreateDirectory(settings);
+            File.WriteAllText(Path.Combine(settings, "settings.ini"), "media_patch=0\r\n");
+            Check("media_patch=0: the XISO handed over as it is", Present(xiso, exe, out _, out _) == xiso);
+            var p3 = Present(redump, exe, out _, out _);
+            Check("media_patch=0: the redump's cut not patched, and named apart", p3 != null && !p3.EndsWith("-mp.iso") && File.Exists(p3)
+                  && patches.All(p => File.ReadAllBytes(p3)[p] == 0x7D));
+            File.Delete(Path.Combine(settings, "settings.ini"));
+        }
+
         public static bool Run(Assembly asm)
         {
             _asm = asm;
@@ -408,6 +561,10 @@ namespace LbIntegrations.Probe
                 Check("noise: no path, a reason", p == null && problem != null, p);
                 d = Call("XemuDisc", "Describe", Path.Combine(work, "missing.iso"));
                 Check("a missing file: refused", Get(d, "Problem") != null);
+
+                // 4b. the media patch (extract-xiso's rule): a game whose default.xbe and a second .xbe hold the pattern
+                Console.WriteLine("  media patch");
+                MediaPatch(work, exe);
 
                 // 5. a game's console: the overlay over a base forged here
                 Console.WriteLine("  qcow2 overlay");

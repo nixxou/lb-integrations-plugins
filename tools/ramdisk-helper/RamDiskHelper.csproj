@@ -49,6 +49,7 @@
     <Compile Include="..\..\src\Cxbx\XisoFatView.cs" Link="Xbox\XisoFatView.cs" />
     <!-- 1.10: the disc's XISO as the one file of an exFAT volume (view=xiso), for xemu. -->
     <Compile Include="..\..\src\Xemu\ExfatOneFileView.cs" Link="Xbox\ExfatOneFileView.cs" />
+    <Compile Include="..\..\src\Xemu\XboxMediaPatch.cs" Link="Xbox\XboxMediaPatch.cs" />
   </ItemGroup>
 
   <!-- 1.8: a ZArchive (.zar) served as the disc it holds (view=xbox) - the pack's one reader. Its zstd, ZstdSharp, is EMBEDDED and

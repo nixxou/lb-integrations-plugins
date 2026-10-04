@@ -1,6 +1,8 @@
 // The plugin's own settings, beside the other plugins' (<Plugins>\.data\<PluginId>\settings.ini), Cxbx's shape:
 //
 //   cache_gb=      how much room the XISO copies may take in <xemu>\discs (default 40; the copies used longest ago go first)
+//   media_patch=   0 to serve the discs as they are; else (the default) extract-xiso's media enable patch (XboxMediaPatch)
+//   console.*      the console a game runs on - region, video, language, time zone (Eeprom\XemuEeprom.Prepare)
 
 using System;
 using System.Collections.Generic;
@@ -59,6 +61,12 @@ namespace LbIntegrations.Xemu
             var tmp = SettingsPath + ".tmp";
             File.WriteAllLines(tmp, lines);
             File.Move(tmp, SettingsPath, overwrite: true);
+        }
+
+        /// <summary>Is the media patch made (XboxMediaPatch)? On unless media_patch is 0, off or false.</summary>
+        public static bool MediaPatch()
+        {
+            return !(Read().TryGetValue("media_patch", out var v) && (v == "0" || v.Equals("off", StringComparison.OrdinalIgnoreCase) || v.Equals("false", StringComparison.OrdinalIgnoreCase)));
         }
 
         public static long CacheBytes()

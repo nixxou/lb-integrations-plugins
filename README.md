@@ -540,6 +540,14 @@ and GTA San Andreas run from it. COPIED (no AIM, an older helper, an image in a 
 and kept (40 GB by default, the copies used longest ago go first) - Batman's CSO in 8 s, byte-identical. A ZArchive or a
 game unpacked in a zip is refused for now.
 
+**The media patch, extract-xiso's rule** (`XboxMediaPatch`, on unless `media_patch=0`): in every `.xbe` of the disc, the
+bytes `E8 CA FD FF FF 85 C0 7D` get their last made `EB`. extract-xiso does it by default when it makes an XISO; xdvdfs does
+not, and xemu's docs warn that "some games on some BIOSes will not load as a result". Measured 04/10: Batman: Rise of Sin
+Tzu's redump stayed on a black screen; an XISO of it from another source ran, the two differing by that one byte of
+`default.xbe`. Served patched by the helper (`patch=media`), the redump's disc is file for file that XISO (140 of 140,
+`default.xbe` SHA-1 equal) and the game reaches its menu. The byte is served or written into the plugin's own copy (named
+`-mp`), never into the user's file; an XISO that needs it is served (or copied) instead of handed over as it is.
+
 **One console per game** (`Qcow2Overlay`): `hdd\games\<title id>.qcow2`, an empty qcow2 v3 whose backing file is
 `hdd\base.qcow2` - xemu's dashboard disk, downloaded at install, read-only. That file is the game's save for the
 host. Between games `xemu.toml` points at `hdd\standalone.qcow2`, never at the base.

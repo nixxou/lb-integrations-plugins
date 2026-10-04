@@ -12,7 +12,8 @@
 // the disk. Clusters of 64 KB. Cluster 2 is the file's first: the file is the heap's start, so the disk reads it aligned as
 // it is laid. After its last cluster, the allocation bitmap (every cluster in use), the up-case table (uncompressed, ASCII
 // letters, every other character itself) and the root directory: the label, the bitmap's and the table's entries, the file's.
-// The file is contiguous (NoFatChain) and read-only. Checksums as the exFAT specification gives them (boot region, up-case
+// The file is contiguous (NoFatChain) and read-only. The media patch (XboxMediaPatch), when given, is laid over the bytes
+// read - one byte per .xbe that has the pattern - so the game is served patched and the image stays as it is. Checksums as the exFAT specification gives them (boot region, up-case
 // table, entry set, name hash).
 
 using System;
@@ -36,6 +37,8 @@ namespace LbIntegrations.Xemu
         public string FileName { get; }
         public string Label { get; }
         public long Length { get; }
+        /// <summary>Offsets in the file of the bytes served as the media patch's (XboxMediaPatch), sorted; none by default.</summary>
+        public long[] Patches { get; }
 
         private readonly long _fileClusters;
         private readonly uint _fatLength, _heapOffset, _clusterCount, _bitmapFirst, _upcaseFirst, _rootFirst;
@@ -47,10 +50,11 @@ namespace LbIntegrations.Xemu
 
         /// <param name="fileBase">where the file's bytes start in the stream Read is given (a redump's game partition)</param>
         /// <param name="fileLength">how many bytes the file has from there</param>
-        public ExfatOneFileView(long fileBase, long fileLength, string fileName = "game.iso", string label = "XBOXDISC")
+        public ExfatOneFileView(long fileBase, long fileLength, string fileName = "game.iso", string label = "XBOXDISC", long[] patches = null)
         {
             if (fileLength <= 0) throw new ArgumentException("the file is empty");
             FileBase = fileBase;
+            Patches = patches ?? Array.Empty<long>();
             FileLength = fileLength;
             FileName = Name(fileName);
             Label = new string((label ?? "XBOXDISC").Where(c => c >= 32 && c < 127).Take(11).ToArray());
@@ -166,6 +170,7 @@ namespace LbIntegrations.Xemu
                         source.Seek(FileBase + fileAt, SeekOrigin.Begin);
                         while (got < want && (r = source.Read(buffer, done + got, want - got)) > 0) got += r;
                         if (got < n) Array.Clear(buffer, done + got, n - got);
+                        XboxMediaPatch.Apply(Patches, fileAt, buffer, done, got);
                     }
                     else
                     {

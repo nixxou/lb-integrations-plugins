@@ -100,25 +100,33 @@ namespace LbIntegrations.Xemu
             return d;
         }
 
-        /// <summary>The path to give xemu's -dvd_path for <paramref name="rom"/> - the file itself for an XISO, else a copy in
-        /// the cache, made now when it is not there. Null with <paramref name="problem"/> when the game cannot be launched.</summary>
+        /// <summary>The path to give xemu's -dvd_path for <paramref name="rom"/> - the file itself for an XISO that needs nothing,
+        /// else the disc served where it is, else a copy in the cache, made now when it is not there. Null with
+        /// <paramref name="problem"/> when the game cannot be launched.</summary>
         public static string Present(string rom, string exe, out string problem, out XemuDiscInfo info, Action<string> report = null)
         {
             problem = null;
             info = Describe(rom);
             if (info.Problem != null) { problem = info.Problem; return null; }
-            if (info.Kind == XemuDiscKind.Xiso) { Log.Info("disc: " + System.IO.Path.GetFileName(rom) + " is an XISO - opened as it is"); return rom; }
+            var name = System.IO.Path.GetFileName(rom);
 
-            // WHERE IT IS FIRST (Mehdi, 04/10: "sans copie d'abord"): a redump or a compressed image served by the RAM disk helper
-            // as the one file of an exFAT volume - its XISO, read in place. Else (no AIM, an older helper, a failure) the copy.
-            if (!AttachOff && (info.Kind == XemuDiscKind.Redump || info.Kind == XemuDiscKind.Compressed))
+            // THE MEDIA PATCH (XboxMediaPatch, on unless media_patch=0): where the disc's .xbe files hold extract-xiso's pattern.
+            bool patch = XemuSettings.MediaPatch();
+            long[] patches = patch && info.Kind != XemuDiscKind.ImageInArchive ? PatchesOf(rom) : Array.Empty<long>();
+            if (patches.Length > 0) Log.Info("disc: the media patch goes in " + patches.Length + " place(s) of " + name);
+            if (info.Kind == XemuDiscKind.Xiso && patches.Length == 0) { Log.Info("disc: " + name + " is an XISO" + (patch ? ", no media patch to make" : "") + " - opened as it is"); return rom; }
+
+            // WHERE IT IS FIRST (Mehdi, 04/10: "sans copie d'abord"): a redump, a compressed image - or an XISO to patch - served by
+            // the RAM disk helper as the one file of an exFAT volume, its XISO read in place, the patch laid over it. Else (no AIM,
+            // an older helper, a failure) the copy.
+            if (!AttachOff && (info.Kind == XemuDiscKind.Redump || info.Kind == XemuDiscKind.Compressed || info.Kind == XemuDiscKind.Xiso))
             {
                 if (RamDisk.RamDrive.CanAttachXiso(out var why, rom))
                 {
-                    var file = RamDisk.RamDrive.AttachXiso(rom, out var root, out var error);
-                    if (file != null && File.Exists(file)) { info.AttachedRoot = root; Log.Info("disc: " + System.IO.Path.GetFileName(rom) + " served where it is - " + file); return file; }
+                    var file = RamDisk.RamDrive.AttachXiso(rom, out var root, out var error, patches.Length > 0);
+                    if (file != null && File.Exists(file)) { info.AttachedRoot = root; Log.Info("disc: " + name + " served where it is" + (patches.Length > 0 ? ", media patched" : "") + " - " + file); return file; }
                     if (file != null) { info.AttachedRoot = root; Release(info); }
-                    Log.Warn("disc: " + System.IO.Path.GetFileName(rom) + " could not be served where it is (" + (error ?? "the file did not appear") + ") - copied instead");
+                    Log.Warn("disc: " + name + " could not be served where it is (" + (error ?? "the file did not appear") + ") - copied instead");
                 }
                 else Log.Info("disc: not served where it is (" + why + ") - copied");
             }
@@ -126,11 +134,12 @@ namespace LbIntegrations.Xemu
             var cache = XemuPaths.DiscCache(exe);
             if (cache == null) { problem = "the emulator's folder is not known"; return null; }
             Directory.CreateDirectory(cache);
-            var target = System.IO.Path.Combine(cache, Safe(System.IO.Path.GetFileNameWithoutExtension(rom)) + "-" + StampHash(rom) + ".iso");
+            // A patched copy is named apart: the option turned off never gets one.
+            var target = System.IO.Path.Combine(cache, Safe(System.IO.Path.GetFileNameWithoutExtension(rom)) + "-" + StampHash(rom) + (patch ? "-mp" : "") + ".iso");
             if (File.Exists(target))
             {
                 try { File.SetLastAccessTimeUtc(target, DateTime.UtcNow); } catch { }
-                Log.Info("disc: the XISO of " + System.IO.Path.GetFileName(rom) + " is in the cache - " + target);
+                Log.Info("disc: the XISO of " + name + " is in the cache - " + target);
                 return target;
             }
 
@@ -138,7 +147,7 @@ namespace LbIntegrations.Xemu
             try
             {
                 Purge(cache, target, NeededBytes(info));
-                report?.Invoke("Preparing " + System.IO.Path.GetFileName(rom) + " for xemu...");
+                report?.Invoke("Preparing " + name + " for xemu...");
                 var watch = System.Diagnostics.Stopwatch.StartNew();
                 if (info.Kind == XemuDiscKind.ImageInArchive)
                 {
@@ -158,13 +167,16 @@ namespace LbIntegrations.Xemu
                         var inner = Describe(unpacked);
                         if (inner.Problem != null) { problem = "the image in the archive: " + inner.Problem; return null; }
                         info.Xbe = inner.Xbe; info.PartitionBase = inner.PartitionBase;
-                        if (inner.Kind == XemuDiscKind.Xiso) { File.Move(unpacked, target); return Done(rom, target, watch); }
-                        Cut(unpacked, inner.PartitionBase, part);
+                        patches = patch ? PatchesOf(unpacked) : Array.Empty<long>();
+                        if (inner.Kind == XemuDiscKind.Xiso) File.Move(unpacked, part);
+                        else Cut(unpacked, inner.PartitionBase, part);
                     }
                     finally { try { if (File.Exists(unpacked)) File.Delete(unpacked); } catch { } }
                 }
                 else Cut(rom, info.PartitionBase, part);
+                XboxMediaPatch.Write(part, patches);
                 File.Move(part, target);
+                if (patches.Length > 0) Log.Info("disc: media patched in " + patches.Length + " place(s)");
                 return Done(rom, target, watch);
             }
             catch (Exception ex)
@@ -176,6 +188,18 @@ namespace LbIntegrations.Xemu
             finally { try { if (File.Exists(part)) File.Delete(part); } catch { } }
         }
 
+        /// <summary>Where the media patch goes in <paramref name="image"/>'s XISO (XboxMediaPatch.Find); none when it cannot be read.</summary>
+        internal static long[] PatchesOf(string image)
+        {
+            try
+            {
+                var listing = Xdvdfs.List(image);
+                if (!listing.Found) return Array.Empty<long>();
+                using var disc = Disc.DiscImages.Open(image);
+                return XboxMediaPatch.Find(disc, listing);
+            }
+            catch (Exception ex) { Log.Warn("disc: the .xbe files could not be read for the media patch", ex); return Array.Empty<long>(); }
+        }
         /// <summary>The disc served where it is, detached - at the session's end, or when the launch goes no further.</summary>
         public static void Release(XemuDiscInfo info)
         {
