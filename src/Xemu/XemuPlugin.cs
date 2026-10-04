@@ -334,7 +334,18 @@ namespace LbIntegrations.Xemu
                 var base_ = XemuPaths.BaseHdd(exe);
                 if (!File.Exists(base_)) return Refuse("xemu's console disk (" + base_ + ") is missing. Update xemu from LaunchBox to download it again.");
 
-                var dvd = XemuDisc.Present(rom, exe, out var problem, out var info);
+                // A session left behind (the host killed mid-game): the user's xemu.toml put back first (XemuSessionConfig).
+                var toml = XemuPaths.TomlOf(exe);
+                var sessionToml = XemuSessionConfig.SessionPath(exe);
+                try { if (XemuSessionConfig.MergeBack(toml, sessionToml)) Log.Info("xemu.toml: a session left behind merged back"); }
+                catch (Exception ex) { Log.Warn("xemu.toml: a session left behind could not be merged back", ex); }
+
+                // THE GAME'S OPTIONS: its own over every game's over the plugin's defaults (XemuOptions).
+                var gameId = Safe(() => args?.GameBeingLaunched?.Id);
+                var options = XemuOptions.Effective(gameId);
+                Log.Info("options: " + string.Join(", ", options.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => kv.Key + "=" + kv.Value)));
+
+                var dvd = XemuDisc.Present(rom, exe, out var problem, out var info, null, options.TryGetValue("disc.media_patch", out var mp) ? mp != "off" : (bool?)null);
                 if (dvd == null) return Refuse(Path.GetFileName(rom) + " cannot be launched: " + problem + ".");
                 XemuDisc.Remember(rom, info.Xbe);
 
@@ -348,22 +359,31 @@ namespace LbIntegrations.Xemu
                     if (error != null) { XemuDisc.Release(info); return Refuse("The console of " + Path.GetFileName(rom) + " could not be made: " + error + "."); }
                 }
 
-                var toml = XemuPaths.TomlOf(exe);
-                XemuToml.Set(toml, "general", "show_welcome", "false");
-                XemuToml.Set(toml, "sys.files", "bootrom_path", XemuToml.Literal(mcpx));
-                XemuToml.Set(toml, "sys.files", "flashrom_path", XemuToml.Literal(flash));
-                // ITS CONSOLE'S SETTINGS: region and video following the game, the pack's language, Windows' time zone - on a
-                // copy of eeprom.bin for the session (Eeprom\XemuEeprom).
+                // ITS CONSOLE'S SETTINGS: region and video following the game, the pack's language, Windows' time zone, the pack's
+                // HDD key - on a copy of eeprom.bin for the session (Eeprom\XemuEeprom).
                 var said = new List<string>();
                 string eeprom = null;
-                try { eeprom = Eeprom.XemuEeprom.Prepare(XemuPaths.Eeprom(exe), XemuPaths.SessionEeprom(exe), info.Xbe, XemuSettings.Read(), said); }
+                try { eeprom = Eeprom.XemuEeprom.Prepare(XemuPaths.Eeprom(exe), XemuPaths.SessionEeprom(exe), info.Xbe, options, said); }
                 catch (Exception ex) { Log.Warn("console: its settings could not be made", ex); }
                 Log.Info("console: " + (said.Count == 0 ? "as it is" : string.Join(", ", said)));
-                XemuToml.Set(toml, "sys.files", "eeprom_path", XemuToml.Literal(eeprom ?? XemuPaths.Eeprom(exe)));
-                XemuToml.Set(toml, "sys.files", "hdd_path", XemuToml.Literal(hdd));
-                Log.Info("launch: " + Path.GetFileName(rom) + " (" + titleId + " \"" + info.Xbe?.TitleName + "\", " + info.Kind + ") on " + Path.GetFileName(hdd));
 
-                var line = CommandLineFor(Safe(() => args?.CurrentCommandLine) ?? "", dvd, rom);
+                // ITS xemu.toml: the user's with the game's options and the plugin's keys over it, for the session only
+                // (XemuSessionConfig) - the user's file merged back from it when xemu has gone.
+                var set = new List<(string, string, string)>
+                {
+                    ("general", "show_welcome", "false"),
+                    ("sys.files", "bootrom_path", XemuToml.Literal(mcpx)),
+                    ("sys.files", "flashrom_path", XemuToml.Literal(flash)),
+                    ("sys.files", "eeprom_path", XemuToml.Literal(eeprom ?? XemuPaths.Eeprom(exe))),
+                    ("sys.files", "hdd_path", XemuToml.Literal(hdd)),
+                    ("sys.files", "dvd_path", XemuToml.Literal(dvd)),
+                };
+                set.AddRange(XemuOptions.TomlOf(options));
+                XemuSessionConfig.Make(toml, sessionToml, set);
+                Log.Info("launch: " + Path.GetFileName(rom) + " (" + titleId + " \"" + info.Xbe?.TitleName + "\", " + info.Kind + ") on " + Path.GetFileName(hdd)
+                         + ", " + Path.GetFileName(sessionToml) + " with " + string.Join(", ", set.Skip(6).Select(s => s.Item1 + "." + s.Item2 + "=" + s.Item3)));
+
+                var line = CommandLineFor(Safe(() => args?.CurrentCommandLine) ?? "", dvd, rom, sessionToml);
                 Log.Info("command line: " + line);
                 XemuSession.Watch(exe, hdd, info);
                 return new PrepareForLaunchResponse(success: true) { NewCommandLine = line };
@@ -375,10 +395,10 @@ namespace LbIntegrations.Xemu
             }
         }
 
-        /// <summary>The host's line without any -dvd_path (and its value) and -L, then -dvd_path "&lt;disc&gt;" -L last - to take
-        /// the game's path the host appends. The user's other options kept with their values (-machine xbox,...); a loose
+        /// <summary>The host's line without any -dvd_path (and its value) and -L - and -config_path when one is given - then
+        /// [-config_path "&lt;session toml&gt;"] -dvd_path "&lt;disc&gt;" -L last: -L to take the game's path the host appends. The user's other options kept with their values (-machine xbox,...); a loose
         /// word that is the game's path dropped - the host puts it back.</summary>
-        internal static string CommandLineFor(string current, string dvd, string rom = null)
+        internal static string CommandLineFor(string current, string dvd, string rom = null, string configPath = null)
         {
             var tokens = Tokenize(current);
             var kept = new List<string>();
@@ -387,14 +407,14 @@ namespace LbIntegrations.Xemu
                 var t = tokens[i];
                 if (t.Length == 0) continue;
                 bool valued = i + 1 < tokens.Count && tokens[i + 1].Length > 0 && !tokens[i + 1].StartsWith("-");
-                if (t.Equals("-dvd_path", StringComparison.OrdinalIgnoreCase) || t.Equals("-L", StringComparison.Ordinal))
+                if (t.Equals("-dvd_path", StringComparison.OrdinalIgnoreCase) || t.Equals("-L", StringComparison.Ordinal) || (configPath != null && t.Equals("-config_path", StringComparison.OrdinalIgnoreCase)))
                 { if (valued) i++; continue; }
                 if (!t.StartsWith("-")) { if (!IsTheGame(t, rom)) kept.Add(Quote(t)); continue; }
                 kept.Add(Quote(t));
                 if (valued) { if (!IsTheGame(tokens[i + 1], rom)) kept.Add(Quote(tokens[i + 1])); i++; }
             }
             if (!kept.Contains("-full-screen")) kept.Insert(0, "-full-screen");
-            return string.Join(" ", kept) + " -dvd_path \"" + dvd + "\" -L";
+            return string.Join(" ", kept) + (configPath != null ? " -config_path \"" + configPath + "\"" : "") + " -dvd_path \"" + dvd + "\" -L";
         }
 
         private static string Quote(string token) => token.IndexOfAny(new[] { ' ', '\t' }) >= 0 ? "\"" + token + "\"" : token;

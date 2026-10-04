@@ -1,8 +1,8 @@
 // The plugin's own settings, beside the other plugins' (<Plugins>\.data\<PluginId>\settings.ini), Cxbx's shape:
 //
 //   cache_gb=      how much room the XISO copies may take in <xemu>\discs (default 40; the copies used longest ago go first)
-//   media_patch=   0 to serve the discs as they are; else (the default) extract-xiso's media enable patch (XboxMediaPatch)
-//   console.*      the console a game runs on - region, video, language, time zone (Eeprom\XemuEeprom.Prepare)
+//   opt.<key>=     an option of every game (XemuOptions): xemu's settings, the console's, the media patch
+//   games\<game id>.ini   one game's options, the same keys
 
 using System;
 using System.Collections.Generic;
@@ -63,10 +63,45 @@ namespace LbIntegrations.Xemu
             File.Move(tmp, SettingsPath, overwrite: true);
         }
 
-        /// <summary>Is the media patch made (XboxMediaPatch)? On unless media_patch is 0, off or false.</summary>
-        public static bool MediaPatch()
+        /// <summary>Is the media patch made for every game (XboxMediaPatch, the option disc.media_patch)? On unless set off.</summary>
+        public static bool MediaPatch() => XemuOptions.Get(Read(), "disc.media_patch") != "off";
+
+        public static string GamePath(string gameId)
         {
-            return !(Read().TryGetValue("media_patch", out var v) && (v == "0" || v.Equals("off", StringComparison.OrdinalIgnoreCase) || v.Equals("false", StringComparison.OrdinalIgnoreCase)));
+            if (string.IsNullOrWhiteSpace(gameId)) return null;
+            var safe = new string(gameId.Trim().Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c).ToArray());
+            return Path.Combine(Dir, "games", safe + ".ini");
+        }
+
+        public static Dictionary<string, string> ReadGame(string gameId)
+        {
+            var p = GamePath(gameId);
+            var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (p == null || !File.Exists(p)) return values;
+            try
+            {
+                foreach (var line in File.ReadAllLines(p))
+                {
+                    var t = line.Trim();
+                    int eq = t.IndexOf('=');
+                    if (t.Length > 0 && t[0] != '#' && eq > 0) values[t.Substring(0, eq).Trim()] = t.Substring(eq + 1).Trim();
+                }
+            }
+            catch (Exception ex) { Log.Warn("could not read " + p, ex); }
+            return values;
+        }
+
+        public static void WriteGame(string gameId, IDictionary<string, string> values)
+        {
+            var p = GamePath(gameId);
+            if (p == null) return;
+            if (values == null || values.All(kv => string.IsNullOrEmpty(kv.Value))) { try { if (File.Exists(p)) File.Delete(p); } catch { } return; }
+            Directory.CreateDirectory(Path.GetDirectoryName(p));
+            var lines = new List<string> { "# Nixx-Xemu: this game. Edited by its options window." };
+            lines.AddRange(values.Where(kv => !string.IsNullOrEmpty(kv.Value)).OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => kv.Key + "=" + kv.Value));
+            var tmp = p + ".tmp";
+            File.WriteAllLines(tmp, lines);
+            File.Move(tmp, p, overwrite: true);
         }
 
         public static long CacheBytes()

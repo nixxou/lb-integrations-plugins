@@ -567,7 +567,21 @@ Cxbx's (and into a new console of either), so a save signed with the console's k
 reinstall. Not zeros: Xbox Live's libraries and Insignia refuse a null key. `console.hddkey=xemu` (Cxbx: its option set
 to Cxbx-Reloaded's own) keeps the emulator's - for a console registered with Insignia, which a new key would lose.
 
-**The line is `-full-screen -dvd_path "<xiso>" -L`**: `-L` (QEMU's firmware folder, unused by xemu) takes the game's
+**Options, game by game** (`XemuOptions`, the Nixx window's xemu tab and "Nixx-Xemu : Options..." on a game): xemu's own
+settings chosen from its `config_spec.yml` - renderer, internal resolution, the Vulkan graphics card (measured 04/10: on a
+machine with an RTX 3060 and a 3050, xemu chose the 3050 by itself), filtering, vsync, fit, aspect, the menu bar (hidden by
+default), memory, AV cable, FPU, shader cache, DSP, HRTF - and the plugin's: the console (region, video, language, time
+zone, HDD key) and the media patch. A game's own over every game's over the default over xemu's own.
+
+**Its own xemu.toml for a session** (`XemuSessionConfig`): `xemu-session.toml`, the user's with the game's options and the
+plugin's keys over it, given by `-config_path` - measured 04/10: xemu reads it and writes it back on exit, the user's file
+untouched. After the session it is merged back BY TABLE: a table the session set nothing in (`[input]`, `[input.bindings]`,
+a new one) comes back whole as xemu left it - a pad bound meanwhile is kept; a table the session set keys in is the user's
+again, whole: nothing changed in it during the game is kept. Left behind (the host killed), it is merged back at the next
+launch. Measured end to end through `PrepareEmulatorForLaunch`: Batman's redump served patched by AIM, Vulkan on the 3060,
+the session EEPROM and console used, then merged back, the disc detached and the save captured.
+
+**The line is `-full-screen -config_path "<session toml>" -dvd_path "<xiso>" -L`**: `-L` (QEMU's firmware folder, unused by xemu) takes the game's
 path the host appends - a bare path would be a hard disk to QEMU. Measured 04/10: the game boots. Alt+F4 quits at once.
 
 **The console follows the game** (`Eeprom/XemuEeprom`), as Cxbx's does: an original Xbox refuses a game of another

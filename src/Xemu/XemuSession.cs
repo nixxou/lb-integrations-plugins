@@ -41,6 +41,9 @@ namespace LbIntegrations.Xemu
                 catch (Exception ex) { Log.Warn("session watch", ex); }
                 finally
                 {
+                    // What xemu wrote into the session's xemu.toml back into the user's, table by table (XemuSessionConfig).
+                    try { if (XemuSessionConfig.MergeBack(XemuPaths.TomlOf(exe), XemuSessionConfig.SessionPath(exe))) Log.Info("xemu.toml: the session's changes merged back"); }
+                    catch (Exception ex) { Log.Warn("xemu.toml: the session could not be merged back", ex); }
                     Standalone(exe, "its game is over");
                     XemuDisc.Release(disc);
                     // The save the host sees, brought up to date with the console the game just wrote (XemuSaves).

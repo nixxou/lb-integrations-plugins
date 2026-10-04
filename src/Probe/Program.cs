@@ -114,6 +114,9 @@ namespace LbIntegrations.Probe
             // xemu: --xemu (discs, a game's console, xemu.toml and the launch line, all made here).
             if (Has(args, "--xdvdfs-diff")) { int at = Array.IndexOf(args, "--xdvdfs-diff"); return XemuCheck.Diff(asm, Path.GetFullPath(args[at + 1]), Path.GetFullPath(args[at + 2])) ? 0 : 1; }
             if (Has(args, "--xemu-insert")) return XemuCheck.Insert(asm, Path.GetFullPath(Arg(args, "--console")), Path.GetFullPath(Arg(args, "--base")), Arg(args, "--title"), Path.GetFullPath(Arg(args, "--zip"))) ? 0 : 1;
+            if (Has(args, "--xemu-shot")) return XemuCheck.Shot(asm, Path.GetFullPath(Arg(args, "--xemu-shot")), Arg(args, "--rom") is string sr ? Path.GetFullPath(sr) : null) ? 0 : 1;
+            if (Has(args, "--xemu-launch")) return XemuCheck.Launch(asm, Path.GetFullPath(emuPath), Path.GetFullPath(Arg(args, "--rom")), int.TryParse(Arg(args, "--seconds"), out var ls) ? ls : 40, Arg(args, "--lb")) ? 0 : 1;
+            if (Has(args, "--xemu-session")) return XemuCheck.SessionStep(asm, Arg(args, "--xemu-session"), Path.GetFullPath(Arg(args, "--user")), Path.GetFullPath(Arg(args, "--session"))) ? 0 : 1;
             if (Has(args, "--xemu-saves")) return XemuCheck.Saves(asm, Path.GetFullPath(Arg(args, "--console")), Arg(args, "--title"), Arg(args, "--out") is string z ? Path.GetFullPath(z) : null) ? 0 : 1;
             if (Has(args, "--xemu-console")) return XemuCheck.Console_(asm, Path.GetFullPath(Arg(args, "--base")), Path.GetFullPath(Arg(args, "--out")), Path.GetFullPath(Arg(args, "--rom"))) ? 0 : 1;
             if (Has(args, "--xemu")) return XemuCheck.Run(asm) ? 0 : 1;

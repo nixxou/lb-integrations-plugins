@@ -49,7 +49,7 @@ namespace LbIntegrations.Probe
         private static string Present(string rom, string exe, out string problem, out object info)
         {
             var m = T("XemuDisc").GetMethod("Present", Any);
-            var args = new object[] { rom, exe, null, null, null };
+            var args = new object[] { rom, exe, null, null, null, null };
             object r;
             try { r = m.Invoke(null, args); } catch (TargetInvocationException ex) { throw ex.InnerException ?? ex; }
             problem = (string)args[2]; info = args[3];
@@ -477,10 +477,10 @@ namespace LbIntegrations.Probe
             // Turned off: the discs as they are.
             var settings = Path.Combine(work, "settings");
             Directory.CreateDirectory(settings);
-            File.WriteAllText(Path.Combine(settings, "settings.ini"), "media_patch=0\r\n");
-            Check("media_patch=0: the XISO handed over as it is", Present(xiso, exe, out _, out _) == xiso);
+            File.WriteAllText(Path.Combine(settings, "settings.ini"), "opt.disc.media_patch=off\r\n");
+            Check("media patch off: the XISO handed over as it is", Present(xiso, exe, out _, out _) == xiso);
             var p3 = Present(redump, exe, out _, out _);
-            Check("media_patch=0: the redump's cut not patched, and named apart", p3 != null && !p3.EndsWith("-mp.iso") && File.Exists(p3)
+            Check("media patch off: the redump's cut not patched, and named apart", p3 != null && !p3.EndsWith("-mp.iso") && File.Exists(p3)
                   && patches.All(p => File.ReadAllBytes(p3)[p] == 0x7D));
             File.Delete(Path.Combine(settings, "settings.ini"));
         }
@@ -610,6 +610,238 @@ namespace LbIntegrations.Probe
             try { S("Insert", console, baseDisk, "4d530004", escape); } catch (InvalidDataException) { refused = true; }
             Check("a save that would leave its folder: refused", refused);
             Check("the base never written", File.ReadAllBytes(baseDisk).SequenceEqual(File.ReadAllBytes(realBase)));
+        }
+
+        /// <summary>The session's xemu.toml and its merge back: made from a user's file, rewritten the way xemu rewrites it on exit
+        /// (a pad added, a binding changed, the window resized, a table new), merged back - untouched tables whole, touched keys
+        /// the user's, the rest the session's.</summary>
+        private static void SessionToml(string work)
+        {
+            var user = Path.Combine(work, "xemu.toml");
+            var session = Path.Combine(work, "xemu-session.toml");
+            var userText = string.Join("\r\n", new[]
+            {
+                "[general]", "show_welcome = false", "games_dir = 'G:\\xboxoriginal'", "",
+                "[input]", "gamepad_mappings = [", "    { gamepad_id = 'AAA'}", "    ]", "",
+                "[input.bindings]", "port1_driver = 'usb-xbox-gamepad'", "port1 = 'AAA'", "",
+                "[display]", "renderer = 'OPENGL' # the user's", "",
+                "[display.window]", "last_width = 1280", "",
+                "[sys.files]", "bootrom_path = 'C:\\x\\mcpx.bin'", "hdd_path = 'C:\\x\\hdd\\standalone.qcow2'", "dvd_path = 'G:\\a [weird] path.iso'", ""
+            });
+            File.WriteAllText(user, userText);
+            var userBytes = File.ReadAllBytes(user);
+            var cfg = _asm.GetType("LbIntegrations.Xemu.XemuSessionConfig", true);
+            var doc = _asm.GetType("LbIntegrations.Xemu.XemuTomlDoc", true);
+            object Load(string f) => doc.GetMethod("Load", Any).Invoke(null, new object[] { f });
+            string G(string f, string t, string k) => (string)doc.GetMethod("Get", Any).Invoke(Load(f), new object[] { t, k });
+            var set = new List<(string, string, string)>
+            {
+                ("general", "show_welcome", "false"), ("display", "renderer", "'VULKAN'"), ("display.quality", "surface_scale", "2"),
+                ("display.ui", "show_menubar", "false"), ("sys.files", "hdd_path", "'C:\\x\\hdd\\games\\4d530004.qcow2'"), ("sys.files", "dvd_path", "'Z:\\game.iso'"),
+            };
+            cfg.GetMethod("Make", Any).Invoke(null, new object[] { user, session, set, null });
+            Check("the session's file: the game's renderer, scale and menu bar", G(session, "display", "renderer") == "'VULKAN'" && G(session, "display.quality", "surface_scale") == "2" && G(session, "display.ui", "show_menubar") == "false");
+            Check("... its console and disc", G(session, "sys.files", "hdd_path") == "'C:\\x\\hdd\\games\\4d530004.qcow2'" && G(session, "sys.files", "dvd_path") == "'Z:\\game.iso'");
+            Check("... the user's pad kept in it", G(session, "input.bindings", "port1") == "'AAA'" && G(session, "input", "gamepad_mappings").Contains("'AAA'"));
+            Check("the user's file not written", File.ReadAllBytes(user).SequenceEqual(userBytes));
+            Check("a path with brackets read as a value, not a table", G(user, "sys.files", "dvd_path") == "'G:\\a [weird] path.iso'");
+
+            // xemu's exit: its whole configuration written back into the session's file, things changed meanwhile.
+            File.WriteAllText(session, string.Join("\n", new[]
+            {
+                "[general]", "show_welcome = false", "games_dir = 'G:\\xboxoriginal'", "last_viewed_menu_index = 3", "",
+                "[input]", "gamepad_mappings = [", "    { gamepad_id = 'AAA'},", "    { gamepad_id = 'BBB', controller_mapping = { a = 1 } }", "    ]", "",
+                "[input.bindings]", "port1_driver = 'usb-xbox-gamepad'", "port1 = 'AAA'", "port2_driver = 'usb-xbox-gamepad'", "port2 = 'BBB'", "",
+                "[display]", "renderer = 'VULKAN'", "",
+                "[display.quality]", "surface_scale = 2", "",
+                "[display.window]", "last_width = 1920", "",
+                "[display.ui]", "show_menubar = false", "use_animations = false", "",
+                "[audio]", "hrtf = false", "",
+                "[sys.files]", "bootrom_path = 'C:\\x\\mcpx.bin'", "hdd_path = 'C:\\x\\hdd\\games\\4d530004.qcow2'", "dvd_path = 'Z:\\game.iso'", ""
+            }));
+            bool changed = (bool)cfg.GetMethod("MergeBack", Any).Invoke(null, new object[] { user, session });
+            Check("merged back: the user's file changed", changed);
+            Check("untouched tables whole: the new pad and its binding kept", G(user, "input", "gamepad_mappings").Contains("'BBB'") && G(user, "input.bindings", "port2") == "'BBB'");
+            Check("... the window's new width kept ([display.window], untouched)", G(user, "display.window", "last_width") == "1920");
+            Check("... a new table kept ([audio])", G(user, "audio", "hrtf") == "false");
+            Check("touched tables the user's, whole: the renderer back, comment and all", G(user, "display", "renderer") == "'OPENGL' # the user's", G(user, "display", "renderer"));
+            Check("... the user's console and disc back", G(user, "sys.files", "hdd_path") == "'C:\\x\\hdd\\standalone.qcow2'" && G(user, "sys.files", "dvd_path") == "'G:\\a [weird] path.iso'" && G(user, "sys.files", "bootrom_path") == "'C:\\x\\mcpx.bin'");
+            Check("... a table the user never had gone ([display.quality], [display.ui])", !File.ReadAllText(user).Contains("[display.quality]") && !File.ReadAllText(user).Contains("[display.ui]"));
+            Check("... a change made in xemu in a touched table not kept ([general]'s menu index, [display.ui]'s animations)", G(user, "general", "last_viewed_menu_index") == null && G(user, "display.ui", "use_animations") == null);
+            Check("... [general] as the user had it", G(user, "general", "games_dir") == "'G:\\xboxoriginal'" && G(user, "general", "show_welcome") == "false");
+            Check("the session's files removed", !File.Exists(session) && !File.Exists(Path.ChangeExtension(session, ".keys")));
+            Check("nothing left: a second merge does nothing", !(bool)cfg.GetMethod("MergeBack", Any).Invoke(null, new object[] { user, session }));
+
+            // A session xemu did not change: the merge gives the user's file back as it was.
+            var before = File.ReadAllText(user);
+            cfg.GetMethod("Make", Any).Invoke(null, new object[] { user, session, set, null });
+            Check("a session xemu left as it was: the user's file unchanged", !(bool)cfg.GetMethod("MergeBack", Any).Invoke(null, new object[] { user, session }) && File.ReadAllText(user) == before);
+
+            // A session file without its keys (cut while being made): nothing of it is the user's.
+            File.WriteAllText(session, "[display]\nrenderer = 'NULL'\n");
+            Check("a half-made session: discarded, the user's file untouched", !(bool)cfg.GetMethod("MergeBack", Any).Invoke(null, new object[] { user, session }) && File.ReadAllText(user) == before && !File.Exists(session));
+        }
+
+        /// <summary>The options' levels and their TOML: a game's own over every game's over the default over xemu's own, "xemu" meaning
+        /// xemu's own; the xemu settings among them written as TOML values of their kind; xemu's own read from a toml or its default.</summary>
+        private static void Options(string work)
+        {
+            var settings = Path.Combine(work, "settings");
+            Directory.CreateDirectory(Path.Combine(settings, "games"));
+            File.WriteAllLines(Path.Combine(settings, "settings.ini"), new[] { "opt.display.renderer=VULKAN", "opt.display.surface_scale=xemu", "opt.display.vsync=off", "cache_gb=12" });
+            File.WriteAllLines(Path.Combine(settings, "games", "game-a.ini"), new[] { "opt.display.renderer=OPENGL", "opt.console.region=4", "opt.display.surface_scale=3", "opt.disc.media_patch=off" });
+            var xo = _asm.GetType("LbIntegrations.Xemu.XemuOptions", true);
+            Dictionary<string, string> Eff(string id) => (Dictionary<string, string>)xo.GetMethod("Effective", Any).Invoke(null, new object[] { id });
+            var a = Eff("game-a"); var b = Eff("game-b");
+            string V(Dictionary<string, string> d, string k) => d.TryGetValue(k, out var v) ? v : null;
+            Check("a game's own over every game's (renderer OpenGL over Vulkan)", V(a, "display.renderer") == "OPENGL" && V(b, "display.renderer") == "VULKAN");
+            Check("... over the default (region Europe over follow)", V(a, "console.region") == "4" && V(b, "console.region") == "follow");
+            Check("\"xemu\" at every game's: xemu's own, absent - unless the game sets it", V(b, "display.surface_scale") == null && V(a, "display.surface_scale") == "3");
+            Check("the defaults: menu bar off, media patch on, HDD key the pack's", V(b, "display.menubar") == "off" && V(b, "disc.media_patch") == "on" && V(b, "console.hddkey") == "pack");
+            Check("a game's media patch off", V(a, "disc.media_patch") == "off");
+            var toml = ((System.Collections.IEnumerable)xo.GetMethod("TomlOf", Any).Invoke(null, new object[] { a })).Cast<object>()
+                       .Select(t => ((string)t.GetType().GetField("Item1").GetValue(t), (string)t.GetType().GetField("Item2").GetValue(t), (string)t.GetType().GetField("Item3").GetValue(t))).ToList();
+            Check("as TOML: a string quoted, a number bare, a switch true/false", toml.Contains(("display", "renderer", "'OPENGL'")) && toml.Contains(("display.quality", "surface_scale", "3"))
+                  && toml.Contains(("display.window", "vsync", "false")) && toml.Contains(("display.ui", "show_menubar", "false")), string.Join(" ", toml));
+            Check("... the plugin's own options not in it (console, disc)", toml.All(t => !t.Item1.StartsWith("console") && !t.Item1.StartsWith("disc")));
+            var doc = _asm.GetType("LbIntegrations.Xemu.XemuTomlDoc", true);
+            var parsed = doc.GetMethod("Parse", Any).Invoke(null, new object[] { "[display]\nrenderer = 'VULKAN'\n" });
+            object Opt(string k) => xo.GetMethod("Find", Any).Invoke(null, new object[] { k });
+            string Own(string k, object d) => (string)xo.GetMethod("OwnOf", Any).Invoke(null, new object[] { Opt(k), d });
+            Check("xemu's own: its toml's value, else its default", Own("display.renderer", parsed) == "VULKAN" && Own("display.renderer", null) == "OPENGL" && Own("display.vsync", null) == "on" && Own("display.surface_scale", null) == "1",
+                  Own("display.renderer", parsed) + " " + Own("display.renderer", null) + " " + Own("display.vsync", null) + " " + Own("display.surface_scale", null));
+            var gpus = (List<string>)xo.GetMethod("DisplayAdapters", Any).Invoke(null, null);
+            Console.WriteLine("      graphics cards: " + string.Join(", ", gpus));
+            Check("the graphics cards listed, none virtual", gpus.Count > 0 && gpus.All(g => !g.ToLowerInvariant().Contains("virtual") && !g.ToLowerInvariant().Contains("parsec")), string.Join(", ", gpus));
+            File.Delete(Path.Combine(settings, "settings.ini"));
+            File.Delete(Path.Combine(settings, "games", "game-a.ini"));
+        }
+
+        /// <summary>--xemu-shot &lt;png&gt; [--rom &lt;game&gt;]: the Nixx window's xemu tab and a game's options window, drawn off screen and laid
+        /// side by side - every scroll of each.</summary>
+        public static bool Shot(Assembly asm, string outPath, string rom)
+        {
+            _asm = asm;
+            var work = Path.Combine(Path.GetTempPath(), "lbip-xemu-shot");
+            Directory.CreateDirectory(work);
+            T("XemuSettings").GetField("DirOverride", Any).SetValue(null, work);
+            var shots = new List<System.Drawing.Bitmap>();
+            void Grab(System.Windows.Forms.Form form, System.Windows.Forms.Panel scroll)
+            {
+                for (int y = 0, last = -1, n = 0; n < 8; y += scroll.ClientSize.Height - 40, n++)
+                {
+                    scroll.AutoScrollPosition = new System.Drawing.Point(0, y);
+                    System.Windows.Forms.Application.DoEvents();
+                    if (-scroll.AutoScrollPosition.Y == last) break;
+                    last = -scroll.AutoScrollPosition.Y;
+                    var bmp = new System.Drawing.Bitmap(form.Width, form.Height);
+                    form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, bmp.Width, bmp.Height));
+                    shots.Add(bmp);
+                }
+            }
+            var page = (System.Windows.Forms.Control)_asm.GetType("LbIntegrations.Xemu.Settings", true).GetMethod("CreatePage").Invoke(null, null);
+            using (var form = new System.Windows.Forms.Form { ClientSize = new System.Drawing.Size(640, 760), Font = new System.Drawing.Font("Segoe UI", 9f), Text = "xemu tab", StartPosition = System.Windows.Forms.FormStartPosition.Manual, Location = new System.Drawing.Point(-4000, -4000) })
+            {
+                page.Dock = System.Windows.Forms.DockStyle.Fill;
+                form.Controls.Add(page);
+                form.Show();
+                System.Windows.Forms.Application.DoEvents();
+                Grab(form, page.Controls.OfType<System.Windows.Forms.Panel>().First(p => p.AutoScroll));
+                form.Close();
+            }
+            var games = new List<Unbroken.LaunchBox.Plugins.Data.IGame> { StubGame.Create("probe-shot", rom != null ? Path.GetFileNameWithoutExtension(rom) : "No game", rom ?? "C:\\none.iso") };
+            var formType = _asm.GetType("LbIntegrations.Xemu.XemuGameForm", true);
+            using (var form = (System.Windows.Forms.Form)Activator.CreateInstance(formType, Any, null, new object[] { games }, null))
+            {
+                form.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
+                form.Location = new System.Drawing.Point(-4000, -4000);
+                form.Show();
+                System.Windows.Forms.Application.DoEvents();
+                Grab(form, form.Controls.OfType<System.Windows.Forms.Panel>().First(p => p.AutoScroll));
+                form.Close();
+            }
+            using var all = new System.Drawing.Bitmap(shots.Sum(s => s.Width), shots.Max(s => s.Height));
+            using (var g = System.Drawing.Graphics.FromImage(all))
+            {
+                g.Clear(System.Drawing.Color.DimGray);
+                int x = 0;
+                foreach (var s in shots) { g.DrawImage(s, x, 0); x += s.Width; s.Dispose(); }
+            }
+            all.Save(outPath, System.Drawing.Imaging.ImageFormat.Png);
+            Console.WriteLine("  " + outPath + " (" + shots.Count + " views)");
+            return true;
+        }
+
+        /// <summary>--xemu-launch --emu &lt;xemu.exe of a lab&gt; --rom &lt;game&gt; [--seconds n]: the plugin's whole launch, for real - its
+        /// PrepareEmulatorForLaunch (disc served, console made, session EEPROM and xemu.toml, the line), xemu started with that line
+        /// (the game's path after it, as the host appends it), closed the normal way after n seconds, then the plugin's session end
+        /// (merge back, stand-alone console, save capture) waited for. The game's options: Vulkan on the RTX 3060. STARTS XEMU.</summary>
+        public static bool Launch(Assembly asm, string exe, string rom, int seconds, string lbRoot = null)
+        {
+            _asm = asm;
+            // The LaunchBox root, for the plugin's own copy of the RAM disk code: its helper, its task - a disc then served by AIM.
+            if (lbRoot != null) asm.GetType("LbIntegrations.RamDisk.RamDiskHost", true).GetMethod("UseRoot", Any).Invoke(null, new object[] { lbRoot });
+            var pluginType = asm.GetType("LbIntegrations.Xemu.XemuPlugin", true);
+            var dir = Path.GetDirectoryName(exe);
+            var settings = Path.Combine(dir, "probe-settings");
+            Directory.CreateDirectory(Path.Combine(settings, "games"));
+            T("XemuSettings").GetField("DirOverride", Any).SetValue(null, settings);
+            File.WriteAllLines(Path.Combine(settings, "games", "probe-launch.ini"), new[] { "opt.display.renderer=VULKAN", "opt.display.gpu=NVIDIA GeForce RTX 3060" });
+            var userToml = Path.Combine(dir, "xemu.toml");
+            var userBefore = File.ReadAllText(userToml);
+
+            var plugin = (Unbroken.LaunchBox.Plugins.EmulatorPlugin)Activator.CreateInstance(pluginType);
+            var emu = new StubEmulator { Title = "Nixx-Xemu", ApplicationPath = exe };
+            var game = StubGame.Create("probe-launch", Path.GetFileNameWithoutExtension(rom), rom, emu.Id);
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var r = plugin.PrepareEmulatorForLaunch(new Unbroken.LaunchBox.Plugins.PrepareForLaunchArgs(emu, game, "-full-screen -dvd_path"));
+            Console.WriteLine("  prepared in " + watch.ElapsedMilliseconds + " ms: success " + r?.WasSuccess + "\n  line: " + r?.NewCommandLine);
+            if (r == null || !r.WasSuccess) return false;
+            var session = Path.Combine(dir, "xemu-session.toml");
+            Console.WriteLine("  session toml: " + File.Exists(session) + "; the user's untouched: " + (File.ReadAllText(userToml) == userBefore));
+            if (File.Exists(session))
+                foreach (var l in File.ReadAllLines(session).Where(l => l.StartsWith("renderer") || l.StartsWith("preferred_physical") || l.StartsWith("show_menubar") || l.Contains("_path")))
+                    Console.WriteLine("    " + l);
+
+            var psi = new System.Diagnostics.ProcessStartInfo(exe, r.NewCommandLine + " \"" + rom + "\"") { UseShellExecute = false, WorkingDirectory = dir };
+            using var p = System.Diagnostics.Process.Start(psi);
+            Console.WriteLine("  xemu started, pid " + p.Id + "; " + seconds + " s");
+            var served = r.NewCommandLine.Contains("game.iso") ? r.NewCommandLine.Split('"').FirstOrDefault(s => s.EndsWith("game.iso")) : null;
+            Console.WriteLine("  disc served where it is: " + (served ?? "no (a copy)"));
+            System.Threading.Thread.Sleep(seconds * 1000);
+            p.CloseMainWindow();
+            if (!p.WaitForExit(15000)) { Console.WriteLine("  xemu did not close - killed"); p.Kill(); p.WaitForExit(); }
+            Console.WriteLine("  xemu closed (exit " + p.ExitCode + ")");
+            // The plugin's session end runs on its own thread: waited for, by its traces - the session's files gone.
+            for (int i = 0; i < 60 && File.Exists(session); i++) System.Threading.Thread.Sleep(500);
+            System.Threading.Thread.Sleep(3000);
+            Console.WriteLine("  session merged back and removed: " + !File.Exists(session));
+            var after = File.ReadAllText(userToml);
+            Console.WriteLine("  the user's xemu.toml: " + (after == userBefore ? "as it was" : "changed:"));
+            if (after != userBefore) foreach (var l in after.Split('\n')) Console.WriteLine("    | " + l.TrimEnd('\r'));
+            if (served != null) Console.WriteLine("  the served disc detached: " + !File.Exists(served));
+            var pack = Path.Combine(dir, "lbip-saves");
+            Console.WriteLine("  saves captured: " + (Directory.Exists(pack) ? string.Join(", ", Directory.GetFiles(pack, "*.cxbxsave").Select(Path.GetFileName)) : "none"));
+            return true;
+        }
+
+        /// <summary>--xemu-session make|merge --user &lt;xemu.toml&gt; --session &lt;session toml&gt;: the plugin's session file made from
+        /// the user's (renderer Vulkan, menu bar hidden, scale 2 - as a game's options would), or merged back - for a real xemu run
+        /// between the two.</summary>
+        public static bool SessionStep(Assembly asm, string step, string user, string session)
+        {
+            _asm = asm;
+            var cfg = _asm.GetType("LbIntegrations.Xemu.XemuSessionConfig", true);
+            if (step == "make")
+            {
+                var set = new List<(string, string, string)> { ("display", "renderer", "'VULKAN'"), ("display.ui", "show_menubar", "false"), ("display.quality", "surface_scale", "2") };
+                cfg.GetMethod("Make", Any).Invoke(null, new object[] { user, session, set, null });
+                Console.WriteLine("  made " + session);
+                return true;
+            }
+            bool changed = (bool)cfg.GetMethod("MergeBack", Any).Invoke(null, new object[] { user, session });
+            Console.WriteLine("  merged back: " + (changed ? "the user's file changed" : "nothing to change"));
+            return true;
         }
 
         public static bool Run(Assembly asm)
@@ -758,6 +990,14 @@ namespace LbIntegrations.Probe
                 File.WriteAllText(toml, "# xemu's\r\n[general]\r\nshow_welcome = true\r\n[display]\r\nrenderer = 'VULKAN'\r\n");
                 Call("XemuToml", "Set", toml, "general", "show_welcome", "false");
                 Check("xemu's own file: the rest kept", File.ReadAllText(toml) == "# xemu's\n[general]\nshow_welcome = false\n[display]\nrenderer = 'VULKAN'\n", File.ReadAllText(toml));
+
+                Console.WriteLine("  options");
+                Options(work);
+
+                Console.WriteLine("  xemu.toml for a session");
+                var sessionWork = Path.Combine(work, "session");
+                Directory.CreateDirectory(sessionWork);
+                SessionToml(sessionWork);
 
                 // 7. the launch line
                 Console.WriteLine("  launch line");

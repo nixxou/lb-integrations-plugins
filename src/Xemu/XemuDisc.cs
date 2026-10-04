@@ -103,15 +103,15 @@ namespace LbIntegrations.Xemu
         /// <summary>The path to give xemu's -dvd_path for <paramref name="rom"/> - the file itself for an XISO that needs nothing,
         /// else the disc served where it is, else a copy in the cache, made now when it is not there. Null with
         /// <paramref name="problem"/> when the game cannot be launched.</summary>
-        public static string Present(string rom, string exe, out string problem, out XemuDiscInfo info, Action<string> report = null)
+        public static string Present(string rom, string exe, out string problem, out XemuDiscInfo info, Action<string> report = null, bool? mediaPatch = null)
         {
             problem = null;
             info = Describe(rom);
             if (info.Problem != null) { problem = info.Problem; return null; }
             var name = System.IO.Path.GetFileName(rom);
 
-            // THE MEDIA PATCH (XboxMediaPatch, on unless media_patch=0): where the disc's .xbe files hold extract-xiso's pattern.
-            bool patch = XemuSettings.MediaPatch();
+            // THE MEDIA PATCH (XboxMediaPatch, the option disc.media_patch - on by default): where the disc's .xbe files hold extract-xiso's pattern.
+            bool patch = mediaPatch ?? XemuSettings.MediaPatch();
             long[] patches = patch && info.Kind != XemuDiscKind.ImageInArchive ? PatchesOf(rom) : Array.Empty<long>();
             if (patches.Length > 0) Log.Info("disc: the media patch goes in " + patches.Length + " place(s) of " + name);
             if (info.Kind == XemuDiscKind.Xiso && patches.Length == 0) { Log.Info("disc: " + name + " is an XISO" + (patch ? ", no media patch to make" : "") + " - opened as it is"); return rom; }
