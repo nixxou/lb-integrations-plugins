@@ -239,8 +239,10 @@ namespace LbIntegrations.Cxbx
                 if (save == null) return new AddSaveResponse("No save was supplied.");
                 var source = Safe(() => save.FileLocation);
                 if (string.IsNullOrWhiteSpace(source) || !File.Exists(source)) return new AddSaveResponse("This Xbox backup is not a file: " + source);
-                var titleId = TitleIdFrom(save);
-                if (titleId == null) return new AddSaveResponse("This backup does not say which Xbox game it belongs to.");
+                // A backup of a save group says its game; a file imported by hand (Import Save Game File...) may not - then the
+                // game it is imported for says it, by its disc. A save of xemu's plugin ("xemu:") is the same format.
+                var titleId = TitleIdFrom(save) ?? TitleIdOfGame(save);
+                if (titleId == null) return new AddSaveResponse("This backup does not say which Xbox game it belongs to, and the game's disc could not be read.");
                 if (!CxbxSaves.IsZip(source)) return new AddSaveResponse("That file is not an Xbox save of this plugin.");
                 if (CxbxPaths.LoaderRunning()) return new AddSaveResponse("Cxbx-Reloaded is running - close it first, then restore the save.");
 
@@ -298,9 +300,24 @@ namespace LbIntegrations.Cxbx
         private static string TitleIdFrom(GameSaveBase save)
         {
             var g = Safe(() => save?.SaveGroupId);
-            if (g == null || !g.StartsWith(CxbxSaves.GroupPrefix, StringComparison.OrdinalIgnoreCase)) return null;
-            var id = g.Substring(CxbxSaves.GroupPrefix.Length).Trim().ToLowerInvariant();
-            return id.Length == 8 && uint.TryParse(id, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out _) ? id : null;
+            if (g == null) return null;
+            string id = null;
+            if (g.StartsWith(CxbxSaves.GroupPrefix, StringComparison.OrdinalIgnoreCase)) id = g.Substring(CxbxSaves.GroupPrefix.Length);
+            else if (g.StartsWith("xemu:", StringComparison.OrdinalIgnoreCase)) id = g.Substring("xemu:".Length);
+            id = id?.Trim().ToLowerInvariant();
+            return id != null && id.Length == 8 && uint.TryParse(id, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out _) ? id : null;
+        }
+
+        /// <summary>The title id of the game a save is added for, read from its disc - for a file imported without its group.</summary>
+        private static string TitleIdOfGame(GameSaveBase save)
+        {
+            try
+            {
+                var game = PluginHelper.DataManager?.GetGameById(Safe(() => save?.GameId));
+                var rom = ResolveFullPath(Safe(() => game?.ApplicationPath));
+                return rom == null ? null : CxbxGame.TitleIdOf(rom);
+            }
+            catch { return null; }
         }
 
         /// <summary>The loader a save belongs to: the game's emulator, else any of ours. AddSaveArgs names neither.</summary>

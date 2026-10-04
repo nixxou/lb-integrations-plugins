@@ -124,23 +124,10 @@ namespace LbIntegrations.Xemu
     internal static class XemuGameMenu
     {
         public const string Caption = "Nixx-Xemu : Options...";
-        private const string Platform = "Microsoft Xbox";
 
-        /// <summary>A game of ours: its own emulator is an xemu of this plugin, or it is an Xbox game and one is in the library.
-        /// Asked at every right-click: lookups in memory only.</summary>
-        internal static bool IsOurs(IGame game)
-        {
-            try
-            {
-                var dm = PluginHelper.DataManager;
-                if (dm == null || game == null) return false;
-                var own = string.IsNullOrWhiteSpace(game.EmulatorId) ? null : dm.GetEmulatorById(game.EmulatorId);
-                if (own != null) return XemuPaths.IsOurs(XemuPlugin.ResolveFullPath(own.ApplicationPath));
-                if (!string.Equals(game.Platform, Platform, StringComparison.OrdinalIgnoreCase)) return false;
-                return XemuLibrary.All().Count > 0;
-            }
-            catch { return false; }
-        }
+        /// <summary>A game of ours: an xemu of this plugin is among what it can be launched with - its own emulator, or one
+        /// "Launch With" offers for its platform (LbipLaunchWith) - so a game set to Cxbx-Reloaded gets this entry too.</summary>
+        internal static bool IsOurs(IGame game) => LbIntegrations.Lbip.LbipLaunchWith.Offers(game, p => XemuPaths.IsOurs(XemuPlugin.ResolveFullPath(p)));
 
         internal static void Open(IGame[] games)
         {

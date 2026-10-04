@@ -172,8 +172,10 @@ namespace LbIntegrations.Xemu
                 if (save == null) return new AddSaveResponse("No save was supplied.");
                 var source = Safe(() => save.FileLocation);
                 if (string.IsNullOrWhiteSpace(source) || !File.Exists(source)) return new AddSaveResponse("This Xbox backup is not a file: " + source);
-                var titleId = TitleIdFrom(save);
-                if (titleId == null) return new AddSaveResponse("This backup does not say which Xbox game it belongs to.");
+                // A backup of a save group says its game; a file imported by hand (Import Save Game File...) may not - then the
+                // game it is imported for says it, by its disc.
+                var titleId = TitleIdFrom(save) ?? TitleIdOfGame(save);
+                if (titleId == null) return new AddSaveResponse("This backup does not say which Xbox game it belongs to, and the game's disc could not be read.");
                 var exe = EmulatorFor(save);
                 if (exe == null) return new AddSaveResponse("Could not locate the xemu installation.");
                 if (XemuPaths.Running(exe)) return new AddSaveResponse("xemu is running - close it first, then restore the save.");
@@ -256,6 +258,18 @@ namespace LbIntegrations.Xemu
             else if (g.StartsWith(XemuSaveFiles.CxbxGroupPrefix, StringComparison.OrdinalIgnoreCase)) id = g.Substring(XemuSaveFiles.CxbxGroupPrefix.Length);
             id = id?.Trim().ToLowerInvariant();
             return id != null && id.Length == 8 && uint.TryParse(id, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out _) ? id : null;
+        }
+
+        /// <summary>The title id of the game a save is added for, read from its disc - for a file imported without its group.</summary>
+        private static string TitleIdOfGame(GameSaveBase save)
+        {
+            try
+            {
+                var game = PluginHelper.DataManager?.GetGameById(Safe(() => save?.GameId));
+                var rom = ResolveFullPath(Safe(() => game?.ApplicationPath));
+                return rom == null ? null : XemuDisc.TitleIdOf(rom);
+            }
+            catch { return null; }
         }
 
         /// <summary>The xemu a save belongs to: the game's emulator, else any of ours. AddSaveArgs names neither.</summary>

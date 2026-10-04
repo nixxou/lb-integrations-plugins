@@ -206,23 +206,10 @@ namespace LbIntegrations.Cxbx
     internal static class CxbxGameMenu
     {
         public const string Caption = "Nixx-Cxbx : Options...";
-        private const string Platform = "Microsoft Xbox";
 
-        /// <summary>A game of ours: its own emulator is a Cxbx-Reloaded loader, or it is an Xbox game and one is in the
-        /// library. Asked at every right-click: lookups in memory only.</summary>
-        internal static bool IsOurs(IGame game)
-        {
-            try
-            {
-                var dm = PluginHelper.DataManager;
-                if (dm == null || game == null) return false;
-                var own = string.IsNullOrWhiteSpace(game.EmulatorId) ? null : dm.GetEmulatorById(game.EmulatorId);
-                if (own != null) return CxbxPaths.IsCxbx(own.ApplicationPath);
-                if (!string.Equals(game.Platform, Platform, StringComparison.OrdinalIgnoreCase)) return false;
-                return (dm.GetAllEmulators() ?? new IEmulator[0]).Any(e => e != null && CxbxPaths.IsCxbx(e.ApplicationPath));
-            }
-            catch { return false; }
-        }
+        /// <summary>A game of ours: a Cxbx-Reloaded loader is among what it can be launched with - its own emulator, or one
+        /// "Launch With" offers for its platform (LbipLaunchWith) - so a game set to xemu gets this entry too.</summary>
+        internal static bool IsOurs(IGame game) => LbIntegrations.Lbip.LbipLaunchWith.Offers(game, CxbxPaths.IsCxbx);
 
         internal static void Open(IGame[] games)
         {
