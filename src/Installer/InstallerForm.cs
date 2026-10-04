@@ -397,15 +397,30 @@ internal sealed class InstallerForm : Form
         {
             Text = text, AutoSize = true, MinimumSize = new Size(120, 32), Padding = new Padding(10, 0, 10, 0),
             FlatStyle = FlatStyle.Flat, Font = _bold, Margin = new Padding(0, 0, 8, 0), Cursor = Cursors.Hand,
-            BackColor = primary ? Accent : Color.White, ForeColor = primary ? Color.White : Ink, UseVisualStyleBackColor = false,
+            UseVisualStyleBackColor = false,
         };
-        b.FlatAppearance.BorderColor = primary ? Accent : Border;
-        b.EnabledChanged += (_, _) =>
-        {
-            b.BackColor = !b.Enabled ? Color.FromArgb(229, 231, 235) : primary ? Accent : Color.White;
-            b.FlatAppearance.BorderColor = !b.Enabled ? Border : primary ? Accent : Border;
-        };
+        if (primary) _primaries.Add(b);
+        Colour(b);
+        b.EnabledChanged += (_, _) => Colour(b);
         return b;
+    }
+
+    /// <summary>Buttons drawn as the window's main action, and those ORANGE because what they install is needed before the
+    /// plugins can be (Mehdi, 04/10: "met en orange les boutons des trucs à installer avant").</summary>
+    private readonly HashSet<Button> _primaries = new(), _orange = new();
+
+    private void Colour(Button b)
+    {
+        bool primary = _primaries.Contains(b), orange = _orange.Contains(b) && b.Enabled;
+        b.BackColor = !b.Enabled ? Color.FromArgb(229, 231, 235) : orange ? Warn : primary ? Accent : Color.White;
+        b.ForeColor = orange || primary ? Color.White : Ink;
+        b.FlatAppearance.BorderColor = !b.Enabled ? Border : orange ? Warn : primary ? Accent : Border;
+    }
+
+    private void Orange(Button b, bool on)
+    {
+        if (on) _orange.Add(b); else _orange.Remove(b);
+        Colour(b);
     }
 
     // ── what is shown ────────────────────────────────────────────────────────
@@ -528,13 +543,20 @@ internal sealed class InstallerForm : Form
         bool any = s.Plugins.Any(p => p.Status != PluginStatus.Missing);
         bool behind = s.Plugins.Any(p => p.Status != PluginStatus.UpToDate);
         _install.Text = !any ? "Install" : behind ? "Update" : "Reinstall";
-        _install.Enabled = l != null;
         _uninstall.Enabled = l != null && s.Installed;
 
         // ── RAM disk ──
         var r = s.Ram;
         // LBIP_PREVIEW_NO_DRIVER=1: the window as a machine without ImDisk sees it - for looking at the choice, nothing else.
         if (Environment.GetEnvironmentVariable("LBIP_PREVIEW_NO_DRIVER") == "1") r = r with { Driver = false, Task = null };
+
+        // THE RAM DISK FIRST (Mehdi, 04/10): Install stays off until a driver (the AIM Toolkit or ImDisk) and the helper with its
+        // task are in place - the buttons that install them are orange, and a line says so. Uninstall is never held back.
+        _install.Enabled = l != null && r.Ready;
+        if (l != null && !r.Ready)
+            Row(_lbRows, Mark.Warn, "RAM disk first",
+                !r.Driver ? "Install a RAM disk driver below - the AIM Toolkit (recommended) or ImDisk: its orange button also sets up the helper. Then Install."
+                          : "Set up the RAM disk helper and its task below (the orange button), then Install.");
         var imdisk = ImDiskSetup.InstalledVersion();
         var aim = AimSetup.DriverVersion();
         bool aimToolkit = AimSetup.ToolkitInstalled();
@@ -577,6 +599,11 @@ internal sealed class InstallerForm : Form
             _ram.Enabled = l != null && r.Runtime;
             _ram.Text = r.Helper && r.HelperOld && r.Task != null ? "Update the helper" : "Set up the helper and task";
         }
+        // Orange: what has to be installed before the plugins - a driver when there is none, else the helper and its task.
+        bool needDriver = l != null && !r.Driver;
+        Orange(_modern.Action, needDriver);
+        Orange(_legacy.Action, needDriver);
+        Orange(_ram, l != null && r.Driver && !r.Ready);
 
         // ── VHDX ──
         var v = s.Vhdx;
