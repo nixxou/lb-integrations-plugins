@@ -149,8 +149,9 @@ namespace LbIntegrations.Flycast
             if (fileName == null) return;
             string stem = StripExtension(fileName);
 
-            // The Dreamcast save, when this ROM is a disc we can read an id out of.
-            var product = FlycastGameId.LooksLikeDisc(romPath) ? FlycastGameId.Of(romPath) : null;
+            // The Dreamcast save, when this ROM is a disc we can read an id out of. The path RESOLVED first (04/10): on
+            // LaunchBox's own drive it is relative to LaunchBox's folder, which is not always the current one.
+            var product = FlycastGameId.LooksLikeDisc(romPath) ? FlycastGameId.Of(LbIntegrations.Lbip.LbipImportWatch.Full(romPath) ?? romPath) : null;
             if (product != null)
             {
                 var vmuName = Ipbin.SanitizeForFileName(product) + VmuSuffix;
