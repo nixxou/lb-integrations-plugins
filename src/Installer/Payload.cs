@@ -152,19 +152,14 @@ internal static class Payload
     /// of our own would be two tasks doing one job.
     ///
     /// A SEPARATE TABLE RATHER THAN A FOURTH FIELD, because these files have a different lifetime.
-    /// Files is what install writes and uninstall removes; this is written only when it is ABSENT and
-    /// is never removed, because the copy sitting there may be LiteBox's and taking it away would
-    /// break its RAM disk. The paths are relative to the LaunchBox root, not to a plugin folder.</summary>
+    /// Files is what install writes and uninstall removes; this is written only when it is absent or
+    /// older, and removed by the uninstall only when no LiteBox shares it (RamDiskSetup.Remove - Mehdi,
+    /// 04/10). The paths are relative to the LaunchBox root, not to a plugin folder. One file since the
+    /// helper 1.9.1, self-contained.</summary>
     public static readonly (string Resource, string Relative)[] SharedFiles =
     {
         ("payload/ramdisk/RamDiskHelper.exe",
              @"ThirdParty\RomExtractor\ramdisk\RamDiskHelper.exe"),
-        ("payload/ramdisk/RamDiskHelper.dll",
-             @"ThirdParty\RomExtractor\ramdisk\RamDiskHelper.dll"),
-        ("payload/ramdisk/RamDiskHelper.deps.json",
-             @"ThirdParty\RomExtractor\ramdisk\RamDiskHelper.deps.json"),
-        ("payload/ramdisk/RamDiskHelper.runtimeconfig.json",
-             @"ThirdParty\RomExtractor\ramdisk\RamDiskHelper.runtimeconfig.json"),
     };
 
     /// <summary>What an older deploy put in the folder LaunchBox scans, rather than under native\.

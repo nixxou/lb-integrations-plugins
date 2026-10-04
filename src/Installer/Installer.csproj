@@ -121,17 +121,9 @@
       <LogicalName>payload/LbIntegrations.Catalog.dll</LogicalName>
     </EmbeddedResource>
 
+    <!-- The RAM disk helper: ONE file since 1.9.1, self-contained (tools\ramdisk-helper\RamDiskHelper.csproj). -->
     <EmbeddedResource Include="$(PayloadDir)\ramdisk\RamDiskHelper.exe">
       <LogicalName>payload/ramdisk/RamDiskHelper.exe</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="$(PayloadDir)\ramdisk\RamDiskHelper.dll">
-      <LogicalName>payload/ramdisk/RamDiskHelper.dll</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="$(PayloadDir)\ramdisk\RamDiskHelper.deps.json">
-      <LogicalName>payload/ramdisk/RamDiskHelper.deps.json</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="$(PayloadDir)\ramdisk\RamDiskHelper.runtimeconfig.json">
-      <LogicalName>payload/ramdisk/RamDiskHelper.runtimeconfig.json</LogicalName>
     </EmbeddedResource>
 
     <EmbeddedResource Include="$(PayloadDir)\native\melonds-nand.dll">

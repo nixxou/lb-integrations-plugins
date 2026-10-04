@@ -22,7 +22,8 @@ namespace NixxIntegrations;
 /// LaunchBox is chosen: the helper and the task belong to an install, the driver and the runtime to the
 /// machine.</summary>
 internal sealed record RamDiskState(bool Known, bool Driver, bool Runtime, string? RuntimeWhy,
-                                    bool Helper, Version? HelperVersion, Version? BundledVersion, string? Task)
+                                    bool Helper, Version? HelperVersion, Version? BundledVersion, string? Task,
+                                    bool SelfContained = false)
 {
     /// <summary>A helper older than the one this exe carries: it works, but misses what came since
     /// (clean, VHDX, clean dismount), and Enable replaces it.</summary>
@@ -46,14 +47,22 @@ internal static class RamDiskSetup
         return _bundled;
     }
 
+    /// <summary>Does this exe carry a SELF-CONTAINED helper (1.9.1 on) - its exe and no runtimeconfig.json? Then no
+    /// .NET runtime is needed on the machine (Mehdi, 04/10).</summary>
+    public static bool BundledSelfContained => Resource("RamDiskHelper.exe") != null && Resource("RamDiskHelper.runtimeconfig.json") == null;
+
     /// <summary>What the machine says, and - when <paramref name="l"/> is given - what that install says.
     /// The task lookup runs schtasks, so this is slow enough to be asked off the window's thread.</summary>
     public static RamDiskState Look(Layout? l)
     {
-        var runtime = RamDrive.RuntimeReady(out var why);
+        if (l != null) RamDiskHost.UseRoot(l.Root);
+        // The runtime matters only for a framework-dependent helper: not for the one this exe carries, nor for a
+        // self-contained one already in place.
+        string? why = null;
+        bool self = BundledSelfContained;
+        var runtime = self || RamDrive.RuntimeReady(out why);
         if (l == null)
-            return new RamDiskState(false, RamDrive.IsDriverInstalled(), runtime, why, false, null, Bundled(), null);
-        RamDiskHost.UseRoot(l.Root);
+            return new RamDiskState(false, RamDrive.IsDriverInstalled(), runtime, why, false, null, Bundled(), null, self);
         return new RamDiskState(
             Known: true,
             Driver: RamDrive.IsDriverInstalled(),
@@ -62,7 +71,8 @@ internal static class RamDiskSetup
             Helper: RamDrive.IsHelperInstalled(),
             HelperVersion: RamDrive.HelperVersion,
             BundledVersion: Bundled(),
-            Task: RamDrive.InstalledTaskName());
+            Task: RamDrive.InstalledTaskName(),
+            SelfContained: self);
     }
 
     /// <summary>One line, for messages.</summary>
@@ -93,9 +103,9 @@ internal static class RamDiskSetup
                          + "Install Arsenal Image Mounter (the AIM Toolkit) or ImDisk with their buttons above, then come back here.\n\n"
                          + "Nothing else was changed.");
 
-        if (!RamDrive.RuntimeReady(out var why))
+        if (!BundledSelfContained && !RamDrive.RuntimeReady(out var why))
             return (false, "The RAM disk helper cannot run here: " + why + ".\n\n"
-                         + "Install the .NET Desktop Runtime and try again. Nothing was changed.");
+                         + "Install the .NET Runtime (9 or newer) and try again. Nothing was changed.");
 
         var deployed = RamDrive.DeployHelper(Resource, out var wrote);
         if (!wrote) return (false, deployed);
@@ -120,7 +130,47 @@ internal static class RamDiskSetup
                     + "LiteBox uses this same task, so its ROM extractor will find it too.");
     }
 
-    /// <summary>The helper's four files, out of this exe. Null when a build was made without its
+    /// <summary>THE UNINSTALL'S PART (Mehdi, 04/10): the helper and its elevated task taken away - unless LiteBox is in
+    /// this LaunchBox, which shares both (same folder, same task) and would lose its RAM disk. The drivers (AIM, ImDisk)
+    /// are left: they are the machine's, with their own entry in Programs and Features. What happened, for the message.</summary>
+    public static string Remove(Layout l)
+    {
+        try
+        {
+            RamDiskHost.UseRoot(l.Root);
+            var dir = RamDrive.HelperDir;
+            bool helper = RamDrive.IsHelperInstalled(), task = RamDrive.InstalledTaskName() != null;
+            if (!helper && !task) return "";
+            if (LiteBoxIsHere(l))
+                return "\n\nThe RAM disk helper and its scheduled task are LiteBox's too (it is installed here): left in place.";
+
+            var said = new List<string>();
+            if (task) said.Add(RamDrive.RemoveTask() ? "its scheduled task removed" : "its scheduled task NOT removed (the Windows prompt was refused?) - schtasks /delete can do it");
+            if (dir != null && Directory.Exists(dir))
+            {
+                foreach (var name in RamDrive.HelperFiles.Concat(RamDrive.FrameworkFiles).Concat(new[] { "ramdisk.cfg", "ramdisk.result", "attached.tsv" }))
+                    try { var p = Path.Combine(dir, name); if (File.Exists(p)) File.Delete(p); } catch { }
+                try { if (!Directory.EnumerateFileSystemEntries(dir).Any()) Directory.Delete(dir); } catch { }
+                said.Add(File.Exists(Path.Combine(dir, "RamDiskHelper.exe")) ? "the helper NOT removed (in use?)" : "the helper removed");
+            }
+            return "\n\nRAM disk: " + string.Join(", ", said) + ". The AIM / ImDisk drivers stay - they have their own entry in "
+                 + "Programs and Features.";
+        }
+        catch (Exception ex) { return "\n\nThe RAM disk helper could not be removed: " + ex.Message; }
+    }
+
+    /// <summary>Is LiteBox installed in this LaunchBox - its exe at the root or in Core\, or its Core\litebox\ folder?</summary>
+    public static bool LiteBoxIsHere(Layout l)
+    {
+        try
+        {
+            return File.Exists(Path.Combine(l.Root, "LiteBox.exe")) || File.Exists(Path.Combine(l.Root, "Core", "LiteBox.exe"))
+                || Directory.Exists(Path.Combine(l.Root, "Core", "litebox"));
+        }
+        catch { return true; }
+    }
+
+    /// <summary>The helper's file, out of this exe. Null when a build was made without its
     /// payload, which DeployHelper turns into a message rather than an exception.</summary>
     private static byte[]? Resource(string fileName)
     {

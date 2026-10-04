@@ -15,12 +15,16 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net9.0-windows</TargetFramework>
 
-    <!-- FRAMEWORK-DEPENDENT, AND THAT NEEDS A ROLL-FORWARD. The default policy is Minor, which
-         moves within major 9 and never across it - so a net9.0 build refuses to start on a machine
-         carrying only .NET 10, with a dialog nobody can act on. Major lets it run on whatever is
-         there. It is one line and it removes a silent failure; the build LiteBox ships does not
-         have it, which costs nothing because neither side overwrites the other's file. -->
-    <RollForward>Major</RollForward>
+    <!-- SELF-CONTAINED, ONE FILE (Mehdi, 04/10: "que RamDiskHelper ne dépende pas de l'install de .NET 9"). Until 1.9.0 it
+         was framework-dependent - four files and a .NET 9+ runtime on the machine, which LaunchBox 14 does not bring (it
+         carries its own, in Core\) and the pack's setup did not install: on a clean PC the RAM disk never started. Now
+         `dotnet publish` (build-release.ps1) makes ONE RamDiskHelper.exe carrying its runtime, compressed. Not trimmed:
+         the helper loads its embedded libraries (ZstdSharp, CHDSharp...) by reflection. -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
 
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
@@ -30,8 +34,9 @@
          type, sparse and format to ramdisk.cfg. Both sides deploy this helper when the one on
          disk is ABSENT OR OLDER and never when it is newer, and a caller checks this version
          before sending a key the older one would silently ignore. Bump it with the protocol,
-         never with an ordinary fix. -->
-    <Version>1.9.0</Version>
+         never with an ordinary fix. 1.9.1 is the one exception: the protocol of 1.9.0, self-contained - numbered
+         above it so that "absent or older" replaces the framework-dependent 1.9.0 already deployed. -->
+    <Version>1.9.1</Version>
 
     <Platforms>AnyCPU;x64</Platforms>
     <UseWindowsForms>false</UseWindowsForms>

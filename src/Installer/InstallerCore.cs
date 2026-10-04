@@ -390,7 +390,11 @@ internal static class InstallerCore
             return (false, "Some folders could not be removed (close LaunchBox / BigBox / LiteBox):\n"
                          + string.Join("\n", problems));
 
+        // The RAM disk helper and its elevated task, when no LiteBox shares them (Mehdi, 04/10) - RamDiskSetup.Remove.
+        var ramdisk = RamDiskSetup.Remove(l);
+
         return (true, (gone == 0 ? "Nothing of this pack was installed here." : gone + " plugin folder(s) removed.")
+                    + ramdisk
                     + "\n\nLeft alone on purpose: your emulator entries in Data\\Emulators.xml, the "
                     + "plugins' settings under Local\\Plugins\\.data\\, your NAND dumps and every "
                     + "save. An emulator you set up keeps launching - these plugins recognise one by "

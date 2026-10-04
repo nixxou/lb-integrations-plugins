@@ -543,7 +543,8 @@ internal sealed class InstallerForm : Form
                     : aim != null ? "Driver " + aim.ToString(3) + " without the Toolkit" : "Not installed",
                     aimToolkit ? null : l != null ? "Install and set up" : "Install",
                     AimSetup.RamDiskUI() != null);
-        Row(_ramRows, r.Runtime ? Mark.Ok : Mark.No, ".NET runtime", r.Runtime ? ".NET 9 or newer is present." : "Missing: the helper needs the .NET 9 Desktop Runtime or newer.");
+        Row(_ramRows, r.Runtime ? Mark.Ok : Mark.No, ".NET runtime",
+            r.SelfContained ? "Not needed: the helper carries its own." : r.Runtime ? ".NET 9 or newer is present." : "Missing: the helper in place needs the .NET Runtime 9 or newer.");
         if (!r.Known)
         {
             Row(_ramRows, Mark.Info, "Helper", "Choose a LaunchBox to check it.");

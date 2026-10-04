@@ -129,8 +129,8 @@ internal static class ImDiskSetup
         finally { try { File.Delete(result); } catch { } }
     }
 
-    /// <summary>In the elevated process: the driver when there is none, then the helper and the task.
-    /// For AIM, the driver only - the helper cannot use it yet.</summary>
+    /// <summary>In the elevated process: the driver when there is none (the AIM Toolkit or ImDisk), then - with a LaunchBox -
+    /// the helper and the task, in this same prompt.</summary>
     public static (bool ok, string message) SetUpElevated(Layout? l, RamDriver chosen = RamDriver.ImDisk)
     {
         if (chosen == RamDriver.Aim)

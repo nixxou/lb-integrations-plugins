@@ -171,19 +171,21 @@ Write-Host ("  staged native\{0,-22} {1,8:N0} KB" -f 'flycast-id.exe', ((Get-Ite
 # It lands in the SAME folder LiteBox uses, so the two share one helper and one elevated task. The
 # installer writes it only when it is absent, so whichever of the two arrives first owns the file.
 
-Write-Host "Building the RAM disk helper..." -ForegroundColor Cyan
-dotnet build (Join-Path $repo 'tools\ramdisk-helper\RamDiskHelper.csproj') -c $Configuration --nologo -v quiet
-if ($LASTEXITCODE -ne 0) { throw "Build failed: RamDiskHelper" }
+# PUBLISHED, SELF-CONTAINED, ONE FILE since 1.9.1 (Mehdi, 04/10): it carries its own .NET, so a machine with none - LaunchBox
+# 14 brings its own, in Core\ - still runs it. See tools\ramdisk-helper\RamDiskHelper.csproj.
+Write-Host "Publishing the RAM disk helper (self-contained, single file)..." -ForegroundColor Cyan
+$ramOut = Join-Path $repo 'build\ramdisk-helper'
+if (Test-Path $ramOut) { Remove-Item $ramOut -Recurse -Force }
+dotnet publish (Join-Path $repo 'tools\ramdisk-helper\RamDiskHelper.csproj') -c $Configuration -o $ramOut --nologo -v quiet
+if ($LASTEXITCODE -ne 0) { throw "Publish failed: RamDiskHelper" }
 
 $ramDir = Join-Path $payload 'ramdisk'
+if (Test-Path $ramDir) { Remove-Item $ramDir -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $ramDir | Out-Null
-foreach ($file in @('RamDiskHelper.exe', 'RamDiskHelper.dll',
-                    'RamDiskHelper.deps.json', 'RamDiskHelper.runtimeconfig.json')) {
-    $source = Join-Path $repo "tools\ramdisk-helper\bin\$Configuration\$file"
-    if (-not (Test-Path $source)) { throw "The RAM disk helper is missing: $source" }
-    Copy-Item $source (Join-Path $ramDir $file) -Force
-    Write-Host ("  staged ramdisk\{0,-24} {1,8:N0} KB" -f $file, ((Get-Item $source).Length / 1KB))
-}
+$source = Join-Path $ramOut 'RamDiskHelper.exe'
+if (-not (Test-Path $source)) { throw "The RAM disk helper is missing: $source" }
+Copy-Item $source (Join-Path $ramDir 'RamDiskHelper.exe') -Force
+Write-Host ("  staged ramdisk\RamDiskHelper.exe     {0,8:N0} KB  (version {1})" -f ((Get-Item $source).Length / 1KB), (Get-Item $source).VersionInfo.FileVersion)
 
 # ── 3. one file ─────────────────────────────────────────────────────────────
 

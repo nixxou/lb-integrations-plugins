@@ -454,10 +454,13 @@ namespace LbIntegrations.RamDisk
         /// no result file, and the only trace would be a Windows dialog nobody sees because a
         /// scheduled task runs hidden.
         ///
-        /// Our build rolls forward across majors, so anything from 9 up will do.</summary>
+        /// Our build rolls forward across majors, so anything from 9 up will do.
+        ///
+        /// SINCE 1.9.1 THE HELPER CARRIES ITS OWN (self-contained, one file): then there is nothing to look for.</summary>
         public static bool RuntimeReady(out string why)
         {
             why = null;
+            if (HelperSelfContained) return true;
             try
             {
                 var dirs = new List<string>();
@@ -492,6 +495,33 @@ namespace LbIntegrations.RamDisk
                 RamDiskLog.Warn("could not look for a .NET runtime", ex);
                 return true;
             }
+        }
+
+        /// <summary>Take the elevated task away (the pack's uninstall, when no LiteBox shares it - Mehdi, 04/10). One UAC
+        /// prompt: a HIGHEST task can only be deleted elevated. True when it is gone, or was never there.</summary>
+        public static bool RemoveTask()
+        {
+            try
+            {
+                var name = InstalledTaskName();
+                if (name == null) return true;
+                var psi = new ProcessStartInfo(SchTasks)
+                {
+                    UseShellExecute = true,
+                    Verb = "runas",
+                    CreateNoWindow = true,
+                    WindowStyle = ProcessWindowStyle.Hidden,
+                    Arguments = "/delete /tn \"" + name + "\" /f",
+                };
+                using (var p = Process.Start(psi))
+                {
+                    if (p == null) return false;
+                    p.WaitForExit();
+                    RamDiskLog.Info("deleting the task " + name + " exited with " + p.ExitCode);
+                }
+                return InstalledTaskName() == null;
+            }
+            catch (Exception ex) { RamDiskLog.Warn("could not delete the task", ex); return false; }
         }
 
         /// <summary>The registered task for THIS install, or null.
@@ -1502,6 +1532,11 @@ namespace LbIntegrations.RamDisk
                     if (bytes == null) return "The RAM disk helper is missing from this build (" + name + ").";
                     File.WriteAllBytes(Path.Combine(dir, name), bytes);
                 }
+                // A SELF-CONTAINED ONE (1.9.1) OVER A FRAMEWORK-DEPENDENT ONE: the three files the old one needed beside it go,
+                // or RuntimeReady would read the folder as framework-dependent still. Only when this build carries none of them.
+                if (fileByName("RamDiskHelper.runtimeconfig.json") == null)
+                    foreach (var stale in FrameworkFiles)
+                        try { var p = Path.Combine(dir, stale); if (File.Exists(p)) File.Delete(p); } catch { }
                 ok = true;
                 var now = HelperVersion;
                 RamDiskLog.Info((replacing ? "replaced the helper (" + installed + " -> " + now + ") in "
@@ -1536,14 +1571,31 @@ namespace LbIntegrations.RamDisk
             finally { try { if (temp != null) File.Delete(temp); } catch { } }
         }
 
-        /// <summary>The four files a framework-dependent .NET executable needs beside it.</summary>
-        public static readonly string[] HelperFiles =
+        /// <summary>The helper's one file since 1.9.1: self-contained, single file, its .NET inside (Mehdi, 04/10).</summary>
+        public static readonly string[] HelperFiles = { "RamDiskHelper.exe" };
+
+        /// <summary>What a framework-dependent helper (up to 1.9.0, and LiteBox's own) needs beside its exe - their presence
+        /// is what says the helper in place needs a .NET runtime on the machine.</summary>
+        public static readonly string[] FrameworkFiles =
         {
-            "RamDiskHelper.exe",
             "RamDiskHelper.dll",
             "RamDiskHelper.deps.json",
             "RamDiskHelper.runtimeconfig.json",
         };
+
+        /// <summary>Is the helper in place self-contained - its exe, and no runtimeconfig.json beside it?</summary>
+        public static bool HelperSelfContained
+        {
+            get
+            {
+                try
+                {
+                    var exe = HelperExe;
+                    return exe != null && File.Exists(exe) && !File.Exists(Path.Combine(Path.GetDirectoryName(exe), "RamDiskHelper.runtimeconfig.json"));
+                }
+                catch { return false; }
+            }
+        }
 
         // ── helpers ──────────────────────────────────────────────────────────
 
