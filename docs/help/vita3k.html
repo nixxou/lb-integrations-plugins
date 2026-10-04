@@ -130,18 +130,13 @@
   <p>Note that game titles in your library stay in US English whatever language you choose here.</p>
 
   <h3>Per game: right-click &gt; "Nixx-Vita3K : Options..."</h3>
-  <p>Right-click a game (or a selection of games) in LaunchBox. The entry is provided by the pack's menu plugin and appears for any game a Nixx-Vita3K can run. It is not available in Big Box. The window has several tabs:</p>
+  <p>Right-click a game (or a selection of games) in LaunchBox. The entry is provided by the pack's menu plugin and appears for any game a Nixx-Vita3K can run. It is not available in Big Box. Under the game's title, its state in Vita3K's compatibility list. Then two tabs:</p>
   <ul>
     <li><strong>Session</strong> - where the console lives while you play: <em>RAM disk</em> (default; falls back to the disk when memory is short), <em>Disk only</em>, or <em>VHDX files</em> (the game is installed once into virtual disk files kept in a folder you choose, so later launches skip the install). Also the RAM disk safety margin and how much memory to keep free for Vita3K itself. Left empty, that last one uses what the game needed last time plus 15%.</li>
     <li><strong>Updates &amp; DLC</strong> - which update the game runs with (<em>Automatic</em> = the highest found, a specific one, or <em>None</em>) and which DLC to leave out. One game at a time. A DLC found later is added automatically. Changing this can affect existing saves, so the window warns you first.</li>
-    <li><strong>System</strong> - a different language, date, time format or confirm button for this game only.</li>
-    <li><strong>Graphics</strong> - Vita3K's renderer (Vulkan or OpenGL), image quality settings and FPS hack, for this game.</li>
-    <li><strong>Compatibility</strong> - the game's state in Vita3K's compatibility list, and three settings some games need: <em>File loading delay</em> (for games that load too fast, such as Silent Hill), <em>CPU optimizations</em> and <em>NGS audio</em> (some games crash or have no sound with them).</li>
-    <li><strong>Advanced</strong> - shows what the other tabs change, and lets you write Vita3K's per-game settings by hand. <em>Preview result...</em> shows exactly what Vita3K will read.</li>
   </ul>
-  <p>Every setting can stay on "default", which means the game runs as it would without the plugin. A coloured bar next to each setting shows where its value comes from, and <strong>Reset to defaults</strong> puts everything back. With several games selected, OK applies the window to all of them (you are asked first).</p>
-  <div class="warn">These per-game settings are applied only while the game runs; Vita3K's own per-game file is put back as it was when you quit. So a change you make in Vita3K's own game settings <em>during</em> such a session is lost - the window says so in red. Click <strong>Pause these settings</strong> to keep the plugin's settings for the game without using them: the game then runs on Vita3K's own settings, and changes made there are kept.</div>
-  <p>The <strong>Game settings in Vita3K...</strong> button at the bottom opens Vita3K on the selected game(s) without starting them, so you can use Vita3K's own "Custom Config" menu (right-click the game in Vita3K's list). The game cannot be played from there. Close Vita3K when you are done.</p>
+  <p>With several games selected, OK applies your changes to all of them (you are asked first).</p>
+  <p><strong>A game's own settings</strong> (renderer, resolution, language, CPU and audio options...) are Vita3K's own: the <strong>Game settings in Vita3K...</strong> button at the bottom opens Vita3K on the selected game(s) without starting them, so you can use Vita3K's own "Custom Config" menu (right-click the game in Vita3K's list). What you set there is kept, and used every time the game runs. The game cannot be played from there. Close Vita3K when you are done.</p>
 </section>
 
 <section id="saves"><h2>Saves and save states</h2>
@@ -167,7 +162,7 @@
   <tr><td>Save states</td><td class="no">No</td><td>Vita3K has none.</td></tr>
   <tr><td>RAM disk</td><td class="partly">Partly</td><td>Only if a RAM disk driver (Arsenal Image Mounter or ImDisk) is installed and the RAM disk was set up in the pack's installer, and only when enough memory is free. Otherwise the disk is used.</td></tr>
   <tr><td>VHDX mode</td><td class="partly">Partly</td><td>Needs the same RAM disk helper and a local (not network) folder. Falls back to the RAM disk or disk if it cannot be used.</td></tr>
-  <tr><td>Per-game settings</td><td class="yes">Yes</td><td>System, Graphics, Compatibility, Advanced; applied only during the game.</td></tr>
+  <tr><td>Per-game settings</td><td class="yes">Yes</td><td>Vita3K's own Custom Config, opened from the Options window ("Game settings in Vita3K...").</td></tr>
   <tr><td>Compatibility info</td><td class="partly">Partly</td><td>Shown once Vita3K has downloaded its compatibility list (it does this itself when it runs).</td></tr>
   <tr><td>Quit with Esc / pause screen Exit</td><td class="yes">Yes</td><td>No confirmation; Vita3K is closed for you if it lingers.</td></tr>
   <tr><td>Right-click Options in Big Box</td><td class="no">No</td><td>LaunchBox only. Playing from Big Box works.</td></tr>
@@ -185,7 +180,6 @@
     <li>If you point the plugin at a Vita3K you already used before, it does not move that install's data around, so your old games and saves there stay where they were. The plugin works best with the Vita3K it installs itself.</li>
     <li>Changing the update or DLC of a game may make old saves load wrong. The plugin keeps the save either way and asks when it sees a risk.</li>
     <li>Licences are never included: you need your own for every .pkg.</li>
-    <li>Changes made in Vita3K's own game settings during a game that has plugin settings are not kept (see <a href="#options">Options</a>, "Pause these settings").</li>
     <li>The import fix and the right-click Options are for LaunchBox; they do nothing in Big Box.</li>
   </ul>
 </section>
@@ -197,7 +191,7 @@
     <li><strong>A .pkg game does not start:</strong> its licence is missing or belongs to another package. Check the file name next to it, or the Content ID in your zRIF table.</li>
     <li><strong>A DLC or update is not used:</strong> open the game's Options, tab Updates &amp; DLC, to see what was found. The log explains why a file was not kept.</li>
     <li><strong>The firmware will not install:</strong> check your internet connection, and that the LaunchBox folder path is not too long.</li>
-    <li><strong>A game crashes or has no sound:</strong> look at its compatibility state, and try the Compatibility tab (CPU optimizations, NGS audio, file loading delay) or another renderer in Graphics.</li>
+    <li><strong>A game crashes or has no sound:</strong> look at its compatibility state (under the title of its Options window), and try its Custom Config in Vita3K (CPU optimizations, NGS audio, file loading delay, another renderer) - "Game settings in Vita3K...".</li>
     <li><strong>The import shows no games:</strong> make sure "Import Vita games as ROM files" is ticked in the Vita3K tab of the pack's window.</li>
   </ul>
 </section>

@@ -360,9 +360,10 @@ namespace LbIntegrations.Vita3k
                     return new PrepareForLaunchResponse(success: false);
                 }
 
-                // This game's own settings, in its custom config for the session - taken back once
-                // Vita3K has quit (the watcher, OnGameExited).
-                Vita3kGameConfig.Apply(layout, titleId, Safe(() => args?.GameBeingLaunched?.Id));
+                // A game's own settings are no longer laid over its custom config (Mehdi, 04/10): the options window's
+                // System, Graphics, Compatibility and Advanced tabs are gone - a game's own settings are Vita3K's own
+                // Custom Config ("Game settings in Vita3K..."). What a session of before left behind is still put back
+                // (Vita3kGameConfig.Restore, everywhere it was).
 
                 Playing(layout, titleId);
                 go = true;
