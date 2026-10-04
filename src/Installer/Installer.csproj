@@ -13,6 +13,8 @@
     <LangVersion>latest</LangVersion>
     <!-- The pack's version, shown in the window's header - the same as the plugins' manifests (InstalledVersion). -->
     <Version>1.1.0</Version>
+    <!-- Drawn by tools\installer-icon. The window takes it from the exe (Icon.ExtractAssociatedIcon). -->
+    <ApplicationIcon>nixx.ico</ApplicationIcon>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
 
     <!-- One file, no prerequisite. It is about 60 MB of which roughly 50 is the .NET runtime, and
