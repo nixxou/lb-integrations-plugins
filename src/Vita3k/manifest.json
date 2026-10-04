@@ -7,7 +7,7 @@
   "Description": "Download, update and firmware installation for the Vita3K emulator (Sony PlayStation Vita).",
   "Credits": "Many thanks to the developers of Vita3K!",
   "OperatingSystemFamily": "Windows",
-  "InstalledVersion": "1.0",
+  "InstalledVersion": "1.1",
   "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
   "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
   "HomePageUrl": "https://vita3k.org/",

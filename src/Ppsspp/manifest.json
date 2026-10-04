@@ -7,7 +7,7 @@
   "Description": "Download, update and save management for the PPSSPP emulator.",
   "Credits": "Many thanks to the developers of PPSSPP!",
   "OperatingSystemFamily": "Windows",
-  "InstalledVersion": "1.0",
+  "InstalledVersion": "1.1",
   "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
   "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
   "HomePageUrl": "https://www.ppsspp.org/",
