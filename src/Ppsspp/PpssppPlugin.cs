@@ -775,27 +775,14 @@ namespace LbIntegrations.Ppsspp
                 }
                 catch { }
 
-                // THE GAME'S OWN SETTINGS (the Options window): a session left behind put back first, then this
-                // game's laid over its PPSSPP config, taken back once PPSSPP has quit - see PpssppGameSettings.
+                // A GAME'S OWN SETTINGS ARE PPSSPP'S OWN (Mehdi, 04/10): its "Game settings" - the plugin's layer over them and
+                // its --graphics= are gone. What a session of before set aside is still put back - see PpssppGameSettings.
                 try
                 {
                     var exe = Safe(() => args?.EmulatorBeingLaunched?.ApplicationPath);
-                    if (!string.IsNullOrWhiteSpace(exe))
-                    {
-                        var layout = PpssppPaths.Resolve(ResolveFullPath(exe));
-                        PpssppGameSettings.Restore(layout, "left behind by a session that did not end");
-                        var gameId = Safe(() => args?.GameBeingLaunched?.Id);
-                        var discId = PspDiscId.Of(ResolveFullPath(Safe(() => args?.GameBeingLaunched?.ApplicationPath)));
-                        if (PpssppGameSettings.Apply(layout, gameId, discId)) PpssppGameSettings.RestoreWhenDone(layout);
-                        // The renderer is not a per-game setting of PPSSPP's: given on its command line, not saved.
-                        PpssppGameSettings.KeysOf(layout, gameId, out var backend, out _);
-                        var current = Safe(() => args?.CurrentCommandLine);
-                        if (string.IsNullOrWhiteSpace(current)) current = Safe(() => args?.EmulatorBeingLaunched?.CommandLine) ?? "";
-                        newLine = PpssppGameSettings.WithBackend(current, backend);
-                        if (newLine != null) Log.Info("this game's renderer: " + backend + " - command line: " + newLine);
-                    }
+                    if (!string.IsNullOrWhiteSpace(exe)) PpssppGameSettings.Restore(PpssppPaths.Resolve(ResolveFullPath(exe)), "left behind by a session that did not end");
                 }
-                catch (Exception ex) { Log.Warn("the game's own settings", ex); }
+                catch (Exception ex) { Log.Warn("a session left behind", ex); }
             }
             catch (Exception ex) { Log.Warn("PrepareEmulatorForLaunch", ex); }
 

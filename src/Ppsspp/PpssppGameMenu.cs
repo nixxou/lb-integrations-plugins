@@ -1,5 +1,5 @@
-// The right-click entry on the games one of our PPSSPP can run - one game or a selection: "Nixx-PPSSPP :
-// Options...", opening PpssppOptionsForm.
+// The right-click entry on the games one of our PPSSPP can run: "Nixx-PPSSPP : Updates...", opening PpssppUpdatesForm for
+// one game (Mehdi, 04/10: the options window kept its updates only - a game's own settings are PPSSPP's "Game settings").
 //
 // NOT AN IGameMenuItemPlugin. A plugin in LaunchBox 14's Local\Plugins gets its emulator role and nothing
 // else (measured on the Vita3K plugin): the entry is shown by Nixx-Menus, a classic plugin in Plugins\ that
@@ -20,7 +20,7 @@ namespace LbIntegrations.Ppsspp
 {
     internal static class PpssppGameMenu
     {
-        public const string Caption = "Nixx-PPSSPP : Options...";
+        public const string Caption = "Nixx-PPSSPP : Updates...";
 
         /// <summary>The emulator's own icon, taken from its executable - see LbipMenuIcon.</summary>
         public static Image Icon => LbIntegrations.Lbip.LbipMenuIcon.Of(PpssppPaths.IsPpssppExecutable, PpssppPlugin.ResolveFullPathOf);
@@ -54,31 +54,27 @@ namespace LbIntegrations.Ppsspp
             try
             {
                 var ours = games.Where(IsOurs).ToList();
-                Log.Info("game menu: " + ours.Count + " game(s) of ours selected" + (games.Length > ours.Count ? ", " + (games.Length - ours.Count) + " other(s) left out" : ""));
                 if (ours.Count == 0) return;
-                var entries = ours.Select(g =>
+                const string caption = "Nixx-PPSSPP - Updates";
+                if (ours.Count > 1) { MessageBox.Show(OwnerWindow(), "A game's updates are shown one game at a time: select only one.", caption, MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+                var g = ours[0];
+                PpssppLayout layout = null;
+                try
                 {
-                    PpssppLayout layout = null;
-                    try
-                    {
-                        var exe = PpssppPlugin.ResolveFullPathOf(EmulatorFor(g)?.ApplicationPath);
-                        layout = string.IsNullOrEmpty(exe) ? null : PpssppPaths.Resolve(exe);
-                    }
-                    catch { }
-                    var gameId = Safe(() => g.Id);
-                    string discId = null;
-                    try { discId = PspDiscId.Of(PpssppPlugin.ResolveFullPathOf(Safe(() => g.ApplicationPath))); } catch { }
-                    return new PpssppOptionsForm.Entry
-                    {
-                        Game = g, Title = Safe(() => g.Title), GameId = gameId, DiscId = discId, Layout = layout,
-                        Own = PpssppGameSettings.Load(layout, gameId),
-                        Defaults = PpssppGameSettings.DefaultsOf(layout, discId, out var fromGame),
-                        GameConfig = fromGame,
-                        Advanced = PpssppGameSettings.LoadAdvanced(layout, gameId, out var on),
-                        AdvancedOn = on,
-                    };
-                }).ToList();
-                using var form = new PpssppOptionsForm(entries);
+                    var exe = PpssppPlugin.ResolveFullPathOf(EmulatorFor(g)?.ApplicationPath);
+                    layout = string.IsNullOrEmpty(exe) ? null : PpssppPaths.Resolve(exe);
+                }
+                catch { }
+                string discId = null;
+                try { discId = PspDiscId.Of(PpssppPlugin.ResolveFullPathOf(Safe(() => g.ApplicationPath))); } catch { }
+                if (layout == null || string.IsNullOrEmpty(discId))
+                {
+                    MessageBox.Show(OwnerWindow(), layout == null ? "No PPSSPP of this pack runs this game."
+                                    : "The game's id could not be read from its file (an .elf, a homebrew, a .cso inside a zip...): its updates cannot be found.",
+                                    caption, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                using var form = new PpssppUpdatesForm(g, Safe(() => g.Title), discId, layout);
                 form.ShowDialog(OwnerWindow());
             }
             catch (Exception ex) { Log.Warn("game menu", ex); }
