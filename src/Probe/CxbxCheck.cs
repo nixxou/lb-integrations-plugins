@@ -52,7 +52,7 @@ namespace LbIntegrations.Probe
 
         // ── a disc, made here ────────────────────────────────────────────────
 
-        private sealed class Node
+        internal sealed class Node
         {
             public string Name;
             public byte[] Data;                       // a file
@@ -60,8 +60,8 @@ namespace LbIntegrations.Probe
             public uint Sector, Size;
         }
 
-        private static Node File_(string name, byte[] data) => new Node { Name = name, Data = data };
-        private static Node Dir(string name, params Node[] children) => new Node { Name = name, Children = children.ToList() };
+        internal static Node File_(string name, byte[] data) => new Node { Name = name, Data = data };
+        internal static Node Dir(string name, params Node[] children) => new Node { Name = name, Children = children.ToList() };
 
         private static byte[] Table(List<Node> entries)
         {
@@ -89,7 +89,7 @@ namespace LbIntegrations.Probe
 
         /// <summary>An XDVDFS image at <paramref name="partitionBase"/>: files from sector 0x40, then the tables, deepest
         /// FIRST and the root LAST - so a reader front to back meets each table after the files it names.</summary>
-        private static void WriteImage(string path, long partitionBase, Node root)
+        internal static void WriteImage(string path, long partitionBase, Node root)
         {
             uint sector = 0x40;
             var files = new List<Node>(); var dirs = new List<Node>();
@@ -116,7 +116,7 @@ namespace LbIntegrations.Probe
             foreach (var d in order) { fs.Seek(partitionBase + (long)d.Sector * 2048, SeekOrigin.Begin); fs.Write(tableBytes[d]); }
         }
 
-        private static byte[] XbeBytes(uint titleId, string name)
+        internal static byte[] XbeBytes(uint titleId, string name)
         {
             var b = new byte[0x3000];
             Encoding.ASCII.GetBytes("XBEH").CopyTo(b, 0);
@@ -130,9 +130,9 @@ namespace LbIntegrations.Probe
             return b;
         }
 
-        private static byte[] Noise(int n, int seed) { var r = new Random(seed); var b = new byte[n]; r.NextBytes(b); return b; }
+        internal static byte[] Noise(int n, int seed) { var r = new Random(seed); var b = new byte[n]; r.NextBytes(b); return b; }
 
-        private static Node Game(uint titleId) => Dir("",
+        internal static Node Game(uint titleId) => Dir("",
             File_("default.xbe", XbeBytes(titleId, "Probe Game")),
             File_("readme.txt", Encoding.ASCII.GetBytes("hello")),
             File_("empty.dat", new byte[0]),
