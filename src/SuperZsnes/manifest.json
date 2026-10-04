@@ -7,7 +7,7 @@
   "Description": "Download, update and launch integration for the SUPER ZSNES emulator (Super Nintendo Entertainment System).",
   "Credits": "Many thanks to zsKnight and _Demo_, the developers of SUPER ZSNES!",
   "OperatingSystemFamily": "Windows",
-  "InstalledVersion": "1.1",
+  "InstalledVersion": "1.1.1",
   "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
   "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
   "HomePageUrl": "https://www.zsnes.com/",

@@ -7,7 +7,7 @@
   "Description": "Download, update, game unpacking and save management for the Cxbx-Reloaded emulator (Microsoft Xbox).",
   "Credits": "Many thanks to the developers of Cxbx-Reloaded!",
   "OperatingSystemFamily": "Windows",
-  "InstalledVersion": "1.1",
+  "InstalledVersion": "1.1.1",
   "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
   "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
   "HomePageUrl": "https://cxbx-reloaded.co.uk/",
