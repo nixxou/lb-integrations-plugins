@@ -238,6 +238,8 @@ namespace LbIntegrations.Cxbx
         private static GameSaveGame Row(string gameId, string appId, string pack, string titleId, string name, long size, DateTime when)
             => new GameSaveGame
             {
+                // Whose it is, said (Mehdi, 05/10): left empty, LaunchBox names whichever emulator played last - xemu's saves share the group.
+                EmulatorFileName = CxbxPaths.Loader,
                 GameId = gameId,
                 AdditionalApplicationId = appId,
                 FileLocation = pack,
@@ -276,6 +278,9 @@ namespace LbIntegrations.Cxbx
                 if (save == null) return new AddSaveResponse("No save was supplied.");
                 var source = Safe(() => save.FileLocation);
                 if (string.IsNullOrWhiteSpace(source) || !File.Exists(source)) return new AddSaveResponse("This Xbox backup is not a file: " + source);
+                // An xemu savestate is xemu's plugin's, never a save of this one: its zip would be laid out as the game's save.
+                if (save is GameSaveState || (Safe(() => save.SaveGroupId) ?? "").StartsWith("xemustate:", StringComparison.OrdinalIgnoreCase))
+                    return new AddSaveResponse("This is an xemu savestate - restore it on the game's xemu (Nixx-Xemu), not on Cxbx-Reloaded.");
                 // A backup of a save group says its game; a file imported by hand (Import Save Game File...) may not - then the
                 // game it is imported for says it, by its disc. A save of xemu's plugin ("xemu:") is the same format.
                 var titleId = TitleIdFrom(save) ?? TitleIdOfGame(save);

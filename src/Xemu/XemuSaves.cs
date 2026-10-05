@@ -174,6 +174,8 @@ namespace LbIntegrations.Xemu
         private static GameSaveGame Row(string gameId, string appId, string file, string titleId, string name, long size, DateTime when)
             => new GameSaveGame
             {
+                // Whose it is, said (Mehdi, 05/10): left empty, LaunchBox names another emulator's (cxbxr-ldr.exe) and may hand it to that plugin.
+                EmulatorFileName = XemuPaths.Exe,
                 GameId = gameId,
                 AdditionalApplicationId = appId,
                 FileLocation = file,
@@ -193,6 +195,7 @@ namespace LbIntegrations.Xemu
             var info = new FileInfo(f.Path);
             return new GameSaveState
             {
+                EmulatorFileName = XemuPaths.Exe,
                 GameId = gameId,
                 AdditionalApplicationId = appId,
                 FileLocation = f.Path,
