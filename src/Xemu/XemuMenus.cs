@@ -317,8 +317,14 @@ namespace LbIntegrations.Xemu
         private GroupBox CompatGroup(string exe, LbIntegrations.Cxbx.XbeInfo xbe)
         {
             var box = Group("Compatibility");
-            _compat = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Dock = DockStyle.Fill };
-            box.Controls.Add(_compat);
+            var outer = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Dock = DockStyle.Fill };
+            _compat = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Margin = Padding.Empty };
+            outer.Controls.Add(_compat);
+            // Its whole list downloaded again (Mehdi, 05/10), the date of the last one.
+            outer.Controls.Add(LbIntegrations.Lbip.LbipListRefresh.Row("xemu's compatibility list",
+                () => XemuCompat.Downloaded() is DateTime d ? "downloaded " + d.ToString("g") + " (xemu.app)" : "never downloaded yet",
+                XemuCompat.FetchWhole, () => ShowCompat(exe, xbe, "")));
+            box.Controls.Add(outer);
             ShowCompat(exe, xbe, "");
             System.Threading.Tasks.Task.Run(() =>
             {
@@ -359,16 +365,18 @@ namespace LbIntegrations.Xemu
                     _compat.Controls.Add(new Label { AutoSize = true, MaximumSize = new Size(520, 0), UseMnemonic = false, Margin = new Padding(18, 2, 3, 6), Text = "\"" + c + "\"" });
                 }
             }
-            var cx = LbIntegrations.Xbox.XboxCompat.Cxbx(xbe.TitleId, xbe.Version, out var hasCxbx);
-            if (cx == null) _compat.Controls.Add(StateRow("Cxbx-Reloaded", hasCxbx ? "not in its list" : "no list", Color.Gray, null, null));
-            else _compat.Controls.Add(StateRow("Cxbx-Reloaded", cx.State, LbIntegrations.Xbox.XboxCompat.CxbxColor(cx.State),
+            // Cxbx-Reloaded's line only when Nixx-Cxbx is loaded in this LaunchBox (Mehdi, 05/10): not there or turned off, not shown.
+            bool cxbxOn = LbIntegrations.Xbox.XboxCompat.PluginLoaded(LbIntegrations.Xbox.XboxCompat.CxbxPluginType);
+            var cx = cxbxOn ? LbIntegrations.Xbox.XboxCompat.Cxbx(xbe.TitleId, xbe.Version, out _) : null;
+            if (cxbxOn && cx == null) _compat.Controls.Add(StateRow("Cxbx-Reloaded", "not in its list", Color.Gray, null, null));
+            else if (cx != null) _compat.Controls.Add(StateRow("Cxbx-Reloaded", cx.State, LbIntegrations.Xbox.XboxCompat.CxbxColor(cx.State),
                                                cx.Serial + " " + cx.Version + (cx.Region.Length > 0 ? ", " + cx.Region : "") + (cx.Updated.Length > 0 && cx.Updated != "N/A" ? ", " + cx.Updated : ""), cx.Url));
             var asked = XemuCompat.Asked();
             _compat.Controls.Add(new Label
             {
                 AutoSize = true, MaximumSize = new Size(540, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 6, 3, 0),
                 Text = (note.Length > 0 ? note + " " : "") + (asked != null ? "xemu's list as of " + asked.Value.ToLocalTime().ToString("g") + ". " : "")
-                       + "Cxbx-Reloaded's reports are mostly from 2020 and 2021.",
+                       + (cxbxOn ? "Cxbx-Reloaded's reports are mostly from 2020 and 2021." : ""),
             });
             _compat.ResumeLayout();
         }

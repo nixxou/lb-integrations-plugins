@@ -83,10 +83,22 @@ namespace LbIntegrations.Vita3k
             ShowInTaskbar = false;
             AutoScaleMode = AutoScaleMode.Dpi;
             Font = new Font("Segoe UI", 9f);
-            ClientSize = new Size(680, 600);
+            ClientSize = new Size(680, 634);
 
             // ── the top: which games, and where to start from
-            var top = new Panel { Dock = DockStyle.Top, Height = _groups.Count > 1 ? 86 : 58, Padding = new Padding(12, 10, 12, 0) };
+            var top = new Panel { Dock = DockStyle.Top, Height = (_groups.Count > 1 ? 86 : 58) + 34, Padding = new Padding(12, 10, 12, 0) };
+            // Under its state: the whole list downloaded again (Mehdi, 05/10), the date of the last one. Docked first, so lowest.
+            var layoutShown = games.Select(g => g.Layout).FirstOrDefault(l => l != null);
+            var refresh = new Panel { Dock = DockStyle.Top, Height = 34 };
+            refresh.Controls.Add(LbIntegrations.Lbip.LbipListRefresh.Row("Vita3K's compatibility list",
+                () => layoutShown == null ? "not known: this game's Vita3K is not found" : Vita3kCompat.Downloaded(layoutShown) is DateTime d ? "downloaded " + d.ToString("g") + " (Vita3K/compatibility)" : "never downloaded yet",
+                job => Vita3kCompat.DownloadWhole(layoutShown, job),
+                () =>
+                {
+                    foreach (var g in _games) if (g.TitleId != null && g.Layout != null) g.CompatState = Vita3kCompat.Lookup(g.Layout, g.TitleId);
+                    ShowCompatState(_source != null && _source.SelectedIndex >= 0 ? _groups[_source.SelectedIndex][0] : _groups[0][0]);
+                }, 640));
+            top.Controls.Add(refresh);
             // Under the title: where the game stands in Vita3K's compatibility list (Mehdi, 04/10).
             _compatState = new Panel { Dock = DockStyle.Top, Height = 28 };
             top.Controls.Add(_compatState);

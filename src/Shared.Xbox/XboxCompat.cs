@@ -89,6 +89,32 @@ namespace LbIntegrations.Xbox
             return roots;
         }
 
+        public const string XemuPluginType = "LbIntegrations.Xemu.XemuPlugin", CxbxPluginType = "LbIntegrations.Cxbx.CxbxPlugin";
+
+        /// <summary>Is the other plugin LOADED in this LaunchBox (Mehdi, 05/10: a plugin not there, or turned off, is not shown)?
+        /// A plugin turned off is never loaded; its files left on disk say nothing. Its class looked for in the assemblies
+        /// loaded - not in this one: Nixx-Xemu carries some of Nixx-Cxbx's files (Xbe.cs...) but never its plugin.</summary>
+        public static bool PluginLoaded(string typeName)
+        {
+            if (PluginOverride != null) return PluginOverride(typeName);
+            try
+            {
+                var own = typeof(XboxCompat).Assembly;
+                foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    if (a == own || a.IsDynamic) continue;
+                    try { if (a.GetType(typeName, false) != null) return true; } catch { }
+                }
+            }
+            catch { }
+            return false;
+        }
+
+#pragma warning disable CS0649
+        /// <summary>For the probe: which plugins count as loaded. Set by reflection.</summary>
+        internal static Func<string, bool> PluginOverride;
+#pragma warning restore CS0649
+
         /// <summary>The first <paramref name="file"/> of <paramref name="pluginId"/>'s data there is, else null.</summary>
         public static string Find(string pluginId, string file)
             => DataRoots().Select(r => Path.Combine(r, pluginId, file)).FirstOrDefault(File.Exists);

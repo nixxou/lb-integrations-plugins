@@ -166,6 +166,21 @@ namespace LbIntegrations.Vita3k
         /// labels. Written only once read whole as Vita3K's list (a &lt;compatibility&gt; root, at least one &lt;app&gt;):
         /// a cut download or an error page never takes the place of a good list. Never throws: a list that does not
         /// come is logged and the install goes on. Returns what to add to the install's message, "" when all went well.</summary>
+        /// <summary>The whole list downloaded again, from a game's window (LbipListRefresh). Null when it was kept, else why not.</summary>
+        public static string DownloadWhole(Vita3kLayout layout, LbIntegrations.Lbip.LbipListJob job)
+        {
+            if (layout == null || DbPath(layout) == null) return "this game's Vita3K is not known";
+            job.Step = "Downloading Vita3K's compatibility list, then its labels...";
+            _lastProblem = null;
+            Download(layout, () => job.Token.IsCancellationRequested);
+            return job.Token.IsCancellationRequested ? "cancelled" : _lastProblem;
+        }
+
+        /// <summary>When the whole list was last downloaded - by this plugin or by Vita3K itself, both write it whole - or null.</summary>
+        public static DateTime? Downloaded(Vita3kLayout layout) => DbPath(layout) is string db && File.Exists(db) ? File.GetLastWriteTime(db) : (DateTime?)null;
+
+        private static string _lastProblem;
+
         public static string Download(Vita3kLayout layout, Func<bool> cancelled = null)
         {
             if (NoNetwork) return "";
@@ -179,7 +194,7 @@ namespace LbIntegrations.Vita3k
                 {
                     http.DefaultRequestHeaders.UserAgent.ParseAdd("lbip-vita3k");
                     var bytes = http.GetByteArrayAsync(DbUrl).GetAwaiter().GetResult();
-                    if (cancelled?.Invoke() == true) return "";
+                    if (cancelled?.Invoke() == true) { _lastProblem = "cancelled"; return ""; }
                     File.WriteAllBytes(tmp, bytes);
                 }
                 int apps = 0;
@@ -201,6 +216,7 @@ namespace LbIntegrations.Vita3k
             }
             catch (Exception ex)
             {
+                _lastProblem = ex.Message;
                 Log.Warn("compatibility list: could not download it", ex);
                 return File.Exists(db) ? "" : " Vita3K's compatibility list could not be downloaded: games show no state until it is.";
             }

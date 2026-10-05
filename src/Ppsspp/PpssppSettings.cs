@@ -21,10 +21,16 @@ namespace LbIntegrations.Ppsspp
         /// <summary>manifest.json's PluginId.</summary>
         public const string PluginId = "75b34659-92fc-4f10-9765-b9e05fac8f6f";
 
+#pragma warning disable CS0649
+        /// <summary>For the probe: the settings somewhere else. Set by reflection.</summary>
+        internal static string DirOverride;
+#pragma warning restore CS0649
+
         public static string Dir
         {
             get
             {
+                if (DirOverride != null) return DirOverride;
                 var dll = typeof(PpssppSettings).Assembly.Location;
                 var root = Path.GetDirectoryName(Path.GetDirectoryName(dll)) ?? Path.GetDirectoryName(dll);
                 return Path.Combine(root, ".data", PluginId);

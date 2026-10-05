@@ -275,8 +275,15 @@ namespace LbIntegrations.Cxbx
             if (d?.Xbe != null && CxbxCompat.SerialOf(d.Xbe.TitleId) != null)
             {
                 var compat = CxbxSettingsPage.Group("Compatibility (cxbx-reloaded.co.uk)");
-                _compat = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Location = new Point(8, 20) };
-                compat.Controls.Add(_compat);
+                var outer = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Location = new Point(8, 20) };
+                _compat = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Margin = Padding.Empty };
+                outer.Controls.Add(_compat);
+                // Its whole list read again (Mehdi, 05/10), the date of the last one.
+                var xbeShown = d.Xbe;
+                outer.Controls.Add(LbIntegrations.Lbip.LbipListRefresh.Row("Cxbx-Reloaded's compatibility list",
+                    () => CxbxCompat.Downloaded() is DateTime when ? "downloaded " + when.ToString("g") + " (cxbx-reloaded.co.uk, 25 games a page)" : "never downloaded here - the copy built into the plugin is shown",
+                    CxbxCompat.RefreshWhole, () => ShowCompat(xbeShown, "")));
+                compat.Controls.Add(outer);
                 stack.Controls.Add(compat);
                 ShowCompat(d.Xbe, "");
                 CxbxCompat.RefreshGame(d.Xbe, done: changed => OnUi(() => ShowCompat(d.Xbe, changed ? "Just asked the site again: updated." : "")));
@@ -397,7 +404,8 @@ namespace LbIntegrations.Cxbx
                 foreach (var o in others.Take(8)) _compat.Controls.Add(Line(o, "Other version", false));
                 if (others.Count > 8) _compat.Controls.Add(new Label { AutoSize = true, ForeColor = SystemColors.GrayText, Text = "... and " + (others.Count - 8) + " more." });
             }
-            _compat.Controls.Add(XemuLine(xbe));
+            // xemu's line only when Nixx-Xemu is loaded in this LaunchBox (Mehdi, 05/10): not there or turned off, not shown.
+            if (LbIntegrations.Xbox.XboxCompat.PluginLoaded(LbIntegrations.Xbox.XboxCompat.XemuPluginType)) _compat.Controls.Add(XemuLine(xbe));
             _compat.Controls.Add(new Label
             {
                 AutoSize = true, MaximumSize = new Size(540, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 6, 3, 0),
@@ -430,7 +438,7 @@ namespace LbIntegrations.Cxbx
                 row.Controls.Add(new Label
                 {
                     AutoSize = true, ForeColor = SystemColors.GrayText, Margin = new Padding(0, 3, 0, 0),
-                    Text = LbIntegrations.Xbox.XboxCompat.HasXemuList() ? "not in its list" : "no list here (Nixx-Xemu keeps one once it is installed)",
+                    Text = LbIntegrations.Xbox.XboxCompat.HasXemuList() ? "not in its list" : "no list yet (Nixx-Xemu downloads it)",
                 });
                 return row;
             }

@@ -144,7 +144,7 @@ namespace LbIntegrations.Ppsspp
             if (Interlocked.Exchange(ref _building, 1) == 1) { Log.Info("compatibility list: already being read - this request is that one (" + why + ")"); return; }
             new Thread(() =>
             {
-                try { Rebuild(why, exe); }
+                try { Rebuild(why, exe, null); }
                 catch (Exception ex) { _problem = ex.Message; Log.Warn("compatibility list: not read", ex); }
                 finally { Interlocked.Exchange(ref _building, 0); }
             }) { IsBackground = true, Name = "PPSSPP compatibility list" }.Start();
@@ -163,7 +163,7 @@ namespace LbIntegrations.Ppsspp
                 lock (Gate) count = Load().Count(kv => kv.Value.Read > DateTime.MinValue);
                 var said = !File.Exists(DbPath) || count == 0
                     ? "Not built: a game's rating is read from its own page when its window opens - which is enough."
-                    : count + " games and versions, read " + File.GetLastWriteTime(DbPath).ToString("g", CultureInfo.CurrentCulture) + ".";
+                    : count + " games and versions, read " + (Downloaded() ?? File.GetLastWriteTime(DbPath)).ToString("g", CultureInfo.CurrentCulture) + ".";
                 var problem = _problem;
                 return said + (problem != null ? "  Last attempt: " + problem : "");
             }
@@ -174,8 +174,32 @@ namespace LbIntegrations.Ppsspp
         private static readonly Regex Row = new Regex("<a href=\"/game/([^\"]+)\" class=\"title\">([^<]*)</a>(?:(?!</tr>).)*?<span class=\"label[^\"]*\">([^<]+)</span>", RegexOptions.Singleline, SearchLimit);
         private static readonly Regex Last = new Regex("<li class=\"[^\"]*last[^\"]*\"><a href=\"/games\\?page=(\\d+)\">", RegexOptions.None, SearchLimit);
 
-        private static void Rebuild(string why, string exe)
+        /// <summary>The whole list read again, from a game's window (LbipListRefresh): its pages counted, Cancel heard. Null when
+        /// it was written, else why not.</summary>
+        public static string RebuildWhole(string exe, LbIntegrations.Lbip.LbipListJob job)
         {
+            if (Interlocked.Exchange(ref _building, 1) == 1) return "already being read";
+            try
+            {
+                Rebuild("asked in a game's window", exe, job);
+                return job.Token.IsCancellationRequested ? "cancelled" : _problem?.Replace(" - the list kept as it was", "");
+            }
+            catch (Exception ex) { _problem = ex.Message; Log.Warn("compatibility list: not read", ex); return ex.Message; }
+            finally { Interlocked.Exchange(ref _building, 0); }
+        }
+
+        private static string BuiltPath => Path.Combine(PpssppSettings.Dir, "ppsspp-compat.built");
+
+        /// <summary>When the whole list was last read through - not a game's own page, which writes the file too - or null.</summary>
+        public static DateTime? Downloaded()
+        {
+            try { return File.Exists(BuiltPath) && DateTime.TryParse(File.ReadAllText(BuiltPath).Trim(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var t) ? t.ToLocalTime() : (DateTime?)null; }
+            catch { return null; }
+        }
+
+        private static void Rebuild(string why, string exe, LbIntegrations.Lbip.LbipListJob job)
+        {
+            var token = job?.Token ?? CancellationToken.None;
             var started = DateTime.UtcNow;
             var found = new List<PspCompat>();
             int last = 1;
@@ -184,8 +208,11 @@ namespace LbIntegrations.Ppsspp
             for (int page = 1; page <= last && page <= 500; page++)
             {
                 _page = page;
+                if (token.IsCancellationRequested) { Fail("cancelled"); return; }
+                if (job != null) { job.Done = page - 1; job.Total = last > 1 ? last : 0; job.Step = "Page " + page + (last > 1 ? " of " + last : "") + " of report.ppsspp.org's list - " + found.Count + " games and versions so far"; }
                 string html;
-                try { html = Http.GetStringAsync(Site + "/games" + (page > 1 ? "?page=" + page : "")).GetAwaiter().GetResult(); }
+                try { html = Http.GetStringAsync(Site + "/games" + (page > 1 ? "?page=" + page : ""), token).GetAwaiter().GetResult(); }
+                catch (Exception) when (token.IsCancellationRequested) { Fail("cancelled"); return; }
                 catch (Exception ex) { Fail("page " + page + " not read (" + ex.Message + ")"); return; }
                 try
                 {
@@ -205,9 +232,10 @@ namespace LbIntegrations.Ppsspp
                     if (found.Count == before) { Fail("page " + page + " holds no game this plugin can read (the site laid out otherwise?)"); return; }
                 }
                 catch (Exception ex) { Fail("page " + page + " could not be read through (" + ex.Message + ")"); return; }
-                Thread.Sleep(400);
+                if (token.WaitHandle.WaitOne(400)) { Fail("cancelled"); return; }
             }
             if (!Save(found, exe, replace: true)) { Fail("not written"); return; }
+            try { File.WriteAllText(BuiltPath, DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)); } catch { }
             _problem = null;
             Log.Info("compatibility list: " + found.Count + " games and versions from " + last + " page(s), " + (int)(DateTime.UtcNow - started).TotalSeconds + " s (" + why + ")");
         }

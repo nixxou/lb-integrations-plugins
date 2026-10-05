@@ -209,17 +209,33 @@ namespace LbIntegrations.Xenia
 
         /// <summary>Ask for the file - "only if it changed" when there is a copy - and keep what comes back once it reads.
         /// True when the copy is good now. Never throws.</summary>
-        public static bool Fetch(TimeSpan timeout)
+        public static bool Fetch(TimeSpan timeout) => Fetch(timeout, false, CancellationToken.None, out _);
+
+        /// <summary>The whole list downloaded again, from a game's window (LbipListRefresh): nothing asked "only if it changed".
+        /// Null when it was kept, else why not.</summary>
+        public static string FetchWhole(LbIntegrations.Lbip.LbipListJob job)
         {
-            if (Interlocked.Exchange(ref _fetching, 1) == 1) return false;
+            job.Step = "Downloading Xenia's compatibility list...";
+            Fetch(TimeSpan.FromMinutes(2), true, job.Token, out var problem);
+            return job.Token.IsCancellationRequested ? "cancelled" : problem;
+        }
+
+        /// <summary>When the whole list was last downloaded (its file written - an "unchanged" answer writes nothing), or null.</summary>
+        public static DateTime? Downloaded() => File.Exists(JsonPath) ? File.GetLastWriteTime(JsonPath) : (DateTime?)null;
+
+        private static bool Fetch(TimeSpan timeout, bool force, CancellationToken token, out string problem)
+        {
+            problem = null;
+            if (Interlocked.Exchange(ref _fetching, 1) == 1) { problem = "already being downloaded"; return false; }
             try
             {
                 var meta = ReadMeta();
                 bool haveCopy = File.Exists(JsonPath);
-                using var cts = new CancellationTokenSource(timeout);
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
+                cts.CancelAfter(timeout);
                 using var req = new HttpRequestMessage(HttpMethod.Get, Source);
-                if (haveCopy && !string.IsNullOrEmpty(meta.ETag)) req.Headers.TryAddWithoutValidation("If-None-Match", meta.ETag);
-                if (haveCopy && !string.IsNullOrEmpty(meta.LastModified)) req.Headers.TryAddWithoutValidation("If-Modified-Since", meta.LastModified);
+                if (!force && haveCopy && !string.IsNullOrEmpty(meta.ETag)) req.Headers.TryAddWithoutValidation("If-None-Match", meta.ETag);
+                if (!force && haveCopy && !string.IsNullOrEmpty(meta.LastModified)) req.Headers.TryAddWithoutValidation("If-Modified-Since", meta.LastModified);
                 using var resp = Http.SendAsync(req, cts.Token).GetAwaiter().GetResult();
                 if (resp.StatusCode == HttpStatusCode.NotModified)
                 {
@@ -228,10 +244,10 @@ namespace LbIntegrations.Xenia
                     Log.Info("compatibility list: unchanged since the copy");
                     return true;
                 }
-                if (!resp.IsSuccessStatusCode) { Log.Info("compatibility list: not fetched (HTTP " + (int)resp.StatusCode + ") - the copy is kept"); return haveCopy; }
+                if (!resp.IsSuccessStatusCode) { problem = "HTTP " + (int)resp.StatusCode; Log.Info("compatibility list: not fetched (HTTP " + (int)resp.StatusCode + ") - the copy is kept"); return haveCopy; }
                 var json = resp.Content.ReadAsStringAsync(cts.Token).GetAwaiter().GetResult();
-                var problem = Problem(json, haveCopy ? All().Count : 0);
-                if (problem != null) { Log.Warn("compatibility list: what came back was not kept - " + problem); return haveCopy; }
+                var bad = Problem(json, haveCopy ? All().Count : 0);
+                if (bad != null) { problem = bad; Log.Warn("compatibility list: what came back was not kept - " + bad); return haveCopy; }
                 Directory.CreateDirectory(Dir);
                 var tmp = JsonPath + ".tmp";
                 File.WriteAllText(tmp, json, new UTF8Encoding(false));
@@ -243,7 +259,7 @@ namespace LbIntegrations.Xenia
                 Log.Info("compatibility list fetched: " + All().Count + " games");
                 return true;
             }
-            catch (Exception ex) { Log.Info("compatibility list: not fetched (" + ex.Message + ") - the copy is kept"); return File.Exists(JsonPath); }
+            catch (Exception ex) { problem = ex.Message; Log.Info("compatibility list: not fetched (" + ex.Message + ") - the copy is kept"); return File.Exists(JsonPath); }
             finally { Interlocked.Exchange(ref _fetching, 0); }
         }
 

@@ -281,6 +281,8 @@ namespace LbIntegrations.Xenia
 
         private static string Capital(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpperInvariant(s[0]) + s.Substring(1);
 
+        private Control _compatRefresh;
+
         private void ShowCompat(string note)
         {
             _compat.SuspendLayout();
@@ -305,6 +307,12 @@ namespace LbIntegrations.Xenia
             var link = new LinkLabel { Text = "All of Xenia's compatibility reports", AutoSize = true, Margin = new Padding(0, 2, 0, 0) };
             link.LinkClicked += (_, _) => Open("https://github.com/xenia-canary/game-compatibility/issues");
             stack.Controls.Add(link);
+            // Its whole list downloaded again (Mehdi, 05/10), the date of the last one - one row kept across redraws, so what it
+            // said of its last download stays.
+            _compatRefresh ??= LbIntegrations.Lbip.LbipListRefresh.Row("Xenia's compatibility list",
+                () => XeniaCompat.Downloaded() is DateTime d ? "downloaded " + d.ToString("g", CultureInfo.CurrentCulture) + " (xenia-canary/game-compatibility)" : "never downloaded yet",
+                XeniaCompat.FetchWhole, () => ShowCompat(null), 560);
+            stack.Controls.Add(_compatRefresh);
             _compat.Controls.Add(stack);
             _compat.ResumeLayout();
         }

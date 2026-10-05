@@ -111,13 +111,30 @@ namespace LbIntegrations.Xemu
         }
 
         /// <summary>Both files asked for, each kept once it reads. True when there is a good copy now. Never throws.</summary>
-        public static bool Fetch(TimeSpan timeout)
+        public static bool Fetch(TimeSpan timeout) => Fetch(timeout, false, CancellationToken.None, out _);
+
+        /// <summary>The whole list downloaded again, from a game's window (LbipListRefresh): nothing asked "only if it changed".
+        /// Null when both files were kept, else why not.</summary>
+        public static string FetchWhole(LbIntegrations.Lbip.LbipListJob job)
         {
-            if (Interlocked.Exchange(ref _fetching, 1) == 1) return false;
+            job.Step = "Downloading xemu.app's titles and reports...";
+            Fetch(TimeSpan.FromMinutes(3), true, job.Token, out var problem);
+            return job.Token.IsCancellationRequested ? "cancelled" : problem;
+        }
+
+        /// <summary>When the whole list was last downloaded - its reports, which always come whole - or null.</summary>
+        public static DateTime? Downloaded() => File.Exists(ReportsPath) ? File.GetLastWriteTime(ReportsPath) : (DateTime?)null;
+
+        private static bool Fetch(TimeSpan timeout, bool force, CancellationToken token, out string problem)
+        {
+            problem = null;
+            if (Interlocked.Exchange(ref _fetching, 1) == 1) { problem = "already being downloaded"; return false; }
+            var failed = new List<string>();
             try
             {
                 var meta = ReadMeta();
-                using var cts = new CancellationTokenSource(timeout);
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
+                cts.CancelAfter(timeout);
                 var said = new List<string>();
 
                 // The titles: "only if they changed".
@@ -125,16 +142,16 @@ namespace LbIntegrations.Xemu
                 {
                     bool have = File.Exists(TitlesPath);
                     using var req = new HttpRequestMessage(HttpMethod.Get, TitlesSource);
-                    if (have && !string.IsNullOrEmpty(meta.ETag)) req.Headers.TryAddWithoutValidation("If-None-Match", meta.ETag);
-                    if (have && !string.IsNullOrEmpty(meta.LastModified)) req.Headers.TryAddWithoutValidation("If-Modified-Since", meta.LastModified);
+                    if (!force && have && !string.IsNullOrEmpty(meta.ETag)) req.Headers.TryAddWithoutValidation("If-None-Match", meta.ETag);
+                    if (!force && have && !string.IsNullOrEmpty(meta.LastModified)) req.Headers.TryAddWithoutValidation("If-Modified-Since", meta.LastModified);
                     using var resp = Http.SendAsync(req, cts.Token).GetAwaiter().GetResult();
                     if (resp.StatusCode == HttpStatusCode.NotModified) said.Add("titles unchanged");
-                    else if (!resp.IsSuccessStatusCode) said.Add("titles not fetched (HTTP " + (int)resp.StatusCode + ")");
+                    else if (!resp.IsSuccessStatusCode) { said.Add("titles not fetched (HTTP " + (int)resp.StatusCode + ")"); failed.Add("the titles: HTTP " + (int)resp.StatusCode); }
                     else
                     {
                         var json = resp.Content.ReadAsStringAsync(cts.Token).GetAwaiter().GetResult();
-                        var problem = Problem(json, false, CountOf(TitlesPath, false));
-                        if (problem != null) said.Add("titles not kept - " + problem);
+                        var bad = Problem(json, false, CountOf(TitlesPath, false));
+                        if (bad != null) { said.Add("titles not kept - " + bad); failed.Add("the titles: " + bad); }
                         else
                         {
                             Keep(TitlesPath, json);
@@ -144,28 +161,29 @@ namespace LbIntegrations.Xemu
                         }
                     }
                 }
-                catch (Exception ex) { said.Add("titles not fetched (" + ex.Message + ")"); }
+                catch (Exception ex) { said.Add("titles not fetched (" + ex.Message + ")"); failed.Add("the titles: " + ex.Message); }
 
                 // The reports: whole.
                 try
                 {
                     using var resp = Http.GetAsync(ReportsSource, cts.Token).GetAwaiter().GetResult();
-                    if (!resp.IsSuccessStatusCode) said.Add("reports not fetched (HTTP " + (int)resp.StatusCode + ")");
+                    if (!resp.IsSuccessStatusCode) { said.Add("reports not fetched (HTTP " + (int)resp.StatusCode + ")"); failed.Add("the reports: HTTP " + (int)resp.StatusCode); }
                     else
                     {
                         var json = resp.Content.ReadAsStringAsync(cts.Token).GetAwaiter().GetResult();
-                        var problem = Problem(json, true, CountOf(ReportsPath, true));
-                        if (problem != null) said.Add("reports not kept - " + problem);
+                        var bad = Problem(json, true, CountOf(ReportsPath, true));
+                        if (bad != null) { said.Add("reports not kept - " + bad); failed.Add("the reports: " + bad); }
                         else { Keep(ReportsPath, json); said.Add(XboxCompat.ParseReports(json).Count + " reports"); }
                     }
                 }
-                catch (Exception ex) { said.Add("reports not fetched (" + ex.Message + ")"); }
+                catch (Exception ex) { said.Add("reports not fetched (" + ex.Message + ")"); failed.Add("the reports: " + ex.Message); }
 
                 if (File.Exists(ReportsPath) || File.Exists(TitlesPath)) { meta.Asked = DateTime.UtcNow; WriteMeta(meta); }
                 Log.Info("compatibility list: " + string.Join(", ", said));
+                if (failed.Count > 0) problem = string.Join("; ", failed);
                 return File.Exists(ReportsPath) || File.Exists(TitlesPath);
             }
-            catch (Exception ex) { Log.Info("compatibility list: not fetched (" + ex.Message + ") - the copy is kept"); return File.Exists(ReportsPath); }
+            catch (Exception ex) { problem = ex.Message; Log.Info("compatibility list: not fetched (" + ex.Message + ") - the copy is kept"); return File.Exists(ReportsPath); }
             finally { Interlocked.Exchange(ref _fetching, 0); }
         }
 

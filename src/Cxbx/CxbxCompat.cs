@@ -192,42 +192,66 @@ namespace LbIntegrations.Cxbx
         // ── the whole list ───────────────────────────────────────────────────
 
         /// <summary>Every page, one after the other, in the background - at the emulator's install and update. Once at a time.</summary>
-        public static void RefreshAll()
+        public static void RefreshAll() => Task.Run(() => Whole(null));
+
+        /// <summary>The whole list read again, from a game's window (LbipListRefresh): its pages counted, Cancel heard. Null when
+        /// it was kept, else why not.</summary>
+        public static string RefreshWhole(LbIntegrations.Lbip.LbipListJob job) => Whole(job);
+
+        /// <summary>When the whole list was last read - not a game's search, which writes the copy too - or null: the copy then
+        /// is the one embedded when the plugin was built.</summary>
+        public static DateTime? Downloaded() => Asked(WholeKey) is DateTime t ? t.ToLocalTime() : (DateTime?)null;
+
+        private const string WholeKey = "*whole*";
+
+        private static string Whole(LbIntegrations.Lbip.LbipListJob job)
         {
-            if (Interlocked.Exchange(ref _fetchingAll, 1) == 1) return;
-            Task.Run(() =>
+            if (Interlocked.Exchange(ref _fetchingAll, 1) == 1) return "already being read";
+            try
             {
-                try
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                var list = FetchAll(TimeSpan.FromSeconds(30), job);
+                if (job != null && job.Token.IsCancellationRequested) { Log.Info("compatibility list: cancelled - the copy stays"); return "cancelled"; }
+                lock (Gate)
                 {
-                    var watch = System.Diagnostics.Stopwatch.StartNew();
-                    var list = FetchAll(TimeSpan.FromSeconds(30));
-                    lock (Gate)
+                    int had = All().Count;
+                    if (list.Count < 1000 || list.Count < had * 9 / 10)
                     {
-                        int had = All().Count;
-                        if (list.Count < 1000 || list.Count < had * 9 / 10)
-                        { Log.Info("compatibility: the site gave " + list.Count + " entries against " + had + " kept - the copy stays"); return; }
-                        _entries = list;
-                        Write(JsonPath, list);
+                        Log.Info("compatibility: the site gave " + list.Count + " entries against " + had + " kept - the copy stays");
+                        return "the site gave " + list.Count + " entries against " + had + " kept";
                     }
-                    Log.Info("compatibility list read again: " + list.Count + " entries, " + list.Select(e => e.Title).Distinct().Count() + " games, " + watch.Elapsed.TotalSeconds.ToString("0") + " s");
+                    _entries = list;
+                    Write(JsonPath, list);
                 }
-                catch (Exception ex) { Log.Info("compatibility list: the site did not answer (" + ex.GetType().Name + ": " + ex.Message + ") - the copy stays"); }
-                finally { Interlocked.Exchange(ref _fetchingAll, 0); }
-            });
+                MarkAsked(WholeKey);
+                Log.Info("compatibility list read again: " + list.Count + " entries, " + list.Select(e => e.Title).Distinct().Count() + " games, " + watch.Elapsed.TotalSeconds.ToString("0") + " s");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                if (job != null && job.Token.IsCancellationRequested) return "cancelled";
+                Log.Info("compatibility list: the site did not answer (" + ex.GetType().Name + ": " + ex.Message + ") - the copy stays");
+                return "the site did not answer (" + ex.Message + ")";
+            }
+            finally { Interlocked.Exchange(ref _fetchingAll, 0); }
         }
 
-        /// <summary>The 42-odd pages, ?page=N until one holds no game. Gently: one at a time, a pause between.</summary>
-        internal static List<CxbxCompatEntry> FetchAll(TimeSpan timeout)
+        /// <summary>The 42-odd pages, ?page=N until one holds no game. Gently: one at a time, a pause between. A cancelled
+        /// read stops at once - what it read is thrown away by its caller.</summary>
+        internal static List<CxbxCompatEntry> FetchAll(TimeSpan timeout, LbIntegrations.Lbip.LbipListJob job = null)
         {
             using var http = new HttpClient(new HttpClientHandler { AutomaticDecompression = DecompressionMethods.All }) { Timeout = timeout };
             http.DefaultRequestHeaders.UserAgent.ParseAdd("lb-integrations-plugins/1.0");
+            var token = job?.Token ?? CancellationToken.None;
             var all = new List<CxbxCompatEntry>();
             for (int page = 1; page <= 500; page++)
             {
-                var found = Parse(http.GetStringAsync(Site + "/compatibility?page=" + page).GetAwaiter().GetResult());
+                if (token.IsCancellationRequested) break;
+                if (job != null) { job.Done = page - 1; job.Step = "Page " + page + " of cxbx-reloaded.co.uk's list (25 games each) - " + all.Count + " entries so far"; }
+                var found = Parse(http.GetStringAsync(Site + "/compatibility?page=" + page, token).GetAwaiter().GetResult());
                 if (found.Count == 0) break;
                 all.AddRange(found);
-                Thread.Sleep(250);
+                if (token.WaitHandle.WaitOne(250)) break;
             }
             return all;
         }

@@ -23,29 +23,37 @@ namespace LbIntegrations.Ppsspp
             StartPosition = FormStartPosition.CenterParent;
             ShowInTaskbar = false;
             Font = new Font("Segoe UI", 9f);
-            ClientSize = new Size(584, 428);
+            ClientSize = new Size(584, 462);
 
             string rom = null;
             try { rom = LbIntegrations.Lbip.LbipImportWatch.Full(game?.ApplicationPath); } catch { }
             var discVersion = rom == null ? null : PspDiscId.SfoOf(rom)?.GetString("DISC_VERSION")?.Trim();
             Controls.Add(new Label { AutoSize = false, Location = new Point(12, 10), Size = new Size(560, 20), Text = title + "   (" + discId + (discVersion != null ? " " + discVersion : "") + ")" });
             Controls.Add(CompatRow(discId, discVersion, new Point(12, 32), layout));
-            Controls.Add(new Label { AutoSize = false, Location = new Point(12, 60), Size = new Size(560, 20), Text = "Updates", Font = new Font(Font, FontStyle.Bold) });
+            // Under it: the whole list read again (Mehdi, 05/10), the date of the last one.
+            string listExe = null;
+            try { listExe = string.IsNullOrEmpty(layout?.InstallDir) ? null : PpssppPaths.FindExecutable(layout.InstallDir); } catch { }
+            var whole = LbIntegrations.Lbip.LbipListRefresh.Row("PPSSPP's compatibility list",
+                () => PpssppCompat.Downloaded() is DateTime d ? "read " + d.ToString("g") + " (report.ppsspp.org, 100 games a page)" : "never read whole - a game's own page is read when its window opens",
+                job => PpssppCompat.RebuildWhole(listExe, job), null, 560);
+            whole.Location = new Point(12, 56);
+            Controls.Add(whole);
+            Controls.Add(new Label { AutoSize = false, Location = new Point(12, 94), Size = new Size(560, 20), Text = "Updates", Font = new Font(Font, FontStyle.Bold) });
             Controls.Add(new Label
             {
-                AutoSize = false, Location = new Point(12, 80), Size = new Size(560, 48), ForeColor = SystemColors.GrayText,
+                AutoSize = false, Location = new Point(12, 114), Size = new Size(560, 48), ForeColor = SystemColors.GrayText,
                 Text = "A game update is a PBOOT.PBP that PPSSPP starts in place of the disc's executable, when it is made for this disc's "
                      + "version (" + (discVersion ?? "?") + "). Installed into the memory stick (PSP\\GAME\\" + discId + ") once, and kept there: "
                      + "never installed unasked.",
             });
-            var installed = new Label { AutoSize = false, Location = new Point(12, 130), Size = new Size(560, 20) };
-            var list = new ListView { Location = new Point(12, 152), Size = new Size(560, 196), View = View.Details, FullRowSelect = true, MultiSelect = false, HideSelection = false, ShowItemToolTips = true };
+            var installed = new Label { AutoSize = false, Location = new Point(12, 164), Size = new Size(560, 20) };
+            var list = new ListView { Location = new Point(12, 186), Size = new Size(560, 196), View = View.Details, FullRowSelect = true, MultiSelect = false, HideSelection = false, ShowItemToolTips = true };
             list.Columns.Add("Update", 250);
             list.Columns.Add("For disc version", 110);
             list.Columns.Add("File", 190);
-            var install = new Button { Text = "Install the selected", AutoSize = true, Location = new Point(12, 356) };
-            var remove = new Button { Text = "Remove the installed one", AutoSize = true, Location = new Point(170, 356) };
-            var close = new Button { Text = "Close", Width = 90, Location = new Point(482, 392), DialogResult = DialogResult.OK };
+            var install = new Button { Text = "Install the selected", AutoSize = true, Location = new Point(12, 390) };
+            var remove = new Button { Text = "Remove the installed one", AutoSize = true, Location = new Point(170, 390) };
+            var close = new Button { Text = "Close", Width = 90, Location = new Point(482, 426), DialogResult = DialogResult.OK };
             void Show_()
             {
                 list.Items.Clear();
