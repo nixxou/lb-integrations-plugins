@@ -91,6 +91,67 @@ namespace LbIntegrations.Xemu.Saves
             return list;
         }
 
+        /// <summary>The picture xemu keeps in a snapshot's VM state - its thumbnail, a PNG (xemu-snapshots.c,
+        /// xemu_snapshots_create_framebuffer_thumbnail_png) - found by its signature and cut at its IEND. Null when there is none.
+        /// The VM state is read past the disk's end, where QEMU puts it (qcow2_vm_state_offset: the first L1 entry past the disk);
+        /// the whole of it at worst - some 35 MB - so never on a window's thread.</summary>
+        internal byte[] SnapshotThumbnail(Qcow2Snapshot s, int maxBytes = 4 << 20)
+        {
+            long perL1 = 1L << (_clusterBits + _l2Bits);
+            long start = (Length + perL1 - 1) / perL1 * perL1;
+            long end = start + (long)s.VmStateSize;
+            byte[] sig = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+            MemoryStream png = null;
+            var tail = new byte[0];
+            for (long off = start; off < end; off += _clusterSize)
+            {
+                var e = EntryIn(s.L1, off >> _clusterBits);
+                var data = e == null || e.Value == 0 ? new byte[_clusterSize] : ClusterData(e.Value);
+                if (png == null)
+                {
+                    // The signature, maybe across two clusters: looked for in the last bytes of one and this one.
+                    var window = new byte[tail.Length + data.Length];
+                    Buffer.BlockCopy(tail, 0, window, 0, tail.Length);
+                    Buffer.BlockCopy(data, 0, window, tail.Length, data.Length);
+                    int at = IndexOf(window, sig);
+                    if (at < 0) { tail = window.AsSpan(window.Length - (sig.Length - 1)).ToArray(); continue; }
+                    png = new MemoryStream();
+                    png.Write(window, at, window.Length - at);
+                }
+                else png.Write(data, 0, data.Length);
+                if (png.Length > maxBytes) return null;
+                if (Cut(png.GetBuffer(), (int)png.Length) is int whole) return png.GetBuffer().AsSpan(0, whole).ToArray();
+            }
+            return null;
+        }
+
+        private static int IndexOf(byte[] hay, byte[] needle)
+        {
+            for (int i = hay.AsSpan().IndexOf(needle[0]); i >= 0 && i <= hay.Length - needle.Length; )
+            {
+                if (hay.AsSpan(i, needle.Length).SequenceEqual(needle)) return i;
+                int next = hay.AsSpan(i + 1).IndexOf(needle[0]);
+                i = next < 0 ? -1 : i + 1 + next;
+            }
+            return -1;
+        }
+
+        /// <summary>The PNG's length once its IEND chunk is there, else null: its chunks walked (length, type, data, CRC).</summary>
+        private static int? Cut(byte[] b, int length)
+        {
+            int pos = 8;
+            while (pos + 12 <= length)
+            {
+                long chunk = BE32(b, pos);
+                if (chunk > 64L << 20) return null;
+                long next = pos + 12 + chunk;
+                if (next > length) return null;
+                if (b[pos + 4] == 'I' && b[pos + 5] == 'E' && b[pos + 6] == 'N' && b[pos + 7] == 'D') return (int)next;
+                pos = (int)next;
+            }
+            return null;
+        }
+
         /// <summary>A data cluster's bytes from its L2 entry: inflated when compressed, zeros for the zero flag.</summary>
         internal byte[] ClusterData(ulong entry)
         {

@@ -372,9 +372,10 @@ namespace LbIntegrations.Probe
         /// <summary>--xemu-shots &lt;out dir&gt; --rom &lt;disc&gt; [--data &lt;Plugins\.data&gt;]: the game's window, each of its tabs, and the
         /// Nixx window's xemu tab, drawn off screen into PNGs - the settings in a scratch folder, the compatibility list read
         /// from <c>--data</c> when given, Nixx-Cxbx counted as loaded.</summary>
-        public static bool Shots(Assembly asm, string outDir, string rom, string data)
+        public static bool Shots(Assembly asm, string outDir, string rom, string data, string emu = null)
         {
             _asm = asm;
+            if (emu != null) T("XemuLibrary").GetField("Override", Any).SetValue(null, emu);
             Directory.CreateDirectory(outDir);
             var work = Path.Combine(Path.GetTempPath(), "lbip-xemu-shots-" + Guid.NewGuid().ToString("N").Substring(0, 8));
             T("XemuSettings").GetField("DirOverride", Any).SetValue(null, work);
@@ -1228,9 +1229,62 @@ namespace LbIntegrations.Probe
             Check("the base never written", File.ReadAllBytes(baseDisk).SequenceEqual(File.ReadAllBytes(realBase)));
         }
 
-        /// <summary>The session's xemu.toml and its merge back: made from a user's file, rewritten the way xemu rewrites it on exit
-        /// (a pad added, a binding changed, the window resized, a table new), merged back - untouched tables whole, touched keys
-        /// the user's, the rest the session's.</summary>
+        /// <summary>--xemu-delete-console &lt;an xemu folder COPY&gt; --title id: the game's console deleted as its window's button does,
+        /// then made again as a launch makes it and its state files put back - nothing lost: as many snapshots after as before.</summary>
+        public static bool DeleteConsoleCycle(Assembly asm, string emuDir, string titleId)
+        {
+            _asm = asm;
+            var exe = Path.Combine(emuDir, "x.emu.exe");
+            var console = Path.Combine(emuDir, "hdd", "games", titleId + ".qcow2");
+            int Count() { using var q = (IDisposable)T("Saves.Qcow2Image").GetMethod("Open", Any).Invoke(null, new object[] { console }); return ((System.Collections.ICollection)q.GetType().GetProperty("Snapshots").GetValue(q)).Count; }
+            int before = Count();
+            Console.WriteLine("  before: " + before + " snapshot(s)");
+            var a = new object[] { exe, titleId, false };
+            var said = (string)T("XemuSaveFiles").GetMethod("DeleteConsole", Any).Invoke(null, a);
+            Console.WriteLine("  " + said.Replace("\n", " "));
+            var dir = (string)Call("Saves.XemuStates", "Dir", exe, titleId);
+            Check("deleted: the console, its stamp and its index gone", (bool)a[2] && !File.Exists(console) && !File.Exists(Path.ChangeExtension(console, ".stamp")) && !File.Exists(Path.ChangeExtension(console, ".states")));
+            Check("... every snapshot a state file first (" + Directory.GetFiles(dir, "*.xemustate").Length + ")", Directory.GetFiles(dir, "*.xemustate").Length == before);
+            _asm.GetType("LbIntegrations.Xemu.Qcow2Overlay", true).GetMethod("Create", Any).Invoke(null, new object[] { Path.Combine(emuDir, "hdd", "base.qcow2"), console });
+            foreach (var l in (IEnumerable<string>)Call("Saves.XemuStates", "Mirror", exe, titleId, true, (Func<string>)(() => "test-keys"))) Console.WriteLine("    > " + l);
+            Check("made again at a launch: every snapshot back in it", Count() == before, Count() + " vs " + before);
+            return _bad == 0;
+        }
+
+        /// <summary>The save to Cxbx-Reloaded and back (XemuSaveFiles.TransferToCxbx / FromCxbx), on a scratch xemu and a scratch
+        /// Nixx-Cxbx data folder: the file put in place, the one it replaced kept apart, the restore noted in the receiving side's
+        /// stamp; the same save twice: nothing done.</summary>
+        private static void SaveTransfer(string work)
+        {
+            var tid = "4d530004";
+            var xemu = Path.Combine(work, "xemu"); Directory.CreateDirectory(Path.Combine(xemu, "hdd", "games"));
+            var exe = Path.Combine(xemu, "x.emu.exe"); File.WriteAllBytes(exe, new byte[0]);
+            var cxbx = Path.Combine(work, "cxbx");
+            T("XemuSaveFiles").GetField("CxbxDataOverride", Any).SetValue(null, cxbx);
+            try
+            {
+                var st = T("Saves.XemuSaveStore");
+                void Zip(string path, string text) { Directory.CreateDirectory(Path.GetDirectoryName(path)); st.GetMethod("Pack", Any).Invoke(null, new object[] { new List<(string, byte[])> { ("save.dat", System.Text.Encoding.ASCII.GetBytes(text)) }, path }); }
+                var ours = (string)Call("XemuSaveFiles", "PackPath", exe, tid);
+                var theirs = Path.Combine(cxbx, "lbip-saves", tid + ".cxbxsave");
+                var theirStamp = Path.Combine(cxbx, "lbip-stamps", tid + ".stamp");
+                string Said(string m) { var a = new object[] { exe, tid, false }; var s = (string)T("XemuSaveFiles").GetMethod(m, Any).Invoke(null, a); return ((bool)a[2] ? "done: " : "not: ") + s; }
+                Zip(ours, "A"); Zip(theirs, "B");
+                var s1 = Said("TransferToCxbx");
+                Check("to Cxbx-Reloaded: its save is ours now", s1.StartsWith("done") && File.ReadAllBytes(theirs).SequenceEqual(File.ReadAllBytes(ours)), s1);
+                Check("... the one it had kept in its lbip-conflicts", Directory.GetFiles(Path.Combine(cxbx, "lbip-conflicts"), tid + "-active-*.cxbxsave").Length == 1);
+                Check("... the restore noted in its stamp", File.Exists(theirStamp) && File.ReadAllText(theirStamp).Contains("restore=1"));
+                Check("the same save again: nothing done", Said("TransferToCxbx").StartsWith("not") && Said("TransferFromCxbx").StartsWith("not"));
+                Zip(theirs, "C");                                          // played on Cxbx-Reloaded since
+                var s2 = Said("TransferFromCxbx");
+                Check("from Cxbx-Reloaded: ours is its save now", s2.StartsWith("done") && File.ReadAllBytes(ours).SequenceEqual(File.ReadAllBytes(theirs)), s2);
+                Check("... ours kept in this xemu's lbip-conflicts", Directory.GetFiles(Path.Combine(xemu, "lbip-conflicts"), tid + "-active-*.cxbxsave").Length == 1);
+                var ourStamp = Path.Combine(xemu, "hdd", "games", tid + ".stamp");
+                Check("... the restore noted in our stamp", File.Exists(ourStamp) && File.ReadAllText(ourStamp).Contains("restore=1"));
+            }
+            finally { T("XemuSaveFiles").GetField("CxbxDataOverride", Any).SetValue(null, null); }
+        }
+
         /// <summary>The disc by one path: a symbolic link made and read through as the disc, the relative path given; made again
         /// over a link left behind; a real file at its place left alone (the disc's own path given); taken away, the link alone.
         /// Without the right to make a link (no developer mode), only the fallback is checked.</summary>
@@ -1255,6 +1309,9 @@ namespace LbIntegrations.Probe
             Check("... and never taken away", File.Exists(link) && new FileInfo(link).Length == 16);
         }
 
+        /// <summary>The session's xemu.toml and its merge back: made from a user's file, rewritten the way xemu rewrites it on exit
+        /// (a pad added, a binding changed, the window resized, a table new), merged back - untouched tables whole, touched keys
+        /// the user's, the rest the session's.</summary>
         private static void SessionToml(string work)
         {
             // A string with a ' (a game "Tom Clancy's ..."): a basic string, escaped, read back as it was - measured 05/10, xemu
@@ -1654,6 +1711,9 @@ namespace LbIntegrations.Probe
 
                 Console.WriteLine("  one path for the disc (XemuDiscLink)");
                 DiscLink(Path.Combine(work, "disclink"));
+
+                Console.WriteLine("  a save from one emulator to the other");
+                SaveTransfer(Path.Combine(work, "transfer"));
 
                 // 7. the launch line
                 Console.WriteLine("  launch line");

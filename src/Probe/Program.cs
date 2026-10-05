@@ -119,7 +119,8 @@ namespace LbIntegrations.Probe
             if (Has(args, "--xemu-session")) return XemuCheck.SessionStep(asm, Arg(args, "--xemu-session"), Path.GetFullPath(Arg(args, "--user")), Path.GetFullPath(Arg(args, "--session"))) ? 0 : 1;
             if (Has(args, "--xemu-saves")) return XemuCheck.Saves(asm, Path.GetFullPath(Arg(args, "--console")), Arg(args, "--title"), Arg(args, "--out") is string z ? Path.GetFullPath(z) : null) ? 0 : 1;
             if (Has(args, "--xemu-console")) return XemuCheck.Console_(asm, Path.GetFullPath(Arg(args, "--base")), Path.GetFullPath(Arg(args, "--out")), Path.GetFullPath(Arg(args, "--rom"))) ? 0 : 1;
-            if (Has(args, "--xemu-shots")) return XemuCheck.Shots(asm, Path.GetFullPath(Arg(args, "--xemu-shots")), Path.GetFullPath(Arg(args, "--rom")), Arg(args, "--data")) ? 0 : 1;
+            if (Has(args, "--xemu-delete-console")) return XemuCheck.DeleteConsoleCycle(asm, Path.GetFullPath(Arg(args, "--xemu-delete-console")), Arg(args, "--title")) ? 0 : 1;
+            if (Has(args, "--xemu-shots")) return XemuCheck.Shots(asm, Path.GetFullPath(Arg(args, "--xemu-shots")), Path.GetFullPath(Arg(args, "--rom")), Arg(args, "--data"), emuPath != null ? Path.GetFullPath(emuPath) : null) ? 0 : 1;
             if (Has(args, "--list-refresh")) return ListRefreshCheck.Run(asm) ? 0 : 1;
             if (Has(args, "--xemu-compat")) return XemuCheck.Compat(asm, args.SkipWhile(a => a != "--xemu-compat").Skip(1).Select(Path.GetFullPath)) ? 0 : 1;
             if (Has(args, "--xemu-states-cycle")) return XemuCheck.StatesCycle(asm, Path.GetFullPath(Arg(args, "--xemu-states-cycle")), Arg(args, "--title")) ? 0 : 1;

@@ -197,6 +197,65 @@ namespace LbIntegrations.Xemu.Saves
             catch { }
         }
 
+        // ── a view, for a window ─────────────────────────────────────────────
+
+        internal sealed class SnapshotView
+        {
+            public string Name, Id, Identity;
+            public DateTime Date;
+            public ulong VmStateSize;
+            public XemuStateFile File;          // its file, when it has one
+        }
+
+        /// <summary>What the game's console holds and what its state files are, read only - nothing exported, nothing written.
+        /// <paramref name="files"/> the state files whose snapshot is not in the console (restored, waiting for a launch).
+        /// Null with <paramref name="problem"/> when the console cannot be read (xemu running holds it).</summary>
+        public static List<SnapshotView> View(string exe, string titleId, out List<XemuStateFile> files, out string problem)
+        {
+            files = new List<XemuStateFile>();
+            problem = null;
+            lock (Gate)
+            {
+                var consolePath = XemuPaths.GameHdd(exe, titleId);
+                var dir = Dir(exe, titleId);
+                var all = dir != null && Directory.Exists(dir) ? Directory.GetFiles(dir, "*" + Extension).Select(Read).Where(f => f != null).OrderBy(f => f.Slot).ToList() : new List<XemuStateFile>();
+                var list = new List<SnapshotView>();
+                if (consolePath != null && File.Exists(consolePath))
+                {
+                    try
+                    {
+                        using var console = (Qcow2Image)Qcow2Image.Open(consolePath);
+                        foreach (var s in console.Snapshots)
+                        {
+                            var id = IdentityOf(s);
+                            list.Add(new SnapshotView { Name = s.Name, Id = s.Id, Identity = id, Date = s.Date, VmStateSize = s.VmStateSize, File = all.FirstOrDefault(f => f.Identity == id) });
+                        }
+                    }
+                    catch (Exception ex) { problem = ex.Message; return null; }
+                }
+                files = all.Where(f => list.All(v => v.Identity != f.Identity)).ToList();
+                return list;
+            }
+        }
+
+        /// <summary>The thumbnail of the snapshot <paramref name="identity"/> of the game's console (Qcow2Image.SnapshotThumbnail),
+        /// or null. Read only.</summary>
+        public static byte[] Thumbnail(string exe, string titleId, string identity)
+        {
+            lock (Gate)
+            {
+                try
+                {
+                    var consolePath = XemuPaths.GameHdd(exe, titleId);
+                    if (consolePath == null || !File.Exists(consolePath)) return null;
+                    using var console = (Qcow2Image)Qcow2Image.Open(consolePath);
+                    var s = console.Snapshots.FirstOrDefault(x => IdentityOf(x) == identity);
+                    return s == null ? null : console.SnapshotThumbnail(s);
+                }
+                catch { return null; }
+            }
+        }
+
         // ── the mirror ───────────────────────────────────────────────────────
 
         /// <summary>The game's snapshots and state files put in step. <paramref name="rewrite"/>: the console may be rewritten

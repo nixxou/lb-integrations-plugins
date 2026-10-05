@@ -119,6 +119,170 @@ namespace LbIntegrations.Xemu
             catch (Exception ex) { Log.Warn("savestates: " + titleId + " could not be put in step", ex); }
         }
 
+        /// <summary>The game's console deleted, to be made again at its next launch (Mehdi, 05/10) - nothing lost: its snapshots
+        /// without a file exported first (whatever the savestates option says), its save kept apart in lbip-conflicts\ when it is
+        /// not the active one; then the console, its stamp and its index gone. The next launch makes a console, lays the save in,
+        /// and puts the state files back (when savestates are on). What it did, or why not (null: nothing to delete).</summary>
+        public static string DeleteConsole(string exe, string titleId, out bool done)
+        {
+            done = false;
+            var console = XemuPaths.GameHdd(exe, titleId);
+            if (console == null || !File.Exists(console)) return "this game has no console yet";
+            if (XemuPaths.Running(exe)) return "xemu is running - close it first";
+            var said = new List<string>();
+            try
+            {
+                // The index forgotten first: a snapshot it lists without a file reads as one LaunchBox removed - not exported, and
+                // lost with the console (measured 05/10 on a copy of Batman's). Forgotten, every snapshot without a file is exported.
+                var index = Path.ChangeExtension(console, ".states");
+                if (File.Exists(index)) File.Delete(index);
+                var exported = XemuStates.Mirror(exe, titleId, false, () => StampKeys(exe, titleId)).Where(l => l.Contains("exported")).ToList();
+                if (exported.Count > 0) said.Add(exported.Count + " snapshot(s) exported as state files first");
+            }
+            catch (Exception ex) { return "its snapshots could not be exported first (" + ex.Message + ") - nothing deleted"; }
+            if (Side(exe, titleId) is XboxSaveSide side)
+            {
+                try { if (XboxSaveSync.KeepConsoleApart(side) is string kept) said.Add("its save, not the active one, kept in " + kept); }
+                catch (Exception ex) { return "its save could not be kept apart (" + ex.Message + ") - nothing deleted"; }
+            }
+            File.Delete(console);
+            foreach (var extra in new[] { Path.ChangeExtension(console, ".stamp"), Path.ChangeExtension(console, ".states") })
+                try { if (File.Exists(extra)) File.Delete(extra); } catch { }
+            done = true;
+            said.Add("the console deleted: made again at the next launch, its save laid in" + (XemuSettings.Savestates() ? ", its savestates put back" : ""));
+            Log.Info("console of " + titleId + ": " + string.Join("; ", said));
+            var text = string.Join(".\n", said) + ".";
+            return char.ToUpperInvariant(text[0]) + text.Substring(1);
+        }
+
+        /// <summary>Cxbx-Reloaded's active save of the game (Nixx-Cxbx's lbip-saves), or null - from the library's Cxbx-Reloaded.</summary>
+        public static string CxbxSaveOf(string titleId) => FindCxbx(titleId) is CxbxSide c && File.Exists(c.Pack) ? c.Pack : null;
+
+        /// <summary>Where Nixx-Cxbx keeps a game's save: its data folder (CxbxPaths.DataDir - beside cxbxr-ldr.exe, or Cxbx-Reloaded's
+        /// AppData folder), its lbip-saves, its stamps, its conflicts.</summary>
+        internal sealed class CxbxSide { public string Exe, Data, Pack, Stamp, Conflicts; }
+
+        /// <summary>The library's Cxbx-Reloaded of this pack and the game's places there - its data folder the one already holding
+        /// Nixx-Cxbx's saves or stamps, else beside the loader when Cxbx-Reloaded keeps its settings there, else AppData. Null:
+        /// no Cxbx-Reloaded in the library.</summary>
+#pragma warning disable CS0649
+        /// <summary>For the probe: Nixx-Cxbx's data folder. Set by reflection.</summary>
+        internal static string CxbxDataOverride;
+#pragma warning restore CS0649
+
+        public static CxbxSide FindCxbx(string titleId)
+        {
+            if (CxbxDataOverride != null)
+                return new CxbxSide { Exe = null, Data = CxbxDataOverride, Pack = Path.Combine(CxbxDataOverride, "lbip-saves", titleId + XemuSaveStore.Extension),
+                                      Stamp = Path.Combine(CxbxDataOverride, "lbip-stamps", titleId + ".stamp"), Conflicts = Path.Combine(CxbxDataOverride, "lbip-conflicts") };
+            try
+            {
+                foreach (var emu in Unbroken.LaunchBox.Plugins.PluginHelper.DataManager?.GetAllEmulators() ?? new Unbroken.LaunchBox.Plugins.Data.IEmulator[0])
+                {
+                    var path = XemuPlugin.ResolveFullPath(XemuPlugin.Safe(() => emu.ApplicationPath));
+                    if (path == null || !string.Equals(Path.GetFileName(path), "cxbxr-ldr.exe", StringComparison.OrdinalIgnoreCase) || !File.Exists(path)) continue;
+                    var beside = Path.GetDirectoryName(path);
+                    var appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Cxbx-Reloaded");
+                    string data = new[] { beside, appData }.FirstOrDefault(d => Directory.Exists(Path.Combine(d, "lbip-saves")) || Directory.Exists(Path.Combine(d, "lbip-stamps")))
+                                  ?? (File.Exists(Path.Combine(beside, "settings.ini")) ? beside : appData);
+                    return new CxbxSide
+                    {
+                        Exe = path, Data = data,
+                        Pack = Path.Combine(data, "lbip-saves", titleId + XemuSaveStore.Extension),
+                        Stamp = Path.Combine(data, "lbip-stamps", titleId + ".stamp"),
+                        Conflicts = Path.Combine(data, "lbip-conflicts"),
+                    };
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        private static bool CxbxRunning()
+        {
+            try { return System.Diagnostics.Process.GetProcessesByName("cxbxr-ldr").Length > 0 || System.Diagnostics.Process.GetProcessesByName("cxbx").Length > 0; }
+            catch { return false; }
+        }
+
+        /// <summary>A save file put in place of another, the other kept apart first when it is not the same save (Mehdi, 05/10:
+        /// "warning si ça écrase la save active et mise en vault") - the copy's path, or null.</summary>
+        private static string Replace(string from, string to, string conflicts, string titleId, string why)
+        {
+            string kept = null;
+            if (File.Exists(to))
+            {
+                var a = XboxSaveSync.FilesOf(from); var b = XboxSaveSync.FilesOf(to);
+                if (a != null && b != null && XboxSaveSync.ContentHash(a) != XboxSaveSync.ContentHash(b))
+                {
+                    var name = titleId + "-" + why + "-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
+                    kept = Path.Combine(conflicts, name + XemuSaveStore.Extension);
+                    for (int i = 2; File.Exists(kept); i++) kept = Path.Combine(conflicts, name + "-" + i + XemuSaveStore.Extension);
+                    Directory.CreateDirectory(conflicts);
+                    File.Copy(to, kept);
+                }
+            }
+            Directory.CreateDirectory(Path.GetDirectoryName(to));
+            var part = to + ".part";
+            File.Copy(from, part, overwrite: true);
+            File.Move(part, to, overwrite: true);
+            return kept;
+        }
+
+        /// <summary>Would putting <paramref name="from"/> in place of <paramref name="to"/> replace another save? True, false, or null
+        /// when <paramref name="to"/> is not there.</summary>
+        public static bool? WouldReplace(string from, string to)
+        {
+            try
+            {
+                if (!File.Exists(to)) return null;
+                var a = XboxSaveSync.FilesOf(from); var b = XboxSaveSync.FilesOf(to);
+                return a == null || b == null || XboxSaveSync.ContentHash(a) != XboxSaveSync.ContentHash(b);
+            }
+            catch { return true; }
+        }
+
+        /// <summary>Cxbx-Reloaded's save made this xemu's active save - as LaunchBox's Restore does: the file put in place, the
+        /// restore noted, laid into the console at the next launch. The active save replaced is kept in lbip-conflicts first.</summary>
+        public static string TransferFromCxbx(string exe, string titleId, out bool done)
+        {
+            done = false;
+            var cx = FindCxbx(titleId);
+            if (cx == null) return "no Cxbx-Reloaded in the library";
+            if (!File.Exists(cx.Pack)) return "Cxbx-Reloaded has no save of this game";
+            if (XemuPaths.Running(exe) || CxbxRunning()) return "an emulator is running - close it first";
+            Sync(exe, titleId, XboxSyncMode.Listing);                 // this side's save up to date with its console first, when safe
+            var pack = PackPath(exe, titleId);
+            if (WouldReplace(cx.Pack, pack) == false) return "this is already the same save";
+            var kept = Replace(cx.Pack, pack, Path.Combine(XemuPaths.Dir(exe), "lbip-conflicts"), titleId, "active");
+            if (Side(exe, titleId) is XboxSaveSide side) XboxSaveSync.MarkRestored(side);
+            done = true;
+            var said = "Cxbx-Reloaded's save is this game's active save now - laid into its console at the next launch"
+                       + (kept != null ? ".\nThe one it replaced is kept in " + kept : "");
+            Log.Info("saves: " + titleId + " - " + said.Replace("\n", " "));
+            return said + ".";
+        }
+
+        /// <summary>This xemu's active save made Cxbx-Reloaded's - its file put in Nixx-Cxbx's lbip-saves, the restore noted in its
+        /// stamp, so Cxbx-Reloaded's next launch lays it in. Cxbx-Reloaded's save replaced is kept in its lbip-conflicts first.</summary>
+        public static string TransferToCxbx(string exe, string titleId, out bool done)
+        {
+            done = false;
+            var cx = FindCxbx(titleId);
+            if (cx == null) return "no Cxbx-Reloaded in the library";
+            if (XemuPaths.Running(exe) || CxbxRunning()) return "an emulator is running - close it first";
+            Sync(exe, titleId, XboxSyncMode.Listing);
+            var pack = PackPath(exe, titleId);
+            if (pack == null || !File.Exists(pack)) return "this game has no save on xemu";
+            if (WouldReplace(pack, cx.Pack) == false) return "Cxbx-Reloaded already has the same save";
+            var kept = Replace(pack, cx.Pack, cx.Conflicts, titleId, "active");
+            XboxSaveSync.MarkRestored(new XboxSaveSide { TitleId = titleId, Pack = cx.Pack, StampPath = cx.Stamp, ConflictDir = cx.Conflicts });
+            done = true;
+            var said = "This save is Cxbx-Reloaded's active save now - laid into its console at its next launch"
+                       + (kept != null ? ".\nThe one it replaced is kept in " + kept : "");
+            Log.Info("saves: " + titleId + " - " + said.Replace("\n", " "));
+            return said + ".";
+        }
+
         public static List<XemuStateFile> StateFiles(string exe, string titleId)
         {
             var dir = XemuStates.Dir(exe, titleId);

@@ -295,6 +295,25 @@ namespace LbIntegrations.Xbox
             return said;
         }
 
+        /// <summary>Before the console is deleted (Mehdi, 05/10: "forcer sa reconstruction"): its save kept apart in lbip-conflicts\,
+        /// with the keys it was written with, when it is not the active save's content. The copy's path, or null when there was
+        /// nothing of its own to keep.</summary>
+        public static string KeepConsoleApart(XboxSaveSide s)
+        {
+            lock (Gate)
+            {
+                var consoleFiles = s.ReadConsole() ?? new List<(string, byte[])>();
+                if (consoleFiles.Count == 0) return null;
+                var saveFiles = FilesOf(s.Pack);
+                if (saveFiles != null && ContentHash(saveFiles) == ContentHash(consoleFiles)) return null;
+                var name = s.TitleId + "-console-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
+                var kept = Path.Combine(s.ConflictDir, name + ".cxbxsave");
+                for (int i = 2; File.Exists(kept); i++) kept = Path.Combine(s.ConflictDir, name + "-" + i + ".cxbxsave");
+                WriteZip(consoleFiles, kept, ReadStamp(s.StampPath)?.Keys ?? s.NaturalKeys?.Invoke());
+                return kept;
+            }
+        }
+
         /// <summary>The console made the save, whatever the stamp says - a console put back from a backup of its own.</summary>
         public static string CaptureNow(XboxSaveSide s)
         {

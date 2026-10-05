@@ -219,11 +219,11 @@ namespace LbIntegrations.Xemu
             catch (Exception ex) { about.Add("The game could not be read: " + ex.Message); }
             if (exe == null) about.Add("No xemu of this plugin in the library.");
             if (games.Count > 1) about.Add("The " + games.Count + " games selected take the same choice; what is shown is the first one's.");
-            var header = new Label
-            {
-                Text = string.Join("\n", about), Dock = DockStyle.Top, AutoSize = true, MaximumSize = new Size(620, 0),
-                ForeColor = SystemColors.GrayText, Padding = new Padding(10, 8, 10, 6),
-            };
+            // Above the tabs: what it is, and its compatibility at a glance (Mehdi, 05/10) - drawn again with the Game tab's.
+            var header = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(8, 6, 8, 4) };
+            header.Controls.Add(new Label { Text = string.Join("\n", about), AutoSize = true, MaximumSize = new Size(620, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(2, 0, 0, 2) });
+            _pills = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty };
+            header.Controls.Add(_pills);
 
             // A tab: a scrolling page, its controls stacked.
             FlowLayoutPanel Tab(TabControl tabs, string title)
@@ -329,16 +329,11 @@ namespace LbIntegrations.Xemu
                 box.Controls.Add(inner);
                 return box;
             }
-            var hdd = XemuPaths.GameHdd(exe, titleId);
-            var lines = new List<string>();
-            if (hdd != null && File.Exists(hdd))
-            {
-                var fi = new FileInfo(hdd);
-                lines.Add("Its disk: " + hdd + " - " + (fi.Length >> 20) + " MB, last written " + fi.LastWriteTime.ToString("g"));
-            }
-            else lines.Add("Its disk: not made yet - made at its first launch, or by booting it below.");
-            if (XemuSaveFiles.Side(exe, titleId) is LbIntegrations.Xbox.XboxSaveSide side) lines.AddRange(LbIntegrations.Xbox.XboxSaveSync.Describe(side));
-            inner.Controls.Add(new Label { Text = string.Join("\n", lines), AutoSize = true, MaximumSize = new Size(540, 0), Margin = new Padding(0, 0, 0, 6) });
+            // Its files (Mehdi, 05/10: "toutes les infos fichiers qu'on a ... chargé en arrière plan"): read off the window's
+            // thread, then drawn - the snapshots' pictures one by one after.
+            _files = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Margin = new Padding(0, 0, 0, 6) };
+            inner.Controls.Add(_files);
+            var buttons = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty };
             var boot = new Button { Text = "Boot this game's console, without its disc", AutoSize = true };
             new ToolTip().SetToolTip(boot, "xemu starts on this game's console with its options, its region and the keys of its save, but no disc: its "
                                          + "dashboard - to clear a cache, look at or delete its saves. When it is closed, the save is captured as after a game.");
@@ -347,9 +342,222 @@ namespace LbIntegrations.Xemu
                 var problem = XemuConsoleBoot.Boot(game);
                 if (problem != null) MessageBox.Show(this, "The console could not be booted: " + problem, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             };
-            inner.Controls.Add(boot);
+            var delete = new Button { Text = "Delete this console...", AutoSize = true, Margin = new Padding(8, 3, 3, 3) };
+            new ToolTip().SetToolTip(delete, "Made again from scratch at the game's next launch, its save laid in - nothing lost: its snapshots without a "
+                                           + "file are exported first, and its save kept apart when it is not the active one.");
+            delete.Click += (_, _) =>
+            {
+                if (MessageBox.Show(this, "Delete this game's console (" + titleId + ".qcow2)?\n\nIt is made again at the next launch, its save laid into it. "
+                                    + "Before that, its snapshots that have no state file are exported as one, and its save is kept in lbip-conflicts if it "
+                                    + "is not the active one.", Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+                delete.Enabled = false;
+                System.Threading.Tasks.Task.Run(() => XemuSaveFiles.DeleteConsole(exe, titleId, out var ok) is string said ? (said, ok) : ("", ok)).ContinueWith(t => OnUi(() =>
+                {
+                    delete.Enabled = true;
+                    var (said, ok) = t.Status == System.Threading.Tasks.TaskStatus.RanToCompletion ? t.Result : (t.Exception?.GetBaseException().Message ?? "failed", false);
+                    MessageBox.Show(this, (ok ? "" : "Not deleted: ") + said, Text, MessageBoxButtons.OK, ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+                    ShowFiles(exe, titleId);
+                }));
+            };
+            buttons.Controls.Add(boot);
+            buttons.Controls.Add(delete);
+            inner.Controls.Add(buttons);
             box.Controls.Add(inner);
+            ShowFiles(exe, titleId);
             return box;
+        }
+
+        // ── its files ────────────────────────────────────────────────────────
+
+        private FlowLayoutPanel _files;
+
+        private sealed class FilesModel
+        {
+            public string Console, Pack, CxbxPack, Stamp, Problem;
+            public bool CxbxThere;
+            public List<string> SaveState = new List<string>();
+            public string ConsoleHash, PackHash, CxbxHash;
+            public List<Saves.XemuStates.SnapshotView> Snapshots;
+            public List<Saves.XemuStateFile> Waiting = new List<Saves.XemuStateFile>();
+            public List<string> Conflicts = new List<string>();
+        }
+
+        private void ShowFiles(string exe, string titleId)
+        {
+            if (_files == null) return;
+            _files.Controls.Clear();
+            _files.Controls.Add(new Label { AutoSize = true, ForeColor = SystemColors.GrayText, Text = "Reading its files..." });
+            System.Threading.Tasks.Task.Run(() => ReadFiles(exe, titleId)).ContinueWith(t => OnUi(() =>
+            {
+                if (t.Status == System.Threading.Tasks.TaskStatus.RanToCompletion) DrawFiles(exe, titleId, t.Result);
+                else { _files.Controls.Clear(); _files.Controls.Add(new Label { AutoSize = true, ForeColor = Color.Firebrick, Text = "Its files could not be read: " + t.Exception?.GetBaseException().Message }); }
+            }));
+        }
+
+        private static FilesModel ReadFiles(string exe, string titleId)
+        {
+            var cx = XemuSaveFiles.FindCxbx(titleId);
+            var m = new FilesModel { Console = XemuPaths.GameHdd(exe, titleId), Pack = XemuSaveFiles.PackPath(exe, titleId), CxbxPack = cx != null && File.Exists(cx.Pack) ? cx.Pack : null, CxbxThere = cx != null };
+            m.Stamp = m.Console == null ? null : Path.ChangeExtension(m.Console, ".stamp");
+            string HashOf(List<(string Name, byte[] Data)> files) => files == null ? null : LbIntegrations.Xbox.XboxSaveSync.ContentHash(files);
+            if (XemuSaveFiles.Side(exe, titleId) is LbIntegrations.Xbox.XboxSaveSide side)
+            {
+                m.SaveState = LbIntegrations.Xbox.XboxSaveSync.Describe(side);
+                try { m.ConsoleHash = File.Exists(m.Console) ? HashOf(side.ReadConsole()) : null; } catch { }
+            }
+            try { m.PackHash = HashOf(LbIntegrations.Xbox.XboxSaveSync.FilesOf(m.Pack)); } catch { }
+            try { m.CxbxHash = HashOf(LbIntegrations.Xbox.XboxSaveSync.FilesOf(m.CxbxPack)); } catch { }
+            m.Snapshots = Saves.XemuStates.View(exe, titleId, out m.Waiting, out m.Problem);
+            var conflicts = XemuPaths.Dir(exe) is string d ? Path.Combine(d, "lbip-conflicts") : null;
+            if (conflicts != null && Directory.Exists(conflicts)) m.Conflicts = Directory.GetFiles(conflicts, titleId + "-*.cxbxsave").OrderByDescending(File.GetLastWriteTime).ToList();
+            return m;
+        }
+
+        private static string SizeOf(long bytes) => bytes >= 10L << 20 ? (bytes >> 20) + " MB" : bytes >= 1 << 20 ? (bytes / 1048576.0).ToString("0.0") + " MB" : Math.Max(1, (bytes + 1023) >> 10) + " KB";
+
+        private static string Facts(string path)
+        {
+            try { var fi = new FileInfo(path); return SizeOf(fi.Length) + ", " + fi.LastWriteTime.ToString("g"); } catch { return ""; }
+        }
+
+        /// <summary>"What: path - 38 MB, 05/10 20:47": the path a link that shows the file in Explorer.</summary>
+        private Control FileRow(string what, string exe, string path, string facts = null)
+        {
+            var row = new FlowLayoutPanel { AutoSize = true, WrapContents = true, MaximumSize = new Size(540, 0), Margin = new Padding(0, 4, 0, 0) };
+            row.Controls.Add(new Label { AutoSize = true, Text = what + ":", Font = new Font("Segoe UI", 9f, FontStyle.Bold), Margin = new Padding(0, 0, 4, 0) });
+            if (path == null || !File.Exists(path)) { row.Controls.Add(new Label { AutoSize = true, ForeColor = SystemColors.GrayText, Text = facts ?? "none", Margin = Padding.Empty }); return row; }
+            var dir = XemuPaths.Dir(exe);
+            var shown = dir != null && path.StartsWith(dir + "\\", StringComparison.OrdinalIgnoreCase) ? path.Substring(dir.Length + 1) : path;
+            var link = new LinkLabel { AutoSize = true, Text = shown, UseMnemonic = false, Margin = Padding.Empty };
+            new ToolTip().SetToolTip(link, path + "\nClick: show it in Explorer.");
+            link.LinkClicked += (_, _) => { try { System.Diagnostics.Process.Start("explorer.exe", "/select,\"" + path + "\""); } catch { } };
+            row.Controls.Add(link);
+            row.Controls.Add(new Label { AutoSize = true, ForeColor = SystemColors.GrayText, Text = "- " + (facts ?? Facts(path)), Margin = new Padding(4, 0, 0, 0) });
+            return row;
+        }
+
+        /// <summary>A save across, after a word on what it replaces: warned when it is another save, which is kept apart.</summary>
+        private void Transfer(string exe, string titleId, bool fromCxbx, FilesModel m)
+        {
+            var from = fromCxbx ? m.CxbxPack : m.Pack;
+            var to = fromCxbx ? m.Pack : m.CxbxPack;
+            var replaces = to != null && File.Exists(to) && XemuSaveFiles.WouldReplace(from, to) == true;
+            var text = (fromCxbx ? "Make Cxbx-Reloaded's save (" + Facts(from) + ") this game's active save on xemu?"
+                                 : "Give this game's active save (" + Facts(from) + ") to Cxbx-Reloaded?")
+                       + "\n\nIt is laid into " + (fromCxbx ? "this console" : "Cxbx-Reloaded's console") + " at the next launch there."
+                       + (replaces ? "\n\nWARNING: it replaces " + (fromCxbx ? "the active save here" : "Cxbx-Reloaded's save") + " (" + Facts(to) + "), another save - "
+                                     + "that one is kept in " + (fromCxbx ? "this xemu's" : "Cxbx-Reloaded's") + " lbip-conflicts folder first." : "");
+            if (MessageBox.Show(this, text, Text, MessageBoxButtons.YesNo, replaces ? MessageBoxIcon.Warning : MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                bool ok;
+                var said = fromCxbx ? XemuSaveFiles.TransferFromCxbx(exe, titleId, out ok) : XemuSaveFiles.TransferToCxbx(exe, titleId, out ok);
+                return (said, ok);
+            }).ContinueWith(t => OnUi(() =>
+            {
+                var (said, ok) = t.Status == System.Threading.Tasks.TaskStatus.RanToCompletion ? t.Result : (t.Exception?.GetBaseException().Message ?? "failed", false);
+                MessageBox.Show(this, (ok ? "" : "Not done: ") + said, Text, MessageBoxButtons.OK, ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+                ShowFiles(exe, titleId);
+            }));
+        }
+
+        private Label Note(string text, Color? color = null)
+            => new Label { AutoSize = true, MaximumSize = new Size(530, 0), ForeColor = color ?? SystemColors.GrayText, Margin = new Padding(14, 1, 0, 2), Text = text, UseMnemonic = false };
+
+        private void DrawFiles(string exe, string titleId, FilesModel m)
+        {
+            _files.SuspendLayout();
+            _files.Controls.Clear();
+
+            // The console.
+            _files.Controls.Add(FileRow("Console", exe, m.Console, File.Exists(m.Console ?? "") ? null : "not made yet - made at its first launch, or by booting it below"));
+            if (File.Exists(m.Console ?? ""))
+            {
+                var lines = m.SaveState.Where(l => !l.StartsWith("Active save")).ToList();
+                foreach (var l in lines) _files.Controls.Add(Note(l));
+                if (m.Stamp != null && File.Exists(m.Stamp)) _files.Controls.Add(Note("Last agreement of the save and the console: " + File.GetLastWriteTime(m.Stamp).ToString("g")));
+            }
+
+            // Its snapshots, and their files.
+            if (m.Problem != null) _files.Controls.Add(Note("Its snapshots could not be read: " + m.Problem, Color.Firebrick));
+            else if (m.Snapshots != null && m.Snapshots.Count > 0)
+            {
+                _files.Controls.Add(Note(m.Snapshots.Count + " snapshot(s) in it" + (XemuSettings.Savestates() ? "" : " - savestates are off (the Nixx window's xemu tab): not shown in LaunchBox")));
+                var pending = new List<(PictureBox Box, string Identity)>();
+                foreach (var s in m.Snapshots)
+                {
+                    var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(14, 4, 0, 2) };
+                    var pic = new PictureBox { Size = new Size(128, 96), SizeMode = PictureBoxSizeMode.Zoom, BorderStyle = BorderStyle.FixedSingle, BackColor = Color.Black, Margin = new Padding(0, 0, 8, 0) };
+                    row.Controls.Add(pic);
+                    var text = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Margin = Padding.Empty };
+                    text.Controls.Add(new Label { AutoSize = true, Text = "\"" + s.Name + "\"", Font = new Font("Segoe UI", 9f, FontStyle.Bold), UseMnemonic = false, Margin = Padding.Empty });
+                    text.Controls.Add(new Label { AutoSize = true, ForeColor = SystemColors.GrayText, Text = s.Date.ToString("g") + ", its state " + SizeOf((long)s.VmStateSize), Margin = Padding.Empty });
+                    if (s.File != null) text.Controls.Add(FileRow("Slot " + s.File.Slot, exe, s.File.Path));
+                    else text.Controls.Add(new Label { AutoSize = true, ForeColor = SystemColors.GrayText, Text = XemuSettings.Savestates() ? "no file yet: exported at the next listing or close" : "no file: only in the console", Margin = new Padding(0, 4, 0, 0) });
+                    row.Controls.Add(text);
+                    _files.Controls.Add(row);
+                    pending.Add((pic, s.Identity));
+                }
+                // The pictures, one by one, off the window's thread.
+                System.Threading.Tasks.Task.Run(() =>
+                {
+                    foreach (var (box, identity) in pending)
+                    {
+                        var png = Saves.XemuStates.Thumbnail(exe, titleId, identity);
+                        if (png == null) continue;
+                        try
+                        {
+                            var image = Image.FromStream(new MemoryStream(png));
+                            OnUi(() => { if (!box.IsDisposed) box.Image = image; });
+                        }
+                        catch { }
+                    }
+                });
+            }
+            else if (File.Exists(m.Console ?? "")) _files.Controls.Add(Note("No snapshot in it."));
+            foreach (var f in m.Waiting)
+            {
+                _files.Controls.Add(FileRow("Slot " + f.Slot + " (\"" + f.Name + "\")", exe, f.Path));
+                _files.Controls.Add(Note("Not in the console: put into it at the next launch" + (XemuSettings.Savestates() ? "" : ", once savestates are on")));
+            }
+
+            // The active save, and Cxbx-Reloaded's.
+            _files.Controls.Add(FileRow("Active save", exe, m.Pack));
+            if (m.PackHash != null && m.ConsoleHash != null)
+                _files.Controls.Add(Note(m.PackHash == m.ConsoleHash ? "The same as the save in the console." : "Not the save in the console - see its state above.", m.PackHash == m.ConsoleHash ? (Color?)null : Color.DarkGoldenrod));
+            if (LbIntegrations.Xbox.XboxCompat.PluginLoaded(LbIntegrations.Xbox.XboxCompat.CxbxPluginType) || m.CxbxPack != null)
+            {
+                _files.Controls.Add(FileRow("Cxbx-Reloaded's save", exe, m.CxbxPack));
+                if (m.CxbxHash != null)
+                    _files.Controls.Add(Note(m.CxbxHash == m.PackHash ? "The same save as this one."
+                                             : m.CxbxHash == m.ConsoleHash ? "The same as the save in this console, not as the active one."
+                                             : "Another save than this one: the game was played on each emulator since they last had the same.",
+                                             m.CxbxHash == m.PackHash ? (Color?)null : Color.DarkGoldenrod));
+            }
+
+            // The save from one emulator to the other (Mehdi, 05/10), each a Restore on the side it goes to.
+            if (m.CxbxThere)
+            {
+                var swap = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(14, 4, 0, 2) };
+                var take = new Button { Text = "Take Cxbx-Reloaded's save", AutoSize = true, Enabled = m.CxbxPack != null && m.CxbxHash != m.PackHash };
+                var give = new Button { Text = "Give this save to Cxbx-Reloaded", AutoSize = true, Enabled = File.Exists(m.Pack ?? "") && m.CxbxHash != m.PackHash };
+                new ToolTip().SetToolTip(take, "Cxbx-Reloaded's save becomes this game's active save here, laid into its console at the next launch.");
+                new ToolTip().SetToolTip(give, "This game's active save becomes Cxbx-Reloaded's, laid into its console at its next launch.");
+                take.Click += (_, _) => Transfer(exe, titleId, true, m);
+                give.Click += (_, _) => Transfer(exe, titleId, false, m);
+                swap.Controls.Add(take);
+                swap.Controls.Add(give);
+                _files.Controls.Add(swap);
+            }
+
+            // The console's versions kept apart.
+
+            if (m.Conflicts.Count > 0)
+            {
+                _files.Controls.Add(FileRow("Kept apart", exe, m.Conflicts[0]));
+                _files.Controls.Add(Note(m.Conflicts.Count == 1 ? "A save kept when another took its place." : m.Conflicts.Count + " saves kept when others took their place (lbip-conflicts) - the newest shown."));
+            }
+            _files.ResumeLayout();
         }
 
         // ── compatibility (XemuCompat, Shared.Xbox\XboxCompat) ───────────────
@@ -439,7 +647,26 @@ namespace LbIntegrations.Xemu
                        + (cxbxOn ? "Cxbx-Reloaded's reports are mostly from 2020 and 2021." : ""),
             });
             _compat.ResumeLayout();
+
+            // The same at a glance, above the tabs.
+            if (_pills != null && !_pills.IsDisposed)
+            {
+                _pills.SuspendLayout();
+                _pills.Controls.Clear();
+                void Pill(string who, string what, Color color)
+                {
+                    _pills.Controls.Add(new Label { AutoSize = true, Text = "●", ForeColor = color, Margin = new Padding(2, 2, 2, 0) });
+                    _pills.Controls.Add(new Label { AutoSize = true, Text = who + ":", Margin = new Padding(0, 2, 3, 0) });
+                    _pills.Controls.Add(new Label { AutoSize = true, Text = what, ForeColor = color, Font = new Font("Segoe UI", 9f, FontStyle.Bold), Margin = new Padding(0, 2, 14, 0) });
+                }
+                bool known = report != null || title != null;
+                Pill("xemu", known ? state : "not known", known ? LbIntegrations.Xbox.XboxCompat.XemuColor(state) : Color.Gray);
+                if (cxbxOn) Pill("Cxbx-Reloaded", cx?.State ?? "not known", cx != null ? LbIntegrations.Xbox.XboxCompat.CxbxColor(cx.State) : Color.Gray);
+                _pills.ResumeLayout();
+            }
         }
+
+        private FlowLayoutPanel _pills;
 
         private static Control StateRow(string who, string state, Color color, string linkText, string url)
         {
@@ -477,8 +704,14 @@ namespace LbIntegrations.Xemu
     /// <summary>The xemu installs of this plugin the library points at, resolved.</summary>
     internal static class XemuLibrary
     {
+#pragma warning disable CS0649
+        /// <summary>For the probe: the xemu every game has. Set by reflection.</summary>
+        internal static string Override;
+#pragma warning restore CS0649
+
         public static List<string> All()
         {
+            if (Override != null) return new List<string> { Override };
             var found = new List<string>();
             try
             {
@@ -497,6 +730,7 @@ namespace LbIntegrations.Xemu
         /// <summary>The game's own emulator when it is ours, else the library's first.</summary>
         public static string For(IGame game)
         {
+            if (Override != null) return Override;
             try
             {
                 var dm = PluginHelper.DataManager;
