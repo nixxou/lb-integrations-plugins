@@ -365,7 +365,106 @@ namespace LbIntegrations.Probe
             var reborn = Snaps();
             Check("the console deleted: a new one gets every state file back, none removed", reborn.Count == first.Count && Directory.GetFiles(dir, "*.xemustate").Length == first.Count, string.Join(", ", reborn));
             File.Copy(savedConsole, console, overwrite: true); File.Delete(savedConsole);
+            SlotsByName(emuDir, titleId, exe, dir, console, Mirror, Snaps, M);
             return _bad == 0;
+        }
+
+        /// <summary>A snapshot's name gives its slot (05/10): what xemu would do - a name saved over (Shift+F#), a name deleted then
+        /// made again, a new name - played without xemu: a state file altered (its date, its name) and put into the console through
+        /// a scratch copy of it, as if xemu had made the snapshot.</summary>
+        private static void SlotsByName(string emuDir, string titleId, string exe, string dir, string console,
+                                        Func<bool, List<string>> Mirror, Func<List<string>> Snaps, Func<string, object[], object> M)
+        {
+            Console.WriteLine("  slots by name");
+            object Field(object o, string n) => o.GetType().GetField(n, Any).GetValue(o);
+            object ReadFile(string p) => M("Read", new object[] { p });
+            string SlotFile(int n) => (string)M("SlotPath", new object[] { exe, titleId, n });
+            uint U32(byte[] b, long at) => (uint)(b[at] << 24 | b[at + 1] << 16 | b[at + 2] << 8 | b[at + 3]);
+            void Put32(byte[] b, long at, uint v) { b[at] = (byte)(v >> 24); b[at + 1] = (byte)(v >> 16); b[at + 2] = (byte)(v >> 8); b[at + 3] = (byte)v; }
+
+            // A state file again, its snapshot's date moved on and its name changed (same length) - in its table and its note.
+            string Variant(string src, string name, uint later, string target)
+            {
+                var tmp = Path.Combine(Path.GetTempPath(), "lbip-variant-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(tmp);
+                try
+                {
+                    System.IO.Compression.ZipFile.ExtractToDirectory(src, tmp);
+                    var q = File.ReadAllBytes(Path.Combine(tmp, "state.qcow2"));
+                    long table = (long)U32(q, 64) << 32 | U32(q, 68);
+                    int extra = (int)U32(q, table + 36), idLen = q[table + 12] << 8 | q[table + 13], nameLen = q[table + 14] << 8 | q[table + 15];
+                    uint date = U32(q, table + 16) + later;
+                    Put32(q, table + 16, date);
+                    var oldName = Encoding.UTF8.GetString(q, (int)(table + 40 + extra + idLen), nameLen);
+                    var newName = name ?? oldName;
+                    if (Encoding.UTF8.GetByteCount(newName) != nameLen) throw new ArgumentException("same length only");
+                    Encoding.UTF8.GetBytes(newName).CopyTo(q, table + 40 + extra + idLen);
+                    File.WriteAllBytes(Path.Combine(tmp, "state.qcow2"), q);
+                    var meta = File.ReadAllLines(Path.Combine(tmp, "lbip-state.txt"))
+                                   .Select(l => l.StartsWith("date_sec=") ? "date_sec=" + date : l.StartsWith("name=") ? "name=" + newName : l);
+                    File.WriteAllText(Path.Combine(tmp, "lbip-state.txt"), string.Join("\n", meta) + "\n");
+                    if (File.Exists(target)) File.Delete(target);
+                    System.IO.Compression.ZipFile.CreateFromDirectory(tmp, target);
+                    return target;
+                }
+                finally { try { Directory.Delete(tmp, true); } catch { } }
+            }
+
+            // As if xemu had made it: the snapshot into a scratch copy of the console (its same name replaced), the copy put back.
+            void AsIfXemuMade(string stateFile)
+            {
+                var scratch = emuDir + "-scratch";
+                if (Directory.Exists(scratch)) Directory.Delete(scratch, true);
+                Directory.CreateDirectory(Path.Combine(scratch, "hdd", "games"));
+                File.Copy(Path.Combine(emuDir, "hdd", "base.qcow2"), Path.Combine(scratch, "hdd", "base.qcow2"));
+                File.SetAttributes(Path.Combine(scratch, "hdd", "base.qcow2"), FileAttributes.Normal);   // the base is kept read-only
+                var sc = Path.Combine(scratch, "hdd", "games", Path.GetFileName(console));
+                File.Copy(console, sc);
+                var sexe = Path.Combine(scratch, "x.emu.exe");
+                File.Copy(exe, sexe);
+                var sfile = (string)M("SlotPath", new object[] { sexe, titleId, 50 });
+                Directory.CreateDirectory(Path.GetDirectoryName(sfile));
+                File.Copy(stateFile, sfile);
+                M("Mirror", new object[] { sexe, titleId, true, (Func<string>)(() => "test-keys") });
+                File.Copy(sc, console, overwrite: true);
+                Directory.Delete(scratch, true);
+            }
+
+            var one = ReadFile(SlotFile(1)); var two = ReadFile(SlotFile(2));
+            if (one == null || two == null) { Check("slots 1 and 2 there to start from", false); return; }
+            string a = (string)Field(one, "Name"), b = (string)Field(two, "Name");
+            uint aDate = (uint)Field(one, "DateSec");
+            var work = Path.Combine(emuDir, "variants"); Directory.CreateDirectory(work);
+
+            // 1. "a" saved over in xemu (Shift+F#): its new version in slot 1, the old file gone.
+            AsIfXemuMade(Variant(SlotFile(1), null, 1, Path.Combine(work, "a1.xemustate")));
+            var said = Mirror(false);
+            var now1 = ReadFile(SlotFile(1));
+            Check("a name saved over in xemu: the new version keeps its slot", said.Any(s => s.Contains("deleted in xemu")) && said.Any(s => s.Contains("\"" + a + "\" exported as slot 1"))
+                  && now1 != null && (uint)Field(now1, "DateSec") == aDate + 1 && Directory.GetFiles(dir, "*.xemustate").Length == 2, string.Join("; ", said));
+
+            // "a" gone (LaunchBox's Remove, the launch): slot 1 free.
+            File.Delete(SlotFile(1));
+            Mirror(true);
+            Check("(\"" + a + "\" taken out of the console)", !Snaps().Contains(a));
+
+            // 2. A new name: a number no name ever had - not the free slot 1.
+            var c = b.Substring(0, b.Length - 1) + (b.EndsWith("X") ? "Y" : "X");
+            AsIfXemuMade(Variant(SlotFile(2), c, 3, Path.Combine(work, "c.xemustate")));
+            said = Mirror(false);
+            Check("a new name: a number never used, not the one freed", said.Any(s => s.Contains("\"" + c + "\" exported as slot 3")) && !File.Exists(SlotFile(1)), string.Join("; ", said));
+
+            // 3. "a" made again in xemu: its slot back.
+            AsIfXemuMade(Variant(Path.Combine(work, "a1.xemustate"), null, 1, Path.Combine(work, "a2.xemustate")));
+            said = Mirror(false);
+            Check("a name deleted then made again: its slot back", said.Any(s => s.Contains("\"" + a + "\" exported as slot 1")), string.Join("; ", said));
+            var slots = File.ReadAllLines((string)M("SlotsPath", new object[] { exe, titleId }));
+            Check("... the slots: one line a name, never forgotten (" + slots.Length + ")", slots.Length == 3 && slots.Contains("1\t" + a) && slots.Contains("2\t" + b) && slots.Contains("3\t" + c), string.Join(" | ", slots));
+
+            // The index forgotten (savestates off): the slots kept, nothing renumbered.
+            File.Delete((string)M("IndexPath", new object[] { exe, titleId }));
+            Check("the index forgotten: nothing exported again, nothing renumbered", Mirror(false).Count == 0 && File.ReadAllLines((string)M("SlotsPath", new object[] { exe, titleId })).Length == 3);
+            Directory.Delete(work, true);
         }
 
         /// <summary>--qcow2-snapshots &lt;a COPY of a console&gt; [--title id --zip save]: its snapshots listed; then, with a save,

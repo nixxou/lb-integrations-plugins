@@ -71,6 +71,41 @@ namespace LbIntegrations.Xemu.Saves
             return map;
         }
 
+        // ── the slots: slot \t name, never forgotten ─────────────────────────
+        // A snapshot's NAME gives its slot (Mehdi, 05/10): xemu's own slots are names saved over (its "overwrite", Shift+F#), so
+        // a slot's history in LaunchBox is that name's versions. A name keeps its slot for good, deleted or not; a new name takes
+        // a number no name ever had. Beside the console, hdd\games\<title id>.slots - not forgotten with the index (savestates
+        // off, the console deleted): it only says which number goes with which name, never which snapshot to take out.
+
+        internal static string SlotsPath(string exe, string titleId) => System.IO.Path.ChangeExtension(XemuPaths.GameHdd(exe, titleId), ".slots");
+
+        private static Dictionary<string, int> ReadSlots(string path)
+        {
+            var map = new Dictionary<string, int>(StringComparer.Ordinal);
+            try
+            {
+                if (path == null || !File.Exists(path)) return map;
+                foreach (var line in File.ReadAllLines(path))
+                {
+                    int tab = line.IndexOf('\t');
+                    if (tab > 0 && int.TryParse(line.Substring(0, tab), NumberStyles.Integer, CultureInfo.InvariantCulture, out var slot) && slot > 0)
+                        map[line.Substring(tab + 1)] = slot;
+                }
+            }
+            catch { }
+            return map;
+        }
+
+        private static void WriteSlots(string path, Dictionary<string, int> map)
+        {
+            if (path == null || map.Count == 0) return;
+            var text = string.Join("\r\n", map.OrderBy(kv => kv.Value).ThenBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => kv.Value.ToString(CultureInfo.InvariantCulture) + "\t" + kv.Key)) + "\r\n";
+            try { if (File.Exists(path) && File.ReadAllText(path) == text) return; } catch { }
+            var part = path + ".part";
+            File.WriteAllText(part, text);
+            File.Move(part, path, overwrite: true);
+        }
+
         private static void WriteIndex(string path, Dictionary<string, int> map)
         {
             if (map.Count == 0) { try { if (File.Exists(path)) File.Delete(path); } catch { } return; }
@@ -186,26 +221,40 @@ namespace LbIntegrations.Xemu.Saves
 
                 var toImport = new List<XemuStateFile>();
                 var toDrop = new List<string>();                     // identities taken out of the console
+                var slotsPath = SlotsPath(exe, titleId);
+                var slots = ReadSlots(slotsPath);
+                // Made again from the files when lost (or written before 05/10): each name the slot its file is at.
+                foreach (var f in files.OrderBy(f => f.Slot)) if (f.Name != null && f.Slot > 0 && !slots.ContainsKey(f.Name)) slots[f.Name] = f.Slot;
                 using (var console = (Qcow2Image)Qcow2Image.Open(consolePath))
                 {
                     var snaps = console.Snapshots.ToDictionary(IdentityOf, s => s, StringComparer.Ordinal);
                     var byFile = files.GroupBy(f => f.Identity).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+                    var live = new List<XemuStateFile>(files);          // the files still there once this loop is done
                     foreach (var f in files)
                     {
                         if (snaps.ContainsKey(f.Identity)) continue;
-                        if (index.ContainsKey(f.Identity)) { File.Delete(f.Path); index.Remove(f.Identity); said.Add("\"" + f.Name + "\" deleted in xemu: its file removed"); }
+                        if (index.ContainsKey(f.Identity)) { File.Delete(f.Path); live.Remove(f); index.Remove(f.Identity); said.Add("\"" + f.Name + "\" deleted in xemu: its file removed"); }
                         else toImport.Add(f);
                     }
                     foreach (var (identity, sn) in snaps)
                     {
                         if (byFile.ContainsKey(identity)) { if (!index.ContainsKey(identity)) index[identity] = byFile[identity].Slot; continue; }
                         if (index.ContainsKey(identity)) { toDrop.Add(identity); continue; }   // its file removed by LaunchBox
-                        int slot = 1;
-                        while (index.ContainsValue(slot) || files.Any(f => f.Slot == slot)) slot++;
+                        // A file of the same name waits to go in (a Restore): it replaces this one - xemu's names are unique.
+                        if (toImport.Any(f => f.Name == sn.Name)) continue;
+                        // Its name's slot - unless a file of another name sits there; else a number no name ever had.
+                        if (!slots.TryGetValue(sn.Name, out var slot) || live.Any(f => f.Slot == slot && f.Name != sn.Name))
+                        {
+                            slot = Math.Max(slots.Values.DefaultIfEmpty(0).Max(), live.Select(f => f.Slot).DefaultIfEmpty(0).Max()) + 1;
+                            slots[sn.Name] = slot;
+                        }
                         Export(console, sn, titleId, slot, keys?.Invoke(), SlotPath(exe, titleId, slot));
+                        live.RemoveAll(f => f.Slot == slot);
+                        live.Add(new XemuStateFile { Name = sn.Name, Slot = slot });
                         index[identity] = slot;
                         said.Add("\"" + sn.Name + "\" exported as slot " + slot);
                     }
+                    WriteSlots(slotsPath, slots);
                     if (!rewrite || (toImport.Count == 0 && toDrop.Count == 0))
                     {
                         if (toImport.Count + toDrop.Count > 0) said.Add((toImport.Count + toDrop.Count) + " change(s) wait for the next launch");
