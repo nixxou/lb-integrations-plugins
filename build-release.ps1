@@ -36,6 +36,7 @@ $repo = Split-Path -Parent $MyInvocation.MyCommand.Path
 # installer creates.
 $Stage = [ordered]@{
     'Cxbx'    = 'Nixx-Cxbx'
+    'Demul'   = 'Nixx-Demul'
     'Flycast' = 'Nixx-Flycast'
     'MelonDs' = 'Nixx-melonDS'
     'NoGba'   = 'Nixx-nogba'

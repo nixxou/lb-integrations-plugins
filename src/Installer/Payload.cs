@@ -20,6 +20,7 @@ internal static class Payload
 {
     public const string Cxbx    = "Nixx-Cxbx";
     public const string Xemu    = "Nixx-Xemu";
+    public const string Demul   = "Nixx-Demul";
     public const string Flycast = "Nixx-Flycast";
     public const string MelonDs = "Nixx-melonDS";
     public const string NoGba   = "Nixx-nogba";
@@ -29,7 +30,7 @@ internal static class Payload
     public const string SuperZsnes = "Nixx-SuperZSNES";
 
     public static readonly string[] Folders =
-        { Cxbx, Flycast, MelonDs, NoGba, Ppsspp, SuperZsnes, Vita3k, Xemu, Xenia };
+        { Cxbx, Demul, Flycast, MelonDs, NoGba, Ppsspp, SuperZsnes, Vita3k, Xemu, Xenia };
 
     /// <summary>Every folder name this pack has been installed under before the rename. They are
     /// swept on install, because PluginLoader dedupes by FILE NAME across plugin roots: a stale
@@ -57,7 +58,7 @@ internal static class Payload
     /// deleting it on the strength of its name alone is how an installer destroys something it was
     /// never told about.</summary>
     public static readonly string[] Assemblies =
-        { "Cxbx.dll", "Flycast.dll", "MelonDs.dll", "NoGba.dll", "Ppsspp.dll", "SuperZsnes.dll", "Vita3k.dll", "Xemu.dll", "Xenia.dll", "NixxMenus.dll" };
+        { "Cxbx.dll", "Demul.dll", "Flycast.dll", "MelonDs.dll", "NoGba.dll", "Ppsspp.dll", "SuperZsnes.dll", "Vita3k.dll", "Xemu.dll", "Xenia.dll", "NixxMenus.dll" };
 
     /// <summary>The menu relay: the pack's right-click entries on games, shown for the plugins.
     ///
@@ -111,6 +112,10 @@ internal static class Payload
         new("payload/Nixx-Xemu/Xemu.dll",           Xemu,    "Xemu.dll"),
         new("payload/Nixx-Xemu/manifest.json",      Xemu,    "manifest.json"),
         new(Contract,                               Xemu,    "LbIntegrations.Catalog.dll"),
+
+        new("payload/Nixx-Demul/Demul.dll",         Demul,   "Demul.dll"),
+        new("payload/Nixx-Demul/manifest.json",     Demul,   "manifest.json"),
+        new(Contract,                               Demul,   "LbIntegrations.Catalog.dll"),
 
         new("payload/Nixx-Flycast/Flycast.dll",     Flycast, "Flycast.dll"),
         new("payload/Nixx-Flycast/manifest.json",   Flycast, "manifest.json"),

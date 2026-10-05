@@ -18,6 +18,7 @@ is published by Unbroken Software), so these are installed by hand.
 | `src/MelonDs` | melonDS | Nintendo DS | download / update, BIOS, DS/DSi mode, per-title DSi NAND, save management (GPL-3.0) |
 | `src/NoGba` | no$gba | Nintendo Game Boy Advance, Nintendo DS | download / update, BIOS, **raw save format**, save management |
 | `src/Vita3k` | Vita3K | Sony Playstation Vita | download / update, firmware, **a disposable console per session**, save management |
+| `src/Demul` | Demul | Sega Dreamcast, Sega Naomi, Sega Naomi 2, Sammy Atomiswave, Sega Hikaru (+ System SP, CV1000, Gaelco by platform name) | download / update (the 2025 build, kept in `vendor/demul`), launch - **closed source** |
 | `src/SuperZsnes` | SUPER ZSNES | Super Nintendo Entertainment System | download / update from zsnes.com, launch - **closed source**, see its notes for what is measured and what is not |
 
 Five folders are shared sources rather than plugins: `src/Shared.Lbip` (the row injection, used by
@@ -265,6 +266,7 @@ file is there. Before LaunchBox 14, `Plugins\` is the only option. `<Name>` is t
 | project | plugin folder, and manifest `Name` | catalogue row | emulator installed into |
 |---|---|---|---|
 | `src/Cxbx` | `Nixx-Cxbx` | `Nixx-Cxbx` | `Emulators\Nixx-Cxbx` |
+| `src/Demul` | `Nixx-Demul` | `Nixx-Demul` | `Emulators\Nixx-Demul` |
 | `src/Xemu` | `Nixx-Xemu` | `Nixx-Xemu` | `Emulators\Nixx-Xemu` |
 | `src/Flycast` | `Nixx-Flycast` | `Nixx-Flycast` | `Emulators\Nixx-Flycast` |
 | `src/MelonDs` | `Nixx-melonDS` | `Nixx-melonDS` | `Emulators\Nixx-melonDS` |

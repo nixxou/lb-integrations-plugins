@@ -118,6 +118,13 @@
       <LogicalName>payload/Nixx-Xemu/manifest.json</LogicalName>
     </EmbeddedResource>
 
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-Demul\Demul.dll">
+      <LogicalName>payload/Nixx-Demul/Demul.dll</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-Demul\manifest.json">
+      <LogicalName>payload/Nixx-Demul/manifest.json</LogicalName>
+    </EmbeddedResource>
+
     <EmbeddedResource Include="$(PayloadDir)\Nixx-Xenia\Xenia.dll">
       <LogicalName>payload/Nixx-Xenia/Xenia.dll</LogicalName>
     </EmbeddedResource>

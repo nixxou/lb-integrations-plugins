@@ -8,3 +8,6 @@
 # The ImDisk driver package, kept byte for byte as LTR Data ships it (see vendor/imdisk/SOURCE.md).
 vendor/imdisk/** binary
 vendor/aim/** binary
+
+# Demul as Batocera ships it, byte for byte (see vendor/demul/SOURCE.md).
+vendor/demul/*.7z binary

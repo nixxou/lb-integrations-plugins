@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demul - Nixx plugin guide</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#ffffff; --ink:#1d1d1f; --muted:#5f6368; --line:#e3e3e0; --accent:#0a6ed1; --ok:#1e8e3e; --warn:#b06000; --no:#c5221f; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17181a; --card:#1f2124; --ink:#e8e8e6; --muted:#a0a3a7; --line:#33363a; --accent:#5aa9ff; --ok:#5bc27a; --warn:#e3a34a; --no:#ff7b72; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 "Segoe UI", system-ui, sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 64px; }
+  header h1 { margin:0 0 4px; font-size:30px; }
+  header p { margin:0; color:var(--muted); }
+  nav { margin:20px 0 8px; display:flex; flex-wrap:wrap; gap:8px; }
+  nav a { font-size:14px; color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; background:var(--card); }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 24px; margin:18px 0; }
+  h2 { margin:0 0 10px; font-size:21px; }
+  h3 { margin:18px 0 6px; font-size:17px; }
+  ul { padding-left:22px; } li { margin:4px 0; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .yes { color:var(--ok); font-weight:600; } .partly { color:var(--warn); font-weight:600; } .no { color:var(--no); font-weight:600; }
+  .tip, .warn { border-left:4px solid var(--accent); padding:8px 14px; margin:12px 0; background:color-mix(in srgb, var(--accent) 8%, transparent); border-radius:0 8px 8px 0; }
+  .warn { border-color:var(--warn); background:color-mix(in srgb, var(--warn) 10%, transparent); }
+  code, kbd { font-family:Consolas, monospace; font-size:14px; background:color-mix(in srgb, var(--ink) 8%, transparent); padding:1px 5px; border-radius:4px; }
+  footer { color:var(--muted); font-size:13px; text-align:center; margin-top:30px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Demul</h1>
+  <p>What the Nixx plugin does for you, and what to expect.</p>
+</header>
+<nav>
+  <a href="#overview">In short</a><a href="#start">Getting started</a><a href="#play">Playing</a>
+  <a href="#saves">Saves</a><a href="#support">What works</a><a href="#limits">Limits</a><a href="#trouble">If something goes wrong</a>
+</nav>
+
+<section id="overview"><h2>In short</h2>
+  <p>Demul emulates Sega's Dreamcast and the arcade boards built around it: Naomi, Naomi 2, Atomiswave, Hikaru and System SP, plus Cave's CV1000 and Gaelco's PowerVR board. It is the only emulator for Hikaru, and one of the very few for CV1000 and Gaelco.</p>
+  <p>The plugin installs the 2025 build of Demul, adds its platforms, and prepares Demul for each game: Demul cannot be handed a romset's path, so the plugin tells it where the game is and which system to start.</p>
+</section>
+
+<section id="start"><h2>Getting started</h2>
+  <ul>
+    <li><b>Add Emulator</b> &gt; Nixx-Demul &gt; Download. Demul goes into <code>Emulators\Nixx-Demul</code>.</li>
+    <li><b>The BIOS sets</b> go, still zipped, into the <code>roms</code> folder beside <code>demul.exe</code>: <code>dc.zip</code> (Dreamcast - Demul has no built-in BIOS), <code>naomi.zip</code>, <code>naomi2.zip</code>, <code>awbios.zip</code>, <code>hikaru.zip</code>, <code>segasp.zip</code>. CV1000 and Gaelco need none.</li>
+    <li><b>Platforms.</b> Sega Dreamcast, Sega Naomi, Sega Naomi 2, Sammy Atomiswave and Sega Hikaru are LaunchBox platforms. System SP, CV1000 and Gaelco are not: make a platform whose name holds <code>System SP</code>, <code>CV1000</code> or <code>Gaelco</code> (scrape it as Arcade) and the plugin recognises it.</li>
+    <li><b>Arcade games stay zipped</b>, under their MAME set name (<code>mvsc2.zip</code>, <code>airtrix.zip</code>...).</li>
+  </ul>
+</section>
+
+<section id="play"><h2>Playing a game</h2>
+  <p>At each launch the plugin writes into Demul.ini the folder of the game and the <code>roms</code> folder of the BIOS sets - the folders you added yourself are kept - picks the video plugin the board needs, and starts Demul with <code>-run=&lt;system&gt; -rom=&lt;set&gt;</code> (or <code>-run=dc -image=&lt;disc&gt;</code> for the Dreamcast).</p>
+</section>
+
+<section id="saves"><h2>Saves and save states</h2>
+  <p>Not handled by the plugin yet: Demul keeps the arcade games' saves in its <code>nvram</code> folder and the Dreamcast memory cards in <code>memsaves</code>.</p>
+</section>
+
+<section id="support"><h2>What works</h2>
+  <table><tr><th>Feature</th><th></th><th>Notes</th></tr>
+  <tr><td>Download and update</td><td class="yes">Yes</td><td>The build of 20/12/2025.</td></tr>
+  <tr><td>Arcade romsets</td><td class="yes">Yes</td><td>Zipped, in any folder.</td></tr>
+  <tr><td>Dreamcast discs</td><td class="yes">Yes</td><td>.gdi, .cdi, .chd.</td></tr>
+  <tr><td>Saves</td><td class="no">Not yet</td><td></td></tr></table>
+</section>
+
+<section id="limits"><h2>Limits and things to know</h2>
+  <ul>
+    <li>CV1000 and Gaelco start in a window: press <kbd>F3</kbd>, then <kbd>Alt</kbd>+<kbd>Enter</kbd>.</li>
+    <li>A platform named "Gaelco" is taken for the PowerVR board (ATV Track, Smashing Drive, Gaelco Football). Gaelco's other 3D games - Speed Up, Surf Planet, Radikal Bikers - do not run in Demul.</li>
+  </ul>
+</section>
+
+<section id="trouble"><h2>If something goes wrong</h2>
+  <ul><li>The plugin's log: <code>%LOCALAPPDATA%\lb-integrations-plugins\demul.log</code>.</li></ul>
+</section>
+
+<footer>Nixx integration plugins for LaunchBox</footer>
+</main>
+</body>
+</html>

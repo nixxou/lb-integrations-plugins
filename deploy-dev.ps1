@@ -47,6 +47,7 @@ $repo = Split-Path -Parent $MyInvocation.MyCommand.Path
 # Keep this in step with src\Installer\Payload.cs. They are the two places a folder name is decided.
 $Pack = @{
     'Cxbx'    = @{ Folder = 'Nixx-Cxbx';    Old = @() }
+    'Demul'   = @{ Folder = 'Nixx-Demul';   Old = @() }
     'Flycast' = @{ Folder = 'Nixx-Flycast'; Old = @('Flycast Integration') }
     'MelonDs' = @{ Folder = 'Nixx-melonDS'; Old = @('MelonDs Integration', 'melonDS Integration') }
     'NoGba'   = @{ Folder = 'Nixx-nogba';   Old = @('NoGba Integration', 'no$gba Integration', 'Nixx-no$gba') }
@@ -58,7 +59,7 @@ $Pack = @{
 }
 
 if ($All) {
-    foreach ($name in @('Cxbx', 'Flycast', 'MelonDs', 'NoGba', 'Ppsspp', 'SuperZsnes', 'Vita3k', 'Xemu', 'Xenia')) {
+    foreach ($name in @('Cxbx', 'Demul', 'Flycast', 'MelonDs', 'NoGba', 'Ppsspp', 'SuperZsnes', 'Vita3k', 'Xemu', 'Xenia')) {
         Write-Host ""
         Write-Host ("=== " + $name) -ForegroundColor Magenta
         & $MyInvocation.MyCommand.Path -Plugin $name -LbRoot $LbRoot -Configuration $Configuration -SuperZsnesDir $SuperZsnesDir
@@ -84,6 +85,19 @@ if ($Plugin -eq 'SuperZsnes') {
         if ($LASTEXITCODE -ne 0) { throw "Build failed: SuperZsnes.BepInEx" }
     } else {
         Write-Host "  ! no -SuperZsnesDir with BepInEx\interop - the in-process plugin is not built; SuperZsnes.dll will deploy BepInEx and the docs only" -ForegroundColor Yellow
+    }
+}
+
+# THE DEMUL ARCHIVE, for the plugin to install from before it is online: the plugin downloads it from
+# this repository's main branch, so a branch that adds or changes it cannot be tried until it is pushed.
+# The copy goes beside the pack's logs - never into the plugin folder, which LaunchBox 14 checks against
+# the manifest - and the plugin takes it only when its SHA-256 is the one it pins (DemulBuild).
+if ($Plugin -eq 'Demul') {
+    $devDir = Join-Path $env:LOCALAPPDATA 'lb-integrations-plugins\dev'
+    New-Item -ItemType Directory -Force -Path $devDir | Out-Null
+    Get-ChildItem (Join-Path $repo 'vendor\demul') -Filter '*.7z' | ForEach-Object {
+        Copy-Item $_.FullName (Join-Path $devDir $_.Name) -Force
+        Write-Host ("  dev copy of {0} -> {1}" -f $_.Name, $devDir)
     }
 }
 

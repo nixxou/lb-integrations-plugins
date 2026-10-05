@@ -1,0 +1,19 @@
+{
+  "SchemaVersion": 1,
+  "PluginId": "a38528af-8941-4a7e-9c03-6666b75e00fa",
+  "UserId": 0,
+  "Name": "Nixx-Demul",
+  "Developer": "nixxou",
+  "Description": "Download, update and launch integration for the Demul emulator (Sega Dreamcast, Naomi, Naomi 2, Atomiswave, Hikaru, System SP, Cave CV1000, Gaelco).",
+  "Credits": "Many thanks to the DEmul team - Wind, CaH4e3, ajax16384, DreamZzz, MetalliC - and to Batocera, which keeps the 2025 build available.",
+  "OperatingSystemFamily": "Windows",
+  "InstalledVersion": "1.1.1",
+  "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
+  "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
+  "HomePageUrl": "http://demul.emulation64.com/",
+  "TipJarUrl": "",
+  "SourceKind": "Local",
+  "Tags": [
+    "5aae585f-ffc5-42bc-9f95-e5e190ef99e2"
+  ]
+}
