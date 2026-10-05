@@ -192,6 +192,7 @@ namespace LbIntegrations.Xemu
             // What the game is, read once: its disc's kind, its title, its regions - and its console.
             var about = new List<string>();
             string titleId = null;
+            LbIntegrations.Cxbx.XbeInfo xbe = null;
             try
             {
                 if (rom != null)
@@ -202,12 +203,14 @@ namespace LbIntegrations.Xemu
                     {
                         about.Add("\"" + d.Xbe.TitleName + "\", title id " + d.Xbe.TitleIdText + ", regions " + Eeprom.XemuEeprom.Name(d.Xbe.Region & 7));
                         titleId = d.Xbe.TitleIdText;
+                        xbe = d.Xbe;
                     }
                 }
             }
             catch (Exception ex) { about.Add("The game could not be read: " + ex.Message); }
             if (exe == null) about.Add("No xemu of this plugin in the library.");
             stack.Controls.Add(new Label { Text = string.Join("\n", about), AutoSize = true, MaximumSize = new Size(600, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(4, 0, 0, 8) });
+            if (xbe != null) stack.Controls.Add(CompatGroup(exe, xbe));
             if (exe != null) stack.Controls.Add(ConsoleGroup(exe, titleId ?? (rom != null ? XemuDisc.XbeForConsole(rom, exe, out _)?.TitleIdText : null), first, rom));
 
             stack.Controls.Add(new Label
@@ -296,6 +299,93 @@ namespace LbIntegrations.Xemu
             inner.Controls.Add(boot);
             box.Controls.Add(inner);
             return box;
+        }
+
+        // ── compatibility (XemuCompat, Shared.Xbox\XboxCompat) ───────────────
+
+        private FlowLayoutPanel _compat;
+
+        private void OnUi(Action a)
+        {
+            try { if (!IsDisposed && IsHandleCreated) BeginInvoke(a); else if (!IsDisposed) HandleCreated += (_, _) => BeginInvoke(a); } catch { }
+        }
+
+        /// <summary>What xemu's list says of the game - its newest report - and Cxbx-Reloaded's (Mehdi, 05/10: each emulator's
+        /// window shows the other's too). The list asked again (when older than a day) in the background, then redrawn. Which
+        /// version of the game a report was made on is not said: its xbe_headers_sha256 is of the headers in the console's memory,
+        /// which the kernel rewrites as the game runs (measured on Batman, 05/10) - never the disc's.</summary>
+        private GroupBox CompatGroup(string exe, LbIntegrations.Cxbx.XbeInfo xbe)
+        {
+            var box = Group("Compatibility");
+            _compat = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Dock = DockStyle.Fill };
+            box.Controls.Add(_compat);
+            ShowCompat(exe, xbe, "");
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                bool asked = false;
+                if (!XemuCompat.IsFresh()) { XemuCompat.Fetch(TimeSpan.FromSeconds(30)); asked = true; }
+                OnUi(() => ShowCompat(exe, xbe, asked ? "List asked again just now." : ""));
+            });
+            return box;
+        }
+
+        private void ShowCompat(string exe, LbIntegrations.Cxbx.XbeInfo xbe, string note)
+        {
+            if (_compat == null || _compat.IsDisposed) return;
+            _compat.SuspendLayout();
+            _compat.Controls.Clear();
+            var id = xbe.TitleIdText;
+            var (report, title) = LbIntegrations.Xbox.XboxCompat.Xemu(id);
+            var state = LbIntegrations.Xbox.XboxCompat.XemuState(report, title);
+            var page = LbIntegrations.Xbox.XboxCompat.XemuPage(id, title);
+            if (report == null && title == null)
+                _compat.Controls.Add(StateRow("xemu", LbIntegrations.Xbox.XboxCompat.HasXemuList() ? "not in its list" : "no list yet", Color.Gray, "xemu.app", page));
+            else
+            {
+                _compat.Controls.Add(StateRow("xemu", state, LbIntegrations.Xbox.XboxCompat.XemuColor(state), title?.Name ?? "xemu.app", page));
+                var facts = new List<string>();
+                if (report != null)
+                {
+                    var mine = exe != null ? XemuPaths.InstalledTag(exe) : null;
+                    facts.Add("Newest report: " + LbIntegrations.Xbox.XboxCompat.Day(report.When) + ", xemu " + report.XemuVersion + (mine != null ? " (yours: " + mine + ")" : "")
+                              + (string.IsNullOrEmpty(report.Platform) ? "" : ", " + report.Platform) + (string.IsNullOrEmpty(report.Gpu) ? "" : ", " + report.Gpu));
+                    if (title != null && !string.IsNullOrEmpty(title.Status) && title.Status != report.Rating) facts.Add("The site shows " + title.Status + " for the game (all its versions).");
+                }
+                _compat.Controls.Add(new Label { AutoSize = true, MaximumSize = new Size(540, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(18, 0, 3, 2), Text = string.Join("\n", facts) });
+                if (!string.IsNullOrWhiteSpace(report?.Comment))
+                {
+                    var c = report.Comment.Replace("\r", "").Trim();
+                    if (c.Length > 600) c = c.Substring(0, 600).TrimEnd() + "...";
+                    _compat.Controls.Add(new Label { AutoSize = true, MaximumSize = new Size(520, 0), UseMnemonic = false, Margin = new Padding(18, 2, 3, 6), Text = "\"" + c + "\"" });
+                }
+            }
+            var cx = LbIntegrations.Xbox.XboxCompat.Cxbx(xbe.TitleId, xbe.Version, out var hasCxbx);
+            if (cx == null) _compat.Controls.Add(StateRow("Cxbx-Reloaded", hasCxbx ? "not in its list" : "no list", Color.Gray, null, null));
+            else _compat.Controls.Add(StateRow("Cxbx-Reloaded", cx.State, LbIntegrations.Xbox.XboxCompat.CxbxColor(cx.State),
+                                               cx.Serial + " " + cx.Version + (cx.Region.Length > 0 ? ", " + cx.Region : "") + (cx.Updated.Length > 0 && cx.Updated != "N/A" ? ", " + cx.Updated : ""), cx.Url));
+            var asked = XemuCompat.Asked();
+            _compat.Controls.Add(new Label
+            {
+                AutoSize = true, MaximumSize = new Size(540, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 6, 3, 0),
+                Text = (note.Length > 0 ? note + " " : "") + (asked != null ? "xemu's list as of " + asked.Value.ToLocalTime().ToString("g") + ". " : "")
+                       + "Cxbx-Reloaded's reports are mostly from 2020 and 2021.",
+            });
+            _compat.ResumeLayout();
+        }
+
+        private static Control StateRow(string who, string state, Color color, string linkText, string url)
+        {
+            var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 1, 0, 1) };
+            row.Controls.Add(new Label { AutoSize = true, Text = "●", ForeColor = color, Margin = new Padding(3, 3, 2, 0) });
+            row.Controls.Add(new Label { AutoSize = true, Text = who + ":", Margin = new Padding(0, 3, 4, 0) });
+            row.Controls.Add(new Label { AutoSize = true, Text = state, ForeColor = color, Font = new Font("Segoe UI", 9f, FontStyle.Bold), Margin = new Padding(0, 3, 6, 0) });
+            if (url != null)
+            {
+                var link = new LinkLabel { AutoSize = true, Text = linkText ?? url, UseMnemonic = false, Margin = new Padding(0, 3, 0, 0) };
+                link.LinkClicked += (_, _) => { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); } catch { } };
+                row.Controls.Add(link);
+            }
+            return row;
         }
 
         internal static GroupBox Group(string text) => new GroupBox { Text = text, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(8, 4, 8, 8), Margin = new Padding(4, 4, 4, 8), MinimumSize = new Size(560, 0) };

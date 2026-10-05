@@ -75,6 +75,8 @@
 
   <ItemGroup>
     <EmbeddedResource Include="..\..\docs\help\xemu.html" LogicalName="help.html" />
+    <!-- Cxbx-Reloaded's compatibility list as Nixx-Cxbx embeds it: what a game's window shows of it when Nixx-Cxbx has no copy (Shared.Xbox\XboxCompat). -->
+    <EmbeddedResource Include="..\Cxbx\compat.json" LogicalName="cxbx-compat.json" Link="Cxbx\compat.json" />
   </ItemGroup>
 
 </Project>

@@ -369,6 +369,45 @@ namespace LbIntegrations.Probe
             return _bad == 0;
         }
 
+        /// <summary>--xemu-compat [rom...]: xemu's compatibility list fetched for real into a scratch folder (XemuCompat), what is
+        /// kept checked, broken answers refused; then for each disc its title, its state in xemu's list and Cxbx-Reloaded's
+        /// entry (the copy embedded in Xemu.dll).</summary>
+        public static bool Compat(Assembly asm, IEnumerable<string> roms)
+        {
+            _asm = asm;
+            var data = Path.Combine(Path.GetTempPath(), "lbip-xemu-compat-" + Guid.NewGuid().ToString("N"));
+            var xemuId = "c54b75ab-94aa-4a1e-b36c-b6af7115c51c";
+            T("XemuSettings").GetField("DirOverride", Any).SetValue(null, Path.Combine(data, xemuId));
+            _asm.GetType("LbIntegrations.Xbox.XboxCompat", true).GetField("DataOverride", Any).SetValue(null, data);
+            var compat = T("XemuCompat");
+            var shared = _asm.GetType("LbIntegrations.Xbox.XboxCompat", true);
+            object C(string m, params object[] a) { try { return compat.GetMethod(m, Any).Invoke(null, a); } catch (TargetInvocationException ex) { throw ex.InnerException ?? ex; } }
+            try
+            {
+                Check("broken answers refused", C("Problem", "[]", true, 0) != null && C("Problem", "{\"a\":1}", false, 0) != null && C("Problem", "not json", true, 0) != null);
+                var w = System.Diagnostics.Stopwatch.StartNew();
+                Check("the list fetched", (bool)C("Fetch", TimeSpan.FromSeconds(90)));
+                Console.WriteLine("  in " + w.Elapsed.TotalSeconds.ToString("0.0") + " s: " + string.Join(", ", Directory.GetFiles(Path.Combine(data, xemuId)).Select(f => Path.GetFileName(f) + " " + (new FileInfo(f).Length >> 10) + " KB")));
+                Check("... fresh, and asked again only a day later", (bool)C("IsFresh"));
+                var reports = File.ReadAllText(Path.Combine(data, xemuId, "xemu-compat-reports.json"));
+                Check("a list cut by two thirds refused against the copy", C("Problem", reports.Substring(0, reports.IndexOf("}, {", reports.Length / 3) + 1) + "]", true, 1104) != null);
+                foreach (var rom in roms)
+                {
+                    var d = T("XemuDisc").GetMethod("Describe", Any).Invoke(null, new object[] { rom });
+                    var xbe = d.GetType().GetField("Xbe").GetValue(d);
+                    if (xbe == null) { Console.WriteLine("  " + Path.GetFileName(rom) + ": no XBE read"); continue; }
+                    var id = (string)xbe.GetType().GetProperty("TitleIdText").GetValue(xbe);
+                    var pair = shared.GetMethod("Xemu", Any).Invoke(null, new object[] { id });
+                    var report = pair.GetType().GetField("Item1").GetValue(pair);
+                    Console.WriteLine("  " + Path.GetFileName(rom) + " (" + id + "): " + C("Describe", id));
+                    var cx = shared.GetMethod("Cxbx", Any).Invoke(null, new object[] { xbe.GetType().GetField("TitleId").GetValue(xbe), xbe.GetType().GetField("Version").GetValue(xbe), false });
+                    Console.WriteLine("    Cxbx-Reloaded: " + (cx == null ? "not in its list" : cx.GetType().GetProperty("State").GetValue(cx) + " (" + cx.GetType().GetProperty("Serial").GetValue(cx) + " " + cx.GetType().GetProperty("Version").GetValue(cx) + ")"));
+                }
+            }
+            finally { try { Directory.Delete(data, true); } catch { } }
+            return _bad == 0;
+        }
+
         /// <summary>A snapshot's name gives its slot (05/10): what xemu would do - a name saved over (Shift+F#), a name deleted then
         /// made again, a new name - played without xemu: a state file altered (its date, its name) and put into the console through
         /// a scratch copy of it, as if xemu had made the snapshot.</summary>

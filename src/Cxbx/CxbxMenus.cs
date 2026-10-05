@@ -397,6 +397,7 @@ namespace LbIntegrations.Cxbx
                 foreach (var o in others.Take(8)) _compat.Controls.Add(Line(o, "Other version", false));
                 if (others.Count > 8) _compat.Controls.Add(new Label { AutoSize = true, ForeColor = SystemColors.GrayText, Text = "... and " + (others.Count - 8) + " more." });
             }
+            _compat.Controls.Add(XemuLine(xbe));
             _compat.Controls.Add(new Label
             {
                 AutoSize = true, MaximumSize = new Size(540, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 6, 3, 0),
@@ -412,6 +413,36 @@ namespace LbIntegrations.Cxbx
             row.Controls.Add(new Label { AutoSize = true, Text = e.State, ForeColor = ColorOf(e.State), Font = new Font("Segoe UI", 9f, FontStyle.Bold), Margin = new Padding(0, 3, 4, 0) });
             var link = new LinkLabel { AutoSize = true, Text = e.Serial + " " + e.Version + ", " + e.Region + (e.Updated != "N/A" && e.Updated.Length > 0 ? ", " + e.Updated : ""), Margin = new Padding(0, 3, 0, 0) };
             link.LinkClicked += (_, _) => { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(e.Url) { UseShellExecute = true }); } catch { } };
+            row.Controls.Add(link);
+            return row;
+        }
+
+        /// <summary>What xemu's list says of the game (Mehdi, 05/10: each emulator's window shows the other's) - read from
+        /// Nixx-Xemu's copy (Shared.Xbox\XboxCompat), nothing fetched here.</summary>
+        private static Control XemuLine(XbeInfo xbe)
+        {
+            var id = xbe.TitleIdText;
+            var (report, title) = LbIntegrations.Xbox.XboxCompat.Xemu(id);
+            var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 6, 0, 1) };
+            row.Controls.Add(new Label { AutoSize = true, Text = "xemu:", Margin = new Padding(3, 3, 4, 0) });
+            if (report == null && title == null)
+            {
+                row.Controls.Add(new Label
+                {
+                    AutoSize = true, ForeColor = SystemColors.GrayText, Margin = new Padding(0, 3, 0, 0),
+                    Text = LbIntegrations.Xbox.XboxCompat.HasXemuList() ? "not in its list" : "no list here (Nixx-Xemu keeps one once it is installed)",
+                });
+                return row;
+            }
+            var state = LbIntegrations.Xbox.XboxCompat.XemuState(report, title);
+            row.Controls.Add(new Label { AutoSize = true, Text = state, ForeColor = LbIntegrations.Xbox.XboxCompat.XemuColor(state), Font = new Font("Segoe UI", 9f, FontStyle.Bold), Margin = new Padding(0, 3, 4, 0) });
+            var url = LbIntegrations.Xbox.XboxCompat.XemuPage(id, title);
+            var link = new LinkLabel
+            {
+                AutoSize = true, UseMnemonic = false, Margin = new Padding(0, 3, 0, 0),
+                Text = report != null ? "xemu " + report.XemuVersion + ", " + LbIntegrations.Xbox.XboxCompat.Day(report.When) : "xemu.app",
+            };
+            link.LinkClicked += (_, _) => { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); } catch { } };
             row.Controls.Add(link);
             return row;
         }

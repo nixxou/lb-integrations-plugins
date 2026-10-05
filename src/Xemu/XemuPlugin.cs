@@ -101,6 +101,8 @@ namespace LbIntegrations.Xemu
                     if (XemuPaths.IsOurs(path)) { XemuConsoleBoot.RestoreOwn(path, "the host has started"); XemuSession.Standalone(path, "the host has started"); }
                 }
                 if (renamed) try { dm.Save(false); } catch (Exception ex) { Log.Warn("data manager save failed", ex); }
+                // No compatibility list yet (an install from before 05/10): fetched in the background, once an xemu of ours is there.
+                if (XemuCompat.Asked() == null && XemuLibrary.All().Any()) XemuCompat.RefreshSoon();
                 LbipRowInjection.Install("com.nixxou.lbip.xemu", MetadataRows());
             }
             catch (Exception ex) { Log.Warn("OnEventRaised", ex); }
@@ -222,6 +224,8 @@ namespace LbIntegrations.Xemu
                 File.WriteAllText(Path.Combine(Path.GetDirectoryName(exe), XemuPaths.VersionFile), label ?? "unknown");
 
                 var note = SetUp(exe, args, cancelled);
+                // The compatibility list asked again, in the background (XemuCompat).
+                XemuCompat.RefreshNow();
 
                 if (reinstall)
                 {
@@ -388,6 +392,7 @@ namespace LbIntegrations.Xemu
                 if (problemConsole != null) { XemuDisc.Release(info); return Refuse(Path.GetFileName(rom) + " cannot be launched: " + problemConsole); }
                 Log.Info("launch: " + Path.GetFileName(rom) + " (" + titleId + " \"" + info.Xbe?.TitleName + "\", " + info.Kind + ") on " + Path.GetFileName(hdd)
                          + ", " + Path.GetFileName(sessionToml) + " with " + string.Join(", ", set.Skip(6).Select(s => s.Item1 + "." + s.Item2 + "=" + s.Item3)));
+                Log.Info("compatibility: " + XemuCompat.Describe(titleId));
 
                 var line = CommandLineFor(Safe(() => args?.CurrentCommandLine) ?? "", dvd, rom, sessionToml);
                 Log.Info("command line: " + line);

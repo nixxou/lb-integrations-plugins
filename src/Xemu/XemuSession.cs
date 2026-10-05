@@ -51,6 +51,8 @@ namespace LbIntegrations.Xemu
                     catch (Exception ex) { Log.Warn("session: the save could not be captured", ex); }
                     // The snapshots made during it, exported for LaunchBox (Saves\XemuStates).
                     XemuSaveFiles.States(exe, System.IO.Path.GetFileNameWithoutExtension(gameHdd), rewrite: false);
+                    // The compatibility list asked again when it is older than a day (XemuCompat).
+                    XemuCompat.RefreshSoon();
                 }
             });
         }
