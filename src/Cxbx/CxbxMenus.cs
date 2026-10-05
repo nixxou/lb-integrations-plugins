@@ -137,6 +137,15 @@ namespace LbIntegrations.Cxbx
             games.Controls.Add(attachStack);
             stack.Controls.Add(games);
 
+            // The compatibility list, every game's (Mehdi, 05/10): read whole again here too, the date of the last time.
+            var compat = Group("Cxbx-Reloaded's compatibility list (cxbx-reloaded.co.uk)");
+            var cl = LbIntegrations.Lbip.LbipListRefresh.Row("Cxbx-Reloaded's compatibility list",
+                () => CxbxCompat.Downloaded() is DateTime when ? "downloaded " + when.ToString("g") + " - each game's state in its Options window" : "never downloaded here - the copy built into the plugin is used",
+                CxbxCompat.RefreshWhole, null, 540);
+            cl.Location = new Point(8, 20);
+            compat.Controls.Add(cl);
+            stack.Controls.Add(compat);
+
             var display = Group("At launch");
             var d = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Location = new Point(8, 20) };
             Label Note(string text, int indent) => new Label { AutoSize = true, MaximumSize = new Size(520 - indent, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(indent, 2, 0, 4), Text = text };

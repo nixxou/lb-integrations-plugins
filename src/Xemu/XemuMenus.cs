@@ -108,6 +108,15 @@ namespace LbIntegrations.Xemu
             states.Controls.Add(sp);
             stack.Controls.Add(states);
 
+            // The compatibility list, every game's (Mehdi, 05/10): downloaded whole again here too, the date of the last one.
+            var compat = XemuGameForm.Group("xemu's compatibility list (xemu.app)");
+            var cl = LbIntegrations.Lbip.LbipListRefresh.Row("xemu's compatibility list",
+                () => XemuCompat.Downloaded() is DateTime d ? "downloaded " + d.ToString("g") + " - each game's state in its Options window" : "never downloaded yet",
+                XemuCompat.FetchWhole, null, 540);
+            cl.Location = new Point(8, 20);
+            compat.Controls.Add(cl);
+            stack.Controls.Add(compat);
+
             stack.Controls.Add(new Label { Text = "Options for every game", AutoSize = true, Font = new Font("Segoe UI", 10f, FontStyle.Bold), Margin = new Padding(4, 8, 0, 0) });
             stack.Controls.Add(new Label
             {

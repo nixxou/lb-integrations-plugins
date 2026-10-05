@@ -155,6 +155,15 @@ namespace LbIntegrations.Xenia
             optimized.Controls.Add(op);
             stack.Controls.Add(optimized);
 
+            // The compatibility list, every game's (Mehdi, 05/10): downloaded whole again here too, the date of the last one.
+            var compat = XeniaConsolePanel.Group("Xenia's compatibility list (xenia-canary/game-compatibility)");
+            var listRow = LbIntegrations.Lbip.LbipListRefresh.Row("Xenia's compatibility list",
+                () => XeniaCompat.Downloaded() is DateTime d ? "downloaded " + d.ToString("g") + " - each game's state in its Options window" : "never downloaded yet",
+                XeniaCompat.FetchWhole, null, 540);
+            listRow.Location = new Point(8, 20);
+            compat.Controls.Add(listRow);
+            stack.Controls.Add(compat);
+
             // NO "OPTIONS FOR EVERY GAME" ANY MORE (Mehdi, 04/10: too much to keep up with): what every game runs on is Xenia's
             // own config, set in Xenia itself; a game's own options are in its right-click menu. Values saved here before are
             // left in the file and no longer passed.

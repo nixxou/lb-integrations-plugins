@@ -172,7 +172,22 @@ namespace LbIntegrations.Vita3k
                 });
             }
 
+            // THE COMPATIBILITY LIST, every game's (Mehdi, 05/10): downloaded whole again here too, the date of the last one.
+            var compat = new GroupBox { Text = "Vita3K's compatibility list", Dock = DockStyle.Top, Height = 92, Padding = new Padding(10) };
+            if (_layout == null)
+                compat.Controls.Add(new Label { AutoSize = true, Location = new Point(14, 26), ForeColor = SystemColors.GrayText, Text = "Nixx-Vita3K is not installed: no list yet." });
+            else
+            {
+                var layout = _layout;
+                var row = LbIntegrations.Lbip.LbipListRefresh.Row("Vita3K's compatibility list",
+                    () => Vita3kCompat.Downloaded(layout) is DateTime d ? "downloaded " + d.ToString("g") + " (Vita3K/compatibility) - each game's state in its Options window" : "never downloaded yet",
+                    job => Vita3kCompat.DownloadWhole(layout, job), null, 560);
+                row.Location = new Point(10, 22);
+                compat.Controls.Add(row);
+            }
+
             Controls.Add(where);
+            Controls.Add(compat);
             Controls.Add(system);
             Controls.Add(import);
         }
