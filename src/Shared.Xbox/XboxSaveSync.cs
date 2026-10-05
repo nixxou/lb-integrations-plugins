@@ -242,6 +242,34 @@ namespace LbIntegrations.Xbox
             }
         }
 
+        /// <summary>Where the save and the console stand, for a window - nothing written: the console's files, the active save,
+        /// their agreement and what the next launch would do, and the keys the console is written with.</summary>
+        public static List<string> Describe(XboxSaveSide s)
+        {
+            var said = new List<string>();
+            try
+            {
+                var consoleFiles = s.ReadConsole() ?? new List<(string, byte[])>();
+                var saveFiles = FilesOf(s.Pack);
+                string c = ContentHash(consoleFiles), p = saveFiles == null ? null : ContentHash(saveFiles);
+                var st = ReadStamp(s.StampPath);
+                said.Add("Its save in the console: " + (consoleFiles.Count == 0 ? "none" : consoleFiles.Count + " file(s), " + (consoleFiles.Sum(f => (long)f.Data.Length) / 1024) + " KB"));
+                said.Add("Active save: " + (p == null ? "none" : s.Pack));
+                string state;
+                if (p == null && consoleFiles.Count == 0) state = "nothing to keep in step";
+                else if (p != null && c == p) state = "the save and the console agree";
+                else if (st?.Content == null) state = p == null ? "the console's save is captured at the next listing" : "never agreed: the save is laid in at the next launch, the console's version kept apart";
+                else if (p == st.Content || p == null && st.Content == ContentHash(new List<(string, byte[])>())) state = "the console changed since: captured at the next listing";
+                else if (c == st.Content) state = p == null ? "the save was removed: taken out of the console at the next launch" : "the save changed: laid in at the next launch";
+                else state = "both changed: at the next launch the save wins, the console's version kept in lbip-conflicts";
+                said.Add("State: " + state);
+                var keys = st?.Keys ?? XboxSaveKeys.Read(s.Pack);
+                if (keys != null) said.Add("Keys: HDD " + XboxKeys.Hex(keys.Hdd) + ", certificate " + (XboxKeys.Same(keys.Cert, XboxKeys.Zero) ? "zero (Cxbx-Reloaded's)" : XboxKeys.Same(keys.Cert, XboxKeys.Retail) ? "a real Xbox's" : "another"));
+            }
+            catch (Exception ex) { said.Add("Could not be read: " + ex.Message); }
+            return said;
+        }
+
         /// <summary>The console made the save, whatever the stamp says - a console put back from a backup of its own.</summary>
         public static string CaptureNow(XboxSaveSide s)
         {

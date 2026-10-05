@@ -1329,7 +1329,22 @@ namespace LbIntegrations.Probe
                 Check("an old-named install of ours: renamed x.emu.exe", Call("XemuPaths", "MigrateOldName", old) is string moved
                       && string.Equals(moved, exe, StringComparison.OrdinalIgnoreCase) && !File.Exists(old) && File.ReadAllBytes(exe).SequenceEqual(new byte[] { 1 }));
                 Check("... x.emu.exe itself: nothing to do", Call("XemuPaths", "MigrateOldName", exe) == null);
-            }
+
+                // xemu opened on its own (XemuConsoleBoot): xemu.toml the session's for that time, yours put back after.
+                Console.WriteLine("  opened on its own");
+                var ownToml = Path.Combine(emu, "xemu.toml");
+                File.WriteAllText(ownToml, "[general]\nshow_welcome = false\n\n[input]\nport1 = 'pad'\n");
+                Call("XemuConsoleBoot", "BeforeOwn", exe);
+                var during = File.ReadAllText(ownToml);
+                Check("before: yours kept aside, xemu.toml the session's (every game's options, the session's EEPROM)", File.Exists(Path.Combine(emu, "xemu-user.toml"))
+                      && during.Contains("show_menubar = false") && during.Contains("eeprom-session.bin"), during);
+                File.WriteAllText(ownToml, during.Replace("port1 = 'pad'", "port1 = 'pad'\nport2 = 'other'") + "\n[net]\nenable = true\n");   // xemu writing on exit
+                Call("XemuConsoleBoot", "RestoreOwn", exe, "the probe");
+                var after = File.ReadAllText(ownToml);
+                Check("after: yours back - what xemu wrote in an untouched table kept, the session's settings gone", !File.Exists(Path.Combine(emu, "xemu-user.toml"))
+                      && after.Contains("port2 = 'other'") && after.Contains("[net]") && !after.Contains("show_menubar") && !after.Contains("eeprom-session.bin"), after);
+                Call("XemuConsoleBoot", "RestoreOwn", exe, "the probe");
+                Check("... again: nothing to do", File.ReadAllText(ownToml) == after);            }
             catch (Exception ex) { Check("no exception", false, ex.ToString()); }
             finally { try { Directory.Delete(work, true); } catch { } }
 

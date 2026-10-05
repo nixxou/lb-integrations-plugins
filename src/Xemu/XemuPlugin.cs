@@ -54,6 +54,9 @@ namespace LbIntegrations.Xemu
                 else LbIntegrations.RamDisk.RamDiskHost.LaunchBoxRoot = LaunchBoxRoot;
             }
             LbipRowInjection.Install("com.nixxou.lbip.xemu", MetadataRows());
+            // Opened on its own (LaunchBox's "Open emulator", the Nixx window's Open button): every game's options for that time (XemuConsoleBoot).
+            LbIntegrations.Catalog.LbEmulatorOpened.Register(new XemuEmulatorOpened());
+            if (!LbIntegrations.Catalog.LbCatalog.HostWillAsk) LbipEmulatorOpened.Install("com.nixxou.lbip.xemu");
         }
 
         private static IEnumerable<LbCatalogEmulator> MetadataRows()
@@ -95,7 +98,7 @@ namespace LbIntegrations.Xemu
                         path = moved;
                     }
                     // A session the host never saw end (killed mid-game): xemu.toml back on the stand-alone console.
-                    if (XemuPaths.IsOurs(path)) XemuSession.Standalone(path, "the host has started");
+                    if (XemuPaths.IsOurs(path)) { XemuConsoleBoot.RestoreOwn(path, "the host has started"); XemuSession.Standalone(path, "the host has started"); }
                 }
                 if (renamed) try { dm.Save(false); } catch (Exception ex) { Log.Warn("data manager save failed", ex); }
                 LbipRowInjection.Install("com.nixxou.lbip.xemu", MetadataRows());
@@ -362,6 +365,7 @@ namespace LbIntegrations.Xemu
                 var base_ = XemuPaths.BaseHdd(exe);
                 if (!File.Exists(base_)) return Refuse("xemu's console disk (" + base_ + ") is missing. Update xemu from LaunchBox to download it again.");
 
+                XemuConsoleBoot.RestoreOwn(exe, "before a launch");
                 // A session left behind (the host killed mid-game): the user's xemu.toml put back first (XemuSessionConfig).
                 var toml = XemuPaths.TomlOf(exe);
                 var sessionToml = XemuSessionConfig.SessionPath(exe);
@@ -380,56 +384,8 @@ namespace LbIntegrations.Xemu
                 // ITS OWN CONSOLE: made over the pristine one at the game's first launch.
                 var titleId = info.Xbe?.TitleId > 0 ? info.Xbe.TitleIdText : null;
                 if (titleId == null) { XemuDisc.Release(info); return Refuse(Path.GetFileName(rom) + " cannot be launched: its title id could not be read."); }
-                var hdd = XemuPaths.GameHdd(exe, titleId);
-                // ITS SAVE FILE FIRST: lbip-saves\<title id>.cxbxsave is what counts - put there since the last session, it goes into
-                // the console now (XemuSaveFiles.Sync, Shared.Xbox\XboxSaveSync).
-                try { XemuSaveFiles.Sync(exe, titleId, LbIntegrations.Xbox.XboxSyncMode.Launch); }
-                catch (Exception ex) { XemuDisc.Release(info); return Refuse("The save of " + Path.GetFileName(rom) + " could not be put into its console: " + ex.Message + "\n\nNothing was changed. Move or remove its file in " + Path.GetDirectoryName(XemuSaveFiles.PackPath(exe, titleId)) + " to start without it."); }
-                if (!File.Exists(hdd))
-                {
-                    var error = Qcow2Overlay.Create(base_, hdd);
-                    if (error != null) { XemuDisc.Release(info); return Refuse("The console of " + Path.GetFileName(rom) + " could not be made: " + error + "."); }
-                }
-
-                // ITS CONSOLE'S SETTINGS: region and video following the game, the pack's language, Windows' time zone, the pack's
-                // HDD key - on a copy of eeprom.bin for the session (Eeprom\XemuEeprom).
-                // THE SAVE'S KEYS (Shared.Xbox\XboxSaveKeys): the HDD key and the certificate key it was made with - a save from
-                // before they were noted is Cxbx-Reloaded's (certificate key zero). No save: the option's certificate key.
-                var pack = XemuSaveFiles.PackPath(exe, titleId);
-                var keys = LbIntegrations.Xbox.XboxSaveKeys.ForLaunch(pack, LbIntegrations.Xbox.XboxKeys.Zero);
-                if (keys?.Hdd != null) options["console.hddkey.bytes"] = LbIntegrations.Xbox.XboxKeys.Hex(keys.Hdd);
-                var cert = keys?.Cert ?? (options.TryGetValue("console.certkey", out var ck) && ck == "zero" ? LbIntegrations.Xbox.XboxKeys.Zero : LbIntegrations.Xbox.XboxKeys.Retail);
-                var said = new List<string>();
-                if (keys != null) said.Add("keys " + keys.Origin);
-                string eeprom = null;
-                try { eeprom = Eeprom.XemuEeprom.Prepare(XemuPaths.Eeprom(exe), XemuPaths.SessionEeprom(exe), info.Xbe, options, said); }
-                catch (Exception ex) { Log.Warn("console: its settings could not be made", ex); }
-                // ITS CERTIFICATE KEY: on a copy of the flash BIOS when it is not the BIOS's own (Shared.Xbox\XboxKeys).
-                var biosFlash = flash;
-                flash = LbIntegrations.Xbox.XboxKeys.SessionFlash(mcpx, flash, XemuPaths.SessionFlash(exe), cert, said) ?? flash;
-                Log.Info("console: " + (said.Count == 0 ? "as it is" : string.Join(", ", said)));
-                // The keys this session runs with, for the save it writes (XemuSaveFiles.Capture).
-                try
-                {
-                    var hddUsed = Eeprom.XemuEeprom.Open(File.ReadAllBytes(eeprom ?? XemuPaths.Eeprom(exe)))?.HddKey;
-                    var certUsed = flash != biosFlash ? cert : LbIntegrations.Xbox.XboxKeys.CertificateKeyOf(mcpx, biosFlash);
-                    if (hddUsed != null && certUsed != null) LbIntegrations.Xbox.XboxSaveSync.NoteSessionKeys(XemuSaveFiles.Side(exe, titleId), hddUsed, certUsed);
-                }
-                catch (Exception ex) { Log.Warn("console: the session's keys could not be noted", ex); }
-
-                // ITS xemu.toml: the user's with the game's options and the plugin's keys over it, for the session only
-                // (XemuSessionConfig) - the user's file merged back from it when xemu has gone.
-                var set = new List<(string, string, string)>
-                {
-                    ("general", "show_welcome", "false"),
-                    ("sys.files", "bootrom_path", XemuToml.Literal(mcpx)),
-                    ("sys.files", "flashrom_path", XemuToml.Literal(flash)),
-                    ("sys.files", "eeprom_path", XemuToml.Literal(eeprom ?? XemuPaths.Eeprom(exe))),
-                    ("sys.files", "hdd_path", XemuToml.Literal(hdd)),
-                    ("sys.files", "dvd_path", XemuToml.Literal(dvd)),
-                };
-                set.AddRange(XemuOptions.TomlOf(options));
-                XemuSessionConfig.Make(toml, sessionToml, set);
+                var problemConsole = MakeSession(exe, titleId, info.Xbe, options, dvd, out var hdd, out var set);
+                if (problemConsole != null) { XemuDisc.Release(info); return Refuse(Path.GetFileName(rom) + " cannot be launched: " + problemConsole); }
                 Log.Info("launch: " + Path.GetFileName(rom) + " (" + titleId + " \"" + info.Xbe?.TitleName + "\", " + info.Kind + ") on " + Path.GetFileName(hdd)
                          + ", " + Path.GetFileName(sessionToml) + " with " + string.Join(", ", set.Skip(6).Select(s => s.Item1 + "." + s.Item2 + "=" + s.Item3)));
 
@@ -443,6 +399,70 @@ namespace LbIntegrations.Xemu
                 Log.Warn("PrepareEmulatorForLaunch", ex);
                 return Refuse("Something went wrong while preparing the game: " + ex.Message);
             }
+        }
+
+        /// <summary>A game's session made ready - shared by its launch and by booting its console without a disc (the game's
+        /// menu): its save into its console, its console made, its EEPROM, its certificate key, its session's xemu.toml.
+        /// <paramref name="dvd"/> null: no disc. Null when ready, else why not.</summary>
+        internal static string MakeSession(string exe, string titleId, XbeInfo xbe, Dictionary<string, string> options, string dvd,
+                                           out string hdd, out List<(string, string, string)> set)
+        {
+            var mcpx = XemuPaths.McpxPath(exe);
+            var flash = XemuPaths.FlashPath(exe);
+            var base_ = XemuPaths.BaseHdd(exe);
+            var toml = XemuPaths.TomlOf(exe);
+            var sessionToml = XemuSessionConfig.SessionPath(exe);
+            hdd = XemuPaths.GameHdd(exe, titleId); set = null;
+            // ITS SAVE FILE FIRST: lbip-saves\<title id>.cxbxsave is what counts - put there since the last session, it goes into
+            // the console now (XemuSaveFiles.Sync, Shared.Xbox\XboxSaveSync).
+            try { XemuSaveFiles.Sync(exe, titleId, LbIntegrations.Xbox.XboxSyncMode.Launch); }
+            catch (Exception ex) { return "its save could not be put into its console: " + ex.Message + "\n\nNothing was changed. Move or remove its file in " + Path.GetDirectoryName(XemuSaveFiles.PackPath(exe, titleId)) + " to start without it."; }
+            if (!File.Exists(hdd))
+            {
+                var error = Qcow2Overlay.Create(base_, hdd);
+                if (error != null) return "its console could not be made: " + error + ".";
+            }
+
+            // ITS CONSOLE'S SETTINGS: region and video following the game, the pack's language, Windows' time zone, the pack's
+            // HDD key - on a copy of eeprom.bin for the session (Eeprom\XemuEeprom).
+            // THE SAVE'S KEYS (Shared.Xbox\XboxSaveKeys): the HDD key and the certificate key it was made with - a save from
+            // before they were noted is Cxbx-Reloaded's (certificate key zero). No save: the option's certificate key.
+            var pack = XemuSaveFiles.PackPath(exe, titleId);
+            var keys = LbIntegrations.Xbox.XboxSaveKeys.ForLaunch(pack, LbIntegrations.Xbox.XboxKeys.Zero);
+            if (keys?.Hdd != null) options["console.hddkey.bytes"] = LbIntegrations.Xbox.XboxKeys.Hex(keys.Hdd);
+            var cert = keys?.Cert ?? (options.TryGetValue("console.certkey", out var ck) && ck == "zero" ? LbIntegrations.Xbox.XboxKeys.Zero : LbIntegrations.Xbox.XboxKeys.Retail);
+            var said = new List<string>();
+            if (keys != null) said.Add("keys " + keys.Origin);
+            string eeprom = null;
+            try { eeprom = Eeprom.XemuEeprom.Prepare(XemuPaths.Eeprom(exe), XemuPaths.SessionEeprom(exe), xbe, options, said); }
+            catch (Exception ex) { Log.Warn("console: its settings could not be made", ex); }
+            // ITS CERTIFICATE KEY: on a copy of the flash BIOS when it is not the BIOS's own (Shared.Xbox\XboxKeys).
+            var biosFlash = flash;
+            flash = LbIntegrations.Xbox.XboxKeys.SessionFlash(mcpx, flash, XemuPaths.SessionFlash(exe), cert, said) ?? flash;
+            Log.Info("console: " + (said.Count == 0 ? "as it is" : string.Join(", ", said)));
+            // The keys this session runs with, for the save it writes (XemuSaveFiles.Capture).
+            try
+            {
+                var hddUsed = Eeprom.XemuEeprom.Open(File.ReadAllBytes(eeprom ?? XemuPaths.Eeprom(exe)))?.HddKey;
+                var certUsed = flash != biosFlash ? cert : LbIntegrations.Xbox.XboxKeys.CertificateKeyOf(mcpx, biosFlash);
+                if (hddUsed != null && certUsed != null) LbIntegrations.Xbox.XboxSaveSync.NoteSessionKeys(XemuSaveFiles.Side(exe, titleId), hddUsed, certUsed);
+            }
+            catch (Exception ex) { Log.Warn("console: the session's keys could not be noted", ex); }
+
+            // ITS xemu.toml: the user's with the game's options and the plugin's keys over it, for the session only
+            // (XemuSessionConfig) - the user's file merged back from it when xemu has gone.
+            set = new List<(string, string, string)>
+            {
+                ("general", "show_welcome", "false"),
+                ("sys.files", "bootrom_path", XemuToml.Literal(mcpx)),
+                ("sys.files", "flashrom_path", XemuToml.Literal(flash)),
+                ("sys.files", "eeprom_path", XemuToml.Literal(eeprom ?? XemuPaths.Eeprom(exe))),
+                ("sys.files", "hdd_path", XemuToml.Literal(hdd)),
+                ("sys.files", "dvd_path", dvd != null ? XemuToml.Literal(dvd) : "''"),
+            };
+            set.AddRange(XemuOptions.TomlOf(options));
+            XemuSessionConfig.Make(toml, sessionToml, set);
+            return null;
         }
 
         /// <summary>The host's line without any -dvd_path (and its value) and -L - and -config_path when one is given - then

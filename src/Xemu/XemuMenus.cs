@@ -174,6 +174,7 @@ namespace LbIntegrations.Xemu
 
             // What the game is, read once: its disc's kind, its title, its regions - and its console.
             var about = new List<string>();
+            string titleId = null;
             try
             {
                 if (rom != null)
@@ -183,14 +184,14 @@ namespace LbIntegrations.Xemu
                     if (d.Xbe != null)
                     {
                         about.Add("\"" + d.Xbe.TitleName + "\", title id " + d.Xbe.TitleIdText + ", regions " + Eeprom.XemuEeprom.Name(d.Xbe.Region & 7));
-                        var hdd = exe != null ? XemuPaths.GameHdd(exe, d.Xbe.TitleIdText) : null;
-                        about.Add("Its console: " + (hdd != null && File.Exists(hdd) ? hdd + " (" + (new FileInfo(hdd).Length >> 20) + " MB)" : "made at its first launch"));
+                        titleId = d.Xbe.TitleIdText;
                     }
                 }
             }
             catch (Exception ex) { about.Add("The game could not be read: " + ex.Message); }
             if (exe == null) about.Add("No xemu of this plugin in the library.");
             stack.Controls.Add(new Label { Text = string.Join("\n", about), AutoSize = true, MaximumSize = new Size(600, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(4, 0, 0, 8) });
+            if (exe != null && titleId != null) stack.Controls.Add(ConsoleGroup(exe, titleId, first));
 
             stack.Controls.Add(new Label
             {
@@ -238,6 +239,35 @@ namespace LbIntegrations.Xemu
                 XemuSettings.WriteGame(id, values);
             }
             Log.Info("game options of " + _games.Count + " game(s) saved");
+        }
+
+        /// <summary>The game's own console (Mehdi, 05/10): its disk, where its save stands, and a button to boot it without a disc -
+        /// its dashboard, to clear a cache or look at its saves (XemuConsoleBoot).</summary>
+        private GroupBox ConsoleGroup(string exe, string titleId, IGame game)
+        {
+            var box = Group("This game's console");
+            var inner = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Dock = DockStyle.Fill };
+            var hdd = XemuPaths.GameHdd(exe, titleId);
+            var lines = new List<string>();
+            if (hdd != null && File.Exists(hdd))
+            {
+                var fi = new FileInfo(hdd);
+                lines.Add("Its disk: " + hdd + " - " + (fi.Length >> 20) + " MB, last written " + fi.LastWriteTime.ToString("g"));
+            }
+            else lines.Add("Its disk: not made yet - made at its first launch, or by booting it below.");
+            if (XemuSaveFiles.Side(exe, titleId) is LbIntegrations.Xbox.XboxSaveSide side) lines.AddRange(LbIntegrations.Xbox.XboxSaveSync.Describe(side));
+            inner.Controls.Add(new Label { Text = string.Join("\n", lines), AutoSize = true, MaximumSize = new Size(540, 0), Margin = new Padding(0, 0, 0, 6) });
+            var boot = new Button { Text = "Boot this game's console, without its disc", AutoSize = true };
+            new ToolTip().SetToolTip(boot, "xemu starts on this game's console with its options, its region and the keys of its save, but no disc: its "
+                                         + "dashboard - to clear a cache, look at or delete its saves. When it is closed, the save is captured as after a game.");
+            boot.Click += (_, _) =>
+            {
+                var problem = XemuConsoleBoot.Boot(game);
+                if (problem != null) MessageBox.Show(this, "The console could not be booted: " + problem, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            };
+            inner.Controls.Add(boot);
+            box.Controls.Add(inner);
+            return box;
         }
 
         internal static GroupBox Group(string text) => new GroupBox { Text = text, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(8, 4, 8, 8), Margin = new Padding(4, 4, 4, 8), MinimumSize = new Size(560, 0) };
