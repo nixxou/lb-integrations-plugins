@@ -53,6 +53,7 @@ namespace LbIntegrations.Xemu
     internal sealed class XemuSettingsPage : UserControl
     {
         private readonly TextBox _cache;
+        private readonly CheckBox _states;
         private readonly XemuOptionRows _rows;
 
         public XemuSettingsPage()
@@ -92,6 +93,21 @@ namespace LbIntegrations.Xemu
             discs.Controls.Add(t);
             stack.Controls.Add(discs);
 
+            var states = XemuGameForm.Group("Savestates");
+            var sp = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Location = new Point(8, 20) };
+            _states = new CheckBox { Text = "Show xemu's snapshots in LaunchBox, as the game's savestates", AutoSize = true, Checked = XemuSettings.Savestates() };
+            sp.Controls.Add(_states);
+            sp.Controls.Add(new Label
+            {
+                AutoSize = true, MaximumSize = new Size(520, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(18, 2, 0, 4), UseMnemonic = false,
+                Text = "xemu makes its snapshots (Snapshots menu) inside the game's console whatever this says. On, each one is also copied "
+                       + "out as a file LaunchBox lists, backs up and restores - some 35 MB each, written when the game closes. Off, nothing "
+                       + "is copied and no file is put back into a console; turned on again, the snapshots made meanwhile are copied out at "
+                       + "the next listing or close, and none is lost.",
+            });
+            states.Controls.Add(sp);
+            stack.Controls.Add(states);
+
             stack.Controls.Add(new Label { Text = "Options for every game", AutoSize = true, Font = new Font("Segoe UI", 10f, FontStyle.Bold), Margin = new Padding(4, 8, 0, 0) });
             stack.Controls.Add(new Label
             {
@@ -119,6 +135,7 @@ namespace LbIntegrations.Xemu
             // Every key kept that this page does not own; its own replaced.
             var all = XemuSettings.Read();
             all["cache_gb"] = cache;
+            all["savestates"] = _states.Checked ? "on" : "";
             foreach (var kv in _rows.Values()) all[kv.Key] = kv.Value;
             XemuSettings.Write(all);
             Log.Info("settings written -> " + XemuSettings.SettingsPath);

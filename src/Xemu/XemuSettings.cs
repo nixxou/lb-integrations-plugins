@@ -1,6 +1,7 @@
 // The plugin's own settings, beside the other plugins' (<Plugins>\.data\<PluginId>\settings.ini), Cxbx's shape:
 //
 //   cache_gb=      how much room the XISO copies may take in <xemu>\discs (default 40; the copies used longest ago go first)
+//   savestates=on  xemu's snapshots shown in LaunchBox as savestates (off by default)
 //   opt.<key>=     an option of every game (XemuOptions): xemu's settings, the console's, the media patch
 //   games\<game id>.ini   one game's options, the same keys
 
@@ -65,6 +66,10 @@ namespace LbIntegrations.Xemu
 
         /// <summary>Is the media patch made for every game (XboxMediaPatch, the option disc.media_patch)? On unless set off.</summary>
         public static bool MediaPatch() => XemuOptions.Get(Read(), "disc.media_patch") != "off";
+
+        /// <summary>Are xemu's snapshots shown in LaunchBox as savestates (Saves\XemuStates)? Off unless set on (Mehdi, 05/10):
+        /// each one is a file of some 35 MB, exported at a game's close.</summary>
+        public static bool Savestates() => Read().TryGetValue("savestates", out var v) && v == "on";
 
         public static string GamePath(string gameId)
         {

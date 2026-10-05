@@ -105,6 +105,15 @@ namespace LbIntegrations.Xemu
             if (XemuPaths.Running(exe)) return;
             try
             {
+                // Off (XemuSettings.Savestates): nothing exported, nothing put into the console - xemu keeps its snapshots in it all
+                // the same. The index forgotten: what happens meanwhile (a file deleted, a snapshot deleted in xemu) is not known,
+                // so once on again nothing is taken out of the console - its snapshots exported, the files it lacks put back in.
+                if (!XemuSettings.Savestates())
+                {
+                    var index = XemuStates.IndexPath(exe, titleId);
+                    if (index != null && File.Exists(index)) { File.Delete(index); Log.Info("savestates: " + titleId + " - off: its index forgotten, its files and snapshots kept"); }
+                    return;
+                }
                 foreach (var line in XemuStates.Mirror(exe, titleId, rewrite, () => StampKeys(exe, titleId))) Log.Info("savestates: " + titleId + " - " + line);
             }
             catch (Exception ex) { Log.Warn("savestates: " + titleId + " could not be put in step", ex); }
@@ -172,8 +181,9 @@ namespace LbIntegrations.Xemu
                 }
                 // Its savestates (Saves\XemuStates): the snapshots of its console, mirrored as files - exported when new.
                 XemuSaveFiles.States(exe, titleId, rewrite: false);
-                foreach (var f in XemuSaveFiles.StateFiles(exe, titleId))
-                    into.Add(StateRow(gameId, appId, f, titleId));
+                if (XemuSettings.Savestates())
+                    foreach (var f in XemuSaveFiles.StateFiles(exe, titleId))
+                        into.Add(StateRow(gameId, appId, f, titleId));
             }
             catch (Exception ex) { Log.Warn("could not collect the save of " + rom, ex); }
         }

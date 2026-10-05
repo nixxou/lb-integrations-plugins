@@ -341,6 +341,19 @@ namespace LbIntegrations.Probe
             var after = Snaps();
             Check("the file restored: its snapshot back in the console", after.Count == first.Count && after.Contains(first[1]), string.Join(", ", after));
             Check("... and nothing more to do", Mirror(false).Count == 0 && Directory.GetFiles(dir, "*.xemustate").Length == first.Count);
+            // Savestates turned off, then on (XemuSaveFiles.States forgets the index): a file deleted meanwhile is exported again,
+            // nothing is taken out of the console, nothing exported twice.
+            {
+                var indexPath = (string)M("IndexPath", exe, titleId);
+                var gone = Directory.GetFiles(dir, "*.xemustate").OrderBy(f => f).First();
+                File.Delete(indexPath);
+                File.Delete(gone);
+                var again = Mirror(false);
+                Check("off then on: the file deleted meanwhile exported again, the others kept", again.Count == 1 && again[0].Contains("exported")
+                      && Directory.GetFiles(dir, "*.xemustate").Length == first.Count, string.Join("; ", again));
+                Mirror(true);
+                Check("... at a launch: the console untouched", Snaps().Count == first.Count && Mirror(false).Count == 0);
+            }
             // The console deleted by hand, its index left beside it: a new console gets the files, none removed.
             var savedConsole = console + ".kept";
             File.Copy(console, savedConsole, overwrite: true);

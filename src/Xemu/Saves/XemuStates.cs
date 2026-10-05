@@ -19,6 +19,8 @@
 // Exports and removals of files at any listing; anything that rewrites the console (Qcow2Rebuild - its other snapshots and
 // its save kept, checked before it replaces anything) only at a launch (Mehdi, 05/10): LaunchBox's Restore and Remove only
 // place or delete the file.
+// ALL OF IT OPTIONAL (Mehdi, 05/10: settings.ini savestates=on, off by default - XemuSaveFiles.States): off, nothing runs and
+// the index is forgotten, so turning it on again never takes a snapshot out of a console.
 
 using System;
 using System.Collections.Generic;
@@ -47,7 +49,7 @@ namespace LbIntegrations.Xemu.Saves
         private static readonly object Gate = new object();
 
         public static string Dir(string exe, string titleId) => XemuPaths.Dir(exe) is string d ? System.IO.Path.Combine(d, "lbip-states", titleId) : null;
-        private static string IndexPath(string exe, string titleId) => System.IO.Path.ChangeExtension(XemuPaths.GameHdd(exe, titleId), ".states");
+        internal static string IndexPath(string exe, string titleId) => System.IO.Path.ChangeExtension(XemuPaths.GameHdd(exe, titleId), ".states");
         public static string SlotPath(string exe, string titleId, int slot) => System.IO.Path.Combine(Dir(exe, titleId), "slot-" + slot.ToString(CultureInfo.InvariantCulture) + Extension);
         private static string IdentityOf(Qcow2Snapshot s) => s.Name + "|" + s.DateSec + "|" + s.DateNsec + "|" + s.VmClockNsec;
 
