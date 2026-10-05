@@ -415,8 +415,6 @@ namespace LbIntegrations.Xemu
             hdd = XemuPaths.GameHdd(exe, titleId); set = null;
             // ITS SAVE FILE FIRST: lbip-saves\<title id>.cxbxsave is what counts - put there since the last session, it goes into
             // the console now (XemuSaveFiles.Sync, Shared.Xbox\XboxSaveSync).
-            // Its savestates first: a state restored or removed in LaunchBox into the console (Saves\XemuStates).
-            XemuSaveFiles.States(exe, titleId, rewrite: true);
             try { XemuSaveFiles.Sync(exe, titleId, LbIntegrations.Xbox.XboxSyncMode.Launch); }
             catch (Exception ex) { return "its save could not be put into its console: " + ex.Message + "\n\nNothing was changed. Move or remove its file in " + Path.GetDirectoryName(XemuSaveFiles.PackPath(exe, titleId)) + " to start without it."; }
             if (!File.Exists(hdd))
@@ -424,6 +422,8 @@ namespace LbIntegrations.Xemu
                 var error = Qcow2Overlay.Create(base_, hdd);
                 if (error != null) return "its console could not be made: " + error + ".";
             }
+            // Its savestates: a state restored or removed in LaunchBox, or the files of a console deleted, into the console (Saves\XemuStates).
+            XemuSaveFiles.States(exe, titleId, rewrite: true);
 
             // ITS CONSOLE'S SETTINGS: region and video following the game, the pack's language, Windows' time zone, the pack's
             // HDD key - on a copy of eeprom.bin for the session (Eeprom\XemuEeprom).

@@ -341,6 +341,17 @@ namespace LbIntegrations.Probe
             var after = Snaps();
             Check("the file restored: its snapshot back in the console", after.Count == first.Count && after.Contains(first[1]), string.Join(", ", after));
             Check("... and nothing more to do", Mirror(false).Count == 0 && Directory.GetFiles(dir, "*.xemustate").Length == first.Count);
+            // The console deleted by hand, its index left beside it: a new console gets the files, none removed.
+            var savedConsole = console + ".kept";
+            File.Copy(console, savedConsole, overwrite: true);
+            File.Delete(console);
+            M("ForgetWithoutConsole", exe, titleId);
+            var baseDisk = Path.Combine(emuDir, "hdd", "base.qcow2");
+            _asm.GetType("LbIntegrations.Xemu.Qcow2Overlay", true).GetMethod("Create", Any).Invoke(null, new object[] { baseDisk, console });
+            Mirror(true);
+            var reborn = Snaps();
+            Check("the console deleted: a new one gets every state file back, none removed", reborn.Count == first.Count && Directory.GetFiles(dir, "*.xemustate").Length == first.Count, string.Join(", ", reborn));
+            File.Copy(savedConsole, console, overwrite: true); File.Delete(savedConsole);
             return _bad == 0;
         }
 

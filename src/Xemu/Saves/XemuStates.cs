@@ -145,6 +145,20 @@ namespace LbIntegrations.Xemu.Saves
             }
         }
 
+        /// <summary>THE INDEX BELONGS TO THE CONSOLE: the console gone (deleted by hand), its index goes too - before a new one is
+        /// made - so the state files are taken for files put there and laid into the new console, never for snapshots deleted in
+        /// xemu (which would remove them). Called before anything can make a console (XemuSaveFiles.Sync, Mirror).</summary>
+        public static void ForgetWithoutConsole(string exe, string titleId)
+        {
+            try
+            {
+                var console = XemuPaths.GameHdd(exe, titleId);
+                var index = console == null ? null : IndexPath(exe, titleId);
+                if (index != null && !File.Exists(console) && File.Exists(index)) { File.Delete(index); LbIntegrations.Xemu.Log.Info("savestates: " + titleId + " - its console is gone: its index forgotten, its files kept"); }
+            }
+            catch { }
+        }
+
         // ── the mirror ───────────────────────────────────────────────────────
 
         /// <summary>The game's snapshots and state files put in step. <paramref name="rewrite"/>: the console may be rewritten
@@ -157,6 +171,7 @@ namespace LbIntegrations.Xemu.Saves
                 var consolePath = XemuPaths.GameHdd(exe, titleId);
                 var dir = Dir(exe, titleId);
                 if (consolePath == null || dir == null) return said;
+                ForgetWithoutConsole(exe, titleId);
                 var indexPath = IndexPath(exe, titleId);
                 var index = ReadIndex(indexPath);
                 var files = Directory.Exists(dir) ? Directory.GetFiles(dir, "*" + Extension).Select(Read).Where(f => f != null).ToList() : new List<XemuStateFile>();

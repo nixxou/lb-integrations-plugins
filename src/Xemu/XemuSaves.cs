@@ -58,6 +58,7 @@ namespace LbIntegrations.Xemu
         public static string Sync(string exe, string titleId, XboxSyncMode mode)
         {
             if (XemuPaths.Running(exe)) return null;
+            Saves.XemuStates.ForgetWithoutConsole(exe, titleId);
             var side = Side(exe, titleId);
             if (side == null) return null;
             var done = XboxSaveSync.Sync(side, mode);
