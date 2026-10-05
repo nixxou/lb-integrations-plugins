@@ -191,7 +191,7 @@ namespace LbIntegrations.Xemu
             catch (Exception ex) { about.Add("The game could not be read: " + ex.Message); }
             if (exe == null) about.Add("No xemu of this plugin in the library.");
             stack.Controls.Add(new Label { Text = string.Join("\n", about), AutoSize = true, MaximumSize = new Size(600, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(4, 0, 0, 8) });
-            if (exe != null && titleId != null) stack.Controls.Add(ConsoleGroup(exe, titleId, first));
+            if (exe != null) stack.Controls.Add(ConsoleGroup(exe, titleId ?? (rom != null ? XemuDisc.XbeForConsole(rom, exe, out _)?.TitleIdText : null), first, rom));
 
             stack.Controls.Add(new Label
             {
@@ -243,10 +243,21 @@ namespace LbIntegrations.Xemu
 
         /// <summary>The game's own console (Mehdi, 05/10): its disk, where its save stands, and a button to boot it without a disc -
         /// its dashboard, to clear a cache or look at its saves (XemuConsoleBoot).</summary>
-        private GroupBox ConsoleGroup(string exe, string titleId, IGame game)
+        private GroupBox ConsoleGroup(string exe, string titleId, IGame game, string rom)
         {
             var box = Group("This game's console");
             var inner = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Dock = DockStyle.Fill };
+            if (titleId == null)
+            {
+                // Never hidden (Mehdi, 05/10): why it cannot be shown, and the button there, greyed.
+                string why = null;
+                if (rom == null) why = "the game has no file";
+                else XemuDisc.XbeForConsole(rom, exe, out why);
+                inner.Controls.Add(new Label { Text = "Its console cannot be known: " + (why ?? "its title id could not be read") + ".", AutoSize = true, MaximumSize = new Size(540, 0), ForeColor = Color.Firebrick, Margin = new Padding(0, 0, 0, 6) });
+                inner.Controls.Add(new Button { Text = "Boot this game's console, without its disc", AutoSize = true, Enabled = false });
+                box.Controls.Add(inner);
+                return box;
+            }
             var hdd = XemuPaths.GameHdd(exe, titleId);
             var lines = new List<string>();
             if (hdd != null && File.Exists(hdd))

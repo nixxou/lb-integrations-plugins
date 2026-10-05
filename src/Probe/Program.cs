@@ -119,6 +119,14 @@ namespace LbIntegrations.Probe
             if (Has(args, "--xemu-session")) return XemuCheck.SessionStep(asm, Arg(args, "--xemu-session"), Path.GetFullPath(Arg(args, "--user")), Path.GetFullPath(Arg(args, "--session"))) ? 0 : 1;
             if (Has(args, "--xemu-saves")) return XemuCheck.Saves(asm, Path.GetFullPath(Arg(args, "--console")), Arg(args, "--title"), Arg(args, "--out") is string z ? Path.GetFullPath(z) : null) ? 0 : 1;
             if (Has(args, "--xemu-console")) return XemuCheck.Console_(asm, Path.GetFullPath(Arg(args, "--base")), Path.GetFullPath(Arg(args, "--out")), Path.GetFullPath(Arg(args, "--rom"))) ? 0 : 1;
+            if (Has(args, "--xemu-describe"))
+            {
+                var d = asm.GetType("LbIntegrations.Xemu.XemuDisc", true).GetMethod("Describe", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic).Invoke(null, new object[] { Path.GetFullPath(Arg(args, "--xemu-describe")) });
+                object F(object o, string n) => o?.GetType().GetField(n, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(o);
+                var xbe = F(d, "Xbe");
+                Console.WriteLine("kind " + F(d, "Kind") + ", problem " + (F(d, "Problem") ?? "none") + ", title id " + (xbe == null ? "none" : xbe.GetType().GetProperty("TitleIdText")?.GetValue(xbe) ?? F(xbe, "TitleIdText")));
+                return 0;
+            }
             if (Has(args, "--xbox-save-keys")) return XemuCheck.MoveSaveKeys(asm, args.SkipWhile(a => a != "--xbox-save-keys").Skip(1).Select(Path.GetFullPath)) ? 0 : 1;
             if (Has(args, "--xemu")) return XemuCheck.Run(asm) ? 0 : 1;
             // Xenia's compatibility list: --xenia-compat [--online].

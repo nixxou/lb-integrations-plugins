@@ -34,19 +34,20 @@ namespace LbIntegrations.Xemu
                 if (XemuPaths.McpxPath(exe) == null || XemuPaths.FlashPath(exe) == null) return "the Xbox's BIOS is not in " + XemuPaths.BiosDir(exe);
                 if (!File.Exists(XemuPaths.BaseHdd(exe))) return "xemu's console disk is missing - update xemu from LaunchBox";
                 var rom = XemuPlugin.ResolveFullPath(XemuPlugin.Safe(() => game.ApplicationPath));
-                var d = rom == null ? null : XemuDisc.Describe(rom);
-                var titleId = d?.Xbe?.TitleId > 0 ? d.Xbe.TitleIdText : null;
-                if (titleId == null) return "the game's title id could not be read from its disc";
+                string why = "it has no file";
+                var xbe = rom == null ? null : XemuDisc.XbeForConsole(rom, exe, out why);
+                if (xbe == null) return "the game's title id could not be read: " + why;
+                var titleId = xbe.TitleIdText;
 
                 RestoreOwn(exe, "before a game's console");
                 try { if (XemuSessionConfig.MergeBack(XemuPaths.TomlOf(exe), XemuSessionConfig.SessionPath(exe))) Log.Info("xemu.toml: a session left behind merged back"); }
                 catch (Exception ex) { Log.Warn("xemu.toml: a session left behind could not be merged back", ex); }
 
                 var options = XemuOptions.Effective(XemuPlugin.Safe(() => game.Id));
-                var problem = XemuPlugin.MakeSession(exe, titleId, d.Xbe, options, null, out var hdd, out _);
+                var problem = XemuPlugin.MakeSession(exe, titleId, xbe, options, null, out var hdd, out _);
                 if (problem != null) return problem;
                 var session = XemuSessionConfig.SessionPath(exe);
-                Log.Info("console boot: " + titleId + " \"" + d.Xbe.TitleName + "\" on " + Path.GetFileName(hdd) + ", no disc");
+                Log.Info("console boot: " + titleId + " \"" + xbe.TitleName + "\" on " + Path.GetFileName(hdd) + ", no disc");
                 var p = Process.Start(new ProcessStartInfo(exe, "-config_path \"" + session + "\"") { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe) });
                 if (p == null) return "xemu did not start";
                 XemuSession.Watch(exe, hdd, null);

@@ -300,6 +300,28 @@ namespace LbIntegrations.Xemu
             catch { return null; }
         }
 
+        /// <summary>The game's XBE for its console without its disc (XemuConsoleBoot, its menu): read from its disc - or, for an
+        /// image in an archive, from the copy its first launch made. Null with <paramref name="why"/> when it cannot be read.</summary>
+        public static XbeInfo XbeForConsole(string rom, string exe, out string why)
+        {
+            why = null;
+            try
+            {
+                var d = Describe(rom);
+                if (d.Xbe?.TitleId > 0) return d.Xbe;
+                if (d.Kind == XemuDiscKind.ImageInArchive)
+                {
+                    var copy = exe == null ? null : System.IO.Path.Combine(XemuPaths.DiscCache(exe) ?? "", Safe(System.IO.Path.GetFileNameWithoutExtension(rom)) + "-" + StampHash(rom) + ".iso");
+                    if (copy != null && File.Exists(copy) && Describe(copy).Xbe is XbeInfo x && x.TitleId > 0) return x;
+                    why = "its disc image is inside an archive, and is read only once copied, at the game's first launch - launch it once";
+                    return null;
+                }
+                why = d.Problem ?? "its disc's default.xbe could not be read";
+                return null;
+            }
+            catch (Exception ex) { why = ex.Message; return null; }
+        }
+
         public static void Remember(string rom, XbeInfo xbe)
         {
             try
