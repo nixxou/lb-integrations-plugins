@@ -303,6 +303,47 @@ namespace LbIntegrations.Probe
                     Check("... the one in " + Path.GetFileName(flash), keys.GetMethod("CertificateKeyOf", Any).Invoke(null, new object[] { Path.Combine(biosDir, "mcpx_1.0.bin"), flash }) is byte[] own && own.SequenceEqual(retail));
         }
 
+        /// <summary>--xemu-states-cycle &lt;an xemu folder COPY&gt; --title id: its game's snapshots exported as state files, one removed
+        /// as LaunchBox's Remove does, put back as its Restore does - each step checked on the console.</summary>
+        public static bool StatesCycle(Assembly asm, string emuDir, string titleId)
+        {
+            _asm = asm;
+            var exe = Path.Combine(emuDir, "x.emu.exe");
+            var states = T("Saves.XemuStates");
+            object M(string m, params object[] a) { try { return states.GetMethod(m, Any).Invoke(null, a); } catch (TargetInvocationException ex) { throw ex.InnerException ?? ex; } }
+            List<string> Mirror(bool rewrite) { var said = ((IEnumerable<string>)M("Mirror", exe, titleId, rewrite, (Func<string>)(() => "test-keys"))).ToList(); foreach (var s in said) Console.WriteLine("    > " + s); return said; }
+            var console = Path.Combine(emuDir, "hdd", "games", titleId + ".qcow2");
+            var img = T("Saves.Qcow2Image");
+            List<string> Snaps()
+            {
+                using var q = (IDisposable)img.GetMethod("Open", Any).Invoke(null, new object[] { console });
+                return ((System.Collections.IEnumerable)q.GetType().GetProperty("Snapshots").GetValue(q)).Cast<object>()
+                       .Select(s => (string)s.GetType().GetField("Name").GetValue(s)).ToList();
+            }
+            var dir = (string)M("Dir", exe, titleId);
+            var first = Snaps();
+            Console.WriteLine("  console: " + first.Count + " snapshot(s): " + string.Join(", ", first));
+            var w = System.Diagnostics.Stopwatch.StartNew();
+            Mirror(false);
+            var files = Directory.GetFiles(dir, "*.xemustate").OrderBy(f => f).ToList();
+            Console.WriteLine("  exported in " + w.Elapsed.TotalSeconds.ToString("0.0") + " s: " + string.Join(", ", files.Select(f => Path.GetFileName(f) + " " + (new FileInfo(f).Length >> 20) + " MB")));
+            Check("a listing: one state file per snapshot", files.Count == first.Count);
+            Check("... again: nothing to do", Mirror(false).Count == 0);
+            if (files.Count < 2) return _bad == 0;
+            var keep = Path.Combine(emuDir, "kept-" + Path.GetFileName(files[1]));
+            File.Copy(files[1], keep, overwrite: true);
+            File.Delete(files[1]);                                       // LaunchBox's Remove
+            Check("a file removed, a listing: the console untouched", Mirror(false).Any(s => s.Contains("wait")) && Snaps().Count == first.Count);
+            Mirror(true);
+            Check("... at a launch: its snapshot taken out", Snaps().Count == first.Count - 1 && !Snaps().Contains(first[1]), string.Join(", ", Snaps()));
+            File.Copy(keep, files[1], overwrite: true);                  // LaunchBox's Restore
+            Mirror(true);
+            var after = Snaps();
+            Check("the file restored: its snapshot back in the console", after.Count == first.Count && after.Contains(first[1]), string.Join(", ", after));
+            Check("... and nothing more to do", Mirror(false).Count == 0 && Directory.GetFiles(dir, "*.xemustate").Length == first.Count);
+            return _bad == 0;
+        }
+
         /// <summary>--qcow2-snapshots &lt;a COPY of a console&gt; [--title id --zip save]: its snapshots listed; then, with a save,
         /// the save put into it (XemuSaveStore.Insert - the rebuild with snapshots), and every snapshot read again: its table
         /// entry and every cluster of its L1 (disk and VM state) the same as before, byte for byte.</summary>

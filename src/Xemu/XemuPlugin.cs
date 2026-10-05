@@ -415,6 +415,8 @@ namespace LbIntegrations.Xemu
             hdd = XemuPaths.GameHdd(exe, titleId); set = null;
             // ITS SAVE FILE FIRST: lbip-saves\<title id>.cxbxsave is what counts - put there since the last session, it goes into
             // the console now (XemuSaveFiles.Sync, Shared.Xbox\XboxSaveSync).
+            // Its savestates first: a state restored or removed in LaunchBox into the console (Saves\XemuStates).
+            XemuSaveFiles.States(exe, titleId, rewrite: true);
             try { XemuSaveFiles.Sync(exe, titleId, LbIntegrations.Xbox.XboxSyncMode.Launch); }
             catch (Exception ex) { return "its save could not be put into its console: " + ex.Message + "\n\nNothing was changed. Move or remove its file in " + Path.GetDirectoryName(XemuSaveFiles.PackPath(exe, titleId)) + " to start without it."; }
             if (!File.Exists(hdd))

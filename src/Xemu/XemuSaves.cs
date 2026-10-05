@@ -90,6 +90,35 @@ namespace LbIntegrations.Xemu
         {
             try { using var a = SharpCompress.Archives.Zip.ZipArchive.Open(path); return a.Entries != null; } catch { return false; }
         }
+
+        /// <summary>The game's savestates and their files in step (Saves\XemuStates) - never while xemu runs.</summary>
+        public static void States(string exe, string titleId, bool rewrite)
+        {
+            if (XemuPaths.Running(exe)) return;
+            try
+            {
+                foreach (var line in XemuStates.Mirror(exe, titleId, rewrite, () => StampKeys(exe, titleId))) Log.Info("savestates: " + titleId + " - " + line);
+            }
+            catch (Exception ex) { Log.Warn("savestates: " + titleId + " could not be put in step", ex); }
+        }
+
+        public static List<XemuStateFile> StateFiles(string exe, string titleId)
+        {
+            var dir = XemuStates.Dir(exe, titleId);
+            if (dir == null || !Directory.Exists(dir)) return new List<XemuStateFile>();
+            return Directory.GetFiles(dir, "*" + XemuStates.Extension).Select(XemuStates.Read).Where(f => f != null).OrderBy(f => f.Slot).ToList();
+        }
+
+        /// <summary>The keys the console is written with - its stamp's keys= line (XboxSaveSync).</summary>
+        private static string StampKeys(string exe, string titleId)
+        {
+            try
+            {
+                var stamp = Path.ChangeExtension(XemuPaths.GameHdd(exe, titleId), ".stamp");
+                return File.Exists(stamp) ? File.ReadAllLines(stamp).FirstOrDefault(l => l.StartsWith("keys="))?.Substring(5) : null;
+            }
+            catch { return null; }
+        }
     }
 
     public partial class XemuPlugin
@@ -127,10 +156,16 @@ namespace LbIntegrations.Xemu
                 var titleId = XemuDisc.TitleIdOf(ResolveFullPath(rom), exe);
                 if (titleId == null) return;
                 var pack = XemuSaveFiles.Capture(exe, titleId);
-                if (pack == null || !File.Exists(pack)) return;
                 if (!seen.Add(titleId + "|" + gameId + "|" + appId)) return;
-                var info = new FileInfo(pack);
-                into.Add(Row(gameId, appId, pack, titleId, title, info.Length, info.LastWriteTimeUtc));
+                if (pack != null && File.Exists(pack))
+                {
+                    var info = new FileInfo(pack);
+                    into.Add(Row(gameId, appId, pack, titleId, title, info.Length, info.LastWriteTimeUtc));
+                }
+                // Its savestates (Saves\XemuStates): the snapshots of its console, mirrored as files - exported when new.
+                XemuSaveFiles.States(exe, titleId, rewrite: false);
+                foreach (var f in XemuSaveFiles.StateFiles(exe, titleId))
+                    into.Add(StateRow(gameId, appId, f, titleId));
             }
             catch (Exception ex) { Log.Warn("could not collect the save of " + rom, ex); }
         }
@@ -150,6 +185,36 @@ namespace LbIntegrations.Xemu
                 ReportedLastModifiedUtc = when == default ? (DateTime?)null : when,
             };
 
+        private const string StatePrefix = "xemustate:", StateChipText = "xemu savestate";
+
+        private static GameSaveState StateRow(string gameId, string appId, XemuStateFile f, string titleId)
+        {
+            var info = new FileInfo(f.Path);
+            return new GameSaveState
+            {
+                GameId = gameId,
+                AdditionalApplicationId = appId,
+                FileLocation = f.Path,
+                IsDirectory = false,
+                OriginalFileName = Path.GetFileName(f.Path),
+                Slot = f.Slot,
+                SaveGroupId = StatePrefix + titleId + ":" + f.Slot,
+                SaveGroupName = "xemu savestates",
+                DisplayChipText = StateChipText + (string.IsNullOrWhiteSpace(f.Name) ? "" : " - " + f.Name),
+                ReportedFileSizeBytes = info.Length,
+                ReportedLastModifiedUtc = f.DateSec > 0 ? DateTimeOffset.FromUnixTimeSeconds(f.DateSec).UtcDateTime : info.LastWriteTimeUtc,
+            };
+        }
+
+        /// <summary>A savestate's title id and slot, from its group "xemustate:<title id>:<slot>".</summary>
+        private static (string TitleId, int Slot)? StateOf(GameSaveBase save)
+        {
+            var g = Safe(() => save?.SaveGroupId);
+            if (g == null || !g.StartsWith(StatePrefix, StringComparison.OrdinalIgnoreCase)) return null;
+            var c = g.Substring(StatePrefix.Length).Split(':');
+            return c.Length == 2 && c[0].Length == 8 && int.TryParse(c[1], out var slot) ? (c[0].ToLowerInvariant(), slot) : ((string, int)?)null;
+        }
+
         public override bool IsSaveContainer(GameSaveBase save) => false;
         public override bool IsSecondarySaveFile(string filePath) => false;
         public override IReadOnlyList<string> GetCompanionSaveFiles(string primaryFilePath) => Array.Empty<string>();
@@ -158,6 +223,12 @@ namespace LbIntegrations.Xemu
         {
             try
             {
+                if (StateOf(save) is (string stateTitle, int stateSlot))
+                {
+                    var want = XemuStates.SlotPath(ResolveFullPath(emulatorApplicationPath), stateTitle, stateSlot);
+                    var have = Safe(() => save?.FileLocation);
+                    return want != null && have != null && File.Exists(have) && string.Equals(Path.GetFullPath(want), Path.GetFullPath(have), StringComparison.OrdinalIgnoreCase);
+                }
                 var titleId = TitleIdFrom(save);
                 if (titleId == null) return false;
                 var expected = XemuSaveFiles.PackPath(ResolveFullPath(emulatorApplicationPath), titleId);
@@ -176,6 +247,7 @@ namespace LbIntegrations.Xemu
                 if (save == null) return new AddSaveResponse("No save was supplied.");
                 var source = Safe(() => save.FileLocation);
                 if (string.IsNullOrWhiteSpace(source) || !File.Exists(source)) return new AddSaveResponse("This Xbox backup is not a file: " + source);
+                if (save is GameSaveState || StateOf(save) != null) return AddState(save, source);
                 // A backup of a save group says its game; a file imported by hand (Import Save Game File...) may not - then the
                 // game it is imported for says it, by its disc.
                 var titleId = TitleIdFrom(save) ?? TitleIdOfGame(save);
@@ -232,6 +304,16 @@ namespace LbIntegrations.Xemu
         {
             try
             {
+                if (StateOf(save) is (string stTitle, int _) && Safe(() => save?.FileLocation) is string stPath)
+                {
+                    var exeS = EmulatorFor(save);
+                    if (exeS != null && XemuPaths.Running(exeS)) return new PluginResponse(false, "xemu is running - close it first.");
+                    if (File.Exists(stPath)) File.Delete(stPath);
+                    // Its snapshot out of the console at once (or at the next launch when it cannot be rewritten now).
+                    if (exeS != null) XemuSaveFiles.States(exeS, stTitle, rewrite: true);
+                    Log.Info("removed the savestate " + stPath);
+                    return new PluginResponse(true);
+                }
                 var titleId = TitleIdFrom(save);
                 var path = Safe(() => save?.FileLocation);
                 if (titleId == null || path == null) return base.RemoveSave(save);
@@ -254,6 +336,33 @@ namespace LbIntegrations.Xemu
                 Log.Warn("RemoveSave", ex);
                 return new PluginResponse(false, "Could not remove the save: " + ex.Message);
             }
+        }
+
+        /// <summary>A savestate restored: its file put at its slot, and into the console at once (xemu not running).</summary>
+        private AddSaveResponse AddState(GameSaveBase save, string source)
+        {
+            var meta = XemuStates.Read(source);
+            if (meta == null) return new AddSaveResponse("That file is not an xemu savestate of this plugin.");
+            var titleId = StateOf(save)?.TitleId ?? meta.Title ?? TitleIdOfGame(save);
+            if (titleId == null) return new AddSaveResponse("This savestate does not say which Xbox game it belongs to.");
+            var exe = EmulatorFor(save);
+            if (exe == null) return new AddSaveResponse("Could not locate the xemu installation.");
+            if (XemuPaths.Running(exe)) return new AddSaveResponse("xemu is running - close it first, then restore the savestate.");
+            int slot = (save as GameSaveState)?.Slot ?? StateOf(save)?.Slot ?? meta.Slot;
+            if (slot <= 0) slot = meta.Slot > 0 ? meta.Slot : 1;
+            var target = XemuStates.SlotPath(exe, titleId, slot);
+            Directory.CreateDirectory(Path.GetDirectoryName(target));
+            if (!string.Equals(Path.GetFullPath(source), Path.GetFullPath(target), StringComparison.OrdinalIgnoreCase))
+            {
+                var tmp = target + ".lbip-restore";
+                File.Copy(source, tmp, overwrite: true);
+                File.Move(tmp, target, overwrite: true);
+            }
+            XemuSaveFiles.States(exe, titleId, rewrite: true);
+            Log.Info("restored the savestate " + Path.GetFileName(source) + " -> " + target);
+            var f = XemuStates.Read(target) ?? meta;
+            f.Path = target;
+            return new AddSaveResponse(StateRow(Safe(() => save.GameId), Safe(() => save.AdditionalApplicationId), f, titleId));
         }
 
         /// <summary>The title id of a save of the group "cxbx:" - this plugin's and Cxbx's, the same format - or of the older "xemu:".</summary>

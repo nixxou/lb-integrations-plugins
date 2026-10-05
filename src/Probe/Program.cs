@@ -119,6 +119,7 @@ namespace LbIntegrations.Probe
             if (Has(args, "--xemu-session")) return XemuCheck.SessionStep(asm, Arg(args, "--xemu-session"), Path.GetFullPath(Arg(args, "--user")), Path.GetFullPath(Arg(args, "--session"))) ? 0 : 1;
             if (Has(args, "--xemu-saves")) return XemuCheck.Saves(asm, Path.GetFullPath(Arg(args, "--console")), Arg(args, "--title"), Arg(args, "--out") is string z ? Path.GetFullPath(z) : null) ? 0 : 1;
             if (Has(args, "--xemu-console")) return XemuCheck.Console_(asm, Path.GetFullPath(Arg(args, "--base")), Path.GetFullPath(Arg(args, "--out")), Path.GetFullPath(Arg(args, "--rom"))) ? 0 : 1;
+            if (Has(args, "--xemu-states-cycle")) return XemuCheck.StatesCycle(asm, Path.GetFullPath(Arg(args, "--xemu-states-cycle")), Arg(args, "--title")) ? 0 : 1;
             if (Has(args, "--qcow2-snapshots")) return XemuCheck.Qcow2SnapshotsCheck(asm, Path.GetFullPath(Arg(args, "--qcow2-snapshots")), Arg(args, "--title"), Arg(args, "--zip") is string qz ? Path.GetFullPath(qz) : null) ? 0 : 1;
             if (Has(args, "--xemu-describe"))
             {

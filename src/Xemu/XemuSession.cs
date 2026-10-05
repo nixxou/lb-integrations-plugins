@@ -49,6 +49,8 @@ namespace LbIntegrations.Xemu
                     // The save the host sees, brought up to date with the console the game just wrote (XemuSaves).
                     try { XemuSaveFiles.Sync(exe, System.IO.Path.GetFileNameWithoutExtension(gameHdd), LbIntegrations.Xbox.XboxSyncMode.SessionEnd); }
                     catch (Exception ex) { Log.Warn("session: the save could not be captured", ex); }
+                    // The snapshots made during it, exported for LaunchBox (Saves\XemuStates).
+                    XemuSaveFiles.States(exe, System.IO.Path.GetFileNameWithoutExtension(gameHdd), rewrite: false);
                 }
             });
         }

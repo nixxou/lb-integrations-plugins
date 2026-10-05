@@ -169,8 +169,8 @@ namespace LbIntegrations.Xemu.Saves
             }
 
             var dir = Path.GetDirectoryName(Path.GetFullPath(path));
-            var name = Path.GetRelativePath(dir, Path.GetFullPath(backing)).Replace('\\', '/');
-            var nameBytes = Encoding.UTF8.GetBytes(name);
+            // No backing (a savestate's file): its tables reach only the clusters it holds.
+            var nameBytes = backing == null ? new byte[0] : Encoding.UTF8.GetBytes(Path.GetRelativePath(dir, Path.GetFullPath(backing)).Replace('\\', '/'));
             if (nameBytes.Length > 1023) throw new NotSupportedException("the backing file's path is too long");
 
             // ── layout, in clusters: 0 the header, the L1 tables, the L2 tables, the data, the snapshot table, the refcounts ──
@@ -231,14 +231,17 @@ namespace LbIntegrations.Xemu.Saves
                     PutBE64(h, 64, (ulong)(snapAt * cs));
                     PutBE32(h, 96, 4);                                   // refcount_order: 16-bit
                     PutBE32(h, 100, 112);
-                    int at = 112;
-                    var fmt = Encoding.ASCII.GetBytes("qcow2");
-                    PutBE32(h, at, 0xE2792ACA); PutBE32(h, at + 4, (uint)fmt.Length); Buffer.BlockCopy(fmt, 0, h, at + 8, fmt.Length);
-                    at += 8 + ((fmt.Length + 7) / 8) * 8;
-                    at += 8;                                             // end of extensions
-                    Buffer.BlockCopy(nameBytes, 0, h, at, nameBytes.Length);
-                    PutBE64(h, 8, (ulong)at);
-                    PutBE32(h, 16, (uint)nameBytes.Length);
+                    if (nameBytes.Length > 0)
+                    {
+                        int at = 112;
+                        var fmt = Encoding.ASCII.GetBytes("qcow2");
+                        PutBE32(h, at, 0xE2792ACA); PutBE32(h, at + 4, (uint)fmt.Length); Buffer.BlockCopy(fmt, 0, h, at + 8, fmt.Length);
+                        at += 8 + ((fmt.Length + 7) / 8) * 8;
+                        at += 8;                                         // end of extensions
+                        Buffer.BlockCopy(nameBytes, 0, h, at, nameBytes.Length);
+                        PutBE64(h, 8, (ulong)at);
+                        PutBE32(h, 16, (uint)nameBytes.Length);
+                    }
                     Put(f, 0, h);
 
                     for (int t = 0; t < tables.Count; t++)
