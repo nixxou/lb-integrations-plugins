@@ -69,6 +69,37 @@ namespace LbIntegrations.Demul
         public static int GaelcoScaling { get { var v = Int("GaelcoScaling", 1); return v >= 1 && v <= 6 ? v : 1; } }
         public static void SetGaelcoScaling(int value) => Write("GaelcoScaling", Math.Max(1, Math.Min(6, value)).ToString());
 
+        // ── a game's own: games\<game id>.ini beside settings.ini, the same keys; a key absent = every game's ──
+        // Written by the game's window (DemulGameMenu), read at its launch (DemulLaunch.PrepareGpu with its id).
+
+        public static string GamePath(string gameId)
+        {
+            var safe = string.Concat((gameId ?? "").Where(c => char.IsLetterOrDigit(c) || c == '-'));
+            return safe.Length == 0 ? null : Path.Combine(Path.GetDirectoryName(SettingsPath), "games", safe + ".ini");
+        }
+
+        /// <summary>The game's own value of <paramref name="key"/>, or null: it follows every game's.</summary>
+        public static string GameValue(string gameId, string key)
+        {
+            var path = GamePath(gameId);
+            return path == null ? null : Read(path).TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v) ? v.Trim().ToLowerInvariant() : null;
+        }
+
+        /// <summary>The game's own value set, or taken away with null.</summary>
+        public static void SetGameValue(string gameId, string key, string value)
+        {
+            var path = GamePath(gameId);
+            if (path != null) Write(path, key, value);
+        }
+
+        public static bool FullscreenFor(string gameId) => GameBool(gameId, "Fullscreen") ?? Fullscreen;
+        public static bool VSyncFor(string gameId) => GameBool(gameId, "VSync") ?? VSync;
+        public static int AspectFor(string gameId) => int.TryParse(GameValue(gameId, "Aspect"), out var a) && a >= 0 && a <= 2 ? a : Aspect;
+        public static int GaelcoScalingFor(string gameId) => int.TryParse(GameValue(gameId, "GaelcoScaling"), out var s) && s >= 1 && s <= 6 ? s : GaelcoScaling;
+        public static string VideoPluginFor(string gameId) { var v = GameValue(gameId, "VideoPlugin"); return v == "new" || v == "old" || v == "auto" ? v : VideoPlugin; }
+
+        private static bool? GameBool(string gameId, string key) { var v = GameValue(gameId, key); return v == "true" ? true : v == "false" ? false : (bool?)null; }
+
         public static string SettingsPath
         {
             get
@@ -81,7 +112,7 @@ namespace LbIntegrations.Demul
             }
         }
 
-        private static string Text(string key) => Read().TryGetValue(key, out var s) ? (s ?? "").Trim().ToLowerInvariant() : null;
+        private static string Text(string key) => Read(SettingsPath).TryGetValue(key, out var s) ? (s ?? "").Trim().ToLowerInvariant() : null;
 
         private static int Int(string key, int fallback) => int.TryParse(Text(key), out var n) ? n : fallback;
 
@@ -93,12 +124,11 @@ namespace LbIntegrations.Demul
             return fallback;
         }
 
-        private static Dictionary<string, string> Read()
+        private static Dictionary<string, string> Read(string path)
         {
             var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             try
             {
-                var path = SettingsPath;
                 if (!File.Exists(path)) return values;
                 foreach (var line in File.ReadAllLines(path))
                 {
@@ -107,16 +137,19 @@ namespace LbIntegrations.Demul
                     values[line.Substring(0, at).Trim()] = line.Substring(at + 1).Trim();
                 }
             }
-            catch (Exception ex) { Log.Warn("settings: could not read " + SettingsPath, ex); }
+            catch (Exception ex) { Log.Warn("settings: could not read " + path, ex); }
             return values;
         }
 
-        private static void Write(string key, string value)
+        private static void Write(string key, string value) => Write(SettingsPath, key, value);
+
+        /// <summary><paramref name="key"/> set in <paramref name="path"/> - taken out with a null value.</summary>
+        private static void Write(string path, string key, string value)
         {
-            var path = SettingsPath;
             var lines = File.Exists(path) ? File.ReadAllLines(path).ToList() : new List<string>();
             lines.RemoveAll(l => l.IndexOf('=') > 0 && string.Equals(l.Substring(0, l.IndexOf('=')).Trim(), key, StringComparison.OrdinalIgnoreCase));
-            lines.Add(key + "=" + value);
+            if (value != null) lines.Add(key + "=" + value);
+            if (value == null && lines.Count == 0 && !File.Exists(path)) return;
             Directory.CreateDirectory(Path.GetDirectoryName(path));
             File.WriteAllLines(path, lines);
         }

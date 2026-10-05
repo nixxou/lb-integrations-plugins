@@ -310,7 +310,7 @@ namespace LbIntegrations.Demul
                 var bios = DemulBios.For(system, DemulPlatforms.BoardOf(platform));
                 if (bios != null) DemulBios.Import(Path.GetDirectoryName(exe), new[] { bios });
 
-                DemulLaunch.PrepareIni(exe, system, rom);
+                DemulLaunch.PrepareIni(exe, system, rom, Safe(() => args?.GameBeingLaunched?.Id));
                 var line = DemulLaunch.CommandLine(Safe(() => args?.CurrentCommandLine) ?? "", system, rom);
                 Log.Info("command line: " + line);
                 return new PrepareForLaunchResponse(success: true) { NewCommandLine = line };

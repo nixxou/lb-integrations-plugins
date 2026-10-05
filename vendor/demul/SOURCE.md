@@ -19,3 +19,12 @@ Virtual-On Force and the Hikaru check ROM (Hikaru 9/9), System SP 29/30 (2018: 1
 `arcade_compat.txt`, the only per-game list of what boots and what plays.
 
 Licence: DEmul is closed-source freeware by the DEmul team (http://demul.emulation64.com/team/).
+
+## src/Demul/arcade_compat.txt
+
+The DEmul team's `arcade_compat.txt` (2018-02-01), byte for byte, from the site's last build `demul07_280418.7z`
+(http://demul.emulation64.com/files/demul07_280418.7z, 2 966 871 bytes, SHA-256
+AE3F11ED5D36C4F327B3428B8947181284A7F9AE302D811852D4D7A4E9AF9148): per romset, players, rotation, controls, the
+BIOS region it wants, and whether it reaches test mode, boots and plays. The site's own compatibility page
+(/compat/) fails since its database went (a PHP error, 06/10), and the 2025 build ships no such list: this is
+the only one. Embedded in Demul.dll (DemulCompat); sets added after 2018 are not in it.

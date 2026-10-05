@@ -29,7 +29,7 @@ namespace LbIntegrations.Probe
                 var settings = asm.GetType("LbIntegrations.Demul.DemulSettings", true);
                 settings.GetField("PathOverride", Any).SetValue(null, Path.Combine(dir, "settings.ini"));
                 var launch = asm.GetType("LbIntegrations.Demul.DemulLaunch", true);
-                void Prepare(string system) { try { launch.GetMethod("PrepareGpu", Any).Invoke(null, new object[] { dir, system }); } catch (TargetInvocationException ex) { throw ex.InnerException ?? ex; } }
+                void Prepare(string system, string game = null) { try { launch.GetMethod("PrepareGpu", Any).Invoke(null, new object[] { dir, system, game }); } catch (TargetInvocationException ex) { throw ex.InnerException ?? ex; } }
                 void Set(string m, object v) => settings.GetMethod(m, Any).Invoke(null, new[] { v });
                 string Value(string file, string key) => File.ReadAllLines(Path.Combine(dir, file)).Select(l => l.Split('=')).Where(p => p.Length == 2 && p[0].Trim().Equals(key, StringComparison.OrdinalIgnoreCase)).Select(p => p[1].Trim()).FirstOrDefault();
 
@@ -60,13 +60,36 @@ namespace LbIntegrations.Probe
                 Check("scaling stays 1 off Gaelco", Value("gpuDX11.ini", "scaling") == "1");
                 Prepare("gaelco");
                 Check("a Gaelco game: the OLD plugin's file, gpuDX11old.ini, scaling = 3", File.Exists(Path.Combine(dir, "gpuDX11old.ini")) && Value("gpuDX11old.ini", "scaling") == "3");
-                var old = (bool)launch.GetMethod("OldGpu", Any).Invoke(null, new object[] { "cave3rd" }) && !(bool)launch.GetMethod("OldGpu", Any).Invoke(null, new object[] { "hikaru" });
+                var old = (bool)launch.GetMethod("OldGpu", Any).Invoke(null, new object[] { "cave3rd", null }) && !(bool)launch.GetMethod("OldGpu", Any).Invoke(null, new object[] { "hikaru", null });
                 Check("by board: old plugin for CV1000, new for Hikaru", old);
                 Set("SetVideoPlugin", "new");
-                Check("forced new: not even Gaelco gets the old one", !(bool)launch.GetMethod("OldGpu", Any).Invoke(null, new object[] { "gaelco" }));
+                Check("forced new: not even Gaelco gets the old one", !(bool)launch.GetMethod("OldGpu", Any).Invoke(null, new object[] { "gaelco", null }));
                 Set("SetVideoPlugin", "old");
-                Check("forced old: Naomi gets it too", (bool)launch.GetMethod("OldGpu", Any).Invoke(null, new object[] { "naomi" }));
+                Check("forced old: Naomi gets it too", (bool)launch.GetMethod("OldGpu", Any).Invoke(null, new object[] { "naomi", null }));
 
+                Console.WriteLine("  a game's own options (games\\<id>.ini) win over every game's:");
+                Set("SetVideoPlugin", "auto");
+                settings.GetMethod("SetGameValue", Any).Invoke(null, new object[] { "game-1", "Aspect", "0" });
+                settings.GetMethod("SetGameValue", Any).Invoke(null, new object[] { "game-1", "VSync", "false" });
+                Prepare("naomi", "game-1");
+                Check("its aspect 0 and vsync off, every game's 16:9 and vsync on elsewhere", Value("gpuDX11.ini", "aspect") == "0" && Value("gpuDX11.ini", "Vsync") == "0");
+                Prepare("naomi", "game-2");
+                Check("another game: every game's (aspect 2, vsync 1)", Value("gpuDX11.ini", "aspect") == "2" && Value("gpuDX11.ini", "Vsync") == "1");
+                settings.GetMethod("SetGameValue", Any).Invoke(null, new object[] { "game-1", "Aspect", null });
+                Check("a value taken away: it follows every game's again", (int)settings.GetMethod("AspectFor", Any).Invoke(null, new object[] { "game-1" }) == 2);
+
+                Console.WriteLine("  the DEmul team's compatibility list (embedded):");
+                var compat = asm.GetType("LbIntegrations.Demul.DemulCompat", true);
+                var all = (System.Collections.IDictionary)compat.GetProperty("All", Any).GetValue(null);
+                Console.WriteLine("    " + all.Count + " sets");
+                object E(string n) => compat.GetMethod("Of", Any).Invoke(null, new object[] { @"C:\roms\" + n + ".zip" });
+                string P(object e, string m) => e?.GetType().GetProperty(m)?.GetValue(e)?.ToString() ?? e?.GetType().GetField(m)?.GetValue(e)?.ToString();
+                Check("over 250 sets read", all.Count > 250, all.Count.ToString());
+                Check("18wheelr: Playable, its note: motorboard unemulated", P(E("18wheelr"), "Verdict") == "Playable" && P(E("18wheelr"), "Notes") == "motorboard unemulated", P(E("18wheelr"), "Verdict"));
+                Check("capsnk: Works, Naomi cartridge system, 2 players", P(E("capsnk"), "Verdict") == "Works" && P(E("capsnk"), "Section") == "Naomi cartridge system" && P(E("capsnk"), "Players") == "2");
+                Check("derbyo2k: Boots (link unemulated), wants a US BIOS", P(E("derbyo2k"), "Verdict") == "Boots" && P(E("derbyo2k"), "Bios") == "Usa");
+                Check("vf4cart: Naomi 2 cartridge system", P(E("vf4cart"), "Section") == "Naomi 2 cartridge system");
+                Check("a set not in it: null", E("notaset") == null);
                 Console.WriteLine("  the import settings:");
                 Check("sorting on by default, for every board", ((string[])settings.GetField("Boards", Any).GetValue(null)).All(b => (bool)settings.GetMethod("SortImport", Any).Invoke(null, new object[] { b })));
                 Set("SetUnknownSets", "drop");
@@ -76,6 +99,23 @@ namespace LbIntegrations.Probe
             finally { try { Directory.Delete(dir, true); } catch { } }
             Console.WriteLine(_bad == 0 ? "  all good" : "  " + _bad + " failed");
             return _bad == 0;
+        }
+
+        /// <summary>--demul-shot <png> --rom <set or disc> --platform <platform>: a game's window drawn off screen (a stub game).</summary>
+        public static bool Shot(Assembly asm, string png, string rom, string platform)
+        {
+            var settings = asm.GetType("LbIntegrations.Demul.DemulSettings", true);
+            settings.GetField("PathOverride", Any).SetValue(null, Path.Combine(Path.GetTempPath(), "lbip-demul-shot-settings.ini"));
+            var game = StubGame.With(StubGame.Create("demul-shot", Path.GetFileNameWithoutExtension(rom), rom), "Platform", platform);
+            var formType = asm.GetType("LbIntegrations.Demul.DemulGameForm", true);
+            using var form = (System.Windows.Forms.Form)Activator.CreateInstance(formType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new object[] { new Unbroken.LaunchBox.Plugins.Data.IGame[] { game } }, null);
+            form.StartPosition = System.Windows.Forms.FormStartPosition.Manual; form.Location = new System.Drawing.Point(-4000, 0);
+            form.Show(); System.Windows.Forms.Application.DoEvents(); System.Threading.Thread.Sleep(300); System.Windows.Forms.Application.DoEvents();
+            using var bmp = new System.Drawing.Bitmap(form.Width, form.Height);
+            form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, form.Width, form.Height));
+            bmp.Save(png);
+            Console.WriteLine("  " + png);
+            return true;
         }
     }
 }
