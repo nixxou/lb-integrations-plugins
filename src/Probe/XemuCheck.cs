@@ -328,6 +328,9 @@ namespace LbIntegrations.Probe
             var files = Directory.GetFiles(dir, "*.xemustate").OrderBy(f => f).ToList();
             Console.WriteLine("  exported in " + w.Elapsed.TotalSeconds.ToString("0.0") + " s: " + string.Join(", ", files.Select(f => Path.GetFileName(f) + " " + (new FileInfo(f).Length >> 20) + " MB")));
             Check("a listing: one state file per snapshot", files.Count == first.Count);
+            var pngs = files.Select(f => (byte[])M("FileThumbnail", f)).ToList();
+            Console.WriteLine("  pictures in the files: " + string.Join(", ", pngs.Select(p => p == null ? "none" : (p.Length >> 10) + " KB")));
+            Check("... each carrying its picture, a PNG", pngs.Any(p => p != null) && pngs.Where(p => p != null).All(p => p.Length > 8 && p[0] == 0x89 && p[1] == (byte)'P' && p[2] == (byte)'N' && p[3] == (byte)'G'));
             Check("... again: nothing to do", Mirror(false).Count == 0);
             if (files.Count < 2) return _bad == 0;
             var keep = Path.Combine(emuDir, "kept-" + Path.GetFileName(files[1]));

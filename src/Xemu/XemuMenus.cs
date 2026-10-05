@@ -483,7 +483,7 @@ namespace LbIntegrations.Xemu
             else if (m.Snapshots != null && m.Snapshots.Count > 0)
             {
                 _files.Controls.Add(Note(m.Snapshots.Count + " snapshot(s) in it" + (XemuSettings.Savestates() ? "" : " - savestates are off (the Nixx window's xemu tab): not shown in LaunchBox")));
-                var pending = new List<(PictureBox Box, string Identity)>();
+                var pending = new List<(PictureBox Box, string Identity, string File)>();
                 foreach (var s in m.Snapshots)
                 {
                     var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(14, 4, 0, 2) };
@@ -496,14 +496,14 @@ namespace LbIntegrations.Xemu
                     else text.Controls.Add(new Label { AutoSize = true, ForeColor = SystemColors.GrayText, Text = XemuSettings.Savestates() ? "no file yet: exported at the next listing or close" : "no file: only in the console", Margin = new Padding(0, 4, 0, 0) });
                     row.Controls.Add(text);
                     _files.Controls.Add(row);
-                    pending.Add((pic, s.Identity));
+                    pending.Add((pic, s.Identity, s.File?.Path));
                 }
                 // The pictures, one by one, off the window's thread.
                 System.Threading.Tasks.Task.Run(() =>
                 {
-                    foreach (var (box, identity) in pending)
+                    foreach (var (box, identity, file) in pending)
                     {
-                        var png = Saves.XemuStates.Thumbnail(exe, titleId, identity);
+                        var png = Saves.XemuStates.Thumbnail(exe, titleId, identity, file);
                         if (png == null) continue;
                         try
                         {
@@ -518,6 +518,8 @@ namespace LbIntegrations.Xemu
             foreach (var f in m.Waiting)
             {
                 _files.Controls.Add(FileRow("Slot " + f.Slot + " (\"" + f.Name + "\")", exe, f.Path));
+                if (Saves.XemuStates.FileThumbnail(f.Path) is byte[] own)
+                    try { _files.Controls.Add(new PictureBox { Size = new Size(128, 96), SizeMode = PictureBoxSizeMode.Zoom, BorderStyle = BorderStyle.FixedSingle, BackColor = Color.Black, Margin = new Padding(14, 2, 0, 2), Image = Image.FromStream(new MemoryStream(own)) }); } catch { }
                 _files.Controls.Add(Note("Not in the console: put into it at the next launch" + (XemuSettings.Savestates() ? "" : ", once savestates are on")));
             }
 

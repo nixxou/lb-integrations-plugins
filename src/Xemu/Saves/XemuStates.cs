@@ -7,6 +7,8 @@
 //     state.qcow2         a qcow2 of its own, no backing, holding that one snapshot: its table entry and every cluster its L1
 //                         reaches - the disk of the game's console as it was (only what differs from the dashboard's disk)
 //                         and the VM state past the disk's end (RAM, devices, xemu's thumbnail)
+//     thumbnail.png       that thumbnail, taken out (Qcow2Image.SnapshotThumbnail) when it can be - for a window to show it
+//                         without reading the state; a file without it is the same file (05/10)
 // Measured 05/10 on Batman: a snapshot's VM state 35 MB (QEMU skips the empty pages).
 //
 // THE CONSOLE IS WHAT XEMU LOADS, THE FILES WHAT LAUNCHBOX SEES; an index beside the console (hdd\games\<title id>.states)
@@ -173,6 +175,16 @@ namespace LbIntegrations.Xemu.Saves
                     var e = z.CreateEntry("state.qcow2", CompressionLevel.Optimal);
                     e.LastWriteTime = new DateTimeOffset(1980, 1, 1, 0, 0, 0, TimeSpan.Zero);
                     using (var src = File.OpenRead(qcow)) using (var dst = e.Open()) src.CopyTo(dst);
+                    // Its picture beside it, when it can be had (Mehdi, 05/10) - never in the way: without it the file is the same.
+                    byte[] png = null;
+                    try { png = console.SnapshotThumbnail(sn); } catch { }
+                    if (png != null)
+                    {
+                        var t = z.CreateEntry(ThumbnailEntry, CompressionLevel.NoCompression);
+                        t.LastWriteTime = new DateTimeOffset(1980, 1, 1, 0, 0, 0, TimeSpan.Zero);
+                        using var dst = t.Open();
+                        dst.Write(png, 0, png.Length);
+                    }
                 }
                 File.Move(part, target, overwrite: true);
             }
@@ -240,8 +252,10 @@ namespace LbIntegrations.Xemu.Saves
 
         /// <summary>The thumbnail of the snapshot <paramref name="identity"/> of the game's console (Qcow2Image.SnapshotThumbnail),
         /// or null. Read only.</summary>
-        public static byte[] Thumbnail(string exe, string titleId, string identity)
+        public static byte[] Thumbnail(string exe, string titleId, string identity, string file = null)
         {
+            // Its file's picture first, when it has one: a few KB, against the console's whole VM state.
+            if (file != null && FileThumbnail(file) is byte[] own) return own;
             lock (Gate)
             {
                 try
@@ -254,6 +268,24 @@ namespace LbIntegrations.Xemu.Saves
                 }
                 catch { return null; }
             }
+        }
+
+        public const string ThumbnailEntry = "thumbnail.png";
+
+        /// <summary>The picture a state file carries (thumbnail.png, 05/10 on), or null - an older file has none.</summary>
+        public static byte[] FileThumbnail(string file)
+        {
+            try
+            {
+                using var z = ZipFile.OpenRead(file);
+                var e = z.GetEntry(ThumbnailEntry);
+                if (e == null || e.Length > 8 << 20) return null;
+                using var s = e.Open();
+                using var m = new MemoryStream();
+                s.CopyTo(m);
+                return m.ToArray();
+            }
+            catch { return null; }
         }
 
         // ── the mirror ───────────────────────────────────────────────────────
