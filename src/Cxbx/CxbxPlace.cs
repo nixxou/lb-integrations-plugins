@@ -287,7 +287,8 @@ namespace LbIntegrations.Cxbx
                 case CxbxRomKind.Image:
                 {
                     // Plain, CSO, CCI or CHD: the disc's bytes, opened once.
-                    using var disc = Disc.DiscImages.Open(d.Path);
+                    // Unpacked in the disc's order: a CHD on the cores the RAM disk options give (chd_threads, ChdParallel).
+                    using var disc = Disc.DiscImages.Open(d.Path, RamDisk.RamDiskOptions.Load().ChdThreads);
                     long length = disc.Length;
                     return Xdvdfs.ExtractListed(listing, () => Disc.DiscImages.Shared(disc), true, target,
                                                 (pos, pass) => progress("Unpacking", length > 0 ? (double)pos / length : (double?)null));

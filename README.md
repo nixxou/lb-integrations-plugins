@@ -552,6 +552,13 @@ reboot every loopback connection of AIM's driver was refused (STATUS_CONNECTION_
 memory unaffected. Batman's XISO through it: 1.9 GB/s, 0.054 ms per random 2 KB read (the port: 0.8 GB/s, 0.24 ms, 04/10);
 its ZArchive 0.8 GB/s, 0.10 ms, byte-identical; its CHD 54 MB/s, 0.59 ms - decompression, not the transport, dominates.
 
+**A CHD decoded on several cores** (`src/Shared.Disc/ChdParallel.cs`, `chd_threads=0|2|4|8` in `ramdisk.ini`, default 4,
+helper 1.13): read in sequence, the next 32 MB are decoded ahead by worker threads, each with its own `ChdFile`, by batches
+of 64 hunks; a read at random stays one hunk on the caller's thread. Measured 06/10 on Batman's CHD (891 200 hunks of 4 KB):
+CHDSharp's stream 83 MB/s on one core; ours 150 / 235 / 301 MB/s on 2 / 4 / 8; `ReadHunkConcurrent` was slower than one
+thread and is not used. Served by AIM with 4 cores: 318 MB/s over the whole disc (54 before), SHA-256 = the patched ISO.
+Each core holds its own copy of the CHD's map: about 90 MB for a DVD.
+
 **The media patch, extract-xiso's rule** (`XboxMediaPatch`, on unless `media_patch=0`): in every `.xbe` of the disc, the
 bytes `E8 CA FD FF FF 85 C0 7D` get their last made `EB`. extract-xiso does it by default when it makes an XISO; xdvdfs does
 not, and xemu's docs warn that "some games on some BIOSes will not load as a result". Measured 04/10: Batman: Rise of Sin

@@ -1033,6 +1033,8 @@ namespace RamDiskHelper
                 psi.ArgumentList.Add(image);
                 if (viewName == "xiso" && Get(kv, "patch", "").Equals("media", StringComparison.OrdinalIgnoreCase)) psi.ArgumentList.Add("media");
                 if (shmName != null) psi.Environment["LBIP_PROXY_SHM"] = shmName;
+                // 1.13: a CHD decoded on that many cores while it is read in sequence (Shared.Disc\ChdParallel).
+                if (int.TryParse(Get(kv, "chd_threads", ""), out int chdThreads) && chdThreads >= 0 && chdThreads <= 16) psi.Environment["LBIP_CHD_THREADS"] = chdThreads.ToString();
                 server = Process.Start(psi);
                 // Listing a redump reads its tables across the image: seconds, a minute on a slow disk.
                 var first = server.StandardOutput.ReadLineAsync();
@@ -1097,6 +1099,7 @@ namespace RamDiskHelper
         /// <summary>--xbox-serve &lt;image&gt;: the disc's FAT32 view served to the one proxy client that connects.</summary>
         private static int XboxServe(string image)
         {
+            ChdThreadsFromEnvironment();
             try
             {
                 // 1.8: a ZArchive (.zar) is the disc it holds - its files laid out as an image (ZArchiveImage), read through
@@ -1141,6 +1144,7 @@ namespace RamDiskHelper
         /// one file of an exFAT volume, served to the one proxy client that connects.</summary>
         private static int XisoServe(string image, bool mediaPatch)
         {
+            ChdThreadsFromEnvironment();
             try
             {
                 Stream source;
@@ -1236,6 +1240,12 @@ namespace RamDiskHelper
         /// <summary>A read-only disk of <paramref name="length"/> bytes that <paramref name="read"/> gives from
         /// <paramref name="source"/>: "PORT n" said, then AIM's proxy protocol to the one client that connects (a minute at
         /// most for it to come). The source closed at the end.</summary>
+        /// <summary>The cores a CHD is decoded on in this server (LBIP_CHD_THREADS, from chd_threads= - 1.13).</summary>
+        private static void ChdThreadsFromEnvironment()
+        {
+            if (int.TryParse(Environment.GetEnvironmentVariable("LBIP_CHD_THREADS"), out int n) && n >= 0 && n <= 16) LbIntegrations.Disc.DiscImages.ChdThreads = n;
+        }
+
         private static int Serve(Stream source, long length, Func<Stream, long, byte[], int, int> read)
         {
             var shm = Environment.GetEnvironmentVariable("LBIP_PROXY_SHM");

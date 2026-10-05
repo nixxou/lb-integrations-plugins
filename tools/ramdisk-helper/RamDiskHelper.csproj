@@ -36,7 +36,7 @@
          before sending a key the older one would silently ignore. Bump it with the protocol,
          never with an ordinary fix. 1.9.1 is the one exception: the protocol of 1.9.0, self-contained - numbered
          above it so that "absent or older" replaces the framework-dependent 1.9.0 already deployed. -->
-    <Version>1.12.0</Version>
+    <Version>1.13.0</Version>
     <!-- 1.12: the shared memory proxy reads and writes its section through a pointer. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 

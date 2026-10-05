@@ -17,6 +17,11 @@
 //                                         AIM's loopback connections were all refused; shared memory, 1.9 GB/s and 0.05 ms
 //                                         per random 2 KB read where the port gave 0.8 GB/s and 0.24 ms (04/10). An older
 //                                         helper ignores the key: the port.
+//     chd_threads = 0 | 2 | 4 | 8         a CHD read in sequence decoded on that many cores (Shared.Disc\ChdParallel) -
+//                                         served without a copy (helper 1.13) or copied by Cxbx and xemu. 0: one core,
+//                                         CHDSharp's own. Default 4. Measured 06/10 on Batman's CHD: 83 MB/s on one core,
+//                                         150 on 2, 235 on 4, 301 on 8; each core holds its own copy of the CHD's map
+//                                         (90 MB for that disc). A small read at random stays one hunk on the caller's.
 //
 // WHAT IS SAVED IS A WISH, WHAT IS USED IS DECIDED AT EACH MOUNT (Mehdi, 02/10: "gaffe si on désinstalle un
 // driver entre deux lancements"): Effective() checks what is installed NOW and falls back - AIM asked and gone:
@@ -45,6 +50,7 @@ namespace LbIntegrations.RamDisk
         public bool AweFor(bool aim) => AutoMemory ? aim : Awe;
         public string Vhdx = "windows";
         public string Proxy = "auto";
+        public int ChdThreads = 4;
 
         public static string Dir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "lb-integrations-plugins");
         public static string FilePath => Path.Combine(Dir, "ramdisk.ini");
@@ -73,6 +79,7 @@ namespace LbIntegrations.RamDisk
                                 break;
                             case "vhdx": if (value == "aim" || value == "windows") o.Vhdx = value; break;
                             case "proxy": if (value == "auto" || value == "shm" || value == "tcp") o.Proxy = value; break;
+                            case "chd_threads": if (int.TryParse(value, out var ct) && ct >= 0 && ct <= 16) o.ChdThreads = ct; break;
                         }
                     }
             }
@@ -93,6 +100,7 @@ namespace LbIntegrations.RamDisk
                 "memory=" + (AutoMemory ? "auto" : Awe ? "awe" : "vm"),
                 "vhdx=" + Vhdx,
                 "proxy=" + Proxy,
+                "chd_threads=" + ChdThreads,
             });
         }
 

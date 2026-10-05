@@ -41,21 +41,26 @@ namespace LbIntegrations.Disc
         }
 
         /// <summary>The disc's bytes, seekable, from its start. Throws when the image does not open.</summary>
-        public static Stream Open(string path)
+        public static Stream Open(string path) => Open(path, ChdThreads);
+
+        /// <summary>The same, a CHD decoded on <paramref name="chdThreads"/> cores when it is read in sequence (ChdParallel; 0 or 1:
+        /// CHDSharp's own stream) - for what reads a disc from end to end or serves it, not for a listing.</summary>
+        public static Stream Open(string path, int chdThreads)
         {
             switch (Kind(path))
             {
                 case DiscContainer.Cso: return CsoImage.Open(path);
                 case DiscContainer.Cci: return CciImage.Open(path);
-                case DiscContainer.Chd: return OpenChd(path);
+                case DiscContainer.Chd: return OpenChd(path, chdThreads);
                 default: return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, FileOptions.RandomAccess);
             }
         }
 
         // Its own method: CHDSharp (and VendoredFlac) are loaded only when a CHD is opened.
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-        private static Stream OpenChd(string path)
+        private static Stream OpenChd(string path, int threads)
         {
+            if (threads > 1) return OpenChdParallel(path, threads);
             var error = CHDSharp.ChdFile.OpenAsStream(path, out var stream, CancellationToken.None);
             if (stream == null || error.ToString() != "Chderrnone")
             {
@@ -63,6 +68,18 @@ namespace LbIntegrations.Disc
                 throw new InvalidDataException("the CHD does not open (" + error + ")");
             }
             return stream;
+        }
+
+        /// <summary>What Open(path) gives a CHD: 0, CHDSharp's own stream. The RAM disk helper's server sets it from its cfg
+        /// (chd_threads=) - the one stream it opens is the disc it serves.</summary>
+        public static int ChdThreads;
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        public static Stream OpenChdParallel(string path, int threads)
+        {
+            var error = CHDSharp.ChdFile.Open(path, out var chd, CancellationToken.None);
+            if (chd == null || error.ToString() != "Chderrnone") { chd?.Dispose(); throw new InvalidDataException("the CHD does not open (" + error + ")"); }
+            return new ChdParallel(chd, path, threads);
         }
 
         /// <summary><paramref name="inner"/> handed out more than once: disposing the wrapper leaves it open.</summary>

@@ -248,7 +248,8 @@ namespace LbIntegrations.Xemu
         /// container when it is one.</summary>
         private static void Cut(string image, long from, string to)
         {
-            using var src = Disc.DiscImages.Open(image);
+            // Read from end to end: a CHD on the cores the RAM disk options give (chd_threads, ChdParallel).
+            using var src = Disc.DiscImages.Open(image, RamDisk.RamDiskOptions.Load().ChdThreads);
             src.Seek(from, SeekOrigin.Begin);
             using var dst = new FileStream(to, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20);
             src.CopyTo(dst, 1 << 20);

@@ -21,6 +21,7 @@ namespace LbIntegrations.Menus
         public const string Title = "RamDisk & VHDX";
 
         private readonly RadioButton _auto, _aim, _imdisk, _vm, _awe, _memAuto, _vhdxWindows, _vhdxAim, _proxyAuto, _proxyShm, _proxyTcp;
+        private readonly ComboBox _chdThreads;
         private readonly CheckBox _removable;
         private readonly Label _effective;
         private readonly bool _aimThere, _imdiskThere, _modern;
@@ -121,8 +122,16 @@ namespace LbIntegrations.Menus
             LbipHint.Attach(_proxyTcp, "A local TCP port only, as up to helper 1.11 - measured 0.8 GB/s, 0.24 ms per small read; a VPN or a firewall can refuse it");
             var proxy = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, Margin = Padding.Empty };
             proxy.Controls.AddRange(new Control[] { _proxyAuto, _proxyShm, _proxyTcp });
+            _chdThreads = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
+            _chdThreads.Items.AddRange(new object[] { "Off - one core", "2 cores", "4 cores (recommended)", "8 cores" });
+            _chdThreads.SelectedIndex = o.ChdThreads <= 1 ? 0 : o.ChdThreads <= 2 ? 1 : o.ChdThreads <= 4 ? 2 : 3;
+            LbipHint.Attach(_chdThreads, "A CHD read in sequence is decoded ahead on that many cores - served without a copy (RAM disk helper 1.13) or copied."
+                                          + " Measured on a DVD CHD: 83 MB/s on one core, 150 on 2, 235 on 4, 301 on 8. Each core holds its own copy of"
+                                          + " the CHD's map, about 90 MB for a DVD. A small read at random costs the same either way.");
             stack.Controls.Add(Group("Discs served without a copy - Cxbx-Reloaded and xemu, through AIM",
-                Line("How AIM reads the disc from the helper", false), proxy));
+                Line("How AIM reads the disc from the helper", false), proxy,
+                Line("CHD: decode ahead on", false), _chdThreads,
+                LbipHint.Note("More cores, faster loading from a CHD; about 90 MB of memory each.", "Also when Cxbx or xemu copies a CHD. Off: CHDSharp's own reader, one core.", 640, new Padding(0, 2, 0, 6))));
 
             Controls.Add(stack);
 
@@ -160,6 +169,7 @@ namespace LbIntegrations.Menus
                 AutoMemory = _memAuto.Checked,
                 Vhdx = _vhdxAim.Checked ? "aim" : "windows",
                 Proxy = _proxyShm.Checked ? "shm" : _proxyTcp.Checked ? "tcp" : "auto",
+                ChdThreads = new[] { 0, 2, 4, 8 }[Math.Max(0, _chdThreads.SelectedIndex)],
             };
             try { o.Save(); return null; }
             catch (Exception ex) { return "The settings could not be saved: " + ex.Message; }

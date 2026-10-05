@@ -1243,6 +1243,8 @@ namespace LbIntegrations.RamDisk
         {
             var proxy = ProxyOverride ?? RamDiskOptions.Load().Proxy;
             if (!string.IsNullOrEmpty(proxy) && proxy != "auto") extra["proxy"] = proxy;
+            // 1.13: a CHD served decoded on that many cores (an older helper ignores it: one core).
+            extra["chd_threads"] = RamDiskOptions.Load().ChdThreads.ToString(System.Globalization.CultureInfo.InvariantCulture);
             return extra;
         }
 
