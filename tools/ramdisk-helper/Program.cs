@@ -154,10 +154,15 @@
 //                                  exFAT volume holding ONE file, game.iso - the disc's XISO, its game partition read where it
 //                                  is (ExfatOneFileView, from the xemu plugin), AIM only. For xemu, which opens a disc image and
 //                                  not a folder, and cannot open a raw disk unelevated. Self-started as "--xiso-serve <image>".
-//                                  The result gains " file=<the file's path>". A ZArchive is refused (it holds files, no disc).
+//                                  The result gains " file=<the file's path>". A ZArchive: from 1.11, below.
 //                                  patch=media: extract-xiso's "media enable" patch served in every .xbe that has its pattern
 //                                  (XboxMediaPatch, from the xemu plugin) - the image itself untouched.
 //                                  An older helper reads view=xiso as no view and attaches the ISO as a CD: check >= 1.10.
+//
+// -- added in 1.11 -----------------------------------------------------------------------------
+//   view     = xiso                a ZArchive (.zar) too: it holds the game's files, so the XDVDFS volume is BUILT around them
+//                                  (ZarXiso, from the xemu plugin), read through the archive, nothing unpacked; patch=media
+//                                  as for a disc. A helper 1.10 refuses a ZArchive: check >= 1.11.
 //
 // AIM, WHAT DIFFERS FROM IMDISK. aim_ll takes imdisk's arguments almost word for word, but its disks
 // are real SCSI disks: Windows' mount manager gives a new volume a letter of its own on top of the one
@@ -1104,11 +1109,22 @@ namespace RamDiskHelper
         {
             try
             {
-                if (LbIntegrations.Zar.ZArchive.IsZar(image)) { Console.WriteLine("ERROR a ZArchive holds the game's files, not a disc - no XISO to serve"); return 1; }
-                var source = LbIntegrations.Disc.DiscImages.Open(image);
-                var disc = source;
-                var listing = LbIntegrations.Cxbx.Xdvdfs.List(() => LbIntegrations.Disc.DiscImages.Shared(disc), true, disc.Length, null);
-                if (listing.Error != null || !listing.Found) { source.Dispose(); Console.WriteLine("ERROR the disc could not be listed: " + (listing.Error ?? "no Xbox volume")); return 1; }
+                Stream source;
+                LbIntegrations.Cxbx.XdvdfsResult listing;
+                if (LbIntegrations.Zar.ZArchive.IsZar(image))
+                {
+                    // 1.11: a ZArchive holds the game's files - the XDVDFS volume built around them (ZarXiso), read through the archive.
+                    var built = LbIntegrations.Xemu.ZarXiso.Open(image);
+                    source = built;
+                    listing = built.Listing;
+                }
+                else
+                {
+                    source = LbIntegrations.Disc.DiscImages.Open(image);
+                    var disc = source;
+                    listing = LbIntegrations.Cxbx.Xdvdfs.List(() => LbIntegrations.Disc.DiscImages.Shared(disc), true, disc.Length, null);
+                    if (listing.Error != null || !listing.Found) { source.Dispose(); Console.WriteLine("ERROR the disc could not be listed: " + (listing.Error ?? "no Xbox volume")); return 1; }
+                }
                 // patch=media: extract-xiso's media enable patch, served - one byte per .xbe that has its pattern (XboxMediaPatch).
                 var patches = mediaPatch ? LbIntegrations.Xemu.XboxMediaPatch.Find(source, listing) : null;
                 var view = new LbIntegrations.Xemu.ExfatOneFileView(listing.PartitionBase, source.Length - listing.PartitionBase, XisoFileName, "XBOXDISC", patches);

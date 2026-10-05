@@ -6,7 +6,8 @@
 //   a redump image          the volume further in (the game partition, after the video one): its partition is the XISO
 //   a CSO, CCI, CHD         the disc inside read through its container (Shared.Disc), whichever of the two it holds
 //   an .iso / .xiso in a zip or a 7z   unpacked first, then as above
-//   a ZArchive, a game unpacked in a zip   no XISO to cut out: refused for now (to come: an XDVDFS built on the fly)
+//   a ZArchive (.zar)       its files, an XDVDFS volume BUILT around them (ZarXiso) - served or copied as a CHD's disc is
+//   a game unpacked in a zip   no XISO to cut out: refused for now (to come: the same volume built from the archive)
 //   an Xbox 360 disc        default.xex: refused, it is Xenia's
 //
 // THE COPY, WHEN THERE HAS TO BE ONE (Mehdi, 04/10: "sans copie d'abord" - serving such a disc through AIM as a raw disk
@@ -54,7 +55,13 @@ namespace LbIntegrations.Xemu
             try
             {
                 if (string.IsNullOrWhiteSpace(rom) || !File.Exists(rom)) { d.Problem = "the game's file is not there (" + rom + ")"; return d; }
-                if (Zar.ZArchive.IsZar(rom)) { d.Kind = XemuDiscKind.Zar; d.Problem = "a ZArchive (.zar) holds the game's files, not a disc xemu can open - not supported yet"; return d; }
+                if (Zar.ZArchive.IsZar(rom))
+                {
+                    d.Kind = XemuDiscKind.Zar;
+                    using var x = ZarXiso.Open(rom);
+                    var l = x.Listing;
+                    return FromListing(d, l, () => l.Root("default.xbe") is XdvdfsFile f ? ReadHead(x, f, Xbe.HeadBytes) : null);
+                }
                 if (Disc.SectorImage.IsLaterPart(rom)) { d.Problem = "this is a later part of a split image - the game is its .1 part"; return d; }
 
                 var list = Xdvdfs.List(rom);
@@ -85,6 +92,15 @@ namespace LbIntegrations.Xemu
                 }
             }
             catch (Exception ex) { d.Problem = ex.GetType().Name + ": " + ex.Message; return d; }
+        }
+
+        private static byte[] ReadHead(Stream s, XdvdfsFile f, int max)
+        {
+            var b = new byte[(int)Math.Min(max, f.Length)];
+            s.Seek(f.Offset, SeekOrigin.Begin);
+            int got = 0, n;
+            while (got < b.Length && (n = s.Read(b, got, b.Length - got)) > 0) got += n;
+            return got == b.Length ? b : b.Take(got).ToArray();
         }
 
         private static XemuDiscInfo FromListing(XemuDiscInfo d, XdvdfsResult list, Func<byte[]> head)
@@ -119,7 +135,7 @@ namespace LbIntegrations.Xemu
             // WHERE IT IS FIRST (Mehdi, 04/10: "sans copie d'abord"): a redump, a compressed image - or an XISO to patch - served by
             // the RAM disk helper as the one file of an exFAT volume, its XISO read in place, the patch laid over it. Else (no AIM,
             // an older helper, a failure) the copy.
-            if (!AttachOff && (info.Kind == XemuDiscKind.Redump || info.Kind == XemuDiscKind.Compressed || info.Kind == XemuDiscKind.Xiso))
+            if (!AttachOff && (info.Kind == XemuDiscKind.Redump || info.Kind == XemuDiscKind.Compressed || info.Kind == XemuDiscKind.Xiso || info.Kind == XemuDiscKind.Zar))
             {
                 if (RamDisk.RamDrive.CanAttachXiso(out var why, rom))
                 {
@@ -173,6 +189,12 @@ namespace LbIntegrations.Xemu
                     }
                     finally { try { if (File.Exists(unpacked)) File.Delete(unpacked); } catch { } }
                 }
+                else if (info.Kind == XemuDiscKind.Zar)
+                {
+                    using var x = ZarXiso.Open(rom);
+                    using var dst = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20);
+                    x.CopyTo(dst, 1 << 20);
+                }
                 else Cut(rom, info.PartitionBase, part);
                 XboxMediaPatch.Write(part, patches);
                 File.Move(part, target);
@@ -193,6 +215,7 @@ namespace LbIntegrations.Xemu
         {
             try
             {
+                if (Zar.ZArchive.IsZar(image)) { using var x = ZarXiso.Open(image); return XboxMediaPatch.Find(x, x.Listing); }
                 var listing = Xdvdfs.List(image);
                 if (!listing.Found) return Array.Empty<long>();
                 using var disc = Disc.DiscImages.Open(image);
@@ -233,7 +256,13 @@ namespace LbIntegrations.Xemu
 
         private static long NeededBytes(XemuDiscInfo info)
         {
-            try { return info.Kind == XemuDiscKind.ImageInArchive ? info.EntrySize * 2 : Disc.DiscImages.Open(info.Path).Length - info.PartitionBase; }
+            try
+            {
+                if (info.Kind == XemuDiscKind.ImageInArchive) return info.EntrySize * 2;
+                if (info.Kind == XemuDiscKind.Zar) { using var x = ZarXiso.Open(info.Path); return x.Length; }
+                using var d = Disc.DiscImages.Open(info.Path);
+                return d.Length - info.PartitionBase;
+            }
             catch { return 0; }
         }
 

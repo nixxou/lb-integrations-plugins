@@ -537,8 +537,13 @@ disk holding one exFAT volume holding one file, `game.iso`, whose bytes are the 
 (`ExfatOneFileView`). Not the raw disk: xemu, not elevated, is refused `\\.\PhysicalDriveN` (measured). Measured 04/10:
 mounted in 1.7 s, read unelevated, byte-identical, ~800 MB/s in sequence and 0.24 ms per random 2 KB read; Street Hoops
 and GTA San Andreas run from it. COPIED (no AIM, an older helper, an image in a zip / 7z): once, into `<xemu>\discs`,
-and kept (40 GB by default, the copies used longest ago go first) - Batman's CSO in 8 s, byte-identical. A ZArchive or a
-game unpacked in a zip is refused for now.
+and kept (40 GB by default, the copies used longest ago go first) - Batman's CSO in 8 s, byte-identical.
+
+**A ZArchive (.zar)** holds the game's files, not a disc: its XDVDFS volume is BUILT around them (`ZarXiso` - descriptor at
+sector 32, one table per directory as a binary tree of names without case, each file on its own sectors read through the
+archive), then served (helper 1.11, `view=xiso`) or copied like a CHD's, with the media patch over it. Measured 05/10 on
+Batman: Rise of Sin Tzu - the volume built at once, listed back by the XDVDFS reader, its copy (11 s) identical file by file
+to an extract-xiso XISO of the game, and xemu boots it. A game unpacked in a zip is still refused.
 
 **The media patch, extract-xiso's rule** (`XboxMediaPatch`, on unless `media_patch=0`): in every `.xbe` of the disc, the
 bytes `E8 CA FD FF FF 85 C0 7D` get their last made `EB`. extract-xiso does it by default when it makes an XISO; xdvdfs does

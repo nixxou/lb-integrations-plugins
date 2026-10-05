@@ -1237,14 +1237,17 @@ namespace LbIntegrations.RamDisk
         /// <summary>The helper that serves an Xbox disc's XISO as the one file of an exFAT volume (view=xiso), for xemu.</summary>
         public static readonly Version XisoViewProtocol = new Version(1, 10, 0, 0);
 
-        /// <summary>Can an Xbox disc's XISO be served where it is (view=xiso): AIM there, the helper 1.10 and its task. A
-        /// ZArchive cannot: it holds files, not a disc.</summary>
+        /// <summary>The helper that serves a ZArchive's game the same way (view=xiso): the XDVDFS volume built around its files.</summary>
+        public static readonly Version ZarXisoViewProtocol = new Version(1, 11, 0, 0);
+
+        /// <summary>Can an Xbox disc's XISO be served where it is (view=xiso): AIM there, the helper 1.10 and its task - 1.11 for a
+        /// ZArchive, whose volume the helper builds around its files.</summary>
         public static bool CanAttachXiso(out string why, string image = null)
         {
             var v = HelperVersion;
-            why = image != null && IsZar(image) ? "a ZArchive holds the game's files, not a disc"
-                : !IsAimInstalled() ? "the Arsenal Image Mounter is not installed"
-                : v == null || v < XisoViewProtocol ? "the RAM disk helper is " + (v?.ToString() ?? "absent") + ", " + XisoViewProtocol + " is needed"
+            var needed = image != null && IsZar(image) ? ZarXisoViewProtocol : XisoViewProtocol;
+            why = !IsAimInstalled() ? "the Arsenal Image Mounter is not installed"
+                : v == null || v < needed ? "the RAM disk helper is " + (v?.ToString() ?? "absent") + ", " + needed + " is needed"
                 : InstalledTaskName() == null ? "the RAM disk helper's task is not installed"
                 : null;
             return why == null;

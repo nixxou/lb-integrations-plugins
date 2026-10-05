@@ -820,6 +820,59 @@ namespace LbIntegrations.Probe
             return path != null;
         }
 
+        /// <summary>--xemu-zar &lt;zar&gt; --out &lt;dir&gt; [--iso &lt;reference&gt;]: a ZArchive as xemu gets it (05/10) - told a ZArchive with
+        /// its game read, its volume BUILT (ZarXiso) listed back by the XDVDFS reader with the same files, the media patch's
+        /// places found in it (as in the reference image's, when given), then the copy made by Present (no disk attached) and
+        /// set beside the reference, file by file. Writes only in &lt;dir&gt;.</summary>
+        public static bool Zar(Assembly asm, string zar, string outDir, string iso)
+        {
+            _asm = asm;
+            Directory.CreateDirectory(outDir);
+            var d = Call("XemuDisc", "Describe", zar);
+            Console.WriteLine("  " + Path.GetFileName(zar) + ": " + Get(d, "Kind") + (Get(d, "Problem") is string pr ? " - " + pr : ""));
+            Check("told a ZArchive, nothing refused", Get(d, "Kind").ToString() == "Zar" && Get(d, "Problem") == null, Get(d, "Problem") as string);
+            var xbe = Get(d, "Xbe");
+            Check("its default.xbe read", xbe != null);
+            if (xbe != null) Console.WriteLine("    title " + Get(xbe, "TitleIdText") + " - " + Get(xbe, "Title"));
+
+            var w = System.Diagnostics.Stopwatch.StartNew();
+            using (var built = (Stream)T("ZarXiso").GetMethod("Open", Any).Invoke(null, new object[] { zar }))
+            {
+                var listing = Get(built, "Listing");
+                int files = ((System.Collections.ICollection)Get(listing, "Files")).Count;
+                Console.WriteLine("    built in " + w.ElapsedMilliseconds + " ms: " + built.Length.ToString("N0") + " bytes, " + files + " files");
+                var list = _asm.GetType("LbIntegrations.Cxbx.Xdvdfs", true).GetMethods(Any).First(m => m.Name == "List" && m.GetParameters().Length == 4);
+                var shared = built;
+                var back = list.Invoke(null, new object[] { (Func<Stream>)(() => shared), true, built.Length, null });
+                var backFiles = ((System.Collections.IEnumerable)Get(back, "Files")).Cast<object>().Select(f => ((string)Get(f, "Path")).ToLowerInvariant() + "|" + Get(f, "Offset") + "|" + Get(f, "Length")).OrderBy(x => x).ToList();
+                var ownFiles = ((System.Collections.IEnumerable)Get(listing, "Files")).Cast<object>().Select(f => ((string)Get(f, "Path")).ToLowerInvariant() + "|" + Get(f, "Offset") + "|" + Get(f, "Length")).OrderBy(x => x).ToList();
+                Check("the XDVDFS reader lists the volume back: the same files, at the same places", Get(back, "Error") == null && backFiles.SequenceEqual(ownFiles),
+                      (Get(back, "Error") as string) + " " + backFiles.Count + " vs " + ownFiles.Count + " " + string.Join(", ", backFiles.Except(ownFiles).Take(5)));
+            }
+            var zp = (long[])Call("XemuDisc", "PatchesOf", zar);
+            Console.WriteLine("    media patch: " + zp.Length + " place(s) in the ZArchive's volume");
+            if (iso != null)
+            {
+                var ip = (long[])Call("XemuDisc", "PatchesOf", iso);
+                Console.WriteLine("    media patch: " + ip.Length + " place(s) in " + Path.GetFileName(iso));
+            }
+
+            var exe = Path.Combine(outDir, "xemu.exe");
+            if (!File.Exists(exe)) File.WriteAllBytes(exe, new byte[0]);
+            T("XemuDisc").GetField("AttachOff", Any).SetValue(null, true);
+            w.Restart();
+            var args = new object[] { zar, exe, null, null, null, (bool?)true };
+            var copy = (string)T("XemuDisc").GetMethod("Present", Any).Invoke(null, args);
+            Check("Present makes its XISO (media patched)", copy != null && File.Exists(copy), args[2] as string);
+            if (copy == null) return false;
+            Console.WriteLine("    " + copy + " in " + w.Elapsed.TotalSeconds.ToString("0") + " s");
+            var c = Call("XemuDisc", "Describe", copy);
+            Check("the copy is an XISO with its game", Get(c, "Kind").ToString() == "Xiso" && Get(c, "Xbe") != null, Get(c, "Problem") as string);
+            Check("the copy holds no media patch left to make", ((long[])Call("XemuDisc", "PatchesOf", copy)).Length == 0);
+            if (iso != null) { Console.WriteLine("  set beside the reference:"); Diff(asm, copy, iso); }
+            return _bad == 0;
+        }
+
         /// <summary>--xdvdfs-diff &lt;a&gt; &lt;b&gt;: two Xbox discs side by side - partition, size, where the volume's last file ends,
         /// the files only one has, those whose size or bytes differ (SHA-1 of each file both have). Reads only.</summary>
         public static bool Diff(Assembly asm, string a, string b)

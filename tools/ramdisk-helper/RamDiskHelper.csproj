@@ -36,7 +36,7 @@
          before sending a key the older one would silently ignore. Bump it with the protocol,
          never with an ordinary fix. 1.9.1 is the one exception: the protocol of 1.9.0, self-contained - numbered
          above it so that "absent or older" replaces the framework-dependent 1.9.0 already deployed. -->
-    <Version>1.10.0</Version>
+    <Version>1.11.0</Version>
 
     <Platforms>AnyCPU;x64</Platforms>
     <UseWindowsForms>false</UseWindowsForms>
@@ -47,9 +47,10 @@
   <ItemGroup>
     <Compile Include="..\..\src\Cxbx\Xdvdfs.cs" Link="Xbox\Xdvdfs.cs" />
     <Compile Include="..\..\src\Cxbx\XisoFatView.cs" Link="Xbox\XisoFatView.cs" />
-    <!-- 1.10: the disc's XISO as the one file of an exFAT volume (view=xiso), for xemu. -->
+    <!-- 1.10: the disc's XISO as the one file of an exFAT volume (view=xiso), for xemu. 1.11: a ZArchive's too, its volume built. -->
     <Compile Include="..\..\src\Xemu\ExfatOneFileView.cs" Link="Xbox\ExfatOneFileView.cs" />
     <Compile Include="..\..\src\Xemu\XboxMediaPatch.cs" Link="Xbox\XboxMediaPatch.cs" />
+    <Compile Include="..\..\src\Xemu\ZarXiso.cs" Link="Xbox\ZarXiso.cs" />
   </ItemGroup>
 
   <!-- 1.8: a ZArchive (.zar) served as the disc it holds (view=xbox) - the pack's one reader. Its zstd, ZstdSharp, is EMBEDDED and
