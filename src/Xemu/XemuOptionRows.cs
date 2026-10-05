@@ -29,7 +29,8 @@ namespace LbIntegrations.Xemu
 
         /// <param name="saved">this level's values (keys "opt.&lt;key&gt;")</param>
         /// <param name="fallback">what an unset option stands for, in words - "xemu's own: on", "every game's: 2x"</param>
-        public XemuOptionRows(IDictionary<string, string> saved, Func<XemuOption, string> fallback)
+        /// <param name="include">the options shown here - null: all of them</param>
+        public XemuOptionRows(IDictionary<string, string> saved, Func<XemuOption, string> fallback, Func<XemuOption, bool> include = null)
         {
             FlowDirection = FlowDirection.TopDown;
             WrapContents = false;
@@ -37,7 +38,7 @@ namespace LbIntegrations.Xemu
             AutoSizeMode = AutoSizeMode.GrowAndShrink;
             Margin = Padding.Empty;
 
-            foreach (var group in XemuOptions.All.GroupBy(o => o.Group))
+            foreach (var group in XemuOptions.All.Where(o => include == null || include(o)).GroupBy(o => o.Group))
             {
                 var box = new GroupBox { Text = group.Key, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(8, 4, 8, 8), Margin = new Padding(4, 4, 4, 10) };
                 var table = new TableLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 3, Location = new Point(8, 20) };
@@ -167,7 +168,8 @@ namespace LbIntegrations.Xemu
 
         /// <summary>One game's level: every game's value, else as above.</summary>
         public static Func<XemuOption, string> GameFallback(IDictionary<string, string> every, XemuTomlDoc userToml)
-            => o => XemuOptions.Get(every, o.Key) is string v && v != XemuOptions.OwnValue ? "every game's: " + o.LabelOf(v)
+            => o => o.IsXemuSetting ? EveryGameFallback(userToml)(o)          // xemu's settings have no every-game level (XemuOptions.Effective)
+                  : XemuOptions.Get(every, o.Key) is string v && v != XemuOptions.OwnValue ? "every game's: " + o.LabelOf(v)
                   : XemuOptions.Get(every, o.Key) == XemuOptions.OwnValue ? "every game's: xemu's own: " + OwnLabel(o, userToml)
                   : EveryGameFallback(userToml)(o);
     }

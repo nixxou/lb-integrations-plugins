@@ -8,6 +8,8 @@
 // the disc (the media patch - XboxMediaPatch). Left out on purpose: pads and keys (the user's, kept whole), paths, the network
 // (one for every game), the debug windows.
 //
+// xemu's own settings are a game's only (Mehdi, 05/10): for every game, xemu's own window - the Nixx window shows the console
+// and the disc alone.
 // STORED as "opt.<key>" in settings.ini (every game) and games\<game id>.ini (one game), XemuSettings. An option unset is not
 // written: xemu's own value - its window's - stays. "xemu" sets it back to that for an option the plugin sets by default.
 
@@ -189,7 +191,9 @@ namespace LbIntegrations.Xemu
             var v = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var o in All)
             {
-                var value = Get(game, o.Key) ?? Get(every, o.Key) ?? o.Default;
+                // xemu's own settings have no every-game level (Mehdi, 05/10): for every game, xemu's own window sets them - an
+                // "opt." written for every game before that is left in the file, and not used.
+                var value = Get(game, o.Key) ?? (o.IsXemuSetting ? null : Get(every, o.Key)) ?? o.Default;
                 if (value != null && value != OwnValue) v[o.Key] = value;
             }
             return v;

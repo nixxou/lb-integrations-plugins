@@ -117,17 +117,19 @@ namespace LbIntegrations.Xemu
             compat.Controls.Add(cl);
             stack.Controls.Add(compat);
 
-            stack.Controls.Add(new Label { Text = "Options for every game", AutoSize = true, Font = new Font("Segoe UI", 10f, FontStyle.Bold), Margin = new Padding(4, 8, 0, 0) });
+            // The console and the disc only (Mehdi, 05/10): xemu's own settings - picture, system, performance, sound - are set for
+            // every game in xemu's own window, and game by game in the game's window.
+            stack.Controls.Add(new Label { Text = "Console and disc, for every game", AutoSize = true, Font = new Font("Segoe UI", 10f, FontStyle.Bold), Margin = new Padding(4, 8, 0, 0) });
             stack.Controls.Add(new Label
             {
-                AutoSize = true, MaximumSize = new Size(560, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(4, 2, 0, 4),
-                Text = "Given to xemu for the time of a game, in a copy of its settings: your xemu.toml is not written while you play, and what "
-                       + "you change in xemu's own windows meanwhile (a pad, a key) comes back into it - but in a part these options set. Unset, "
-                       + "xemu's own setting applies. A game's own options (right-click it, Nixx-Xemu : Options...) win over these.",
+                AutoSize = true, MaximumSize = new Size(560, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(4, 2, 0, 4), UseMnemonic = false,
+                Text = "The console a game runs on and its disc, made for the time of the game - your files are never written. A game's own "
+                       + "choice (right-click it, Nixx-Xemu : Options..., Console & disc) wins over these. Picture, sound and performance: "
+                       + "for every game in xemu's own window, for one game in its Options window.",
             });
             var toml = exe != null ? XemuTomlDoc.Load(XemuPaths.TomlOf(exe)) : null;
-            _rows = new XemuOptionRows(s, XemuOptionRows.EveryGameFallback(toml));
-            stack.Controls.Add(XemuOptionRows.Legend("Not set: the default, else xemu's own (read from its xemu.toml)"));
+            _rows = new XemuOptionRows(s, XemuOptionRows.EveryGameFallback(toml), o => !o.IsXemuSetting);
+            stack.Controls.Add(XemuOptionRows.Legend("Not set: the default"));
             stack.Controls.Add(_rows);
 
             var file = new TextBox { Dock = DockStyle.Bottom, ReadOnly = true, BorderStyle = BorderStyle.None, BackColor = SystemColors.Control,
@@ -177,7 +179,7 @@ namespace LbIntegrations.Xemu
     internal sealed class XemuGameForm : Form
     {
         private readonly List<IGame> _games;
-        private readonly XemuOptionRows _rows;
+        private readonly XemuOptionRows _xemuRows, _consoleRows;
         private readonly Dictionary<string, string> _rowsAtOpen;
 
         public XemuGameForm(List<IGame> games)
@@ -194,10 +196,8 @@ namespace LbIntegrations.Xemu
             ClientSize = new Size(640, 720);
             MinimizeBox = false; MaximizeBox = false; ShowInTaskbar = false;
 
-            var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(8) };
-            var stack = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
-            scroll.Controls.Add(stack);
-
+            // THREE TABS (Mehdi, 05/10: "le pergame menu est un gros bordel"): the game - its compatibility, its console; xemu's
+            // settings for it; its console and disc. What it is, above them all.
             // What the game is, read once: its disc's kind, its title, its regions - and its console.
             var about = new List<string>();
             string titleId = null;
@@ -218,26 +218,60 @@ namespace LbIntegrations.Xemu
             }
             catch (Exception ex) { about.Add("The game could not be read: " + ex.Message); }
             if (exe == null) about.Add("No xemu of this plugin in the library.");
-            stack.Controls.Add(new Label { Text = string.Join("\n", about), AutoSize = true, MaximumSize = new Size(600, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(4, 0, 0, 8) });
-            if (xbe != null) stack.Controls.Add(CompatGroup(exe, xbe));
-            if (exe != null) stack.Controls.Add(ConsoleGroup(exe, titleId ?? (rom != null ? XemuDisc.XbeForConsole(rom, exe, out _)?.TitleIdText : null), first, rom));
-
-            stack.Controls.Add(new Label
+            if (games.Count > 1) about.Add("The " + games.Count + " games selected take the same choice; what is shown is the first one's.");
+            var header = new Label
             {
-                AutoSize = true, MaximumSize = new Size(600, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(4, 0, 0, 6),
-                Text = (games.Count > 1 ? "The options of the " + games.Count + " games selected, shown from the first. " : "This game's own options. ")
-                       + "Unset, an option is every game's (the Nixx window's xemu tab), else the default, else xemu's own setting. They are "
-                       + "given to xemu for the time of the game - your xemu.toml is left as it is.",
-            });
+                Text = string.Join("\n", about), Dock = DockStyle.Top, AutoSize = true, MaximumSize = new Size(620, 0),
+                ForeColor = SystemColors.GrayText, Padding = new Padding(10, 8, 10, 6),
+            };
+
+            // A tab: a scrolling page, its controls stacked.
+            FlowLayoutPanel Tab(TabControl tabs, string title)
+            {
+                var page = new TabPage(title) { UseVisualStyleBackColor = true };
+                var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(8) };
+                var stack = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
+                scroll.Controls.Add(stack);
+                page.Controls.Add(scroll);
+                tabs.TabPages.Add(page);
+                return stack;
+            }
+            Label Explain(string text) => new Label { AutoSize = true, MaximumSize = new Size(580, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(4, 0, 0, 6), Text = text };
+            Button Reset(XemuOptionRows rows, string what)
+            {
+                var b = new Button { Text = "Reset to defaults", AutoSize = true, Margin = new Padding(4, 0, 0, 6) };
+                new ToolTip().SetToolTip(b, what + " back to unset. Nothing is saved until OK.");
+                b.Click += (_, _) => rows.Reset();
+                return b;
+            }
+            var tabs = new TabControl { Dock = DockStyle.Fill };
+
+            // ── Game: its compatibility, its console ──
+            var game = Tab(tabs, "Game");
+            if (xbe != null) game.Controls.Add(CompatGroup(exe, xbe));
+            if (exe != null) game.Controls.Add(ConsoleGroup(exe, titleId ?? (rom != null ? XemuDisc.XbeForConsole(rom, exe, out _)?.TitleIdText : null), first, rom));
+
+            // ── xemu's settings for this game ──
             var toml = exe != null ? XemuTomlDoc.Load(XemuPaths.TomlOf(exe)) : null;
-            _rows = new XemuOptionRows(choice, XemuOptionRows.GameFallback(XemuSettings.Read(), toml));
-            _rowsAtOpen = _rows.Values();
-            stack.Controls.Add(XemuOptionRows.Legend("Not set: every game's, else the default, else xemu's own"));
-            var reset = new Button { Text = "Reset to defaults", AutoSize = true, Margin = new Padding(4, 0, 0, 6) };
-            new ToolTip().SetToolTip(reset, "Every option of this game back to unset. Nothing is saved until OK.");
-            reset.Click += (_, _) => _rows.Reset();
-            stack.Controls.Add(reset);
-            stack.Controls.Add(_rows);
+            var every = XemuSettings.Read();
+            var settings = Tab(tabs, "xemu settings");
+            settings.Controls.Add(Explain("xemu's own settings, for this game only. Unset: xemu's own - its own window sets them for every game. Given "
+                                          + "to xemu for the time of the game: your xemu.toml is left as it is."));
+            _xemuRows = new XemuOptionRows(choice, XemuOptionRows.GameFallback(every, toml), o => o.IsXemuSetting);
+            settings.Controls.Add(XemuOptionRows.Legend("Not set: xemu's own (its xemu.toml), else the default"));
+            settings.Controls.Add(Reset(_xemuRows, "Every xemu setting of this game"));
+            settings.Controls.Add(_xemuRows);
+
+            // ── its console and disc ──
+            var console = Tab(tabs, "Console & disc");
+            console.Controls.Add(Explain("The console this game runs on and its disc, made for the time of the game - your files are never written. "
+                                         + "Unset: every game's (the Nixx window's xemu tab), else the default."));
+            _consoleRows = new XemuOptionRows(choice, XemuOptionRows.GameFallback(every, toml), o => !o.IsXemuSetting);
+            console.Controls.Add(XemuOptionRows.Legend("Not set: every game's, else the default"));
+            console.Controls.Add(Reset(_consoleRows, "The console and disc options of this game"));
+            console.Controls.Add(_consoleRows);
+
+            _rowsAtOpen = Values();
 
             var bottom = new Panel { Dock = DockStyle.Bottom, Height = 46 };
             var ok = new Button { Text = "OK", Width = 90, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
@@ -250,8 +284,16 @@ namespace LbIntegrations.Xemu
                 ok.Location = new Point(cancel.Left - 8 - ok.Width, 10);
             };
             AcceptButton = ok; CancelButton = cancel;
-            Controls.Add(scroll);
+            Controls.Add(tabs);
+            Controls.Add(header);
             Controls.Add(bottom);
+        }
+
+        private Dictionary<string, string> Values()
+        {
+            var all = new Dictionary<string, string>(_xemuRows.Values(), StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in _consoleRows.Values()) all[kv.Key] = kv.Value;
+            return all;
         }
 
         /// <summary>OK changes only what was changed (LbipGameEdit's rule): over several games, each keeps what it has of its own
@@ -263,7 +305,7 @@ namespace LbIntegrations.Xemu
                 var id = XemuPlugin.Safe(() => g.Id);
                 if (string.IsNullOrEmpty(id)) continue;
                 var values = XemuSettings.ReadGame(id);
-                foreach (var kv in _rows.Values())
+                foreach (var kv in Values())
                     if (!_rowsAtOpen.TryGetValue(kv.Key, out var before) || before != kv.Value) values[kv.Key] = kv.Value;
                 XemuSettings.WriteGame(id, values);
             }
@@ -369,9 +411,18 @@ namespace LbIntegrations.Xemu
                 _compat.Controls.Add(new Label { AutoSize = true, MaximumSize = new Size(540, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(18, 0, 3, 2), Text = string.Join("\n", facts) });
                 if (!string.IsNullOrWhiteSpace(report?.Comment))
                 {
-                    var c = report.Comment.Replace("\r", "").Trim();
-                    if (c.Length > 600) c = c.Substring(0, 600).TrimEnd() + "...";
-                    _compat.Controls.Add(new Label { AutoSize = true, MaximumSize = new Size(520, 0), UseMnemonic = false, Margin = new Padding(18, 2, 3, 6), Text = "\"" + c + "\"" });
+                    // The tester's words, whole, in a box of its own (Mehdi, 05/10): read-only, scrolled when long - rules of
+                    // dashes and blank lines left out.
+                    var lines = report.Comment.Replace("\r", "").Split('\n').Select(l => l.Trim())
+                                      .Where(l => l.Length > 0 && !l.All(ch => ch == '-' || ch == '=' || ch == '_' || ch == '*')).ToList();
+                    var box = new TextBox
+                    {
+                        Multiline = true, ReadOnly = true, WordWrap = true, ScrollBars = ScrollBars.Vertical, BorderStyle = BorderStyle.FixedSingle,
+                        BackColor = SystemColors.Window, Width = 520, Margin = new Padding(18, 2, 3, 6), TabStop = false,
+                        Text = string.Join("\r\n", lines),
+                    };
+                    box.Height = Math.Min(110, Math.Max(36, TextRenderer.MeasureText(box.Text, box.Font, new Size(box.Width - 22, 0), TextFormatFlags.WordBreak).Height + 10));
+                    _compat.Controls.Add(box);
                 }
             }
             // Cxbx-Reloaded's line only when Nixx-Cxbx is loaded in this LaunchBox (Mehdi, 05/10): not there or turned off, not shown.

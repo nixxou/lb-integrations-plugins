@@ -369,6 +369,51 @@ namespace LbIntegrations.Probe
             return _bad == 0;
         }
 
+        /// <summary>--xemu-shots &lt;out dir&gt; --rom &lt;disc&gt; [--data &lt;Plugins\.data&gt;]: the game's window, each of its tabs, and the
+        /// Nixx window's xemu tab, drawn off screen into PNGs - the settings in a scratch folder, the compatibility list read
+        /// from <c>--data</c> when given, Nixx-Cxbx counted as loaded.</summary>
+        public static bool Shots(Assembly asm, string outDir, string rom, string data)
+        {
+            _asm = asm;
+            Directory.CreateDirectory(outDir);
+            var work = Path.Combine(Path.GetTempPath(), "lbip-xemu-shots-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            T("XemuSettings").GetField("DirOverride", Any).SetValue(null, work);
+            var shared = _asm.GetType("LbIntegrations.Xbox.XboxCompat", true);
+            if (data != null) shared.GetField("DataOverride", Any).SetValue(null, data);
+            shared.GetField("PluginOverride", Any).SetValue(null, (Func<string, bool>)(_ => true));
+            try
+            {
+                var game = StubGame.With(StubGame.Create("game-1", "Batman: Rise of Sin Tzu", rom), "Platform", "Microsoft Xbox");
+                for (int tab = 0; tab < 3; tab++)
+                {
+                    var form = (System.Windows.Forms.Form)Activator.CreateInstance(T("XemuGameForm"), Any, null, new object[] { new List<Unbroken.LaunchBox.Plugins.Data.IGame> { game } }, null);
+                    int t = tab;
+                    form.Shown += (_, _) => { foreach (var tc in form.Controls.OfType<System.Windows.Forms.TabControl>()) tc.SelectedIndex = t; };
+                    SnapForm(form, Path.Combine(outDir, "xemu-game-" + tab + ".png"));
+                }
+                var page = (System.Windows.Forms.Control)T("Settings").GetMethod("CreatePage").Invoke(null, null);
+                var nixx = new System.Windows.Forms.Form { ClientSize = new System.Drawing.Size(700, 900), Font = new System.Drawing.Font("Segoe UI", 9f), Text = "xemu" };
+                page.Dock = System.Windows.Forms.DockStyle.Fill;
+                nixx.Controls.Add(page);
+                SnapForm(nixx, Path.Combine(outDir, "xemu-nixx.png"));
+                Console.WriteLine("  shots in " + outDir);
+                return true;
+            }
+            finally { try { Directory.Delete(work, recursive: true); } catch { } }
+        }
+
+        private static void SnapForm(System.Windows.Forms.Form form, string path)
+        {
+            form.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
+            form.Location = new System.Drawing.Point(-3000, 0);
+            form.Show();
+            for (int i = 0; i < 10; i++) { System.Windows.Forms.Application.DoEvents(); System.Threading.Thread.Sleep(80); }
+            using var bmp = new System.Drawing.Bitmap(form.Width, form.Height);
+            form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, form.Width, form.Height));
+            bmp.Save(path);
+            form.Close();
+        }
+
         /// <summary>--xemu-compat [rom...]: xemu's compatibility list fetched for real into a scratch folder (XemuCompat), what is
         /// kept checked, broken answers refused; then for each disc its title, its state in xemu's list and Cxbx-Reloaded's
         /// entry (the copy embedded in Xemu.dll).</summary>
@@ -1304,7 +1349,7 @@ namespace LbIntegrations.Probe
             Dictionary<string, string> Eff(string id) => (Dictionary<string, string>)xo.GetMethod("Effective", Any).Invoke(null, new object[] { id });
             var a = Eff("game-a"); var b = Eff("game-b");
             string V(Dictionary<string, string> d, string k) => d.TryGetValue(k, out var v) ? v : null;
-            Check("a game's own over every game's (renderer OpenGL over Vulkan)", V(a, "display.renderer") == "OPENGL" && V(b, "display.renderer") == "VULKAN");
+            Check("xemu's settings: a game's own (renderer OpenGL), no every-game level - its Vulkan left unused (05/10)", V(a, "display.renderer") == "OPENGL" && V(b, "display.renderer") == null);
             Check("... over the default (region Europe over follow)", V(a, "console.region") == "4" && V(b, "console.region") == "follow");
             Check("\"xemu\" at every game's: xemu's own, absent - unless the game sets it", V(b, "display.surface_scale") == null && V(a, "display.surface_scale") == "3");
             Check("the defaults: menu bar off, media patch on, HDD key the pack's", V(b, "display.menubar") == "off" && V(b, "disc.media_patch") == "on" && V(b, "console.hddkey") == "pack");
@@ -1312,7 +1357,7 @@ namespace LbIntegrations.Probe
             var toml = ((System.Collections.IEnumerable)xo.GetMethod("TomlOf", Any).Invoke(null, new object[] { a })).Cast<object>()
                        .Select(t => ((string)t.GetType().GetField("Item1").GetValue(t), (string)t.GetType().GetField("Item2").GetValue(t), (string)t.GetType().GetField("Item3").GetValue(t))).ToList();
             Check("as TOML: a string quoted, a number bare, a switch true/false", toml.Contains(("display", "renderer", "'OPENGL'")) && toml.Contains(("display.quality", "surface_scale", "3"))
-                  && toml.Contains(("display.window", "vsync", "false")) && toml.Contains(("display.ui", "show_menubar", "false")), string.Join(" ", toml));
+                  && !toml.Any(x => x.Item2 == "vsync") && toml.Contains(("display.ui", "show_menubar", "false")), string.Join(" ", toml));
             Check("... the plugin's own options not in it (console, disc)", toml.All(t => !t.Item1.StartsWith("console") && !t.Item1.StartsWith("disc")));
             var doc = _asm.GetType("LbIntegrations.Xemu.XemuTomlDoc", true);
             var parsed = doc.GetMethod("Parse", Any).Invoke(null, new object[] { "[display]\nrenderer = 'VULKAN'\n" });
