@@ -79,6 +79,13 @@ namespace LbIntegrations.Disc
         {
             var error = CHDSharp.ChdFile.Open(path, out var chd, CancellationToken.None);
             if (chd == null || error.ToString() != "Chderrnone") { chd?.Dispose(); throw new InvalidDataException("the CHD does not open (" + error + ")"); }
+            // A CD's hunks are frames of 2352 + 96 bytes (subchannels), not the sectors one after another: CHDSharp's own stream.
+            if (chd.IsCd || chd.IsGdRom)
+            {
+                var e2 = CHDSharp.ChdFile.OpenAsStream(chd, true, out var plain);
+                if (plain == null || e2.ToString() != "Chderrnone") { chd.Dispose(); throw new InvalidDataException("the CHD does not open (" + e2 + ")"); }
+                return plain;
+            }
             return new ChdParallel(chd, path, threads);
         }
 

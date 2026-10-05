@@ -16,7 +16,7 @@ namespace LbIntegrations.Probe
 
         public static bool Run(Assembly asm, string image)
         {
-            var open = asm.GetType("LbIntegrations.Disc.DiscImages", true).GetMethod("Open", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+            var open = asm.GetType("LbIntegrations.Disc.DiscImages", true).GetMethod("Open", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic, null, new[] { typeof(string) }, null);
             using var disc = (Stream)open.Invoke(null, new object[] { image });
             long fileLength = new FileInfo(image).Length;
             Console.WriteLine("  " + Path.GetFileName(image) + ": file " + fileLength.ToString("N0") + " bytes, disc " + disc.Length.ToString("N0") + " bytes, stream " + disc.GetType().FullName);

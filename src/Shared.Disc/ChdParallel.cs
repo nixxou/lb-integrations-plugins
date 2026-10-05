@@ -11,6 +11,9 @@
 //   kept         the batches decoded, up to Keep bytes; the batches behind the reader go first
 //
 // Read-only, one reader at a time (as every Stream). Same bytes as CHDSharp's stream - checked by the probe (--disc-bench).
+// DVDs and hard disks only: a CD's hunks are frames with their subchannels, and DiscImages gives a CD CHDSharp's own stream.
+// Measured 06/10 on the same disc made zstd (chdman 0.289 copy -c zstd): one core 377 MB/s, ours 475 / 590 / 486 on 2 / 4 / 8 -
+// with a codec that fast the reader's own copying, not the decoding, is what is left.
 
 using System;
 using System.Collections.Concurrent;
