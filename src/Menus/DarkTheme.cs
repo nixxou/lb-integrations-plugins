@@ -107,11 +107,12 @@ namespace LbIntegrations.Menus
                     b.FlatStyle = FlatStyle.Flat;
                     b.BackColor = Field;
                     NativeDark(b, "DarkMode_CFD");
+                    WheelScrollsPage(b, () => b.DroppedDown);
                     break;
                 case ListBox l: l.BackColor = Field; l.BorderStyle = BorderStyle.FixedSingle; NativeDark(l); break;
                 case ListView v: v.BackColor = Field; NativeDark(v); HeaderDark(v); break;
                 case TreeView tv: tv.BackColor = Field; tv.LineColor = Border; NativeDark(tv); break;
-                case NumericUpDown n: n.BackColor = Field; break;
+                case NumericUpDown n: n.BackColor = Field; WheelScrollsPage(n, () => false); break;
                 case Button bt:
                     bt.FlatStyle = FlatStyle.Flat;
                     bt.UseVisualStyleBackColor = false;
@@ -233,6 +234,30 @@ namespace LbIntegrations.Menus
                 g.FillEllipse(b, dot);
             }
             g.SmoothingMode = old;
+        }
+
+        // ── the wheel scrolls the page, never a value (Mehdi, 05/10) ───────────
+        // Over a closed list or a number box, the wheel changed its value while the page was being scrolled. Now it is taken
+        // from them and given to the page they are in; a list opened still scrolls its own entries.
+
+        private static void WheelScrollsPage(Control c, Func<bool> ownWheel)
+        {
+            c.MouseWheel += (_, e) =>
+            {
+                if (ownWheel()) return;
+                if (e is HandledMouseEventArgs h) h.Handled = true;
+                for (var p = c.Parent; p != null; p = p.Parent)
+                {
+                    if (p is ScrollableControl s && s.AutoScroll && s.VerticalScroll.Visible)
+                    {
+                        // As the page's own wheel moves it: three lines a notch.
+                        int step = SystemInformation.MouseWheelScrollLines * c.Font.Height * e.Delta / 120;
+                        int y = Math.Max(0, Math.Min(s.VerticalScroll.Maximum - s.VerticalScroll.LargeChange + 1, -s.AutoScrollPosition.Y - step));
+                        s.AutoScrollPosition = new Point(-s.AutoScrollPosition.X, y);
+                        return;
+                    }
+                }
+            };
         }
 
         // ── a group as a card ─────────────────────────────────────────────────
