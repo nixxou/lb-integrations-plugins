@@ -36,6 +36,7 @@
     <Compile Include="..\Shared.Zar\**\*.cs" />
     <!-- CSO, CCI, CHD (03/10) - the disc's bytes through its container. -->
     <Compile Include="..\Shared.Disc\**\*.cs" />
+    <Compile Include="..\Shared.Xbox\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>

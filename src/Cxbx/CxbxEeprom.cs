@@ -22,6 +22,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -132,14 +133,22 @@ namespace LbIntegrations.Cxbx
                 said.Add("sound " + audio);
             }
 
-            // The HDD key: the pack's (PackIdentity.XboxHddKey) unless Cxbx-Reloaded's own is chosen - a key the header's HMAC
-            // covers, signed again below.
+            // THE CONSOLE'S OWN VALUES: your console's (its seed - serial number, MAC, online key, HDD key), unless Cxbx-Reloaded's
+            // own is chosen; with no seed, the HDD key alone, sixteen 0x11 (PackIdentity.XboxHddKey). The HDD key is under the
+            // header's HMAC, signed again below; the factory section's checksum Cxbx-Reloaded recomputes at load.
             if (!v.TryGetValue("console.hddkey", out var hddKey) || hddKey == "pack")
             {
-                var key = LbIntegrations.Identity.PackIdentity.XboxHddKey();
-                bool same = true; for (int i = 0; i < 16; i++) if (b[0x1C + i] != key[i]) same = false;
-                if (!same) { key.CopyTo(b, 0x1C); said.Add("HDD key the pack's"); }
+                if (SetIdentity(b, LbIntegrations.Identity.PackIdentity.Load()?.Xbox())) said.Add("your console's serial, MAC and keys");
+                else
+                {
+                    var key = LbIntegrations.Identity.PackIdentity.XboxHddKey();
+                    if (!b.Skip(0x1C).Take(16).SequenceEqual(key)) { key.CopyTo(b, 0x1C); said.Add("HDD key the pack's"); }
+                }
             }
+            // ... and over it, the HDD key of the game's save when it carries one (console.hddkey.bytes - Shared.Xbox\XboxSaveKeys).
+            if (v.TryGetValue("console.hddkey.bytes", out var savedHex) && LbIntegrations.Xbox.XboxKeys.FromHex(savedHex) is byte[] saved
+                && !b.Skip(0x1C).Take(16).SequenceEqual(saved))
+            { saved.CopyTo(b, 0x1C); said.Add("HDD key the save's"); }
 
             // Never a game refused by parental controls: no restriction, whatever was set.
             W(ParentalGamesAt, 0);
@@ -185,7 +194,38 @@ namespace LbIntegrations.Cxbx
             LbIntegrations.Identity.PackIdentity.XboxHddKey().CopyTo(b, 0x1C);
             // User: English; everything else zero, as Cxbx-Reloaded leaves it.
             BitConverter.GetBytes(1u).CopyTo(b, 0x90);
+            SetIdentity(b, LbIntegrations.Identity.PackIdentity.Load()?.Xbox());
             return b;
+        }
+
+        /// <summary>THE CONSOLE ITSELF set as your console, at install and from "Apply to my emulators" (Mehdi, 05/10): the
+        /// seed's serial number, MAC, online key and HDD key (with no seed, the HDD key alone, the pack's), and the header
+        /// signed with keys.bin's EEPROM key - so Cxbx-Reloaded opened without a game is the same console as in a game.
+        /// Written only when something changes. What it did, or null.</summary>
+        public static string ApplyIdentity(string path, string dataDir)
+        {
+            var b = File.ReadAllBytes(path);
+            if (b.Length != Size) return "EEPROM.bin left alone (" + b.Length + " bytes)";
+            var before = (byte[])b.Clone();
+            if (!SetIdentity(b, LbIntegrations.Identity.PackIdentity.Load()?.Xbox()) && LbIntegrations.Identity.PackIdentity.Load()?.HasSeed != true)
+                LbIntegrations.Identity.PackIdentity.XboxHddKey().CopyTo(b, 0x1C);
+            Sign(b, dataDir);
+            if (before.SequenceEqual(b)) return null;
+            WriteAtomically(path, b);
+            return "EEPROM.bin: your console's serial " + System.Text.Encoding.ASCII.GetString(b, 0x34, 12) + ", MAC and keys";
+        }
+
+        /// <summary>Your console's own values (PackIdentity's seed) into an EEPROM.bin in clear: serial number 0x34, MAC 0x40,
+        /// online key 0x48, HDD key 0x1C. False with no seed, or when they are there already.</summary>
+        private static bool SetIdentity(byte[] b, LbIntegrations.Identity.PackIdentity.XboxConsole x)
+        {
+            if (x == null) return false;
+            var before = (byte[])b.Clone();
+            System.Text.Encoding.ASCII.GetBytes(x.Serial).CopyTo(b, 0x34);
+            x.Mac.CopyTo(b, 0x40);
+            x.OnlineKey.CopyTo(b, 0x48);
+            x.HddKey.CopyTo(b, 0x1C);
+            return !before.SequenceEqual(b);
         }
 
         /// <summary>The header's HMAC, with Cxbx-Reloaded's key: keys.bin's first 16 bytes, else zeros.</summary>

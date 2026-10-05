@@ -23,6 +23,9 @@ namespace LbIntegrations.Probe
         private static int _bad;
         private static Assembly _asm;
 
+        /// <summary>The HDD key the pack gives a console on this machine: "Your console"'s (its seed), else sixteen 0x11.</summary>
+        private static byte[] PackHdd() => (byte[])_asm.GetType("LbIntegrations.Identity.PackIdentity", true).GetMethod("XboxHddKey", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic).Invoke(null, null);
+
         private static bool Check(string what, bool ok, string detail = null)
         {
             Console.WriteLine("    " + (ok ? "ok   " : "FAIL ") + what + (!ok && detail != null ? "\n          got: " + detail : ""));
@@ -314,30 +317,77 @@ namespace LbIntegrations.Probe
                 Check("the GUI is not there: left on the loader", Mode(@"Emulators\Nixx-Cxbx\cxbxr-ldr.exe", true) == null);
                 Check("another emulator: never touched", Mode(@"Emulators\Xenia\xenia_canary.exe", true) == null);
 
-                // 8b. the active save (lbip-saves\<id>.cxbxsave, Mehdi 04/10): a file put there is laid out at launch; the folder after
-                // a session is packed into it; the plugin's own file is never laid back over a newer folder.
+                // 8b. the active save (lbip-saves\<id>.cxbxsave) kept in step with the folder (Shared.Xbox\XboxSaveSync, Mehdi
+                // 05/10): whole contents compared, the stamp of the last agreement with the console, in <data>\lbip-stamps.
                 Console.WriteLine("  active save");
                 var udataDir = (string)Call("CxbxPaths", "UdataDir", exe);
                 if (udataDir == null) Check("Cxbx-Reloaded's UDATA folder known", false, "none for " + exe);
                 else
                 {
-                    var activeLive = Path.Combine(udataDir, "4d530005");
-                    var activePack = (string)Call("CxbxSaves", "PackPath", exe, "4d530005");
+                    const string tid = "4d530005";
+                    var activeLive = Path.Combine(udataDir, tid);
+                    var activePack = (string)Call("CxbxSaves", "PackPath", exe, tid);
+                    var stampFile = Path.Combine((string)Call("CxbxPaths", "DataDir", exe), "lbip-stamps", tid + ".stamp");
+                    var conflicts = Path.Combine((string)Call("CxbxPaths", "DataDir", exe), "lbip-conflicts");
+                    var modeType = _asm.GetType("LbIntegrations.Xbox.XboxSyncMode", true);
+                    string S(string mode) => (string)Call("CxbxSaves", "Sync", exe, tid, Enum.Parse(modeType, mode));
+                    var saveDat = Path.Combine(activeLive, "ABCDEF012345", "save.dat");
+                    long Len() => File.Exists(saveDat) ? new FileInfo(saveDat).Length : -1;
                     Directory.CreateDirectory(Path.GetDirectoryName(activePack));
+
                     File.Copy(p1, activePack, overwrite: true);
-                    Check("a file put in lbip-saves: laid out at launch", Call("CxbxSaves", "SyncIn", exe, "4d530005") is string a1 && a1.Contains("laid"));
-                    Check("... the folder holds it", File.Exists(Path.Combine(activeLive, "ABCDEF012345", "save.dat")));
-                    Check("... the next launch: nothing to do", Call("CxbxSaves", "SyncIn", exe, "4d530005") == null);
-                    System.Threading.Thread.Sleep(50);
-                    File.WriteAllBytes(Path.Combine(activeLive, "ABCDEF012345", "save.dat"), Noise(9100, 6));     // the game saving
+                    Check("a file put in lbip-saves, no folder: laid out at launch", S("Launch") is string a1 && a1.Contains("laid") && Len() == 9000);
+                    Check("... its stamp with the console, nothing beside the save", File.Exists(stampFile)
+                          && !Directory.GetFiles(Path.GetDirectoryName(activePack)).Any(f => f.EndsWith(".stamp") || f.EndsWith(".synced")));
+                    Check("... the next launch: nothing to do", S("Launch") == null);
+
+                    File.WriteAllBytes(saveDat, Noise(9100, 6));                                  // the game saving
                     var before = File.ReadAllBytes(activePack);
-                    Check("after a session: the folder packed into the file", (string)Call("CxbxSaves", "Capture", exe, "4d530005") == activePack && !File.ReadAllBytes(activePack).SequenceEqual(before));
-                    Check("... the file the plugin wrote not laid back at launch", Call("CxbxSaves", "SyncIn", exe, "4d530005") == null && new FileInfo(Path.Combine(activeLive, "ABCDEF012345", "save.dat")).Length == 9100);
-                    File.Copy(p1, activePack, overwrite: true);                                                        // a Restore
-                    Check("a file put back: not packed over before the launch", (string)Call("CxbxSaves", "Capture", exe, "4d530005") == activePack && File.ReadAllBytes(activePack).SequenceEqual(File.ReadAllBytes(p1)));
-                    Check("... laid out at launch", Call("CxbxSaves", "SyncIn", exe, "4d530005") is string a2 && a2.Contains("laid") && new FileInfo(Path.Combine(activeLive, "ABCDEF012345", "save.dat")).Length == 9000);
-                    File.Delete(activePack);
-                    Check("the file removed: the folder taken out at launch", Call("CxbxSaves", "SyncIn", exe, "4d530005") is string a3 && a3.Contains("taken out") && !Directory.Exists(activeLive));
+                    Check("the folder changed, a listing: captured", S("Listing") is string a2 && a2.Contains("captured") && !File.ReadAllBytes(activePack).SequenceEqual(before));
+                    Check("... the next launch: nothing to do, the folder as the game left it", S("Launch") == null && Len() == 9100);
+
+                    File.Copy(p1, activePack, overwrite: true);                                   // a save put back by hand
+                    Check("the save changed: a listing and a session's end touch nothing", S("Listing") == null && S("SessionEnd") == null
+                          && File.ReadAllBytes(activePack).SequenceEqual(File.ReadAllBytes(p1)) && Len() == 9100);
+                    Check("... laid out at launch", S("Launch") is string a3 && a3.Contains("laid") && Len() == 9000);
+
+                    File.WriteAllBytes(saveDat, Noise(9200, 7));                                  // a session cut short: never captured
+                    Check("the folder changed, the save not: captured at launch", S("Launch") is string a4 && a4.Contains("captured") && Len() == 9200);
+
+                    File.WriteAllBytes(saveDat, Noise(9300, 8));                                  // both changed
+                    File.Copy(p1, activePack, overwrite: true);
+                    Check("both changed: a listing touches nothing", S("Listing") == null && Len() == 9300);
+                    var conflict = S("Launch");
+                    Check("... at launch the save wins, the folder's version kept in lbip-conflicts", conflict != null && conflict.Contains("kept") && Len() == 9000
+                          && Directory.Exists(conflicts) && Directory.GetFiles(conflicts, tid + "-console-*.cxbxsave").Length == 1, conflict);
+
+                    File.Delete(activePack);                                                      // the save removed
+                    Check("the save removed: a listing does not make it again", S("Listing") == null && !File.Exists(activePack) && Len() == 9000);
+                    Check("... the folder taken out at launch, the stamp gone", S("Launch") is string a5 && a5.Contains("taken out") && !Directory.Exists(activeLive) && !File.Exists(stampFile));
+
+                    Directory.CreateDirectory(Path.GetDirectoryName(saveDat));                    // a folder, no save, no stamp
+                    File.WriteAllBytes(saveDat, Noise(9400, 9));
+                    Check("a folder with no save and no stamp: captured - never taken for a removed save", S("Launch") is string a6 && a6.Contains("captured")
+                          && File.Exists(activePack) && Len() == 9400);
+
+                    File.Delete(stampFile);                                                       // stamps lost, the save and folder differ
+                    File.Copy(p1, activePack, overwrite: true);
+                    var n = Directory.GetFiles(conflicts).Length;
+                    Check("no stamp, the save and the folder differ: the save wins, the folder kept", S("Launch") is string a7 && a7.Contains("kept") && Len() == 9000
+                          && Directory.GetFiles(conflicts).Length == n + 1);
+
+                    // The notes of 04/10 beside the save: their agreement read once, then gone.
+                    File.Delete(stampFile);
+                    File.WriteAllBytes(saveDat, Noise(9500, 10));
+                    string sha1; using (var sh = System.Security.Cryptography.SHA1.Create()) using (var fs = File.OpenRead(activePack)) sha1 = Convert.ToHexString(sh.ComputeHash(fs));
+                    File.WriteAllText(Path.ChangeExtension(activePack, ".synced"), sha1 + "|" + Path.GetFullPath(activePack).ToLowerInvariant());
+                    File.WriteAllText(Path.ChangeExtension(activePack, ".stamp"), "1|2|3");
+                    Check("a save of 04/10 agreed in its notes, the folder newer: captured, not a conflict", S("Launch") is string a8 && a8.Contains("captured") && Len() == 9500
+                          && Directory.GetFiles(conflicts).Length == n + 1);
+                    Check("... the old notes gone", !File.Exists(Path.ChangeExtension(activePack, ".synced")) && !File.Exists(Path.ChangeExtension(activePack, ".stamp")) && File.Exists(stampFile));
+
+                    var listed = (string)Call("CxbxSaves", "Capture", exe, tid);
+                    Check("a listing hands the active save", listed == activePack);
                 }
 
                 // 9. the compatibility list, embedded: GTA San Andreas Europe (Classics), title id 545400a4, version 1
@@ -364,7 +414,7 @@ namespace LbIntegrations.Probe
                     Check("made with the game's region (PAL)", BitConverter.ToUInt32(e1, 0x2C) == 4, "" + BitConverter.ToUInt32(e1, 0x2C));
                     Check("made as Cxbx-Reloaded makes one: English, NTSC-M 60 Hz, a Microsoft MAC", BitConverter.ToUInt32(e1, 0x90) == 1 && BitConverter.ToUInt32(e1, 0x58) == 0x00400100 && e1[0x41] == 0x50 && e1[0x42] == 0xF2);
                     Check("its checksum right", Signed(e1));
-                    Check("made with the pack's HDD key (16 x 0x11)", e1.Skip(0x1C).Take(16).All(x => x == 0x11));
+                    Check("made with the pack's HDD key (your console's, else 16 x 0x11)", e1.Skip(0x1C).Take(16).SequenceEqual(PackHdd()));
                     var na = (byte[])e1.Clone(); BitConverter.GetBytes(1u).CopyTo(na, 0x2C); File.WriteAllBytes(eeprom, na);
                     Call("CxbxEeprom", "MatchRegion", exe, Info(4));
                     var e2 = File.ReadAllBytes(eeprom);
@@ -408,7 +458,7 @@ namespace LbIntegrations.Probe
                 Check("console: NTSC + HD modes", BitConverter.ToUInt32(e, 0x58) == 0x00400100 && (BitConverter.ToUInt32(e, 0x94) & 0xE0000) == 0xE0000, BitConverter.ToUInt32(e, 0x58).ToString("X8") + " " + BitConverter.ToUInt32(e, 0x94).ToString("X8"));
                 Check("console: French, widescreen", BitConverter.ToUInt32(e, 0x90) == 4 && (BitConverter.ToUInt32(e, 0x94) & 0x10000) != 0);
                 Check("console: the game's region (PAL), checksum right", BitConverter.ToUInt32(e, 0x2C) == 4 && Signed(e));
-                Check("console: the pack's HDD key over its own, checksum right", e.Skip(0x1C).Take(16).All(x => x == 0x11) && Signed(e));
+                Check("console: the pack's HDD key over its own (your console's, else 16 x 0x11), checksum right", e.Skip(0x1C).Take(16).SequenceEqual(PackHdd()) && Signed(e));
                 Call("CxbxOptions", "Restore", exe, "the probe's session is over");
                 Check("after the session: settings.ini as it was, byte for byte", File.ReadAllBytes(ini).SequenceEqual(iniBefore));
                 Check("after the session: EEPROM.bin as it was, byte for byte", File.ReadAllBytes(eeprom).SequenceEqual(eepBefore));

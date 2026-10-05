@@ -283,6 +283,10 @@ namespace LbIntegrations.Cxbx
                 if (!CxbxPaths.VcRuntimeX86())
                     Log.Warn("the Visual C++ 2015-2022 runtime (x86) is not installed - Cxbx-Reloaded will not start without it");
 
+                // YOUR CONSOLE, for good: a real Xbox's keys.bin, EEPROM.bin with the seed's serial number, MAC and keys (CxbxConsole).
+                try { CxbxConsole.SetUp(exe); }
+                catch (Exception ex) { Log.Warn("console: could not be set up as yours", ex); }
+
                 // The whole compatibility list read again, in the background - its failure is a line in the log.
                 CxbxCompat.RefreshAll();
 
@@ -410,13 +414,23 @@ namespace LbIntegrations.Cxbx
                 catch (Exception ex) { Log.Info("compatibility: " + ex.Message); }
                 // The game's options (CxbxOptions) written for its session into settings.ini and EEPROM.bin - put back once it
                 // is over - and the console's region made the game's, or Cxbx-Reloaded stops on a question first (CxbxEeprom).
-                CxbxOptions.Apply(exe, Safe(() => args?.GameBeingLaunched?.Id), described?.Xbe ?? Xbe.Read(xbe));
-                // Its save file is the active save: put in lbip-saves\ since the last session, it is laid out now (CxbxSaves.SyncIn).
+                // With its save's keys (Shared.Xbox\XboxSaveKeys): the HDD key and certificate key it was made with - a save from
+                // before they were noted is Cxbx-Reloaded's own, made with the certificate key it has now.
                 var launchTitle = (described?.Xbe ?? Xbe.Read(xbe))?.TitleId > 0 ? (described?.Xbe ?? Xbe.Read(xbe)).TitleIdText : null;
+                var savePack = launchTitle != null ? CxbxSaves.PackPath(exe, launchTitle) : null;
+                // A session left behind put right first: its keys.bin is not the user's.
+                CxbxOptions.Restore(exe, "a session left behind");
+                var saveKeys = LbIntegrations.Xbox.XboxSaveKeys.ForLaunch(savePack, CxbxConsole.LegacyCertificateKey(CxbxPaths.DataDir(exe)))
+                               // No save yet: a real Xbox's certificate key (XboxKeys.Retail) - its saves read on xemu and a real Xbox.
+                               ?? new LbIntegrations.Xbox.SaveKeys { Cert = LbIntegrations.Xbox.XboxKeys.Retail, Origin = "a real Xbox's (no save yet)" };
+                CxbxOptions.Apply(exe, Safe(() => args?.GameBeingLaunched?.Id), described?.Xbe ?? Xbe.Read(xbe), saveKeys);
+                // Its save file is the active save: put in lbip-saves\ since the last session, it is laid out now (CxbxSaves.SyncIn).
                 if (launchTitle != null)
                 {
-                    try { if (CxbxSaves.SyncIn(exe, launchTitle) is string synced) Log.Info("saves: " + launchTitle + " - " + synced); }
+                    try { CxbxSaves.Sync(exe, launchTitle, LbIntegrations.Xbox.XboxSyncMode.Launch); }
                     catch (Exception ex) { return Refuse("The save of " + Path.GetFileName(rom) + " could not be laid out: " + ex.Message + "\n\nNothing was changed. Move or remove its file in " + Path.GetDirectoryName(CxbxSaves.PackPath(exe, launchTitle)) + " to start without it."); }
+                    // The keys this session writes the console with, into its stamp (XboxSaveSync).
+                    if (CxbxSaves.NaturalKeys(exe) is LbIntegrations.Xbox.SaveKeys used) LbIntegrations.Xbox.XboxSaveSync.NoteSessionKeys(CxbxSaves.Side(exe, launchTitle), used.Hdd, used.Cert);
                 }
                 // Full screen: a sub-option of the window's (Mehdi, 03/10); the loader alone always starts full screen.
                 bool borderless = CxbxSettings.On(settings, "borderless", true) && !CxbxSession.ExclusiveFullScreen(exe);

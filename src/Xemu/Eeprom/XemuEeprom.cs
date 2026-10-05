@@ -13,7 +13,8 @@
 // Decrypted and encrypted again with XboxEepromEditor's code (github.com/Ernegien/XboxEepromEditor, nixxou's fork):
 // HmacSha1.cs and RC4.cs beside this file, and the time zone table below - which is why src\Xemu is GPL-2.0-or-later.
 //
-// THE USER'S FILE IS NEVER WRITTEN. The session's console is <xemu>\eeprom-session.bin, made from eeprom.bin at every
+// eeprom.bin IS WRITTEN ONLY AS YOUR CONSOLE (Mehdi, 05/10): at install and from "Apply to my emulators", the seed's serial
+// number, MAC and keys (ApplyIdentity) - nothing else. The session's console is <xemu>\eeprom-session.bin, made from eeprom.bin at every
 // launch, and xemu.toml's eeprom_path points at it for the game - back at eeprom.bin when the game is over
 // (XemuSession.Standalone). Whatever a game changes in it goes with the session. No eeprom.bin yet: one is made first, as
 // XboxEepromEditor makes a new one (a 1.0 kernel's, North America, NTSC-M, English, random serial, MAC and keys) - the
@@ -128,7 +129,42 @@ namespace LbIntegrations.Xemu.Eeprom
             e.AvRegion = NtscM | Hz60;
             e.Zone = "London";
             e.Language = 1;
+            SetIdentity(e, LbIntegrations.Identity.PackIdentity.Load()?.Xbox());
             return Seal(e);
+        }
+
+        /// <summary>THE CONSOLE ITSELF set as your console, at install and from "Apply to my emulators" (Mehdi, 05/10): eeprom.bin
+        /// made, or given the seed's serial number, MAC, online key and HDD key (with no seed, the HDD key alone, the pack's) -
+        /// so xemu opened without a game is the same console as in a game. Written only when something changes. What it did,
+        /// or null.</summary>
+        public static string ApplyIdentity(string basePath)
+        {
+            if (!File.Exists(basePath)) { WriteAtomically(basePath, Fresh()); return "eeprom.bin made as your console"; }
+            var e = Open(File.ReadAllBytes(basePath));
+            if (e == null) return "eeprom.bin is not an EEPROM any Xbox key opens - left alone";
+            var id = LbIntegrations.Identity.PackIdentity.Load();
+            bool changed = SetIdentity(e, id?.Xbox());
+            if (id?.HasSeed != true)
+            {
+                var key = LbIntegrations.Identity.PackIdentity.XboxHddKey();
+                if (!e.HddKey.SequenceEqual(key)) { e.HddKey = key; changed = true; }
+            }
+            if (!changed) return null;
+            WriteAtomically(basePath, Seal(e));
+            return "eeprom.bin: your console's serial " + e.Serial + ", MAC and keys";
+        }
+
+        /// <summary>Your console's own values (PackIdentity's seed): serial number, MAC, online key, HDD key. False with no seed,
+        /// or when they are there already.</summary>
+        private static bool SetIdentity(Opened e, LbIntegrations.Identity.PackIdentity.XboxConsole x)
+        {
+            if (x == null) return false;
+            var before = (byte[])e.Data.Clone();
+            Encoding.ASCII.GetBytes(x.Serial).CopyTo(e.Data, 0x34);
+            x.Mac.CopyTo(e.Data, 0x40);
+            x.OnlineKey.CopyTo(e.Data, 0x48);
+            e.HddKey = x.HddKey;
+            return !before.SequenceEqual(e.Data);
         }
 
         // ── the session's console ────────────────────────────────────────────
@@ -193,12 +229,20 @@ namespace LbIntegrations.Xemu.Eeprom
 
             if (O("console.timezone", "windows") == "windows" && WindowsZone() is string zone) { e.Zone = zone; said.Add("time zone " + zone); }
 
-            // The HDD key: the pack's (PackIdentity.XboxHddKey), unless console.hddkey=xemu keeps the console's own.
+            // THE CONSOLE'S OWN VALUES: your console's (its seed - serial number, MAC, online key, HDD key), unless
+            // console.hddkey=xemu keeps the EEPROM's; with no seed, the HDD key alone, sixteen 0x11 (PackIdentity.XboxHddKey).
             if (O("console.hddkey", "pack") != "xemu")
             {
-                var key = LbIntegrations.Identity.PackIdentity.XboxHddKey();
-                if (!e.HddKey.SequenceEqual(key)) { e.HddKey = key; said.Add("HDD key the pack's"); }
+                if (SetIdentity(e, LbIntegrations.Identity.PackIdentity.Load()?.Xbox())) said.Add("your console's serial, MAC and keys");
+                else
+                {
+                    var key = LbIntegrations.Identity.PackIdentity.XboxHddKey();
+                    if (!e.HddKey.SequenceEqual(key)) { e.HddKey = key; said.Add("HDD key the pack's"); }
+                }
             }
+            // ... and over it, the HDD key of the game's save when it carries one (console.hddkey.bytes - Shared.Xbox\XboxSaveKeys).
+            if (LbIntegrations.Xbox.XboxKeys.FromHex(O("console.hddkey.bytes", null)) is byte[] saved && !e.HddKey.SequenceEqual(saved))
+            { e.HddKey = saved; said.Add("HDD key the save's"); }
 
             // Never a game refused by parental controls (CxbxEeprom's rule): no restriction, whatever was set.
             BitConverter.GetBytes(0u).CopyTo(e.Data, ParentalGamesAt);

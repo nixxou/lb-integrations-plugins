@@ -116,7 +116,7 @@ internal sealed class InstallerForm : Form
         {
             Run(InstallerCore.Install, "Install");
             // Asked at the pack's install (Mehdi, 03/10): the plugins read it when they set up their emulators.
-            if (LbIntegrations.Identity.PackIdentity.Exists() == false) EditIdentity();
+            if (LbIntegrations.Identity.PackIdentity.Load()?.HasSeed != true) EditIdentity();
         };
         // LiteBox shares the RAM disk helper and its task: asked, No by default (Mehdi, 04/10) - RamDiskSetup.Remove.
         _uninstall.Click += (_, _) => Run(l => InstallerCore.Uninstall(l, () => MessageBox.Show(this,
@@ -136,7 +136,8 @@ internal sealed class InstallerForm : Form
         _identitySummary.MaximumSize = new Size(Inner(LeftW), 0);
         left.Controls.Add(Card("Your console", null, LeftW, _identitySummary, Buttons(_identityButton),
             Note(LeftW, "Your nickname, language, date and time formats, confirm button and birthday, asked once for every "
-               + "emulator: each plugin uses them when it sets up its emulator for the first time.")));
+               + "emulator: each plugin uses them when it sets up its emulator for the first time. And the seed your consoles' "
+               + "serial numbers and keys are made from.")));
         ShowIdentity();
 
         // RAM disk
@@ -209,8 +210,9 @@ internal sealed class InstallerForm : Form
         var language = LbIntegrations.Identity.PackIdentity.Languages.FirstOrDefault(l => l.Culture == p.Language).Name ?? p.Language;
         var date = p.DateOrder == "dmy" ? "03/10/2026" : p.DateOrder == "mdy" ? "10/03/2026" : "2026/10/03";
         _identitySummary.Text = (p.Nickname.Length > 0 ? p.Nickname : "(no nickname)") + "  ·  " + language + "  ·  " + date + "  ·  "
-                              + (p.Clock24 ? "24-hour" : "12-hour") + "  ·  " + (p.Confirm == "circle" ? "○" : "✕") + " confirms";
-        _identitySummary.ForeColor = Ink;
+                              + (p.Clock24 ? "24-hour" : "12-hour") + "  ·  " + (p.Confirm == "circle" ? "○" : "✕") + " confirms"
+                              + (p.HasSeed ? "  ·  Xbox serial " + p.Xbox().Serial : "\nNo seed yet - the consoles' serial numbers and keys are made from it.");
+        _identitySummary.ForeColor = p.HasSeed ? Ink : Warn;
     }
 
     private void EditIdentity()
@@ -222,7 +224,9 @@ internal sealed class InstallerForm : Form
             AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(10),
         };
         var panel = new LbIntegrations.Menus.IdentityPanel();
-        var ok = new Button { Text = "OK", Width = 90 };
+        // Not past this window without a seed (Mehdi, 05/10): the consoles' serial numbers and keys are made from it.
+        var ok = new Button { Text = "OK", Width = 90, Enabled = panel.Complete };
+        panel.CompleteChanged += () => ok.Enabled = panel.Complete;
         var cancel = new Button { Text = "Cancel", Width = 90, DialogResult = DialogResult.Cancel };
         ok.Click += (_, _) =>
         {

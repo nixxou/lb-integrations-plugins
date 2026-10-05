@@ -6,11 +6,11 @@
 // CONSOLE (Mehdi, 04/10: "un disque par jeu"): hdd\games\<title id>.qcow2, a qcow2 of differences over the pristine
 // hdd\base.qcow2 (Qcow2Overlay) - that file is the game's save (XemuSaves).
 //
-// THE LAUNCH LINE: xemu.exe -full-screen -dvd_path "<xiso>" -L
+// THE LAUNCH LINE: x.emu.exe (xemu renamed - XemuPaths) -full-screen -config_path "<session toml>" -dvd_path "<xiso>"
 //   -dvd_path   xemu's own (system/vl.c), over [sys.files] dvd_path
-//   -L          QEMU's firmware search folder - no use to xemu, put LAST to take the game's path the host appends after the
-//               line (NoGbaRoms.cs: the host appends the ROM after NewCommandLine): a bare path would be taken by QEMU for a
-//               hard disk. Not -name: QEMU splits its value at commas, and "(En,Fr,De)" is in half the names. TO MEASURE.
+// NOTHING AFTER IT: NewCommandLine REPLACES the host's whole line, the game's path included (Vita3kSaves.cs). Measured in
+// LaunchBox 14 on 04/10: a line ending in -L, to swallow a path the host was thought to append, stopped xemu at once -
+// "-L: requires an argument" in xemu.log. The game's own path is dropped from the line: a bare path is a hard disk to QEMU.
 // Talks only to the public SDK; every entry point is defensive (the host swallows exceptions).
 
 using System;
@@ -45,6 +45,14 @@ namespace LbIntegrations.Xemu
             Log.Info("plugin constructed, assembly " + typeof(XemuPlugin).Assembly.Location);
             LbipLog.Use(Log.Info, Log.Warn, Log.Disabled, () => Log.Tracing);
             LbIntegrations.RamDisk.RamDiskLog.Use(Log.Info, (m, ex) => Log.Warn(m, ex));
+            // Where LaunchBox is, for the RAM disk helper's folder - unset, the helper reads as absent and every disc is copied
+            // (measured 04/10: "the RAM disk helper is absent, 1.10.0.0 is needed" with 1.10 in place). The probe sets its own.
+            if (LbIntegrations.RamDisk.RamDiskHost.LaunchBoxRoot == null)
+            {
+                var forced = Environment.GetEnvironmentVariable("LBIP_RAMDISK_ROOT");
+                if (!string.IsNullOrWhiteSpace(forced)) LbIntegrations.RamDisk.RamDiskHost.UseRoot(forced);
+                else LbIntegrations.RamDisk.RamDiskHost.LaunchBoxRoot = LaunchBoxRoot;
+            }
             LbipRowInjection.Install("com.nixxou.lbip.xemu", MetadataRows());
         }
 
@@ -73,12 +81,23 @@ namespace LbIntegrations.Xemu
             {
                 if (eventType != SystemEventTypes.PluginInitialized && eventType != SystemEventTypes.LaunchBoxStartupCompleted
                     && eventType != SystemEventTypes.BigBoxStartupCompleted) return;
-                // A session the host never saw end (killed mid-game): xemu.toml back on the stand-alone console.
-                foreach (var emu in PluginHelper.DataManager?.GetAllEmulators() ?? new IEmulator[0])
+                var dm = PluginHelper.DataManager;
+                bool renamed = false;
+                foreach (var emu in dm?.GetAllEmulators() ?? new IEmulator[0])
                 {
                     var path = ResolveFullPath(Safe(() => emu.ApplicationPath));
+                    // An install of ours from before x.emu.exe (XemuPaths): renamed, and the entry pointed at it - else
+                    // Unbroken's plugin keeps claiming it.
+                    if (XemuPaths.MigrateOldName(path) is string moved)
+                    {
+                        try { emu.ApplicationPath = MakeRelativeToLaunchBox(moved); renamed = true; Log.Info("renamed " + path + " -> " + moved + ", entry \"" + Safe(() => emu.Title) + "\" updated"); }
+                        catch (Exception ex) { Log.Warn("renamed " + path + " but the entry could not be updated", ex); }
+                        path = moved;
+                    }
+                    // A session the host never saw end (killed mid-game): xemu.toml back on the stand-alone console.
                     if (XemuPaths.IsOurs(path)) XemuSession.Standalone(path, "the host has started");
                 }
+                if (renamed) try { dm.Save(false); } catch (Exception ex) { Log.Warn("data manager save failed", ex); }
                 LbipRowInjection.Install("com.nixxou.lbip.xemu", MetadataRows());
             }
             catch (Exception ex) { Log.Warn("OnEventRaised", ex); }
@@ -184,7 +203,7 @@ namespace LbIntegrations.Xemu
                     ? Path.GetDirectoryName(ResolveFullPath(args.ExistingEmulator.ApplicationPath))
                     : Path.Combine(LaunchBoxRoot(), "Emulators", PackName);
                 if (string.IsNullOrWhiteSpace(targetDir)) return new EmulatorInstallResponse("Couldn't work out where to install xemu.");
-                if (XemuPaths.Running(Path.Combine(targetDir, XemuPaths.Exe))) return new EmulatorInstallResponse("xemu is running - close it first, then try again.");
+                if (XemuPaths.Running(Path.Combine(targetDir, XemuPaths.Exe)) || XemuPaths.Running(Path.Combine(targetDir, XemuPaths.ReleaseExe))) return new EmulatorInstallResponse("xemu is running - close it first, then try again.");
 
                 Report(args, "Downloading xemu...", 0);
                 archive = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".zip");
@@ -193,8 +212,10 @@ namespace LbIntegrations.Xemu
                 Directory.CreateDirectory(targetDir);
                 // OVER, never cleared first: xemu.toml, eeprom.bin, the BIOS and every game's console live in this folder.
                 Archives.ExtractOver(archive, targetDir);
-                var exe = XemuPaths.FindExe(targetDir);
-                if (exe == null) return new EmulatorInstallResponse("xemu was extracted to " + targetDir + " but no " + XemuPaths.Exe + " was found in it.");
+                // RENAMED x.emu.exe: Unbroken's Xemu plugin claims every executable named like xemu, and LaunchBox gives the entry
+                // to the first plugin that claims it (XemuPaths).
+                var exe = XemuPaths.RenameReleaseExe(targetDir);
+                if (exe == null) return new EmulatorInstallResponse("xemu was extracted to " + targetDir + " but no " + XemuPaths.ReleaseExe + " was found in it.");
                 File.WriteAllText(Path.Combine(Path.GetDirectoryName(exe), XemuPaths.VersionFile), label ?? "unknown");
 
                 var note = SetUp(exe, args, cancelled);
@@ -270,6 +291,13 @@ namespace LbIntegrations.Xemu
             if (XemuPaths.McpxPath(exe) is string mcpx) XemuToml.Set(toml, "sys.files", "bootrom_path", XemuToml.Literal(mcpx));
             if (XemuPaths.FlashPath(exe) is string flash) XemuToml.Set(toml, "sys.files", "flashrom_path", XemuToml.Literal(flash));
             XemuToml.Set(toml, "sys.files", "eeprom_path", XemuToml.Literal(XemuPaths.Eeprom(exe)));
+            // YOUR CONSOLE, for good: eeprom.bin with the seed's serial number, MAC and keys (Eeprom\XemuEeprom.ApplyIdentity).
+            try
+            {
+                if (!XemuOptions.Effective(null).ContainsKey("console.hddkey")) Log.Info("console: xemu's own identity kept (the Console identity option)");
+                else if (Eeprom.XemuEeprom.ApplyIdentity(XemuPaths.Eeprom(exe)) is string done) Log.Info("console: " + done);
+            }
+            catch (Exception ex) { Log.Warn("console: could not be set up as yours", ex); }
             XemuSession.Standalone(exe, "installed");
             return notes.Count == 0 ? "" : " " + string.Join(" ", notes);
         }
@@ -354,8 +382,8 @@ namespace LbIntegrations.Xemu
                 if (titleId == null) { XemuDisc.Release(info); return Refuse(Path.GetFileName(rom) + " cannot be launched: its title id could not be read."); }
                 var hdd = XemuPaths.GameHdd(exe, titleId);
                 // ITS SAVE FILE FIRST: lbip-saves\<title id>.cxbxsave is what counts - put there since the last session, it goes into
-                // the console now (XemuSaveFiles.SyncIn).
-                try { if (XemuSaveFiles.SyncIn(exe, titleId, base_) is string synced) Log.Info("saves: " + titleId + " - " + synced); }
+                // the console now (XemuSaveFiles.Sync, Shared.Xbox\XboxSaveSync).
+                try { XemuSaveFiles.Sync(exe, titleId, LbIntegrations.Xbox.XboxSyncMode.Launch); }
                 catch (Exception ex) { XemuDisc.Release(info); return Refuse("The save of " + Path.GetFileName(rom) + " could not be put into its console: " + ex.Message + "\n\nNothing was changed. Move or remove its file in " + Path.GetDirectoryName(XemuSaveFiles.PackPath(exe, titleId)) + " to start without it."); }
                 if (!File.Exists(hdd))
                 {
@@ -365,11 +393,29 @@ namespace LbIntegrations.Xemu
 
                 // ITS CONSOLE'S SETTINGS: region and video following the game, the pack's language, Windows' time zone, the pack's
                 // HDD key - on a copy of eeprom.bin for the session (Eeprom\XemuEeprom).
+                // THE SAVE'S KEYS (Shared.Xbox\XboxSaveKeys): the HDD key and the certificate key it was made with - a save from
+                // before they were noted is Cxbx-Reloaded's (certificate key zero). No save: the option's certificate key.
+                var pack = XemuSaveFiles.PackPath(exe, titleId);
+                var keys = LbIntegrations.Xbox.XboxSaveKeys.ForLaunch(pack, LbIntegrations.Xbox.XboxKeys.Zero);
+                if (keys?.Hdd != null) options["console.hddkey.bytes"] = LbIntegrations.Xbox.XboxKeys.Hex(keys.Hdd);
+                var cert = keys?.Cert ?? (options.TryGetValue("console.certkey", out var ck) && ck == "zero" ? LbIntegrations.Xbox.XboxKeys.Zero : LbIntegrations.Xbox.XboxKeys.Retail);
                 var said = new List<string>();
+                if (keys != null) said.Add("keys " + keys.Origin);
                 string eeprom = null;
                 try { eeprom = Eeprom.XemuEeprom.Prepare(XemuPaths.Eeprom(exe), XemuPaths.SessionEeprom(exe), info.Xbe, options, said); }
                 catch (Exception ex) { Log.Warn("console: its settings could not be made", ex); }
+                // ITS CERTIFICATE KEY: on a copy of the flash BIOS when it is not the BIOS's own (Shared.Xbox\XboxKeys).
+                var biosFlash = flash;
+                flash = LbIntegrations.Xbox.XboxKeys.SessionFlash(mcpx, flash, XemuPaths.SessionFlash(exe), cert, said) ?? flash;
                 Log.Info("console: " + (said.Count == 0 ? "as it is" : string.Join(", ", said)));
+                // The keys this session runs with, for the save it writes (XemuSaveFiles.Capture).
+                try
+                {
+                    var hddUsed = Eeprom.XemuEeprom.Open(File.ReadAllBytes(eeprom ?? XemuPaths.Eeprom(exe)))?.HddKey;
+                    var certUsed = flash != biosFlash ? cert : LbIntegrations.Xbox.XboxKeys.CertificateKeyOf(mcpx, biosFlash);
+                    if (hddUsed != null && certUsed != null) LbIntegrations.Xbox.XboxSaveSync.NoteSessionKeys(XemuSaveFiles.Side(exe, titleId), hddUsed, certUsed);
+                }
+                catch (Exception ex) { Log.Warn("console: the session's keys could not be noted", ex); }
 
                 // ITS xemu.toml: the user's with the game's options and the plugin's keys over it, for the session only
                 // (XemuSessionConfig) - the user's file merged back from it when xemu has gone.
@@ -400,8 +446,8 @@ namespace LbIntegrations.Xemu
         }
 
         /// <summary>The host's line without any -dvd_path (and its value) and -L - and -config_path when one is given - then
-        /// [-config_path "&lt;session toml&gt;"] -dvd_path "&lt;disc&gt;" -L last: -L to take the game's path the host appends. The user's other options kept with their values (-machine xbox,...); a loose
-        /// word that is the game's path dropped - the host puts it back.</summary>
+        /// [-config_path "&lt;session toml&gt;"] -dvd_path "&lt;disc&gt;" - nothing after: the line replaces the host's whole line. The user's other
+        /// options kept with their values (-machine xbox,...); a loose word that is the game's path dropped.</summary>
         internal static string CommandLineFor(string current, string dvd, string rom = null, string configPath = null)
         {
             var tokens = Tokenize(current);
@@ -418,7 +464,7 @@ namespace LbIntegrations.Xemu
                 if (valued) { if (!IsTheGame(tokens[i + 1], rom)) kept.Add(Quote(tokens[i + 1])); i++; }
             }
             if (!kept.Contains("-full-screen")) kept.Insert(0, "-full-screen");
-            return string.Join(" ", kept) + (configPath != null ? " -config_path \"" + configPath + "\"" : "") + " -dvd_path \"" + dvd + "\" -L";
+            return string.Join(" ", kept) + (configPath != null ? " -config_path \"" + configPath + "\"" : "") + " -dvd_path \"" + dvd + "\"";
         }
 
         private static string Quote(string token) => token.IndexOfAny(new[] { ' ', '\t' }) >= 0 ? "\"" + token + "\"" : token;

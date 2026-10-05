@@ -157,11 +157,16 @@ namespace LbIntegrations.Xemu
                              Choices = { ("windows", "Your console's language (else Windows')"), ("1", "English"), ("4", "French"), ("3", "German"), ("5", "Spanish"),
                                          ("6", "Italian"), ("9", "Portuguese"), ("2", "Japanese"), ("7", "Korean"), ("8", "Chinese"), Own } },
             new XemuOption { Key = "console.timezone", Group = "Console", Label = "Time zone", Default = "windows", Choices = { ("windows", "Windows' time zone"), Own } },
-            new XemuOption { Key = "console.hddkey", Group = "Console", Label = "HDD key", Default = "pack",
-                             Choices = { ("pack", "The pack's (the same on every console)"), Own },
-                             Help = "The console's key, which a few games sign their saves with. The pack's: every console of the pack - xemu's and "
-                                    + "Cxbx-Reloaded's - has the same, so those saves move between them. xemu's own: keep it if this console is "
-                                    + "registered with Insignia (a new key loses the registration)." },
+            new XemuOption { Key = "console.hddkey", Group = "Console", Label = "Console identity", Default = "pack",
+                             Choices = { ("pack", "Your console's (from its seed)"), Own },
+                             Help = "The serial number, MAC address, HDD key and online key - made from the seed of \"Your console\", the same "
+                                    + "on xemu and Cxbx-Reloaded (with no seed yet: the HDD key alone, the pack's). A save carries the HDD key it "
+                                    + "was made with, and its game is launched with that one. xemu's own: its EEPROM as it is." },
+            new XemuOption { Key = "console.certkey", Group = "Console", Label = "Certificate key", Default = "retail",
+                             Choices = { ("retail", "A real Xbox's"), ("zero", "Zero - Cxbx-Reloaded's without keys.bin") },
+                             Help = "For a game with no save yet: a save carries the keys it was made with, and its game is launched with them "
+                                    + "whatever is set here. The key a game signs its saves with comes from it; zero is Cxbx-Reloaded's. Made on "
+                                    + "a copy of your flash BIOS for the session - your file is never written." },
 
             // ── the disc (XboxMediaPatch) ──
             new XemuOption { Key = "disc.media_patch", Group = "Disc", Label = "Media patch", Bool = true, Default = "on",

@@ -65,7 +65,7 @@ namespace LbIntegrations.Cxbx
                 {
                     CxbxRamSession.Release("its game is over");
                     CxbxOptions.Restore(exe, "its game is over");
-                    try { if (titleId != null) CxbxSaves.Capture(exe, titleId); } catch (Exception ex) { Log.Warn("save capture", ex); }
+                    try { if (titleId != null) CxbxSaves.Sync(exe, titleId, LbIntegrations.Xbox.XboxSyncMode.SessionEnd); } catch (Exception ex) { Log.Warn("save capture", ex); }
                 }
             });
         }

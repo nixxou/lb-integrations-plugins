@@ -33,6 +33,7 @@
     <Compile Include="..\Shared.Zar\**\*.cs" />
     <!-- CSO, CCI, CHD - the disc's bytes through its container. -->
     <Compile Include="..\Shared.Disc\**\*.cs" />
+    <Compile Include="..\Shared.Xbox\**\*.cs" />
     <!-- The Cxbx plugin's Xbox readers, the SAME files (as tools\ramdisk-helper links them): the XBE certificate, the
          XDVDFS listing (MPL-2.0, see THIRD-PARTY.md), GitHub's releases, archives. Their LbIntegrations.Cxbx.Log is
          answered by CxbxLog.cs here. -->

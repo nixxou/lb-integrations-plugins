@@ -47,7 +47,7 @@ namespace LbIntegrations.Xemu
                     Standalone(exe, "its game is over");
                     XemuDisc.Release(disc);
                     // The save the host sees, brought up to date with the console the game just wrote (XemuSaves).
-                    try { XemuSaveFiles.Capture(exe, System.IO.Path.GetFileNameWithoutExtension(gameHdd)); }
+                    try { XemuSaveFiles.Sync(exe, System.IO.Path.GetFileNameWithoutExtension(gameHdd), LbIntegrations.Xbox.XboxSyncMode.SessionEnd); }
                     catch (Exception ex) { Log.Warn("session: the save could not be captured", ex); }
                 }
             });

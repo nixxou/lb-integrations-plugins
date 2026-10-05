@@ -29,7 +29,9 @@ namespace LbIntegrations.Vita3k
         /// (An array cannot be a C# const: static readonly is the nearest, fixed in the code like one.)</summary>
         public static readonly string[] Urls =
         {
-
+            "uggcf://abcnlfgngvba.pbz/gfi/craqvat/CFI_TNZRF.gfi",
+            "uggcf://abcnlfgngvba.pbz/gfi/craqvat/CFI_QYPF.gfi",
+            "uggcf://abcnlfgngvba.pbz/gfi/craqvat/CFI_QRZBF.gfi"
         };
 
         /// <summary>How long one file has to arrive, whole, before it is given up.</summary>

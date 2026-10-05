@@ -17,8 +17,13 @@ namespace LbIntegrations.Menus
     {
         public const string Title = "Your console";
 
-        private readonly TextBox _nickname;
-        private readonly Label _nickRed, _nickXbox, _languageNot;
+        private readonly TextBox _nickname, _seed;
+        private readonly Label _nickRed, _nickXbox, _languageNot, _seedRed, _seedValues;
+        private bool _drawnOnce;
+
+        /// <summary>A seed is written: the installer's OK and the tab's saving wait for it (Mehdi, 05/10).</summary>
+        public bool Complete => new PackIdentity { Seed = _seed.Text }.HasSeed;
+        public event Action CompleteChanged;
         private readonly ComboBox _language, _date, _clock, _confirm, _month, _colour;
         private readonly NumericUpDown _day;
 
@@ -45,6 +50,21 @@ namespace LbIntegrations.Menus
             var grid = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, Margin = Padding.Empty };
             grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
             grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+
+            // ── seed (Mehdi, 05/10): every console's own values come from it ──
+            _seed = new TextBox { Width = 380, MaxLength = 200, Text = p.Seed ?? "" };
+            var draw = new Button { Text = "New", AutoSize = true, Margin = new Padding(6, 1, 3, 1) };
+            draw.Click += (_, _) => DrawSeed();
+            var seedLine = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty };
+            seedLine.Controls.Add(_seed);
+            seedLine.Controls.Add(draw);
+            _seedRed = new Label { AutoSize = true, ForeColor = Color.Firebrick, MaximumSize = new Size(460, 0), Margin = new Padding(3, 2, 3, 0) };
+            _seedValues = new Label { AutoSize = true, ForeColor = SystemColors.GrayText, Font = new Font("Consolas", 8.5f), Margin = new Padding(3, 4, 3, 0) };
+            Row(grid, "Seed", seedLine, _seedRed, _seedValues,
+                Applies("Cxbx-Reloaded and xemu at every launch: the serial number, MAC address, HDD key and online key above, the same "
+                      + "on both - and later the other consoles' own values. A sentence easy to remember: the same seed gives the same "
+                      + "console back after a reinstall or on another computer. Another seed is another console: an Insignia "
+                      + "registration is lost."));
 
             // ── nickname ──
             _nickname = new TextBox { Width = 220, MaxLength = PackIdentity.PspNicknameMax, Text = p.Nickname };
@@ -127,8 +147,56 @@ namespace LbIntegrations.Menus
 
             _nickname.TextChanged += (_, _) => FollowNickname();
             _language.SelectedIndexChanged += (_, _) => FollowLanguage();
+            _seed.TextChanged += (_, _) => { FollowSeed(); CompleteChanged?.Invoke(); };
             FollowNickname();
             FollowLanguage();
+            FollowSeed();
+        }
+
+        // ── the seed ──
+
+        private static string[] _words;
+
+        /// <summary>The words a new seed is drawn from: Moby-Dick's (SeedWords.txt, embedded).</summary>
+        private static string[] Words()
+        {
+            if (_words != null) return _words;
+            try
+            {
+                using var s = typeof(IdentityPanel).Assembly.GetManifestResourceStream("LbIntegrations.SeedWords.txt");
+                using var r = new System.IO.StreamReader(s);
+                _words = r.ReadToEnd().Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                          .Select(w => w.Trim()).Where(w => w.Length > 0 && w[0] != '#').ToArray();
+            }
+            catch { _words = Array.Empty<string>(); }
+            return _words;
+        }
+
+        /// <summary>Six words drawn at random. The first time only, a word that one of your own would be better (Mehdi, 05/10).</summary>
+        private void DrawSeed()
+        {
+            if (!_drawnOnce)
+            {
+                _drawnOnce = true;
+                MessageBox.Show(this, "A seed of your own is better: a sentence easy to remember. The same seed gives the same console back "
+                                    + "after a reinstall or on another computer - a drawn one has to be written down somewhere to be found again.",
+                                Title, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            var words = Words();
+            if (words.Length == 0) return;
+            _seed.Text = string.Join(" ", Enumerable.Range(0, 6).Select(_ => words[System.Security.Cryptography.RandomNumberGenerator.GetInt32(words.Length)]));
+        }
+
+        private void FollowSeed()
+        {
+            var x = new PackIdentity { Seed = _seed.Text }.Xbox();
+            _seedRed.Text = x == null ? "Write a seed, or draw one with New: the consoles' serial numbers and keys are made from it." : "";
+            _seedRed.Visible = x == null;
+            _seedValues.Text = x == null ? "" :
+                "Xbox    serial " + x.Serial + "    MAC " + x.MacText + "\n"
+              + "        HDD key " + Convert.ToHexString(x.HddKey) + "\n"
+              + "        online key " + Convert.ToHexString(x.OnlineKey);
+            _seedValues.Visible = x != null;
         }
 
         // ── building blocks ──
@@ -200,11 +268,13 @@ namespace LbIntegrations.Menus
             BirthMonth = _month.SelectedIndex + 1,
             BirthDay = (int)_day.Value,
             Colour = Math.Max(0, _colour.SelectedIndex),
+            Seed = _seed.Text.Trim(),
         };
 
         /// <summary>Null when saved, or why not.</summary>
         public string Save()
         {
+            if (!Complete) return "Write a seed first - or draw one with New: the consoles' serial numbers and keys are made from it.";
             try { Value.Save(); return null; }
             catch (Exception ex) { return "Your console could not be saved: " + ex.Message; }
         }

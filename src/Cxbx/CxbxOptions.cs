@@ -99,11 +99,11 @@ namespace LbIntegrations.Cxbx
                                          ("ntsc", "NTSC"), ("ntsc-hd", "NTSC + 480p/720p/1080i"), Own },
                              Help = "Follow: a European game gets PAL with 60 Hz allowed, an American or Japanese one NTSC with its HD modes. "
                                     + "A European game's HD modes, when it has any, only show on NTSC." },
-            new CxbxOption { Key = "console.hddkey", Group = "Console", Label = "HDD key", Default = "pack",
-                             Choices = { ("pack", "The pack's (the same on every console)"), Own },
-                             Help = "The console's key, which a few games sign their saves with. The pack's: every console of the pack - Cxbx-Reloaded's "
-                                    + "and xemu's - has the same, so those saves move between them. Cxbx-Reloaded's own: the one in its EEPROM window "
-                                    + "(keep it if this console is registered with Insignia: a new key loses the registration)." },
+            new CxbxOption { Key = "console.hddkey", Group = "Console", Label = "Console identity", Default = "pack",
+                             Choices = { ("pack", "Your console's (from its seed)"), Own },
+                             Help = "The serial number, MAC address, HDD key and online key - made from the seed of \"Your console\", the same "
+                                    + "on Cxbx-Reloaded and xemu (with no seed yet: the HDD key alone, the pack's). A save carries the HDD key it "
+                                    + "was made with, and its game is launched with that one. Cxbx-Reloaded's own: the values of its EEPROM window." },
             new CxbxOption { Key = "console.screen", Group = "Console", Label = "Picture", Choices = { ("normal", "Normal (4:3)"), ("widescreen", "Widescreen (16:9)"), ("letterbox", "Letterbox") } },
             new CxbxOption { Key = "console.audio", Group = "Console", Label = "Sound", Choices = { ("stereo", "Stereo"), ("mono", "Mono"), ("surround", "Surround") } },
 
@@ -166,6 +166,15 @@ namespace LbIntegrations.Cxbx
                     foreach (var line in File.ReadAllLines(list))
                     {
                         var c = line.Split('\t');
+                        // keys.bin (the save's certificate key, XboxSaveKeys): back as it was - removed when there was none.
+                        if (c.Length >= 2 && c[0].Equals(KeysBin, StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (c.Length == 3 && c[2] == "absent") { if (File.Exists(c[1])) { File.Delete(c[1]); done.Add("keys.bin removed"); } }
+                            else if (File.Exists(Path.Combine(dir, KeysBin))
+                                     && !(File.Exists(c[1]) && File.ReadAllBytes(c[1]).AsSpan().SequenceEqual(File.ReadAllBytes(Path.Combine(dir, KeysBin)))))
+                            { File.Copy(Path.Combine(dir, KeysBin), c[1], overwrite: true); done.Add("keys.bin put back"); }
+                            continue;
+                        }
                         var copy = c.Length == 2 ? Path.Combine(dir, c[0]) : null;
                         if (copy == null || !File.Exists(copy)) continue;
                         bool isSettings = c[0].Equals(CxbxPaths.SettingsFile, StringComparison.OrdinalIgnoreCase);
@@ -183,8 +192,9 @@ namespace LbIntegrations.Cxbx
         }
 
         /// <summary>The game's options written into settings.ini and EEPROM.bin for its session, the two files copied
-        /// first. <paramref name="xbe"/>: the game, for its region.</summary>
-        public static void Apply(string exe, string gameId, XbeInfo xbe)
+        /// first. <paramref name="xbe"/>: the game, for its region. <paramref name="keys"/>: its save's (XboxSaveKeys) - the
+        /// HDD key into EEPROM.bin, the certificate key into keys.bin (its EEPROM key kept: the one EEPROM.bin is signed with).</summary>
+        public static void Apply(string exe, string gameId, XbeInfo xbe, LbIntegrations.Xbox.SaveKeys keys = null)
         {
             try
             {
@@ -204,10 +214,25 @@ namespace LbIntegrations.Cxbx
                 File.Copy(settings, Path.Combine(dir, CxbxPaths.SettingsFile), overwrite: true);
                 paths.Add(CxbxPaths.SettingsFile + "\t" + settings);
                 if (File.Exists(eeprom)) { File.Copy(eeprom, Path.Combine(dir, "EEPROM.bin"), overwrite: true); paths.Add("EEPROM.bin\t" + eeprom); }
+                var keysBin = Path.Combine(data, KeysBin);
+                if (File.Exists(keysBin)) { File.Copy(keysBin, Path.Combine(dir, KeysBin), overwrite: true); paths.Add(KeysBin + "\t" + keysBin); }
+                else paths.Add(KeysBin + "\t" + keysBin + "\tabsent");
                 File.WriteAllLines(Path.Combine(dir, "paths.tsv"), paths);
 
                 var v = Effective(gameId);
                 var said = new List<string>();
+                // THE SAVE'S KEYS (XboxSaveKeys): its HDD key (CxbxEeprom.ApplyOptions), its certificate key in keys.bin.
+                if (keys != null) said.Add("keys " + keys.Origin);
+                if (keys?.Hdd != null) v["console.hddkey.bytes"] = LbIntegrations.Xbox.XboxKeys.Hex(keys.Hdd);
+                if (keys?.Cert != null && !LbIntegrations.Xbox.XboxKeys.Same(CertificateKey(data), keys.Cert))
+                {
+                    var now = File.Exists(keysBin) ? File.ReadAllBytes(keysBin) : null;
+                    var b = new byte[32];
+                    if (now != null && now.Length == 32) Array.Copy(now, b, 16); else LbIntegrations.Xbox.XboxKeys.RetailEeprom.CopyTo(b, 0);
+                    keys.Cert.CopyTo(b, 16);
+                    File.WriteAllBytes(keysBin, b);
+                    said.Add("certificate key " + (LbIntegrations.Xbox.XboxKeys.Same(keys.Cert, LbIntegrations.Xbox.XboxKeys.Zero) ? "zero" : "the save's") + " (keys.bin)");
+                }
                 var written = WriteSettings(settings, v, said);
                 File.WriteAllLines(Path.Combine(dir, KeysFile), written.Select(w => string.Join("\t", w.Section, w.Key, w.Before ?? Absent, w.After)), new UTF8Encoding(false));
                 File.WriteAllText(Path.Combine(dir, SettingsHash), Sha(settings));
@@ -221,6 +246,20 @@ namespace LbIntegrations.Cxbx
         }
 
         private const string KeysFile = "keys.tsv", EepromHash = "eeprom.sha", SettingsHash = "settings.sha", Absent = "\u0001absent";
+        private const string KeysBin = "keys.bin";
+
+        /// <summary>The certificate key Cxbx-Reloaded runs with: keys.bin's second half (LoadXboxKeys reads a file of 32 bytes
+        /// exactly), else zero.</summary>
+        public static byte[] CertificateKey(string data)
+        {
+            try
+            {
+                var f = data == null ? null : Path.Combine(data, KeysBin);
+                var b = f != null && File.Exists(f) ? File.ReadAllBytes(f) : null;
+                return b != null && b.Length == 32 ? b.Skip(16).ToArray() : LbIntegrations.Xbox.XboxKeys.Zero;
+            }
+            catch { return LbIntegrations.Xbox.XboxKeys.Zero; }
+        }
 
         /// <summary>The same value, however written: true / True, 8 / 0x8.</summary>
         private static bool SameValue(string a, string b)

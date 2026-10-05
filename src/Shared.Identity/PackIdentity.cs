@@ -35,12 +35,76 @@ namespace LbIntegrations.Identity
 {
     internal sealed class PackIdentity
     {
-        /// <summary>THE HDD KEY OF EVERY XBOX CONSOLE OF THE PACK (Mehdi, 04/10): sixteen 0x11, written into each console's
-        /// EEPROM by the Cxbx and xemu plugins (a new one, and the session's copy) - so a save a game signs with the console's
-        /// key (a few games) is valid on all of them, and stays so after any reinstall. Not zeros: Xbox Live's libraries, and
-        /// Insignia by design, refuse a null key (Cxbx-Reloaded PR #1944; ConsoleMods). A console already registered with
-        /// Insignia loses that registration when its key changes - the option "own" keeps the emulator's.</summary>
-        public static byte[] XboxHddKey() => Enumerable.Repeat((byte)0x11, 16).ToArray();
+        /// <summary>THE HDD KEY OF THE XBOX CONSOLES OF THE PACK, written into each console's EEPROM by the Cxbx and xemu plugins
+        /// (a new one, and the session's copy): the one of YOUR CONSOLE's seed (Xbox, below) - else, with no seed yet, sixteen
+        /// 0x11 (04/10, before the seed: one key on every console). A save carries the HDD key it was made with
+        /// (Shared.Xbox\XboxSaveKeys) and its game is launched with that one. Never zeros: Xbox Live's libraries, and Insignia
+        /// by design, refuse a null key (Cxbx-Reloaded PR #1944; ConsoleMods).</summary>
+        public static byte[] XboxHddKey() => Load()?.Xbox()?.HddKey ?? Enumerable.Repeat((byte)0x11, 16).ToArray();
+
+        // ── the seed (Mehdi, 05/10) ─────────────────────────────────────────
+        // THE VALUES A CONSOLE IS MADE UNIQUE BY - an Xbox's serial number, MAC address, HDD key and online key - all come from
+        // ONE seed the user writes (a sentence easy to remember), so the same seed gives the same console after a reinstall, on
+        // another machine, whichever emulator is installed first. Each value is its own HMAC-SHA-256 of the seed: independent
+        // of the others, and the seed is not found back from them. The seed is compared lower case, its spaces collapsed.
+        // Changing it makes another console: an Insignia registration (serial number, HDD key) is lost.
+
+        /// <summary>The seed, as typed. Empty: none yet - the consoles keep their own values.</summary>
+        public string Seed = "";
+
+        public static string NormalizeSeed(string s)
+            => string.Join(" ", (s ?? "").Trim().ToLowerInvariant().Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
+
+        public bool HasSeed => NormalizeSeed(Seed).Length > 0;
+
+        /// <summary><paramref name="count"/> bytes of the seed for <paramref name="label"/> ("xbox.serial"...).</summary>
+        public byte[] Derive(string label, int count)
+        {
+            var result = new byte[count];
+            using var h = new System.Security.Cryptography.HMACSHA256(Encoding.UTF8.GetBytes("lbip-console-seed/1"));
+            for (int block = 0, got = 0; got < count; block++)
+            {
+                var b = h.ComputeHash(Encoding.UTF8.GetBytes(NormalizeSeed(Seed) + "\n" + label + "\n" + block.ToString(CultureInfo.InvariantCulture)));
+                int take = Math.Min(b.Length, count - got);
+                Array.Copy(b, 0, result, got, take);
+                got += take;
+            }
+            return result;
+        }
+
+        /// <summary>An Xbox's own values: the EEPROM's factory section (serial 0x34, MAC 0x40, online key 0x48) and its HDD key (0x1C).</summary>
+        internal sealed class XboxConsole
+        {
+            public string Serial;       // 12 digits
+            public byte[] Mac;          // 6 bytes, Microsoft's 00:50:F2 first
+            public byte[] HddKey;       // 16 bytes, never all zero
+            public byte[] OnlineKey;    // 16 bytes
+
+            public string MacText => string.Join(":", Mac.Select(x => x.ToString("X2", CultureInfo.InvariantCulture)));
+        }
+
+        /// <summary>The Xbox of this seed - null with no seed.</summary>
+        public XboxConsole Xbox()
+        {
+            if (!HasSeed) return null;
+            // A real one's form (xboxdevwiki Manufacturing_Process, Free60): L NNNNNN Y WW FF - the production line, the console's
+            // number in its week, the year's last digit, the week, the factory (02 Mexico, 03 Hungary, 05 China, 06 Taiwan).
+            // Made between week 46 of 2001 and the end of 2005.
+            var s = Derive("xbox.serial", 16);
+            uint U(int at) => BitConverter.ToUInt32(s, at);
+            int year = 1 + (int)(U(0) % 5);
+            int week = year == 1 ? 46 + (int)(U(4) % 7) : 1 + (int)(U(4) % 52);
+            var factories = new[] { "02", "03", "05", "06" };
+            var digits = new StringBuilder()
+                .Append((char)('1' + U(8) % 4))
+                .Append((U(12) % 300000).ToString("D6", CultureInfo.InvariantCulture))
+                .Append(year.ToString(CultureInfo.InvariantCulture))
+                .Append(week.ToString("D2", CultureInfo.InvariantCulture))
+                .Append(factories[(s[3] ^ s[7]) % 4]);
+            var mac = Derive("xbox.mac", 6); mac[0] = 0x00; mac[1] = 0x50; mac[2] = 0xF2;
+            var hdd = Derive("xbox.hddkey", 16); if (hdd.All(x => x == 0)) hdd[0] = 1;
+            return new XboxConsole { Serial = digits.ToString().PadRight(12, '0'), Mac = mac, HddKey = hdd, OnlineKey = Derive("xbox.onlinekey", 16) };
+        }
 
         public string Nickname = "";
         /// <summary>A culture name of <see cref="Languages"/>.</summary>
@@ -225,6 +289,7 @@ namespace LbIntegrations.Identity
                     BirthMonth = Int(v, "birth_month", 1, 12, 1),
                     BirthDay = Int(v, "birth_day", 1, 31, 1),
                     Colour = Int(v, "colour", 0, 15, 0),
+                    Seed = v.TryGetValue("seed", out var s) ? s : "",
                 };
                 return p;
             }
@@ -248,6 +313,8 @@ namespace LbIntegrations.Identity
                 "birth_month=" + BirthMonth.ToString(CultureInfo.InvariantCulture),
                 "birth_day=" + BirthDay.ToString(CultureInfo.InvariantCulture),
                 "colour=" + Colour.ToString(CultureInfo.InvariantCulture),
+                "# The seed every console's own values come from (an Xbox's serial number, MAC, HDD key, online key).",
+                "seed=" + (Seed ?? "").Replace("\r", "").Replace("\n", " ").Trim(),
             };
             var tmp = FilePath + ".tmp";
             File.WriteAllLines(tmp, lines, new UTF8Encoding(false));

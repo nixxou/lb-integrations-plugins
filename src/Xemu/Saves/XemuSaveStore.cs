@@ -80,7 +80,7 @@ namespace LbIntegrations.Xemu.Saves
             using var archive = ZipArchive.Open(pack);
             foreach (var en in archive.Entries)
             {
-                if (en.IsDirectory || string.IsNullOrEmpty(en.Key)) continue;
+                if (en.IsDirectory || string.IsNullOrEmpty(en.Key) || LbIntegrations.Xbox.XboxSaveKeys.IsKeysEntry(en.Key)) continue;
                 var name = en.Key.Replace('\\', '/').TrimStart('/');
                 var parts = name.Split('/');
                 if (parts.Any(p => p.Length == 0 || p == "." || p == "..")) throw new InvalidDataException("an entry escapes the save's folder: " + en.Key);

@@ -222,6 +222,159 @@ namespace LbIntegrations.Probe
         /// <summary>The console's EEPROM: XboxEepromEditor's crypto both ways, a new console, and a session's settings - region and
         /// video following the game, language, time zone - on a copy, the base never written. With <paramref name="real"/> (an
         /// EEPROM xemu made), opening and sealing it unchanged must give back its very bytes.</summary>
+        /// <summary>The flash BIOS of a session with the certificate key at zero (Eeprom\XboxBldr), made from the user's
+        /// mcpx_1.0.bin and flash BIOS in <paramref name="biosDir"/>: RC4 is a stream, so the 16 bytes of the key are the only ones
+        /// that change in each 256 KB image - nothing else. No key is printed.</summary>
+        private static void CertKey(string work, string biosDir)
+        {
+            // a[3]: "retail" - the BIOS as it is (null), "zero" - Cxbx-Reloaded's key.
+            object B(params object[] a)
+            {
+                a[3] = (string)a[3] == "zero" ? new byte[16] : null;
+                try { return _asm.GetType("LbIntegrations.Xbox.XboxKeys", true).GetMethod("SessionFlash", Any).Invoke(null, a); }
+                catch (TargetInvocationException ex) { throw ex.InnerException ?? ex; }
+            }
+            object KeyOf(string m, string f) { try { return _asm.GetType("LbIntegrations.Xbox.XboxKeys", true).GetMethod("CertificateKeyOf", Any).Invoke(null, new object[] { m, f }); } catch (TargetInvocationException ex) { throw ex.InnerException ?? ex; } }
+            object Flash(params object[] a) { try { return _asm.GetType("LbIntegrations.Xbox.XboxKeys", true).GetMethod("SessionFlash", Any).Invoke(null, a); } catch (TargetInvocationException ex) { throw ex.InnerException ?? ex; } }
+            var said = new List<string>();
+            var fake = Path.Combine(work, "flash-fake.bin"); File.WriteAllBytes(fake, new byte[0x100000]);
+            var mcpxFake = Path.Combine(work, "mcpx-fake.bin"); File.WriteAllBytes(mcpxFake, new byte[512]);
+            var outPath = Path.Combine(work, "flash-session.bin");
+            Check("retail: the BIOS as it is", (string)B(mcpxFake, fake, outPath, "retail", said) == fake && !File.Exists(outPath));
+            Check("zero on a BIOS that does not open: none made, said", B(mcpxFake, fake, outPath, "zero", said) == null && !File.Exists(outPath) && said.Any(s => s.Contains("NOT set")));
+            if (string.IsNullOrWhiteSpace(biosDir) || !File.Exists(Path.Combine(biosDir, "mcpx_1.0.bin"))) { Console.WriteLine("    (no LBIP_XEMU_BIOS: the real BIOS not checked)"); return; }
+            var mcpx = Path.Combine(biosDir, "mcpx_1.0.bin");
+            foreach (var flash in Directory.GetFiles(biosDir, "*.bin").Where(f => !Path.GetFileName(f).Equals("mcpx_1.0.bin", StringComparison.OrdinalIgnoreCase)))
+            {
+                said.Clear();
+                var before = File.ReadAllBytes(flash);
+                var made = (string)B(mcpx, flash, outPath, "zero", said);
+                Check(Path.GetFileName(flash) + ": a session copy made", made == outPath && File.Exists(outPath), string.Join("; ", said));
+                if (made == null) continue;
+                var after = File.ReadAllBytes(outPath);
+                var changed = Enumerable.Range(0, before.Length).Where(i => before[i] != after[i]).ToList();
+                int images = before.Length / 0x40000;
+                Check("... the same size, the user's file untouched", after.Length == before.Length && File.ReadAllBytes(flash).SequenceEqual(before));
+                Check("... at most 16 bytes changed per image, each inside its boot loader", changed.Count > 0 && changed.Count <= 16 * images
+                      && changed.All(i => i % 0x40000 >= 0x40000 - 0x6200 && i % 0x40000 < 0x40000 - 0x200)
+                      && changed.GroupBy(i => i / 0x40000).All(g => g.Max() - g.Min() < 16), changed.Count + " byte(s)");
+                said.Clear();
+                Check("... zero asked of the copy: already its own - the copy itself, nothing made", (string)B(mcpx, outPath, Path.Combine(work, "flash-session2.bin"), "zero", said) == outPath
+                      && !File.Exists(Path.Combine(work, "flash-session2.bin")));
+                var own = KeyOf(mcpx, flash) as byte[];
+                Check("... its own key read, and the copy's is zero", own != null && own.Length == 16 && own.Any(x => x != 0)
+                      && KeyOf(mcpx, outPath) is byte[] z && z.All(x => x == 0));
+                said.Clear();
+                var back = Flash(mcpx, outPath, Path.Combine(work, "flash-session3.bin"), own, said) as string;
+                Check("... its own key put back into the copy: the BIOS byte for byte", back != null && File.ReadAllBytes(back).SequenceEqual(before));
+                Check("... asked for its own key: the BIOS itself, no copy", (string)Flash(mcpx, flash, Path.Combine(work, "flash-session4.bin"), own, said) == flash
+                      && !File.Exists(Path.Combine(work, "flash-session4.bin")));
+                foreach (var f in new[] { outPath, Path.Combine(work, "flash-session3.bin") }) { try { File.Delete(f); } catch { } }
+            }
+        }
+
+        /// <summary>Your console's seed (PackIdentity): the same seed, however typed, gives the same Xbox; another, another one.
+        /// And the hard-coded retail certificate key is the user's BIOS's (LBIP_XEMU_BIOS), when one is given.</summary>
+        private static void SeedCheck(string biosDir)
+        {
+            var id = _asm.GetType("LbIntegrations.Identity.PackIdentity", true);
+            object Xbox(string seed) { var p = Activator.CreateInstance(id, true); id.GetField("Seed").SetValue(p, seed); return id.GetMethod("Xbox").Invoke(p, null); }
+            object F(object x, string f) => x?.GetType().GetField(f, Any)?.GetValue(x);
+            string Sig(object x) => x == null ? null : F(x, "Serial") + "|" + Convert.ToHexString((byte[])F(x, "Mac")) + "|" + Convert.ToHexString((byte[])F(x, "HddKey")) + "|" + Convert.ToHexString((byte[])F(x, "OnlineKey"));
+            var a = Xbox("Call me Ishmael");
+            Check("no seed: no console values", Xbox("") == null && Xbox("   ") == null);
+            Check("the same seed, however typed (case, spaces): the same Xbox", Sig(a) == Sig(Xbox("  call   ME ishmael ")));
+            Check("another seed: another Xbox", Sig(a) != Sig(Xbox("Call me Ahab")));
+            Check("... a serial of 12 digits, a MAC of Microsoft's, an HDD key not null, keys apart",
+                  ((string)F(a, "Serial")).Length == 12 && ((string)F(a, "Serial")).All(char.IsDigit)
+                  && ((byte[])F(a, "Mac")).Take(3).SequenceEqual(new byte[] { 0x00, 0x50, 0xF2 })
+                  && ((byte[])F(a, "HddKey")).Any(x => x != 0) && !((byte[])F(a, "HddKey")).SequenceEqual((byte[])F(a, "OnlineKey")));
+            Console.WriteLine("    (\"Call me Ishmael\": serial " + F(a, "Serial") + ")");
+            bool RealForm(string sn) => sn.Length == 12 && sn[7] >= '1' && sn[7] <= '5' && int.Parse(sn.Substring(8, 2)) is int w && w >= 1 && w <= 52
+                                        && new[] { "02", "03", "05", "06" }.Contains(sn.Substring(10, 2)) && (sn[7] != '1' || w >= 46);
+            var many = Enumerable.Range(0, 300).Select(i => (string)F(Xbox("seed " + i), "Serial")).ToList();
+            Check("... serials of a real Xbox's form, L NNNNNN Y WW FF (300 seeds)", many.All(RealForm), many.FirstOrDefault(x => !RealForm(x)));
+            Check("... every factory and year seen, no two the same", many.Select(x => x.Substring(10, 2)).Distinct().Count() == 4 && many.Select(x => x[7]).Distinct().Count() == 5 && many.Distinct().Count() == many.Count);
+            var keys = _asm.GetType("LbIntegrations.Xbox.XboxKeys", true);
+            var retail = (byte[])keys.GetProperty("Retail", Any).GetValue(null);
+            Check("the retail certificate key: 16 bytes, not zero", retail.Length == 16 && retail.Any(x => x != 0));
+            if (!string.IsNullOrWhiteSpace(biosDir) && File.Exists(Path.Combine(biosDir, "mcpx_1.0.bin")))
+                foreach (var flash in Directory.GetFiles(biosDir, "*.bin").Where(f => !Path.GetFileName(f).Equals("mcpx_1.0.bin", StringComparison.OrdinalIgnoreCase)))
+                    Check("... the one in " + Path.GetFileName(flash), keys.GetMethod("CertificateKeyOf", Any).Invoke(null, new object[] { Path.Combine(biosDir, "mcpx_1.0.bin"), flash }) is byte[] own && own.SequenceEqual(retail));
+        }
+
+        /// <summary>--xbox-save-keys &lt;file&gt;...: saves of 04/10, their keys in the zip's comment, moved to the entry - the
+        /// plugin's own code. A file without keys is left alone.</summary>
+        public static bool MoveSaveKeys(Assembly asm, IEnumerable<string> packs)
+        {
+            _asm = asm;
+            var t = _asm.GetType("LbIntegrations.Xbox.XboxSaveKeys", true);
+            object K(string m, params object[] a) { try { return t.GetMethod(m, Any).Invoke(null, a); } catch (TargetInvocationException ex) { throw ex.InnerException ?? ex; } }
+            byte[] F(object o, string f) => (byte[])o.GetType().GetField(f, Any).GetValue(o);
+            bool ok = true;
+            foreach (var p in packs)
+            {
+                try
+                {
+                    var k = K("Read", p);
+                    if (k == null) { Console.WriteLine("  no keys, left alone: " + p); continue; }
+                    var when = File.GetLastWriteTime(p);
+                    K("Write", p, F(k, "Hdd"), F(k, "Cert"));
+                    File.SetLastWriteTime(p, when);
+                    var back = K("Read", p);
+                    bool same = back != null && F(back, "Hdd").SequenceEqual(F(k, "Hdd")) && F(back, "Cert").SequenceEqual(F(k, "Cert")) && (string)K("Comment", p) == "";
+                    Console.WriteLine("  " + (same ? "moved " : "FAILED ") + p);
+                    ok &= same;
+                }
+                catch (Exception ex) { Console.WriteLine("  FAILED " + p + ": " + ex.Message); ok = false; }
+            }
+            return ok;
+        }
+
+        /// <summary>The keys a save carries (Shared.Xbox\XboxSaveKeys): an entry at the zip's root, left out of the console.</summary>
+        private static void SaveKeysCheck(string work)
+        {
+            var t = _asm.GetType("LbIntegrations.Xbox.XboxSaveKeys", true);
+            object K(string m, params object[] a) { try { return t.GetMethod(m, Any).Invoke(null, a); } catch (TargetInvocationException ex) { throw ex.InnerException ?? ex; } }
+            byte[] Field(object o, string f) => o?.GetType().GetField(f, Any)?.GetValue(o) as byte[];
+            var store = _asm.GetType("LbIntegrations.Xemu.Saves.XemuSaveStore", true);
+            var pack = Path.Combine(work, "keys", "4d530004.cxbxsave");
+            Directory.CreateDirectory(Path.GetDirectoryName(pack));
+            var files = new List<(string, byte[])> { ("AAAA/SaveMeta.xbx", new byte[] { 1, 2, 3 }), ("TitleMeta.xbx", new byte[] { 4 }) };
+            void Pack() { try { store.GetMethod("Pack", Any).Invoke(null, new object[] { files, pack }); } catch (TargetInvocationException ex) { throw ex.InnerException ?? ex; } }
+            List<string> Names() { using var a = SharpCompress.Archives.Zip.ZipArchive.Open(pack); return a.Entries.Where(e => !e.IsDirectory).Select(e => e.Key).ToList(); }
+            Pack();
+            var plain = File.ReadAllBytes(pack);
+            var legacy = K("ForLaunch", pack, new byte[16]);
+            Check("a save without keys: Cxbx-Reloaded's (the certificate key given), its HDD key not imposed", legacy != null && Field(legacy, "Hdd") == null && Field(legacy, "Cert").All(x => x == 0));
+            Check("no save: nothing imposed", K("ForLaunch", Path.Combine(work, "keys", "none.cxbxsave"), new byte[16]) == null);
+            var hdd = Enumerable.Repeat((byte)0x11, 16).ToArray();
+            var cert = Enumerable.Range(1, 16).Select(i => (byte)i).ToArray();
+            K("Write", pack, hdd, cert);
+            var read = K("Read", pack);
+            Check("the keys written into the file read back", read != null && Field(read, "Hdd").SequenceEqual(hdd) && Field(read, "Cert").SequenceEqual(cert));
+            Check("... as lbip-xbox-keys.txt at the zip's root, beside the save's files", Names().OrderBy(n => n, StringComparer.Ordinal).SequenceEqual(new[] { "AAAA/SaveMeta.xbx", "TitleMeta.xbx", "lbip-xbox-keys.txt" }.OrderBy(n => n, StringComparer.Ordinal)), string.Join(", ", Names()));
+            var un = (System.Collections.IList)store.GetMethod("Unpack", Any).Invoke(null, new object[] { pack });
+            Check("... left out when laid into a console (" + un.Count + " files)", un.Count == 2);
+            var before = File.ReadAllBytes(pack);
+            K("Write", pack, hdd, cert);
+            Check("written again with the same keys: not rewritten", File.ReadAllBytes(pack).SequenceEqual(before));
+            K("Write", pack, hdd, new byte[16]);
+            Check("written with other keys: replaced, not added", Field(K("Read", pack), "Cert").All(x => x == 0) && Names().Count(n => n == "lbip-xbox-keys.txt") == 1);
+            var withKeys = K("ForLaunch", pack, cert);
+            Check("a save with keys: its own, not the emulator's", Field(withKeys, "Hdd").SequenceEqual(hdd) && Field(withKeys, "Cert").All(x => x == 0));
+            // A save of 04/10: the keys in the zip's comment - read, and moved to the entry when written.
+            Pack();
+            var b = File.ReadAllBytes(pack);
+            var comment = System.Text.Encoding.ASCII.GetBytes((string)K("Format", cert, hdd));
+            var old = b.Take(b.Length - 2).Concat(new[] { (byte)comment.Length, (byte)(comment.Length >> 8) }).Concat(comment).ToArray();
+            File.WriteAllBytes(pack, old);
+            var fromComment = K("Read", pack);
+            Check("a save of 04/10 (keys in the comment): read", fromComment != null && Field(fromComment, "Hdd").SequenceEqual(cert));
+            K("Write", pack, cert, hdd);
+            Check("... written: in the entry, the comment gone", (string)K("Comment", pack) == "" && Names().Contains("lbip-xbox-keys.txt"));
+        }
+
         private static void Eeprom(string work, string real)
         {
             Type E() => _asm.GetType("LbIntegrations.Xemu.Eeprom.XemuEeprom", true);
@@ -255,7 +408,16 @@ namespace LbIntegrations.Probe
                   Get(f, "Version").ToString() == "RetailFirst" && (uint)Get(f, "Region") == 1 && (uint)Get(f, "AvRegion") == 0x00400100 && (uint)Get(f, "Language") == 1 && (string)Get(f, "Zone") == "London",
                   Get(f, "Version") + " " + Get(f, "Region") + " " + Get(f, "AvRegion") + " " + Get(f, "Language") + " " + Get(f, "Zone"));
             Check("new: both section checksums right", Sums(fresh));
-            Check("new: serial of 12 digits ending in 9", System.Text.RegularExpressions.Regex.IsMatch((string)Get(f, "Serial"), "^[0-9]{11}9$"), (string)Get(f, "Serial"));
+            // This machine's "Your console": with a seed, a new console is it (PackIdentity.Xbox); without, XboxEepromEditor's.
+            var idType = _asm.GetType("LbIntegrations.Identity.PackIdentity", true);
+            var loaded = idType.GetMethod("Load", Any).Invoke(null, null);
+            var seedX = loaded == null ? null : idType.GetMethod("Xbox", Any).Invoke(loaded, null);
+            var seedSerial = seedX == null ? null : (string)Get(seedX, "Serial");
+            var seedHdd = seedX == null ? null : (byte[])Get(seedX, "HddKey");
+            Console.WriteLine("    (this machine's console: " + (seedX == null ? "no seed" : "a seed, serial " + seedSerial) + ")");
+            if (seedX == null) Check("new: serial of 12 digits ending in 9", System.Text.RegularExpressions.Regex.IsMatch((string)Get(f, "Serial"), "^[0-9]{11}9$"), (string)Get(f, "Serial"));
+            else Check("new: your console's serial and MAC", (string)Get(f, "Serial") == seedSerial
+                       && ((byte[])fresh.Skip(0x40).Take(6).ToArray()).SequenceEqual((byte[])Get(seedX, "Mac")), (string)Get(f, "Serial"));
             Check("two new consoles differ", !((byte[])Ec("Fresh")).SequenceEqual(fresh));
 
             var baseFile = Path.Combine(work, "eeprom.bin");
@@ -298,18 +460,21 @@ namespace LbIntegrations.Probe
             uint lang = (uint)Ec("IdentityLanguage");
             Check("the console language is one the Xbox knows", lang >= 1 && lang <= 9, "" + lang);
 
-            var packKey = Enumerable.Repeat((byte)0x11, 16).ToArray();
-            Check("new: the pack's HDD key (16 x 0x11)", ((byte[])Get(f, "HddKey")).SequenceEqual(packKey));
+            var packKey = seedHdd ?? Enumerable.Repeat((byte)0x11, 16).ToArray();
+            Check(seedX == null ? "new: the pack's HDD key (16 x 0x11)" : "new: your console's HDD key", ((byte[])Get(f, "HddKey")).SequenceEqual(packKey));
             if (real != null && File.Exists(real))
             {
                 // xemu's own console, its key drawn at random: the session gets the pack's - or keeps its own when asked.
                 File.Copy(real, baseFile, overwrite: true);
                 var theirs = (byte[])Get(Ec("Open", File.ReadAllBytes(real)), "HddKey");
                 var withPack = Session(Game(1), new Dictionary<string, string>(), out var sk);
-                Check("xemu's console: the session gets the pack's HDD key", withPack != null && ((byte[])Get(withPack, "HddKey")).SequenceEqual(packKey) && sk.Contains("HDD key the pack's"), string.Join(", ", sk));
+                Check("xemu's console: the session gets " + (seedX == null ? "the pack's HDD key" : "your console's values"), withPack != null && ((byte[])Get(withPack, "HddKey")).SequenceEqual(packKey)
+                      && sk.Contains(seedX == null ? "HDD key the pack's" : "your console's serial, MAC and keys"), string.Join(", ", sk));
                 var withOwn = Session(Game(1), new Dictionary<string, string> { ["console.hddkey"] = "xemu" }, out _);
-                Check("... console.hddkey=xemu keeps its own", withOwn != null && ((byte[])Get(withOwn, "HddKey")).SequenceEqual(theirs));
-                Check("... its serial kept either way", withPack != null && (string)Get(withPack, "Serial") == (string)Get(Ec("Open", File.ReadAllBytes(real)), "Serial"));
+                Check("... console.hddkey=xemu keeps its own", withOwn != null && ((byte[])Get(withOwn, "HddKey")).SequenceEqual(theirs)
+                      && (string)Get(withOwn, "Serial") == (string)Get(Ec("Open", File.ReadAllBytes(real)), "Serial"));
+                Check("... its serial " + (seedX == null ? "kept" : "your console's"), withPack != null
+                      && (string)Get(withPack, "Serial") == (seedSerial ?? (string)Get(Ec("Open", File.ReadAllBytes(real)), "Serial")));
                 Check("... the base never written", File.ReadAllBytes(baseFile).SequenceEqual(File.ReadAllBytes(real)));
             }
 
@@ -588,6 +753,9 @@ namespace LbIntegrations.Probe
             var rich = new List<(string, byte[])>(first) { ("ABCDEF012345/big.bin", Bytes(16384 * 3 + 5)), ("ABCDEF012345/deep/x/y.dat", Bytes(300)), ("FEDCBA987654/SaveMeta.xbx", Bytes(90)), ("FEDCBA987654/empty.dat", new byte[0]) };
             var richZip = Path.Combine(work, "rich.cxbxsave");
             st.GetMethod("Pack", Any).Invoke(null, new object[] { rich, richZip });
+            var rewrite = new List<(string, byte[])>(first.Take(3)) { ("ABCDEF012345/game.sav", Bytes(1500)) };
+            var rewriteZip = Path.Combine(work, "rewrite.cxbxsave");
+            st.GetMethod("Pack", Any).Invoke(null, new object[] { rewrite, rewriteZip });
             S("Insert", console, baseDisk, "4d530004", richZip);
             var got = Hashes(((System.Collections.IEnumerable)S("Extract", console, "4d530004")).Cast<object>());
             var want = Hashes(rich.Select(x => (object)x));
@@ -604,40 +772,126 @@ namespace LbIntegrations.Probe
             Check("... the volume clean", Problems().Count == 0, string.Join("; ", Problems().Take(4)));
             Check("... removing again: nothing to do", !(bool)S("Remove", console, "4d530004"));
 
-            // THE ACTIVE SAVE (lbip-saves\<id>.cxbxsave, Mehdi 04/10): a file put there goes into the console at launch; the
-            // console after a session goes into the file; the file the plugin wrote is never laid back over a newer console.
-            var exe = Path.Combine(work, "xemu.exe");
+            // THE ACTIVE SAVE (lbip-saves\<id>.cxbxsave) kept in step with the console (Shared.Xbox\XboxSaveSync, Mehdi 05/10):
+            // whole contents compared, the stamp of the last agreement beside the game's disk, hdd\games\<id>.stamp.
+            var exe = Path.Combine(work, "x.emu.exe");
             File.WriteAllBytes(exe, new byte[0]);
             var files = _asm.GetType("LbIntegrations.Xemu.XemuSaveFiles", true);
             object F(string m, params object[] a) { try { return files.GetMethod(m, Any).Invoke(null, a); } catch (TargetInvocationException ex) { throw ex.InnerException ?? ex; } }
-            var active = (string)F("PackPath", exe, "4d530004");
+            var sync = _asm.GetType("LbIntegrations.Xbox.XboxSaveSync", true);
+            var modeType = _asm.GetType("LbIntegrations.Xbox.XboxSyncMode", true);
+            const string tid = "4d530004";
+            string Y(string mode) => (string)F("Sync", exe, tid, Enum.Parse(modeType, mode));
+            string Hash(object list) => (string)sync.GetMethod("ContentHash", Any).Invoke(null, new[] { list });
+            string OfZip(string zip) => Hash(sync.GetMethod("FilesOf", Any).Invoke(null, new object[] { zip }));
+            string OfConsole() => Hash(S("Extract", console, tid));
+            var active = (string)F("PackPath", exe, tid);
+            var stampFile = Path.ChangeExtension(console, ".stamp");
+            var conflicts = Path.Combine(work, "lbip-conflicts");
             File.Delete(console);
-            Check("no file, no console: nothing to do at launch", F("SyncIn", exe, "4d530004", baseDisk) == null);
+            Check("no file, no console: nothing to do at launch", Y("Launch") == null);
             Directory.CreateDirectory(Path.GetDirectoryName(active));
             File.Copy(firstZip, active, overwrite: true);
-            Check("a file put in lbip-saves: laid into the console at launch", F("SyncIn", exe, "4d530004", baseDisk) is string s1 && s1.Contains("laid"));
-            S("Capture", console, "4d530004", back);
-            Check("... the console now holds it, byte for byte", File.ReadAllBytes(back).SequenceEqual(File.ReadAllBytes(firstZip)));
-            Check("... the next launch: nothing to do", F("SyncIn", exe, "4d530004", baseDisk) == null);
-            Check("... listed: the same file, not packed over", (string)F("Capture", exe, "4d530004") == active && File.ReadAllBytes(active).SequenceEqual(File.ReadAllBytes(firstZip)));
-            System.Threading.Thread.Sleep(50);
-            S("Insert", console, baseDisk, "4d530004", richZip);                // the game saving during a session
-            Check("after a session: the console captured into the file", (string)F("Capture", exe, "4d530004") == active && !File.ReadAllBytes(active).SequenceEqual(File.ReadAllBytes(firstZip))
-                  && Hashes(((System.Collections.IEnumerable)S("Extract", console, "4d530004")).Cast<object>()).Count == rich.Count);
-            Check("... the file the plugin wrote is not laid back at the next launch", F("SyncIn", exe, "4d530004", baseDisk) == null);
+            Check("a file put in lbip-saves: laid into the console at launch", Y("Launch") is string s1 && s1.Contains("laid") && OfConsole() == OfZip(firstZip));
+            Check("... its stamp beside the game's disk, nothing beside the save", File.Exists(stampFile)
+                  && !Directory.GetFiles(Path.GetDirectoryName(active)).Any(f => f.EndsWith(".stamp") || f.EndsWith(".synced")));
+            Check("... the next launch: nothing to do", Y("Launch") == null);
+            S("Insert", console, baseDisk, tid, richZip);                        // the game saving during a session
+            Check("after a session: the console captured into the file", Y("SessionEnd") is string s2 && s2.Contains("captured") && OfZip(active) == OfZip(richZip));
+            Check("... the next launch: nothing to do", Y("Launch") == null && OfConsole() == OfZip(richZip));
             File.Copy(firstZip, active, overwrite: true);                        // a Restore: an older save put back
-            Check("a file put back: not packed over before the launch", (string)F("Capture", exe, "4d530004") == active && File.ReadAllBytes(active).SequenceEqual(File.ReadAllBytes(firstZip)));
-            Check("... laid into the console at launch", F("SyncIn", exe, "4d530004", baseDisk) is string s2 && s2.Contains("laid"));
-            S("Capture", console, "4d530004", back);
-            Check("... the console holds the restored save", File.ReadAllBytes(back).SequenceEqual(File.ReadAllBytes(firstZip)));
+            Check("a file put back: a listing touches nothing", Y("Listing") == null && OfZip(active) == OfZip(firstZip) && OfConsole() == OfZip(richZip));
+            Check("... laid into the console at launch", Y("Launch") is string s3 && s3.Contains("laid") && OfConsole() == OfZip(firstZip));
+            S("Insert", console, baseDisk, tid, richZip);                        // a session cut short: never captured
+            Check("the console changed, the save not: captured at launch", Y("Launch") is string s4 && s4.Contains("captured") && OfZip(active) == OfZip(richZip));
+            File.Copy(firstZip, active, overwrite: true);                        // the save put back, and the console changes too
+            S("Insert", console, baseDisk, tid, rewriteZip);
+            Check("both changed: a listing touches nothing", Y("Listing") == null && OfConsole() == OfZip(rewriteZip));
+            var conflict = Y("Launch");
+            Check("... at launch the save wins, the console's version kept in lbip-conflicts", conflict != null && conflict.Contains("kept") && OfConsole() == OfZip(firstZip)
+                  && Directory.GetFiles(conflicts, tid + "-console-*.cxbxsave").Length == 1
+                  && OfZip(Directory.GetFiles(conflicts, tid + "-console-*.cxbxsave")[0]) == OfZip(rewriteZip), conflict);
+            // Copied into another xemu's lbip-saves: nothing comes with it - laid in there.
+            var other = Path.Combine(work, "other"); Directory.CreateDirectory(Path.Combine(other, "hdd"));
+            File.Copy(baseDisk, Path.Combine(other, "hdd", "base.qcow2"), overwrite: true);
+            var otherExe = Path.Combine(other, "x.emu.exe"); File.WriteAllBytes(otherExe, new byte[0]);
+            var otherPack = (string)F("PackPath", otherExe, tid);
+            Directory.CreateDirectory(Path.GetDirectoryName(otherPack));
+            File.Copy(active, otherPack, overwrite: true);
+            Check("a file copied into another xemu: laid in there", F("Sync", otherExe, tid, Enum.Parse(modeType, "Launch")) is string so && so.Contains("laid"));
             File.Delete(active);
-            Check("the file removed: the console's save taken out at launch", F("SyncIn", exe, "4d530004", baseDisk) is string s3 && s3.Contains("taken out")
-                  && ((System.Collections.IEnumerable)S("Extract", console, "4d530004")).Cast<object>().Count() == 0);
+            Check("the file removed: a listing does not make it again", (string)F("Capture", exe, tid) == null && !File.Exists(active));
+            Check("the file removed: the console's save taken out at launch, the stamp gone", Y("Launch") is string s5 && s5.Contains("taken out")
+                  && ((System.Collections.IEnumerable)S("Extract", console, tid)).Cast<object>().Count() == 0 && !File.Exists(stampFile));
             Check("... the console clean", Problems().Count == 0, string.Join("; ", Problems().Take(4)));
-            var legacy = (string)F("PackPath", exe, "4d530004");
-            File.Copy(firstZip, legacy, overwrite: true); File.WriteAllText(Path.ChangeExtension(legacy, ".stamp"), "older");
-            Check("a file from before the notes (captured, its stamp there): the plugin's own, not laid in", F("SyncIn", exe, "4d530004", baseDisk) == null);
-            File.Delete(legacy); File.Delete(Path.ChangeExtension(legacy, ".stamp"));
+            S("Insert", console, baseDisk, tid, richZip);                        // a console with a save, no file, no stamp
+            Check("a console with no file and no stamp: captured - never taken for a removed save", Y("Launch") is string s6 && s6.Contains("captured") && OfZip(active) == OfZip(richZip));
+            // The notes of 04/10 beside the save: their agreement read once, then gone.
+            File.Delete(stampFile);
+            S("Insert", console, baseDisk, tid, rewriteZip);
+            string sha1; using (var sh = System.Security.Cryptography.SHA1.Create()) using (var fs = File.OpenRead(active)) sha1 = Convert.ToHexString(sh.ComputeHash(fs));
+            File.WriteAllText(Path.ChangeExtension(active, ".synced"), sha1 + "|" + Path.GetFullPath(active).ToLowerInvariant());
+            File.WriteAllText(Path.ChangeExtension(active, ".stamp"), "1|2");
+            var before = Directory.GetFiles(conflicts).Length;
+            Check("a save of 04/10 agreed in its notes, the console newer: captured, not a conflict", Y("Launch") is string s7 && s7.Contains("captured")
+                  && OfZip(active) == OfZip(rewriteZip) && Directory.GetFiles(conflicts).Length == before);
+            Check("... the old notes gone", !File.Exists(Path.ChangeExtension(active, ".synced")) && !File.Exists(Path.ChangeExtension(active, ".stamp")) && File.Exists(stampFile));
+            // The keys in the console's stamp (Codex's review, 05/10): noted at a launch, written into what a capture makes, given to
+            // a conflict's copy; a save written whole; a restore always put in.
+            {
+                var keysType = _asm.GetType("LbIntegrations.Xbox.XboxSaveKeys", true);
+                object KeysOf(string zip) => keysType.GetMethod("Read", Any).Invoke(null, new object[] { zip });
+                byte[] Kf(object k, string f) => k?.GetType().GetField(f, Any)?.GetValue(k) as byte[];
+                var side = F("Side", exe, tid);
+                void Note(byte[] h, byte[] c) => sync.GetMethod("NoteSessionKeys", Any).Invoke(null, new[] { side, h, c });
+                var k1h = Enumerable.Repeat((byte)0x21, 16).ToArray(); var k1c = Enumerable.Repeat((byte)0x31, 16).ToArray();
+                var k2h = Enumerable.Repeat((byte)0x22, 16).ToArray(); var k2c = Enumerable.Repeat((byte)0x32, 16).ToArray();
+                File.Copy(firstZip, active, overwrite: true);
+                Y("Launch");                                                     // agreed on first
+                Note(k1h, k1c);                                                  // the session runs with K1
+                S("Insert", console, baseDisk, tid, richZip);                    // and saves
+                Check("a capture writes the keys the session was noted with", Y("SessionEnd") is string c1 && c1.Contains("captured")
+                      && Kf(KeysOf(active), "Hdd").SequenceEqual(k1h) && Kf(KeysOf(active), "Cert").SequenceEqual(k1c));
+                Check("... the stamp holds them, two lines", File.ReadAllText(stampFile).Contains("content=") && File.ReadAllText(stampFile).Contains("keys=lbip-xbox-keys/1 hdd=" + Convert.ToHexString(k1h)));
+
+                // Codex 1: a conflict's copy carries the keys of what the console holds.
+                S("Insert", console, baseDisk, tid, rewriteZip);                 // the console changes (a session cut short)
+                var other2 = Path.Combine(work, "k2.cxbxsave");
+                File.Copy(firstZip, other2, overwrite: true);
+                keysType.GetMethod("Write", Any).Invoke(null, new object[] { other2, k2h, k2c });
+                File.Copy(other2, active, overwrite: true);                      // and a save with other keys put there
+                var seen = Directory.GetFiles(conflicts).ToList();
+                Check("both changed: the save wins at launch", Y("Launch") is string c2 && c2.Contains("kept") && OfConsole() == OfZip(firstZip));
+                var copy = Directory.GetFiles(conflicts).Except(seen).SingleOrDefault();
+                Check("... the conflict's copy: the console's files, with the console's keys (K1), not the save's (K2)",
+                      copy != null && OfZip(copy) == OfZip(rewriteZip) && Kf(KeysOf(copy), "Hdd").SequenceEqual(k1h) && Kf(KeysOf(copy), "Cert").SequenceEqual(k1c));
+                Check("... the stamp now holds the keys of the save laid in (K2)", File.ReadAllText(stampFile).Contains("hdd=" + Convert.ToHexString(k2h)));
+
+                // Codex 2: a save is written whole - a capture that cannot write leaves the save and the stamp as they were.
+                S("Insert", console, baseDisk, tid, richZip);
+                var saveBefore = File.ReadAllBytes(active); var stampBefore = File.ReadAllText(stampFile);
+                File.SetAttributes(active, FileAttributes.ReadOnly);
+                bool threw = false;
+                try { Y("SessionEnd"); } catch { threw = true; }
+                File.SetAttributes(active, FileAttributes.Normal);
+                Check("a capture that cannot write: the save and the stamp as they were", threw && File.ReadAllBytes(active).SequenceEqual(saveBefore) && File.ReadAllText(stampFile) == stampBefore
+                      && !File.Exists(active + ".part"));
+                Check("... the next one writes it, keys and all", Y("SessionEnd") is string c3 && c3.Contains("captured") && OfZip(active) == OfZip(richZip) && Kf(KeysOf(active), "Hdd").SequenceEqual(k2h));
+
+                // Codex 3: a restore of the agreed save over a console changed since (a session cut short) - put in, not undone.
+                var agreed = Path.Combine(work, "agreed.cxbxsave"); File.Copy(active, agreed, overwrite: true);
+                S("Insert", console, baseDisk, tid, rewriteZip);                 // played, the host killed: never captured
+                File.Copy(agreed, active, overwrite: true);                      // LaunchBox restores the save of the last agreement
+                seen = Directory.GetFiles(conflicts).ToList();
+                Check("a restore of the agreed save over a changed console: laid in, the console kept apart", Y("Restore") is string c4 && c4.Contains("restored")
+                      && OfConsole() == OfZip(agreed) && Directory.GetFiles(conflicts).Except(seen).Count() == 1);
+                // ... and over a console that is the last agreement: laid in, no copy (it is in LaunchBox's backups).
+                File.Copy(firstZip, active, overwrite: true);
+                seen = Directory.GetFiles(conflicts).ToList();
+                Check("a restore over a console as agreed: laid in, no copy", Y("Restore") is string c5 && c5.Contains("restored") && OfConsole() == OfZip(firstZip)
+                      && Directory.GetFiles(conflicts).Except(seen).Count() == 0);
+            }
+            File.Delete(active); File.Delete(stampFile);
 
             var escape = Path.Combine(work, "escape.cxbxsave");
             st.GetMethod("Pack", Any).Invoke(null, new object[] { new List<(string, byte[])> { ("../outside.bin", new byte[] { 1 }) }, escape });
@@ -838,7 +1092,7 @@ namespace LbIntegrations.Probe
                 foreach (var l in File.ReadAllLines(session).Where(l => l.StartsWith("renderer") || l.StartsWith("preferred_physical") || l.StartsWith("show_menubar") || l.Contains("_path")))
                     Console.WriteLine("    " + l);
 
-            var psi = new System.Diagnostics.ProcessStartInfo(exe, r.NewCommandLine + " \"" + rom + "\"") { UseShellExecute = false, WorkingDirectory = dir };
+            var psi = new System.Diagnostics.ProcessStartInfo(exe, r.NewCommandLine) { UseShellExecute = false, WorkingDirectory = dir };
             using var p = System.Diagnostics.Process.Start(psi);
             Console.WriteLine("  xemu started, pid " + p.Id + "; " + seconds + " s");
             var served = r.NewCommandLine.Contains("game.iso") ? r.NewCommandLine.Split('"').FirstOrDefault(s => s.EndsWith("game.iso")) : null;
@@ -891,7 +1145,7 @@ namespace LbIntegrations.Probe
             {
                 var emu = Path.Combine(work, "emu");
                 Directory.CreateDirectory(emu);
-                var exe = Path.Combine(emu, "xemu.exe");
+                var exe = Path.Combine(emu, "x.emu.exe");
                 File.WriteAllBytes(exe, new byte[0]);
 
                 // 1. an XISO: as it is
@@ -1037,19 +1291,27 @@ namespace LbIntegrations.Probe
                 // 7. the launch line
                 Console.WriteLine("  launch line");
                 string Line(string current, string rom = null) => (string)Call("XemuPlugin", "CommandLineFor", current, @"C:\d\g.iso", rom);
-                Check("the default", Line("-full-screen -dvd_path") == "-full-screen -dvd_path \"C:\\d\\g.iso\" -L", Line("-full-screen -dvd_path"));
-                Check("empty: full screen added", Line("") == "-full-screen -dvd_path \"C:\\d\\g.iso\" -L", Line(""));
-                Check("options kept with their values", Line("-machine xbox,short-animation=on -dvd_path") == "-full-screen -machine xbox,short-animation=on -dvd_path \"C:\\d\\g.iso\" -L", Line("-machine xbox,short-animation=on -dvd_path"));
-                Check("an old -dvd_path value dropped", Line("-full-screen -dvd_path \"E:\\old game.iso\"") == "-full-screen -dvd_path \"C:\\d\\g.iso\" -L", Line("-full-screen -dvd_path \"E:\\old game.iso\""));
-                Check("the game's own path dropped", Line("-full-screen \"G:\\Xbox\\My Game.iso\"", @"G:\Xbox\My Game.iso") == "-full-screen -dvd_path \"C:\\d\\g.iso\" -L", Line("-full-screen \"G:\\Xbox\\My Game.iso\"", @"G:\Xbox\My Game.iso"));
-                Check("an -L already there not doubled", Line("-full-screen -dvd_path -L") == "-full-screen -dvd_path \"C:\\d\\g.iso\" -L", Line("-full-screen -dvd_path -L"));
-                Check("a valued option with spaces requoted", Line("-config_path \"C:\\my cfg\\x.toml\"") == "-full-screen -config_path \"C:\\my cfg\\x.toml\" -dvd_path \"C:\\d\\g.iso\" -L", Line("-config_path \"C:\\my cfg\\x.toml\""));
+                Check("the default", Line("-full-screen -dvd_path") == "-full-screen -dvd_path \"C:\\d\\g.iso\"", Line("-full-screen -dvd_path"));
+                Check("empty: full screen added", Line("") == "-full-screen -dvd_path \"C:\\d\\g.iso\"", Line(""));
+                Check("options kept with their values", Line("-machine xbox,short-animation=on -dvd_path") == "-full-screen -machine xbox,short-animation=on -dvd_path \"C:\\d\\g.iso\"", Line("-machine xbox,short-animation=on -dvd_path"));
+                Check("an old -dvd_path value dropped", Line("-full-screen -dvd_path \"E:\\old game.iso\"") == "-full-screen -dvd_path \"C:\\d\\g.iso\"", Line("-full-screen -dvd_path \"E:\\old game.iso\""));
+                Check("the game's own path dropped", Line("-full-screen \"G:\\Xbox\\My Game.iso\"", @"G:\Xbox\My Game.iso") == "-full-screen -dvd_path \"C:\\d\\g.iso\"", Line("-full-screen \"G:\\Xbox\\My Game.iso\"", @"G:\Xbox\My Game.iso"));
+                Check("an -L of an older line dropped", Line("-full-screen -dvd_path -L") == "-full-screen -dvd_path \"C:\\d\\g.iso\"", Line("-full-screen -dvd_path -L"));
+                Check("a valued option with spaces requoted", Line("-config_path \"C:\\my cfg\\x.toml\"") == "-full-screen -config_path \"C:\\my cfg\\x.toml\" -dvd_path \"C:\\d\\g.iso\"", Line("-config_path \"C:\\my cfg\\x.toml\""));
 
                 // 7b. the console's EEPROM
                 Console.WriteLine("  EEPROM");
                 var eepromWork = Path.Combine(work, "eeprom");
                 Directory.CreateDirectory(eepromWork);
                 Eeprom(eepromWork, Environment.GetEnvironmentVariable("LBIP_XEMU_EEPROM"));
+
+                // 7b'. the certificate key of a session, on a copy of the user's flash BIOS (not shipped: LBIP_XEMU_BIOS, the bios\ folder)
+                Console.WriteLine("  certificate key");
+                CertKey(work, Environment.GetEnvironmentVariable("LBIP_XEMU_BIOS"));
+                Console.WriteLine("  the keys a save carries");
+                SaveKeysCheck(work);
+                Console.WriteLine("  your console's seed");
+                SeedCheck(Environment.GetEnvironmentVariable("LBIP_XEMU_BIOS"));
 
                 // 7c. the saves, in Cxbx's format, on a copy of xemu's dashboard disk (not shipped: LBIP_XEMU_BASE)
                 Console.WriteLine("  saves (Cxbx's format)");
@@ -1058,6 +1320,15 @@ namespace LbIntegrations.Probe
                 // 8. whose install it is
                 Console.WriteLine("  ours");
                 Check("an xemu without the marker is not ours", !(bool)Call("XemuPaths", "IsOurs", exe));
+                var old = Path.Combine(emu, "xemu.exe");
+                File.WriteAllBytes(old, new byte[] { 1 });
+                Check("an old-named xemu without the marker: left alone", Call("XemuPaths", "MigrateOldName", old) == null && File.Exists(old));
+                File.WriteAllText(Path.Combine(emu, "lbip-xemu-build.txt"), "v0");
+                Check("x.emu.exe with the marker is ours", (bool)Call("XemuPaths", "IsOurs", exe));
+                Check("xemu.exe with the marker is not ours (Unbroken's plugin claims it)", !(bool)Call("XemuPaths", "IsOurs", old));
+                Check("an old-named install of ours: renamed x.emu.exe", Call("XemuPaths", "MigrateOldName", old) is string moved
+                      && string.Equals(moved, exe, StringComparison.OrdinalIgnoreCase) && !File.Exists(old) && File.ReadAllBytes(exe).SequenceEqual(new byte[] { 1 }));
+                Check("... x.emu.exe itself: nothing to do", Call("XemuPaths", "MigrateOldName", exe) == null);
             }
             catch (Exception ex) { Check("no exception", false, ex.ToString()); }
             finally { try { Directory.Delete(work, true); } catch { } }

@@ -9,13 +9,12 @@
 // rules, with subfolders). A file and not the folder because the host's folder arm is the one every save defect of
 // this pack came from (memory: save-container-vs-file) - IsSaveContainer answers false, the file is copied as it is.
 //
-// THE FILE IS THE ACTIVE SAVE (Mehdi, 04/10: "dans lbip-saves\ je veux avoir les saves actives", for both Xbox emulators):
-// packed from the folder after each session (CxbxSession) and whenever the host lists saves and the folder has changed (a
-// stamp: files, bytes, newest date); and at a launch, a file put there since the two last agreed (by hand, by LaunchBox) is
-// laid out as the folder, a file removed takes the folder with it (SyncIn). Which side changed is told by <title id>.synced,
-// the file's SHA-1 when they last agreed - so a file the plugin wrote itself is never laid back over a newer folder.
-// RESTORE writes the file and lays it out as the folder at once - the folder's content REPLACED, not merged: a save
-// slot the backup does not hold must not survive it.
+// THE FILE IS THE ACTIVE SAVE (Mehdi, 04/10: "dans lbip-saves\ je veux avoir les saves actives", for both Xbox emulators),
+// kept in step with the folder by Shared.Xbox\XboxSaveSync (Mehdi, 05/10): every comparison of whole contents, the stamp of
+// the last agreement in <data>\lbip-stamps\<title id>.stamp - with the console, not beside the save. At a launch the save is
+// laid out (its folder's content REPLACED, not merged: a save slot the backup does not hold must not survive it), or the
+// folder captured, or both kept in a conflict; at a session's end and when LaunchBox lists saves, the folder captured when
+// that is safe; a Restore or a Remove reaches the folder at once.
 // TDATA (E:\TDATA\<title id>, the game's own cache and settings) is NOT part of the save: to be measured on real games
 // before it is.
 
@@ -60,92 +59,73 @@ namespace LbIntegrations.Cxbx
             catch { return null; }
         }
 
-        /// <summary>The packed save, brought up to date with its folder - or null when the game has none. Not packed while
-        /// a loader runs: the game may be writing.</summary>
+        /// <summary>The game's save on this Cxbx-Reloaded, for Shared.Xbox\XboxSaveSync: its console is the folder
+        /// E:\UDATA\<title id> (whatever case the game wrote its name in), its stamp <data>\lbip-stamps\<title id>.stamp.</summary>
+        public static LbIntegrations.Xbox.XboxSaveSide Side(string exe, string titleId)
+        {
+            var data = CxbxPaths.DataDir(exe);
+            var pack = PackPath(exe, titleId);
+            var live = LiveFolder(exe, titleId);
+            if (data == null || pack == null || live == null) return null;
+            return new LbIntegrations.Xbox.XboxSaveSide
+            {
+                TitleId = titleId,
+                Pack = pack,
+                StampPath = Path.Combine(data, "lbip-stamps", titleId + ".stamp"),
+                ConflictDir = Path.Combine(data, "lbip-conflicts"),
+                ReadConsole = () => FolderFiles(FindLive(exe, titleId)),
+                LayIn = () => { var folder = FindLive(exe, titleId) ?? live; if (!Unpack(pack, folder, out var error)) throw new IOException("the save file could not be laid out: " + error); },
+                RemoveFromConsole = () => { var folder = FindLive(exe, titleId); if (folder == null || !Directory.Exists(folder)) return false; Directory.Delete(folder, recursive: true); return true; },
+                NaturalKeys = () => NaturalKeys(exe),
+                Log = m => Log.Info("saves: " + titleId + " - " + m),
+            };
+        }
+
+        /// <summary>A folder's files by their path in it ('/' separated) - empty when there is none.</summary>
+        private static List<(string Name, byte[] Data)> FolderFiles(string folder)
+        {
+            var files = new List<(string, byte[])>();
+            if (folder == null || !Directory.Exists(folder)) return files;
+            var root = Path.GetFullPath(folder).TrimEnd('\\') + "\\";
+            foreach (var f in Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories))
+                files.Add((Path.GetFullPath(f).Substring(root.Length).Replace('\\', '/'), File.ReadAllBytes(f)));
+            return files;
+        }
+
+        /// <summary>The save and the console in step (XboxSaveSync) - never while a loader runs. What it did, or null.</summary>
+        public static string Sync(string exe, string titleId, LbIntegrations.Xbox.XboxSyncMode mode)
+        {
+            if (CxbxPaths.LoaderRunning()) return null;
+            var side = Side(exe, titleId);
+            if (side == null) return null;
+            var done = LbIntegrations.Xbox.XboxSaveSync.Sync(side, mode);
+            if (done != null) Log.Info("saves: " + titleId + " - " + done);
+            return done;
+        }
+
+        /// <summary>The active save, brought up to date when that is safe (a listing) - its path, or null when there is none.</summary>
         public static string Capture(string exe, string titleId)
         {
-            lock (Gate)
-            {
-                var pack = PackPath(exe, titleId);
-                if (pack == null) return null;
-                var live = FindLive(exe, titleId);
-                var stampFile = Path.ChangeExtension(pack, ".stamp");
-                // A file put there since the last agreement wins: it is laid out at the next launch, never packed over nor removed.
-                if (Pending(pack)) return pack;
-                if (live == null || !Directory.EnumerateFiles(live, "*", SearchOption.AllDirectories).Any())
-                {
-                    if (File.Exists(pack) && !CxbxPaths.LoaderRunning())
-                    {
-                        try { File.Delete(pack); File.Delete(stampFile); File.Delete(SyncedPath(pack)); Log.Info("saves: " + titleId + " has no save any more - its file removed"); } catch { }
-                    }
-                    return null;
-                }
-                var now = StampOf(live);
-                try { if (File.Exists(pack) && File.Exists(stampFile) && File.ReadAllText(stampFile) == now) return pack; } catch { }
-                if (CxbxPaths.LoaderRunning()) return File.Exists(pack) ? pack : null;
-                if (!Pack(live, pack, out var error)) { Log.Warn("saves: could not pack " + live + ": " + error); return File.Exists(pack) ? pack : null; }
-                File.WriteAllText(stampFile, now);
-                File.WriteAllText(SyncedPath(pack), Hash(pack));
-                Log.Info("saves: " + titleId + " packed -> " + pack);
-                return pack;
-            }
+            try { Sync(exe, titleId, LbIntegrations.Xbox.XboxSyncMode.Listing); }
+            catch (Exception ex) { Log.Warn("saves: could not bring the save of " + titleId + " up to date", ex); }
+            var pack = PackPath(exe, titleId);
+            return pack != null && File.Exists(pack) ? pack : null;
         }
 
-        private static string SyncedPath(string pack) => Path.ChangeExtension(pack, ".synced");
-
-        private static string Hash(string file)
-        {
-            using var sha = System.Security.Cryptography.SHA1.Create();
-            using var s = File.OpenRead(file);
-            return BitConverter.ToString(sha.ComputeHash(s)).Replace("-", "");
-        }
-
-        /// <summary>Is the file one put there since it and the folder last agreed? Changed since the SHA-1 noted then - or, with
-        /// no note at all, never seen: a file packed before these notes (it has its stamp) is the plugin's own, not pending.</summary>
-        internal static bool Pending(string pack)
+        /// <summary>The keys Cxbx-Reloaded runs with as its files are now: EEPROM.bin's HDD key (kept in clear), keys.bin's
+        /// certificate key or zero.</summary>
+        internal static LbIntegrations.Xbox.SaveKeys NaturalKeys(string exe)
         {
             try
             {
-                if (!File.Exists(pack)) return false;
-                var synced = SyncedPath(pack);
-                if (File.Exists(synced)) return File.ReadAllText(synced).Trim() != Hash(pack);
-                return !File.Exists(Path.ChangeExtension(pack, ".stamp"));
+                var data = CxbxPaths.DataDir(exe);
+                var eeprom = data == null ? null : Path.Combine(data, "EEPROM.bin");
+                if (eeprom == null || !File.Exists(eeprom)) return null;
+                var b = File.ReadAllBytes(eeprom);
+                if (b.Length != 256) return null;
+                return new LbIntegrations.Xbox.SaveKeys { Hdd = b.Skip(0x1C).Take(16).ToArray(), Cert = CxbxOptions.CertificateKey(data) };
             }
-            catch { return false; }
-        }
-
-        /// <summary>AT LAUNCH: the file is the active save. Put there since the last agreement, it is laid out as the folder (its
-        /// content replaced); removed since, the folder goes. What it did, or null.</summary>
-        public static string SyncIn(string exe, string titleId)
-        {
-            lock (Gate)
-            {
-                var pack = PackPath(exe, titleId);
-                var live = LiveFolder(exe, titleId);
-                if (pack == null || live == null) return null;
-                if (Pending(pack))
-                {
-                    var folder = FindLive(exe, titleId) ?? live;
-                    if (!Unpack(pack, folder, out var error)) throw new IOException("the save file could not be laid out: " + error);
-                    File.WriteAllText(SyncedPath(pack), Hash(pack));
-                    File.WriteAllText(Path.ChangeExtension(pack, ".stamp"), StampOf(folder));
-                    return "the save file laid out -> " + folder;
-                }
-                if (!File.Exists(pack) && File.Exists(SyncedPath(pack)))
-                {
-                    var folder = FindLive(exe, titleId);
-                    if (folder != null && Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
-                    try { File.Delete(SyncedPath(pack)); File.Delete(Path.ChangeExtension(pack, ".stamp")); } catch { }
-                    return folder != null ? "the save file removed - its folder taken out" : "the save file removed";
-                }
-                return null;
-            }
-        }
-
-        private static string StampOf(string dir)
-        {
-            var files = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Select(f => new FileInfo(f)).ToList();
-            return files.Count + "|" + files.Sum(f => f.Length) + "|" + (files.Count == 0 ? 0 : files.Max(f => f.LastWriteTimeUtc.Ticks));
+            catch { return null; }
         }
 
         /// <summary>A folder into one zip, deterministic, through a .part file moved into place.</summary>
@@ -187,7 +167,7 @@ namespace LbIntegrations.Cxbx
                 using (var archive = ZipArchive.Open(pack))
                     foreach (var e in archive.Entries)
                     {
-                        if (e.IsDirectory || string.IsNullOrEmpty(e.Key)) continue;
+                        if (e.IsDirectory || string.IsNullOrEmpty(e.Key) || LbIntegrations.Xbox.XboxSaveKeys.IsKeysEntry(e.Key)) continue;
                         var path = Path.GetFullPath(Path.Combine(root, e.Key.Replace('/', '\\')));
                         if (!path.StartsWith(root, StringComparison.OrdinalIgnoreCase)) { error = "an entry escapes the save's folder: " + e.Key; return false; }
                         Directory.CreateDirectory(Path.GetDirectoryName(path));
@@ -203,9 +183,6 @@ namespace LbIntegrations.Cxbx
             catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; return false; }
             finally { try { if (Directory.Exists(fresh)) Directory.Delete(fresh, recursive: true); } catch { } }
         }
-
-        /// <summary>The file and the folder agree now (a restore laid it out).</summary>
-        public static void MarkSynced(string pack) { try { File.WriteAllText(SyncedPath(pack), Hash(pack)); } catch { } }
 
         public static bool IsZip(string path)
         {
@@ -315,9 +292,9 @@ namespace LbIntegrations.Cxbx
                 bool same = string.Equals(Path.GetFullPath(source), Path.GetFullPath(pack), StringComparison.OrdinalIgnoreCase);
                 Directory.CreateDirectory(Path.GetDirectoryName(pack));
                 if (!same) File.Copy(source, pack, overwrite: true);
-                if (!CxbxSaves.Unpack(pack, live, out var error)) return new AddSaveResponse("Could not lay the save out: " + error);
-                CxbxSaves.MarkSynced(pack);
-                var refreshed = CxbxSaves.Capture(exe, titleId) ?? pack;
+                // Into its console at once (XboxSaveSync): laid out, or - both changed - the console's version kept apart first.
+                CxbxSaves.Sync(exe, titleId, LbIntegrations.Xbox.XboxSyncMode.Restore);
+                var refreshed = pack;
                 Log.Info("restored the save of " + titleId + " -> " + live);
                 var info = new FileInfo(refreshed);
                 return new AddSaveResponse(Row(Safe(() => save.GameId), Safe(() => save.AdditionalApplicationId), refreshed, titleId,
@@ -343,11 +320,11 @@ namespace LbIntegrations.Cxbx
                 if (pack != null && string.Equals(Path.GetFullPath(pack), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase))
                 {
                     if (CxbxPaths.LoaderRunning()) return new PluginResponse(false, "Cxbx-Reloaded is running - close it first.");
-                    var live = CxbxSaves.LiveFolder(exe, titleId);
-                    if (live != null && Directory.Exists(live)) Directory.Delete(live, recursive: true);
-                    try { File.Delete(Path.ChangeExtension(pack, ".stamp")); } catch { }
                 }
                 if (File.Exists(path)) File.Delete(path);
+                // The active save gone: out of its console at once (XboxSaveSync).
+                if (pack != null && string.Equals(Path.GetFullPath(pack), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase))
+                    CxbxSaves.Sync(exe, titleId, LbIntegrations.Xbox.XboxSyncMode.Launch);
                 Log.Info("removed the save " + path);
                 return new PluginResponse(true);
             }

@@ -5,17 +5,13 @@
 // WHAT THE HOST SEES IS ONE FILE, <xemu>\lbip-saves\<title id>.cxbxsave - a file and not a folder (IsSaveContainer false:
 // the host's folder arm is the one every save defect of this pack came from) - in the group "cxbx:<title id>", the Cxbx
 // plugin's: the same save, the same format, one group whichever emulator plays the game.
-// THE FILE IS WHAT COUNTS (Mehdi, 04/10: "si on met la save dans lbip-saves\<id>.cxbxsave, elle doit se lancer au lancement
-// du jeu, point"). At a launch, a file put there since it and the console last agreed (by hand, by LaunchBox's Restore) is
-// laid into the console - the title's folder REPLACED, as Cxbx's restore does; a file removed takes the console's save out
-// (XemuSaveFiles.SyncIn). After a session, and when the host lists saves and the console has changed, the console is
-// captured into the file. Which side changed is told by <title id>.synced, the file's SHA-1 when the two last agreed.
-//   Backup    the host copies the file.
-//   Restore   the file put in place - into the console at the next launch. A save of the group "cxbx:" or the older "xemu:".
-//             A backup of the older kind - the console itself, a qcow2 - is put back as the console at once.
-//   Remove    the file deleted - its save out of the console at the next launch; the console's cache and the rest kept.
-// NOT HANDLED: saves a game signs with the console's own key (a few games) - moved between consoles, such a game may call them
-// damaged. To come: one HDD key for every console of the pack.
+// THE FILE IS THE ACTIVE SAVE, kept in step with the console by Shared.Xbox\XboxSaveSync (Mehdi, 05/10) - its stamp beside
+// the game's disk, hdd\games\<title id>.stamp:
+//   Launch    the save laid into the console, or the console captured, or both kept in a conflict - XboxSaveSync's rule
+//   Session's end, LaunchBox listing saves (its backups)    the console captured when that is safe
+//   Restore   the file put in place and laid into the console at once (xemu not running). A backup of the older kind - the
+//             console itself, a qcow2 - is put back as the console, and the save captured from it.
+//   Remove    the file deleted, and its save taken out of the console at once; the console's cache and the rest kept.
 
 using System;
 using System.Collections.Generic;
@@ -23,6 +19,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using LbIntegrations.Xemu.Saves;
+using LbIntegrations.Xbox;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 
@@ -33,111 +30,68 @@ namespace LbIntegrations.Xemu
         /// <summary>The save group, shared with the Cxbx plugin (Mehdi, 04/10): the same save in the same format, so LaunchBox sees
         /// one group for the game whichever emulator plays it - a Cxbx backup made active for a game on xemu goes where it should.</summary>
         public const string GroupPrefix = "cxbx:", OldGroupPrefix = "xemu:";
-        private static readonly object Gate = new object();
 
         public static string PackPath(string exe, string titleId)
             => XemuPaths.Dir(exe) is string d ? Path.Combine(d, "lbip-saves", titleId + XemuSaveStore.Extension) : null;
 
-        private static string StampPath(string pack) => Path.ChangeExtension(pack, ".stamp");
-        /// <summary>The SHA-1 of the file as it was when it and the console last agreed - written by a capture and by an insert.
-        /// The file differing from it is a file put there since (by hand, or by LaunchBox): it wins at the next launch.</summary>
-        private static string SyncedPath(string pack) => Path.ChangeExtension(pack, ".synced");
-
-        private static string Hash(string file)
+        /// <summary>The game's save on this xemu, for XboxSaveSync: its console is hdd\games\<title id>.qcow2.</summary>
+        public static XboxSaveSide Side(string exe, string titleId)
         {
-            using var sha = System.Security.Cryptography.SHA1.Create();
-            using var s = File.OpenRead(file);
-            return BitConverter.ToString(sha.ComputeHash(s)).Replace("-", "");
+            var console = XemuPaths.GameHdd(exe, titleId);
+            var pack = PackPath(exe, titleId);
+            if (console == null || pack == null) return null;
+            return new XboxSaveSide
+            {
+                TitleId = titleId,
+                Pack = pack,
+                StampPath = Path.ChangeExtension(console, ".stamp"),
+                ConflictDir = Path.Combine(XemuPaths.Dir(exe), "lbip-conflicts"),
+                ReadConsole = () => File.Exists(console) ? XemuSaveStore.Extract(console, titleId) : new List<(string, byte[])>(),
+                LayIn = () => XemuSaveStore.Insert(console, XemuPaths.BaseHdd(exe), titleId, pack),
+                RemoveFromConsole = () => File.Exists(console) && XemuSaveStore.Remove(console, titleId),
+                NaturalKeys = () => NaturalKeys(exe),
+                Log = m => Log.Info("saves: " + titleId + " - " + m),
+            };
         }
 
-        private static string Read(string file) { try { return File.Exists(file) ? File.ReadAllText(file).Trim() : null; } catch { return null; } }
-        private static string ConsoleStamp(string console) { var i = new FileInfo(console); return i.Length + "|" + i.LastWriteTimeUtc.Ticks; }
-
-        /// <summary>Is the file one put there since it and the console last agreed? Changed since the SHA-1 noted then - or, with
-        /// no note at all, never seen: a file captured before these notes (it has its stamp) is the plugin's own, not pending.</summary>
-        private static bool Pending(string pack)
+        /// <summary>The save and the console in step (XboxSaveSync) - never while xemu runs. What it did, or null.</summary>
+        public static string Sync(string exe, string titleId, XboxSyncMode mode)
         {
-            if (!File.Exists(pack)) return false;
-            var synced = Read(SyncedPath(pack));
-            if (synced != null) return synced != Hash(pack);
-            return !File.Exists(StampPath(pack));
+            if (XemuPaths.Running(exe)) return null;
+            var side = Side(exe, titleId);
+            if (side == null) return null;
+            var done = XboxSaveSync.Sync(side, mode);
+            if (done != null) Log.Info("saves: " + titleId + " - " + done);
+            return done;
         }
 
-        /// <summary>The file brought up to date with the game's console - or left as it is when it is one put there since (it
-        /// goes into the console at the next launch). Null when there is no save. Not while xemu runs: the game may be writing.</summary>
+        /// <summary>The active save, brought up to date when that is safe (a listing) - its path, or null when there is none.</summary>
         public static string Capture(string exe, string titleId)
         {
-            lock (Gate)
-            {
-                var pack = PackPath(exe, titleId);
-                var console = XemuPaths.GameHdd(exe, titleId);
-                if (pack == null || console == null) return null;
-                if (!File.Exists(console) || Pending(pack) || XemuPaths.Running(exe)) return File.Exists(pack) ? pack : null;
-                var now = ConsoleStamp(console);
-                if (File.Exists(pack) && Read(StampPath(pack)) == now) return pack;
-                try
-                {
-                    if (!XemuSaveStore.Capture(console, titleId, pack))
-                    {
-                        // The console holds no save, and the file was its: the game removed its save itself.
-                        if (File.Exists(pack)) { File.Delete(pack); Log.Info("saves: " + titleId + " - its console holds no save any more: its file removed"); }
-                        TryDelete(SyncedPath(pack)); TryDelete(StampPath(pack));
-                        return null;
-                    }
-                    File.WriteAllText(StampPath(pack), now);
-                    File.WriteAllText(SyncedPath(pack), Hash(pack));
-                    Log.Info("saves: " + titleId + " captured -> " + pack);
-                    return pack;
-                }
-                catch (Exception ex)
-                {
-                    Log.Warn("saves: could not capture the save of " + titleId + " from " + console, ex);
-                    return File.Exists(pack) ? pack : null;
-                }
-            }
-        }
-
-        /// <summary>AT LAUNCH (Mehdi, 04/10: "si on met la save dans lbip-saves\<id>.cxbxsave, elle doit se lancer au lancement du
-        /// jeu, point"): the file is what counts. Put there since the last agreement - by hand, by LaunchBox's Restore - it is laid
-        /// into the console (made over <paramref name="baseDisk"/> when there is none); removed since, the console's save goes;
-        /// unchanged, the console is the newer (a session cut short) and is captured. What it did, or null.</summary>
-        public static string SyncIn(string exe, string titleId, string baseDisk)
-        {
-            lock (Gate)
-            {
-                var pack = PackPath(exe, titleId);
-                var console = XemuPaths.GameHdd(exe, titleId);
-                if (pack == null || console == null) return null;
-                if (Pending(pack))
-                {
-                    XemuSaveStore.Insert(console, baseDisk, titleId, pack);
-                    File.WriteAllText(SyncedPath(pack), Hash(pack));
-                    File.WriteAllText(StampPath(pack), ConsoleStamp(console));
-                    return "the save file laid into the console";
-                }
-                if (!File.Exists(pack) && File.Exists(SyncedPath(pack)))
-                {
-                    bool removed = File.Exists(console) && XemuSaveStore.Remove(console, titleId);
-                    TryDelete(SyncedPath(pack)); TryDelete(StampPath(pack));
-                    return removed ? "the save file removed - the console's save taken out" : "the save file removed";
-                }
-                return null;
-            }
-        }
-
-        public static void Forget(string exe, string titleId)
-        {
+            try { Sync(exe, titleId, XboxSyncMode.Listing); }
+            catch (Exception ex) { Log.Warn("saves: could not bring the save of " + titleId + " up to date", ex); }
             var pack = PackPath(exe, titleId);
-            if (pack != null) TryDelete(StampPath(pack));
+            return pack != null && File.Exists(pack) ? pack : null;
         }
 
-        private static void TryDelete(string f) { try { if (File.Exists(f)) File.Delete(f); } catch { } }
+        /// <summary>The keys xemu runs with on its own: eeprom.bin's HDD key, the flash BIOS's certificate key.</summary>
+        internal static SaveKeys NaturalKeys(string exe)
+        {
+            try
+            {
+                var hdd = File.Exists(XemuPaths.Eeprom(exe)) ? Eeprom.XemuEeprom.Open(File.ReadAllBytes(XemuPaths.Eeprom(exe)))?.HddKey : null;
+                var cert = XemuPaths.McpxPath(exe) is string m && XemuPaths.FlashPath(exe) is string f ? XboxKeys.CertificateKeyOf(m, f) : null;
+                return hdd != null && cert != null ? new SaveKeys { Hdd = hdd, Cert = cert } : null;
+            }
+            catch { return null; }
+        }
 
         public static bool IsZip(string path)
         {
             try { using var a = SharpCompress.Archives.Zip.ZipArchive.Open(path); return a.Entries != null; } catch { return false; }
         }
     }
+
     public partial class XemuPlugin
     {
         private const string ChipText = "Xbox save";
@@ -241,8 +195,9 @@ namespace LbIntegrations.Xemu
                         File.Copy(source, tmp, overwrite: true);
                         File.Move(tmp, hdd, overwrite: true);
                     }
-                    XemuSaveFiles.Forget(exe, titleId);
+                    // The console is the backup: the save is made from it.
                     Log.Info("restored the console of " + titleId + " -> " + hdd);
+                    if (XemuSaveFiles.Side(exe, titleId) is XboxSaveSide side) Log.Info("saves: " + titleId + " - " + XboxSaveSync.CaptureNow(side));
                 }
                 else
                 {
@@ -256,9 +211,11 @@ namespace LbIntegrations.Xemu
                         File.Copy(source, tmp, overwrite: true);
                         File.Move(tmp, pack, overwrite: true);
                     }
-                    Log.Info("restored the save of " + titleId + " (" + Path.GetFileName(source) + ") -> " + pack + " - into its console at the next launch");
+                    Log.Info("restored the save of " + titleId + " (" + Path.GetFileName(source) + ") -> " + pack);
+                    // Into its console at once, whatever the stamp says - the console's version kept apart when it changed since.
+                    XemuSaveFiles.Sync(exe, titleId, XboxSyncMode.Restore);
                 }
-                var refreshed = XemuSaveFiles.Capture(exe, titleId);
+                var refreshed = XemuSaveFiles.PackPath(exe, titleId) is string active && File.Exists(active) ? active : null;
                 if (refreshed == null) return new AddSaveResponse("The save was restored, but the console holds none for this game.");
                 var info = new FileInfo(refreshed);
                 return new AddSaveResponse(Row(Safe(() => save.GameId), Safe(() => save.AdditionalApplicationId), refreshed, titleId,
@@ -284,10 +241,11 @@ namespace LbIntegrations.Xemu
                 if (pack != null && string.Equals(Path.GetFullPath(pack), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase))
                 {
                     if (XemuPaths.Running(exe)) return new PluginResponse(false, "xemu is running - close it first.");
-                    // The file is what counts: gone, the console's save goes at the next launch (SyncIn).
-                    Log.Info("removed the save file of " + titleId + " - out of its console at the next launch");
                 }
                 if (File.Exists(path)) File.Delete(path);
+                // The active save gone: out of its console at once.
+                if (pack != null && string.Equals(Path.GetFullPath(pack), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase))
+                    XemuSaveFiles.Sync(exe, titleId, XboxSyncMode.Launch);
                 Log.Info("removed the save " + path);
                 return new PluginResponse(true);
             }
