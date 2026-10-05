@@ -17,6 +17,11 @@ namespace LbIntegrations.Ppsspp
     {
         public static string Title => "PPSSPP";
 
+        /// <summary>Its emulators LaunchBox has, "<title>\t<path>", for the Nixx window's Open buttons - opened as LaunchBox's "Open
+        /// emulator" menu opens them, with what this plugin does around it (Shared.Lbip\LbipOpenEmulator).</summary>
+        public static string[] Emulators() => LbIntegrations.Lbip.LbipOpenEmulator.Find(p => PpssppPaths.IsPpssppExecutable(p));
+        public static string OpenEmulator(string path) => LbIntegrations.Lbip.LbipOpenEmulator.Open(path);
+
         public static Control CreatePage() => new PpssppSettingsPage();
 
         public static string Save(Control page)

@@ -23,6 +23,11 @@ namespace LbIntegrations.Vita3k
     {
         public static string Title => "Vita3K";
 
+        /// <summary>Its emulators LaunchBox has, "<title>\t<path>", for the Nixx window's Open buttons - opened as LaunchBox's "Open
+        /// emulator" menu opens them, with what this plugin does around it (Shared.Lbip\LbipOpenEmulator).</summary>
+        public static string[] Emulators() => LbIntegrations.Lbip.LbipOpenEmulator.Find(p => Vita3kPaths.IsVita3kExecutable(p));
+        public static string OpenEmulator(string path) => LbIntegrations.Lbip.LbipOpenEmulator.Open(path);
+
         public static Control CreatePage() => new Vita3kSettingsPage();
 
         public static string Save(Control page)

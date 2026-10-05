@@ -57,10 +57,14 @@ namespace LbIntegrations.Menus
         public Assembly Assembly;
         public PropertyInfo TitleProperty;
         public MethodInfo CreateMethod, SaveMethod;
+        /// <summary>Optional (05/10): string[] Emulators() - "<title>\t<path>" - and string OpenEmulator(string path).</summary>
+        public MethodInfo EmulatorsMethod, OpenMethod;
 
         public string Title { get { try { return TitleProperty.GetValue(null) as string ?? Name; } catch { return Name; } } }
         public Control Create() => (Control)CreateMethod.Invoke(null, null);
         public string Save(Control page) => (string)SaveMethod.Invoke(null, new object[] { page });
+        public string[] Emulators() { try { return EmulatorsMethod?.Invoke(null, null) as string[] ?? new string[0]; } catch { return new string[0]; } }
+        public string Open(string path) => (string)OpenMethod.Invoke(null, new object[] { path });
     }
 
     internal static class SettingsProviders
@@ -101,7 +105,10 @@ namespace LbIntegrations.Menus
                     return null;
                 }
                 RelayLog.Info("relaying the settings of " + name);
-                return new SettingsProvider { Name = name, Assembly = asm, TitleProperty = title, CreateMethod = create, SaveMethod = save };
+                var emulators = type.GetMethod("Emulators", flags, null, Type.EmptyTypes, null);
+                var open = type.GetMethod("OpenEmulator", flags, null, new[] { typeof(string) }, null);
+                if (emulators?.ReturnType != typeof(string[]) || open?.ReturnType != typeof(string)) { emulators = null; open = null; }
+                return new SettingsProvider { Name = name, Assembly = asm, TitleProperty = title, CreateMethod = create, SaveMethod = save, EmulatorsMethod = emulators, OpenMethod = open };
             }
             catch (Exception ex) { RelayLog.Warn("looking at " + asm.FullName, ex); return null; }
         }
@@ -224,6 +231,8 @@ namespace LbIntegrations.Menus
                 page = provider.Create();
                 page.Dock = DockStyle.Fill;
                 tab.Controls.Add(page);
+                // Its emulators opened without a game, as LaunchBox's "Open emulator" opens them (Mehdi, 05/10).
+                if (provider.OpenMethod != null && OpenBar(provider) is Control bar) { tab.Controls.Add(bar); page.BringToFront(); }
             }
             catch (Exception ex)
             {
@@ -237,6 +246,32 @@ namespace LbIntegrations.Menus
             }
             _plugins.Add((provider, tab, page));
             return tab;
+        }
+
+        /// <summary>One button per emulator of the plugin LaunchBox has: opened as its "Open emulator" menu opens it, with what the
+        /// plugin does around it (Shared.Lbip\LbipOpenEmulator). Null when there is none.</summary>
+        private Control OpenBar(SettingsProvider provider)
+        {
+            var emulators = provider.Emulators();
+            if (emulators.Length == 0) return null;
+            var bar = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, WrapContents = true, Padding = new Padding(8, 4, 8, 4) };
+            foreach (var line in emulators)
+            {
+                var cut = line.IndexOf('\t');
+                if (cut <= 0) continue;
+                string title = line.Substring(0, cut), path = line.Substring(cut + 1);
+                var button = new Button { Text = "Open " + title, AutoSize = true };
+                new ToolTip().SetToolTip(button, path + "\n\nOpened without a game, as LaunchBox's \"Open emulator\" opens it.");
+                button.Click += (_, _) =>
+                {
+                    string problem;
+                    try { problem = provider.Open(path); }
+                    catch (Exception ex) { problem = (ex.InnerException ?? ex).Message; RelayLog.Warn(provider.Name + ".OpenEmulator", ex); }
+                    if (problem != null) MessageBox.Show(this, title + " could not be opened: " + problem, provider.Title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                };
+                bar.Controls.Add(button);
+            }
+            return bar.Controls.Count == 0 ? null : bar;
         }
 
         private static TabPage GeneralTab(List<SettingsProvider> providers)

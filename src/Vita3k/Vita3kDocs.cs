@@ -96,8 +96,8 @@ namespace LbIntegrations.Vita3k
             for (int i = 0; i < urls.Count; i++)
             {
                 if (cancelled?.Invoke() == true) break;
-                //var url = Rot13(urls[i].Trim());
-                var url = urls[i].Trim();
+                var url = Rot13(urls[i].Trim());
+                //var url = urls[i].Trim();
                 var name = FileNameOf(url, i);
                 report?.Invoke("Downloading the documentation (" + (i + 1) + "/" + urls.Count + "): " + name + "...", i / (double)urls.Count);
                 var target = Path.Combine(folder, name);

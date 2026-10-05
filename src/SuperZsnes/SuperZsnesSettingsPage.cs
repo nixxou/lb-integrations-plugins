@@ -35,6 +35,11 @@ namespace LbIntegrations.SuperZsnes
     {
         public static string Title => "SUPER ZSNES";
 
+        /// <summary>Its emulators LaunchBox has, "<title>\t<path>", for the Nixx window's Open buttons - opened as LaunchBox's "Open
+        /// emulator" menu opens them, with what this plugin does around it (Shared.Lbip\LbipOpenEmulator).</summary>
+        public static string[] Emulators() => LbIntegrations.Lbip.LbipOpenEmulator.Find(p => SuperZsnesPaths.IsSuperZsnesExecutable(p));
+        public static string OpenEmulator(string path) => LbIntegrations.Lbip.LbipOpenEmulator.Open(path);
+
         public static Control CreatePage()
             => new SuperZsnesSettingsPage(o => o.Scope == OptionScope.Global, SuperZsnesSettings.Read(),
                    "What the pack's plugin does inside SUPER ZSNES, for every game. A game's own options - window, display, "

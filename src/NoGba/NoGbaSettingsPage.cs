@@ -17,6 +17,11 @@ namespace LbIntegrations.NoGba
     {
         public static string Title => "no$gba";
 
+        /// <summary>Its emulators LaunchBox has, "<title>\t<path>", for the Nixx window's Open buttons - opened as LaunchBox's "Open
+        /// emulator" menu opens them, with what this plugin does around it (Shared.Lbip\LbipOpenEmulator).</summary>
+        public static string[] Emulators() => LbIntegrations.Lbip.LbipOpenEmulator.Find(p => NoGbaPaths.IsNoGbaExecutable(p));
+        public static string OpenEmulator(string path) => LbIntegrations.Lbip.LbipOpenEmulator.Open(path);
+
         public static Control CreatePage() => new NoGbaSettingsPage();
 
         public static string Save(Control page)
