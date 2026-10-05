@@ -30,6 +30,8 @@ namespace LbIntegrations.Xemu
         /// <summary>What applies when neither the game nor every game sets it - null: xemu's own.</summary>
         public string Default;
         public string Help;
+        /// <summary>What a window shows under the option (Mehdi, 05/10: short sentences, the rest on hover) - null: Help itself.</summary>
+        public string Short;
         /// <summary>For xemu's settings: the table and key in xemu.toml, the value's TOML kind, xemu's own default (config_spec.yml).
         /// Null table: the plugin's own option.</summary>
         public string Table, TomlKey;
@@ -175,6 +177,20 @@ namespace LbIntegrations.Xemu
                              Help = "extract-xiso's patch, made on the fly in the disc's .xbe files: some games stay on a black screen without it "
                                     + "(Batman: Rise of Sin Tzu). Your files are never written." },
         };
+
+        /// <summary>The short sentences a window shows (Mehdi, 05/10), the option's whole Help in its tooltip.</summary>
+        private static readonly Dictionary<string, string> Shorts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["display.gpu"] = "Vulkan only. On a machine with two cards, xemu may pick the slower one.",
+            ["display.menubar"] = "Hidden by default: no Machine / View / Debug / Help bar over the game.",
+            ["console.region"] = "The game's own: an Xbox shows a black screen for a game of another region.",
+            ["console.video"] = "Follow: PAL with 60 Hz on a European console, NTSC with HD modes on the others.",
+            ["console.hddkey"] = "Serial, MAC and keys made from \"Your console\" - the same on Cxbx-Reloaded.",
+            ["console.certkey"] = "Only for a game with no save yet: a save keeps the keys it was made with.",
+            ["disc.media_patch"] = "Some games stay on a black screen without it. Your files are never written.",
+        };
+
+        static XemuOptions() { foreach (var o in All) if (Shorts.TryGetValue(o.Key, out var s)) o.Short = s; }
 
         public static XemuOption Find(string key) => All.FirstOrDefault(o => o.Key == key);
 

@@ -11,6 +11,7 @@ using System;
 using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
+using LbIntegrations.Lbip;
 using LbIntegrations.RamDisk;
 
 namespace LbIntegrations.Menus
@@ -77,7 +78,9 @@ namespace LbIntegrations.Menus
                 Status(nativeVhdx, "Windows virtual disks", nativeVhdx ? "virtdisk.dll and vhdmp.sys - VHDX without any driver of ours" : "missing")));
 
             // ── RAM disk ──
-            _auto = new RadioButton { Text = "Automatic: Arsenal Image Mounter when it is installed, ImDisk otherwise (recommended)", AutoSize = true, Checked = o.Backend == "auto" };
+            // Short on the page, the whole of it on hover (Mehdi, 05/10).
+            _auto = new RadioButton { Text = "Automatic (recommended): AIM if installed, else ImDisk", AutoSize = true, Checked = o.Backend == "auto" };
+            LbipHint.Attach(_auto, "Automatic: Arsenal Image Mounter when it is installed, ImDisk otherwise (recommended)");
             _aim = new RadioButton { Text = "Arsenal Image Mounter" + (_aimThere ? "" : "  (not installed)"), AutoSize = true, Checked = o.Backend == "aim" };
             _imdisk = new RadioButton { Text = "ImDisk" + (_imdiskThere ? "" : "  (not installed)"), AutoSize = true, Checked = o.Backend == "imdisk" };
             var driver = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, Margin = Padding.Empty };
@@ -85,11 +88,13 @@ namespace LbIntegrations.Menus
             _effective = Line("", false);
             _effective.ForeColor = Color.DarkGoldenrod;
 
-            _removable = new CheckBox { Text = "Removable media - indexers (Everything, Windows Search) leave it alone, so it unmounts cleanly", AutoSize = true, Checked = o.Removable };
+            _removable = new CheckBox { Text = "Removable media - so it unmounts cleanly", AutoSize = true, Checked = o.Removable };
+            LbipHint.Attach(_removable, "Removable media - indexers (Everything, Windows Search) leave it alone, so it unmounts cleanly");
 
             _memAuto = new RadioButton { Text = "Automatic: virtual memory through ImDisk, physical memory through AIM", AutoSize = true, Checked = o.AutoMemory };
             _vm = new RadioButton { Text = "Virtual memory", AutoSize = true, Checked = !o.AutoMemory && !o.Awe };
-            _awe = new RadioButton { Text = "Physical memory (AWE) - never paged out; through ImDisk it needs its AWEAlloc driver", AutoSize = true, Checked = !o.AutoMemory && o.Awe };
+            _awe = new RadioButton { Text = "Physical memory (AWE) - never paged out", AutoSize = true, Checked = !o.AutoMemory && o.Awe };
+            LbipHint.Attach(_awe, "Physical memory (AWE) - never paged out; through ImDisk it needs its AWEAlloc driver");
             var memory = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, Margin = Padding.Empty };
             memory.Controls.AddRange(new Control[] { _memAuto, _vm, _awe });
 
@@ -101,9 +106,11 @@ namespace LbIntegrations.Menus
             // ── VHDX ──
             _vhdxWindows = new RadioButton { Text = "Windows' own", AutoSize = true, Checked = o.Vhdx != "aim", Enabled = nativeVhdx };
             _vhdxAim = new RadioButton { Text = "Arsenal Image Mounter" + (_aimThere ? " - can also attach it as removable media" : "  (not installed)"), AutoSize = true, Checked = o.Vhdx == "aim" };
+            const string vhdxFull = "Creating a VHDX, or a differencing one over it, is always Windows' own; this is how it is attached.";
+            LbipHint.Attach(_vhdxWindows, vhdxFull, _vhdxAim);
             stack.Controls.Add(Group("VHDX - Vita3K's VHDX mode, and disk images",
                 _vhdxWindows, _vhdxAim,
-                Line("Creating a VHDX, or a differencing one over it, is always Windows' own; this is how it is attached.")));
+                LbipHint.Note("Only how a VHDX is attached: Windows always creates it.", vhdxFull, 640, new Padding(0, 2, 0, 6))));
 
             Controls.Add(stack);
 

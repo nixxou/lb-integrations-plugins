@@ -68,53 +68,42 @@ namespace LbIntegrations.Vita3k
                 Text = "Import Vita games as ROM files (bypass LaunchBox's own PS Vita import)",
                 AutoSize = true, Location = new Point(14, 26), Checked = Vita3kSettings.BypassVitaImport,
             };
-            var explain = new Label
-            {
-                AutoSize = false, Location = new Point(32, 52), Size = new Size(540, 86), ForeColor = SystemColors.GrayText,
-                Text = "For \"Sony Playstation Vita\" (or a platform scraped as it), LaunchBox ignores the files you pick "
-                     + "and lists the games installed in Vita3K instead - none, with this plugin's console, which is "
-                     + "rebuilt for every session. When this is on, the wizard scans your .zip / .vpk files like any "
-                     + "other ROMs; the platform, its metadata and its images stay \"Sony Playstation Vita\".",
-            };
+            // Short on the page, the whole of it on hover (LbipHint) - over the note and the checkbox it explains.
+            var explain = Note(32, 50, 540, "LaunchBox's own Vita import finds no game here; this scans your .zip / .vpk files instead.",
+                  "For \"Sony Playstation Vita\" (or a platform scraped as it), LaunchBox ignores the files you pick "
+                + "and lists the games installed in Vita3K instead - none, with this plugin's console, which is "
+                + "rebuilt for every session. When this is on, the wizard scans your .zip / .vpk files like any "
+                + "other ROMs; the platform, its metadata and its images stay \"Sony Playstation Vita\".", _bypass);
             _clean = new CheckBox
             {
                 Text = "Filter out what is not a game",
-                AutoSize = true, Location = new Point(32, 146), Checked = Vita3kSettings.CleanImportList,
+                AutoSize = true, Location = new Point(32, 72), Checked = Vita3kSettings.CleanImportList,
             };
-            var explainClean = new Label
-            {
-                AutoSize = false, Location = new Point(50, 170), Size = new Size(522, 52), ForeColor = SystemColors.GrayText,
-                Text = "Each file's param.sfo is read before you click Finish: a game stays; an update or a DLC is noted for "
-                     + "its game, found again at launch; a .pkg with no licence and anything else goes.",
-            };
+            var explainClean = Note(50, 96, 522, "Updates and DLCs are attached to their game; anything else is left out.",
+                  "Each file's param.sfo is read before you click Finish: a game stays; an update or a DLC is noted for "
+                + "its game, found again at launch; a .pkg with no licence and anything else goes.", _clean);
             _title = new CheckBox
             {
                 Text = "Rename games when their name is not in LaunchBox's database",
-                AutoSize = true, Location = new Point(32, 226), Checked = Vita3kSettings.ImportTitle,
+                AutoSize = true, Location = new Point(32, 118), Checked = Vita3kSettings.ImportTitle,
             };
-            var explainTitle = new Label
-            {
-                AutoSize = false, Location = new Point(50, 250), Size = new Size(522, 52), ForeColor = SystemColors.GrayText,
-                Text = "The file's name is kept when LaunchBox's database knows it on Sony Playstation Vita; else the param.sfo's "
-                     + "title, written as the database writes it. Shown in the list before you click Finish.",
-            };
+            var explainTitle = Note(50, 142, 522, "Unknown names take the game's own title from its param.sfo.",
+                  "The file's name is kept when LaunchBox's database knows it on Sony Playstation Vita; else the param.sfo's "
+                + "title, written as the database writes it. Shown in the list before you click Finish.", _title);
             // After the import (Mehdi, 30/09) - see Vita3kImportFinished. Read while the list is read.
             _regionVersion = new CheckBox
             {
                 Text = "Set each game's region and version after the import",
-                AutoSize = true, Location = new Point(32, 306), Checked = Vita3kSettings.ImportRegionVersion,
+                AutoSize = true, Location = new Point(32, 164), Checked = Vita3kSettings.ImportRegionVersion,
             };
-            var explainRegion = new Label
-            {
-                AutoSize = false, Location = new Point(50, 330), Size = new Size(522, 56), ForeColor = SystemColors.GrayText,
-                Text = "Region: from the game's param.sfo - the store its CONTENT_ID names (U North America, E Europe, "
-                     + "J Japan, H Asia, K Korea), else its title id. Version: only the [tags] and (tags) of the file's "
-                     + "name - \"[PCSA00017] [USA] [NoNpDRM]\" - and nothing when it has none.",
-            };
+            var explainRegion = Note(50, 188, 522, "Region from the game's param.sfo, version from the file name's [tags].",
+                  "Region: from the game's param.sfo - the store its CONTENT_ID names (U North America, E Europe, "
+                + "J Japan, H Asia, K Korea), else its title id. Version: only the [tags] and (tags) of the file's "
+                + "name - \"[PCSA00017] [USA] [NoNpDRM]\" - and nothing when it has none.", _regionVersion);
             void Enable() { _clean.Enabled = _title.Enabled = _regionVersion.Enabled = _bypass.Checked; }
             Enable();
             _bypass.CheckedChanged += (_, _) => Enable();
-            import.Height = 396;
+            import.Height = 216;
             import.Controls.Add(_bypass);
             import.Controls.Add(explain);
             import.Controls.Add(_clean);
@@ -134,7 +123,7 @@ namespace LbIntegrations.Vita3k
             // those every game without its own runs on - the same four the install asked about.
             var exe = Vita3kPlugin.KnownExecutables().FirstOrDefault();
             _layout = exe == null ? null : Vita3kPaths.Resolve(exe);
-            var system = new GroupBox { Text = "System settings - what Vita3K tells every game", Dock = DockStyle.Top, Height = 224, Padding = new Padding(10) };
+            var system = new GroupBox { Text = "System settings - what Vita3K tells every game", Dock = DockStyle.Top, Height = _layout == null ? 64 : 224, Padding = new Padding(10) };
             if (_layout == null)
                 system.Controls.Add(new Label
                 {
@@ -147,12 +136,9 @@ namespace LbIntegrations.Vita3k
                 _system = new Vita3kSystemFields { Location = new Point(14, 26) };
                 _system.ShowValues(_shown);
                 system.Controls.Add(_system);
-                system.Controls.Add(new Label
-                {
-                    AutoSize = false, Location = new Point(14, 182), Size = new Size(540, 36), ForeColor = SystemColors.GrayText,
-                    Text = "Written into portable\\config.yml. A game's own system settings are in its Options window. "
-                         + "The library keeps naming games in US English.",
-                });
+                system.Controls.Add(Note(14, 182, 540, "Saved in config.yml; a game can override them in its Options window.",
+                    "Written into portable\\config.yml. A game's own system settings are in its Options window. "
+                  + "The library keeps naming games in US English.", _system));
             }
 
             // NO GRAPHICS HERE (Mehdi, 29/09): writing Vita3K's own graphics keys from a list of ours is asking
@@ -161,19 +147,16 @@ namespace LbIntegrations.Vita3k
             // is: config.yml IS its settings, and Vita3K's own window already edits it.
             if (_layout != null)
             {
-                system.Height = 262;
-                var open = new Button { Text = "Open config.yml...", AutoSize = true, Location = new Point(14, 222) };
+                system.Height = 244;
+                var open = new Button { Text = "Open config.yml...", AutoSize = true, Location = new Point(14, 204) };
                 open.Click += (_, _) => OpenConfigYml();
                 system.Controls.Add(open);
-                system.Controls.Add(new Label
-                {
-                    AutoSize = true, Location = new Point(150, 227), ForeColor = SystemColors.GrayText,
-                    Text = "every other setting, in Vita3K's own file - Vita3K must be closed, it rewrites it as it quits",
-                });
+                system.Controls.Add(Note(150, 209, 420, "every other setting - close Vita3K first",
+                    "every other setting, in Vita3K's own file - Vita3K must be closed, it rewrites it as it quits", open));
             }
 
             // THE COMPATIBILITY LIST, every game's (Mehdi, 05/10): downloaded whole again here too, the date of the last one.
-            var compat = new GroupBox { Text = "Vita3K's compatibility list", Dock = DockStyle.Top, Height = 92, Padding = new Padding(10) };
+            var compat = new GroupBox { Text = "Vita3K's compatibility list", Dock = DockStyle.Top, Height = _layout == null ? 64 : 92, Padding = new Padding(10) };
             if (_layout == null)
                 compat.Controls.Add(new Label { AutoSize = true, Location = new Point(14, 26), ForeColor = SystemColors.GrayText, Text = "Nixx-Vita3K is not installed: no list yet." });
             else
@@ -192,6 +175,15 @@ namespace LbIntegrations.Vita3k
             Controls.Add(import);
         }
 
+        /// <summary>A grey note at <paramref name="x"/>, <paramref name="y"/>: <paramref name="shortText"/> shown, <paramref name="full"/>
+        /// on hover - over it and over <paramref name="explained"/>.</summary>
+        private static Label Note(int x, int y, int width, string shortText, string full, Control explained)
+        {
+            var label = LbIntegrations.Lbip.LbipHint.Note(shortText, full, width);
+            label.Location = new Point(x, y);
+            LbIntegrations.Lbip.LbipHint.Attach(explained, full);
+            return label;
+        }
         /// <summary>The system settings, written when they changed. Null, or why not.</summary>
         public string SaveSystem()
         {

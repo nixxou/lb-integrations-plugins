@@ -9,6 +9,7 @@ using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
 using LbIntegrations.Identity;
+using LbIntegrations.Lbip;
 
 namespace LbIntegrations.NoGba
 {
@@ -50,11 +51,18 @@ namespace LbIntegrations.NoGba
             AutoScroll = true;
             Padding = new Padding(12);
             _layout = Layout();
-            Label Grey(string text, int x, int y) => new Label { AutoSize = true, MaximumSize = new Size(540 - x, 0), Location = new Point(x, y), ForeColor = SystemColors.GrayText, Text = text };
+            // A grey note: one short sentence shown, what it said before - word for word - on hover (LbipHint).
+            Label Grey(string text, string full, int x, int y)
+            {
+                var note = LbipHint.Note(text, full, 540 - x, Padding.Empty);
+                note.Location = new Point(x, y);
+                return note;
+            }
             if (_layout == null)
             {
-                Controls.Add(Grey("Nixx-nogba is not installed: there is nothing to configure yet. Add it from LaunchBox's Tools > Manage > "
-                                  + "Emulators, and its settings appear here.", 12, 12));
+                Controls.Add(Grey("Nixx-nogba is not installed yet: add it in Tools > Manage > Emulators.",
+                                  "Nixx-nogba is not installed: there is nothing to configure yet. Add it from LaunchBox's Tools > Manage > "
+                                + "Emulators, and its settings appear here.", 12, 12));
                 return;
             }
 
@@ -72,20 +80,26 @@ namespace LbIntegrations.NoGba
                 _theirs = new RadioButton { Text = "the one of your dump " + a.Dump + ": " + a.DumpOwner.Describe(), AutoSize = true, Location = new Point(30, y + 22), Checked = !a.Identity };
                 box.Controls.Add(_mine);
                 box.Controls.Add(_theirs);
-                box.Controls.Add(Grey("Written into FIRMWARE.BIN, no$gba's copy of the dump - your dump itself is never written. Your console is "
-                                      + "set in the \"Your console\" tab.", 48, y + 46));
-                y += 84;
+                const string writtenFull = "Written into FIRMWARE.BIN, no$gba's copy of the dump - your dump itself is never written. Your console is "
+                                         + "set in the \"Your console\" tab.";
+                box.Controls.Add(Grey("Written into no$gba's copy, FIRMWARE.BIN - never into your dump.", writtenFull, 48, y + 46));
+                LbipHint.Attach(_mine, writtenFull, _theirs);
+                y += 68;
             }
             else
             {
-                box.Controls.Add(Grey("DS games: no$gba has no copy of a DS firmware dump of yours (dsfirmware.bin in no$gba's bios folder), "
-                                      + "so they show whatever FIRMWARE.BIN holds, or none.", 14, y));
-                y += 44;
+                box.Controls.Add(Grey("DS games show FIRMWARE.BIN's owner, or none: no dump of yours in the bios folder.",
+                                      "DS games: no$gba has no copy of a DS firmware dump of yours (dsfirmware.bin in no$gba's bios folder), "
+                                    + "so they show whatever FIRMWARE.BIN holds, or none.", 14, y));
+                y += 26;
             }
-            box.Controls.Add(new Label { Text = "DSiWare:", AutoSize = true, Location = new Point(14, y) });
-            box.Controls.Add(Grey("the owner of each DSi console - no$gba cannot show another over it. A console made from a blank NAND is "
-                                  + "set up as your console when it is made.", 30, y + 20));
-            y += 60;
+            const string dsiWareFull = "the owner of each DSi console - no$gba cannot show another over it. A console made from a blank NAND is "
+                                     + "set up as your console when it is made.";
+            var dsiWare = new Label { Text = "DSiWare:", AutoSize = true, Location = new Point(14, y) };
+            box.Controls.Add(dsiWare);
+            LbipHint.Attach(dsiWare, dsiWareFull);
+            box.Controls.Add(Grey("each DSi console's own owner; one made from a blank NAND gets yours.", dsiWareFull, 30, y + 20));
+            y += 46;
             box.Size = new Size(560, y);
             Controls.Add(box);
         }

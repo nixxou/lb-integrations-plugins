@@ -16,6 +16,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
+using LbIntegrations.Lbip;
 
 namespace LbIntegrations.MelonDs
 {
@@ -57,12 +58,9 @@ namespace LbIntegrations.MelonDs
             _layout = exe == null ? null : MelonDsPaths.Resolve(exe);
             if (_layout?.ConfigFile == null)
             {
-                Controls.Add(new Label
-                {
-                    Dock = DockStyle.Top, Height = 60, ForeColor = SystemColors.GrayText,
-                    Text = "Nixx-melonDS is not installed: there is nothing to configure yet. Add it from LaunchBox's "
-                         + "Tools > Manage > Emulators, and its settings appear here.",
-                });
+                Controls.Add(Grey("Nixx-melonDS is not installed yet: add it in Tools > Manage > Emulators.",
+                                  "Nixx-melonDS is not installed: there is nothing to configure yet. Add it from LaunchBox's "
+                                + "Tools > Manage > Emulators, and its settings appear here.", 12, 12));
                 return;
             }
 
@@ -77,9 +75,11 @@ namespace LbIntegrations.MelonDs
             _dsiWareShown = MelonDsFirmware.DsiWareOverride(_layout);
             _dsiWare = new CheckBox { Text = "DSiWare: show your console, over each DSi console's own owner", AutoSize = true, Location = new Point(14, wy), Checked = _dsiWareShown };
             whose.Controls.Add(_dsiWare);
-            whose.Controls.Add(Grey("The owner below, for the length of each session: a DSi console is never rewritten, and its saves keep its own "
-                                    + "settings. A language its region does not have stays the console's.", 34, wy + 22));
-            wy += 64;
+            const string dsiWareFull = "The owner below, for the length of each session: a DSi console is never rewritten, and its saves keep its own "
+                                     + "settings. A language its region does not have stays the console's.";
+            whose.Controls.Add(Grey("Only for the session: the DSi console and its saves keep their own owner.", dsiWareFull, 34, wy + 22));
+            LbipHint.Attach(_dsiWare, dsiWareFull);
+            wy += 46;
             var active = MelonDsFirmware.Active(_layout);
             if (active != null)
             {
@@ -96,9 +96,10 @@ namespace LbIntegrations.MelonDs
             }
             else
             {
-                whose.Controls.Add(Grey("DS games run on melonDS's own firmware, which always shows the owner below. DSi cartridges show your "
-                                        + "console too: it is written into the copy of the console they run on.", 14, wy));
-                wy += 40;
+                whose.Controls.Add(Grey("DS games use melonDS's own firmware, so they show the owner below; DSi cartridges too.",
+                                        "DS games run on melonDS's own firmware, which always shows the owner below. DSi cartridges show your "
+                                      + "console too: it is written into the copy of the console they run on.", 14, wy));
+                wy += 24;
             }
             whose.Size = new Size(560, wy + 6);
             Controls.Add(whose);
@@ -124,17 +125,20 @@ namespace LbIntegrations.MelonDs
             var open = new Button { Text = "Open melonDS.toml...", AutoSize = true, Location = new Point(12, y) };
             open.Click += (_, _) => OpenToml();
             Controls.Add(open);
-            Controls.Add(new Label
-            {
-                AutoSize = true, Location = new Point(160, y + 5), ForeColor = SystemColors.GrayText,
-                Text = "every other setting - melonDS must be closed, it rewrites the file as it quits",
-            });
+            const string openFull = "every other setting - melonDS must be closed, it rewrites the file as it quits";
+            Controls.Add(Grey("every other setting - close melonDS first", openFull, 160, y + 5));
+            LbipHint.Attach(open, openFull);
         }
 
-        private static Label Grey(string text, int x, int y) => new Label
+        private static Label Grey(string text, int x, int y) => Grey(text, null, x, y);
+
+        /// <summary>A grey note: <paramref name="text"/> shown, <paramref name="full"/> - what it said before, word for word - on hover (LbipHint).</summary>
+        private static Label Grey(string text, string full, int x, int y)
         {
-            AutoSize = true, MaximumSize = new Size(530 - x, 0), Location = new Point(x, y), ForeColor = SystemColors.GrayText, Text = text,
-        };
+            var note = LbipHint.Note(text, full, 530 - x, Padding.Empty);
+            note.Location = new Point(x, y);
+            return note;
+        }
 
         private void OpenToml()
         {

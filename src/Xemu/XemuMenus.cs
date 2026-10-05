@@ -82,13 +82,13 @@ namespace LbIntegrations.Xemu
             _cache = new TextBox { Width = 80, Text = s.TryGetValue("cache_gb", out var c) ? c : "", Margin = new Padding(3, 3, 0, 0) };
             t.Controls.Add(new Label { Text = "Copies kept (GB)", AutoSize = true, Margin = new Padding(0, 7, 4, 0) }, 0, 0);
             t.Controls.Add(_cache, 1, 0);
-            var help = new Label
-            {
-                AutoSize = true, MaximumSize = new Size(520, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 6, 0, 4), UseMnemonic = false,
-                Text = "xemu opens an XISO only. A redump, a CSO, a CCI or a CHD is served as one where it is, through the Arsenal Image Mounter - "
+            // A short sentence, the whole of it on hover (Mehdi, 05/10) - over the box too.
+            const string discsFull = "xemu opens an XISO only. A redump, a CSO, a CCI or a CHD is served as one where it is, through the Arsenal Image Mounter - "
                        + "nothing copied. Without it (or for an image in a zip / 7z) the XISO is made once into <xemu>\\discs and kept, up to this "
-                       + "size (40 GB by default): past it, the copies used longest ago go. Your own files are never changed.",
-            };
+                       + "size (40 GB by default): past it, the copies used longest ago go. Your own files are never changed.";
+            var help = LbIntegrations.Lbip.LbipHint.Note("Mounted as an XISO through AIM, else converted once and kept up to this size.",
+                                                         discsFull, 520, new Padding(0, 6, 0, 4));
+            LbIntegrations.Lbip.LbipHint.Attach(_cache, discsFull);
             t.Controls.Add(help, 0, 1); t.SetColumnSpan(help, 2);
             discs.Controls.Add(t);
             stack.Controls.Add(discs);
@@ -97,14 +97,13 @@ namespace LbIntegrations.Xemu
             var sp = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Location = new Point(8, 20) };
             _states = new CheckBox { Text = "Show xemu's snapshots in LaunchBox, as the game's savestates", AutoSize = true, Checked = XemuSettings.Savestates() };
             sp.Controls.Add(_states);
-            sp.Controls.Add(new Label
-            {
-                AutoSize = true, MaximumSize = new Size(520, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(18, 2, 0, 4), UseMnemonic = false,
-                Text = "xemu makes its snapshots (Snapshots menu) inside the game's console whatever this says. On, each one is also copied "
+            const string statesFull = "xemu makes its snapshots (Snapshots menu) inside the game's console whatever this says. On, each one is also copied "
                        + "out as a file LaunchBox lists, backs up and restores - some 35 MB each, written when the game closes. Off, nothing "
                        + "is copied and no file is put back into a console; turned on again, the snapshots made meanwhile are copied out at "
-                       + "the next listing or close, and none is lost.",
-            });
+                       + "the next listing or close, and none is lost.";
+            sp.Controls.Add(LbIntegrations.Lbip.LbipHint.Note("Each is copied out (about 35 MB) when the game closes; off, xemu still keeps them.",
+                                                              statesFull, 520, new Padding(18, 2, 0, 4)));
+            LbIntegrations.Lbip.LbipHint.Attach(_states, statesFull);
             states.Controls.Add(sp);
             stack.Controls.Add(states);
 
@@ -120,13 +119,11 @@ namespace LbIntegrations.Xemu
             // The console and the disc only (Mehdi, 05/10): xemu's own settings - picture, system, performance, sound - are set for
             // every game in xemu's own window, and game by game in the game's window.
             stack.Controls.Add(new Label { Text = "Console and disc, for every game", AutoSize = true, Font = new Font("Segoe UI", 10f, FontStyle.Bold), Margin = new Padding(4, 8, 0, 0) });
-            stack.Controls.Add(new Label
-            {
-                AutoSize = true, MaximumSize = new Size(560, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(4, 2, 0, 4), UseMnemonic = false,
-                Text = "The console a game runs on and its disc, made for the time of the game - your files are never written. A game's own "
-                       + "choice (right-click it, Nixx-Xemu : Options..., Console & disc) wins over these. Picture, sound and performance: "
-                       + "for every game in xemu's own window, for one game in its Options window.",
-            });
+            stack.Controls.Add(LbIntegrations.Lbip.LbipHint.Note("Made for the time of a game, your files untouched; a game's own choice wins.",
+                "The console a game runs on and its disc, made for the time of the game - your files are never written. A game's own "
+                + "choice (right-click it, Nixx-Xemu : Options..., Console & disc) wins over these. Picture, sound and performance: "
+                + "for every game in xemu's own window, for one game in its Options window.",
+                560, new Padding(4, 2, 0, 4)));
             var toml = exe != null ? XemuTomlDoc.Load(XemuPaths.TomlOf(exe)) : null;
             _rows = new XemuOptionRows(s, XemuOptionRows.EveryGameFallback(toml), o => !o.IsXemuSetting);
             stack.Controls.Add(XemuOptionRows.Legend("Not set: the default"));

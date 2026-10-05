@@ -102,12 +102,11 @@ namespace LbIntegrations.Xenia
             var windows = new Button { Text = "Use this Windows' language, country, time zone and clock", AutoSize = true, Margin = new Padding(3, 8, 0, 4) };
             windows.Click += (_, _) => Put(XeniaConsole.FromWindows(Values() ?? _read));
             AddWide(ct, windows);
-            AddWide(ct, new Label
-            {
-                AutoSize = true, MaximumSize = new Size(470, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 4, 0, 4),
-                Text = "What Xenia's Console settings window edits - the language is the one games show. Written to "
-                       + XeniaConsole.PathIn(_layout.StorageRoot) + (XeniaConsole.Exists(_layout.StorageRoot) ? "" : " (not there yet: Xenia's defaults are shown)") + ".",
-            });
+            // A short sentence, the whole of it on hover (LbipHint); where it is written stays on the page.
+            var written = "Written to " + XeniaConsole.PathIn(_layout.StorageRoot)
+                          + (XeniaConsole.Exists(_layout.StorageRoot) ? "" : " (not there yet: Xenia's defaults are shown)") + ".";
+            AddWide(ct, LbIntegrations.Lbip.LbipHint.Note("The language is the one games show. " + written,
+                "What Xenia's Console settings window edits - the language is the one games show. " + written, 470, new Padding(0, 4, 0, 4)));
             consoleBox.Controls.Add(ct);
             Controls.Add(consoleBox);
         }

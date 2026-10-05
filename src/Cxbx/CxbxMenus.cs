@@ -80,21 +80,30 @@ namespace LbIntegrations.Cxbx
             // LaunchBox's Import ROM Files wizard, for Microsoft Xbox (CxbxImport) - as Vita3K's tab has it.
             var import = Group("LaunchBox's Import ROM Files wizard (Microsoft Xbox)");
             var im = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Location = new Point(8, 20) };
-            Label Explain(string text) => new Label { AutoSize = true, MaximumSize = new Size(500, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(18, 0, 0, 6), Text = text };
+            // A short sentence under each choice, the whole of it on hover (Mehdi, 05/10) - over the choice too.
+            Label Explain(string text, string full = null, params Control[] explained)
+            {
+                var l = LbIntegrations.Lbip.LbipHint.Note(text, full, 500, new Padding(18, 0, 0, 6));
+                foreach (var c in explained) LbIntegrations.Lbip.LbipHint.Attach(c, full);
+                return l;
+            }
             _importClean = new CheckBox { Text = "Filter out what is not a game", AutoSize = true, Checked = CxbxSettings.On(s, "import_clean", true) };
             im.Controls.Add(_importClean);
-            im.Controls.Add(Explain("Each file is read for what it holds, zipped or not, before you click Finish: a disc with a default.xbe stays; an "
+            im.Controls.Add(Explain("Keeps discs with a default.xbe; Xbox 360 discs and anything else are left out.",
+                                    "Each file is read for what it holds, zipped or not, before you click Finish: a disc with a default.xbe stays; an "
                                     + "Xbox 360 disc or anything else goes. The disc is listed on the way, so its first launch only unpacks it - a zipped "
-                                    + "game takes a few seconds to read, once, under a window saying how far it is."));
+                                    + "game takes a few seconds to read, once, under a window saying how far it is.", _importClean));
             _importTitle = new CheckBox { Text = "Rename games when their name is not in LaunchBox's database", AutoSize = true, Checked = CxbxSettings.On(s, "import_title", true) };
             im.Controls.Add(_importTitle);
-            im.Controls.Add(Explain("The file's name is kept when LaunchBox's database knows it on Microsoft Xbox; else the compatibility list's name for its "
+            im.Controls.Add(Explain("The new name comes from the compatibility list, else from the game's executable.",
+                                    "The file's name is kept when LaunchBox's database knows it on Microsoft Xbox; else the compatibility list's name for its "
                                     + "serial, else the name its executable carries - the first the database knows, written as it writes it. Shown in the "
-                                    + "list before you click Finish."));
+                                    + "list before you click Finish.", _importTitle));
             _importRegion = new CheckBox { Text = "Set each game's region after the import", AutoSize = true, Checked = CxbxSettings.On(s, "import_region", true) };
             im.Controls.Add(_importRegion);
-            im.Controls.Add(Explain("The compatibility list's entry for that very disc (Europe, Germany, North America...), else the region its executable "
-                                    + "declares - North America, Japan, or the rest of the world as Europe, World when it has several."));
+            im.Controls.Add(Explain("Read from the compatibility list for that disc, else from the game's executable.",
+                                    "The compatibility list's entry for that very disc (Europe, Germany, North America...), else the region its executable "
+                                    + "declares - North America, Japan, or the rest of the world as Europe, World when it has several.", _importRegion));
             import.Controls.Add(im);
             stack.Controls.Add(import);
 
@@ -104,10 +113,11 @@ namespace LbIntegrations.Cxbx
             var noSupport = CxbxRamSession.DiscSupport(exe != null ? Path.GetDirectoryName(exe) : null);
             _attach = new CheckBox { Text = "Mount ISO / XISO / CSO / CCI / CHD / ZAR directly through AIM - no copy, no RAM disk", AutoSize = true, Checked = CxbxSettings.On(s, "attach_discs", true), Enabled = noSupport == null };
             attachStack.Controls.Add(_attach);
-            attachStack.Controls.Add(Explain(noSupport == null
-                ? "The disc image is attached as a read-only disk for the session and the game read from it (a compressed one decompressed as the game reads) - zips and 7z are still unpacked, "
-                  + "as below. Needs the Arsenal Image Mounter."
-                : "Unavailable: " + noSupport + " (what is installed shows in the RamDisk & VHDX tab). Until then discs are unpacked, as below."));
+            attachStack.Controls.Add(noSupport == null
+                ? Explain("Read-only for the session; zips and 7z are still unpacked. Needs Arsenal Image Mounter.",
+                          "The disc image is attached as a read-only disk for the session and the game read from it (a compressed one decompressed as the game reads) - zips and 7z are still unpacked, "
+                          + "as below. Needs the Arsenal Image Mounter.", _attach)
+                : Explain("Unavailable: " + noSupport + " (what is installed shows in the RamDisk & VHDX tab). Until then discs are unpacked, as below."));
             var t = new TableLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, Location = new Point(8, 20) };
             t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
             t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 380));
@@ -122,15 +132,14 @@ namespace LbIntegrations.Cxbx
             ramRow.Controls.Add(_ramBelow);
             ramRow.Controls.Add(new Label { Text = "GB of game", AutoSize = true, Margin = new Padding(4, 7, 0, 0) });
             t.Controls.Add(_ram, 0, 2); t.Controls.Add(ramRow, 1, 2);
-            var help = new Label
-            {
-                AutoSize = true, MaximumSize = new Size(520, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 6, 0, 4), UseMnemonic = false,
-                Text = "Cxbx-Reloaded runs a game's executable, not its disc image. At a launch, the plugin unpacks the disc - from the image, or "
+            const string unpackFull = "Cxbx-Reloaded runs a game's executable, not its disc image. At a launch, the plugin unpacks the disc - from the image, or "
                        + "straight out of its zip or 7z without writing the image - to a RAM disk for the session when the game fits under that size, "
                        + "else into this folder, once: the next launches open it from there. Over the size limit, the games launched longest ago lose "
                        + "their copy, whole - it comes back at their next launch. Your own files are never changed. The RAM disk itself is set in the "
-                       + "RamDisk & VHDX tab.",
-            };
+                       + "RamDisk & VHDX tab.";
+            var help = LbIntegrations.Lbip.LbipHint.Note("Unpacked once to a RAM disk if small enough, else here; the oldest go past the limit.",
+                                                         unpackFull, 520, new Padding(0, 6, 0, 4));
+            LbIntegrations.Lbip.LbipHint.Attach(_folder, unpackFull, _limit, _ram, _ramBelow);
             t.Controls.Add(help, 0, 3); t.SetColumnSpan(help, 2);
             t.Location = Point.Empty;
             attachStack.Controls.Add(t);
@@ -148,29 +157,30 @@ namespace LbIntegrations.Cxbx
 
             var display = Group("At launch");
             var d = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Location = new Point(8, 20) };
-            Label Note(string text, int indent) => new Label { AutoSize = true, MaximumSize = new Size(520 - indent, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(indent, 2, 0, 4), Text = text };
+            Label Note(string text, string full, int indent) => LbIntegrations.Lbip.LbipHint.Note(text, full, 520 - indent, new Padding(indent, 2, 0, 4));
 
             // A game is launched with the loader alone (Mehdi, 03/10: game-by-game options will come, as for the other
             // emulators, and the GUI around a game would be in their way). Cxbx-Reloaded's window is for its settings,
             // before a game: right-click a game, "Open Nixx-Cxbx..." opens it (CxbxOpenRedirect).
             _borderless = new CheckBox { Text = "Full screen in a window once the game shows", AutoSize = true, Checked = CxbxSettings.On(s, "borderless", true) };
             d.Controls.Add(_borderless);
-            d.Controls.Add(Note("Cxbx-Reloaded's own Alt+Enter, sent to the game: a borderless window over the whole screen. Its exclusive full "
-                                + "screen (Video settings, in Cxbx-Reloaded) can lock up the screen on some machines; when it is on, this is not sent.", 18));
-            d.Controls.Add(Note("Cxbx-Reloaded's own settings (video, controllers, EEPROM...): right-click a game, \"Open Nixx-Cxbx...\" opens its "
+            const string borderlessFull = "Cxbx-Reloaded's own Alt+Enter, sent to the game: a borderless window over the whole screen. Its exclusive full "
+                                + "screen (Video settings, in Cxbx-Reloaded) can lock up the screen on some machines; when it is on, this is not sent.";
+            d.Controls.Add(Note("Borderless, safer than exclusive full screen - not sent when that one is on.", borderlessFull, 18));
+            LbIntegrations.Lbip.LbipHint.Attach(_borderless, borderlessFull);
+            d.Controls.Add(Note("Video, controllers, EEPROM: right-click a game, \"Open Nixx-Cxbx...\".",
+                                "Cxbx-Reloaded's own settings (video, controllers, EEPROM...): right-click a game, \"Open Nixx-Cxbx...\" opens its "
                                 + "window. Set them there before playing.", 0));
             display.Controls.Add(d);
             stack.Controls.Add(display);
 
             // The options of every game (CxbxOptions) - a game's own are in its right-click menu, Nixx-Cxbx : Options...
             stack.Controls.Add(new Label { Text = "Options for every game", AutoSize = true, Font = new Font("Segoe UI", 10f, FontStyle.Bold), Margin = new Padding(4, 8, 0, 0) });
-            stack.Controls.Add(new Label
-            {
-                AutoSize = true, MaximumSize = new Size(560, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(4, 2, 0, 4),
-                Text = "Written into Cxbx-Reloaded's settings for the time of a game, then put back. Unset, Cxbx-Reloaded's own setting applies - "
-                       + "the one its window sets (right-click a game, \"Open Nixx-Cxbx...\"). A game's own options win over these. "
-                       + "Audio, the hacks and the experimental LLE parts are set game by game, in its right-click menu.",
-            });
+            stack.Controls.Add(LbIntegrations.Lbip.LbipHint.Note("Applied for the time of a game, then put back; a game's own options win.",
+                "Written into Cxbx-Reloaded's settings for the time of a game, then put back. Unset, Cxbx-Reloaded's own setting applies - "
+                + "the one its window sets (right-click a game, \"Open Nixx-Cxbx...\"). A game's own options win over these. "
+                + "Audio, the hacks and the experimental LLE parts are set game by game, in its right-click menu.",
+                560, new Padding(4, 2, 0, 4)));
             _rows = new CxbxOptionRows(s, CxbxOptionRows.EveryGameFallback(CxbxOwn.Read(exe)), everyGame: true);
             stack.Controls.Add(CxbxOptionRows.Legend("Not set: the default, else Cxbx-Reloaded's own (read from its settings)"));
             stack.Controls.Add(_rows);

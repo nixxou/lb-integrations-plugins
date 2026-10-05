@@ -14,6 +14,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
+using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Flycast
 {
@@ -66,35 +67,35 @@ namespace LbIntegrations.Flycast
             AutoScroll = true;
             Padding = new Padding(12);
 
+            // Each note: one short sentence, its whole text on hover (LbipHint) - and what is below starts where it ends.
             var import = new GroupBox { Text = "LaunchBox's Import ROM Files wizard", Location = new Point(12, 12), Size = new Size(560, 330) };
-            import.Controls.Add(new Label
-            {
-                AutoSize = false, Location = new Point(14, 22), Size = new Size(530, 64), ForeColor = SystemColors.GrayText,
-                Text = "Importing to Nixx-Flycast, for a platform ticked below (or scraped as one): the game list the wizard shows "
-                     + "last keeps only the games of that platform - handy when a whole MAME folder is imported. A System SP "
-                     + "platform is any whose name holds \"System SP\".",
-            });
-            import.Controls.Add(new Label { Text = "Quick check", AutoSize = true, Location = new Point(200, 92), Font = new Font(Font, FontStyle.Bold) });
-            import.Controls.Add(new Label { Text = "CRC check", AutoSize = true, Location = new Point(320, 92), Font = new Font(Font, FontStyle.Bold) });
-            int y = 116;
+            const string importFull = "Importing to Nixx-Flycast, for a platform ticked below (or scraped as one): the game list the wizard shows "
+                                    + "last keeps only the games of that platform - handy when a whole MAME folder is imported. A System SP "
+                                    + "platform is any whose name holds \"System SP\".";
+            int y = Note(import, "For a ticked platform, the wizard's last list keeps only its games.", importFull, 14, 22, 530) + 8;
+            var quickHead = new Label { Text = "Quick check", AutoSize = true, Location = new Point(200, y), Font = new Font(Font, FontStyle.Bold) };
+            var crcHead = new Label { Text = "CRC check", AutoSize = true, Location = new Point(320, y), Font = new Font(Font, FontStyle.Bold) };
+            import.Controls.Add(quickHead);
+            import.Controls.Add(crcHead);
+            const string checksFull = "Quick: by the file's name, as Flycast finds a set (a disc: by its extension) - instant.\n"
+                                    + "CRC: by its content - every file of the set there, a set under another name told by its files (the list "
+                                    + "says what to rename it to), each game kept loaded as Flycast loads it; a disc's IP.BIN read. Minutes on a whole MAME folder.";
+            LbipHint.Attach(quickHead, checksFull, crcHead);
+            y += 24;
             foreach (var system in FlycastSettings.Systems)
             {
-                import.Controls.Add(new Label { Text = system == "Dreamcast" ? "Sega Dreamcast" : system, AutoSize = true, Location = new Point(18, y + 2) });
+                var name = new Label { Text = system == "Dreamcast" ? "Sega Dreamcast" : system, AutoSize = true, Location = new Point(18, y + 2) };
+                import.Controls.Add(name);
+                LbipHint.Attach(name, importFull);
                 var quick = new CheckBox { AutoSize = true, Location = new Point(226, y), Checked = FlycastSettings.QuickCheck(system) };
                 var crc = new CheckBox { AutoSize = true, Location = new Point(344, y), Checked = FlycastSettings.CrcCheck(system) };
                 import.Controls.Add(quick);
                 import.Controls.Add(crc);
+                LbipHint.Attach(quick, checksFull, crc);
                 _checks[system] = (quick, crc);
                 y += 28;
             }
-            import.Controls.Add(new Label
-            {
-                AutoSize = false, Location = new Point(14, y + 6), Size = new Size(530, 64), ForeColor = SystemColors.GrayText,
-                Text = "Quick: by the file's name, as Flycast finds a set (a disc: by its extension) - instant.\n"
-                     + "CRC: by its content - every file of the set there, a set under another name told by its files (the list "
-                     + "says what to rename it to), each game kept loaded as Flycast loads it; a disc's IP.BIN read. Minutes on a whole MAME folder.",
-            });
-            y += 80;
+            y = Note(import, "Quick: by file name, instant. CRC: by content, minutes on a whole MAME folder.", checksFull, 14, y + 4, 530) + 12;
 
             // After the import (Mehdi, 30/09) - see FlycastImportFinished.
             _repair = new CheckBox
@@ -103,24 +104,31 @@ namespace LbIntegrations.Flycast
                 Text = "After the import, put back the arcade sets LaunchBox left out",
             };
             import.Controls.Add(_repair);
-            import.Controls.Add(new Label
-            {
-                AutoSize = false, Location = new Point(36, y + 24), Size = new Size(508, 92), ForeColor = SystemColors.GrayText,
-                Text = "The problem: LaunchBox files a set as a version of a game only when their MAME titles are the same. A set "
-                     + "whose title differs but that its database takes for a game already imported (vf4b \"Virtua Fighter 4\" beside "
-                     + "vf4 \"Virtua Fighter 4 Version C\") ends up neither a version nor a game - dropped without a word.\n"
-                     + "The fix: once the games are in, each set left out is looked up in LaunchBox's own database, and added as a "
-                     + "version of the one game holding that id, through LaunchBox's API. Nothing it imported is touched.",
-            });
-            import.Height = y + 124;
+            const string repairFull = "The problem: LaunchBox files a set as a version of a game only when their MAME titles are the same. A set "
+                                    + "whose title differs but that its database takes for a game already imported (vf4b \"Virtua Fighter 4\" beside "
+                                    + "vf4 \"Virtua Fighter 4 Version C\") ends up neither a version nor a game - dropped without a word.\n"
+                                    + "The fix: once the games are in, each set left out is looked up in LaunchBox's own database, and added as a "
+                                    + "version of the one game holding that id, through LaunchBox's API. Nothing it imported is touched.";
+            LbipHint.Attach(_repair, repairFull);
+            y = Note(import, "Sets LaunchBox drops without a word are added as versions of their game.", repairFull, 36, y + 24, 508);
+            import.Height = y + 12;
             Controls.Add(import);
             System = new FlycastSystemPanel(560) { Location = new Point(12, import.Bottom + 10) };
             Controls.Add(System);
             Controls.Add(new Label
             {
-                AutoSize = false, Location = new Point(12, System.Bottom + 8), Size = new Size(560, 20), ForeColor = SystemColors.GrayText,
+                AutoSize = false, Location = new Point(12, System.Bottom + 8), Size = new Size(560, 20), ForeColor = SystemColors.GrayText, AutoEllipsis = true,
                 Text = "Settings file: " + FlycastSettings.SettingsPath,
             });
+        }
+
+        /// <summary>A grey note at (x, y) in <paramref name="box"/>, as wide as <paramref name="width"/>; where it ends.</summary>
+        private static int Note(Control box, string shortText, string full, int x, int y, int width)
+        {
+            var note = LbipHint.Note(shortText, full, width, Padding.Empty);
+            note.Location = new Point(x, y);
+            box.Controls.Add(note);
+            return y + note.GetPreferredSize(new Size(width, 0)).Height;
         }
     }
 }

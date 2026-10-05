@@ -60,6 +60,7 @@
     <Compile Include="..\Shared.RamDisk\**\*.cs" />
     <!-- The NixxMenu's RAM disk tab, for the ramdisk-tab arm: a picture of it without LaunchBox. -->
     <Compile Include="..\Menus\RamDiskTab.cs" />
+    <Compile Include="..\Shared.Lbip\LbipHint.cs" Link="Shared.Lbip\LbipHint.cs" />
   </ItemGroup>
 
 

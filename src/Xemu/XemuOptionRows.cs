@@ -58,7 +58,9 @@ namespace LbIntegrations.Xemu
                     table.Controls.Add(row.Editor, 2, r);
                     if (!string.IsNullOrEmpty(o.Help))
                     {
-                        var help = new Label { Text = o.Help, AutoSize = true, MaximumSize = new Size(480, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 0, 0, 6) };
+                        // A short sentence under it, the whole of it on hover (Mehdi, 05/10) - over the row: its name, its control, its sentence.
+                        var help = new Label { Text = o.Short ?? o.Help, AutoSize = true, MaximumSize = new Size(480, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 0, 0, 6) };
+                        LbIntegrations.Lbip.LbipHint.Attach(help, o.Help, label, row.Editor);
                         int h = table.RowCount++;
                         table.Controls.Add(help, 1, h);
                         table.SetColumnSpan(help, 2);

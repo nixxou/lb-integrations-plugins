@@ -48,9 +48,11 @@ namespace LbIntegrations.Xenia
             var top = new Label
             {
                 Dock = DockStyle.Top, Height = 40, Padding = new Padding(12, 8, 12, 0), ForeColor = SystemColors.GrayText,
-                Text = "The profile and the console of Xenia, then the options passed to every game at launch. A game's own options, "
-                       + "and its compatibility, are in its right-click menu: Nixx-Xenia : Options...",
+                Text = "A game's own options and compatibility are in its right-click menu: Nixx-Xenia : Options...",
             };
+            // A short sentence on the page, the whole of it on hover (LbipHint).
+            LbIntegrations.Lbip.LbipHint.Attach(top, "The profile and the console of Xenia, then the options passed to every game at launch. A game's own options, "
+                       + "and its compatibility, are in its right-click menu: Nixx-Xenia : Options...");
 
             var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(8) };
             var stack = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
@@ -75,30 +77,27 @@ namespace LbIntegrations.Xenia
             var im = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Location = new Point(8, 20) };
             _importClean = new CheckBox { Text = "Filter out what is not a game", AutoSize = true, Checked = XeniaLbImport.Wanted };
             im.Controls.Add(_importClean);
-            im.Controls.Add(new Label
-            {
-                AutoSize = true, MaximumSize = new Size(500, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(18, 0, 0, 6),
-                Text = "Each file is read for what it holds, before you click Finish: a disc, an extracted disc, an Arcade, Indie or Games on Demand "
+            const string cleanFull = "Each file is read for what it holds, before you click Finish: a disc, an extracted disc, an Arcade, Indie or Games on Demand "
                        + "package stays, loose or in an archive; a title update or a DLC is noted for its game, found again at launch; a theme or "
-                       + "anything else goes. A disc image inside an archive is read too - it takes longer, once.",
-            });
+                       + "anything else goes. A disc image inside an archive is read too - it takes longer, once.";
+            im.Controls.Add(LbIntegrations.Lbip.LbipHint.Note("Discs and game packages stay; updates and DLC join their game; themes go.",
+                cleanFull, 500, new Padding(18, 0, 0, 6)));
+            LbIntegrations.Lbip.LbipHint.Attach(_importClean, cleanFull);
             _importTitle = new CheckBox { Text = "Rename games when their name is not in LaunchBox's database", AutoSize = true, Checked = XeniaLbImport.Titles };
             im.Controls.Add(_importTitle);
-            im.Controls.Add(new Label
-            {
-                AutoSize = true, MaximumSize = new Size(500, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(18, 0, 0, 6),
-                Text = "The file's name is kept when LaunchBox's database knows it on Microsoft Xbox 360; else Xenia's compatibility list's name for "
+            const string titleFull = "The file's name is kept when LaunchBox's database knows it on Microsoft Xbox 360; else Xenia's compatibility list's name for "
                        + "its title id, else the game's own - the first the database knows, written as it writes it. Shown in the list before you "
-                       + "click Finish.",
-            });
+                       + "click Finish.";
+            im.Controls.Add(LbIntegrations.Lbip.LbipHint.Note("Takes Xenia's compatibility list name, else the game's own; shown before Finish.",
+                titleFull, 500, new Padding(18, 0, 0, 6)));
+            LbIntegrations.Lbip.LbipHint.Attach(_importTitle, titleFull);
             _importRegion = new CheckBox { Text = "Set each game's region after the import", AutoSize = true, Checked = XeniaLbImport.Regions };
             im.Controls.Add(_importRegion);
-            im.Controls.Add(new Label
-            {
-                AutoSize = true, MaximumSize = new Size(500, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(18, 0, 0, 6),
-                Text = "The region the game's executable declares - North America, Japan, Europe, Asia, Australia, or World when it plays on "
-                       + "several - on the game, or on the version LaunchBox filed it as.",
-            });
+            const string regionFull = "The region the game's executable declares - North America, Japan, Europe, Asia, Australia, or World when it plays on "
+                       + "several - on the game, or on the version LaunchBox filed it as.";
+            im.Controls.Add(LbIntegrations.Lbip.LbipHint.Note("Read from the game's executable; World when it plays in several.",
+                regionFull, 500, new Padding(18, 0, 0, 6)));
+            LbIntegrations.Lbip.LbipHint.Attach(_importRegion, regionFull);
 
             import.Controls.Add(im);
             stack.Controls.Add(import);
@@ -127,14 +126,13 @@ namespace LbIntegrations.Xenia
             ramRow.Controls.Add(new Label { Text = "GB of content for the game", AutoSize = true, Margin = new Padding(4, 7, 0, 0) });
             ct.Controls.Add(_ram, 0, 2);
             ct.Controls.Add(ramRow, 1, 2);
-            var help = new Label
-            {
-                AutoSize = true, MaximumSize = new Size(480, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 4, 0, 4),
-                Text = "Xenia cannot read an archive, and reads a game's title update and DLC from its own folders only: at a launch, a zipped "
+            const string contentFull = "Xenia cannot read an archive, and reads a game's title update and DLC from its own folders only: at a launch, a zipped "
                        + "game and what its options choose are unpacked by the plugin - to a RAM disk for the session when it all fits under that size and "
                        + "none of it is on the disk yet, else here, once, then linked into place. Over the size limit, the games launched longest ago lose "
-                       + "theirs, whole - they come back at their next launch. Your own files are never changed.",
-            };
+                       + "theirs, whole - they come back at their next launch. Your own files are never changed.";
+            var help = LbIntegrations.Lbip.LbipHint.Note("Unpacked at launch, to a RAM disk when small; past the limit, the oldest are dropped.",
+                contentFull, 480, new Padding(0, 4, 0, 4));
+            LbIntegrations.Lbip.LbipHint.Attach(_contentFolder, contentFull, _contentLimit, _ram, _ramBelow);
             ct.Controls.Add(help, 0, 3);
             ct.SetColumnSpan(help, 2);
             cbox.Controls.Add(ct);
@@ -145,13 +143,12 @@ namespace LbIntegrations.Xenia
             _optimized = new CheckBox { Text = "Apply each game's optimized settings", AutoSize = true,
                                         Checked = XeniaOptimized.On(null, XeniaSettings.Read()) };
             op.Controls.Add(_optimized);
-            op.Controls.Add(new Label
-            {
-                AutoSize = true, MaximumSize = new Size(500, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(18, 0, 0, 6),
-                Text = "The settings the community found a game runs best on (xenia-manager's database, from A1eNaz's wiki) - Halo 3's gamma "
+            const string optimizedFull = "The settings the community found a game runs best on (xenia-manager's database, from A1eNaz's wiki) - Halo 3's gamma "
                        + "fix, a game's resolution scale... They win over the options for every game below, and a game's own options win over "
-                       + "them; each game's options window shows them, and can turn them off for that game.",
-            });
+                       + "them; each game's options window shows them, and can turn them off for that game.";
+            op.Controls.Add(LbIntegrations.Lbip.LbipHint.Note("Community fixes per game; a game's own options win and can turn them off.",
+                optimizedFull, 500, new Padding(18, 0, 0, 6)));
+            LbIntegrations.Lbip.LbipHint.Attach(_optimized, optimizedFull);
             optimized.Controls.Add(op);
             stack.Controls.Add(optimized);
 

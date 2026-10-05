@@ -35,13 +35,13 @@ namespace LbIntegrations.Flycast
             _layout = FindLayout();
 
             var stack = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Location = new Point(14, 22) };
-            stack.Controls.Add(new Label
-            {
-                AutoSize = true, MaximumSize = new Size(width - 30, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 0, 0, 8),
-                Text = "Flycast's own settings (emu.cfg), what every game runs on - the same as in Flycast's Settings window. "
-                     + "A game's own Flycast config (Make Game Config, in Flycast's settings while the game runs) wins over them for that game. "
-                     + "\"Your console\" sets the Dreamcast language here too.",
-            });
+            // One short sentence, the whole text on hover (LbipHint).
+            stack.Controls.Add(LbipHint.Note(
+                "Flycast's own emu.cfg, as in its Settings window; a game's own config wins.",
+                "Flycast's own settings (emu.cfg), what every game runs on - the same as in Flycast's Settings window. "
+              + "A game's own Flycast config (Make Game Config, in Flycast's settings while the game runs) wins over them for that game. "
+              + "\"Your console\" sets the Dreamcast language here too.",
+                width - 30, new Padding(0, 0, 0, 8)));
             if (_layout == null || string.IsNullOrEmpty(_layout.ConfigFile))
             {
                 stack.Controls.Add(new Label { AutoSize = true, Text = "Nixx-Flycast is not installed in this LaunchBox.", ForeColor = Color.Firebrick });
@@ -52,8 +52,9 @@ namespace LbIntegrations.Flycast
 
             var current = FlycastGameSettings.DefaultsOf(_layout, null, out _);
             var table = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, Margin = Padding.Empty };
-            table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 200));
-            table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, width - 240));
+            // 240: "Dreamcast 32MB RAM Mod  (Dreamcast)" on one line (it wrapped in 200).
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 240));
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, width - 280));
             foreach (var s in FlycastGameSettings.Offered.Where(x => x.Tab == FlycastGameSettings.SystemTab))
             {
                 current.TryGetValue(s.Id, out var value);

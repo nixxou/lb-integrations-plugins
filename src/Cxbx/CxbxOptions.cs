@@ -53,6 +53,8 @@ namespace LbIntegrations.Cxbx
         /// <summary>What applies when neither the game nor every game sets it - null: Cxbx-Reloaded's own.</summary>
         public string Default;
         public string Help;
+        /// <summary>What a window shows under the option (Mehdi, 05/10: short sentences, the rest on hover) - null: Help itself.</summary>
+        public string Short;
 
         /// <summary>Set game by game only (Mehdi, 04/10): audio, the hacks and the experimental LLE parts are not in the Nixx
         /// window's tab - a value it once saved for every game is no longer used.</summary>
@@ -125,6 +127,18 @@ namespace LbIntegrations.Cxbx
             new CxbxOption { Key = "lle.jit", Group = "Experimental (LLE)", Label = "LLE JIT (CPU)", Bool = true },
             new CxbxOption { Key = "lle.usb", Group = "Experimental (LLE)", Label = "LLE USB (controllers)", Bool = true },
         };
+
+        /// <summary>The short sentences a window shows (Mehdi, 05/10), the option's whole Help in its tooltip.</summary>
+        private static readonly Dictionary<string, string> Shorts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["video.resolution"] = "The screen's current is sharp; Automatic stretches the Xbox's 640x480.",
+            ["console.region"] = "The game's own starts it with no warning; another one makes Cxbx-Reloaded warn first.",
+            ["console.language"] = "A game with several languages starts in this one.",
+            ["console.video"] = "Follow: PAL with 60 Hz for a European game, NTSC with HD modes for the others.",
+            ["console.hddkey"] = "Serial, MAC and keys made from \"Your console\" - the same on xemu.",
+        };
+
+        static CxbxOptions() { foreach (var o in All) if (Shorts.TryGetValue(o.Key, out var s)) o.Short = s; }
         /// <summary>What a launch uses, option by option: the game's, else every game's, else the default; absent: Cxbx-Reloaded's own.</summary>
         public static Dictionary<string, string> Effective(string gameId)
         {

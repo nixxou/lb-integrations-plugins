@@ -44,6 +44,16 @@ namespace LbIntegrations.Probe
                 form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, form.Width, form.Height));
                 var name = new string(title.Select(ch => char.IsLetterOrDigit(ch) ? ch : '-').ToArray());
                 bmp.Save(Path.Combine(outDir, i.ToString("00") + "-" + name + ".png"));
+                // Every text shown on it longer than 100 characters - what is still to shorten (LBIP_LONG_TEXTS=1).
+                if (Environment.GetEnvironmentVariable("LBIP_LONG_TEXTS") == "1")
+                {
+                    void Walk(Control c)
+                    {
+                        if ((c is Label || c is ButtonBase) && c.Visible && (c.Text ?? "").Length > 100) Console.WriteLine("      [" + c.Text.Length + "] " + c.Text.Replace("\n", " ").Substring(0, 100));
+                        foreach (Control k in c.Controls) Walk(k);
+                    }
+                    Walk((Control)e.GetType().GetField("View").GetValue(e));
+                }
                 Console.WriteLine("  " + i.ToString("00") + " " + title);
             }
             form.Close();

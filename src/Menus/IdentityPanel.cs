@@ -10,6 +10,7 @@ using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 using LbIntegrations.Identity;
+using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Menus
 {
@@ -42,10 +43,13 @@ namespace LbIntegrations.Menus
             var p = start ?? PackIdentity.Load() ?? PackIdentity.FromWindows();
             bool saved = start != null || PackIdentity.Exists();
 
+            // Short on the page, the whole of it on hover (Mehdi, 05/10).
             Controls.Add(Grey((saved ? "" : "Not set yet: filled in from this Windows. ")
+                + "Used when a plugin first sets up its emulator.", 620, new Padding(0, 0, 0, 10),
+                (saved ? "" : "Not set yet: filled in from this Windows. ")
                 + "Each plugin reads this when it sets up its emulator for the first time; an emulator already set up keeps "
                 + "its own settings; a DSi console is set up with it when made from a blank NAND. Not used by SUPER ZSNES "
-                + "(it has no such settings).", 620, new Padding(0, 0, 0, 10)));
+                + "(it has no such settings)."));
 
             var grid = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, Margin = Padding.Empty };
             grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
@@ -61,26 +65,29 @@ namespace LbIntegrations.Menus
             _seedRed = new Label { AutoSize = true, ForeColor = Color.Firebrick, MaximumSize = new Size(460, 0), Margin = new Padding(3, 2, 3, 0) };
             _seedValues = new Label { AutoSize = true, ForeColor = SystemColors.GrayText, Font = new Font("Consolas", 8.5f), Margin = new Padding(3, 4, 3, 0) };
             Row(grid, "Seed", seedLine, _seedRed, _seedValues,
-                Applies("Cxbx-Reloaded and xemu at every launch: the serial number, MAC address, HDD key and online key above, the same "
+                Applies("Cxbx-Reloaded, xemu. Same seed, same console after a reinstall.",
+                        "Cxbx-Reloaded and xemu at every launch: the serial number, MAC address, HDD key and online key above, the same "
                       + "on both - and later the other consoles' own values. A sentence easy to remember: the same seed gives the same "
                       + "console back after a reinstall or on another computer. Another seed is another console: an Insignia "
-                      + "registration is lost."));
+                      + "registration is lost.", _seed));
 
             // ── nickname ──
             _nickname = new TextBox { Width = 220, MaxLength = PackIdentity.PspNicknameMax, Text = p.Nickname };
             _nickRed = new Label { AutoSize = true, ForeColor = Color.Firebrick, MaximumSize = new Size(460, 0), Margin = new Padding(3, 2, 3, 0) };
             _nickXbox = Grey("", 460);
             Row(grid, "Nickname", _nickname, _nickRed, _nickXbox,
-                Applies("Xenia (the gamertag of the profile it creates), melonDS and no$gba (the DS and DSi name, 10 characters), "
-                      + "PPSSPP (the PSP's nickname, 32 characters)."));
+                Applies("Xenia, melonDS, no$gba, PPSSPP.",
+                        "Xenia (the gamertag of the profile it creates), melonDS and no$gba (the DS and DSi name, 10 characters), "
+                      + "PPSSPP (the PSP's nickname, 32 characters).", _nickname));
 
             // ── language ──
             _language = Combo(PackIdentity.Languages.Select(l => l.Name), 220);
             _language.SelectedIndex = Math.Max(0, Array.FindIndex(PackIdentity.Languages, l => l.Culture.Equals(p.Language, StringComparison.OrdinalIgnoreCase)));
             _languageNot = new Label { AutoSize = true, ForeColor = Color.DarkGoldenrod, MaximumSize = new Size(460, 0), Margin = new Padding(3, 2, 3, 0) };
             Row(grid, "Language", _language, _languageNot,
-                Applies("Xenia, Vita3K, PPSSPP, melonDS, no$gba (its DSi consoles), Flycast - and Cxbx-Reloaded and xemu at every launch (their Language "
-                      + "option, when left on its default)."));
+                Applies("Xenia, Vita3K, PPSSPP, melonDS, no$gba, Flycast, Cxbx-Reloaded, xemu.",
+                        "Xenia, Vita3K, PPSSPP, melonDS, no$gba (its DSi consoles), Flycast - and Cxbx-Reloaded and xemu at every launch (their Language "
+                      + "option, when left on its default).", _language));
 
             // ── date ──
             _date = Combo(new[] { "2026/10/03 - year, month, day", "03/10/2026 - day, month, year", "10/03/2026 - month, day, year" }, 220);
@@ -104,7 +111,8 @@ namespace LbIntegrations.Menus
             var birthday = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty };
             birthday.Controls.Add(_month);
             birthday.Controls.Add(_day);
-            Row(grid, "Birthday", birthday, Applies("melonDS (DS games, and the DSi consoles made from a blank NAND), no$gba (the same DSi consoles)."));
+            Row(grid, "Birthday", birthday, Applies("melonDS, no$gba.",
+                "melonDS (DS games, and the DSi consoles made from a blank NAND), no$gba (the same DSi consoles).", _month, _day));
 
             // ── colour ──
             _colour = Combo(PackIdentity.DsColours.Select(c => c.Name), 180);
@@ -140,8 +148,10 @@ namespace LbIntegrations.Menus
                 };
                 buttons.Controls.Add(apply);
                 Controls.Add(buttons);
-                Controls.Add(Grey("Applies your console to the emulators already set up - each one listed with what it holds now and "
-                                + "what it would hold, for you to tick. The DSi consoles already made are never rewritten.", 620, new Padding(0, 4, 0, 0)));
+                const string applyFull = "Applies your console to the emulators already set up - each one listed with what it holds now and "
+                                       + "what it would hold, for you to tick. The DSi consoles already made are never rewritten.";
+                Controls.Add(Grey("You pick each change, seeing the old and new values first.", 620, new Padding(0, 4, 0, 0), applyFull));
+                LbipHint.Attach(apply, applyFull);
             }
             else Controls.Add(buttons);
 
@@ -201,13 +211,21 @@ namespace LbIntegrations.Menus
 
         // ── building blocks ──
 
-        private static Label Grey(string text, int width, Padding? margin = null) => new Label
+        /// <summary>A grey note; <paramref name="full"/>, when given, on hover (LbipHint).</summary>
+        private static Label Grey(string text, int width, Padding? margin = null, string full = null)
         {
-            Text = text, AutoSize = true, ForeColor = SystemColors.GrayText, MaximumSize = new Size(width, 0),
-            Margin = margin ?? new Padding(3, 2, 3, 0),
-        };
+            var label = LbipHint.Note(text, full, width, margin ?? new Padding(3, 2, 3, 0));
+            label.UseMnemonic = true;
+            return label;
+        }
 
-        private static Label Applies(string text) => Grey("Applies to: " + text, 460, new Padding(3, 1, 3, 10));
+        /// <summary>"Applies to:" - the short list shown, the whole of it on hover, over the setting too.</summary>
+        private static Label Applies(string text, string full = null, params Control[] explained)
+        {
+            var label = Grey("Applies to: " + text, 460, new Padding(3, 1, 3, 10), full == null ? null : "Applies to: " + full);
+            if (full != null && explained.Length > 0) LbipHint.Attach(explained[0], "Applies to: " + full, explained.Skip(1).ToArray());
+            return label;
+        }
 
         private static ComboBox Combo(System.Collections.Generic.IEnumerable<string> items, int width)
         {
