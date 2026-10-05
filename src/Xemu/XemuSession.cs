@@ -45,6 +45,7 @@ namespace LbIntegrations.Xemu
                     try { if (XemuSessionConfig.MergeBack(XemuPaths.TomlOf(exe), XemuSessionConfig.SessionPath(exe))) Log.Info("xemu.toml: the session's changes merged back"); }
                     catch (Exception ex) { Log.Warn("xemu.toml: the session could not be merged back", ex); }
                     Standalone(exe, "its game is over");
+                    XemuDiscLink.Remove(exe);
                     XemuDisc.Release(disc);
                     // The save the host sees, brought up to date with the console the game just wrote (XemuSaves).
                     try { XemuSaveFiles.Sync(exe, System.IO.Path.GetFileNameWithoutExtension(gameHdd), LbIntegrations.Xbox.XboxSyncMode.SessionEnd); }

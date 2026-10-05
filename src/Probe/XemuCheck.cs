@@ -1186,6 +1186,30 @@ namespace LbIntegrations.Probe
         /// <summary>The session's xemu.toml and its merge back: made from a user's file, rewritten the way xemu rewrites it on exit
         /// (a pad added, a binding changed, the window resized, a table new), merged back - untouched tables whole, touched keys
         /// the user's, the rest the session's.</summary>
+        /// <summary>The disc by one path: a symbolic link made and read through as the disc, the relative path given; made again
+        /// over a link left behind; a real file at its place left alone (the disc's own path given); taken away, the link alone.
+        /// Without the right to make a link (no developer mode), only the fallback is checked.</summary>
+        private static void DiscLink(string work)
+        {
+            Directory.CreateDirectory(work);
+            var exe = Path.Combine(work, "x.emu.exe"); File.WriteAllBytes(exe, new byte[0]);
+            var discA = Path.Combine(work, "a.iso"); File.WriteAllBytes(discA, new byte[4096]);
+            var discB = Path.Combine(work, "b's disc.iso"); File.WriteAllBytes(discB, new byte[8192]);
+            var link = Path.Combine(work, "lbip-disc", "game.iso");
+            string For(string disc) => (string)Call("XemuDiscLink", "For", exe, disc);
+            var got = For(discA);
+            if (got == discA) { Check("no link here (no developer mode?): the disc's own path", !File.Exists(link)); return; }
+            Check("the relative path given", got == @"lbip-disc\game.iso", got);
+            Check("... a link to the disc, read through as it", new FileInfo(link).LinkTarget == discA && new FileStream(link, FileMode.Open, FileAccess.Read, FileShare.ReadWrite).Length == 4096);
+            Check("made again over the one left behind", For(discB) == @"lbip-disc\game.iso" && new FileInfo(link).LinkTarget == discB);
+            Call("XemuDiscLink", "Remove", exe);
+            Check("taken away: the link gone, its disc there", !File.Exists(link) && new FileInfo(link).LinkTarget == null && File.Exists(discB) && new FileInfo(discB).Length == 8192);
+            File.WriteAllBytes(link, new byte[16]);                     // a file of the user's at its place
+            Check("a real file at its place: left alone, the disc's own path", For(discA) == discA && new FileInfo(link).LinkTarget == null && new FileInfo(link).Length == 16);
+            Call("XemuDiscLink", "Remove", exe);
+            Check("... and never taken away", File.Exists(link) && new FileInfo(link).Length == 16);
+        }
+
         private static void SessionToml(string work)
         {
             // A string with a ' (a game "Tom Clancy's ..."): a basic string, escaped, read back as it was - measured 05/10, xemu
@@ -1582,6 +1606,9 @@ namespace LbIntegrations.Probe
                 var sessionWork = Path.Combine(work, "session");
                 Directory.CreateDirectory(sessionWork);
                 SessionToml(sessionWork);
+
+                Console.WriteLine("  one path for the disc (XemuDiscLink)");
+                DiscLink(Path.Combine(work, "disclink"));
 
                 // 7. the launch line
                 Console.WriteLine("  launch line");

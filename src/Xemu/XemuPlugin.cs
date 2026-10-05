@@ -98,7 +98,7 @@ namespace LbIntegrations.Xemu
                         path = moved;
                     }
                     // A session the host never saw end (killed mid-game): xemu.toml back on the stand-alone console.
-                    if (XemuPaths.IsOurs(path)) { XemuConsoleBoot.RestoreOwn(path, "the host has started"); XemuSession.Standalone(path, "the host has started"); }
+                    if (XemuPaths.IsOurs(path)) { XemuConsoleBoot.RestoreOwn(path, "the host has started"); XemuSession.Standalone(path, "the host has started"); XemuDiscLink.Remove(path); }
                 }
                 if (renamed) try { dm.Save(false); } catch (Exception ex) { Log.Warn("data manager save failed", ex); }
                 // No compatibility list yet (an install from before 05/10): fetched in the background, once an xemu of ours is there.
@@ -384,6 +384,8 @@ namespace LbIntegrations.Xemu
                 var dvd = XemuDisc.Present(rom, exe, out var problem, out var info, null, options.TryGetValue("disc.media_patch", out var mp) ? mp != "off" : (bool?)null);
                 if (dvd == null) return Refuse(Path.GetFileName(rom) + " cannot be launched: " + problem + ".");
                 XemuDisc.Remember(rom, info.Xbe);
+                // ONE PATH for every session of every game, so its snapshots find their disc again (XemuDiscLink); else its own.
+                dvd = XemuDiscLink.For(exe, dvd);
 
                 // ITS OWN CONSOLE: made over the pristine one at the game's first launch.
                 var titleId = info.Xbe?.TitleId > 0 ? info.Xbe.TitleIdText : null;
