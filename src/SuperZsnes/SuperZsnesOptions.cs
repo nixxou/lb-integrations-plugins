@@ -42,6 +42,8 @@ namespace LbIntegrations.SuperZsnes
         public string Group;
         public string Label;
         public string Help;
+        /// <summary>What a window shows under the option (Mehdi, 05/10: short sentences, the rest on hover) - null: Help itself.</summary>
+        public string Short;
         public string[] Choices;
         /// <summary>What the emulator does when the option is not passed - shown, never sent.</summary>
         public string Default;
@@ -169,6 +171,23 @@ namespace LbIntegrations.SuperZsnes
             Int(OptionFamily.Game, "widescreenCOL", "Widescreen (this game)", "Colour-math extension (tiles)", "0 to 7.", 0, 7),
             Int(OptionFamily.Game, "aspectOverride", "Widescreen (this game)", "Aspect override", "The emulator's own index.", 0, 8),
         };
+
+        /// <summary>The short sentences a window shows (Mehdi, 05/10), the option's whole Help in its tooltip.</summary>
+        private static readonly Dictionary<string, string> Shorts = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase)
+        {
+            ["plugin.bepinex"] = "Installs BepInEx and the pack's plugin with the emulator, and puts them back at each launch if missing.",
+            ["plugin.quit-confirm"] = "Escape twice to save and quit.",
+            ["plugin.menu-key"] = "The key that opens the emulator's menu instead.",
+            ["plugin.portable"] = "The emulator's settings stay in its own folder.",
+            ["plugin.data-folders"] = "Saves, states and cheats go in the emulator's folder, not beside the ROMs.",
+            ["plugin.support-popup"] = "Lets the Patreon reminder show.",
+            ["plugin.version-popup"] = "Lets the \"new version\" reminder show.",
+            ["plugin.display"] = "Every game full screen on the main display.",
+            ["plugin.persist"] = "Keeps the pack's overrides in the emulator's settings for good.",
+            ["plugin.log"] = "The in-process plugin writes a diagnostic log.",
+        };
+
+        static SuperZsnesOptions() { foreach (var o in All) if (Shorts.TryGetValue(o.IniKey, out var s)) o.Short = s; }
 
         /// <summary>Mehdi's choice of 01/10: these for every game, those per game, the others nowhere. The primary display
         /// moved to every game on 04/10, on by default - and given up by a game that sets one of its ScreenKeys.</summary>

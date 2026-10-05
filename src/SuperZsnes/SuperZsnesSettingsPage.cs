@@ -42,8 +42,7 @@ namespace LbIntegrations.SuperZsnes
 
         public static Control CreatePage()
             => new SuperZsnesSettingsPage(o => o.Scope == OptionScope.Global, SuperZsnesSettings.Read(),
-                   "What the pack's plugin does inside SUPER ZSNES, for every game. A game's own options - window, display, "
-                   + "gameplay, audio - are in its right-click menu: Nixx-SuperZSNES : Options...",
+                   "For every game. A game's own options: right-click it, Nixx-SuperZSNES : Options...",
                    deploy: true, where: "Settings file: " + SuperZsnesSettings.SettingsPath);
 
         public static string Save(Control page)
@@ -87,6 +86,32 @@ namespace LbIntegrations.SuperZsnes
         private readonly Label _count;
         private readonly Label _screenNote;
 
+        /// <summary>The hover text of an option: its whole help, wrapped (a tooltip never wraps by itself), and its key.</summary>
+        private readonly ToolTip Tips = new ToolTip { AutoPopDelay = 30000, InitialDelay = 300, ReshowDelay = 100 };
+
+        internal static string Tip(string help, string key)
+        {
+            var text = string.IsNullOrWhiteSpace(help) ? "" : Wrap(help.Trim(), 80) + "\n\n";
+            return text + "Setting: " + key;
+        }
+
+        internal static string Wrap(string text, int width)
+        {
+            var lines = new List<string>();
+            foreach (var paragraph in text.Replace("\r", "").Split('\n'))
+            {
+                var line = new System.Text.StringBuilder();
+                foreach (var word in paragraph.Split(' '))
+                {
+                    if (line.Length > 0 && line.Length + 1 + word.Length > width) { lines.Add(line.ToString()); line.Clear(); }
+                    if (line.Length > 0) line.Append(' ');
+                    line.Append(word);
+                }
+                lines.Add(line.ToString());
+            }
+            return string.Join("\n", lines);
+        }
+
         /// <summary>The options <paramref name="show"/> picks, with <paramref name="saved"/>'s values; the in-process plugin's
         /// box under them when <paramref name="deploy"/>; <paramref name="where"/> at the bottom.</summary>
         public SuperZsnesSettingsPage(Func<Option, bool> show, Dictionary<string, string> saved, string intro, bool deploy, string where,
@@ -123,7 +148,10 @@ namespace LbIntegrations.SuperZsnes
                     row.Editor = Editor(row, current);
                     row.Bar = new Panel { Width = 4, Height = 18, Margin = new Padding(0, 6, 8, 0) };
                     var label = new Label { Text = o.Label, AutoSize = true, MaximumSize = new Size(236, 0), Margin = new Padding(0, 7, 4, 0) };
-                    new ToolTip().SetToolTip(label, o.IniKey);
+                    // A short sentence under it, the whole of it on hover (Mehdi, 05/10) - over the row: its name, its control, its sentence.
+                    var tip = Tip(o.Help, o.IniKey);
+                    Tips.SetToolTip(label, tip);
+                    Tips.SetToolTip(row.Editor, tip);
                     Hook(row.Editor, () => { Show(row); Refresh(); });
                     Show(row);
 
@@ -131,9 +159,11 @@ namespace LbIntegrations.SuperZsnes
                     table.Controls.Add(row.Bar, 0, r);
                     table.Controls.Add(label, 1, r);
                     table.Controls.Add(row.Editor, 2, r);
-                    if (!string.IsNullOrEmpty(o.Help))
+                    var said = o.Short ?? o.Help;
+                    if (!string.IsNullOrEmpty(said))
                     {
-                        var help = new Label { Text = o.Help, AutoSize = true, MaximumSize = new Size(450, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 0, 0, 6) };
+                        var help = new Label { Text = said, AutoSize = true, MaximumSize = new Size(450, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 0, 0, 6) };
+                        Tips.SetToolTip(help, tip);
                         int h = table.RowCount++;
                         table.Controls.Add(help, 1, h);
                         table.SetColumnSpan(help, 2);
@@ -422,7 +452,8 @@ namespace LbIntegrations.SuperZsnes
                     button.Text = "Replace the file...";
                 }
             };
-            var what = new Label { Text = "Nintendo's code, never shipped: give the pack yours once, it puts it back beside SUPER ZSNES - after a reinstall too.", AutoSize = true, MaximumSize = new Size(470, 0), Margin = new Padding(0, 6, 0, 0) };
+            var what = new Label { Text = "Needed by a few games (Super Mario Kart, Pilotwings). Give yours once.", AutoSize = true, MaximumSize = new Size(470, 0), Margin = new Padding(0, 6, 0, 0) };
+            new ToolTip { AutoPopDelay = 30000, InitialDelay = 300 }.SetToolTip(what, Wrap("Nintendo's code, never shipped: give the pack yours once, any file name - it is recognised by its CRC32 - and it puts it back beside every SUPER ZSNES of the library, after a reinstall too.", 80));
             int top = table.RowCount++;
             table.Controls.Add(what, 0, top);
             table.SetColumnSpan(what, 2);
