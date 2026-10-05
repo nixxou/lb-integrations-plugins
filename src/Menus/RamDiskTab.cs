@@ -20,7 +20,7 @@ namespace LbIntegrations.Menus
     {
         public const string Title = "RamDisk & VHDX";
 
-        private readonly RadioButton _auto, _aim, _imdisk, _vm, _awe, _memAuto, _vhdxWindows, _vhdxAim;
+        private readonly RadioButton _auto, _aim, _imdisk, _vm, _awe, _memAuto, _vhdxWindows, _vhdxAim, _proxyAuto, _proxyShm, _proxyTcp;
         private readonly CheckBox _removable;
         private readonly Label _effective;
         private readonly bool _aimThere, _imdiskThere, _modern;
@@ -112,6 +112,18 @@ namespace LbIntegrations.Menus
                 _vhdxWindows, _vhdxAim,
                 LbipHint.Note("Only how a VHDX is attached: Windows always creates it.", vhdxFull, 640, new Padding(0, 2, 0, 6))));
 
+            // ── a disc served without a copy ──
+            _proxyAuto = new RadioButton { Text = "Automatic (recommended): shared memory, else network", AutoSize = true, Checked = o.Proxy != "shm" && o.Proxy != "tcp" };
+            _proxyShm = new RadioButton { Text = "Shared memory", AutoSize = true, Checked = o.Proxy == "shm" };
+            _proxyTcp = new RadioButton { Text = "Network (local TCP port)", AutoSize = true, Checked = o.Proxy == "tcp" };
+            LbipHint.Attach(_proxyAuto, "Shared memory first; the local TCP port if that fails (RAM disk helper 1.12 or later)");
+            LbipHint.Attach(_proxyShm, "Shared memory only: faster, and no firewall or VPN can block it - measured 1.9 GB/s, 0.05 ms per small read");
+            LbipHint.Attach(_proxyTcp, "A local TCP port only, as up to helper 1.11 - measured 0.8 GB/s, 0.24 ms per small read; a VPN or a firewall can refuse it");
+            var proxy = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, Margin = Padding.Empty };
+            proxy.Controls.AddRange(new Control[] { _proxyAuto, _proxyShm, _proxyTcp });
+            stack.Controls.Add(Group("Discs served without a copy - Cxbx-Reloaded and xemu, through AIM",
+                Line("How AIM reads the disc from the helper", false), proxy));
+
             Controls.Add(stack);
 
             foreach (var r in new[] { _auto, _aim, _imdisk }) r.CheckedChanged += (_, _) => Follow();
@@ -147,6 +159,7 @@ namespace LbIntegrations.Menus
                 Awe = _awe.Checked,
                 AutoMemory = _memAuto.Checked,
                 Vhdx = _vhdxAim.Checked ? "aim" : "windows",
+                Proxy = _proxyShm.Checked ? "shm" : _proxyTcp.Checked ? "tcp" : "auto",
             };
             try { o.Save(); return null; }
             catch (Exception ex) { return "The settings could not be saved: " + ex.Message; }

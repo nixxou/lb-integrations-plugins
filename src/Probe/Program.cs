@@ -41,6 +41,7 @@ namespace LbIntegrations.Probe
             // An Xbox disc's XISO served where it is (helper 1.10, view=xiso), read back unelevated - it MOUNTS a disk:
             // --xiso-attach --lb <root> --rom <image> [--base <hex offset of the game partition>]; --xiso-detach --lb <root> --root K:\
             if (Has(args, "--xiso-attach")) return XisoAttachCheck.Attach(Arg(args, "--lb"), Arg(args, "--rom"), Arg(args, "--base"), Has(args, "--media-patch")) ? 0 : 1;
+            if (Has(args, "--xbox-attach")) return XisoAttachCheck.XboxAttach(Arg(args, "--lb"), Arg(args, "--rom")) ? 0 : 1;
             if (Has(args, "--xiso-detach")) return XisoAttachCheck.Detach(Arg(args, "--lb"), Arg(args, "--root")) ? 0 : 1;
             if (Has(args, "--ramdisk-bench")) return RamDiskBench.Run(Arg(args, "--lb"), Has(args, "--only-api"), Has(args, "--shipped")) ? 0 : 1;
             if (Has(args, "--ramdisk-tab")) { LbIntegrations.RamDisk.RamDiskHost.UseRoot(Arg(args, "--lb")); var form = new System.Windows.Forms.Form { ClientSize = new System.Drawing.Size(720, 1000), Font = new System.Drawing.Font("Segoe UI", 9f), Text = "RAM disk" }; var tab = new LbIntegrations.Menus.RamDiskTab(); form.Controls.Add(tab); form.Show(); System.Windows.Forms.Application.DoEvents(); System.Threading.Thread.Sleep(300); System.Windows.Forms.Application.DoEvents(); using var bmp = new System.Drawing.Bitmap(form.Width, form.Height); form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, form.Width, form.Height)); bmp.Save(Arg(args, "--out")); return 0; }

@@ -1225,13 +1225,25 @@ namespace LbIntegrations.RamDisk
                 if (!CanAttachXboxDisc(out error, image)) return null;
                 char letter = FreeDriveLetter();
                 if (letter == '\0') { error = "no free drive letter"; return null; }
-                var said = RunAndWait("image-attach", letter, image, new Dictionary<string, string> { { "view", "xbox" }, { "backend", "aim" } });
+                var said = RunAndWait("image-attach", letter, image, WithProxy(new Dictionary<string, string> { { "view", "xbox" }, { "backend", "aim" } }));
                 if (said == null) { error = "the helper never answered"; return null; }
                 if (!said.StartsWith("OK image-attach", StringComparison.Ordinal)) { error = said; RamDiskLog.Warn("xbox attach " + Path.GetFileName(image) + ": " + said); return null; }
                 RamDiskLog.Info("attached the Xbox disc " + Path.GetFileName(image) + " at " + letter + ":\\ - " + said);
                 return letter + ":\\";
             }
             catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; return null; }
+        }
+
+        /// <summary>For the probe: how AIM reaches the helper's server (proxy=shm|tcp; helper 1.12) - null, the options' choice.</summary>
+        internal static string ProxyOverride;
+
+        /// <summary>A disc served without a copy: how AIM reaches the helper's server (RamDiskOptions.Proxy, proxy=auto|shm|tcp, helper
+        /// 1.12 - an older one ignores the key and uses the port).</summary>
+        private static Dictionary<string, string> WithProxy(Dictionary<string, string> extra)
+        {
+            var proxy = ProxyOverride ?? RamDiskOptions.Load().Proxy;
+            if (!string.IsNullOrEmpty(proxy) && proxy != "auto") extra["proxy"] = proxy;
+            return extra;
         }
 
         /// <summary>The helper that serves an Xbox disc's XISO as the one file of an exFAT volume (view=xiso), for xemu.</summary>
@@ -1268,6 +1280,7 @@ namespace LbIntegrations.RamDisk
                 if (letter == '\0') { error = "no free drive letter"; return null; }
                 var extra = new Dictionary<string, string> { { "view", "xiso" }, { "backend", "aim" } };
                 if (mediaPatch) extra["patch"] = "media";
+                WithProxy(extra);
                 var said = RunAndWait("image-attach", letter, image, extra);
                 if (said == null) { error = "the helper never answered"; return null; }
                 if (!said.StartsWith("OK image-attach", StringComparison.Ordinal)) { error = said; RamDiskLog.Warn("xiso attach " + Path.GetFileName(image) + ": " + said); return null; }

@@ -11,6 +11,12 @@
 //                                         installed
 //     vhdx      = windows | aim           VHDX (Vita3K's VHDX mode, image attaches): Windows' own support (vhdmp,
 //                                         the default) or AIM (DiscUtils)
+//     proxy     = auto | shm | tcp        how AIM reaches the helper's server when a disc is served without a copy (Cxbx's
+//                                         view=xbox, xemu's view=xiso; helper 1.12): shared memory, a loopback port, or
+//                                         auto (default) shared memory first then the port. Measured 05/10: after a reboot
+//                                         AIM's loopback connections were all refused; shared memory, 1.9 GB/s and 0.05 ms
+//                                         per random 2 KB read where the port gave 0.8 GB/s and 0.24 ms (04/10). An older
+//                                         helper ignores the key: the port.
 //
 // WHAT IS SAVED IS A WISH, WHAT IS USED IS DECIDED AT EACH MOUNT (Mehdi, 02/10: "gaffe si on désinstalle un
 // driver entre deux lancements"): Effective() checks what is installed NOW and falls back - AIM asked and gone:
@@ -38,6 +44,7 @@ namespace LbIntegrations.RamDisk
         public bool AutoMemory = true;
         public bool AweFor(bool aim) => AutoMemory ? aim : Awe;
         public string Vhdx = "windows";
+        public string Proxy = "auto";
 
         public static string Dir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "lb-integrations-plugins");
         public static string FilePath => Path.Combine(Dir, "ramdisk.ini");
@@ -65,6 +72,7 @@ namespace LbIntegrations.RamDisk
                                 o.Awe = value.Equals("awe", StringComparison.OrdinalIgnoreCase);
                                 break;
                             case "vhdx": if (value == "aim" || value == "windows") o.Vhdx = value; break;
+                            case "proxy": if (value == "auto" || value == "shm" || value == "tcp") o.Proxy = value; break;
                         }
                     }
             }
@@ -84,6 +92,7 @@ namespace LbIntegrations.RamDisk
                 "removable=" + (Removable ? "1" : "0"),
                 "memory=" + (AutoMemory ? "auto" : Awe ? "awe" : "vm"),
                 "vhdx=" + Vhdx,
+                "proxy=" + Proxy,
             });
         }
 

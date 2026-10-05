@@ -545,6 +545,13 @@ archive), then served (helper 1.11, `view=xiso`) or copied like a CHD's, with th
 Batman: Rise of Sin Tzu - the volume built at once, listed back by the XDVDFS reader, its copy (11 s) identical file by file
 to an extract-xiso XISO of the game, and xemu boots it. A game unpacked in a zip is still refused.
 
+**How AIM reaches the helper's server** (helper 1.12, `proxy=` in `ramdisk.ini`, the RamDisk tab's last card): shared
+memory - the ImDisk proxy protocol over a named section `Global\lbip-devio-<guid>` and its `_Request` / `_Response` events,
+no network at all - or the loopback TCP port of 1.7-1.11; automatic = shared memory, then the port. Measured 05/10: after a
+reboot every loopback connection of AIM's driver was refused (STATUS_CONNECTION_REFUSED, the server listening), shared
+memory unaffected. Batman's XISO through it: 1.9 GB/s, 0.054 ms per random 2 KB read (the port: 0.8 GB/s, 0.24 ms, 04/10);
+its ZArchive 0.8 GB/s, 0.10 ms, byte-identical; its CHD 54 MB/s, 0.59 ms - decompression, not the transport, dominates.
+
 **The media patch, extract-xiso's rule** (`XboxMediaPatch`, on unless `media_patch=0`): in every `.xbe` of the disc, the
 bytes `E8 CA FD FF FF 85 C0 7D` get their last made `EB`. extract-xiso does it by default when it makes an XISO; xdvdfs does
 not, and xemu's docs warn that "some games on some BIOSes will not load as a result". Measured 04/10: Batman: Rise of Sin

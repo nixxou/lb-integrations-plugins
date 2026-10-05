@@ -1015,26 +1015,60 @@ namespace RamDiskHelper
             else if (Directory.Exists(point + "\\")) return "FAIL " + head + " exit=-1 - " + point + " is in use";
 
             var unitsBefore = Aim.Units();
-            var psi = new ProcessStartInfo(Environment.ProcessPath) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
-            psi.ArgumentList.Add("--" + viewName + "-serve");
-            psi.ArgumentList.Add(image);
-            if (viewName == "xiso" && Get(kv, "patch", "").Equals("media", StringComparison.OrdinalIgnoreCase)) psi.ArgumentList.Add("media");
-            var server = Process.Start(psi);
+            // 1.12: HOW AIM REACHES THE SERVER - proxy=shm, shared memory (named section and events, no network at all), proxy=tcp,
+            // a loopback port (up to 1.11), proxy=auto (the default) shared memory first, then the port. Measured 05/10: after a
+            // reboot every loopback connection of AIM's driver was refused (STATUS_CONNECTION_REFUSED) while the server listened.
+            var proxy = Get(kv, "proxy", "auto").ToLowerInvariant();
+            Process server = null;
             string Fail(string why)
             {
-                try { if (!server.HasExited) server.Kill(); } catch { }
+                try { if (server != null && !server.HasExited) server.Kill(); } catch { }
                 DropNewAimDevices(unitsBefore);
                 return "FAIL " + head + " " + token + " exit=-1 backend=aim view=" + viewName + " - " + why;
             }
-            // Listing a redump reads its tables across the image: seconds, a minute on a slow disk.
-            var first = server.StandardOutput.ReadLineAsync();
-            if (!first.Wait(120000)) return Fail("the disc was not listed within two minutes");
-            var line = first.Result ?? "";
-            if (!line.StartsWith("PORT ", StringComparison.Ordinal) || !int.TryParse(line.Substring(5), out int port))
-                return Fail(line.Length > 0 ? line : "the server stopped without a word");
-
-            var (code, said) = Run(Aim.LowLevel, "-a", "-t", "proxy", "-o", "ip,ro", "-f", "127.0.0.1:" + port);
-            if (code != 0) return Fail("aim_ll exit=" + code + " - " + LastWords(said));
+            string StartServer(string shmName)
+            {
+                var psi = new ProcessStartInfo(Environment.ProcessPath) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
+                psi.ArgumentList.Add("--" + viewName + "-serve");
+                psi.ArgumentList.Add(image);
+                if (viewName == "xiso" && Get(kv, "patch", "").Equals("media", StringComparison.OrdinalIgnoreCase)) psi.ArgumentList.Add("media");
+                if (shmName != null) psi.Environment["LBIP_PROXY_SHM"] = shmName;
+                server = Process.Start(psi);
+                // Listing a redump reads its tables across the image: seconds, a minute on a slow disk.
+                var first = server.StandardOutput.ReadLineAsync();
+                if (!first.Wait(120000)) return null;
+                return first.Result ?? "";
+            }
+            string key = null, said = "", why1 = null;
+            int code = -1;
+            if (proxy != "tcp")
+            {
+                var name = "lbip-devio-" + Guid.NewGuid().ToString("N");
+                var line = StartServer(name);
+                if (line == "SHM " + name)
+                {
+                    (code, said) = Run(Aim.LowLevel, "-a", "-t", "proxy", "-o", "shm,ro", "-f", name);
+                    if (code == 0) { key = name; proxy = "shm"; }
+                    else why1 = "shared memory: aim_ll exit=" + code + " - " + LastWords(said);
+                }
+                else why1 = "shared memory: " + (line == null ? "the disc was not listed within two minutes" : line.Length > 0 ? line : "the server stopped without a word");
+                if (key == null)
+                {
+                    try { if (!server.HasExited) server.Kill(); } catch { }
+                    DropNewAimDevices(unitsBefore);
+                    if (proxy == "shm") return Fail(why1);
+                }
+            }
+            if (key == null)
+            {
+                var line = StartServer(null);
+                if (line == null) return Fail("the disc was not listed within two minutes");
+                if (!line.StartsWith("PORT ", StringComparison.Ordinal) || !int.TryParse(line.Substring(5), out int port))
+                    return Fail((line.Length > 0 ? line : "the server stopped without a word") + (why1 != null ? "; " + why1 : ""));
+                (code, said) = Run(Aim.LowLevel, "-a", "-t", "proxy", "-o", "ip,ro", "-f", "127.0.0.1:" + port);
+                if (code != 0) return Fail("aim_ll exit=" + code + " - " + LastWords(said) + (why1 != null ? "; " + why1 : ""));
+                key = "127.0.0.1:" + port; proxy = "tcp";
+            }
             // THE VOLUME OF THE DISK JUST MADE, by AIM's own word ("Contains volume ...") - never "the first volume that
             // appeared": a USB stick plugged in meanwhile would lose its letters to us.
             string unit = null, volume = null;
@@ -1044,7 +1078,7 @@ namespace RamDiskHelper
                 foreach (var block in list.Split(new[] { "Device number " }, StringSplitOptions.RemoveEmptyEntries))
                 {
                     if (block.Length < 6 || unitsBefore.Contains(block.Substring(0, 6).ToUpperInvariant())) continue;
-                    if (block.IndexOf("127.0.0.1:" + port, StringComparison.Ordinal) < 0) continue;
+                    if (block.IndexOf(key, StringComparison.OrdinalIgnoreCase) < 0) continue;
                     unit = block.Substring(0, 6);
                     var m = System.Text.RegularExpressions.Regex.Match(block, @"Contains volume (\\\\\?\\Volume\{[0-9a-fA-F-]+\}\\)");
                     if (m.Success) volume = m.Groups[1].Value;
@@ -1056,7 +1090,7 @@ namespace RamDiskHelper
             foreach (var other in PathsOf(volume)) DeleteVolumeMountPoint(other);
             if (!SetVolumeMountPoint(point.TrimEnd('\\') + "\\", volume)) return Fail("attached, but " + point + " could not be given to it (error " + Marshal.GetLastWin32Error() + ")");
             WriteAttached(dir, point, "aim", image, "");
-            return "OK " + head + " " + token + " exit=0 backend=aim view=" + viewName + " at=" + point
+            return "OK " + head + " " + token + " exit=0 backend=aim view=" + viewName + " proxy=" + proxy + " at=" + point
                    + (viewName == "xiso" ? " file=" + point.TrimEnd('\\') + "\\" + XisoFileName : "");
         }
 
@@ -1137,11 +1171,75 @@ namespace RamDiskHelper
             }
         }
 
+        /// <summary>1.12: the same disk through SHARED MEMORY - the ImDisk proxy protocol AIM speaks over a named section (no network):
+        /// "Global\&lt;name&gt;" of 8 MB + 4 KB, its requests and answers at its start, the data 4 KB in; "&lt;name&gt;_Request" set by
+        /// the driver, "&lt;name&gt;_Response" by us, "&lt;name&gt;_Server" held while we serve. "SHM &lt;name&gt;" said once all exist.
+        /// Requests as on the socket: INFO (1), READ (2), CLOSE (5) - nothing else on a read-only disk.</summary>
+        private static int ServeShared(Stream source, long length, Func<Stream, long, byte[], int, int> read, string name)
+        {
+            const int Header = 4096;
+            const long Size = (8L << 20) + Header;
+            try
+            {
+                using var request = new System.Threading.EventWaitHandle(false, System.Threading.EventResetMode.AutoReset, @"Global\" + name + "_Request");
+                using var response = new System.Threading.EventWaitHandle(false, System.Threading.EventResetMode.AutoReset, @"Global\" + name + "_Response");
+                using var held = new System.Threading.Mutex(false, @"Global\" + name + "_Server");
+                if (!held.WaitOne(0)) { Console.WriteLine("ERROR the shared memory name is in use"); return 1; }
+                using var map = System.IO.MemoryMappedFiles.MemoryMappedFile.CreateNew(@"Global\" + name, Size, System.IO.MemoryMappedFiles.MemoryMappedFileAccess.ReadWrite);
+                using var view = map.CreateViewAccessor();
+                Console.WriteLine("SHM " + name);
+                Console.Out.Flush();
+                Console.SetOut(TextWriter.Null);
+                if (!request.WaitOne(60000)) return 2;     // nobody came within a minute
+                using var img = source;
+                var buffer = new byte[Size - Header];
+                unsafe
+                {
+                    byte* at = null;
+                    view.SafeMemoryMappedViewHandle.AcquirePointer(ref at);
+                    try
+                    {
+                        while (true)
+                        {
+                            ulong code = *(ulong*)at;
+                            if (code == 1)                  // INFO: size, alignment, flags (read-only)
+                            {
+                                *(ulong*)at = (ulong)length;
+                                *(ulong*)(at + 8) = 1;
+                                *(ulong*)(at + 16) = 1;
+                            }
+                            else if (code == 2)             // READ: offset, length -> errno, length, data at 4 KB
+                            {
+                                long offset = *(long*)(at + 8);
+                                int n = (int)Math.Min(*(ulong*)(at + 16), (ulong)buffer.Length);
+                                int got = offset < 0 || offset >= length ? 0 : read(img, offset, buffer, (int)Math.Min(n, length - offset));
+                                if (got < n) Array.Clear(buffer, got, n - got);
+                                Marshal.Copy(buffer, 0, (IntPtr)(at + Header), n);
+                                *(ulong*)at = 0;
+                                *(ulong*)(at + 8) = (ulong)n;
+                            }
+                            else break;                     // CLOSE (5), or anything a read-only disk does not do
+                            System.Threading.WaitHandle.SignalAndWait(response, request);
+                        }
+                    }
+                    finally { view.SafeMemoryMappedViewHandle.ReleasePointer(); }
+                }
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                try { Console.WriteLine("ERROR " + ex.GetType().Name + ": " + ex.Message); } catch { }
+                return 1;
+            }
+        }
+
         /// <summary>A read-only disk of <paramref name="length"/> bytes that <paramref name="read"/> gives from
         /// <paramref name="source"/>: "PORT n" said, then AIM's proxy protocol to the one client that connects (a minute at
         /// most for it to come). The source closed at the end.</summary>
         private static int Serve(Stream source, long length, Func<Stream, long, byte[], int, int> read)
         {
+            var shm = Environment.GetEnvironmentVariable("LBIP_PROXY_SHM");
+            if (!string.IsNullOrEmpty(shm)) return ServeShared(source, length, read, shm);
             try
             {
                 var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
