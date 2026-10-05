@@ -116,12 +116,25 @@ namespace LbIntegrations.Menus
 
     internal sealed class NixxSettingsForm : Form
     {
-        private readonly List<(SettingsProvider Provider, TabPage Tab, Control Page)> _plugins = new List<(SettingsProvider, TabPage, Control)>();
-        private readonly TabControl _tabs;
+        // ONE WINDOW, PAGES ON THE LEFT (Mehdi, 05/10: "au lieu d'onglets une barre de pages sur la gauche", dark): LiteBox's own
+        // options shell (LbApiHost\Host\Options\OptionsWindow.cs) - a list at the left, the page at the right under its title,
+        // Cancel / Apply / OK below - in its colours (DarkTheme), so these pages can go into LiteBox one day as they are.
+        // Every page is built when the window opens, as the tabs were: OK and Apply save them all, whichever was looked at.
+        private sealed class Entry
+        {
+            public string Title;
+            public Control View;            // what the page bar shows at the right; null for a heading
+            public Func<string> Save;       // null: nothing to save
+        }
+
+        private readonly List<Entry> _entries = new List<Entry>();
+        private readonly ListBox _nav;
+        private readonly Panel _host;
+        private readonly Label _title;
         private RamDiskTab _ramDisk;
-        private TabPage _ramDiskPage;
         private IdentityPanel _identity;
-        private TabPage _identityPage;
+
+        private static int S(Control c, int px) => (int)Math.Round(px * (c.DeviceDpi / 96f));
 
         public NixxSettingsForm(List<SettingsProvider> providers)
         {
@@ -132,122 +145,181 @@ namespace LbIntegrations.Menus
             ShowInTaskbar = false;
             AutoScaleMode = AutoScaleMode.Dpi;
             Font = new Font("Segoe UI", 9f);
-            ClientSize = new Size(700, 500);
-            MinimumSize = new Size(560, 400);
+            ClientSize = new Size(900, 640);
+            MinimumSize = new Size(720, 480);
 
-            _tabs = new TabControl { Dock = DockStyle.Fill };
-            _tabs.TabPages.Add(GeneralTab(providers));
-            _tabs.TabPages.Add(IdentityPage());
-            _tabs.TabPages.Add(RamDiskPage());
-            foreach (var provider in providers) _tabs.TabPages.Add(PluginTab(provider));
+            Heading("PACK");
+            Add("General", GeneralPage(providers), null);
+            Add(IdentityPanel.Title, IdentityPage(), () => _identity?.Save());
+            Add(RamDiskTab.Title, RamDiskPage(), () => _ramDisk?.Save());
+            Heading("EMULATORS");
+            foreach (var provider in providers) PluginPage(provider);
 
-            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 46 };
-            var ok = new Button { Text = "OK", Width = 90, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
-            var cancel = new Button { Text = "Cancel", Width = 90, DialogResult = DialogResult.Cancel, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
-            var apply = new Button { Text = "Apply", Width = 90, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
+            // ── the page bar ──
+            _nav = new ListBox
+            {
+                Dock = DockStyle.Left, Width = S(this, 190), DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = S(this, 30),
+                BorderStyle = BorderStyle.None, BackColor = DarkTheme.Side, ForeColor = DarkTheme.Text, Font = new Font("Segoe UI", 10f), IntegralHeight = false, Tag = DarkTheme.Own,
+            };
+            foreach (var e in _entries) _nav.Items.Add(e);
+            _nav.DrawItem += DrawEntry;
+            // More pages than it can show (Mehdi, 05/10): it scrolls - its scroll bar dark too.
+            DarkTheme.NativeDark(_nav);
+            int last = 0;
+            _nav.SelectedIndexChanged += (_, _) =>
+            {
+                var i = _nav.SelectedIndex;
+                if (i < 0) return;
+                if (_entries[i].View == null) { _nav.SelectedIndex = last; return; }   // a heading is not a page
+                last = i;
+                Show(_entries[i]);
+            };
+
+            // ── the page ──
+            var right = new Panel { Dock = DockStyle.Fill, BackColor = DarkTheme.Back, Padding = new Padding(S(this, 18), S(this, 12), S(this, 18), S(this, 4)) };
+            _title = new Label { Dock = DockStyle.Top, AutoSize = false, Height = S(this, 34), Font = new Font("Segoe UI Semibold", 14f), ForeColor = DarkTheme.Text, BackColor = DarkTheme.Back, UseMnemonic = false, Tag = DarkTheme.Own };
+            _host = new Panel { Dock = DockStyle.Fill, BackColor = DarkTheme.Back };
+            right.Controls.Add(_host);
+            right.Controls.Add(_title);
+
+            // ── below: LiteBox's footer ──
+            var bottom = new Panel { Dock = DockStyle.Bottom, Height = S(this, 50), BackColor = DarkTheme.Side };
+            Button Action(string text, Color back)
+            {
+                var b = new Button { Text = text, Width = S(this, 96), Height = S(this, 30), FlatStyle = FlatStyle.Flat, BackColor = back, ForeColor = Color.White,
+                                     Font = new Font("Segoe UI", 9f, FontStyle.Bold), Anchor = AnchorStyles.Right | AnchorStyles.Bottom, UseVisualStyleBackColor = false };
+                b.FlatAppearance.BorderSize = 0;
+                b.FlatAppearance.MouseOverBackColor = ControlPaint.Light(back, 0.15f);
+                return b;
+            }
+            var cancel = Action("Cancel", DarkTheme.ButtonBack);
+            var apply = Action("Apply", DarkTheme.Accent);
+            var ok = Action("OK", DarkTheme.Ok);
+            cancel.DialogResult = DialogResult.Cancel;
             ok.Click += (_, _) => { if (SaveAll()) { DialogResult = DialogResult.OK; Close(); } };
             apply.Click += (_, _) => SaveAll();
-            bottom.Controls.AddRange(new Control[] { ok, cancel, apply });
+            bottom.Controls.AddRange(new Control[] { cancel, apply, ok });
             bottom.Layout += (_, _) =>
             {
-                apply.Location = new Point(bottom.ClientSize.Width - 12 - apply.Width, 10);
-                cancel.Location = new Point(apply.Left - 8 - cancel.Width, 10);
-                ok.Location = new Point(cancel.Left - 8 - ok.Width, 10);
+                int y = (bottom.ClientSize.Height - ok.Height) / 2, gap = S(this, 8);
+                ok.Location = new Point(bottom.ClientSize.Width - S(this, 16) - ok.Width, y);
+                apply.Location = new Point(ok.Left - gap - apply.Width, y);
+                cancel.Location = new Point(apply.Left - gap - cancel.Width, y);
             };
             AcceptButton = ok;
             CancelButton = cancel;
 
-            Controls.Add(_tabs);
+            Controls.Add(right);
+            Controls.Add(_nav);
             Controls.Add(bottom);
+            DarkTheme.Apply(this);
+
+            _nav.SelectedIndex = _entries.FindIndex(e => e.View != null);
         }
 
-        /// <summary>Every tab's Save, in tab order - EACH ONE, whatever the others say (Mehdi, 04/10: one tab refusing,
-        /// "Xenia is running", no longer leaves the tabs after it unsaved). When any refused: one message listing
-        /// them, the first one's tab shown, the window left open.</summary>
+        private void Heading(string text) => _entries.Add(new Entry { Title = text });
+
+        private void Add(string title, Control view, Func<string> save)
+        {
+            view.Dock = DockStyle.Fill;
+            view.Visible = false;
+            _entries.Add(new Entry { Title = title, View = view, Save = save });
+        }
+
+        private void Show(Entry e)
+        {
+            _title.Text = e.Title;
+            _host.SuspendLayout();
+            foreach (Control c in _host.Controls) c.Visible = false;
+            if (e.View.Parent != _host) _host.Controls.Add(e.View);
+            e.View.Visible = true;
+            _host.ResumeLayout();
+        }
+
+        /// <summary>A row of the page bar: LiteBox's - the whole row in the accent when chosen; a heading small, dim, not chosen.</summary>
+        private void DrawEntry(object sender, DrawItemEventArgs e)
+        {
+            if (e.Index < 0) return;
+            var entry = _entries[e.Index];
+            var g = e.Graphics;
+            bool chosen = (e.State & DrawItemState.Selected) != 0 && entry.View != null;
+            using (var b = new SolidBrush(chosen ? DarkTheme.Accent : DarkTheme.Side)) g.FillRectangle(b, e.Bounds);
+            var r = new Rectangle(e.Bounds.X + S(this, 12), e.Bounds.Y, e.Bounds.Width - S(this, 16), e.Bounds.Height);
+            if (entry.View == null)
+            {
+                using var small = new Font("Segoe UI", 8f, FontStyle.Bold);
+                TextRenderer.DrawText(g, entry.Title, small, new Rectangle(r.X, r.Y + S(this, 8), r.Width, r.Height - S(this, 8)), DarkTheme.Dim, TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
+                return;
+            }
+            TextRenderer.DrawText(g, entry.Title, _nav.Font, r, chosen ? Color.White : DarkTheme.Text, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        }
+
+        /// <summary>Every page's Save, in order - EACH ONE, whatever the others say (Mehdi, 04/10: one page refusing,
+        /// "Xenia is running", no longer leaves the pages after it unsaved). When any refused: one message listing
+        /// them, the first one's page shown, the window left open.</summary>
         private bool SaveAll()
         {
-            var refused = new List<(TabPage Tab, string Title, string Problem)>();
-            void One(TabPage tab, string title, Func<string> save)
+            var refused = new List<(Entry Entry, string Problem)>();
+            foreach (var e in _entries)
             {
+                if (e.Save == null) continue;
                 string problem;
-                try { problem = save(); }
-                catch (Exception ex) { problem = (ex.InnerException ?? ex).Message; RelayLog.Warn(title + ".Save", ex); }
-                if (problem != null) refused.Add((tab, title, problem));
+                try { problem = e.Save(); }
+                catch (Exception ex) { problem = (ex.InnerException ?? ex).Message; RelayLog.Warn(e.Title + ".Save", ex); }
+                if (problem != null) refused.Add((e, problem));
             }
-            if (_identity != null) One(_identityPage, IdentityPanel.Title, _identity.Save);
-            if (_ramDisk != null) One(_ramDiskPage, RamDiskTab.Title, _ramDisk.Save);
-            foreach (var (provider, tab, page) in _plugins)
-                if (page != null)   // a page that could not be built has nothing to save
-                    One(tab, provider.Title, () => provider.Save(page));
             if (refused.Count == 0) return true;
 
-            _tabs.SelectedTab = refused[0].Tab;
+            _nav.SelectedIndex = _entries.IndexOf(refused[0].Entry);
             var text = refused.Count == 1
                 ? refused[0].Problem
-                : "These tabs were not saved:\n\n" + string.Join("\n\n", refused.Select(r => r.Title + ": " + r.Problem))
+                : "These pages were not saved:\n\n" + string.Join("\n\n", refused.Select(r => r.Entry.Title + ": " + r.Problem))
                   + "\n\nEverything else was saved.";
-            MessageBox.Show(this, text, refused.Count == 1 ? refused[0].Title : "Some settings were not saved", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(this, text, refused.Count == 1 ? refused[0].Entry.Title : "Some settings were not saved", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return false;
         }
 
+        private static Control Failed(string text) => new Label { Dock = DockStyle.Fill, Padding = new Padding(12), ForeColor = Color.Firebrick, Text = text };
+
         /// <summary>The pack's one console identity, for every plugin - see IdentityPanel.</summary>
-        private TabPage IdentityPage()
+        private Control IdentityPage()
         {
-            _identityPage = new TabPage(IdentityPanel.Title) { UseVisualStyleBackColor = true };
             try
             {
-                var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(8) };
+                var scroll = new Panel { AutoScroll = true, Padding = new Padding(0, 4, 8, 8) };
                 _identity = new IdentityPanel(null, _ => IdentityApply.Show(this));
                 scroll.Controls.Add(_identity);
-                _identityPage.Controls.Add(scroll);
+                return scroll;
             }
-            catch (Exception ex)
-            {
-                RelayLog.Warn("the identity tab", ex);
-                _identityPage.Controls.Add(new Label { Dock = DockStyle.Fill, Padding = new Padding(12), ForeColor = Color.Firebrick, Text = "Your console could not be shown:\n\n" + ex.Message });
-            }
-            return _identityPage;
+            catch (Exception ex) { RelayLog.Warn("the identity page", ex); return Failed("Your console could not be shown:\n\n" + ex.Message); }
         }
 
         /// <summary>One RAM disk section for every plugin of the pack - see RamDiskTab.</summary>
-        private TabPage RamDiskPage()
+        private Control RamDiskPage()
         {
-            _ramDiskPage = new TabPage(RamDiskTab.Title) { UseVisualStyleBackColor = true };
-            try { _ramDisk = new RamDiskTab(); _ramDiskPage.Controls.Add(_ramDisk); }
-            catch (Exception ex)
-            {
-                RelayLog.Warn("the RAM disk tab", ex);
-                _ramDiskPage.Controls.Add(new Label { Dock = DockStyle.Fill, Padding = new Padding(12), ForeColor = Color.Firebrick, Text = "The RAM disk settings could not be shown:\n\n" + ex.Message });
-            }
-            return _ramDiskPage;
+            try { return _ramDisk = new RamDiskTab(); }
+            catch (Exception ex) { RelayLog.Warn("the RAM disk page", ex); return Failed("The RAM disk settings could not be shown:\n\n" + ex.Message); }
         }
 
-        private TabPage PluginTab(SettingsProvider provider)
+        private void PluginPage(SettingsProvider provider)
         {
-            var tab = new TabPage(provider.Title) { UseVisualStyleBackColor = true };
-            Control page = null;
+            var view = new Panel();
             try
             {
-                page = provider.Create();
+                var page = provider.Create();
                 page.Dock = DockStyle.Fill;
-                tab.Controls.Add(page);
+                view.Controls.Add(page);
                 // Its emulators opened without a game, as LaunchBox's "Open emulator" opens them (Mehdi, 05/10).
-                if (provider.OpenMethod != null && OpenBar(provider) is Control bar) { tab.Controls.Add(bar); page.BringToFront(); }
+                if (provider.OpenMethod != null && OpenBar(provider) is Control bar) { view.Controls.Add(bar); page.BringToFront(); }
+                Add(provider.Title, view, () => provider.Save(page));
             }
             catch (Exception ex)
             {
                 RelayLog.Warn(provider.Name + ".CreatePage", ex);
-                tab.Controls.Add(new Label
-                {
-                    Dock = DockStyle.Fill, Padding = new Padding(12), ForeColor = Color.Firebrick,
-                    Text = provider.Title + " could not build its settings page:\n\n" + (ex.InnerException ?? ex).Message,
-                });
-                page = null;
+                view.Controls.Add(Failed(provider.Title + " could not build its settings page:\n\n" + (ex.InnerException ?? ex).Message));
+                Add(provider.Title, view, null);       // a page that could not be built has nothing to save
             }
-            _plugins.Add((provider, tab, page));
-            return tab;
         }
-
         /// <summary>One button per emulator of the plugin LaunchBox has: opened as its "Open emulator" menu opens it, with what the
         /// plugin does around it (Shared.Lbip\LbipOpenEmulator). Null when there is none.</summary>
         private Control OpenBar(SettingsProvider provider)
@@ -274,58 +346,62 @@ namespace LbIntegrations.Menus
             return bar.Controls.Count == 0 ? null : bar;
         }
 
-        private static TabPage GeneralTab(List<SettingsProvider> providers)
+        /// <summary>The pack at a glance: its guides, the plugins loaded and their versions, where its logs are.</summary>
+        private static Control GeneralPage(List<SettingsProvider> providers)
         {
-            var tab = new TabPage("General") { UseVisualStyleBackColor = true, Padding = new Padding(12) };
+            var scroll = new Panel { AutoScroll = true };
+            var stack = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Location = new Point(0, 0), Margin = Padding.Empty };
+            scroll.Controls.Add(stack);
+            GroupBox Card(string title)
+            {
+                var g = new GroupBox { Text = title, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, MinimumSize = new Size(620, 0), Padding = new Padding(12, 8, 12, 10), Margin = new Padding(0, 0, 0, 12) };
+                stack.Controls.Add(g);
+                return g;
+            }
+
+            var guides = Card("User guides");
+            guides.Controls.Add(HelpButtons());
+
+            var loaded = Card("Plugins loaded");
+            var table = new TableLayoutPanel { AutoSize = true, ColumnCount = 3, Location = new Point(12, 24), Margin = Padding.Empty };
+            int row = 0;
+            void Line(string name, string version, string where)
+            {
+                table.Controls.Add(new Label { Text = name, AutoSize = true, Font = new Font("Segoe UI", 9f, FontStyle.Bold), Margin = new Padding(0, 3, 16, 3) }, 0, row);
+                table.Controls.Add(new Label { Text = version, AutoSize = true, ForeColor = SystemColors.GrayText, Margin = new Padding(0, 3, 16, 3) }, 1, row);
+                var path = new Label { Text = where, AutoSize = true, MaximumSize = new Size(380, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 3, 0, 3) };
+                table.Controls.Add(path, 2, row);
+                row++;
+            }
+            if (providers.Count == 0) Line("none", "", "");
+            foreach (var p in providers) Line(p.Title, p.Assembly.GetName().Version?.ToString() ?? "", p.Assembly.Location);
+            loaded.Controls.Add(table);
 
             var logs = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "lb-integrations-plugins");
             string host = "?";
             try { host = Path.GetFileName(Environment.ProcessPath) + " " + FileVersionInfo.GetVersionInfo(Environment.ProcessPath).FileVersion; } catch { }
-
-            var lines = new List<string>
-            {
-                "Nixx integration plugins",
-                "",
-                "Host: " + host,
-                "Menu relay: " + typeof(NixxSettingsMenu).Assembly.Location,
-                "",
-                "Plugins with settings:",
-            };
-            if (providers.Count == 0) lines.Add("    none loaded");
-            foreach (var p in providers)
-                lines.Add("    " + p.Title + "  " + p.Assembly.GetName().Version + "  -  " + p.Assembly.Location);
-            lines.Add("");
-            lines.Add("Plugins with game menus:");
-            var menus = Providers.All();
-            if (menus.Count == 0) lines.Add("    none loaded");
-            foreach (var m in menus) lines.Add("    " + m.Name);
-            lines.Add("");
-            lines.Add("Logs: " + logs);
-
-            var text = new TextBox
-            {
-                Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical,
-                BorderStyle = BorderStyle.None, BackColor = SystemColors.Window, Text = string.Join(Environment.NewLine, lines),
-            };
-            var open = new Button { Text = "Open the logs folder", AutoSize = true, Dock = DockStyle.Bottom };
+            var about = Card("This LaunchBox");
+            var aboutFlow = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Location = new Point(12, 24), Margin = Padding.Empty };
+            aboutFlow.Controls.Add(new Label { AutoSize = true, MaximumSize = new Size(600, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 0, 0, 6),
+                                               Text = "Host: " + host + "\nMenu relay: " + typeof(NixxSettingsMenu).Assembly.Location + "\nGame menus: "
+                                                      + (Providers.All() is var menus && menus.Count > 0 ? string.Join(", ", menus.Select(m => m.Name)) : "none loaded")
+                                                      + "\nLogs: " + logs });
+            var open = new Button { Text = "Open the logs folder", AutoSize = true, Margin = new Padding(0, 2, 0, 0) };
             open.Click += (_, _) =>
             {
                 try { Directory.CreateDirectory(logs); Process.Start(new ProcessStartInfo("explorer.exe", "\"" + logs + "\"") { UseShellExecute = true }); }
                 catch (Exception ex) { RelayLog.Warn("open the logs folder", ex); }
             };
-            tab.Controls.Add(text);
-            tab.Controls.Add(HelpButtons());
-            tab.Controls.Add(open);
-            return tab;
+            aboutFlow.Controls.Add(open);
+            about.Controls.Add(aboutFlow);
+            return scroll;
         }
-
         /// <summary>One button per plugin that carries a user guide - an embedded resource named "help.html" (Mehdi, 01/10).
         /// Found among the loaded assemblies like the rest of this relay; the page is written to the logs folder's help\ and
         /// opened in the browser. A plugin without one simply has no button.</summary>
         private static Control HelpButtons()
         {
-            var box = new GroupBox { Text = "User guides", Dock = DockStyle.Bottom, Height = 64, Padding = new Padding(8, 4, 8, 4) };
-            var row = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = true, AutoScroll = true };
+            var row = new FlowLayoutPanel { AutoSize = true, MaximumSize = new Size(600, 0), WrapContents = true, Location = new Point(12, 24), Margin = Padding.Empty };
             foreach (var (name, asm) in HelpProviders())
             {
                 var button = new Button { Text = name, AutoSize = true, Margin = new Padding(0, 2, 6, 2) };
@@ -333,8 +409,7 @@ namespace LbIntegrations.Menus
                 row.Controls.Add(button);
             }
             if (row.Controls.Count == 0) row.Controls.Add(new Label { Text = "No plugin with a guide is loaded.", AutoSize = true, ForeColor = SystemColors.GrayText, Margin = new Padding(0, 6, 0, 0) });
-            box.Controls.Add(row);
-            return box;
+            return row;
         }
 
         private static List<(string Name, Assembly Assembly)> HelpProviders()
