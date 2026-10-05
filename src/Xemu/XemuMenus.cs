@@ -252,8 +252,9 @@ namespace LbIntegrations.Xemu
             var toml = exe != null ? XemuTomlDoc.Load(XemuPaths.TomlOf(exe)) : null;
             var every = XemuSettings.Read();
             var settings = Tab(tabs, "xemu settings");
-            settings.Controls.Add(Explain("xemu's own settings, for this game only. Unset: xemu's own - its own window sets them for every game. Given "
-                                          + "to xemu for the time of the game: your xemu.toml is left as it is."));
+            settings.Controls.Add(LbIntegrations.Lbip.LbipHint.Note("For this game only; unset, xemu's own setting applies.",
+                "xemu's own settings, for this game only. Unset: xemu's own - its own window sets them for every game. Given "
+                + "to xemu for the time of the game: your xemu.toml is left as it is.", 580, new Padding(4, 0, 0, 6)));
             _xemuRows = new XemuOptionRows(choice, XemuOptionRows.GameFallback(every, toml), o => o.IsXemuSetting);
             settings.Controls.Add(XemuOptionRows.Legend("Not set: xemu's own (its xemu.toml), else the default"));
             settings.Controls.Add(Reset(_xemuRows, "Every xemu setting of this game"));
@@ -261,8 +262,9 @@ namespace LbIntegrations.Xemu
 
             // ── its console and disc ──
             var console = Tab(tabs, "Console & disc");
-            console.Controls.Add(Explain("The console this game runs on and its disc, made for the time of the game - your files are never written. "
-                                         + "Unset: every game's (the Nixx window's xemu tab), else the default."));
+            console.Controls.Add(LbIntegrations.Lbip.LbipHint.Note("For this game only; unset, the Nixx window's choice applies.",
+                "The console this game runs on and its disc, made for the time of the game - your files are never written. "
+                + "Unset: every game's (the Nixx window's xemu tab), else the default.", 580, new Padding(4, 0, 0, 6)));
             _consoleRows = new XemuOptionRows(choice, XemuOptionRows.GameFallback(every, toml), o => !o.IsXemuSetting);
             console.Controls.Add(XemuOptionRows.Legend("Not set: every game's, else the default"));
             console.Controls.Add(Reset(_consoleRows, "The console and disc options of this game"));
@@ -284,6 +286,8 @@ namespace LbIntegrations.Xemu
             Controls.Add(tabs);
             Controls.Add(header);
             Controls.Add(bottom);
+            // Dressed as the Nixx window (Mehdi, 05/10): LiteBox's look, its tabs a page bar at the left.
+            LbIntegrations.Ui.NixxShell.Dress(this);
         }
 
         private Dictionary<string, string> Values()

@@ -26,6 +26,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Windows.Forms;
+using LbIntegrations.Ui;
 using Unbroken.LaunchBox.Plugins;
 
 namespace LbIntegrations.Menus
@@ -159,12 +160,12 @@ namespace LbIntegrations.Menus
             _nav = new ListBox
             {
                 Dock = DockStyle.Left, Width = S(this, 190), DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = S(this, 30),
-                BorderStyle = BorderStyle.None, BackColor = DarkTheme.Side, ForeColor = DarkTheme.Text, Font = new Font("Segoe UI", 10f), IntegralHeight = false, Tag = DarkTheme.Own,
+                BorderStyle = BorderStyle.None, BackColor = NixxTheme.Side, ForeColor = NixxTheme.Text, Font = new Font("Segoe UI", 10f), IntegralHeight = false, Tag = NixxTheme.Own,
             };
             foreach (var e in _entries) _nav.Items.Add(e);
             _nav.DrawItem += DrawEntry;
             // More pages than it can show (Mehdi, 05/10): it scrolls - its scroll bar dark too.
-            DarkTheme.NativeDark(_nav);
+            NixxTheme.NativeDark(_nav);
             int last = 0;
             _nav.SelectedIndexChanged += (_, _) =>
             {
@@ -176,14 +177,14 @@ namespace LbIntegrations.Menus
             };
 
             // ── the page ──
-            var right = new Panel { Dock = DockStyle.Fill, BackColor = DarkTheme.Back, Padding = new Padding(S(this, 18), S(this, 12), S(this, 18), S(this, 4)) };
-            _title = new Label { Dock = DockStyle.Top, AutoSize = false, Height = S(this, 34), Font = new Font("Segoe UI Semibold", 14f), ForeColor = DarkTheme.Text, BackColor = DarkTheme.Back, UseMnemonic = false, Tag = DarkTheme.Own };
-            _host = new Panel { Dock = DockStyle.Fill, BackColor = DarkTheme.Back };
+            var right = new Panel { Dock = DockStyle.Fill, BackColor = NixxTheme.Back, Padding = new Padding(S(this, 18), S(this, 12), S(this, 18), S(this, 4)) };
+            _title = new Label { Dock = DockStyle.Top, AutoSize = false, Height = S(this, 34), Font = new Font("Segoe UI Semibold", 14f), ForeColor = NixxTheme.Text, BackColor = NixxTheme.Back, UseMnemonic = false, Tag = NixxTheme.Own };
+            _host = new Panel { Dock = DockStyle.Fill, BackColor = NixxTheme.Back };
             right.Controls.Add(_host);
             right.Controls.Add(_title);
 
             // ── below: LiteBox's footer ──
-            var bottom = new Panel { Dock = DockStyle.Bottom, Height = S(this, 50), BackColor = DarkTheme.Side };
+            var bottom = new Panel { Dock = DockStyle.Bottom, Height = S(this, 50), BackColor = NixxTheme.Side };
             Button Action(string text, Color back)
             {
                 var b = new Button { Text = text, Width = S(this, 96), Height = S(this, 30), FlatStyle = FlatStyle.Flat, BackColor = back, ForeColor = Color.White,
@@ -192,9 +193,9 @@ namespace LbIntegrations.Menus
                 b.FlatAppearance.MouseOverBackColor = ControlPaint.Light(back, 0.15f);
                 return b;
             }
-            var cancel = Action("Cancel", DarkTheme.ButtonBack);
-            var apply = Action("Apply", DarkTheme.Accent);
-            var ok = Action("OK", DarkTheme.Ok);
+            var cancel = Action("Cancel", NixxTheme.ButtonBack);
+            var apply = Action("Apply", NixxTheme.Accent);
+            var ok = Action("OK", NixxTheme.Ok);
             cancel.DialogResult = DialogResult.Cancel;
             ok.Click += (_, _) => { if (SaveAll()) { DialogResult = DialogResult.OK; Close(); } };
             apply.Click += (_, _) => SaveAll();
@@ -212,7 +213,7 @@ namespace LbIntegrations.Menus
             Controls.Add(right);
             Controls.Add(_nav);
             Controls.Add(bottom);
-            DarkTheme.Apply(this);
+            NixxTheme.Apply(this);
 
             _nav.SelectedIndex = _entries.FindIndex(e => e.View != null);
         }
@@ -243,15 +244,15 @@ namespace LbIntegrations.Menus
             var entry = _entries[e.Index];
             var g = e.Graphics;
             bool chosen = (e.State & DrawItemState.Selected) != 0 && entry.View != null;
-            using (var b = new SolidBrush(chosen ? DarkTheme.Accent : DarkTheme.Side)) g.FillRectangle(b, e.Bounds);
+            using (var b = new SolidBrush(chosen ? NixxTheme.Accent : NixxTheme.Side)) g.FillRectangle(b, e.Bounds);
             var r = new Rectangle(e.Bounds.X + S(this, 12), e.Bounds.Y, e.Bounds.Width - S(this, 16), e.Bounds.Height);
             if (entry.View == null)
             {
                 using var small = new Font("Segoe UI", 8f, FontStyle.Bold);
-                TextRenderer.DrawText(g, entry.Title, small, new Rectangle(r.X, r.Y + S(this, 8), r.Width, r.Height - S(this, 8)), DarkTheme.Dim, TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
+                TextRenderer.DrawText(g, entry.Title, small, new Rectangle(r.X, r.Y + S(this, 8), r.Width, r.Height - S(this, 8)), NixxTheme.Dim, TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
                 return;
             }
-            TextRenderer.DrawText(g, entry.Title, _nav.Font, r, chosen ? Color.White : DarkTheme.Text, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            TextRenderer.DrawText(g, entry.Title, _nav.Font, r, chosen ? Color.White : NixxTheme.Text, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
         }
 
         /// <summary>Every page's Save, in order - EACH ONE, whatever the others say (Mehdi, 04/10: one page refusing,

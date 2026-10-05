@@ -392,7 +392,7 @@ namespace LbIntegrations.Probe
                 {
                     var form = (System.Windows.Forms.Form)Activator.CreateInstance(T("XemuGameForm"), Any, null, new object[] { new List<Unbroken.LaunchBox.Plugins.Data.IGame> { game } }, null);
                     int t = tab;
-                    form.Shown += (_, _) => { foreach (var tc in form.Controls.OfType<System.Windows.Forms.TabControl>()) tc.SelectedIndex = t; };
+                    form.Shown += (_, _) => { foreach (var tc in AllTabs(form)) tc.SelectedIndex = t; };
                     SnapForm(form, Path.Combine(outDir, "xemu-game-" + tab + ".png"));
                 }
                 var page = (System.Windows.Forms.Control)T("Settings").GetMethod("CreatePage").Invoke(null, null);
@@ -404,6 +404,15 @@ namespace LbIntegrations.Probe
                 return true;
             }
             finally { try { Directory.Delete(work, recursive: true); } catch { } }
+        }
+
+        private static IEnumerable<System.Windows.Forms.TabControl> AllTabs(System.Windows.Forms.Control c)
+        {
+            foreach (System.Windows.Forms.Control k in c.Controls)
+            {
+                if (k is System.Windows.Forms.TabControl t) yield return t;
+                foreach (var d in AllTabs(k)) yield return d;
+            }
         }
 
         private static void SnapForm(System.Windows.Forms.Form form, string path)

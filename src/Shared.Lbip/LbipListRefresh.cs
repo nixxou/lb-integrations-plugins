@@ -96,6 +96,7 @@ namespace LbIntegrations.Lbip
                 // Over before the window was there: closed as soon as it is.
                 Shown += (_, _) => { _tick.Start(); if (Work?.IsCompleted == true) Finish(); };
                 FormClosing += (_, e) => { if (!_over) { e.Cancel = true; Stop(); } };
+                LbIntegrations.Ui.NixxShell.Dress(this);     // LiteBox's look, as the window it comes from
             }
 
             private void Stop()

@@ -15,9 +15,9 @@ using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace LbIntegrations.Menus
+namespace LbIntegrations.Ui
 {
-    internal static class DarkTheme
+    internal static class NixxTheme
     {
         // LITEBOX'S PALETTE (Mehdi, 05/10: "faudra que visuellement ça puisse s'intégrer plus tard dans mon LiteBox") - its
         // defaults, LbApiHost\Host\UiKit\LiteBoxTheme.cs, and the few colours its own controls use beside them.

@@ -27,6 +27,8 @@
 
   <ItemGroup>
     <Compile Include="..\Shared.Lbip\**\*.cs" />
+    <!-- The look of the Nixx windows, LiteBox's: the theme and the shell of a game's window. -->
+    <Compile Include="..\Shared.Ui\**\*.cs" />
     <!-- The pack's console identity ("Your console") - see src\Shared.Identity\PackIdentity.cs. -->
     <Compile Include="..\Shared.Identity\**\*.cs" />
     <Compile Include="..\Shared.Menu\**\*.cs" />

@@ -23,6 +23,8 @@
     <Compile Include="..\Shared.RamDisk\**\*.cs" />
     <!-- The pack's console identity - the "Your console" tab (IdentityPanel). -->
     <Compile Include="..\Shared.Identity\**\*.cs" />
+    <!-- The look of the Nixx windows, LiteBox's: the theme and the shell of a game's window. -->
+    <Compile Include="..\Shared.Ui\**\*.cs" />
     <!-- Short sentences, the whole on hover: the plugins' helper, the same file. -->
     <Compile Include="..\Shared.Lbip\LbipHint.cs" Link="Shared.Lbip\LbipHint.cs" />
     <!-- The words a new seed is drawn from (IdentityPanel). -->

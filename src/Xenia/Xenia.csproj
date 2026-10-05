@@ -45,6 +45,8 @@
          folder is how they cannot drift. ILRepack still folds it into one DLL per plugin. See
          src\Shared.Lbip\LbipLog.cs for how it reaches this plugin's logger without naming it. -->
     <Compile Include="..\Shared.Lbip\**\*.cs" />
+    <!-- The look of the Nixx windows, LiteBox's: the theme and the shell of a game's window. -->
+    <Compile Include="..\Shared.Ui\**\*.cs" />
     <!-- The icon of the right-click entry (Shared.Menu\LbipMenuIcon.cs), as the other plugins with a game menu. -->
     <Compile Include="..\Shared.Menu\**\*.cs" />
     <!-- The RAM disk a game's unpacked content goes to - the one LiteBox, melonDS and Vita3K mount. See src\Shared.RamDisk\RamDrive.cs. -->
