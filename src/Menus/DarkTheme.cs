@@ -123,16 +123,20 @@ namespace LbIntegrations.Menus
                     break;
                 case CheckBox cb:
                     if (cb.Appearance == Appearance.Button) goto default;
-                    cb.FlatStyle = FlatStyle.Flat;
-                    cb.FlatAppearance.BorderColor = Dim;
-                    cb.FlatAppearance.CheckedBackColor = Field;
+                    cb.FlatStyle = FlatStyle.Standard;          // Windows' 13 px box, the text where it puts it - the box painted over
                     cb.UseVisualStyleBackColor = false;
                     Transparent(cb);
+                    cb.Paint += (_, e) => PaintCheck(cb, e.Graphics);
+                    cb.CheckStateChanged += (_, _) => cb.Invalidate();
+                    cb.EnabledChanged += (_, _) => cb.Invalidate();
                     break;
                 case RadioButton rb:
-                    rb.FlatStyle = FlatStyle.Flat;
+                    rb.FlatStyle = FlatStyle.Standard;
                     rb.UseVisualStyleBackColor = false;
                     Transparent(rb);
+                    rb.Paint += (_, e) => PaintRadio(rb, e.Graphics);
+                    rb.CheckedChanged += (_, _) => rb.Invalidate();
+                    rb.EnabledChanged += (_, _) => rb.Invalidate();
                     break;
                 case LinkLabel ll:
                     ll.LinkColor = Link; ll.ActiveLinkColor = Color.White; ll.VisitedLinkColor = Link; ll.DisabledLinkColor = Dim;
@@ -163,6 +167,72 @@ namespace LbIntegrations.Menus
             catch { }
             if (c.Parent != null && IsWindowsColour(c.BackColor) && c.Parent.BackColor != c.BackColor && !(c.Parent is Form)) c.BackColor = c.Parent.BackColor;
             c.ParentChanged += (_, _) => { if (IsWindowsColour(c.BackColor)) try { c.ResetBackColor(); } catch { } };
+        }
+
+        // ── check boxes and round buttons, readable (Mehdi, 05/10: "blanc sur gris c'est pas lisible") ──
+        // LiteBox's own (LbApiHost\Host\UiKit\ThemedCheckBox.cs): the glyph painted over Windows' - on, the accent with a white
+        // tick; off, a hollow outline. One change for this window's three-state boxes, where the middle is NOT "mixed" but
+        // "not set here" (the grey bar): neutral, a grey outline round a small grey core - never the accent of a choice.
+
+        private static Rectangle GlyphBox(ButtonBase b, ContentAlignment align)
+        {
+            int size = Math.Max(12, (int)Math.Round(13 * b.DeviceDpi / 96.0));
+            bool right = align == ContentAlignment.MiddleRight || align == ContentAlignment.TopRight || align == ContentAlignment.BottomRight;
+            bool centre = align == ContentAlignment.MiddleCenter || align == ContentAlignment.TopCenter || align == ContentAlignment.BottomCenter;
+            int x = right ? b.Width - size - 1 : centre ? (b.Width - size) / 2 : 0;
+            int y = align == ContentAlignment.TopLeft || align == ContentAlignment.TopRight ? 1
+                  : align == ContentAlignment.BottomLeft || align == ContentAlignment.BottomRight ? b.Height - size - 1
+                  : (b.Height - size) / 2;
+            return new Rectangle(x, y, size, size);
+        }
+
+        private static void PaintCheck(CheckBox cb, Graphics g)
+        {
+            var box = GlyphBox(cb, cb.CheckAlign);
+            int size = box.Width;
+            bool on = cb.CheckState == CheckState.Checked;
+            var fill = on && cb.Enabled ? Accent : Field;
+            var edge = !cb.Enabled ? Color.FromArgb(90, Dim) : on ? Accent : Color.FromArgb(200, Dim);
+            // Under it, the parent's colour: Windows' glyph gone whole.
+            using (var under = new SolidBrush(cb.BackColor)) g.FillRectangle(under, Rectangle.Inflate(box, 1, 1));
+            var old = g.SmoothingMode;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            using (var b = new SolidBrush(fill)) g.FillRectangle(b, box);
+            using (var p = new Pen(edge)) g.DrawRectangle(p, box);
+            if (on)
+            {
+                using var tick = new Pen(cb.Enabled ? Color.White : Dim, Math.Max(1.6f, size / 7f)) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+                g.DrawLines(tick, new[]
+                {
+                    new PointF(box.Left + size * 0.24f, box.Top + size * 0.52f),
+                    new PointF(box.Left + size * 0.44f, box.Top + size * 0.72f),
+                    new PointF(box.Left + size * 0.78f, box.Top + size * 0.28f),
+                });
+            }
+            else if (cb.CheckState == CheckState.Indeterminate)
+            {
+                using var b = new SolidBrush(cb.Enabled ? Dim : Color.FromArgb(90, Dim));
+                g.FillRectangle(b, Rectangle.Inflate(box, -(int)(size * 0.3), -(int)(size * 0.3)));
+            }
+            g.SmoothingMode = old;
+        }
+
+        private static void PaintRadio(RadioButton rb, Graphics g)
+        {
+            var box = GlyphBox(rb, rb.CheckAlign);
+            using (var under = new SolidBrush(rb.BackColor)) g.FillRectangle(under, Rectangle.Inflate(box, 1, 1));
+            var old = g.SmoothingMode;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            var edge = !rb.Enabled ? Color.FromArgb(90, Dim) : rb.Checked ? Accent : Color.FromArgb(200, Dim);
+            using (var b = new SolidBrush(Field)) g.FillEllipse(b, box);
+            using (var p = new Pen(edge, rb.Checked ? 1.6f : 1f)) g.DrawEllipse(p, box);
+            if (rb.Checked)
+            {
+                var dot = Rectangle.Inflate(box, -(int)(box.Width * 0.28), -(int)(box.Width * 0.28));
+                using var b = new SolidBrush(rb.Enabled ? Accent : Dim);
+                g.FillEllipse(b, dot);
+            }
+            g.SmoothingMode = old;
         }
 
         // ── a group as a card ─────────────────────────────────────────────────
