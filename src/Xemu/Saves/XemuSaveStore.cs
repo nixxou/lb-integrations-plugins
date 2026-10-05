@@ -98,14 +98,12 @@ namespace LbIntegrations.Xemu.Saves
         public static bool Remove(string console, string titleId)
         {
             if (!File.Exists(console)) return false;
-            Dictionary<long, byte[]> clusters;
-            long size; int clusterBits; string backing;
+            string tmp;
             using (var disk = Qcow2Image.Open(console))
             {
                 var q = disk as Qcow2Image ?? throw new InvalidDataException(console + " is not a qcow2");
-                size = q.Length; clusterBits = q.ClusterBits;
-                backing = q.BackingPath ?? throw new InvalidDataException(console + " has no base under it");
-                var patched = new PatchedDisk(disk, clusterBits);
+                if (q.BackingPath == null) throw new InvalidDataException(console + " has no base under it");
+                var patched = new PatchedDisk(disk, q.ClusterBits);
                 var e = FatxVolume.Open(patched) ?? throw new InvalidDataException("no FATX partition E: on " + console);
                 var udata = e.Find("UDATA");
                 var old = udata == null || !udata.IsDirectory ? null
@@ -115,16 +113,10 @@ namespace LbIntegrations.Xemu.Saves
                 e.Flush();
                 var problems = FatxVolume.Open(patched).Check();
                 if (problems.Count > 0) throw new InvalidDataException("the console would be damaged - nothing written: " + string.Join("; ", problems.Take(5)));
-                clusters = new Dictionary<long, byte[]>();
-                foreach (var c in q.HeldClusters())
-                {
-                    var b = new byte[q.ClusterSize];
-                    q.Read(c * q.ClusterSize, b, 0, b.Length);
-                    clusters[c] = b;
-                }
-                foreach (var kv in patched.Changed) clusters[kv.Key] = kv.Value;
+                // Written again WITH its savestates (Qcow2Rebuild), checked before it replaces anything.
+                tmp = Qcow2Rebuild.WithChanges(console, q, patched.Changed);
             }
-            Qcow2Image.Build(console, backing, size, clusterBits, clusters);
+            Qcow2Rebuild.Commit(tmp, console);
             return true;
         }
 
@@ -135,7 +127,7 @@ namespace LbIntegrations.Xemu.Saves
         {
             var files = Unpack(pack);
             bool exists = File.Exists(console);
-            Dictionary<long, byte[]> clusters;
+            string tmp;
             long size; int clusterBits;
             string backing;
             using (var disk = Qcow2Image.Open(exists ? console : baseDisk))
@@ -171,19 +163,18 @@ namespace LbIntegrations.Xemu.Saves
                 var problems = FatxVolume.Open(patched).Check();
                 if (problems.Count > 0) throw new InvalidDataException("the console would be damaged - nothing written: " + string.Join("; ", problems.Take(5)));
 
-                // The new console: what the old one held, then what changed.
-                clusters = new Dictionary<long, byte[]>();
-                if (exists)
-                    foreach (var c in q.HeldClusters())
-                    {
-                        var b = new byte[q.ClusterSize];
-                        q.Read(c * q.ClusterSize, b, 0, b.Length);
-                        clusters[c] = b;
-                    }
-                foreach (var kv in patched.Changed) clusters[kv.Key] = kv.Value;
+                // The new console: what the old one held - its savestates too (Qcow2Rebuild) - then what changed; checked before
+                // it replaces anything. A console not made yet: what changed, over the base.
+                if (exists) tmp = Qcow2Rebuild.WithChanges(console, q, patched.Changed);
+                else
+                {
+                    var active = new RebuildTable();
+                    foreach (var kv in patched.Changed) active.Clusters[kv.Key] = ClusterSource.New(kv.Value);
+                    Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(console)));
+                    tmp = Qcow2Rebuild.Write(console, backing, size, clusterBits, active, new List<RebuildTable>());
+                }
             }
-            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(console)));
-            Qcow2Image.Build(console, backing, size, clusterBits, clusters);
+            Qcow2Rebuild.Commit(tmp, console);
         }
     }
 }

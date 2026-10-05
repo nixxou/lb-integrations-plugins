@@ -303,6 +303,68 @@ namespace LbIntegrations.Probe
                     Check("... the one in " + Path.GetFileName(flash), keys.GetMethod("CertificateKeyOf", Any).Invoke(null, new object[] { Path.Combine(biosDir, "mcpx_1.0.bin"), flash }) is byte[] own && own.SequenceEqual(retail));
         }
 
+        /// <summary>--qcow2-snapshots &lt;a COPY of a console&gt; [--title id --zip save]: its snapshots listed; then, with a save,
+        /// the save put into it (XemuSaveStore.Insert - the rebuild with snapshots), and every snapshot read again: its table
+        /// entry and every cluster of its L1 (disk and VM state) the same as before, byte for byte.</summary>
+        public static bool Qcow2SnapshotsCheck(Assembly asm, string console, string titleId, string zip)
+        {
+            _asm = asm;
+            var img = T("Saves.Qcow2Image");
+            object Open(string p) { try { return img.GetMethod("Open", Any).Invoke(null, new object[] { p }); } catch (TargetInvocationException ex) { throw ex.InnerException ?? ex; } }
+            object G(object o, string n) => o.GetType().GetProperty(n, Any)?.GetValue(o) ?? o.GetType().GetField(n, Any)?.GetValue(o);
+            List<(string Entry, Dictionary<long, string> Clusters)> Read(string path)
+            {
+                var all = new List<(string, Dictionary<long, string>)>();
+                var q = (IDisposable)Open(path);
+                using (q)
+                {
+                    var entryIn = q.GetType().GetMethod("EntryIn", Any);
+                    var data = q.GetType().GetMethod("ClusterData", Any);
+                    long perL2 = 1L << (int)G(q, "L2Bits");
+                    using var sha = System.Security.Cryptography.SHA1.Create();
+                    foreach (var sn in (System.Collections.IEnumerable)G(q, "Snapshots"))
+                    {
+                        var l1 = (ulong[])G(sn, "L1");
+                        var map = new Dictionary<long, string>();
+                        for (long i = 0; i < l1.Length; i++)
+                        {
+                            if ((l1[i] & 0x00FFFFFFFFFFFE00UL) == 0) continue;
+                            for (long j = 0; j < perL2; j++)
+                            {
+                                var e = (ulong?)entryIn.Invoke(q, new object[] { l1, i * perL2 + j });
+                                if (e == null || e.Value == 0) continue;
+                                map[i * perL2 + j] = (e.Value & 1) != 0 && (e.Value & (1UL << 62)) == 0 ? "zero" : Convert.ToHexString(sha.ComputeHash((byte[])data.Invoke(q, new object[] { e.Value })));
+                            }
+                        }
+                        var entry = G(sn, "Id") + "|" + G(sn, "Name") + "|" + G(sn, "DateSec") + "|" + G(sn, "VmStateSize") + "|" + Convert.ToHexString((byte[])G(sn, "Extra")) + "|" + l1.Length;
+                        all.Add((entry, map));
+                        Console.WriteLine("  snapshot " + G(sn, "Id") + " \"" + G(sn, "Name") + "\" " + G(sn, "Date") + ", VM state " + ((ulong)G(sn, "VmStateSize") >> 20) + " MB, L1 " + l1.Length + ", " + map.Count + " cluster(s)");
+                    }
+                }
+                return all;
+            }
+            Console.WriteLine("before (" + (new FileInfo(console).Length >> 20) + " MB):");
+            var before = Read(console);
+            if (titleId == null || zip == null) return true;
+            var store = T("Saves.XemuSaveStore");
+            var baseDisk = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(console)), "base.qcow2");
+            try { store.GetMethod("Insert", Any).Invoke(null, new object[] { console, baseDisk, titleId, zip }); }
+            catch (TargetInvocationException ex) { Check("the save put in", false, (ex.InnerException ?? ex).Message); return false; }
+            Console.WriteLine("after (" + (new FileInfo(console).Length >> 20) + " MB):");
+            var after = Read(console);
+            Check("as many snapshots after as before", after.Count == before.Count, after.Count + " vs " + before.Count);
+            for (int i = 0; i < Math.Min(before.Count, after.Count); i++)
+            {
+                Check("snapshot " + (i + 1) + ": its table entry the same", before[i].Entry == after[i].Entry);
+                Check("snapshot " + (i + 1) + ": every cluster the same (" + before[i].Clusters.Count + ")", before[i].Clusters.Count == after[i].Clusters.Count
+                      && before[i].Clusters.All(kv => after[i].Clusters.TryGetValue(kv.Key, out var h) && h == kv.Value));
+            }
+            var extracted = ((System.Collections.IEnumerable)store.GetMethod("Extract", Any).Invoke(null, new object[] { console, titleId })).Cast<object>().ToList();
+            var wanted = ((System.Collections.IEnumerable)store.GetMethod("Unpack", Any).Invoke(null, new object[] { zip })).Cast<object>().ToList();
+            Check("the active disk holds the save put in (" + wanted.Count + " files)", extracted.Count == wanted.Count);
+            return _bad == 0;
+        }
+
         /// <summary>--xbox-save-keys &lt;file&gt;...: saves of 04/10, their keys in the zip's comment, moved to the entry - the
         /// plugin's own code. A file without keys is left alone.</summary>
         public static bool MoveSaveKeys(Assembly asm, IEnumerable<string> packs)

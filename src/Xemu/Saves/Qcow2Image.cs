@@ -44,7 +44,7 @@ namespace LbIntegrations.Xemu.Saves
         public void Dispose() => _f.Dispose();
     }
 
-    internal sealed class Qcow2Image : IVirtualDisk
+    internal sealed partial class Qcow2Image : IVirtualDisk
     {
         private const uint Magic = 0x514649FB;
         private const ulong OffsetMask = 0x00FFFFFFFFFFFE00UL;
@@ -100,6 +100,7 @@ namespace LbIntegrations.Xemu.Saves
                 _l1 = new ulong[l1Size];
                 var l1 = ReadAt(l1Offset, (int)l1Size * 8);
                 for (int i = 0; i < l1Size; i++) _l1[i] = BE64(l1, i * 8);
+                Snapshots = ReadSnapshotTable(BE32(h, 60), (long)BE64(h, 64));
 
                 long backingOffset = (long)BE64(h, 8);
                 int backingSize = (int)BE32(h, 16);
@@ -172,12 +173,21 @@ namespace LbIntegrations.Xemu.Saves
             else Array.Clear(buffer, at, n);
         }
 
-        private ulong? L2Entry(long cluster)
+        private ulong? L2Entry(long cluster) => EntryIn(_l1, cluster);
+
+        /// <summary>The L2 entry of <paramref name="cluster"/> under the L1 table <paramref name="l1"/> (the active one, or a
+        /// snapshot's), null when no L2 table covers it.</summary>
+        internal ulong? EntryIn(ulong[] l1, long cluster)
         {
             long l1Index = cluster >> _l2Bits;
-            if (l1Index >= _l1.Length) return null;
-            long l2Offset = (long)(_l1[l1Index] & OffsetMask);
+            if (l1Index >= l1.Length) return null;
+            long l2Offset = (long)(l1[l1Index] & OffsetMask);
             if (l2Offset == 0) return null;
+            return L2Table(l2Offset)[cluster & ((1L << _l2Bits) - 1)];
+        }
+
+        internal ulong[] L2Table(long l2Offset)
+        {
             if (!_l2.TryGetValue(l2Offset, out var table))
             {
                 var raw = ReadAt(l2Offset, (int)_clusterSize);
@@ -185,11 +195,14 @@ namespace LbIntegrations.Xemu.Saves
                 for (int i = 0; i < table.Length; i++) table[i] = BE64(raw, i * 8);
                 _l2[l2Offset] = table;
             }
-            return table[cluster & ((1L << _l2Bits) - 1)];
+            return table;
         }
 
-        private byte[] Inflate(long cluster, ulong entry)
+        private byte[] Inflate(long cluster, ulong entry) => InflateEntry(entry);
+
+        internal byte[] InflateEntry(ulong entry)
         {
+            long cluster = (long)(entry & ~(1UL << 63));
             if (_inflated.TryGetValue(cluster, out var done)) return done;
             int x = 62 - (_clusterBits - 8);
             long host = (long)(entry & ((1UL << x) - 1));
@@ -207,7 +220,7 @@ namespace LbIntegrations.Xemu.Saves
             return data;
         }
 
-        private byte[] ReadAt(long offset, int count)
+        internal byte[] ReadAt(long offset, int count)
         {
             var b = new byte[count];
             _f.Seek(offset, SeekOrigin.Begin);
