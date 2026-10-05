@@ -130,6 +130,7 @@ namespace LbIntegrations.Demul
 
                 var board = Board();
                 if (board == null) return;
+                if (!DemulSettings.SortImport(board)) { Log.Info("[import] " + board + " import: sorting turned off in the Nixx window - the list is left as it is"); return; }
                 var exe = ChosenEmulator(wizard, out var where);
                 if (exe == null || !IsDemul(exe))
                 {
@@ -350,7 +351,13 @@ namespace LbIntegrations.Demul
 
             // THE RIGHT BOARD, UNKNOWN TO DEMUL: asked, once for all of them (Mehdi, 06/10).
             var unknowns = findings.Where(f => f.Drop == null && f.Unknown).ToList();
-            if (unknowns.Count > 0 && !Quiet)
+            var policy = DemulSettings.UnknownSets;
+            if (unknowns.Count > 0 && policy != "ask")
+            {
+                if (policy == "drop") foreach (var f in unknowns) f.Drop = "not in Demul's list of games (left out, as the Nixx window says)";
+                Log.Info("[import] " + unknowns.Count + " set(s) of the board unknown to Demul: " + (policy == "drop" ? "left out" : "kept") + ", as the Nixx window says");
+            }
+            else if (unknowns.Count > 0 && !Quiet)
             {
                 var answer = MessageBox.Show(owner,
                     unknowns.Count + " " + board + " game(s) of this folder are not in Demul's list of games, so Demul will most likely not run them:\n\n"

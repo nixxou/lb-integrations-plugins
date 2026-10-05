@@ -35,6 +35,8 @@
     <Compile Include="..\Shared.Lbip\**\*.cs" />
     <!-- And the menu helpers: the right-click entry's icon (LbipMenuIcon). -->
     <Compile Include="..\Shared.Menu\**\*.cs" />
+    <!-- The look of the Nixx windows, LiteBox's: the theme and the shell of a game's window. -->
+    <Compile Include="..\Shared.Ui\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>

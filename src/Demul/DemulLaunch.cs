@@ -81,13 +81,48 @@ namespace LbIntegrations.Demul
 
             bool changed = ini.Changed;
             ini.SaveIfChanged();
+            PrepareGpu(emuDir, system);
             Log.Info("Demul.ini " + (changed ? "updated" : "already right") + ": " + system + ", "
                      + paths.Count + " rom folder(s) (" + users.Count + " of the user's), gpu "
                      + (OldGpu(system) ? "gpuDX11old" : "gpuDX11"));
         }
 
-        /// <summary>The boards the new DX11 plugin cannot run.</summary>
-        public static bool OldGpu(string system) => system == "gaelco" || system == "cave3rd";
+        /// <summary>The video plugin is the old one: by board (auto - the boards the new DX11 plugin cannot run, as Batocera
+        /// does), or always or never, as the Nixx window says (DemulSettings.VideoPlugin).</summary>
+        public static bool OldGpu(string system)
+        {
+            var choice = DemulSettings.VideoPlugin;
+            return choice == "old" || (choice == "auto" && (system == "gaelco" || system == "cave3rd"));
+        }
+
+        /// <summary>The picture, in the video plugin's own .ini (gpuDX11.ini, or gpuDX11old.ini - each plugin reads its own):
+        /// full screen at the screen's resolution, the aspect, vsync, Gaelco's scaling - Batocera's keys and values
+        /// (batocera_launch/emulators/demul.py), read off the gpuDX11.ini the archive ships ([main] UseFullscreen, aspect,
+        /// Vsync, scaling; [resolution] Width, Height). Every other line of the file stays as it is (DemulIni).</summary>
+        public static void PrepareGpu(string emuDir, string system)
+        {
+            var name = OldGpu(system) ? "gpuDX11old.ini" : "gpuDX11.ini";
+            var gpu = DemulIni.Load(Path.Combine(emuDir, name));
+            bool full = DemulSettings.Fullscreen;
+            gpu.Set("main", "UseFullscreen", full ? "1" : "0");
+            gpu.Set("main", "aspect", DemulSettings.Aspect.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            gpu.Set("main", "Vsync", DemulSettings.VSync ? "1" : "0");
+            gpu.Set("main", "scaling", (system == "gaelco" ? DemulSettings.GaelcoScaling : 1).ToString(System.Globalization.CultureInfo.InvariantCulture));
+            if (full)
+            {
+                // The screen the game opens on is the main one: its size, as Batocera gives Demul its display's.
+                var screen = System.Windows.Forms.Screen.PrimaryScreen?.Bounds;
+                if (screen != null && screen.Value.Width > 0)
+                {
+                    gpu.Set("resolution", "Width", screen.Value.Width.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    gpu.Set("resolution", "Height", screen.Value.Height.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                }
+            }
+            bool changed = gpu.Changed;
+            gpu.SaveIfChanged();
+            Log.Info(name + " " + (changed ? "updated" : "already right") + ": fullscreen " + (full ? "on" : "off") + ", aspect " + DemulSettings.Aspect
+                     + ", vsync " + (DemulSettings.VSync ? "on" : "off") + (system == "gaelco" ? ", scaling " + DemulSettings.GaelcoScaling : ""));
+        }
 
         /// <summary>The command line for the game: "-run=dc -image=&quot;path&quot;" for a disc, "-run=naomi
         /// -rom=set" for a romset. Switches the user put on the emulator's line that are not one of these
