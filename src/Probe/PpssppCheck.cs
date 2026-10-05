@@ -39,7 +39,7 @@ namespace LbIntegrations.Probe
             IEnumerable<System.Windows.Forms.Control> All(System.Windows.Forms.Control c) => new[] { c }.Concat(c.Controls.Cast<System.Windows.Forms.Control>().SelectMany(All));
             int Bars() => All(form).Count(c => c is System.Windows.Forms.Panel && c.Width == 4 && c.Parent is not System.Windows.Forms.FlowLayoutPanel && c.Visible
                                 && (c.BackColor.ToArgb() == System.Drawing.Color.FromArgb(0, 120, 215).ToArgb() || c.BackColor.ToArgb() == System.Drawing.Color.FromArgb(205, 45, 45).ToArgb()));   // ours, blue or red: amber is the game's own config, which a reset leaves
-            var tabs = form.Controls.OfType<System.Windows.Forms.TabControl>().First();
+            var tabs = form.Controls.Cast<System.Windows.Forms.Control>().SelectMany(ProbeUi.Deep).OfType<System.Windows.Forms.TabControl>().First();
             int before = 0;
             foreach (System.Windows.Forms.TabPage page in tabs.TabPages) { tabs.SelectedTab = page; System.Windows.Forms.Application.DoEvents(); before += Bars(); }
             form.GetType().GetMethod("ResetDefaults", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(form, null);

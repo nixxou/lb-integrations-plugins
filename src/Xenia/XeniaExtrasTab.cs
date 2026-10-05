@@ -45,33 +45,51 @@ namespace LbIntegrations.Xenia
             _stack.Controls.Clear();
             _updates.Clear();
             _dlc.Clear();
-            Label Line(string text, bool grey = true) => new Label { Text = text, AutoSize = true, MaximumSize = new Size(560, 0), ForeColor = grey ? SystemColors.GrayText : SystemColors.ControlText, Margin = new Padding(0, 2, 0, 6) };
+            Label Line(string text, bool grey = true) => new Label { Text = text, AutoSize = true, MaximumSize = new Size(520, 0), ForeColor = grey ? SystemColors.GrayText : SystemColors.ControlText, Margin = new Padding(0, 2, 0, 6) };
+            // The page in cards (Mehdi, 05/10: as the Nixx window's): the game's folder, its title update, its DLC.
+            FlowLayoutPanel Card(string title)
+            {
+                var box = XeniaConsolePanel.Group(title);
+                box.MinimumSize = new Size(540, 0);
+                var inner = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Location = new Point(8, 20) };
+                box.Controls.Add(inner);
+                _stack.Controls.Add(box);
+                return inner;
+            }
 
             if (_layout == null || Folder == null) { _stack.Controls.Add(Line("No Xenia or no game file: nothing to look at.", false)); _stack.ResumeLayout(); return; }
             if (look) XeniaScan.ScanShowing(Folder, "Nixx-Xenia - Looking at the game's folder");
             _extras = XeniaExtras.For(_rom, _layout);
+            var folder = Card("The game's folder");
             if (_extras == null)
             {
-                _stack.Controls.Add(Line(look
+                folder.Controls.Add(Line(look
                     ? "This game was not recognised in its folder (" + Folder + "): its title id could not be read, so nothing can be matched to it."
                     : "This game's folder has not been looked at yet. Click Look at the folder to look in " + Folder + ".", false));
                 if (!look)
                 {
                     var first = new Button { Text = "Look at the folder", AutoSize = true, Margin = new Padding(0, 4, 0, 0) };
                     first.Click += (_, _) => Build(look: true);
-                    _stack.Controls.Add(first);
+                    folder.Controls.Add(first);
                 }
                 _stack.ResumeLayout();
                 return;
             }
             var (update, dlc) = XeniaExtras.Chosen(_extras, keep);
 
-            _stack.Controls.Add(Line("Title id " + _extras.Game.TitleId + (_extras.Game.Digest.Length > 0 ? "  -  executable " + _extras.Game.Digest.Substring(0, 8) : "")
+            folder.Controls.Add(Line("Title id " + _extras.Game.TitleId + (_extras.Game.Digest.Length > 0 ? "  -  executable " + _extras.Game.Digest.Substring(0, 8) : "")
                                      + (look ? ". Looked for in " + Folder + " and its subfolders." : ". What was seen so far - click Look at the folder to look in " + Folder + ".")));
+            // A short sentence, the whole of it on hover (Mehdi, 05/10).
+            folder.Controls.Add(LbIntegrations.Lbip.LbipHint.Note("Put in place at the next launch; Session says where. Your files are never changed.",
+                "Put in place at the next launch - on a RAM disk or on the disk: the Session tab says which, and why. Unpacked once on the disk, "
+                + "changing the choice later unpacks nothing again. Your own files are never changed.", 520, new Padding(0, 2, 0, 6)));
+            var again = new Button { Text = look ? "Look at the folder again" : "Look at the folder", AutoSize = true, Margin = new Padding(0, 0, 0, 2) };
+            again.Click += (_, _) => Build(look: true);
+            folder.Controls.Add(again);
 
             // ── the update ──
-            var ub = XeniaConsolePanel.Group("Title update (one at most - each holds every earlier one)");
-            var uf = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Location = new Point(8, 20) };
+            var uf = Card("Title update");
+            uf.Controls.Add(Line("One at most: each holds every earlier one."));
             // What the Patches tab has for each version (XeniaPatches.FileFor) - from the files and copies already here.
             List<XeniaPatchFile> patchFiles;
             try { patchFiles = XeniaPatches.Known(_layout, _extras.Game.TitleId); } catch { patchFiles = new List<XeniaPatchFile>(); }
@@ -83,7 +101,7 @@ namespace LbIntegrations.Xenia
                 var text = names.Count == 0 ? (sure ? "No patch for this version." : "No patch named for this version.")
                          : names.Count + " patch" + (names.Count > 1 ? "es" : "") + " for this version in the Patches tab: " + string.Join(", ", names)
                            + (sure ? "" : " (by the file's name)") + ".";
-                return new Label { Text = text, AutoSize = true, MaximumSize = new Size(520, 0), ForeColor = names.Count > 0 ? SystemColors.ControlText : SystemColors.GrayText, Margin = new Padding(20, 0, 0, 4) };
+                return new Label { Text = text, AutoSize = true, MaximumSize = new Size(500, 0), ForeColor = names.Count > 0 ? SystemColors.ControlText : SystemColors.GrayText, Margin = new Padding(20, 0, 0, 4) };
             }
 
             var none = new RadioButton { Text = "None: the game as released", AutoSize = true, Checked = update == null, Margin = new Padding(3, 3, 0, 3) };
@@ -102,12 +120,9 @@ namespace LbIntegrations.Xenia
                 _updates.Add((r, u));
             }
             if (_extras.Updates.Count == 0) uf.Controls.Add(Line("No title update for this game in its folder."));
-            ub.Controls.Add(uf);
-            _stack.Controls.Add(ub);
 
             // ── the DLC ──
-            var db = XeniaConsolePanel.Group("DLC (" + _extras.Dlc.Count + ")");
-            var df = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Location = new Point(8, 20) };
+            var df = Card("DLC (" + _extras.Dlc.Count + ")");
             foreach (var d in _extras.Dlc.OrderBy(x => x.Entry.Name, StringComparer.CurrentCultureIgnoreCase))
             {
                 var c = new CheckBox
@@ -130,14 +145,6 @@ namespace LbIntegrations.Xenia
                 df.Controls.Add(all);
                 df.Controls.Add(nothing);
             }
-            db.Controls.Add(df);
-            _stack.Controls.Add(db);
-
-            _stack.Controls.Add(Line("Put in place at the next launch - on a RAM disk or on the disk: the Session tab says which, and why. Unpacked once on the disk, "
-                                     + "changing the choice later unpacks nothing again. Your own files are never changed."));
-            var again = new Button { Text = look ? "Look at the folder again" : "Look at the folder", AutoSize = true, Margin = new Padding(0, 4, 0, 0) };
-            again.Click += (_, _) => Build(look: true);
-            _stack.Controls.Add(again);
             _stack.ResumeLayout();
         }
 

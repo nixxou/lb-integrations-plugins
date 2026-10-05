@@ -113,13 +113,17 @@ namespace LbIntegrations.SuperZsnes
         }
 
         /// <summary>The options <paramref name="show"/> picks, with <paramref name="saved"/>'s values; the in-process plugin's
-        /// box under them when <paramref name="deploy"/>; <paramref name="where"/> at the bottom.</summary>
+        /// box under them when <paramref name="deploy"/>; <paramref name="where"/> at the bottom. <paramref name="intro"/> is one
+        /// short sentence, <paramref name="introFull"/> - when given - the whole of it on hover.</summary>
         public SuperZsnesSettingsPage(Func<Option, bool> show, Dictionary<string, string> saved, string intro, bool deploy, string where,
-                                      Dictionary<string, string> running = null)
+                                      Dictionary<string, string> running = null, string introFull = null)
         {
             saved = saved ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             _current = running ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var top = new Label { Dock = DockStyle.Top, Height = 52, Padding = new Padding(12, 8, 12, 0), ForeColor = SystemColors.GrayText, Text = intro };
+            // One line, sized on its text (Mehdi, 05/10: short sentences, the rest on hover).
+            var top = LbIntegrations.Lbip.LbipHint.Note(intro, introFull, 0, Padding.Empty);
+            top.Dock = DockStyle.Top;
+            top.Padding = new Padding(12, 8, 12, 6);
 
             var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(8) };
             var stack = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
@@ -366,9 +370,13 @@ namespace LbIntegrations.SuperZsnes
                 var set = _rows.Where(r => SuperZsnesOptions.ScreenKeys.Contains(r.Option.IniKey, StringComparer.OrdinalIgnoreCase) && ValueOf(r) != null)
                                .Select(r => r.Option.Label).ToList();
                 _screenNote.ForeColor = set.Count > 0 ? Color.Firebrick : SystemColors.GrayText;
+                // Short, the whole of it on hover (Mehdi, 05/10).
                 _screenNote.Text = set.Count > 0
+                    ? "Main display full screen off for this game: " + string.Join(", ", set) + " set here."
+                    : "Set any of these, and the main display full screen is off for this game.";
+                LbIntegrations.Lbip.LbipHint.Attach(_screenNote, set.Count > 0
                     ? "Overridden: \"Always full screen on the primary display\" (the SUPER ZSNES tab) is not passed for this game - " + string.Join(", ", set) + " set here."
-                    : "Set any of these, and \"Always full screen on the primary display\" (the SUPER ZSNES tab) is not passed for this game.";
+                    : "Set any of these, and \"Always full screen on the primary display\" (the SUPER ZSNES tab) is not passed for this game.");
             }
             _count.Text = flags.Count == 0 ? "Nothing added to the command line." : flags.Count + " option(s) added to the command line, before the ROM path:";
             _line.Text = string.Join(" ", flags.Select(f => f.Text));

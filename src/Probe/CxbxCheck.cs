@@ -549,7 +549,7 @@ namespace LbIntegrations.Probe
                 var gameForm = (System.Windows.Forms.Form)Activator.CreateInstance(T("CxbxGameForm"), Any, null, new object[] { new List<Unbroken.LaunchBox.Plugins.Data.IGame> { game } }, null);
                 Snap(gameForm, Path.Combine(outDir, "cxbx-game.png"));
                 var second = (System.Windows.Forms.Form)Activator.CreateInstance(T("CxbxGameForm"), Any, null, new object[] { new List<Unbroken.LaunchBox.Plugins.Data.IGame> { game } }, null);
-                second.Shown += (_, _) => { foreach (var tc in second.Controls.OfType<System.Windows.Forms.TabControl>()) tc.SelectedIndex = 1; };
+                second.Shown += (_, _) => { foreach (var tc in second.Controls.Cast<System.Windows.Forms.Control>().SelectMany(ProbeUi.Deep).OfType<System.Windows.Forms.TabControl>()) tc.SelectedIndex = 1; };
                 Snap(second, Path.Combine(outDir, "cxbx-game-options.png"));
                 Console.WriteLine("  shots in " + outDir);
                 return true;

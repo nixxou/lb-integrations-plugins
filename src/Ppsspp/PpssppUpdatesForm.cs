@@ -23,37 +23,51 @@ namespace LbIntegrations.Ppsspp
             StartPosition = FormStartPosition.CenterParent;
             ShowInTaskbar = false;
             Font = new Font("Segoe UI", 9f);
-            ClientSize = new Size(584, 462);
+            ClientSize = new Size(584, 560);
 
             string rom = null;
             try { rom = LbIntegrations.Lbip.LbipImportWatch.Full(game?.ApplicationPath); } catch { }
             var discVersion = rom == null ? null : PspDiscId.SfoOf(rom)?.GetString("DISC_VERSION")?.Trim();
-            Controls.Add(new Label { AutoSize = false, Location = new Point(12, 10), Size = new Size(560, 20), Text = title + "   (" + discId + (discVersion != null ? " " + discVersion : "") + ")" });
-            Controls.Add(CompatRow(discId, discVersion, new Point(12, 32), layout));
-            // Under it: the whole list read again (Mehdi, 05/10), the date of the last one.
+
+            // TWO CARDS, top-down as the Nixx window's pages (Mehdi, 05/10: "uniformiser l'ensemble"): the game's compatibility
+            // and its whole-list refresh, then its updates. Stacked, not placed: the refresh row wraps when its date is long.
+            var stack = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(8, 8, 8, 0) };
+            stack.Controls.Add(new Label { AutoSize = true, MaximumSize = new Size(560, 0), Margin = new Padding(4, 0, 0, 6), Text = title + "   (" + discId + (discVersion != null ? " " + discVersion : "") + ")" });
+
+            // ── Compatibility: the game's state, and under it the whole list read again (Mehdi, 05/10), the date of the last one ──
+            var compat = Card("Compatibility");
+            compat.Inner.Controls.Add(CompatRow(discId, discVersion, layout));
             string listExe = null;
             try { listExe = string.IsNullOrEmpty(layout?.InstallDir) ? null : PpssppPaths.FindExecutable(layout.InstallDir); } catch { }
-            var whole = LbIntegrations.Lbip.LbipListRefresh.Row("PPSSPP's compatibility list",
+            compat.Inner.Controls.Add(LbIntegrations.Lbip.LbipListRefresh.Row("PPSSPP's compatibility list",
                 () => PpssppCompat.Downloaded() is DateTime d ? "read " + d.ToString("g") + " (report.ppsspp.org, 100 games a page)" : "never read whole - a game's own page is read when its window opens",
-                job => PpssppCompat.RebuildWhole(listExe, job), null, 560);
-            whole.Location = new Point(12, 56);
-            Controls.Add(whole);
-            Controls.Add(new Label { AutoSize = false, Location = new Point(12, 94), Size = new Size(560, 20), Text = "Updates", Font = new Font(Font, FontStyle.Bold) });
-            Controls.Add(new Label
-            {
-                AutoSize = false, Location = new Point(12, 114), Size = new Size(560, 48), ForeColor = SystemColors.GrayText,
-                Text = "A game update is a PBOOT.PBP that PPSSPP starts in place of the disc's executable, when it is made for this disc's "
-                     + "version (" + (discVersion ?? "?") + "). Installed into the memory stick (PSP\\GAME\\" + discId + ") once, and kept there: "
-                     + "never installed unasked.",
-            });
-            var installed = new Label { AutoSize = false, Location = new Point(12, 164), Size = new Size(560, 20) };
-            var list = new ListView { Location = new Point(12, 186), Size = new Size(560, 196), View = View.Details, FullRowSelect = true, MultiSelect = false, HideSelection = false, ShowItemToolTips = true };
-            list.Columns.Add("Update", 250);
+                job => PpssppCompat.RebuildWhole(listExe, job), null, Inside));
+            stack.Controls.Add(compat.Box);
+
+            // ── Updates: the ones found, the one installed, the buttons ──
+            var updates = Card("Updates");
+            updates.Inner.Controls.Add(LbIntegrations.Lbip.LbipHint.Note(
+                "Made for disc version " + (discVersion ?? "?") + "; installed once, never unasked.",
+                "A game update is a PBOOT.PBP that PPSSPP starts in place of the disc's executable, when it is made for this disc's "
+                + "version (" + (discVersion ?? "?") + "). Installed into the memory stick (PSP\\GAME\\" + discId + ") once, and kept there: "
+                + "never installed unasked.", Inside, new Padding(0, 0, 0, 6)));
+            var installed = new Label { AutoSize = true, MaximumSize = new Size(Inside, 0), Margin = new Padding(0, 0, 0, 4) };
+            var list = new ListView { Size = new Size(Inside, 160), View = View.Details, FullRowSelect = true, MultiSelect = false, HideSelection = false, ShowItemToolTips = true, Margin = new Padding(0, 0, 0, 6) };
+            list.Columns.Add("Update", 230);
             list.Columns.Add("For disc version", 110);
-            list.Columns.Add("File", 190);
-            var install = new Button { Text = "Install the selected", AutoSize = true, Location = new Point(12, 390) };
-            var remove = new Button { Text = "Remove the installed one", AutoSize = true, Location = new Point(170, 390) };
-            var close = new Button { Text = "Close", Width = 90, Location = new Point(482, 426), DialogResult = DialogResult.OK };
+            list.Columns.Add("File", 180);
+            var install = new Button { Text = "Install the selected", AutoSize = true, Margin = new Padding(0, 0, 6, 0) };
+            var remove = new Button { Text = "Remove the installed one", AutoSize = true, Margin = Padding.Empty };
+            var actions = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty };
+            actions.Controls.AddRange(new Control[] { install, remove });
+            updates.Inner.Controls.AddRange(new Control[] { installed, list, actions });
+            stack.Controls.Add(updates.Box);
+
+            var close = new Button { Text = "Close", Width = 90, DialogResult = DialogResult.OK, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
+            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 46 };
+            bottom.Controls.Add(close);
+            bottom.Layout += (_, _) => close.Location = new Point(bottom.ClientSize.Width - 12 - close.Width, 10);
+
             void Show_()
             {
                 list.Items.Clear();
@@ -82,16 +96,31 @@ namespace LbIntegrations.Ppsspp
                 if (why != null) MessageBox.Show(this, why, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 Show_();
             };
-            Controls.AddRange(new Control[] { installed, list, install, remove, close });
+            Controls.Add(stack);
+            Controls.Add(bottom);
             AcceptButton = CancelButton = close;
             Show_();
+            // Dressed as the Nixx window (Mehdi, 05/10): LiteBox's look; no tabs here, so only themed.
+            LbIntegrations.Ui.NixxShell.Dress(this);
         }
 
+        /// <summary>The width a card's content gets: the window's, less the margins and the box's own.</summary>
+        private const int Inside = 528;
+
+        /// <summary>A card: a group box sized on the stack in it - the stack PLACED under its caption, never docked (a docked
+        /// child of a box that sizes itself on its children comes out a sliver, as SUPER ZSNES's page found).</summary>
+        private static (GroupBox Box, FlowLayoutPanel Inner) Card(string title)
+        {
+            var box = new GroupBox { Text = title, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, MinimumSize = new Size(552, 0), Padding = new Padding(8, 4, 8, 8), Margin = new Padding(4, 0, 4, 10) };
+            var inner = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Location = new Point(10, 22), Margin = Padding.Empty };
+            box.Controls.Add(inner);
+            return (box, inner);
+        }
         /// <summary>"● PPSSPP compatibility: Perfect   report page" - the database's at once, the game's page read in the
         /// background when its line is a week old. The link is there whatever is known.</summary>
-        private Control CompatRow(string discId, string discVersion, Point at, PpssppLayout layout)
+        private Control CompatRow(string discId, string discVersion, PpssppLayout layout)
         {
-            var row = new FlowLayoutPanel { Location = at, Size = new Size(560, 24), WrapContents = false, Margin = Padding.Empty };
+            var row = new FlowLayoutPanel { Size = new Size(Inside, 24), WrapContents = false, Margin = Padding.Empty };
             var dot = new Label { Text = "●", AutoSize = true, Margin = new Padding(0, 2, 2, 0) };
             var what = new Label { Text = "PPSSPP compatibility:", AutoSize = true, Margin = new Padding(0, 3, 4, 0) };
             var rating = new Label { AutoSize = true, Font = new Font(Font, FontStyle.Bold), Margin = new Padding(0, 3, 12, 0) };

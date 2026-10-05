@@ -185,6 +185,20 @@ namespace LbIntegrations.SuperZsnes
             ["plugin.display"] = "Every game full screen on the main display.",
             ["plugin.persist"] = "Keeps the pack's overrides in the emulator's settings for good.",
             ["plugin.log"] = "The in-process plugin writes a diagnostic log.",
+            // A game's own (its right-click window): what the name does not say, the switch itself on hover.
+            ["unity.screen-fullscreen"] = "Takes the place of the remembered mode, for this launch only.",
+            ["unity.screen-width"] = "With a height: the window's size, or the full screen resolution.",
+            ["unity.screen-height"] = "With a width: the window's size, or the full screen resolution.",
+            ["unity.popupwindow"] = "A window without title bar or borders.",
+            ["unity.monitor"] = "The display to open on, counted from 1.",
+            ["native.loadstate"] = "Loads the state written when the emulator's menu last opened.",
+            ["setting.gfxMode"] = "Scanlines like a CRT, or the 3D gimmick.",
+            ["setting.scanlineStrength"] = "From 0 to 1, for the Scanlines effect.",
+            ["setting.interpolationMode"] = "The emulator's own list, counted from 0.",
+            ["setting.use87aspect"] = "Square pixels, as the console outputs them.",
+            ["setting.uiVolumeInv"] = "The emulator's own scale, from 0 to 1.",
+            ["setting.gameVolumeInv"] = "The emulator's own scale, from 0 to 1.",
+            ["setting.msu1VolumeInv"] = "The emulator's own scale, from 0 to 1.",
         };
 
         static SuperZsnesOptions() { foreach (var o in All) if (Shorts.TryGetValue(o.IniKey, out var s)) o.Short = s; }

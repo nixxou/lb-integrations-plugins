@@ -632,7 +632,7 @@ namespace LbIntegrations.Probe
                 form.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
                 form.Location = new System.Drawing.Point(-3000, -3000);
                 form.Show();
-                var tabs = form.Controls.OfType<System.Windows.Forms.TabControl>().First();
+                var tabs = form.Controls.Cast<System.Windows.Forms.Control>().SelectMany(ProbeUi.Deep).OfType<System.Windows.Forms.TabControl>().First();
                 foreach (System.Windows.Forms.TabPage page in tabs.TabPages)
                 {
                     if (set.Length > 1 && page.Text != "Emulation" && page.Text != "Cartridge") continue;

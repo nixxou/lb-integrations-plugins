@@ -286,8 +286,11 @@ namespace LbIntegrations.Cxbx
                 if (d.Xbe != null) facts.Add("Title " + d.Xbe.TitleIdText + (d.Xbe.TitleName.Length > 0 ? "  \"" + d.Xbe.TitleName + "\"" : "") + "  - its saves: E:\\UDATA\\" + d.Xbe.TitleIdText);
                 if (d.Problem != null && d.Kind != CxbxRomKind.ImageInArchive) facts.Add("Cannot be launched: " + d.Problem);
             }
-            if (games.Count > 1) facts.Add("The choice below goes to the " + games.Count + " games selected.");
-            stack.Controls.Add(new Label { Text = string.Join("\n", facts), AutoSize = true, MaximumSize = new Size(560, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(2, 0, 0, 8) });
+            if (games.Count > 1) facts.Add("The " + games.Count + " games selected take the same choices; what is shown is the first one's.");
+            // Above the pages, as Nixx-Xemu's window has it (Mehdi, 05/10: "uniformiser l'ensemble"): what the game is, read once,
+            // whichever page is shown.
+            var header = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(8, 6, 8, 4) };
+            header.Controls.Add(new Label { Text = string.Join("\n", facts), AutoSize = true, MaximumSize = new Size(620, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(2, 0, 0, 2), UseMnemonic = false });
 
             // Its state in Cxbx-Reloaded's compatibility list - this very version, then the game's others - asked again in
             // the background as the window opens (at most every 6 hours), and redrawn if the site says something new.
@@ -308,7 +311,7 @@ namespace LbIntegrations.Cxbx
                 CxbxCompat.RefreshGame(d.Xbe, done: changed => OnUi(() => ShowCompat(d.Xbe, changed ? "Just asked the site again: updated." : "")));
             }
 
-            var where = CxbxSettingsPage.Group("Where it is unpacked");
+            var where = CxbxSettingsPage.Group("Where it runs from");
             var w = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Location = new Point(8, 20) };
             var placement = CxbxSettings.Placement(choice);
             // Read where it is (AIM) - a bare ISO / XISO / CSO / CCI / CHD, or a ZArchive. Three states: on, off, every game's (the grey square).
@@ -321,36 +324,40 @@ namespace LbIntegrations.Cxbx
                 CheckState = own == "on" ? CheckState.Checked : own == "off" ? CheckState.Unchecked : CheckState.Indeterminate,
                 Enabled = noSupport == null && bareImage,
             };
-            new ToolTip().SetToolTip(_attachGame, "Grey: as every game (the Cxbx-Reloaded tab of the Nixx window, now "
-                                                  + (CxbxSettings.On(CxbxSettings.Read(), "attach_discs", true) ? "on" : "off") + ").");
+            var attachGrey = "Grey: as every game (the Cxbx-Reloaded tab of the Nixx window, now "
+                             + (CxbxSettings.On(CxbxSettings.Read(), "attach_discs", true) ? "on" : "off") + ").";
             w.Controls.Add(_attachGame);
-            w.Controls.Add(new Label
-            {
-                AutoSize = true, MaximumSize = new Size(520, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(20, 0, 3, 8),
-                Text = noSupport != null ? "Unavailable: " + noSupport + "."
-                     : !bareImage ? "Only for a bare disc image (ISO, XISO, CSO, CCI, CHD) or a .zar - a zip or a 7z is unpacked."
-                     : "Grey: as every game. When it is mounted, the choice below is not used - nothing is unpacked.",
-            });
+            // A short sentence under it, the whole of it on hover (Mehdi, 05/10) - over the choice too.
+            const string attachOnlyFull = "Only for a bare disc image (ISO, XISO, CSO, CCI, CHD) or a .zar - a zip or a 7z is unpacked.";
+            const string attachFull = "Grey: as every game. When it is mounted, the choice below is not used - nothing is unpacked.";
+            var attachNote = noSupport != null ? LbIntegrations.Lbip.LbipHint.Note("Unavailable: " + noSupport + ".", null, 520, new Padding(20, 0, 3, 8))
+                           : !bareImage ? LbIntegrations.Lbip.LbipHint.Note("Only for a bare disc image or a .zar; zips and 7z are unpacked.", attachOnlyFull, 520, new Padding(20, 0, 3, 8))
+                           : LbIntegrations.Lbip.LbipHint.Note("Grey: as every game. When mounted, nothing is unpacked.", attachFull, 520, new Padding(20, 0, 3, 8));
+            LbIntegrations.Lbip.LbipHint.Attach(_attachGame, attachGrey + (noSupport != null ? "" : "\n" + (!bareImage ? attachOnlyFull : attachFull)));
+            w.Controls.Add(attachNote);
             _auto = new RadioButton { Text = "Automatic - a RAM disk when it fits under the threshold, else the disk", AutoSize = true, Checked = placement == "auto" };
             _ram = new RadioButton { Text = "Always a RAM disk, whatever its size (when one can be had)", AutoSize = true, Checked = placement == "ram" };
             _disk = new RadioButton { Text = "Always the disk", AutoSize = true, Checked = placement == "disk" };
             _keep = new CheckBox { Text = "Keep its copy on the disk - never removed to make room", AutoSize = true, Checked = CxbxSettings.Keep(choice), Margin = new Padding(3, 8, 3, 3) };
             _plan = new Label { AutoSize = true, MaximumSize = new Size(540, 0), Margin = new Padding(3, 8, 3, 3) };
-            w.Controls.AddRange(new Control[] { _auto, _ram, _disk, _keep, _plan });
+            w.Controls.AddRange(new Control[] { _auto, _ram, _disk, _plan });
             _attachGame.CheckStateChanged += (_, _) => ShowPlan();
             where.Controls.Add(w);
             stack.Controls.Add(where);
 
             var disk = CxbxSettingsPage.Group("Its copy on the disk");
-            var k = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true, Location = new Point(8, 20) };
+            // Its copy, and whether it stays: one card (Mehdi, 05/10: "hésite pas à réorganiser").
+            var copy = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Location = new Point(8, 20) };
+            var k = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true, Margin = Padding.Empty };
             _onDisk = new Label { AutoSize = true, Margin = new Padding(3, 7, 8, 3) };
             _delete = new Button { Text = "Delete it", AutoSize = true };
             _delete.Click += (_, _) => DeleteCopy();
             k.Controls.Add(_onDisk); k.Controls.Add(_delete);
-            disk.Controls.Add(k);
+            copy.Controls.Add(k); copy.Controls.Add(_keep);
+            disk.Controls.Add(copy);
             stack.Controls.Add(disk);
 
-            // Two tabs: the game (what it is, where it goes), and its options - every game's for what it leaves unset.
+            // Two pages: the game (its compatibility, where it runs from, its copy), and its options - every game's for what it leaves unset.
             var tabs = new TabControl { Dock = DockStyle.Fill };
             var gameTab = new TabPage("Game") { UseVisualStyleBackColor = true };
             var gameScroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(8) };
@@ -361,18 +368,17 @@ namespace LbIntegrations.Cxbx
             var optionsTab = new TabPage("Options") { UseVisualStyleBackColor = true };
             var optionsScroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(8) };
             var optionsStack = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
-            optionsStack.Controls.Add(new Label
-            {
-                AutoSize = true, MaximumSize = new Size(560, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(4, 0, 0, 6),
-                Text = (games.Count > 1 ? "The options of the " + games.Count + " games selected, shown from the first. " : "This game's own options. ")
-                       + "Unset, an option is every game's (the Nixx window's Cxbx-Reloaded tab), else Cxbx-Reloaded's own setting. "
-                       + "They are written into Cxbx-Reloaded's settings for the time of the game, then put back.",
-            });
+            // The page's title says what it is: one sentence, the whole of it on hover (Mehdi, 05/10).
+            optionsStack.Controls.Add(LbIntegrations.Lbip.LbipHint.Note("For this game only; unset, the Nixx window's choice applies.",
+                (games.Count > 1 ? "The options of the " + games.Count + " games selected, shown from the first. " : "This game's own options. ")
+                + "Unset, an option is every game's (the Nixx window's Cxbx-Reloaded tab), else Cxbx-Reloaded's own setting. "
+                + "They are written into Cxbx-Reloaded's settings for the time of the game, then put back.",
+                580, new Padding(4, 0, 0, 6)));
             _rows = new CxbxOptionRows(choice, CxbxOptionRows.GameFallback(CxbxSettings.Read(), CxbxOwn.Read(_exe)));
             _rowsAtOpen = _rows.Values();
             optionsStack.Controls.Add(CxbxOptionRows.Legend("Not set: every game's, else the default, else Cxbx-Reloaded's own"));
             var reset = new Button { Text = "Reset to defaults", AutoSize = true, Margin = new Padding(4, 0, 0, 6) };
-            new ToolTip().SetToolTip(reset, "Every option of this game back to unset. Nothing is saved until OK.");
+            LbIntegrations.Lbip.LbipHint.Attach(reset, "Every option of this game back to unset. Nothing is saved until OK.");
             reset.Click += (_, _) => _rows.Reset();
             optionsStack.Controls.Add(reset);
             optionsStack.Controls.Add(_rows);
@@ -392,10 +398,13 @@ namespace LbIntegrations.Cxbx
             };
             AcceptButton = ok; CancelButton = cancel;
             Controls.Add(tabs);
+            Controls.Add(header);
             Controls.Add(bottom);
 
             foreach (var r in new[] { _auto, _ram, _disk }) r.CheckedChanged += (_, _) => ShowPlan();
             ShowPlan();
+            // Dressed as the Nixx window (Mehdi, 05/10): LiteBox's look, its tabs a page bar at the left.
+            LbIntegrations.Ui.NixxShell.Dress(this);
         }
 
         private string Placement => _ram.Checked ? "ram" : _disk.Checked ? "disk" : "auto";
@@ -425,11 +434,10 @@ namespace LbIntegrations.Cxbx
             }
             // xemu's line only when Nixx-Xemu is loaded in this LaunchBox (Mehdi, 05/10): not there or turned off, not shown.
             if (LbIntegrations.Xbox.XboxCompat.PluginLoaded(LbIntegrations.Xbox.XboxCompat.XemuPluginType)) _compat.Controls.Add(XemuLine(xbe));
-            _compat.Controls.Add(new Label
-            {
-                AutoSize = true, MaximumSize = new Size(540, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 6, 3, 0),
-                Text = (note.Length > 0 ? note + " " : "") + "The reports are mostly from 2020 and 2021: Cxbx-Reloaded has moved on since, a game may well do better now.",
-            });
+            // One sentence, the whole of it on hover (Mehdi, 05/10); what the site just said stays in front of it.
+            _compat.Controls.Add(LbIntegrations.Lbip.LbipHint.Note((note.Length > 0 ? note + " " : "") + "Reports mostly from 2020-2021: a game may well do better now.",
+                "The reports are mostly from 2020 and 2021: Cxbx-Reloaded has moved on since, a game may well do better now.",
+                540, new Padding(3, 6, 3, 0)));
             _compat.ResumeLayout();
         }
 

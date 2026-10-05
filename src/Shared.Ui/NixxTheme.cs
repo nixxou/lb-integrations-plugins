@@ -159,6 +159,33 @@ namespace LbIntegrations.Ui
                     if (IsWindowsColour(c.BackColor)) Transparent(c);
                     break;
             }
+
+            // A background a window sets AGAIN later, to one of Windows' (an editor shown read-only as SystemColors.Control):
+            // made dark again, as the first time - never a page's own colour (a priority bar's blue or grey).
+            bool backBusy = false;
+            c.BackColorChanged += (_, _) =>
+            {
+                if (backBusy || !IsWindowsColour(c.BackColor)) return;
+                backBusy = true;
+                try { if (DarkBackOf(c) is Color dark) c.BackColor = dark; else Transparent(c); }
+                catch { }
+                finally { backBusy = false; }
+            };
+        }
+
+        /// <summary>The dark background a control of this kind takes - null for one that takes its parent's.</summary>
+        private static Color? DarkBackOf(Control c)
+        {
+            switch (c)
+            {
+                case Form _: return Back;
+                case TextBoxBase t: return t is TextBox tb && tb.ReadOnly && tb.BorderStyle == BorderStyle.None ? Card : Field;
+                case ComboBox _: case ListBox _: case ListView _: case TreeView _: case NumericUpDown _: return Field;
+                case Button _: return ButtonBack;
+                case GroupBox _: return Card;
+                case TabPage _: return Back;
+                default: return null;
+            }
         }
 
         /// <summary>The parent's colour: a control's own reset to its ambient one, or the parent's taken when that cannot be.</summary>

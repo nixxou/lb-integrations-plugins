@@ -43,7 +43,9 @@ namespace LbIntegrations.NoGba
             => v == null ? "" : string.Join(";", v.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase).Select(kv => kv.Key + "=" + kv.Value));
 
         private const string SizingKey = "Game Screen Sizing";
-        private const string NoteText = "Set by hand in the Advanced tab - untick \"Edit by hand\" there to use this tab again.";
+        private const string NoteText = "Set by hand on the Advanced page - untick \"Edit by hand\" there to use this page again.";
+        // What the window is, said once under the game's name before (Mehdi, 05/10): now on hover over each page's note.
+        private const string LaidOver = "This plugin's settings, laid over NO$GBA.INI only while the game runs.";
 
         private readonly List<Entry> _games;
         private readonly List<List<Entry>> _groups;
@@ -84,15 +86,10 @@ namespace LbIntegrations.NoGba
             Font = new Font("Segoe UI", 9f);
             ClientSize = new Size(580, 548);
 
-            var top = new Panel { Dock = DockStyle.Top, Height = _groups.Count > 1 ? 80 : 52, Padding = new Padding(12, 10, 12, 0) };
+            var top = new Panel { Dock = DockStyle.Top, Height = _groups.Count > 1 ? 58 : 32, Padding = new Padding(12, 10, 12, 0) };
             top.Controls.Add(new Label
             {
-                AutoSize = false, Dock = DockStyle.Top, Height = 20, ForeColor = SystemColors.GrayText,
-                Text = "This plugin's settings, laid over NO$GBA.INI only while the game runs.",
-            });
-            top.Controls.Add(new Label
-            {
-                AutoSize = false, Dock = DockStyle.Top, Height = 20,
+                AutoSize = false, Dock = DockStyle.Top, Height = 20, UseMnemonic = false,
                 Text = games.Count == 1 ? games[0].Title + "   (" + KindName(games[0].Kind) + ")"
                      : games.Count + " games (" + string.Join(", ", new[] { NoGbaKind.Gba, NoGbaKind.Ds, NoGbaKind.DsiWare }.Where(k => (_kinds & k) != 0).Select(KindName)) + ")"
                        + (_groups.Count > 1 ? " - their settings differ: start from" : ", all with the same settings"),
@@ -133,6 +130,9 @@ namespace LbIntegrations.NoGba
 
             if (_source != null) _source.SelectedIndex = 0;
             else LoadFrom(_groups[0][0]);
+            // Dressed as the Nixx window (Mehdi, 05/10): LiteBox's look, the tabs a page bar at the left, each page's title
+            // above it - and each long explanation one short sentence, the whole of it on hover (LbipHint).
+            LbIntegrations.Ui.NixxShell.Dress(this);
         }
 
         internal static string KindName(NoGbaKind k) => k == NoGbaKind.Gba ? "GBA" : k == NoGbaKind.Ds ? "DS cartridge" : k == NoGbaKind.DsiWare ? "DSiWare" : "?";
@@ -148,30 +148,44 @@ namespace LbIntegrations.NoGba
             if (settings.Count == 0) return null;
             var state = new TabState { Name = name };
             var page = new TabPage(name) { UseVisualStyleBackColor = true, AutoScroll = true };
-            page.Controls.Add(new Label
-            {
-                AutoSize = false, Location = new Point(12, 10), Size = new Size(530, 34), ForeColor = SystemColors.GrayText,
-                Text = "A <Default> entry or an untouched \"Override default\" leaves the setting as no$gba has it. What is set here is "
-                     + "written for the game's session only; no$gba's own come back when it quits.",
-            });
+            var full = LaidOver + "\n"
+                     + "A <Default> entry or an untouched \"Override default\" leaves the setting as no$gba has it. What is set here is "
+                     + "written for the game's session only; no$gba's own come back when it quits.";
+            var intro = LbipHint.Note("For this game only; left on <Default>, no$gba's own setting applies.", full, 520);
+            intro.Location = new Point(12, 8);
+            page.Controls.Add(intro);
 
-            int y = 52;
+            // A card per part of the page, as the Nixx window's pages (Mehdi, 05/10) - the settings in no$gba's order.
+            int y = 34;
+            GroupBox card = null;
+            string cardName = null;
+            int cy = 0;
+            void EndCard() { if (card != null) { card.Height = cy + 4; y = card.Bottom + 10; } }
             foreach (var s in settings)
             {
+                var wanted = CardOf(s);
+                if (card == null || wanted != cardName)
+                {
+                    EndCard();
+                    cardName = wanted;
+                    card = new GroupBox { Text = wanted, Location = new Point(12, y), Size = new Size(520, 40) };
+                    page.Controls.Add(card);
+                    cy = 22;
+                }
                 bool partial = (s.Kinds & _kinds) != _kinds;   // the selection holds games it does not apply to
                 var label = s.Key + (partial ? "   (" + KindsName(s.Kinds & _kinds) + " only)" : "");
-                page.Controls.Add(new Label { Text = label, AutoSize = true, Location = new Point(18, y), UseMnemonic = false });
+                card.Controls.Add(new Label { Text = label, AutoSize = true, Location = new Point(14, cy), UseMnemonic = false });
                 if (s.Key == SizingKey)
                 {
                     // no$gba's own two boxes over its four words: Free, Force 50% step, Force Aspect Ratio, Strict (both) -
                     // one key, so one "Override default" for the pair.
-                    state.SizingOverride = new CheckBox { Text = "Override default", AutoSize = true, Location = new Point(200, y - 2) };
-                    page.Controls.Add(state.SizingOverride);
-                    y += 22;
-                    state.Step50 = new CheckBox { Text = "Force 50% step", AutoSize = true, Location = new Point(24, y) };
-                    state.Aspect = new CheckBox { Text = "Force Aspect Ratio", AutoSize = true, Location = new Point(200, y) };
-                    page.Controls.Add(state.Step50);
-                    page.Controls.Add(state.Aspect);
+                    state.SizingOverride = new CheckBox { Text = "Override default", AutoSize = true, Location = new Point(196, cy - 2) };
+                    card.Controls.Add(state.SizingOverride);
+                    cy += 22;
+                    state.Step50 = new CheckBox { Text = "Force 50% step", AutoSize = true, Location = new Point(20, cy) };
+                    state.Aspect = new CheckBox { Text = "Force Aspect Ratio", AutoSize = true, Location = new Point(196, cy) };
+                    card.Controls.Add(state.Step50);
+                    card.Controls.Add(state.Aspect);
                     state.SizingOverride.CheckedChanged += (_, _) =>
                     {
                         if (_loading) return;
@@ -179,20 +193,31 @@ namespace LbIntegrations.NoGba
                         RefreshEnabled();
                         RefreshMarks();
                     };
-                    y += 30;
+                    cy += 30;
                     continue;
                 }
-                y += 20;
-                var combo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(24, y), Width = 330 };
+                cy += 19;
+                var combo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(20, cy), Width = 330 };
                 combo.SelectedIndexChanged += (_, _) => { if (!_loading) RefreshMarks(); };
-                page.Controls.Add(combo);
+                card.Controls.Add(combo);
                 state.Combos[s.Key] = combo;
-                y += 34;
+                cy += 32;
             }
-            state.HandNote = new Label { AutoSize = false, Location = new Point(12, y + 4), Size = new Size(520, 34), ForeColor = Color.Firebrick, Visible = false, Text = NoteText };
+            EndCard();
+            state.HandNote = new Label { AutoSize = false, Location = new Point(12, y - 4), Size = new Size(520, 34), ForeColor = Color.Firebrick, Visible = false, Text = NoteText };
             page.Controls.Add(state.HandNote);
             _tabs.Add(state);
             return page;
+        }
+
+        /// <summary>The card a setting sits in on its page: Display &amp; sound split in two, the other pages one card each.</summary>
+        private static string CardOf(NoGbaGameSettings.Setting s)
+        {
+            if (s.Tab == NoGbaGameSettings.DisplayTab) return s.Key.StartsWith("Sound", StringComparison.OrdinalIgnoreCase) || s.Key == "Volume Control" ? "Sound" : "Screen";
+            if (s.Tab == NoGbaGameSettings.EmulationTab) return "Speed and video";
+            if (s.Tab == NoGbaGameSettings.CartridgeTab) return "Cartridge hardware";
+            if (s.Tab == NoGbaGameSettings.LinkTab) return "Multiplayer link";
+            return s.Tab;
         }
 
         /// <summary>Fill a list: "&lt;Default : no$gba's value&gt;" first ("&lt;Default&gt;" when NO$GBA.INI does not
@@ -294,27 +319,28 @@ namespace LbIntegrations.NoGba
         private TabPage AdvancedTab()
         {
             var page = new TabPage("Advanced") { UseVisualStyleBackColor = true };
-            page.Controls.Add(new Label
-            {
-                AutoSize = false, Location = new Point(12, 6), Size = new Size(544, 116), ForeColor = SystemColors.GrayText,
-                Text = "Write ONLY the lines you want to change: Key == Value, as NO$GBA.INI writes them - any key.\n"
+            var full = "Write ONLY the lines you want to change: Key == Value, as NO$GBA.INI writes them - any key.\n"
                      + "- A value must be one of no$gba's own, word for word (a leading \"-\" included): it ignores any other IN SILENCE. "
                      + "The check below says when a value is not one of them.\n"
                      + "- Only these lines are written, for this game's sessions; no$gba's own come back when it quits, and a line that was not there is taken out.\n"
-                     + "- Left out: the lines this plugin sets for every launch (NDS Mode/Colors, Reset/Startup Entrypoint, SAV/SNA File Format).",
-            });
-            _handOn = new CheckBox { AutoSize = true, Location = new Point(12, 126), Text = "Edit by hand (the other tabs are then not used)" };
+                     + "- Left out: the lines this plugin sets for every launch (NDS Mode/Colors, Reset/Startup Entrypoint, SAV/SNA File Format).";
+            var intro = LbipHint.Note("Only the lines to change, as NO$GBA.INI has them: Key == Value.", full, 532);
+            intro.Location = new Point(12, 6);
+            page.Controls.Add(intro);
+            _handOn = new CheckBox { AutoSize = true, Location = new Point(12, 32), Text = "Edit by hand (the other pages are then not used)" };
             page.Controls.Add(_handOn);
-            var preview = new Button { Text = "Preview result...", AutoSize = true, Location = new Point(438, 122) };
+            var preview = new Button { Text = "Preview result...", AutoSize = true };
+            preview.Location = new Point(544 - preview.PreferredSize.Width, 28);
             preview.Click += (_, _) => PreviewResult();
             page.Controls.Add(preview);
             _handText = new TextBox
             {
-                Location = new Point(12, 152), Size = new Size(544, 176), Multiline = true, ScrollBars = ScrollBars.Both, WordWrap = false,
+                Location = new Point(12, 60), Size = new Size(532, 236), Multiline = true, ScrollBars = ScrollBars.Both, WordWrap = false,
                 AcceptsReturn = true, AcceptsTab = true, Font = new Font("Consolas", 9f), ReadOnly = true,
             };
+            LbipHint.Attach(_handText, full, _handOn);
             page.Controls.Add(_handText);
-            _handStatus = new Label { AutoSize = false, Location = new Point(12, 332), Size = new Size(544, 60) };
+            _handStatus = new Label { AutoSize = false, Location = new Point(12, 302), Size = new Size(532, 60) };
             page.Controls.Add(_handStatus);
 
             _handOn.CheckedChanged += (_, _) =>
@@ -382,10 +408,12 @@ namespace LbIntegrations.NoGba
         {
             bool on = _handOn.Checked;
             _handText.ReadOnly = !on;
-            _handText.BackColor = on ? SystemColors.Window : SystemColors.Control;
+            // Read-only said by its text, not its background: the dark theme maps a text colour each time it is set, a background
+            // only once (NixxTheme) - a background set here later would bring Windows' white back.
+            _handText.ForeColor = on ? SystemColors.WindowText : SystemColors.GrayText;
             RefreshEnabled();
             RefreshMarks();
-            if (!on) { _handStatus.ForeColor = SystemColors.GrayText; _handStatus.Text = "Generated from the other tabs."; return; }
+            if (!on) { _handStatus.ForeColor = SystemColors.GrayText; _handStatus.Text = "Generated from the other pages."; return; }
             var warnings = NoGbaGameSettings.CheckHand(SourceGame().Layout, _handText.Text, out var error);
             _handStatus.ForeColor = error != null ? Color.Firebrick : warnings.Count > 0 ? Color.DarkGoldenrod : Color.DarkGreen;
             _handStatus.Text = error != null ? "Not valid: " + error

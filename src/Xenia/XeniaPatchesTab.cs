@@ -104,7 +104,7 @@ namespace LbIntegrations.Xenia
 
         private Label Line(string text, Color? color = null, int indent = 0) => new Label
         {
-            Text = text, AutoSize = true, MaximumSize = new Size(560 - indent, 0), Margin = new Padding(indent, 2, 0, 4),
+            Text = text, AutoSize = true, MaximumSize = new Size(520 - indent, 0), Margin = new Padding(indent, 2, 0, 4),
             ForeColor = color ?? SystemColors.GrayText, UseMnemonic = false,     // "Updates & DLC", not "Updates _DLC"
         };
 
@@ -172,30 +172,48 @@ namespace LbIntegrations.Xenia
             var (version, mine, sure, what) = Mine(files, seen);
             bool decided = mine != null || sure;       // sure and no file: no patch is for this version
 
-            _stack.Controls.Add(Line("Tick a patch and Xenia applies it each time the game starts. A game has one patch file per version (per title "
-                                     + "update): they all go to Xenia's folder, and Xenia uses the one for the version you play. Title id " + _titleId
-                                     + (XeniaLauncherDisc.IsDeduced(_titleId) ? XeniaLauncherDisc.DeducedNote : "") + "."));
+            // The page in cards (Mehdi, 05/10: as the Nixx window's): the game and the version that runs, then its patches.
+            FlowLayoutPanel Card(string title)
+            {
+                var box = XeniaConsolePanel.Group(title);
+                box.MinimumSize = new Size(540, 0);
+                var inner = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Location = new Point(8, 20) };
+                box.Controls.Add(inner);
+                _stack.Controls.Add(box);
+                return inner;
+            }
+            var game = Card("This game");
+            // A short sentence, the whole of it on hover (Mehdi, 05/10); the title id on its own line, as it was said.
+            game.Controls.Add(LbIntegrations.Lbip.LbipHint.Note("A ticked patch applies at each start; Xenia picks the file for your version.",
+                "Tick a patch and Xenia applies it each time the game starts. A game has one patch file per version (per title "
+                + "update): they all go to Xenia's folder, and Xenia uses the one for the version you play.", 520, new Padding(0, 2, 0, 4)));
+            game.Controls.Add(Line("Title id " + _titleId + (XeniaLauncherDisc.IsDeduced(_titleId) ? XeniaLauncherDisc.DeducedNote : "") + "."));
             if (files.Count == 0)
             {
-                _stack.Controls.Add(Line(_remote == null ? (_note ?? "Looking at xenia-canary/game-patches...") : "There is no patch for this game in xenia-canary/game-patches.",
-                                         SystemColors.ControlText));
+                game.Controls.Add(Line(_remote == null ? (_note ?? "Looking at xenia-canary/game-patches...") : "There is no patch for this game in xenia-canary/game-patches.",
+                                       SystemColors.ControlText));
             }
             else
             {
                 // The version that will run, and its file.
                 if (what == null)
-                    _stack.Controls.Add(Line("Patches exist for: " + Labels(files) + ". Which one is yours depends on the title update the game runs with "
-                                             + "(Updates & DLC tab); after a launch, this tab knows it for sure."));
+                {
+                    var unknown = Line("Patches exist for: " + Labels(files) + ". Which one is yours: known after a launch.");
+                    LbIntegrations.Lbip.LbipHint.Attach(unknown, "Patches exist for: " + Labels(files) + ". Which one is yours depends on the title update the game runs with "
+                                                                 + "(Updates & DLC tab); after a launch, this tab knows it for sure.");
+                    game.Controls.Add(unknown);
+                }
                 else if (mine != null)
-                    _stack.Controls.Add(Line(what + ": its patch file is " + Label(mine) + (sure ? "." : " - by its name, made sure of at the next launch."), Good));
+                    game.Controls.Add(Line(what + ": its patch file is " + Label(mine) + (sure ? "." : " - by its name, made sure of at the next launch."), Good));
                 else
-                    _stack.Controls.Add(Line(what + ": " + (sure ? "no patch file is for it" : "no patch file is named for it") + ". Patches exist for " + Labels(files)
-                                             + " - another title update (Updates & DLC tab) may be the one they need.", Bad));
+                    game.Controls.Add(Line(what + ": " + (sure ? "no patch file is for it" : "no patch file is named for it") + ". Patches exist for " + Labels(files)
+                                           + " - another title update (Updates & DLC tab) may be the one they need.", Bad));
                 if (seen != null && seen.Applied.Count > 0 && (version == null || version == (seen.Version ?? "")))
-                    _stack.Controls.Add(Line("At the last launch, Xenia applied: " + string.Join(", ", seen.Applied) + ".", SystemColors.ControlText));
+                    game.Controls.Add(Line("At the last launch, Xenia applied: " + string.Join(", ", seen.Applied) + ".", SystemColors.ControlText));
 
                 // One line per patch name, every version together - those the version that runs does not have greyed.
                 var names = files.SelectMany(f => f.Patches.Where(p => p.Name != null).Select(p => p.Name)).Distinct().ToList();
+                var list = Card("Patches (" + names.Count + ")");
                 foreach (var name in names)
                 {
                     var having = files.Where(f => f.Patches.Any(p => p.Name == name)).ToList();
@@ -206,16 +224,16 @@ namespace LbIntegrations.Xenia
                         Text = name + (string.IsNullOrWhiteSpace(patch.Author) ? "" : "  (" + patch.Author + ")"), AutoSize = true, Margin = new Padding(0, 6, 0, 0),
                         Checked = _wanted.TryGetValue(name, out var w) && w, Enabled = forMine,
                     };
-                    _stack.Controls.Add(cb);
+                    list.Controls.Add(cb);
                     _boxes.Add((name, cb));
-                    if (!string.IsNullOrWhiteSpace(patch.Desc)) _stack.Controls.Add(Line(patch.Desc, null, 18));
-                    if (having.Count < files.Count) _stack.Controls.Add(Line("Only for " + Labels(having) + ".", null, 18));
-                    if (decided && !forMine) _stack.Controls.Add(Line("Not for the version that runs" + (version != null ? " (" + VersionWords(version) + ")" : "") + ".", null, 18));
+                    if (!string.IsNullOrWhiteSpace(patch.Desc)) list.Controls.Add(Line(patch.Desc, null, 18));
+                    if (having.Count < files.Count) list.Controls.Add(Line("Only for " + Labels(having) + ".", null, 18));
+                    if (decided && !forMine) list.Controls.Add(Line("Not for the version that runs" + (version != null ? " (" + VersionWords(version) + ")" : "") + ".", null, 18));
                     else if (sure && cb.Checked && seen != null && version == (seen.Version ?? "") && !seen.Applied.Contains(name, StringComparer.OrdinalIgnoreCase))
-                        _stack.Controls.Add(Line("Ticked, but not applied at the last launch.", Bad, 18));
+                        list.Controls.Add(Line("Ticked, but not applied at the last launch.", Bad, 18));
                 }
-                if (_remote == null) _stack.Controls.Add(Line(_note ?? "Looking at xenia-canary/game-patches for more..."));
-                else if (_note != null) _stack.Controls.Add(Line(_note));
+                if (_remote == null) list.Controls.Add(Line(_note ?? "Looking at xenia-canary/game-patches for more..."));
+                else if (_note != null) list.Controls.Add(Line(_note));
             }
 
             var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 10, 0, 0) };

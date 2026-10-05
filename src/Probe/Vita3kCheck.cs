@@ -1563,10 +1563,14 @@ namespace LbIntegrations.Probe
                 var formType = menus.GetType("LbIntegrations.Menus.NixxSettingsForm");
                 using (var form = (System.Windows.Forms.Form)Activator.CreateInstance(formType, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { providers }, null))
                 {
-                    var tabs = form.Controls.OfType<System.Windows.Forms.TabControl>().First();
-                    var titles = tabs.TabPages.Cast<System.Windows.Forms.TabPage>().Select(t => t.Text).ToList();
-                    Console.WriteLine("            tabs: " + string.Join(" | ", titles));
-                    Check("the window has General, then the Vita3K tab", titles.Count >= 2 && titles[0] == "General" && titles.Contains("Vita3K"));
+                    // Its pages, as its page bar lists them (05/10: a bar at the left, no tabs any more) - its headings left out.
+                    var entries = ((System.Collections.IList)formType.GetField("_entries", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(form)).Cast<object>().ToList();
+                    var nav = (System.Windows.Forms.ListBox)formType.GetField("_nav", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(form);
+                    string TitleOf(object e) => (string)e.GetType().GetField("Title").GetValue(e);
+                    bool IsPage(object e) => e.GetType().GetField("View").GetValue(e) != null;
+                    var titles = entries.Where(IsPage).Select(TitleOf).ToList();
+                    Console.WriteLine("            pages: " + string.Join(" | ", titles));
+                    Check("the window has General, then the Vita3K page", titles.Count >= 2 && titles[0] == "General" && titles.Contains("Vita3K"));
 
                     var shot = Environment.GetEnvironmentVariable("LBIP_PROBE_SHOT_SETTINGS");
                     if (!string.IsNullOrEmpty(shot))
@@ -1576,7 +1580,7 @@ namespace LbIntegrations.Probe
                         form.Show();
                         foreach (var i in new[] { 0, titles.IndexOf("Vita3K") })
                         {
-                            tabs.SelectedIndex = i;
+                            nav.SelectedIndex = entries.IndexOf(entries.Where(IsPage).ElementAt(i));
                             System.Windows.Forms.Application.DoEvents();
                             using var bmp = new System.Drawing.Bitmap(form.Width, form.Height);
                             form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, form.Width, form.Height));
@@ -2695,7 +2699,7 @@ namespace LbIntegrations.Probe
             form.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
             form.Location = new System.Drawing.Point(-3000, -3000);
             form.Show();
-            var tabs = form.Controls.OfType<System.Windows.Forms.TabControl>().First();
+            var tabs = form.Controls.Cast<System.Windows.Forms.Control>().SelectMany(ProbeUi.Deep).OfType<System.Windows.Forms.TabControl>().First();
             var shots = new List<System.Drawing.Bitmap>();
             // Every tab the window has (Session, Updates & DLC since 04/10).
             foreach (var page in tabs.TabPages.Cast<System.Windows.Forms.TabPage>().ToList())
@@ -3079,7 +3083,7 @@ namespace LbIntegrations.Probe
             if (!string.IsNullOrEmpty(shot))
             {
                 auto.Checked = true;
-                var tabs = form.Controls.OfType<System.Windows.Forms.TabControl>().First();
+                var tabs = form.Controls.Cast<System.Windows.Forms.Control>().SelectMany(ProbeUi.Deep).OfType<System.Windows.Forms.TabControl>().First();
                 form.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
                 form.Location = new System.Drawing.Point(-4000, -4000);
                 form.Show();

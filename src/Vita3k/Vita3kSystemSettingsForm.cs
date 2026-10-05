@@ -28,23 +28,24 @@ namespace LbIntegrations.Vita3k
             ShowInTaskbar = true;
             TopMost = true;
             Font = new Font("Segoe UI", 9f);
-            ClientSize = new Size(380, 214);
+            ClientSize = new Size(380, 236);
 
-            var intro = new Label
-            {
-                Text = "What Vita3K tells the games. The library keeps naming games in US English.",
-                Location = new Point(14, 12), Size = new Size(352, 34),
-            };
+            // One short sentence, the whole on hover (Mehdi, 05/10); the four rows in a card, as the Nixx pages.
+            var intro = LbIntegrations.Lbip.LbipHint.Note("What Vita3K tells the games; game names stay in US English.",
+                "What Vita3K tells the games. The library keeps naming games in US English.", 352);
+            intro.Location = new Point(14, 12);
             Controls.Add(intro);
 
-            int y = 52;
+            var card = new GroupBox { Text = "System", Location = new Point(14, 36), Size = new Size(352, 148) };
+            Controls.Add(card);
+            int y = 22;
             ComboBox Row(string label, string[] items, int value)
             {
-                Controls.Add(new Label { Text = label, Location = new Point(14, y + 3), AutoSize = true });
-                var box = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(130, y), Width = 236 };
+                card.Controls.Add(new Label { Text = label, Location = new Point(12, y + 3), AutoSize = true });
+                var box = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(110, y), Width = 230 };
                 box.Items.AddRange(items);
                 box.SelectedIndex = value >= 0 && value < items.Length ? value : 0;
-                Controls.Add(box);
+                card.Controls.Add(box);
                 y += 30;
                 return box;
             }
@@ -57,12 +58,14 @@ namespace LbIntegrations.Vita3k
             // and still free to be changed back.
             _language.SelectedIndexChanged += (_, _) => _enter.SelectedIndex = _language.SelectedIndex == 0 ? 0 : 1;
 
-            var ok = new Button { Text = "Save", DialogResult = DialogResult.OK, Location = new Point(196, y + 8), Width = 82 };
-            var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Location = new Point(284, y + 8), Width = 82 };
+            var ok = new Button { Text = "Save", DialogResult = DialogResult.OK, Location = new Point(196, card.Bottom + 10), Width = 82 };
+            var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Location = new Point(284, card.Bottom + 10), Width = 82 };
             Controls.Add(ok);
             Controls.Add(cancel);
             AcceptButton = ok;
             CancelButton = cancel;
+            // Dressed as the Nixx window (Mehdi, 05/10): LiteBox's look, Cancel then Save from the left.
+            LbIntegrations.Ui.NixxShell.Dress(this);
         }
 
         public VitaSystemSettings Chosen => new VitaSystemSettings

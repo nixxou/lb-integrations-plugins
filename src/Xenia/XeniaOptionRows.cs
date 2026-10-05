@@ -62,7 +62,10 @@ namespace LbIntegrations.Xenia
                     row.Editor = Editor(row, current);
                     row.Bar = new Panel { Width = 4, Height = 18, Margin = new Padding(0, 6, 8, 0) };
                     var label = new Label { Text = o.Label, AutoSize = true, MaximumSize = new Size(206, 0), Margin = new Padding(0, 7, 4, 0) };
-                    new ToolTip().SetToolTip(label, "--" + string.Join(", --", o.Sends ?? new[] { o.Key }));
+                    // One tooltip for the row (LbipHint's): its whole help, then the cvars it passes.
+                    var cvars = "--" + string.Join(", --", o.Sends ?? new[] { o.Key });
+                    var tip = string.IsNullOrEmpty(o.Help) ? cvars : o.Help + "\n" + cvars;
+                    LbIntegrations.Lbip.LbipHint.Attach(label, tip, row.Editor);
                     if (row.Gone)
                     {
                         row.Kept = string.IsNullOrWhiteSpace(current) ? null : current;
@@ -70,8 +73,7 @@ namespace LbIntegrations.Xenia
                         label.ForeColor = SystemColors.GrayText;
                         var why = "This Xenia no longer has this setting (--" + string.Join(", --", o.Sends ?? new[] { o.Key }) + " is not in its config.toml): it is not passed."
                                   + (row.Kept != null ? " Your choice is kept, for a Xenia that has it again." : "");
-                        new ToolTip().SetToolTip(label, why);
-                        new ToolTip().SetToolTip(row.Editor, why);
+                        LbIntegrations.Lbip.LbipHint.Attach(label, why, row.Editor);
                         label.Text = o.Label + " (not in this Xenia)";
                     }
                     Hook(row.Editor, () => { Show(row); Changed?.Invoke(); });
@@ -83,7 +85,9 @@ namespace LbIntegrations.Xenia
                     table.Controls.Add(row.Editor, 2, r);
                     if (!string.IsNullOrEmpty(o.Help))
                     {
-                        var help = new Label { Text = o.Help, AutoSize = true, MaximumSize = new Size(470, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 0, 0, 6) };
+                        // A short sentence under it, the whole of it on hover (Mehdi, 05/10) - over the row: its name, its control, its sentence.
+                        var help = new Label { Text = o.Short ?? o.Help, AutoSize = true, MaximumSize = new Size(470, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 0, 0, 6) };
+                        LbIntegrations.Lbip.LbipHint.Attach(help, row.Gone ? o.Help : tip);
                         int h = table.RowCount++;
                         table.Controls.Add(help, 1, h);
                         table.SetColumnSpan(help, 2);

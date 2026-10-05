@@ -90,7 +90,7 @@ namespace LbIntegrations.Xenia
             MinimizeBox = false;
             ShowInTaskbar = false;
             Font = new Font("Segoe UI", 9f);
-            ClientSize = new Size(620, 720);
+            ClientSize = new Size(640, 720);
             MinimumSize = new Size(560, 400);
 
             // What an unset row falls back to: the game's optimized setting when they are on and set it, else Xenia's own
@@ -113,27 +113,26 @@ namespace LbIntegrations.Xenia
 
             // ── Options ──
             var optionsTab = new TabPage("Options") { UseVisualStyleBackColor = true };
-            var intro = new Label
-            {
-                Dock = DockStyle.Top, Height = 52, Padding = new Padding(10, 8, 10, 0), ForeColor = SystemColors.GrayText,
-                Text = (_games.Count == 1 ? first.Title + "'s own options" : _games.Count + " games" + (differ ? " - their options differ: shown from " + first.Title : ", all with the same options"))
-                       + ". Unset, an option is Xenia's own (its config, set in Xenia); set, it goes on the game's command line "
-                       + "at launch, never into Xenia's config.",
-            };
             var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(6) };
             var optionsStack = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
+            // At the top of the page, a short sentence - the whole of it on hover (Mehdi, 05/10); which games, said as before.
+            var whose = _games.Count == 1 ? first.Title + "'s own options" : _games.Count + " games" + (differ ? " - their options differ: shown from " + first.Title : ", all with the same options");
+            optionsStack.Controls.Add(LbIntegrations.Lbip.LbipHint.Note(
+                (_games.Count == 1 ? "For this game only" : whose) + "; unset, Xenia's own setting applies.",
+                whose + ". Unset, an option is Xenia's own (its config, set in Xenia); set, it goes on the game's command line "
+                + "at launch, never into Xenia's config.", 520, new Padding(4, 0, 0, 6)));
             // The game's optimized settings (XeniaOptimized): on, off, or as every game (the grey square).
-            var optimizedBox = new GroupBox { Text = "Optimized settings (xenia-manager)", AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(8, 4, 8, 8), Margin = new Padding(4, 4, 4, 10), MinimumSize = new Size(500, 0) };
-            var op = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Location = new Point(8, 20) };
+            var optimizedBox = new GroupBox { Text = "Optimized settings (xenia-manager)", AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(8, 4, 8, 8), Margin = new Padding(4, 4, 4, 10), MinimumSize = new Size(510, 0) };
+            var op = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Location = new Point(8, 20) };
             saved.TryGetValue(XeniaOptimized.SettingKey, out var optimizedOwn);
             _optimized = new CheckBox
             {
                 Text = "Apply this game's optimized settings", AutoSize = true, ThreeState = true,
                 CheckState = optimizedOwn == "on" ? CheckState.Checked : optimizedOwn == "off" ? CheckState.Unchecked : CheckState.Indeterminate,
             };
-            new ToolTip().SetToolTip(_optimized, "Grey: as every game (the Nixx window's Xenia tab, now " + (XeniaOptimized.On(null, every) ? "on" : "off") + ").");
+            LbIntegrations.Lbip.LbipHint.Attach(_optimized, "Grey: as every game (the Nixx window's Xenia tab, now " + (XeniaOptimized.On(null, every) ? "on" : "off") + ").");
             op.Controls.Add(_optimized);
-            _optimizedList = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Margin = new Padding(18, 2, 0, 0) };
+            _optimizedList = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Margin = new Padding(18, 2, 0, 0) };
             op.Controls.Add(_optimizedList);
             optimizedBox.Controls.Add(op);
             optionsStack.Controls.Add(optimizedBox);
@@ -149,7 +148,6 @@ namespace LbIntegrations.Xenia
             bottom.Controls.Add(_line);
             bottom.Controls.Add(XeniaOptionRows.Legend());
             optionsTab.Controls.Add(scroll);
-            optionsTab.Controls.Add(intro);
             optionsTab.Controls.Add(bottom);
             _rows.Changed += ShowLine;
             ShowLine();
@@ -162,8 +160,12 @@ namespace LbIntegrations.Xenia
                 _extrasTab = new XeniaExtrasTab(XeniaPlugin.ResolveFullPathForUi(Safe(() => games[0].ApplicationPath)), first.Id, exe);
                 extrasTab.Controls.Add(_extrasTab);
             }
-            else extrasTab.Controls.Add(new Label { Dock = DockStyle.Fill, Padding = new Padding(12), ForeColor = SystemColors.GrayText,
-                                                    Text = "A game's title update and DLC are chosen one game at a time: open this window on one game." });
+            else
+            {
+                var one = new Label { Dock = DockStyle.Fill, Padding = new Padding(4, 0, 4, 0), ForeColor = SystemColors.GrayText, Text = "Chosen one game at a time: open this window on one game." };
+                LbIntegrations.Lbip.LbipHint.Attach(one, "A game's title update and DLC are chosen one game at a time: open this window on one game.");
+                extrasTab.Controls.Add(one);
+            }
             tabs.TabPages.Add(extrasTab);
 
             // ── Patches: Xenia's game patches for it, on or off one by one (XeniaPatchesTab) - one game at a time ──
@@ -205,7 +207,7 @@ namespace LbIntegrations.Xenia
             Controls.Add(tabs);
             Controls.Add(buttons);
 
-            Shown += (_, _) =>
+            Shown +=(_, _) =>
             {
                 // The game's optimized settings asked for in the background when the copy is old or missing.
                 if (_titleId != null)
@@ -233,6 +235,9 @@ namespace LbIntegrations.Xenia
                     catch { }
                 });
             };
+            // Dressed as the Nixx window (Mehdi, 05/10): LiteBox's look, its tabs a page bar at the left, the page's title above
+            // it. The tabs stay, so the pages that wait to be shown (Patches, Session) are still told.
+            LbIntegrations.Ui.NixxShell.Dress(this);
         }
 
         private void ShowLine()
@@ -287,32 +292,49 @@ namespace LbIntegrations.Xenia
         {
             _compat.SuspendLayout();
             _compat.Controls.Clear();
+            // Two cards (Mehdi, 05/10: the pages read as the Nixx window's): the game's reports, then the list they come from.
             var stack = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Dock = DockStyle.Top };
             Label Line(string text, bool grey = true)
-                => new Label { Text = text, AutoSize = true, MaximumSize = new Size(560, 0), ForeColor = grey ? SystemColors.GrayText : SystemColors.ControlText, Margin = new Padding(0, 2, 0, 6) };
+                => new Label { Text = text, AutoSize = true, MaximumSize = new Size(520, 0), ForeColor = grey ? SystemColors.GrayText : SystemColors.ControlText, Margin = new Padding(0, 2, 0, 6) };
+            FlowLayoutPanel Card(string title)
+            {
+                var box = XeniaConsolePanel.Group(title);
+                box.MinimumSize = new Size(540, 0);
+                var inner = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Location = new Point(8, 20) };
+                box.Controls.Add(inner);
+                stack.Controls.Add(box);
+                return inner;
+            }
 
-            if (_games.Count > 1) stack.Controls.Add(Line("Shown for " + _games[0].Title + ", the first of the selection."));
+            var reports = Card("Reports");
+            if (_games.Count > 1) reports.Controls.Add(Line("Shown for " + _games[0].Title + ", the first of the selection."));
             if (_titleId == null)
-                stack.Controls.Add(Line("This game's title id could not be read off its file, so it cannot be looked up in Xenia's compatibility list.", false));
+            {
+                var none = Line("No title id could be read off its file: it cannot be looked up.", false);
+                LbIntegrations.Lbip.LbipHint.Attach(none, "This game's title id could not be read off its file, so it cannot be looked up in Xenia's compatibility list.");
+                reports.Controls.Add(none);
+            }
             else
             {
-                stack.Controls.Add(Line("Title id " + _titleId + (XeniaLauncherDisc.IsDeduced(_titleId) ? XeniaLauncherDisc.DeducedNote : "")));
+                reports.Controls.Add(Line("Title id " + _titleId + (XeniaLauncherDisc.IsDeduced(_titleId) ? XeniaLauncherDisc.DeducedNote : "")));
                 var found = XeniaCompat.Lookup(_titleId);
                 if (found.Count == 0)
-                    stack.Controls.Add(Line(XeniaCompat.Asked() == null ? "No compatibility list yet." : "Not in Xenia's compatibility list: nobody has reported this game yet.", false));
-                foreach (var e in found) stack.Controls.Add(XeniaCompatRow.Build(e, 560));
+                    reports.Controls.Add(Line(XeniaCompat.Asked() == null ? "No compatibility list yet." : "Not in Xenia's compatibility list: nobody has reported this game yet.", false));
+                foreach (var e in found) reports.Controls.Add(XeniaCompatRow.Build(e, 520));
             }
+
+            var list = Card("Xenia's compatibility list");
             var asked = XeniaCompat.Asked();
-            stack.Controls.Add(Line(note ?? (asked != null ? "List checked " + asked.Value.ToLocalTime().ToString("g", CultureInfo.CurrentCulture) + " (xenia-canary/game-compatibility)." : "")));
+            list.Controls.Add(Line(note ?? (asked != null ? "List checked " + asked.Value.ToLocalTime().ToString("g", CultureInfo.CurrentCulture) + " (xenia-canary/game-compatibility)." : "")));
             var link = new LinkLabel { Text = "All of Xenia's compatibility reports", AutoSize = true, Margin = new Padding(0, 2, 0, 0) };
             link.LinkClicked += (_, _) => Open("https://github.com/xenia-canary/game-compatibility/issues");
-            stack.Controls.Add(link);
+            list.Controls.Add(link);
             // Its whole list downloaded again (Mehdi, 05/10), the date of the last one - one row kept across redraws, so what it
             // said of its last download stays.
             _compatRefresh ??= LbIntegrations.Lbip.LbipListRefresh.Row("Xenia's compatibility list",
                 () => XeniaCompat.Downloaded() is DateTime d ? "downloaded " + d.ToString("g", CultureInfo.CurrentCulture) + " (xenia-canary/game-compatibility)" : "never downloaded yet",
-                XeniaCompat.FetchWhole, () => ShowCompat(null), 560);
-            stack.Controls.Add(_compatRefresh);
+                XeniaCompat.FetchWhole, () => ShowCompat(null), 520);
+            list.Controls.Add(_compatRefresh);
             _compat.Controls.Add(stack);
             _compat.ResumeLayout();
         }

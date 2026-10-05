@@ -49,13 +49,16 @@ namespace LbIntegrations.Xenia
             _stack.SuspendLayout();
             _stack.Controls.Clear();
             Label Line(string text, bool grey = true, bool bold = false)
-                => new Label { Text = text, AutoSize = true, MaximumSize = new Size(560, 0), ForeColor = grey ? SystemColors.GrayText : SystemColors.ControlText,
+                => new Label { Text = text, AutoSize = true, MaximumSize = new Size(520, 0), ForeColor = grey ? SystemColors.GrayText : SystemColors.ControlText,
                                Font = bold ? new Font(SystemFonts.MessageBoxFont, FontStyle.Bold) : null, Margin = new Padding(0, 2, 0, 6) };
 
             var x = _layout == null ? null : XeniaExtras.For(_rom, _layout);
             if (x == null)
             {
-                _stack.Controls.Add(Line("This game's folder has not been looked at yet: open the Updates & DLC tab and click Look at the folder.", false));
+                // A short sentence, the whole of it on hover (Mehdi, 05/10).
+                var first = Line("Not looked at yet: on the Updates & DLC page, click Look at the folder.", false);
+                LbIntegrations.Lbip.LbipHint.Attach(first, "This game's folder has not been looked at yet: open the Updates & DLC tab and click Look at the folder.");
+                _stack.Controls.Add(first);
                 AddChoices(null);
                 _stack.ResumeLayout();
                 return;
@@ -63,9 +66,9 @@ namespace LbIntegrations.Xenia
             var choice = Current();
             var plan = XeniaExtras.Plan(x, choice, _layout);
 
-            // ── what the next launch unpacks ──
-            var box = XeniaConsolePanel.Group("What the next launch unpacks");
-            var table = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, Location = new Point(8, 20) };
+            // ── what the next launch unpacks, where, and why: one card (Mehdi, 05/10: the pages read as the Nixx window's) ──
+            var box = Card("What the next launch unpacks");
+            var table = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, Margin = new Padding(0, 0, 0, 4) };
             table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 300));
             table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
             void Row(string what, string size, bool bold = false)
@@ -80,19 +83,18 @@ namespace LbIntegrations.Xenia
             Row("DLC: " + dlc.Count + " of " + x.Dlc.Count, dlc.Count > 0 ? Size(plan.Dlc) : "-");
             Row("In all", Size(plan.Total), bold: true);
             box.Controls.Add(table);
-            _stack.Controls.Add(box);
-
-            _stack.Controls.Add(Line("Next launch: " + (plan.Total == 0 ? "nothing to unpack" : plan.Ram ? "a RAM disk, for the session" : "the disk, in " + plan.Folder), false, true));
-            _stack.Controls.Add(Line("Because " + plan.Why + "."));
+            box.Controls.Add(Line("Next launch: " + (plan.Total == 0 ? "nothing to unpack" : plan.Ram ? "a RAM disk, for the session" : "the disk, in " + plan.Folder), false, true));
+            box.Controls.Add(Line("Because " + plan.Why + "."));
 
             // ── on the disk now ──
             if (plan.OnDisk > 0)
             {
-                _stack.Controls.Add(Line("On the disk now: " + Size(plan.OnDisk) + " in " + plan.Folder
-                                         + (plan.Unused > 0 ? ", of which " + Size(plan.Unused) + " is no longer chosen." : "."), false));
+                var disk = Card("On the disk now");
+                disk.Controls.Add(Line(Size(plan.OnDisk) + " in " + plan.Folder
+                                       + (plan.Unused > 0 ? ", of which " + Size(plan.Unused) + " is no longer chosen." : "."), false));
                 if (plan.Unused > 0)
                 {
-                    var free = new Button { Text = "Free what is no longer chosen (" + Size(plan.Unused) + ")", AutoSize = true, Margin = new Padding(0, 0, 0, 8) };
+                    var free = new Button { Text = "Free what is no longer chosen (" + Size(plan.Unused) + ")", AutoSize = true, Margin = new Padding(0, 0, 0, 2) };
                     free.Click += (_, _) =>
                     {
                         if (XeniaConsolePanel.IsRunning(Path.Combine(_layout.InstallDir, XeniaPaths.ExecutableNames[0])))
@@ -100,19 +102,32 @@ namespace LbIntegrations.Xenia
                         XeniaExtras.FreeUnused(x, Current());
                         Show();
                     };
-                    _stack.Controls.Add(free);
+                    disk.Controls.Add(free);
                 }
             }
             AddChoices(plan);
             _stack.ResumeLayout();
         }
 
+        /// <summary>A card of the page: a group box, its controls stacked in it.</summary>
+        private FlowLayoutPanel Card(string title)
+        {
+            var box = XeniaConsolePanel.Group(title);
+            box.MinimumSize = new Size(540, 0);
+            var inner = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Location = new Point(8, 20) };
+            box.Controls.Add(inner);
+            _stack.Controls.Add(box);
+            return inner;
+        }
+
         private void AddChoices(XeniaExtras.XeniaPlan plan)
         {
-            var box = XeniaConsolePanel.Group("This game");
-            var flow = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Location = new Point(8, 20) };
-            _auto = new RadioButton { Text = "Automatic - the RAM disk under its threshold, unless part of it is on the disk already", AutoSize = true, Checked = _placement == "auto" };
-            _ram = new RadioButton { Text = "Always the RAM disk (whatever its size, and even when a copy is on the disk)", AutoSize = true, Checked = _placement == "ram" };
+            var flow = Card("Where this game's content goes");
+            // Short texts, the whole of each on hover (Mehdi, 05/10).
+            _auto = new RadioButton { Text = "Automatic: the RAM disk under its threshold, unless already on the disk", AutoSize = true, Checked = _placement == "auto" };
+            LbIntegrations.Lbip.LbipHint.Attach(_auto, "Automatic - the RAM disk under its threshold, unless part of it is on the disk already");
+            _ram = new RadioButton { Text = "Always the RAM disk", AutoSize = true, Checked = _placement == "ram" };
+            LbIntegrations.Lbip.LbipHint.Attach(_ram, "Always the RAM disk (whatever its size, and even when a copy is on the disk)");
             _disk = new RadioButton { Text = "Always the disk", AutoSize = true, Checked = _placement == "disk" };
             _keep = new CheckBox
             {
@@ -122,8 +137,6 @@ namespace LbIntegrations.Xenia
                 r.CheckedChanged += (_, _) => { if (!((RadioButton)r).Checked) return; _placement = r == _ram ? "ram" : r == _disk ? "disk" : "auto"; BeginInvoke(new Action(Show)); };
             _keep.CheckedChanged += (_, _) => _keepOn = _keep.Checked;
             flow.Controls.AddRange(new Control[] { _auto, _ram, _disk, _keep });
-            box.Controls.Add(flow);
-            _stack.Controls.Add(box);
         }
 
         /// <summary>The choice as the window stands: the Updates & DLC tab's, with this tab's two over it.</summary>

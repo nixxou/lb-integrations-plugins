@@ -72,7 +72,7 @@ namespace LbIntegrations.Probe
                 form.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
                 form.Location = new System.Drawing.Point(-4000, -4000);
                 form.Show();
-                var tabs = form.Controls.OfType<System.Windows.Forms.TabControl>().First();
+                var tabs = form.Controls.Cast<System.Windows.Forms.Control>().SelectMany(ProbeUi.Deep).OfType<System.Windows.Forms.TabControl>().First();
                 for (int i = 0; i < tabs.TabCount; i++)
                 {
                     tabs.SelectedIndex = i;

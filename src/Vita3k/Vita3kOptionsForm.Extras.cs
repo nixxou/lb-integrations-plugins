@@ -9,6 +9,8 @@
 // ONE GAME AT A TIME: a selection gets a sentence saying so. Read when the tab is first shown, not when
 // the window opens - every candidate archive is opened, and the Session tab should not wait for that.
 //
+// AS CARDS (Mehdi, 05/10): "Update" and "DLC", one under the other; the grey line above them short, its whole on hover.
+//
 // On OK a change asks first: nobody knows what another update, or fewer DLC, does to the saves a game
 // already has. The console is rebuilt at the next launch - the extras are part of what it is built
 // with - and the save check there still asks if the save was made with something else.
@@ -84,45 +86,55 @@ namespace LbIntegrations.Vita3k
                 return;
             }
 
-            int y = 8;
-            void Add(Control c, int x) { c.Location = new Point(x, y); _extrasTab.Controls.Add(c); }
-            Label Bold(string t) => new Label { Text = t, AutoSize = true, Font = new Font(Font, FontStyle.Bold) };
-            Label Grey(string t) => new Label { Text = t, AutoSize = true, ForeColor = SystemColors.GrayText };
+            // TWO CARDS, read top-down (Mehdi, 05/10): the update, the DLC - the button that looks at the folder under them.
+            var stack = new FlowLayoutPanel { Location = new Point(_extrasTab.Padding.Left, _extrasTab.Padding.Top), FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
+            _extrasTab.Controls.Add(stack);
+            Label Grey(string t) => new Label { Text = t, AutoSize = true, MaximumSize = new Size(560, 0), ForeColor = SystemColors.GrayText, UseMnemonic = false, Margin = new Padding(22, 0, 3, 6) };
+            FlowLayoutPanel Card(string title)
+            {
+                var box = new GroupBox { Text = title, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, MinimumSize = new Size(610, 0),
+                                         Padding = new Padding(8, 4, 8, 8), Margin = new Padding(0, 0, 0, 8) };
+                var inner = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
+                box.Controls.Add(inner);
+                stack.Controls.Add(box);
+                return inner;
+            }
 
-            Add(new Label { Text = (again ? "Looked for in " : "What was seen so far - click Look at the folder to look in ") + Vita3kScan.FolderFor(g.RomFull)
-                                   + " and its subfolders. Updates and DLC of this game seen elsewhere are listed too.",
-                            AutoSize = true, MaximumSize = new Size(560, 0), ForeColor = SystemColors.GrayText }, 8); y += 40;
+            var folder = Vita3kScan.FolderFor(g.RomFull);
+            stack.Controls.Add(LbIntegrations.Lbip.LbipHint.Note(
+                (again ? "Looked for in " : "Seen so far, in ") + folder + (again ? " and its subfolders." : " and elsewhere."),
+                (again ? "Looked for in " : "What was seen so far - click Look at the folder to look in ") + folder
+                + " and its subfolders. Updates and DLC of this game seen elsewhere are listed too.", 600, new Padding(0, 0, 0, 8)));
 
-            Add(Bold("Update"), 8); y += 24;
+            var updates = Card("Update");
             var highest = _found.Updates.FirstOrDefault();
             _updateAuto = new RadioButton { AutoSize = true, Text = "Automatic - the highest found" + (highest != null ? " (" + highest.Content.AppVer + " today)" : " (none today)") };
-            Add(_updateAuto, 18); y += 24;
+            updates.Controls.Add(_updateAuto);
             foreach (var u in _found.Updates)
             {
-                var b = new RadioButton { AutoSize = true, Text = (u.Content.AppVer ?? "?") + "  -  " + u.Name };
-                Add(b, 18); y += 20;
-                Add(Grey(u.FoundBy + ", " + Vita3kExtras.Mb(u.Bytes)), 36); y += 22;
+                var b = new RadioButton { AutoSize = true, Margin = new Padding(3, 3, 3, 0), Text = (u.Content.AppVer ?? "?") + "  -  " + u.Name };
+                updates.Controls.Add(b);
+                updates.Controls.Add(Grey(u.FoundBy + ", " + Vita3kExtras.Mb(u.Bytes)));
                 _updates.Add((b, u));
             }
             _updateNone = new RadioButton { AutoSize = true, Text = "None - the game as it is" };
-            Add(_updateNone, 18); y += 32;
+            updates.Controls.Add(_updateNone);
 
-            Add(Bold("DLC"), 8); y += 24;
-            if (_found.Addons.Count == 0) { Add(Grey("None found."), 18); y += 22; }
+            var addons = Card("DLC");
+            if (_found.Addons.Count == 0) { var none = Grey("None found."); none.Margin = new Padding(3, 3, 3, 3); addons.Controls.Add(none); }
             foreach (var d in _found.Addons)
             {
                 var id = d.Content.ContentId ?? "";
-                var box = new CheckBox { AutoSize = true, Checked = choice == null || !choice.LeftOut.Contains(id),
+                var box = new CheckBox { AutoSize = true, Margin = new Padding(3, 3, 3, 0), Checked = choice == null || !choice.LeftOut.Contains(id),
                                          Text = (d.Content.Title ?? id) + "  -  " + d.Name };
-                Add(box, 18); y += 20;
-                Add(Grey(id + ", " + d.FoundBy + ", " + Vita3kExtras.Mb(d.Bytes)), 36); y += 22;
+                addons.Controls.Add(box);
+                addons.Controls.Add(Grey(id + ", " + d.FoundBy + ", " + Vita3kExtras.Mb(d.Bytes)));
                 _dlc.Add((box, d));
             }
 
-            y += 10;
-            var rescan = new Button { Text = again ? "Look at the folder again" : "Look at the folder", AutoSize = true };
+            var rescan = new Button { Text = again ? "Look at the folder again" : "Look at the folder", AutoSize = true, Margin = new Padding(0, 2, 0, 0) };
             rescan.Click += (_, _) => LoadExtras(again: true);
-            Add(rescan, 8);
+            stack.Controls.Add(rescan);
 
             // What is chosen now.
             if (choice == null) _updateAuto.Checked = true;

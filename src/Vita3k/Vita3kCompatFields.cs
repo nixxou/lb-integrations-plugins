@@ -40,23 +40,23 @@ namespace LbIntegrations.Vita3k
             _delayOverride = new CheckBox { Text = "Override default", AutoSize = true, Location = new Point(190, 20) };
             _delay = new TrackBar { Minimum = 0, Maximum = 30, SmallChange = 1, LargeChange = 5, TickStyle = TickStyle.None, Location = new Point(8, 44), Width = 292 };
             _delayValue = new Label { AutoSize = true, Location = new Point(12, 84) };
-            var help = new Label
-            {
-                AutoSize = false, Location = new Point(318, 44), Size = new Size(290, 60), ForeColor = SystemColors.GrayText,
-                Text = "An artificial delay on file loading, required for some games that load files too quickly compared to real hardware (Silent Hill, for one).",
-            };
+            // One short sentence, the whole on hover (Mehdi, 05/10).
+            var help = LbipHint.Note("For games that load files too fast (Silent Hill, for one).",
+                "An artificial delay on file loading, required for some games that load files too quickly compared to real hardware (Silent Hill, for one).", 290);
+            help.Location = new Point(318, 46);
+            LbipHint.Attach(_delay, "An artificial delay on file loading, required for some games that load files too quickly compared to real hardware (Silent Hill, for one).");
             loading.Controls.AddRange(new Control[] { _delayOverride, _delay, _delayValue, help });
             loading.Layout += (_, _) => _delayValue.Top = _delay.Bottom + 4;
 
             var cpu = new GroupBox { Text = "CPU", Location = new Point(0, 118), Size = new Size(620, 60) };
             _cpuOpt = Box("Enable optimizations", new Point(12, 24));
             cpu.Controls.Add(_cpuOpt);
-            new ToolTip().SetToolTip(_cpuOpt, "Dynarmic's JIT optimizations. Faster; some games crash with them.");
+            LbipHint.Attach(_cpuOpt, "Dynarmic's JIT optimizations. Faster; some games crash with them.");
 
             var audio = new GroupBox { Text = "Audio", Location = new Point(0, 186), Size = new Size(620, 60) };
             _ngs = Box("Enable NGS support", new Point(12, 24));
             audio.Controls.Add(_ngs);
-            new ToolTip().SetToolTip(_ngs, "The advanced audio library NGS. Some games crash, or have no sound, with it.");
+            LbipHint.Attach(_ngs, "The advanced audio library NGS. Some games crash, or have no sound, with it.");
 
             Controls.AddRange(new Control[] { loading, cpu, audio });
 

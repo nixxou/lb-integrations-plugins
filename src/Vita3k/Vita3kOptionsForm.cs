@@ -6,6 +6,9 @@
 // Vita3K's own Custom Config: "Game settings in Vita3K..." opens Vita3K on it. The System, Graphics, Compatibility and
 // Advanced tabs are gone, and what they saved for a game is no longer laid over its custom config at launch.
 //
+// DRESSED AS THE NIXX WINDOW (Mehdi, 05/10, NixxShell): the two tabs are pages chosen at the left, their title above them;
+// each page reads top-down as cards, a grey line one short sentence with what it said before on hover (LbipHint).
+//
 // A SELECTION THAT DOES NOT AGREE: the games are grouped by identical options; when there is more than
 // one group, a combo box names each ("KILLALLZOMBIES <and 3 others>") and the one chosen is what the
 // window starts from. OK then applies what is shown to EVERY selected game, after asking - each game
@@ -83,7 +86,8 @@ namespace LbIntegrations.Vita3k
             ShowInTaskbar = false;
             AutoScaleMode = AutoScaleMode.Dpi;
             Font = new Font("Segoe UI", 9f);
-            ClientSize = new Size(680, 634);
+            // Taller by the combo box a selection that does not agree adds above the pages: the Session page fits unscrolled.
+            ClientSize = new Size(680, 634 + (_groups.Count > 1 ? 28 : 0));
 
             // ── the top: which games, and where to start from
             var top = new Panel { Dock = DockStyle.Top, Height = (_groups.Count > 1 ? 86 : 58) + 34, Padding = new Padding(12, 10, 12, 0) };
@@ -132,7 +136,7 @@ namespace LbIntegrations.Vita3k
             ok.Click += (_, _) => Apply();
             // Vita3K's OWN per-game settings - its Custom Config - edited in Vita3K itself, for the selection.
             var own = new Button { Text = (games.Count == 1 ? "Game settings" : "Games' settings") + " in Vita3K...", AutoSize = true, Anchor = AnchorStyles.Left | AnchorStyles.Bottom };
-            new ToolTip().SetToolTip(own, "Opens Vita3K on " + (games.Count == 1 ? "this game" : "these games") + ", not started, to edit "
+            LbipHint.Attach(own, "Opens Vita3K on " + (games.Count == 1 ? "this game" : "these games") + ", not started, to edit "
                                           + (games.Count == 1 ? "its" : "each one's") + " own Custom Config in Vita3K.\n"
                                           + "What this window sets is not written there: it is laid over it while the game runs.");
             own.Click += (_, _) =>
@@ -163,6 +167,8 @@ namespace LbIntegrations.Vita3k
 
             if (_source != null) _source.SelectedIndex = 0;
             else LoadFrom(_groups[0][0]);
+            // Dressed as the Nixx window (Mehdi, 05/10): LiteBox's look, its tabs a page bar at the left.
+            LbIntegrations.Ui.NixxShell.Dress(this);
         }
 
         private void LoadFrom(Entry e)
@@ -186,64 +192,84 @@ namespace LbIntegrations.Vita3k
 
         // ── the Session tab ──────────────────────────────────────────────────
 
+        // THREE CARDS, read top-down (Mehdi, 05/10: "je veux uniformiser l'ensemble"): where the console lives, its sizes, and
+        // what a launch is given. Each grey line is one short sentence; what it said before is on hover, word for word.
         private TabPage SessionTab()
         {
             var page = new TabPage("Session") { Padding = new Padding(12), UseVisualStyleBackColor = true };
-            int y = 10;
+            var stack = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true };
+            page.Controls.Add(stack);
+            GroupBox card = null;
+            int y = 0;
+            GroupBox Card(string title)
+            {
+                card = new GroupBox { Text = title, Width = 610, Margin = new Padding(0, 0, 0, 8) };
+                stack.Controls.Add(card);
+                y = 22;
+                return card;
+            }
+            void End() => card.Height = y + 10;
             Control Add(Control c, int x, int width = 0, int height = 0)
             {
                 c.Location = new Point(x, y);
                 if (width > 0) c.Width = width;
                 if (height > 0) c.Height = height;
-                page.Controls.Add(c);
+                card.Controls.Add(c);
                 return c;
             }
-            Label Hint(string text, int x, int width = 520)
-                => (Label)Add(new Label { Text = text, AutoSize = false, Height = 18, ForeColor = SystemColors.GrayText }, x, width);
+            Label Hint(string text, string full, int x, int width)
+            {
+                var label = (Label)Add(new Label { Text = text, AutoSize = false, Height = 18, ForeColor = SystemColors.GrayText, UseMnemonic = false }, x, width);
+                LbipHint.Attach(label, full);
+                return label;
+            }
 
-            Add(new Label { Text = "Where the console lives during a game", AutoSize = true, Font = new Font(Font, FontStyle.Bold) }, 8);
-            y += 26;
-            _ramDisk = (RadioButton)Add(new RadioButton { Text = "RAM disk - on the disk instead when memory is short (default)", AutoSize = true }, 18);
+            Card("Where the console lives during a game");
+            _ramDisk = (RadioButton)Add(new RadioButton { Text = "RAM disk - on the disk instead when memory is short (default)", AutoSize = true }, 12);
             y += 24;
-            _diskOnly = (RadioButton)Add(new RadioButton { Text = "Disk only, never a RAM disk  (" + Vita3kPlugin.NoRamDiskFlag + ")", AutoSize = true }, 18);
+            _diskOnly = (RadioButton)Add(new RadioButton { Text = "Disk only, never a RAM disk  (" + Vita3kPlugin.NoRamDiskFlag + ")", AutoSize = true }, 12);
             y += 24;
-            _useVhdx = (RadioButton)Add(new RadioButton { Text = "VHDX files - the game installed once, kept on the disk  (" + Vita3kPlugin.UseVhdxFlag + ")", AutoSize = true }, 18);
-            y += 24;
-            Add(new Label { Text = "Folder:", AutoSize = true }, 38);
-            _vhdxDir = (TextBox)Add(new TextBox(), 92, 450);
-            _browse = (Button)Add(new Button { Text = "Browse...", Width = 80, Height = 25 }, 550);
-            y += 28;
-            _vhdxHint = Hint("Empty: the vhdx folder beside Vita3K. When the VHDX cannot be used, the session takes the RAM disk.", 38, 590);
-            y += 34;
+            _useVhdx = (RadioButton)Add(new RadioButton { Text = "VHDX files - the game installed once, kept on the disk  (" + Vita3kPlugin.UseVhdxFlag + ")", AutoSize = true }, 12);
+            y += 27;
+            Add(new Label { Text = "Folder:", AutoSize = true }, 32).Top += 3;
+            _vhdxDir = (TextBox)Add(new TextBox(), 86, 420);
+            _browse = (Button)Add(new Button { Text = "Browse...", Width = 80, Height = 25 }, 514);
+            y += 29;
+            _vhdxHint = Hint("Empty: the vhdx folder beside Vita3K.",
+                             "Empty: the vhdx folder beside Vita3K. When the VHDX cannot be used, the session takes the RAM disk.", 86, 500);
+            LbipHint.Attach(_vhdxDir, "Empty: the vhdx folder beside Vita3K. When the VHDX cannot be used, the session takes the RAM disk.");
+            y += 18;
+            End();
 
-            Add(new Label { Text = "Sizes", AutoSize = true, Font = new Font(Font, FontStyle.Bold) }, 8);
-            y += 26;
-            Add(new Label { Text = "RAM disk margin (MB):", AutoSize = true }, 18);
-            _margin = (TextBox)Add(new TextBox(), 190, 80);
-            Hint("empty: " + Vita3kWorkspace.MarginMb + " MB, for saves, caches and logs  (" + Vita3kPlugin.RamDiskMarginFlag + "=)", 280, 360);
+            Card("Sizes");
+            Add(new Label { Text = "RAM disk margin (MB):", AutoSize = true }, 12).Top += 3;
+            _margin = (TextBox)Add(new TextBox(), 184, 80);
+            var marginFull = "empty: " + Vita3kWorkspace.MarginMb + " MB, for saves, caches and logs  (" + Vita3kPlugin.RamDiskMarginFlag + "=)";
+            Hint("Empty: " + Vita3kWorkspace.MarginMb + " MB, for saves, caches and logs.", marginFull, 274, 320).Top += 3;
+            LbipHint.Attach(_margin, marginFull);
             y += 28;
-            Add(new Label { Text = "RAM kept for Vita3K (MB):", AutoSize = true }, 18);
-            _vitaRam = (TextBox)Add(new TextBox(), 190, 80);
-            new ToolTip().SetToolTip(_vitaRam, "Free RAM the RAM disk must leave for Vita3K itself (" + Vita3kPlugin.Vita3kRamFlag + "=).\n"
+            Add(new Label { Text = "RAM kept for Vita3K (MB):", AutoSize = true }, 12).Top += 3;
+            _vitaRam = (TextBox)Add(new TextBox(), 184, 80);
+            var ramFull = "empty: this game's last peak + 15%, at least " + Vita3kWorkspace.MinReserveMb + " MB (2048 before any measure)\n\n"
+                + "Free RAM the RAM disk must leave for Vita3K itself (" + Vita3kPlugin.Vita3kRamFlag + "=).\n"
                 + "Empty: the peak Vita3K reached with this game last time, plus 15% - the largest peak of any\n"
                 + "game for one never played, 2048 MB before anything was measured - never less than " + Vita3kWorkspace.MinReserveMb + " MB.\n"
-                + "Short of it, other programs' idle memory is freed first, then the session runs on the disk.");
-            Hint("empty: this game's last peak + 15%, at least " + Vita3kWorkspace.MinReserveMb + " MB (2048 before any measure)", 280, 380);
-            y += 38;
-
-            Add(new Label { Text = "Applied at launch", AutoSize = true, Font = new Font(Font, FontStyle.Bold) }, 8);
+                + "Short of it, other programs' idle memory is freed first, then the session runs on the disk.";
+            Hint("Empty: this game's last peak + 15%.", ramFull, 274, 320).Top += 3;
+            LbipHint.Attach(_vitaRam, ramFull);
             y += 24;
-            _preview = (TextBox)Add(new TextBox { ReadOnly = true, Multiline = true, ScrollBars = ScrollBars.Vertical }, 18, 610, 52);
+            End();
 
+            Card("Applied at launch");
+            _preview = (TextBox)Add(new TextBox { ReadOnly = true, Multiline = true, ScrollBars = ScrollBars.Vertical }, 12, 584, 52);
+            y += 58;
             // KEPT BY THIS PLUGIN, NOT IN THE GAME'S COMMAND LINE (Mehdi, 29/09): that line is the game's default
             // emulator's - kept here, the choice holds whichever emulator of ours runs it.
-            y += 58;
-            Add(new Label
-            {
-                AutoSize = false, Size = new Size(610, 34), ForeColor = SystemColors.GrayText,
-                Text = "Kept by this plugin for the game and applied at launch - whichever emulator of ours runs it; the game's "
-                     + "command line is not changed (flags of ours left on it are moved here).",
-            }, 8);
+            Hint("Kept by this plugin; the game's command line stays as it is.",
+                 "Kept by this plugin for the game and applied at launch - whichever emulator of ours runs it; the game's "
+                 + "command line is not changed (flags of ours left on it are moved here).", 12, 584);
+            y += 18;
+            End();
 
             EventHandler changed = (_, _) => Refresh_();
             _ramDisk.CheckedChanged += changed;
@@ -319,7 +345,8 @@ namespace LbIntegrations.Vita3k
         {
             if (_loading || _preview == null) return;
             RefreshMarks();
-            _vhdxDir.Enabled = _browse.Enabled = _vhdxHint.Enabled = _useVhdx.Checked;
+            // The hint stays enabled: greyed it would be drawn engraved, and say nothing on hover.
+            _vhdxDir.Enabled = _browse.Enabled = _useVhdx.Checked;
             // The sizes are the RAM disk's: nothing reads them on the disk, a VHDX reads them if it falls back.
             _margin.Enabled = _vitaRam.Enabled = !_diskOnly.Checked;
 

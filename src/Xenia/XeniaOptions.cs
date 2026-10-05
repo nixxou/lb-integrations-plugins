@@ -28,6 +28,8 @@ namespace LbIntegrations.Xenia
     {
         public string Key;                  // the cvar - and the key in the .ini files
         public string Label, Group, Help;
+        /// <summary>What a window shows under the option (Mehdi, 05/10: short sentences, the rest on hover) - null: Help itself.</summary>
+        public string Short;
         public XeniaOptionKind Kind;
         public (string Value, string Label)[] Choices = new (string, string)[0];
         public decimal Min, Max;
@@ -78,6 +80,14 @@ namespace LbIntegrations.Xenia
             new XeniaOption { Group = "Input and audio", Key = "apu", Label = "Audio backend", Kind = XeniaOptionKind.Choice, Default = "any",
                 Choices = new[] { ("any", "Automatic"), ("xaudio2", "XAudio2"), ("sdl", "SDL"), ("nop", "None (silent)") } },
         };
+
+        /// <summary>The short sentences a window shows (Mehdi, 05/10), the option's whole Help in its tooltip.</summary>
+        private static readonly Dictionary<string, string> Shorts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["draw_resolution_scale"] = "A multiple of the game's own resolution: sharper, but heavier on the GPU.",
+        };
+
+        static XeniaOptions() { foreach (var o in All) if (Shorts.TryGetValue(o.Key, out var s)) o.Short = s; }
 
         public static XeniaOption ByKey(string key) => All.FirstOrDefault(o => string.Equals(o.Key, key, StringComparison.OrdinalIgnoreCase));
 

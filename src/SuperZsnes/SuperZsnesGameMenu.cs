@@ -92,14 +92,16 @@ namespace LbIntegrations.SuperZsnes
             Font = new Font("Segoe UI", 9f);
             ClientSize = new Size(700, 780);
 
-            var intro = (_games.Count == 1 ? first.Title + "'s own options" : _games.Count + " games" + (differ ? " - their options differ: shown from " + first.Title : ", all with the same options"))
-                        + ". " + "Each stays SUPER ZSNES's own until set here; set, it goes on the game's command line at launch, "
-                        + "and is never written into the emulator's settings.";
+            // One sentence (Mehdi, 05/10), the whole of it on hover.
+            var who = _games.Count == 1 ? first.Title + "'s own options" : _games.Count + " games" + (differ ? " - their options differ: shown from " + first.Title : ", all with the same options");
+            var intro = who + "; unset, SUPER ZSNES's own applies.";
+            var introFull = who + ". " + "Each stays SUPER ZSNES's own until set here; set, it goes on the game's command line at launch, "
+                            + "and is never written into the emulator's settings.";
             // What SUPER ZSNES runs on without these: its settings file and Unity's registry values (SuperZsnesCurrent).
             var exe = ExecutableFor(games.FirstOrDefault());
             var current = exe != null ? SuperZsnesCurrent.Read(exe) : null;
             _page = new SuperZsnesSettingsPage(o => o.Scope == OptionScope.Game, saved, intro, deploy: false,
-                                               where: _games.Count == 1 ? "Options file: " + SuperZsnesSettings.GamePath(first.Id) : "", running: current);
+                                               where: _games.Count == 1 ? "Options file: " + SuperZsnesSettings.GamePath(first.Id) : "", running: current, introFull: introFull);
             _atOpen = _page.Shown();
             _page.Dock = DockStyle.Fill;
 
@@ -114,6 +116,8 @@ namespace LbIntegrations.SuperZsnes
 
             Controls.Add(_page);
             Controls.Add(buttons);
+            // Dressed as the Nixx window (Mehdi, 05/10): LiteBox's look. One page of cards, no tabs: only themed.
+            LbIntegrations.Ui.NixxShell.Dress(this);
         }
 
         /// <summary>The SUPER ZSNES this game runs on: its own emulator when that is one, else the first in the library.</summary>

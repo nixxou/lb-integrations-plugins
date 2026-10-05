@@ -36,7 +36,7 @@ namespace LbIntegrations.Vita3k
             _enter = Row("Enter button:", Vita3kConfig.EnterButtons);
             _pstv = new CheckBox { Text = "PlayStation TV mode (PSTV)", AutoSize = true, Location = new Point(116, y + 2) };
             Controls.Add(_pstv);
-            new ToolTip().SetToolTip(_pstv, "Vita3K answers the game as a PlayStation TV: each controller on its own port (local multiplayer),\n"
+            LbIntegrations.Lbip.LbipHint.Attach(_pstv, "Vita3K answers the game as a PlayStation TV: each controller on its own port (local multiplayer),\n"
                                             + "no camera, the TV's model and resolution. A game that needs the touch screen or the camera may refuse it.");
 
             // Japanese goes with the circle button, as on a Japanese console - when chosen, not when shown.

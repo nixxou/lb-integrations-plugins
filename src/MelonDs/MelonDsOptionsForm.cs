@@ -92,7 +92,7 @@ namespace LbIntegrations.MelonDs
             StartPosition = FormStartPosition.CenterParent;
             ShowInTaskbar = false;
             Font = new Font("Segoe UI", 9f);
-            ClientSize = new Size(560, 588);
+            ClientSize = new Size(580, 588);
 
             // ── the top: which games, and where to start from
             var top = new Panel { Dock = DockStyle.Top, Height = _groups.Count > 1 ? 58 : 32, Padding = new Padding(12, 10, 12, 0) };
@@ -137,6 +137,9 @@ namespace LbIntegrations.MelonDs
 
             if (_source != null) _source.SelectedIndex = 0;
             else LoadFrom(_groups[0][0]);
+            // Dressed as the Nixx window (Mehdi, 05/10): LiteBox's look, the tabs a page bar at the left, each page's title
+            // above it - and each long explanation one short sentence, the whole of it on hover (LbipHint).
+            LbIntegrations.Ui.NixxShell.Dress(this);
         }
 
         private static string Describe(Entry e)
@@ -149,16 +152,21 @@ namespace LbIntegrations.MelonDs
         private TabPage SessionTab()
         {
             var page = new TabPage("Session") { UseVisualStyleBackColor = true };
-            int y = 14;
-            void Add(Control c, int x) { c.Location = new Point(x, y); page.Controls.Add(c); }
-
-            Add(new Label
+            // One card, as the Nixx window's pages (Mehdi, 05/10): the choice, and a line under each part of it.
+            var card = new GroupBox { Text = "Working NAND", Location = new Point(12, 6), Size = new Size(532, 40) };
+            page.Controls.Add(card);
+            int y = 24;
+            // Placed, then the next one under it: a note that wraps (a long reason) pushes the rest down.
+            void Add(Control c, int x, int gap = 6)
             {
-                Text = "Where the working NAND of " + (_ware.Count == 1 ? "this DSiWare title" : "the " + _ware.Count + " DSiWare titles of the selection")
-                       + " lives while it plays. Its save is kept either way.",
-                AutoSize = false, Size = new Size(510, 34),
-            }, 12);
-            y += 40;
+                c.Location = new Point(x, y);
+                card.Controls.Add(c);
+                y += Math.Max(c.PreferredSize.Height, 16) + gap;
+            }
+
+            var whereFull = "Where the working NAND of " + (_ware.Count == 1 ? "this DSiWare title" : "the " + _ware.Count + " DSiWare titles of the selection")
+                          + " lives while it plays. Its save is kept either way.";
+            Add(LbipHint.Note("Where the DSiWare NAND lives while it plays; its save is kept either way.", whereFull, 500, Padding.Empty), 12, 10);
 
             string why = null;
             try
@@ -170,26 +178,23 @@ namespace LbIntegrations.MelonDs
             catch (Exception ex) { why = ex.Message; }
 
             _ram = new RadioButton { AutoSize = true, Text = "RAM disk - faster, nothing written to the disk while playing (the default)", Enabled = why == null };
-            Add(_ram, 18); y += 22;
+            Add(_ram, 18, 2);
             Add(why != null
-                ? new Label { AutoSize = true, ForeColor = Color.Firebrick, Text = "Not available: " + why + ". These titles play on the disk." }
-                : new Label { AutoSize = true, ForeColor = SystemColors.GrayText, Text = "Needs about 300 MB of free memory; without it, the disk is used." }, 36);
-            y += 28;
+                ? new Label { AutoSize = true, MaximumSize = new Size(480, 0), ForeColor = Color.Firebrick, Text = "Not available: " + why + ". These titles play on the disk." }
+                : new Label { AutoSize = true, MaximumSize = new Size(480, 0), ForeColor = SystemColors.GrayText, Text = "Needs about 300 MB of free memory; without it, the disk is used." }, 36, 10);
             _disk = new RadioButton { AutoSize = true, Text = "Disk - survives a crash of the machine mid-game" };
-            Add(_disk, 18); y += 34;
+            Add(_disk, 18, 12);
+            LbipHint.Attach(_ram, whereFull, _disk);
             _disk.CheckedChanged += (_, _) => { if (!_loading) RefreshMarks(); };
             // KEPT BY THIS PLUGIN, NOT IN THE GAME'S COMMAND LINE (Mehdi, 29/09): that line is the game's
             // default emulator's - kept here, the choice holds whichever emulator of ours runs it.
-            Add(new Label
-            {
-                AutoSize = false, Size = new Size(510, 34), ForeColor = SystemColors.GrayText,
-                Text = "Kept by this plugin for the game and applied at launch - whichever emulator of ours runs it; "
-                       + "the game's command line is not changed (a " + MelonDsCommandLine.NoRamDiskFlag + " left on it is moved here).",
-            }, 12);
-            y += 40;
+            Add(LbipHint.Note("Kept by this plugin for the game; its command line is not changed.",
+                "Kept by this plugin for the game and applied at launch - whichever emulator of ours runs it; "
+                + "the game's command line is not changed (a " + MelonDsCommandLine.NoRamDiskFlag + " left on it is moved here).", 500, Padding.Empty), 12, 8);
+            card.Height = y;
             if (_games.Count > _ware.Count)
-                Add(new Label { AutoSize = true, ForeColor = SystemColors.GrayText,
-                                Text = (_games.Count - _ware.Count) + " cartridge game(s) of the selection have no session option and keep theirs." }, 12);
+                page.Controls.Add(new Label { AutoSize = true, MaximumSize = new Size(520, 0), ForeColor = SystemColors.GrayText, Location = new Point(14, card.Bottom + 8),
+                                              Text = (_games.Count - _ware.Count) + " cartridge game(s) of the selection have no session option and keep theirs." });
             return page;
         }
 
@@ -200,14 +205,13 @@ namespace LbIntegrations.MelonDs
         private TabPage VideoTab()
         {
             var page = new TabPage("Video") { UseVisualStyleBackColor = true };
-            page.Controls.Add(new Label
-            {
-                AutoSize = false, Location = new Point(12, 8), Size = new Size(520, 52), ForeColor = SystemColors.GrayText,
-                Text = "A <Default> entry, a filled box or an untouched \"Override default\" leaves the setting as melonDS has it; only "
-                     + "what is set here is written, for the game's session only - melonDS's own come back when it quits.",
-            });
+            var intro = LbipHint.Note("For this game only; left on default, melonDS's own setting applies.",
+                "A <Default> entry, a filled box or an untouched \"Override default\" leaves the setting as melonDS has it; only "
+                + "what is set here is written, for the game's session only - melonDS's own come back when it quits.", 520);
+            intro.Location = new Point(12, 8);
+            page.Controls.Add(intro);
 
-            var display = new GroupBox { Text = "Display settings", Location = new Point(12, 64), Size = new Size(250, 232) };
+            var display = new GroupBox { Text = "Display settings", Location = new Point(12, 34), Size = new Size(250, 232) };
             display.Controls.Add(new Label { Text = "3D renderer:", AutoSize = true, Location = new Point(12, 24) });
             _renderer = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(12, 44), Width = 226 };
             _useGl = Box("OpenGL display", new Point(12, 80));
@@ -217,11 +221,11 @@ namespace LbIntegrations.MelonDs
             _interval = new NumericUpDown { Minimum = 1, Maximum = 20, Width = 50, Location = new Point(14, 164) };
             display.Controls.AddRange(new Control[] { _renderer, _useGl, _vsync, _intervalOverride, _interval });
 
-            var softBox = new GroupBox { Text = "Software renderer", Location = new Point(276, 64), Size = new Size(250, 56) };
+            var softBox = new GroupBox { Text = "Software renderer", Location = new Point(276, 34), Size = new Size(268, 56) };
             _threaded = Box("Use separate thread", new Point(12, 24));
             softBox.Controls.Add(_threaded);
 
-            var glBox = new GroupBox { Text = "OpenGL renderer", Location = new Point(276, 128), Size = new Size(250, 168) };
+            var glBox = new GroupBox { Text = "OpenGL renderer", Location = new Point(276, 98), Size = new Size(268, 168) };
             glBox.Controls.Add(new Label { Text = "Internal resolution:", AutoSize = true, Location = new Point(12, 24) });
             _scale = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(12, 46), Width = 224 };
             // Two lines each: "(default: ...)" would not fit beside the name.
@@ -232,8 +236,8 @@ namespace LbIntegrations.MelonDs
             glBox.Controls.AddRange(new Control[] { _scale, _better, _hires });
 
             page.Controls.AddRange(new Control[] { display, softBox, glBox });
-            _videoHandNote = new Label { AutoSize = false, Location = new Point(12, 304), Size = new Size(520, 34), ForeColor = Color.Firebrick, Visible = false,
-                                         Text = "Set by hand in the Advanced tab - untick \"Edit by hand\" there to use this tab again." };
+            _videoHandNote = new Label { AutoSize = false, Location = new Point(12, 274), Size = new Size(532, 34), ForeColor = Color.Firebrick, Visible = false,
+                                         Text = HandNoteText };
             page.Controls.Add(_videoHandNote);
 
             EventHandler refresh = (_, _) => { if (!_loading) RefreshEnabled(); };
@@ -248,6 +252,9 @@ namespace LbIntegrations.MelonDs
             };
             return page;
         }
+
+        // Under Video and Firmware while the Advanced page's text is the one in use.
+        private const string HandNoteText = "Set by hand on the Advanced page - untick \"Edit by hand\" there to use this page again.";
 
         private static CheckBox Box(string text, Point at) => new CheckBox { Text = text, Tag = text, AutoSize = true, Location = at, ThreeState = true };
 
@@ -297,21 +304,21 @@ namespace LbIntegrations.MelonDs
             var page = new TabPage("Firmware") { UseVisualStyleBackColor = true };
             _fwOverwrite = new CheckBox
             {
-                AutoSize = true, Location = new Point(12, 12),
+                AutoSize = true, Location = new Point(12, 8),
                 Text = "Overwrite melonDS's firmware settings for " + (_games.Count == 1 ? "this game" : "these games"),
             };
             page.Controls.Add(_fwOverwrite);
-            page.Controls.Add(new Label
-            {
-                AutoSize = false, Location = new Point(30, 34), Size = new Size(500, 46), ForeColor = SystemColors.GrayText,
-                Text = "melonDS then overrides the console's own settings with these, for the game's session only. "
+            var fwFull = "melonDS then overrides the console's own settings with these, for the game's session only. "
                        + (_ware.Count > 0 ? "A DSiWare title's save keeps the console's own: the game sees these only while this is ticked. " : "")
-                       + "Unticked, the game runs on melonDS's settings, shown below.",
-            });
-            _firmware = new MelonDsFirmwareFields { Location = new Point(12, 84) };
+                       + "Unticked, the game runs on melonDS's settings, shown below.";
+            var fwNote = LbipHint.Note("For the game's session only; unticked, melonDS's settings below apply.", fwFull, 510);
+            fwNote.Location = new Point(30, 32);
+            page.Controls.Add(fwNote);
+            LbipHint.Attach(_fwOverwrite, fwFull);
+            _firmware = new MelonDsFirmwareFields { Location = new Point(12, 58) };
             page.Controls.Add(_firmware);
-            _fwHandNote = new Label { AutoSize = false, Location = new Point(12, 354), Size = new Size(520, 34), ForeColor = Color.Firebrick, Visible = false,
-                                      Text = "Set by hand in the Advanced tab - untick \"Edit by hand\" there to use this tab again." };
+            _fwHandNote = new Label { AutoSize = false, Location = new Point(12, 328), Size = new Size(532, 34), ForeColor = Color.Firebrick, Visible = false,
+                                      Text = HandNoteText };
             page.Controls.Add(_fwHandNote);
             _fwOverwrite.CheckedChanged += (_, _) =>
             {
@@ -468,27 +475,28 @@ namespace LbIntegrations.MelonDs
         private TabPage AdvancedTab()
         {
             var page = new TabPage("Advanced") { UseVisualStyleBackColor = true };
-            page.Controls.Add(new Label
-            {
-                AutoSize = false, Location = new Point(12, 6), Size = new Size(524, 116), ForeColor = SystemColors.GrayText,
-                Text = "Write ONLY the keys you want to change: [table], then key = value - true/false, a number, 'text' or [a, b]. "
+            var full = "Write ONLY the keys you want to change: [table], then key = value - true/false, a number, 'text' or [a, b]. "
                      + "Any key of melonDS.toml, in any table.\n"
                      + "- Only these keys are written into melonDS.toml, for this game's sessions; the rest of the file is not touched.\n"
                      + "- melonDS's own values come back when it quits, and a key that was not there is taken out again.\n"
-                     + "- Left out: the keys this plugin sets for every launch (console, boot, NAND, BIOS, save folders).",
-            });
-            _handOn = new CheckBox { AutoSize = true, Location = new Point(12, 126), Text = "Edit by hand (Video and Firmware are then not used)" };
+                     + "- Left out: the keys this plugin sets for every launch (console, boot, NAND, BIOS, save folders).";
+            var intro = LbipHint.Note("Only the keys to change, as melonDS.toml has them: [table], then key = value.", full, 532);
+            intro.Location = new Point(12, 6);
+            page.Controls.Add(intro);
+            _handOn = new CheckBox { AutoSize = true, Location = new Point(12, 32), Text = "Edit by hand (Video and Firmware are then not used)" };
             page.Controls.Add(_handOn);
-            var preview = new Button { Text = "Preview result...", AutoSize = true, Location = new Point(418, 122) };
+            var preview = new Button { Text = "Preview result...", AutoSize = true };
+            preview.Location = new Point(544 - preview.PreferredSize.Width, 28);
             preview.Click += (_, _) => PreviewResult();
             page.Controls.Add(preview);
             _handText = new TextBox
             {
-                Location = new Point(12, 152), Size = new Size(524, 196), Multiline = true, ScrollBars = ScrollBars.Both, WordWrap = false,
+                Location = new Point(12, 60), Size = new Size(532, 270), Multiline = true, ScrollBars = ScrollBars.Both, WordWrap = false,
                 AcceptsReturn = true, AcceptsTab = true, Font = new Font("Consolas", 9f), ReadOnly = true,
             };
+            LbipHint.Attach(_handText, full, _handOn);
             page.Controls.Add(_handText);
-            _handStatus = new Label { AutoSize = false, Location = new Point(12, 352), Size = new Size(524, 70) };
+            _handStatus = new Label { AutoSize = false, Location = new Point(12, 336), Size = new Size(532, 66) };
             page.Controls.Add(_handStatus);
 
             _handOn.CheckedChanged += (_, _) =>
@@ -549,14 +557,16 @@ namespace LbIntegrations.MelonDs
         {
             bool on = _handOn.Checked;
             _handText.ReadOnly = !on;
-            _handText.BackColor = on ? SystemColors.Window : SystemColors.Control;
+            // Read-only said by its text, not its background: the dark theme maps a text colour each time it is set, a background
+            // only once (NixxTheme) - a background set here later would bring Windows' white back.
+            _handText.ForeColor = on ? SystemColors.WindowText : SystemColors.GrayText;
             RefreshEnabled();
             _fwOverwrite.Enabled = !on;
             _firmware.SetEditable(!on && _fwOverwrite.Checked);
             _videoHandNote.Visible = _fwHandNote.Visible = on;
             RefreshMarks();
 
-            if (!on) { _handStatus.ForeColor = SystemColors.GrayText; _handStatus.Text = "Generated from the Video and Firmware tabs."; return; }
+            if (!on) { _handStatus.ForeColor = SystemColors.GrayText; _handStatus.Text = "Generated from the Video and Firmware pages."; return; }
             var warnings = MelonDsGameSettings.CheckHand(Layout0(), _handText.Text, out var error);
             _handStatus.ForeColor = error != null ? Color.Firebrick : warnings.Count > 0 ? Color.DarkGoldenrod : Color.DarkGreen;
             _handStatus.Text = error != null ? "Not valid: " + error
