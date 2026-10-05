@@ -41,7 +41,7 @@ namespace LbIntegrations.Xemu
 
         /// <summary>A value of this option as TOML: true / false, 'TEXT', or a number.</summary>
         public string ToToml(string value)
-            => Bool ? (value == "on" ? "true" : "false") : Kind == TomlKind.String ? "'" + value + "'" : value;
+            => Bool ? (value == "on" ? "true" : "false") : Kind == TomlKind.String ? XemuToml.Literal(value) : value;
 
         /// <summary>A raw TOML value read back as this option's value - "on" / "off", the text, the number.</summary>
         public string FromToml(string raw)

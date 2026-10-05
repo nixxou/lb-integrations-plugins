@@ -6,8 +6,9 @@
 // over several lines (gamepad_mappings = [ ... { gamepad_id = '...' } ... ]), so a line is a key's only when it starts one at
 // the table's level - brackets and braces counted, strings skipped. A header is a line "[name]" of letters, digits, '_', '-'
 // and '.' only: an array's line ("[1, 2]", "{ ... }") never is one.
-// Strings as TOML literal strings ('C:\path'): no escaping, a backslash is a backslash. A path holding a ' cannot be one -
-// refused rather than written broken.
+// Strings as TOML literal strings ('C:\path'): no escaping, a backslash is a backslash, as xemu writes them. A string holding
+// a ' cannot be one (a game "Tom Clancy's ..."): it goes as a basic string instead, "G:\\games\\Tom Clancy's.iso" - escaped,
+// and read back unescaped (Text). Measured 05/10: xemu v0.8.136 reads it.
 
 using System;
 using System.Collections.Generic;
@@ -179,8 +180,28 @@ namespace LbIntegrations.Xemu
 
     internal static class XemuToml
     {
-        public static string Literal(string path)
-            => path.IndexOf('\'') >= 0 ? throw new ArgumentException("a path with a ' cannot go into xemu.toml: " + path) : "'" + path + "'";
+        /// <summary>A string as TOML: a literal string, else - it holds a ' - a basic string, escaped.</summary>
+        public static string Literal(string text)
+        {
+            if (text.IndexOf('\'') < 0 && text.IndexOf('\n') < 0 && text.IndexOf('\r') < 0) return "'" + text + "'";
+            var b = new StringBuilder("\"");
+            foreach (var c in text)
+            {
+                switch (c)
+                {
+                    case '\\': b.Append("\\\\"); break;
+                    case '"': b.Append("\\\""); break;
+                    case '\n': b.Append("\\n"); break;
+                    case '\r': b.Append("\\r"); break;
+                    case '\t': b.Append("\\t"); break;
+                    default:
+                        if (c < 0x20) b.Append("\\u").Append(((int)c).ToString("X4"));
+                        else b.Append(c);
+                        break;
+                }
+            }
+            return b.Append('"').ToString();
+        }
 
         /// <summary>Set <paramref name="key"/> = <paramref name="value"/> (already TOML: 'text', true, 4) in [<paramref name="table"/>],
         /// the table appended when there is none. <paramref name="onlyIfAbsent"/>: a value already there - the user's - stays.
@@ -202,7 +223,29 @@ namespace LbIntegrations.Xemu
         {
             if (raw == null) return null;
             raw = raw.Trim();
-            if (raw.Length >= 2 && (raw[0] == '\'' || raw[0] == '"') && raw[raw.Length - 1] == raw[0]) return raw.Substring(1, raw.Length - 2);
+            if (raw.Length >= 2 && raw[0] == '\'' && raw[raw.Length - 1] == '\'') return raw.Substring(1, raw.Length - 2);
+            if (raw.Length >= 2 && raw[0] == '"' && raw[raw.Length - 1] == '"')
+            {
+                // A basic string: its escapes read back.
+                var s = raw.Substring(1, raw.Length - 2);
+                var b = new StringBuilder();
+                for (int i = 0; i < s.Length; i++)
+                {
+                    if (s[i] != '\\' || i + 1 >= s.Length) { b.Append(s[i]); continue; }
+                    char e = s[++i];
+                    switch (e)
+                    {
+                        case 'n': b.Append('\n'); break;
+                        case 'r': b.Append('\r'); break;
+                        case 't': b.Append('\t'); break;
+                        case 'b': b.Append('\b'); break;
+                        case 'f': b.Append('\f'); break;
+                        case 'u' when i + 4 < s.Length && int.TryParse(s.Substring(i + 1, 4), System.Globalization.NumberStyles.HexNumber, null, out var u4): b.Append((char)u4); i += 4; break;
+                        default: b.Append(e); break;          // \\ and \" - and anything else, as it is
+                    }
+                }
+                return b.ToString();
+            }
             return raw;
         }
     }

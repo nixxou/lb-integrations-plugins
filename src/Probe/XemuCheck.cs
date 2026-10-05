@@ -1188,6 +1188,21 @@ namespace LbIntegrations.Probe
         /// the user's, the rest the session's.</summary>
         private static void SessionToml(string work)
         {
+            // A string with a ' (a game "Tom Clancy's ..."): a basic string, escaped, read back as it was - measured 05/10, xemu
+            // v0.8.136 reads it and writes it back the same way.
+            {
+                var toml = T("XemuToml");
+                string Lit(string s) => (string)toml.GetMethod("Literal", Any).Invoke(null, new object[] { s });
+                string Txt(string s) => (string)toml.GetMethod("Text", Any).Invoke(null, new object[] { s });
+                var path = "G:\\xboxoriginal\\Tom Clancy's \"Splinter\" Cell.iso";
+                Check("a plain path stays a literal string", Lit("G:\\a b\\c.iso") == "'G:\\a b\\c.iso'");
+                Check("a path with a ': a basic string, escaped", Lit(path) == "\"G:\\\\xboxoriginal\\\\Tom Clancy's \\\"Splinter\\\" Cell.iso\"", Lit(path));
+                Check("... read back as it was", Txt(Lit(path)) == path, Txt(Lit(path)));
+                Check("... as xemu writes it back", Txt("\"G:\\\\xboxoriginal\\\\lbip-test's disc.iso\"") == "G:\\xboxoriginal\\lbip-test's disc.iso");
+                var quoted = T("XemuTomlDoc").GetMethod("Parse", Any).Invoke(null, new object[] { "[sys.files]\r\ndvd_path = " + Lit(path) + "\r\nhdd_path = 'x'\r\n" });
+                Check("... and a file holding it reads whole", Txt((string)quoted.GetType().GetMethod("Get", Any).Invoke(quoted, new object[] { "sys.files", "dvd_path" })) == path
+                      && Txt((string)quoted.GetType().GetMethod("Get", Any).Invoke(quoted, new object[] { "sys.files", "hdd_path" })) == "x");
+            }
             var user = Path.Combine(work, "xemu.toml");
             var session = Path.Combine(work, "xemu-session.toml");
             var userText = string.Join("\r\n", new[]
@@ -1554,9 +1569,7 @@ namespace LbIntegrations.Probe
                 Call("XemuToml", "Set", toml, "sys.files", "hdd_path", Call("XemuToml", "Literal", @"D:\x.qcow2"));
                 Check("a value replaced, read back", (string)Call("XemuToml", "Text", Call("XemuToml", "Get", toml, "sys.files", "hdd_path")) == @"D:\x.qcow2");
                 Check("[general.updates] not mistaken for [general]", Call("XemuToml", "Get", toml, "general.updates", "check") == null);
-                bool threw = false;
-                try { Call("XemuToml", "Literal", @"C:\it's\x"); } catch (ArgumentException) { threw = true; }
-                Check("a path with a ' refused", threw);
+                Check("a path with a ': written as a basic string, not refused (05/10)", (string)Call("XemuToml", "Literal", @"C:\it's\x") == "\"C:\\\\it's\\\\x\"");
                 Check("LF only", !File.ReadAllText(toml).Contains("\r"));
                 File.WriteAllText(toml, "# xemu's\r\n[general]\r\nshow_welcome = true\r\n[display]\r\nrenderer = 'VULKAN'\r\n");
                 Call("XemuToml", "Set", toml, "general", "show_welcome", "false");
