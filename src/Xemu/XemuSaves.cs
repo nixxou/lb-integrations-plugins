@@ -59,6 +59,11 @@ namespace LbIntegrations.Xemu
         {
             if (XemuPaths.Running(exe)) return null;
             Saves.XemuStates.ForgetWithoutConsole(exe, titleId);
+            // THE STAMP BELONGS TO THE CONSOLE too: a console deleted by hand is not a console the game emptied - read so, its save
+            // would be removed. Forgotten, the save is laid into the new console at the next launch.
+            var consolePath = XemuPaths.GameHdd(exe, titleId);
+            var stampPath = consolePath == null ? null : Path.ChangeExtension(consolePath, ".stamp");
+            if (stampPath != null && !File.Exists(consolePath) && File.Exists(stampPath)) { try { File.Delete(stampPath); Log.Info("saves: " + titleId + " - its console is gone: its stamp forgotten, its save kept"); } catch { } }
             var side = Side(exe, titleId);
             if (side == null) return null;
             var done = XboxSaveSync.Sync(side, mode);

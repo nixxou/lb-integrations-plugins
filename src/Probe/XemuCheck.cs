@@ -1005,6 +1005,13 @@ namespace LbIntegrations.Probe
                 Check("a restore over a console as agreed: laid in, no copy", Y("Restore") is string c5 && c5.Contains("restored") && OfConsole() == OfZip(firstZip)
                       && Directory.GetFiles(conflicts).Except(seen).Count() == 0);
             }
+            // The console deleted by hand, its stamp left: the save is kept at a listing, laid into a new console at the launch.
+            File.Copy(firstZip, active, overwrite: true);
+            Y("Launch");
+            Check("(agreed, its stamp there)", File.Exists(stampFile) && File.Exists(console));
+            File.Delete(console);
+            Check("the console deleted: a listing keeps the save", Y("Listing") == null && File.Exists(active) && OfZip(active) == OfZip(firstZip));
+            Check("... the launch lays it into a new console", Y("Launch") is string sd && sd.Contains("laid") && File.Exists(console) && OfConsole() == OfZip(firstZip));
             File.Delete(active); File.Delete(stampFile);
 
             var escape = Path.Combine(work, "escape.cxbxsave");
