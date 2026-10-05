@@ -164,6 +164,13 @@
 //                                  (ZarXiso, from the xemu plugin), read through the archive, nothing unpacked; patch=media
 //                                  as for a disc. A helper 1.10 refuses a ZArchive: check >= 1.11.
 //
+// -- added in 1.14 -----------------------------------------------------------------------------
+//   view     = chd                 on image-attach: a CHD served UNCOMPRESSED - a CHD v5 with no compressor, its hunks decoded
+//                                  as they are read, its metadata and SHA-1s the source's (ChdPlain) - as the one file of an
+//                                  exFAT volume, game.chd, AIM only; self-started as "--chd-serve <chd>". For an emulator that
+//                                  cannot read the file's codecs (Demul: zstd). The result gains " file=<the file's path>".
+//                                  An older helper reads view=chd as no view: check >= 1.14.
+//
 // AIM, WHAT DIFFERS FROM IMDISK. aim_ll takes imdisk's arguments almost word for word, but its disks
 // are real SCSI disks: Windows' mount manager gives a new volume a letter of its own on top of the one
 // asked for, which is taken off again (only the mount point asked for is kept), and the disk goes the
@@ -208,6 +215,7 @@ namespace RamDiskHelper
             // 1.7: the one command-line use - this exe serving an Xbox disc's view, started by itself (below).
             if (argv.Length == 2 && argv[0] == "--xbox-serve") return XboxServe(argv[1]);
             // 1.10: the same, the disc's XISO as one file on an exFAT volume.
+            if (argv.Length == 2 && argv[0] == "--chd-serve") return ChdServe(argv[1]);
             if ((argv.Length == 2 || argv.Length == 3) && argv[0] == "--xiso-serve") return XisoServe(argv[1], argv.Length == 3 && argv[2] == "media");
             string dir = AppContext.BaseDirectory;
             string cfgPath = Path.Combine(dir, "ramdisk.cfg");
@@ -845,6 +853,7 @@ namespace RamDiskHelper
             if (!SafeImage(image) || !File.Exists(image)) return "FAIL " + head + " exit=-1 - image is not an existing file with an absolute path of a plain shape";
             if (Get(kv, "view", "").Equals("xbox", StringComparison.OrdinalIgnoreCase)) return XboxAttach(kv, dir, image, "xbox");
             if (Get(kv, "view", "").Equals("xiso", StringComparison.OrdinalIgnoreCase)) return XboxAttach(kv, dir, image, "xiso");
+            if (Get(kv, "view", "").Equals("chd", StringComparison.OrdinalIgnoreCase)) return XboxAttach(kv, dir, image, "chd");
             string ext = Path.GetExtension(image).ToLowerInvariant();
             bool iso = ext == ".iso";
             bool raw = Array.IndexOf(RawImages, ext) >= 0;
@@ -1093,7 +1102,7 @@ namespace RamDiskHelper
             if (!SetVolumeMountPoint(point.TrimEnd('\\') + "\\", volume)) return Fail("attached, but " + point + " could not be given to it (error " + Marshal.GetLastWin32Error() + ")");
             WriteAttached(dir, point, "aim", image, "");
             return "OK " + head + " " + token + " exit=0 backend=aim view=" + viewName + " proxy=" + proxy + " at=" + point
-                   + (viewName == "xiso" ? " file=" + point.TrimEnd('\\') + "\\" + XisoFileName : "");
+                   + (viewName == "xiso" ? " file=" + point.TrimEnd('\\') + "\\" + XisoFileName : viewName == "chd" ? " file=" + point.TrimEnd('\\') + "\\" + ChdFileName : "");
         }
 
         /// <summary>--xbox-serve &lt;image&gt;: the disc's FAT32 view served to the one proxy client that connects.</summary>
@@ -1139,6 +1148,28 @@ namespace RamDiskHelper
 
         /// <summary>The name of the one file on view=xiso's volume.</summary>
         private const string XisoFileName = "game.iso";
+
+        /// <summary>The name of the one file on view=chd's volume.</summary>
+        private const string ChdFileName = "game.chd";
+
+        /// <summary>--chd-serve &lt;chd&gt; (1.14): the CHD made UNCOMPRESSED (Shared.Disc\ChdPlain - its hunks decoded as they are read,
+        /// its metadata, sizes and SHA-1s the source's) as the one file of an exFAT volume - for an emulator whose CHD reader is
+        /// older than the file (Demul's libchd.dll crashes on a zstd one).</summary>
+        private static int ChdServe(string image)
+        {
+            ChdThreadsFromEnvironment();
+            try
+            {
+                var source = LbIntegrations.Disc.ChdPlain.Open(image);
+                var view = new LbIntegrations.Xemu.ExfatOneFileView(0, source.Length, ChdFileName, "CHDPLAIN", null);
+                return Serve(source, view.Length, view.Read);
+            }
+            catch (Exception ex)
+            {
+                try { Console.WriteLine("ERROR " + ex.GetType().Name + ": " + ex.Message); } catch { }
+                return 1;
+            }
+        }
 
         /// <summary>--xiso-serve &lt;image&gt; (1.10): the disc's XISO - from its game partition on, through its container - as the
         /// one file of an exFAT volume, served to the one proxy client that connects.</summary>

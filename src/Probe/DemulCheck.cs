@@ -101,6 +101,36 @@ namespace LbIntegrations.Probe
             return _bad == 0;
         }
 
+        /// <summary>--demul-chd --lb <root> <chd>...: what Demul is handed for each CHD (DemulChd) - as it is, or why not and then
+        /// the uncompressed CHD served by the RAM disk helper (view=chd, AIM - MOUNTS A DISK), left attached for a reader to try;
+        /// --demul-chd-release --lb <root> --root K:\ takes it back.</summary>
+        public static bool Chd(Assembly asm, string lb, string[] chds)
+        {
+            asm.GetType("LbIntegrations.RamDisk.RamDiskHost", true).GetMethod("UseRoot", Any).Invoke(null, new object[] { lb });
+            var t = asm.GetType("LbIntegrations.Demul.DemulChd", true);
+            foreach (var c in chds)
+            {
+                var why = (string)t.GetMethod("Unreadable", Any).Invoke(null, new object[] { c });
+                Console.WriteLine("  " + Path.GetFileName(c) + ": " + (why == null ? "Demul reads it - handed over as it is" : why));
+                if (why == null) continue;
+                var exe = Path.Combine(Path.GetTempPath(), "lbip-demul-probe", "demul.exe");
+                Directory.CreateDirectory(Path.GetDirectoryName(exe));
+                var args = new object[] { c, exe, null, null };
+                var w = System.Diagnostics.Stopwatch.StartNew();
+                var path = (string)t.GetMethod("Present", Any).Invoke(null, args);
+                Console.WriteLine("    handed over: " + (path ?? "nothing - " + args[3]) + " in " + w.ElapsedMilliseconds + " ms" + (args[2] != null ? ", served at " + args[2] : ", a copy"));
+            }
+            return true;
+        }
+
+        public static bool ChdRelease(Assembly asm, string lb, string root)
+        {
+            asm.GetType("LbIntegrations.RamDisk.RamDiskHost", true).GetMethod("UseRoot", Any).Invoke(null, new object[] { lb });
+            asm.GetType("LbIntegrations.Demul.DemulChd", true).GetMethod("Release", Any).Invoke(null, new object[] { root });
+            Console.WriteLine("  released " + root + "; still there: " + Directory.Exists(root));
+            return true;
+        }
+
         /// <summary>--demul-shot <png> --rom <set or disc> --platform <platform>: a game's window drawn off screen (a stub game).</summary>
         public static bool Shot(Assembly asm, string png, string rom, string platform)
         {

@@ -310,10 +310,24 @@ namespace LbIntegrations.Demul
                 var bios = DemulBios.For(system, DemulPlatforms.BoardOf(platform));
                 if (bios != null) DemulBios.Import(Path.GetDirectoryName(exe), new[] { bios });
 
-                DemulLaunch.PrepareIni(exe, system, rom, Safe(() => args?.GameBeingLaunched?.Id));
-                var line = DemulLaunch.CommandLine(Safe(() => args?.CurrentCommandLine) ?? "", system, rom);
-                Log.Info("command line: " + line);
-                return new PrepareForLaunchResponse(success: true) { NewCommandLine = line };
+                // A Dreamcast CHD Demul cannot read (a zstd one: its reader crashes) handed over uncompressed - served where it
+                // is, else copied (DemulChd); a CHD it reads, and every other file, as it is.
+                string disc = rom, served = null;
+                if (system == "dc")
+                {
+                    disc = DemulChd.Present(rom, exe, out served, out var problem);
+                    if (disc == null) return Refuse(problem);
+                }
+                try
+                {
+                    DemulLaunch.PrepareIni(exe, system, disc, Safe(() => args?.GameBeingLaunched?.Id));
+                    var line = DemulLaunch.CommandLine(Safe(() => args?.CurrentCommandLine) ?? "", system, disc);
+                    Log.Info("command line: " + line);
+                    DemulSession.Watch(exe, served);
+                    served = null;
+                    return new PrepareForLaunchResponse(success: true) { NewCommandLine = line };
+                }
+                finally { DemulChd.Release(served); }
             }
             catch (Exception ex)
             {

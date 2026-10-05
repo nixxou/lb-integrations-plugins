@@ -37,6 +37,9 @@
     <Compile Include="..\Shared.Menu\**\*.cs" />
     <!-- The look of the Nixx windows, LiteBox's: the theme and the shell of a game's window. -->
     <Compile Include="..\Shared.Ui\**\*.cs" />
+    <!-- A Dreamcast CHD Demul cannot read, handed over uncompressed (DemulChd): Shared.Disc's ChdPlain, served by the RAM disk helper. -->
+    <Compile Include="..\Shared.Disc\**\*.cs" />
+    <Compile Include="..\Shared.RamDisk\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -59,6 +62,7 @@
     <!-- Demul ships as a solid .7z, which System.IO.Compression cannot read. Same version as the
          Xenia and Cxbx plugins. -->
     <PackageReference Include="SharpCompress" Version="0.41.0" />
+    <PackageReference Include="CHDSharp" Version="1.4.3" />
   </ItemGroup>
 
   <!-- Fold every dependency INTO Demul.dll, internalized. See Xenia.csproj for why. -->

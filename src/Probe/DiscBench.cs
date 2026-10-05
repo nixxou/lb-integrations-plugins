@@ -112,6 +112,43 @@ namespace LbIntegrations.Probe
             return allSame;
         }
 
+        /// <summary>--chd-meta <chd>: CHDSharp's view of a CHD's metadata - each entry's members and values.</summary>
+        public static bool Meta(Assembly asm, string image)
+        {
+            var chdType = AppDomain.CurrentDomain.GetAssemblies().Select(a => a.GetType("CHDSharp.ChdFile", false)).FirstOrDefault(x => x != null);
+            if (chdType == null) { asm.GetType("LbIntegrations.Disc.DiscImages", true).GetMethod("Kind", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)?.Invoke(null, new object[] { image }); }
+            var open = (Stream)asm.GetType("LbIntegrations.Disc.DiscImages", true).GetMethod("Open", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic, null, new[] { typeof(string) }, null).Invoke(null, new object[] { image });
+            var chd = open.GetType().GetField("_chd", Any).GetValue(open);
+            foreach (var p in new[] { "Version", "HunkBytes", "UnitBytes", "HunkCount", "TotalBytes", "IsCd", "IsGdRom", "IsDvd" }) Console.WriteLine("  " + p + " = " + Short(chd.GetType().GetProperty(p, Any)?.GetValue(chd)));
+            var list = (System.Collections.IEnumerable)chd.GetType().GetProperty("Metadata", Any).GetValue(chd);
+            foreach (var e in list)
+            {
+                Console.WriteLine("  entry " + e.GetType().FullName);
+                foreach (var m in e.GetType().GetProperties(Any)) { object v; try { v = m.GetValue(e); } catch { v = "?"; } Console.WriteLine("    " + m.PropertyType.Name + " " + m.Name + " = " + (v is byte[] b ? System.Text.Encoding.ASCII.GetString(b).Replace("\0", "\\0") : Short(v))); }
+                foreach (var m in e.GetType().GetFields(Any)) Console.WriteLine("    field " + m.FieldType.Name + " " + m.Name + " = " + Short(m.GetValue(e)));
+            }
+            var hdr = chd.GetType().GetField("_chd", Any).GetValue(chd);
+            var map = (Array)hdr.GetType().GetProperty("Map", Any)?.GetValue(hdr) ?? (Array)hdr.GetType().GetField("Map", Any)?.GetValue(hdr);
+            var me = map.GetValue(0);
+            Console.WriteLine("  map entry " + me.GetType().FullName + ": " + string.Join(", ", me.GetType().GetFields(Any).Select(x => x.Name + "=" + Short(x.GetValue(me)))));
+            open.Dispose();
+            return true;
+        }
+
+        /// <summary>--chd-plain <in.chd> <out.chd>: the CHD made uncompressed (Shared.Disc\ChdPlain), written to a file.</summary>
+        public static bool Plain(Assembly asm, string from, string to)
+        {
+            var t = asm.GetType("LbIntegrations.Disc.ChdPlain", true);
+            var w = System.Diagnostics.Stopwatch.StartNew();
+            using (var s = (Stream)t.GetMethod("Open", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic).Invoke(null, new object[] { from }))
+            using (var o = File.Create(to))
+            {
+                Console.WriteLine("  " + Path.GetFileName(from) + ": " + s.Length.ToString("N0") + " bytes plain");
+                s.CopyTo(o, 1 << 20);
+            }
+            Console.WriteLine("  written in " + w.Elapsed.TotalSeconds.ToString("0.0") + " s: " + to);
+            return true;
+        }
         private static string Speed(Stream s, long bytes, byte[] buf)
         {
             var w = System.Diagnostics.Stopwatch.StartNew();

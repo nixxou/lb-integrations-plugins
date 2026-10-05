@@ -1295,6 +1295,45 @@ namespace LbIntegrations.RamDisk
             catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; return null; }
         }
 
+        /// <summary>The helper that serves a CHD UNCOMPRESSED as the one file of an exFAT volume (view=chd) - for Demul, whose CHD
+        /// reader crashes on a zstd one.</summary>
+        public static readonly Version ChdViewProtocol = new Version(1, 14, 0, 0);
+
+        /// <summary>Can a CHD be served uncompressed (view=chd): AIM there, the helper 1.14 and its task.</summary>
+        public static bool CanAttachChd(out string why)
+        {
+            var v = HelperVersion;
+            why = !IsAimInstalled() ? "the Arsenal Image Mounter is not installed"
+                : v == null || v < ChdViewProtocol ? "the RAM disk helper is " + (v?.ToString() ?? "absent") + ", " + ChdViewProtocol + " is needed"
+                : InstalledTaskName() == null ? "the RAM disk helper's task is not installed"
+                : null;
+            return why == null;
+        }
+
+        /// <summary>A CHD served uncompressed - a CHD v5 with no compressor, decoded as it is read, its metadata the source's - as
+        /// ONE FILE ("K:\game.chd") on a disk attached on a free letter, through AIM. Null with the reason. <paramref name="root"/>:
+        /// what DetachImage takes back.</summary>
+        public static string AttachChd(string image, out string root, out string error)
+        {
+            error = null; root = null;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(image) || !OneLine(image) || !Path.IsPathFullyQualified(image)) { error = "an image path must be absolute and on one line"; return null; }
+                if (!CanAttachChd(out error)) return null;
+                char letter = FreeDriveLetter();
+                if (letter == '\0') { error = "no free drive letter"; return null; }
+                var said = RunAndWait("image-attach", letter, image, WithProxy(new Dictionary<string, string> { { "view", "chd" }, { "backend", "aim" } }));
+                if (said == null) { error = "the helper never answered"; return null; }
+                if (!said.StartsWith("OK image-attach", StringComparison.Ordinal)) { error = said; RamDiskLog.Warn("chd attach " + Path.GetFileName(image) + ": " + said); return null; }
+                var m = System.Text.RegularExpressions.Regex.Match(said, @" file=(.+?)(?= id=|$)");
+                root = letter + ":\\";
+                var file = m.Success ? m.Groups[1].Value.Trim() : root + "game.chd";
+                RamDiskLog.Info("attached " + Path.GetFileName(image) + " uncompressed at " + file + " - " + said);
+                return file;
+            }
+            catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; return null; }
+        }
+
         /// <summary>A CSO ("CISO"), a CCI ("CCIM") or a CHD ("MComprHD"), by its first bytes.</summary>
         private static bool IsCompressedImage(string path)
         {
