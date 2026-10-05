@@ -13,14 +13,18 @@
 // and its bytes - lbip-xbox-keys.txt left out. Neither the zip's dates, compression nor comment count, only the files.
 // Every comparison here is of whole contents, byte for byte, through it.
 //
-// AT A LAUNCH, and when LaunchBox removes the active save (Remove):
-//   console = save                         nothing (the stamp written if it was not)
+// LAUNCHBOX'S RESTORE, SET ACTIVE AND REMOVE only place or take away the file (Mehdi, 05/10): the console is written at the
+// next launch. A restore is noted in the stamp (restore=1, MarkRestored) so that launch treats it as one - even a save equal
+// to the last agreement wins over a console changed since - and the listings and sessions' ends leave it alone until then.
+//
+// AT A LAUNCH:
+//   console = save                        nothing (the stamp written if it was not)
 //   the save changed since the stamp       laid into the console (removed from it, the file gone), the stamp made again
 //   the console changed since the stamp    captured into the save (a session cut short, a save copied into the console)
 //   both changed                           the console's version kept in lbip-conflicts\, then the save laid in
 //   no stamp yet                           a save there wins over a console without any; with no save, the console is
 //                                          captured - NEVER "no stamp" read as "the save was deleted"
-// A RESTORE (LaunchBox writing the active save) always lays the save in: the console's version kept in lbip-conflicts\
+// A RESTORE (noted, applied at that launch) always lays the save in: the console's version kept in lbip-conflicts\
 // first when it changed since the last agreement - none when it is that agreement (it is in LaunchBox's backups).
 // AT A SESSION'S END, AND WHEN LAUNCHBOX LISTS SAVES (its backups go through the list): only what is safe - the console
 // captured when the save is unchanged since the stamp (or there is neither save nor stamp); never laid in, never a conflict
@@ -125,6 +129,7 @@ namespace LbIntegrations.Xbox
         {
             public string Content;       // null: no agreement known
             public SaveKeys Keys;        // null: not known
+            public bool Restore;         // LaunchBox restored the save: the next launch lays it in, whatever the stamp says
         }
 
         /// <summary>The stamp - null when there is none. A stamp of the first days, one hash alone, has no keys.</summary>
@@ -137,7 +142,8 @@ namespace LbIntegrations.Xbox
                 foreach (var raw in File.ReadAllLines(path))
                 {
                     var line = raw.Trim();
-                    if (line.StartsWith("content=", StringComparison.Ordinal)) st.Content = line.Substring(8);
+                    if (line.StartsWith("content=", StringComparison.Ordinal)) st.Content = line.Length > 8 ? line.Substring(8) : null;
+                    else if (line == "restore=1") st.Restore = true;
                     else if (line.StartsWith("keys=", StringComparison.Ordinal)) st.Keys = XboxSaveKeys.Parse(line.Substring(5));
                     else if (line.Length == 64 && st.Content == null) st.Content = line;
                 }
@@ -146,9 +152,11 @@ namespace LbIntegrations.Xbox
             catch { return null; }
         }
 
-        private static void WriteStamp(string path, string content, SaveKeys keys)
+        private static void WriteStamp(string path, string content, SaveKeys keys, bool restore = false)
         {
-            var text = "content=" + content + "\r\n" + (keys?.Hdd != null && keys.Cert != null ? "keys=" + XboxSaveKeys.Format(keys.Hdd, keys.Cert) + "\r\n" : "");
+            var text = (content != null ? "content=" + content + "\r\n" : "")
+                     + (keys?.Hdd != null && keys.Cert != null ? "keys=" + XboxSaveKeys.Format(keys.Hdd, keys.Cert) + "\r\n" : "")
+                     + (restore ? "restore=1\r\n" : "");
             try { if (File.Exists(path) && File.ReadAllText(path) == text) return; } catch { }
             Directory.CreateDirectory(Path.GetDirectoryName(path));
             var part = path + ".part";
@@ -166,7 +174,19 @@ namespace LbIntegrations.Xbox
             {
                 var st = ReadStamp(s.StampPath);
                 var files = st?.Content == null ? s.ReadConsole() ?? new List<(string, byte[])>() : null;
-                WriteStamp(s.StampPath, st?.Content ?? ContentHash(files), new SaveKeys { Hdd = hdd, Cert = cert });
+                WriteStamp(s.StampPath, st?.Content ?? ContentHash(files), new SaveKeys { Hdd = hdd, Cert = cert }, st?.Restore == true);
+            }
+        }
+
+        /// <summary>LaunchBox just wrote the active save (Restore, Set active): only noted - the next launch lays it in, the
+        /// listings and the sessions' ends leave it alone until then. The console is not read nor written here.</summary>
+        public static void MarkRestored(XboxSaveSide s)
+        {
+            if (s == null) return;
+            lock (Gate)
+            {
+                var st = ReadStamp(s.StampPath);
+                WriteStamp(s.StampPath, st?.Content, st?.Keys, restore: true);
             }
         }
 
@@ -219,8 +239,12 @@ namespace LbIntegrations.Xbox
                 if (p == null && !consoleHas) { DeleteStamp(s.StampPath); return null; }
                 if (p != null && c == p) { WriteStamp(s.StampPath, p, st?.Keys ?? XboxSaveKeys.Read(s.Pack)); return null; }
 
+                // A restore noted (MarkRestored): applied by the next launch only, left alone by listings and sessions' ends.
+                bool pending = st?.Restore == true;
+                if (pending && (mode == XboxSyncMode.Listing || mode == XboxSyncMode.SessionEnd)) return null;
+
                 // A restore: the save LaunchBox wrote is put in, whatever the stamp says.
-                if (mode == XboxSyncMode.Restore && p != null)
+                if ((mode == XboxSyncMode.Restore || pending) && p != null)
                     return !consoleHas || c == stamp ? Lay(s, p, "restored: laid into the console")
                                                      : Conflict(s, consoleFiles, st?.Keys, p, "restored over a console changed since the last agreement");
 
@@ -258,6 +282,7 @@ namespace LbIntegrations.Xbox
                 string state;
                 if (p == null && consoleFiles.Count == 0) state = "nothing to keep in step";
                 else if (p != null && c == p) state = "the save and the console agree";
+                else if (st?.Restore == true && p != null) state = "restored: laid in at the next launch" + (consoleFiles.Count > 0 && c != st.Content ? ", the console's version kept in lbip-conflicts" : "");
                 else if (st?.Content == null) state = p == null ? "the console's save is captured at the next listing" : "never agreed: the save is laid in at the next launch, the console's version kept apart";
                 else if (p == st.Content || p == null && st.Content == ContentHash(new List<(string, byte[])>())) state = "the console changed since: captured at the next listing";
                 else if (c == st.Content) state = p == null ? "the save was removed: taken out of the console at the next launch" : "the save changed: laid in at the next launch";

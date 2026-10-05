@@ -17,7 +17,8 @@
 //   one copied there)
 //   an indexed snapshot whose file is gone     taken out of the console (LaunchBox's Remove)
 // Exports and removals of files at any listing; anything that rewrites the console (Qcow2Rebuild - its other snapshots and
-// its save kept, checked before it replaces anything) only when the game is not running: at a launch, a Restore, a Remove.
+// its save kept, checked before it replaces anything) only at a launch (Mehdi, 05/10): LaunchBox's Restore and Remove only
+// place or delete the file.
 
 using System;
 using System.Collections.Generic;
@@ -162,7 +163,7 @@ namespace LbIntegrations.Xemu.Saves
         // ── the mirror ───────────────────────────────────────────────────────
 
         /// <summary>The game's snapshots and state files put in step. <paramref name="rewrite"/>: the console may be rewritten
-        /// (a launch, a Restore, a Remove - xemu not running). What it did.</summary>
+        /// (a launch - xemu not running). What it did.</summary>
         public static List<string> Mirror(string exe, string titleId, bool rewrite, Func<string> keys)
         {
             lock (Gate)

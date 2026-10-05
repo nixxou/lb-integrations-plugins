@@ -993,17 +993,27 @@ namespace LbIntegrations.Probe
                 Check("... the next one writes it, keys and all", Y("SessionEnd") is string c3 && c3.Contains("captured") && OfZip(active) == OfZip(richZip) && Kf(KeysOf(active), "Hdd").SequenceEqual(k2h));
 
                 // Codex 3: a restore of the agreed save over a console changed since (a session cut short) - put in, not undone.
+                // A Restore only places the file and notes it (Mehdi, 05/10): the launch lays it in.
+                void Restored(string zip) { File.Copy(zip, active, overwrite: true); sync.GetMethod("MarkRestored", Any).Invoke(null, new[] { side }); }
                 var agreed = Path.Combine(work, "agreed.cxbxsave"); File.Copy(active, agreed, overwrite: true);
                 S("Insert", console, baseDisk, tid, rewriteZip);                 // played, the host killed: never captured
-                File.Copy(agreed, active, overwrite: true);                      // LaunchBox restores the save of the last agreement
+                Restored(agreed);                                                // LaunchBox restores the save of the last agreement
+                Check("a restore: the console untouched, noted in the stamp", OfConsole() == OfZip(rewriteZip) && File.ReadAllText(stampFile).Contains("restore=1"));
+                Check("... a listing and a session's end leave the restored file alone", Y("Listing") == null && Y("SessionEnd") == null && OfZip(active) == OfZip(agreed));
                 seen = Directory.GetFiles(conflicts).ToList();
-                Check("a restore of the agreed save over a changed console: laid in, the console kept apart", Y("Restore") is string c4 && c4.Contains("restored")
+                Check("... at launch: laid in, the console kept apart", Y("Launch") is string c4 && c4.Contains("restored")
                       && OfConsole() == OfZip(agreed) && Directory.GetFiles(conflicts).Except(seen).Count() == 1);
+                Check("... the note gone", !File.ReadAllText(stampFile).Contains("restore="));
                 // ... and over a console that is the last agreement: laid in, no copy (it is in LaunchBox's backups).
-                File.Copy(firstZip, active, overwrite: true);
+                Restored(firstZip);
                 seen = Directory.GetFiles(conflicts).ToList();
-                Check("a restore over a console as agreed: laid in, no copy", Y("Restore") is string c5 && c5.Contains("restored") && OfConsole() == OfZip(firstZip)
+                Check("a restore over a console as agreed: laid in at launch, no copy", Y("Launch") is string c5 && c5.Contains("restored") && OfConsole() == OfZip(firstZip)
                       && Directory.GetFiles(conflicts).Except(seen).Count() == 0);
+                // ... and with no stamp at all: noted, laid in at launch.
+                File.Delete(stampFile);
+                Restored(agreed);
+                Check("a restore with no stamp: noted, laid in at launch", File.ReadAllText(stampFile).Trim() == "restore=1" && Y("Listing") == null
+                      && Y("Launch") is string c6 && c6.Contains("restored") && OfConsole() == OfZip(agreed), File.Exists(stampFile) ? File.ReadAllText(stampFile) : "no stamp");
             }
             // The console deleted by hand, its stamp left: the save is kept at a listing, laid into a new console at the launch.
             File.Copy(firstZip, active, overwrite: true);

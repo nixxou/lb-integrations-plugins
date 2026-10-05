@@ -14,7 +14,8 @@
 // the last agreement in <data>\lbip-stamps\<title id>.stamp - with the console, not beside the save. At a launch the save is
 // laid out (its folder's content REPLACED, not merged: a save slot the backup does not hold must not survive it), or the
 // folder captured, or both kept in a conflict; at a session's end and when LaunchBox lists saves, the folder captured when
-// that is safe; a Restore or a Remove reaches the folder at once.
+// that is safe; a Restore or a Remove only places or deletes the file (Mehdi, 05/10), the folder reached at the next launch
+// - a Restore noted in the stamp so that launch lays it in whatever the stamp says.
 // TDATA (E:\TDATA\<title id>, the game's own cache and settings) is NOT part of the save: to be measured on real games
 // before it is.
 
@@ -297,8 +298,8 @@ namespace LbIntegrations.Cxbx
                 bool same = string.Equals(Path.GetFullPath(source), Path.GetFullPath(pack), StringComparison.OrdinalIgnoreCase);
                 Directory.CreateDirectory(Path.GetDirectoryName(pack));
                 if (!same) File.Copy(source, pack, overwrite: true);
-                // Into its console at once (XboxSaveSync): laid out, or - both changed - the console's version kept apart first.
-                CxbxSaves.Sync(exe, titleId, LbIntegrations.Xbox.XboxSyncMode.Restore);
+                // Into its console at the next launch (XboxSaveSync): laid out, or - both changed - the console's version kept apart first.
+                if (CxbxSaves.Side(exe, titleId) is LbIntegrations.Xbox.XboxSaveSide side) LbIntegrations.Xbox.XboxSaveSync.MarkRestored(side);
                 var refreshed = pack;
                 Log.Info("restored the save of " + titleId + " -> " + live);
                 var info = new FileInfo(refreshed);
@@ -327,9 +328,7 @@ namespace LbIntegrations.Cxbx
                     if (CxbxPaths.LoaderRunning()) return new PluginResponse(false, "Cxbx-Reloaded is running - close it first.");
                 }
                 if (File.Exists(path)) File.Delete(path);
-                // The active save gone: out of its console at once (XboxSaveSync).
-                if (pack != null && string.Equals(Path.GetFullPath(pack), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase))
-                    CxbxSaves.Sync(exe, titleId, LbIntegrations.Xbox.XboxSyncMode.Launch);
+                // The active save gone: out of its console at the next launch (XboxSaveSync).
                 Log.Info("removed the save " + path);
                 return new PluginResponse(true);
             }

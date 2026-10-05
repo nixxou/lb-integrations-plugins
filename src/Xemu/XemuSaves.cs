@@ -9,9 +9,11 @@
 // the game's disk, hdd\games\<title id>.stamp:
 //   Launch    the save laid into the console, or the console captured, or both kept in a conflict - XboxSaveSync's rule
 //   Session's end, LaunchBox listing saves (its backups)    the console captured when that is safe
-//   Restore   the file put in place and laid into the console at once (xemu not running). A backup of the older kind - the
-//             console itself, a qcow2 - is put back as the console, and the save captured from it.
-//   Remove    the file deleted, and its save taken out of the console at once; the console's cache and the rest kept.
+//   Restore   the file put in place, the restore noted in the stamp - laid into the console at the next launch (Mehdi, 05/10:
+//             the heavy work at a game's opening and closing only). A backup of the older kind - the console itself, a qcow2 -
+//             is put back as the console, and the save captured from it.
+//   Remove    the file deleted; its save taken out of the console at the next launch.
+// The savestates the same: Restore and Remove place or delete the file, the next launch rewrites the console.
 
 using System;
 using System.Collections.Generic;
@@ -293,8 +295,8 @@ namespace LbIntegrations.Xemu
                         File.Move(tmp, pack, overwrite: true);
                     }
                     Log.Info("restored the save of " + titleId + " (" + Path.GetFileName(source) + ") -> " + pack);
-                    // Into its console at once, whatever the stamp says - the console's version kept apart when it changed since.
-                    XemuSaveFiles.Sync(exe, titleId, XboxSyncMode.Restore);
+                    // Into its console at the next launch, whatever the stamp says - the console's version kept apart when it changed since.
+                    if (XemuSaveFiles.Side(exe, titleId) is XboxSaveSide side) XboxSaveSync.MarkRestored(side);
                 }
                 var refreshed = XemuSaveFiles.PackPath(exe, titleId) is string active && File.Exists(active) ? active : null;
                 if (refreshed == null) return new AddSaveResponse("The save was restored, but the console holds none for this game.");
@@ -318,8 +320,7 @@ namespace LbIntegrations.Xemu
                     var exeS = EmulatorFor(save);
                     if (exeS != null && XemuPaths.Running(exeS)) return new PluginResponse(false, "xemu is running - close it first.");
                     if (File.Exists(stPath)) File.Delete(stPath);
-                    // Its snapshot out of the console at once (or at the next launch when it cannot be rewritten now).
-                    if (exeS != null) XemuSaveFiles.States(exeS, stTitle, rewrite: true);
+                    // Its snapshot out of the console at the next launch.
                     Log.Info("removed the savestate " + stPath);
                     return new PluginResponse(true);
                 }
@@ -334,9 +335,7 @@ namespace LbIntegrations.Xemu
                     if (XemuPaths.Running(exe)) return new PluginResponse(false, "xemu is running - close it first.");
                 }
                 if (File.Exists(path)) File.Delete(path);
-                // The active save gone: out of its console at once.
-                if (pack != null && string.Equals(Path.GetFullPath(pack), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase))
-                    XemuSaveFiles.Sync(exe, titleId, XboxSyncMode.Launch);
+                // The active save gone: out of its console at the next launch.
                 Log.Info("removed the save " + path);
                 return new PluginResponse(true);
             }
@@ -347,7 +346,7 @@ namespace LbIntegrations.Xemu
             }
         }
 
-        /// <summary>A savestate restored: its file put at its slot, and into the console at once (xemu not running).</summary>
+        /// <summary>A savestate restored: its file put at its slot only - the console takes it at the next launch.</summary>
         private AddSaveResponse AddState(GameSaveBase save, string source)
         {
             var meta = XemuStates.Read(source);
@@ -367,7 +366,7 @@ namespace LbIntegrations.Xemu
                 File.Copy(source, tmp, overwrite: true);
                 File.Move(tmp, target, overwrite: true);
             }
-            XemuSaveFiles.States(exe, titleId, rewrite: true);
+            // Into the console at the next launch.
             Log.Info("restored the savestate " + Path.GetFileName(source) + " -> " + target);
             var f = XemuStates.Read(target) ?? meta;
             f.Path = target;
