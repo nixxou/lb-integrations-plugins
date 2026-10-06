@@ -73,9 +73,23 @@
 </section>
 
 <section id="options"><h2>Options</h2>
-  <p>The ares page of <b>Tools &gt; Nixx Integration Plugins Configuration...</b> sets every game's; a game's window sets its own: screen (full,
-  borderless, windowed), scaling, aspect correction, VSync, video driver, preferred region, fast boot. They are written into
-  <code>settings.bml</code> before each game - change them there, not in ares's menus, which the next launch overwrites.</p>
+  <p>The ares page of <b>Tools &gt; Nixx Integration Plugins Configuration...</b> sets every game's; a game's window sets its own. They are
+  written into <code>settings.bml</code> before each game:</p>
+  <ul>
+    <li><b>Picture</b> - screen (full, borderless, windowed), video driver (OpenGL 3.2, OpenGL 4.6, Direct3D 9.0), scaling (best fit, integer
+    auto or fixed 1x-7x, stretch), aspect (standard, none, anamorphic 16:9), shader (every <code>.slangp</code> preset of ares's
+    <code>Shaders</code> folder), VSync, exclusive full screen;</li>
+    <li><b>Colour and effects</b> - luminance, saturation, gamma, colour emulation, colour bleed, interframe blending, overscan, pixel accuracy;</li>
+    <li><b>Sound</b> - driver, volume, mute, dynamic rate;</li>
+    <li><b>Start and emulation</b> - region order, fast boot, what happens when ares loses the focus, rewind, run-ahead, periodic save,
+    the interpreter for Nintendo 64 and PlayStation;</li>
+    <li><b>One system's</b> - Nintendo 64 (resolution 1x/2x/4x, supersampling, weave deinterlacing, video interface, Expansion Pak, Controller
+    Pak size), Super Famicom (deep black boost), Game Boy Advance (Game Boy Player), Mega Drive (TMSS). A game's window shows those of its
+    system only.</li>
+  </ul>
+  <p>Screen, driver, scaling, aspect, VSync, region and fast boot are always the plugin's: change them here, not in ares's menus, which the
+  next launch overwrites. Every other option starts as <b>As set in ares</b>: then nothing is written, and what you set in ares's own menus
+  stays.</p>
 </section>
 
 <section id="saves"><h2>Saves and save states</h2>

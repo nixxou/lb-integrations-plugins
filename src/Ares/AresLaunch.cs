@@ -103,14 +103,13 @@ namespace LbIntegrations.Ares
             try
             {
                 var bml = AresBml.Load(SettingsOf(exe));
+                // The scaling: Output, and FixedScale for a fixed integer (ares's "Scale: Integer (fixed 3x)").
                 var output = AresSettings.For(gameId, "Output");
-                bml.Set("Video/Output", output == "integer" ? "Integer" : output == "stretch" ? "Stretch" : "Scale");
-                bml.Set("Video/AspectCorrectionMode", AresSettings.For(gameId, "Aspect") == "none" ? "None" : "Standard");
-                bml.SetBool("Video/Blocking", AresSettings.BoolFor(gameId, "VSync"));
-                bml.Set("Video/Driver", AresSettings.For(gameId, "Driver") == "d3d" ? "Direct3D 9.0" : "OpenGL 3.2");
+                if (output.StartsWith("fixed")) { bml.Set("Video/Output", "IntegerFixed"); bml.Set("Video/FixedScale", output.Substring(5)); }
+                else bml.Set("Video/Output", output == "integer" ? "Integer" : output == "stretch" ? "Stretch" : "Scale");
+                // Every other option: its own node, or nothing when it is "as set in ares".
+                foreach (var o in AresSettings.All) AresSettings.Apply(bml, o, AresSettings.For(gameId, o.Key));
                 var region = AresSettings.For(gameId, "Region");
-                bml.Set("Boot/Prefer", region == "ntsc-j" ? "NTSC-J" : region == "pal" ? "PAL" : "NTSC-U");
-                bml.SetBool("Boot/Fast", AresSettings.BoolFor(gameId, "FastBoot"));
                 if (string.IsNullOrWhiteSpace(bml.Get("Hotkey/SaveState")) || bml.Get("Hotkey/SaveState") == ";;") bml.Set("Hotkey/SaveState", SaveKey);
                 if (string.IsNullOrWhiteSpace(bml.Get("Hotkey/LoadState")) || bml.Get("Hotkey/LoadState") == ";;") bml.Set("Hotkey/LoadState", LoadKey);
                 bool changed = bml.Changed;

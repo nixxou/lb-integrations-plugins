@@ -2,7 +2,8 @@
 //   --ares-names <ares.exe>                   every system of the plugin's table against the exe's own "ares --help" list
 //   --ares-line                               the system chosen and the line built, offline, for the three levels
 //   --ares-settings <ares.exe> [--settings f] the options written into settings.bml (a COPY), the lines that changed
-//   --ares-firmware <ares.exe>                the BIOS found and given - WRITES into that install's Firmware\ and settings.bml
+//   --ares-options <ares.exe> [out.bml]       every game's and a game's own options, each node as ares writes it (a COPY)
+//   --ares-firmware <ares.exe>              the BIOS found and given - WRITES into that install's Firmware\ and settings.bml
 //   --ares-saves <ares.exe> <system> <rom>    the files listed for that ROM run as that system
 //   --ares-latest                             the latest release as GitHub has it
 
@@ -82,11 +83,11 @@ namespace LbIntegrations.Probe
             Check("a platform the plugin does not map: nothing", a.Item1 == null);
 
             var built = (string)launch.GetMethod("CommandLine", Any).Invoke(null, new object[] {
-                "--system \"Mega Drive\" --fullscreen \"C:\\My Games\\Sonic.md\"", @"C:\LB\Emulators\Nixx-ares\ares.exe", "Mega Drive", "pseudo", @"C:\My Games\Sonic.md", null });
+                "--system \"Mega Drive\" --fullscreen \"C:\\My Games\\Sonic.md\"", @"C:\LB\Emulators\Nixx-ares\ares.exe", "Mega Drive", "pseudo", @"C:\My Games\Sonic.md", null, true });
             Console.WriteLine("    " + built);
             Check("one --system, the screen switch replaced, --no-file-prompt, the game last",
                   built == "--settings-file C:\\LB\\Emulators\\Nixx-ares\\settings.bml --system \"Mega Drive\" --pseudofullscreen --no-file-prompt \"C:\\My Games\\Sonic.md\"");
-            built = (string)launch.GetMethod("CommandLine", Any).Invoke(null, new object[] { "\"C:\\g\\Zelda.7z\"", @"C:\a\ares.exe", "Super Famicom", "windowed", @"C:\g\Zelda.7z", @"C:\t\Zelda.sfc" });
+            built = (string)launch.GetMethod("CommandLine", Any).Invoke(null, new object[] { "\"C:\\g\\Zelda.7z\"", @"C:\a\ares.exe", "Super Famicom", "windowed", @"C:\g\Zelda.7z", @"C:\t\Zelda.sfc", true });
             Check("a .7z swapped for what was unpacked", built.EndsWith("--no-file-prompt C:\\t\\Zelda.sfc") && !built.Contains("--fullscreen"), built);
             Console.WriteLine(_bad == 0 ? "  all good" : "  " + _bad + " FAILED");
             return _bad == 0;
@@ -121,6 +122,78 @@ namespace LbIntegrations.Probe
             finally { try { Directory.Delete(copy, true); } catch { } }
             Console.WriteLine(_bad == 0 ? "  all good" : "  " + _bad + " FAILED");
             return _bad == 0;
+        }
+
+        /// <summary>--ares-options &lt;ares.exe&gt; [out.bml]: every game's and a game's own values written into a COPY of the
+        /// install's settings.bml - each node as ares writes it, "as set in ares" untouched. The result is kept in out.bml
+        /// when given (for a run of the real ares on it: does it keep them?).</summary>
+        public static bool Options(Assembly asm, string exe, string keep)
+        {
+            _bad = 0;
+            Console.WriteLine("-- the options, written --");
+            var copy = Path.Combine(Path.GetTempPath(), "lbip-ares-opt-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Path.Combine(copy, "games"));
+            try
+            {
+                var target = Path.Combine(copy, "settings.bml");
+                File.Copy(Path.Combine(Path.GetDirectoryName(exe), "settings.bml"), target);
+                var fake = Path.Combine(copy, "ares.exe");
+                File.WriteAllText(fake, "");
+                var shaders = (System.Collections.Generic.List<string>)T(asm, "AresSettings").GetMethod("Shaders", Any).Invoke(null, new object[] { exe });
+                Console.WriteLine("  " + shaders.Count + " shaders in the install, e.g. " + string.Join(", ", shaders.Take(3)));
+                Check("the install's shaders listed, as ares names them", shaders.Count > 10 && shaders.All(s => s.EndsWith(".slangp") && !s.Contains('\\')));
+                var shader = shaders.FirstOrDefault(s => s.StartsWith("crt/")) ?? shaders.FirstOrDefault();
+                // Every game's: a few; the game's own: more, one of them over every game's.
+                var own = new[] { "Output=fixed3", "Shader=" + shader, "Aspect=anamorphic", "AudioDriver=xaudio", "N64ControllerPak=1984", "MdTmss=true", "Defocus=allow" };
+                File.WriteAllLines(Path.Combine(copy, "settings.ini"), new[] { "Driver=opengl46", "Region=pal-ntsc-j", "Luminance=0.75", "N64Quality=hd", "Output=integer" });
+                File.WriteAllLines(Path.Combine(copy, "games", "probe-game.ini"), own);
+                T(asm, "AresSettings").GetField("PathOverride", Any).SetValue(null, Path.Combine(copy, "settings.ini"));
+                var before = AresBmlLines(target);
+                T(asm, "AresLaunch").GetMethod("PrepareSettings", Any).Invoke(null, new object[] { fake, "probe-game" });
+                var after = AresBmlLines(target);
+                foreach (var kv in new (string, string)[] {
+                    ("Video/Driver", "OpenGL 4.6"), ("Boot/Prefer", "PAL,NTSC-J,NTSC-U"), ("Video/Luminance", "0.75"), ("Video/Quality", "HD"),
+                    ("Video/Output", "IntegerFixed"), ("Video/FixedScale", "3"), ("Video/Shader", shader), ("Video/AspectCorrectionMode", "Anamorphic"),
+                    ("Audio/Driver", "XAudio 2.9"), ("Nintendo64/ControllerPakBankString", "1984KiB (Maximum)"), ("MegaDrive/TMSS", "true"), ("Input/Defocus", "Allow") })
+                    Check(kv.Item1 + " = " + kv.Item2, after.TryGetValue(kv.Item1, out var v) && v == kv.Item2, after.TryGetValue(kv.Item1, out var w) ? w : "(absent)");
+                foreach (var untouched in new[] { "Video/Saturation", "Video/Gamma", "Video/ColorEmulation", "Video/Exclusive", "Audio/Volume", "Audio/Mute",
+                                                  "General/Rewind", "General/RunAhead", "Nintendo64/ExpansionPak", "GameBoyAdvance/Player", "Video/DeepBlackBoost" })
+                    Check(untouched + " left as ares had it", before.TryGetValue(untouched, out var b) == after.TryGetValue(untouched, out var a) && b == a, b + " -> " + a);
+                if (keep != null) { File.Copy(target, keep, true); Console.WriteLine("  kept in " + keep); }
+                // A game with none of its own: every game's integer scale, no shader written.
+                File.Delete(Path.Combine(copy, "games", "probe-game.ini"));
+                File.Copy(Path.Combine(Path.GetDirectoryName(exe), "settings.bml"), target, true);
+                T(asm, "AresLaunch").GetMethod("PrepareSettings", Any).Invoke(null, new object[] { fake, "probe-game" });
+                var plain = AresBmlLines(target);
+                Check("every game's: Integer, the shader as ares had it", plain["Video/Output"] == "Integer" && plain["Video/Shader"] == before["Video/Shader"], plain["Video/Output"] + " / " + plain["Video/Shader"]);
+            }
+            finally
+            {
+                T(asm, "AresSettings").GetField("PathOverride", Any).SetValue(null, null);
+                try { Directory.Delete(copy, true); } catch { }
+            }
+            Console.WriteLine(_bad == 0 ? "  all good" : "  " + _bad + " FAILED");
+            return _bad == 0;
+        }
+
+        /// <summary>A settings.bml's leaves, by path ("Video/Shader").</summary>
+        internal static System.Collections.Generic.Dictionary<string, string> AresBmlLines(string path)
+        {
+            var map = new System.Collections.Generic.Dictionary<string, string>();
+            var stack = new System.Collections.Generic.List<string>();
+            foreach (var line in File.ReadAllText(path).Replace("\r", "").Split('\n'))
+            {
+                if (line.Trim().Length == 0) continue;
+                int depth = 0; while (depth < line.Length && line[depth] == ' ') depth++;
+                depth /= 2;
+                var t = line.Trim(); int c = t.IndexOf(':');
+                var name = c < 0 ? t : t.Substring(0, c).Trim();
+                while (stack.Count > depth) stack.RemoveAt(stack.Count - 1);
+                stack.Add(name);
+                var key = string.Join("/", stack);
+                if (!map.ContainsKey(key)) map[key] = c < 0 ? "" : t.Substring(c + 1).Trim();
+            }
+            return map;
         }
 
         public static bool Firmware(Assembly asm, string exe)

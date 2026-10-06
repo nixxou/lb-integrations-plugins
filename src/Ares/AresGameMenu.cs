@@ -58,6 +58,7 @@ namespace LbIntegrations.Ares
         private readonly IGame[] _games;
         private readonly Dictionary<string, ComboBox> _choices = new Dictionary<string, ComboBox>();
         private readonly Dictionary<string, int> _initial = new Dictionary<string, int>();
+        private readonly Dictionary<string, string[]> _values = new Dictionary<string, string[]>();   // what each list's items stand for
         /// <summary>Several games: the first item keeps each game's own value, and only a combo the user changed is written.</summary>
         private int Offset => _games.Length > 1 ? 1 : 0;
         private readonly ComboBox _system;
@@ -71,7 +72,7 @@ namespace LbIntegrations.Ares
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.Sizable;
             MinimizeBox = false;
-            ClientSize = new Size(700, 620);
+            ClientSize = new Size(720, 760);
             Font = new Font("Segoe UI", 9f);
 
             var page = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(14, 10, 14, 6) };
@@ -139,24 +140,34 @@ namespace LbIntegrations.Ares
             }
             page.Controls.Add(Card("The system ares runs it as", systemRows.ToArray()));
 
-            // ── its own options ──
-            var optionRows = new List<Control>();
-            foreach (var o in AresSettings.All)
+            // ── its own options, a card per group: a single game sees those of its system only ──
+            var gameSystem = games.Length == 1 ? (own ?? asPlatform) : null;
+            page.Controls.Add(LbipHint.Note("Each option starts as every game has it (the Nixx window, page ares); a value chosen here is "
+                                            + (games.Length == 1 ? "this game's" : "each of these games'") + " alone.",
+                                            "Kept in games\\<game id>.ini and written into ares's settings.bml when the game starts. \"As set in ares\" writes "
+                                            + "nothing: what ares's own menus have stays.", 650, new Padding(0, 0, 0, 8)));
+            foreach (var group in AresSettings.Groups)
             {
-                var c = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 320 };
-                if (games.Length > 1) c.Items.Add("Each game keeps its own");
-                c.Items.Add("As every game (" + o.TextOf(AresSettings.Value(o.Key)) + ")");
-                c.Items.AddRange(o.Texts.Select(t => (object)t).ToArray());
-                var mine = games.Length == 1 ? AresSettings.GameValue(id, o.Key) : null;
-                c.SelectedIndex = games.Length > 1 ? 0 : mine == null ? 0 : Array.IndexOf(o.Values, mine) + 1;
-                LbipHint.Attach(c, o.Hint);
-                _choices[o.Key] = c;
-                _initial[o.Key] = c.SelectedIndex;
-                optionRows.Add(Row(o.Label, c));
+                var rows = new List<Control>();
+                foreach (var o in AresSettings.All.Where(x => x.Group == group && x.AppliesTo(gameSystem)))
+                {
+                    var everyGame = AresSettings.Value(o.Key);
+                    var mine = games.Length == 1 ? AresSettings.GameValue(id, o.Key) : null;
+                    var (values, texts) = AresSettings.Choices(o, exe, mine, everyGame);
+                    var c = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 320, MaxDropDownItems = 20 };
+                    if (games.Length > 1) c.Items.Add("Each game keeps its own");
+                    c.Items.Add("As every game (" + o.TextOf(everyGame) + ")");
+                    c.Items.AddRange(texts.Select(t => (object)t).ToArray());
+                    int at = mine == null ? -1 : Array.FindIndex(values, v => string.Equals(v, mine, StringComparison.OrdinalIgnoreCase));
+                    c.SelectedIndex = games.Length > 1 ? 0 : at < 0 ? 0 : at + 1;
+                    LbipHint.Attach(c, o.Hint);
+                    _choices[o.Key] = c;
+                    _values[o.Key] = values;
+                    _initial[o.Key] = c.SelectedIndex;
+                    rows.Add(Row(o.Label, c));
+                }
+                if (rows.Count > 0) page.Controls.Add(Card(group, rows.ToArray()));
             }
-            optionRows.Add(LbipHint.Note("Written into settings.bml when the game starts.", "Every game's values are in the Nixx window, page ares. "
-                                         + "These are kept for this game alone (games\\<game id>.ini).", 620, new Padding(0, 4, 0, 2)));
-            page.Controls.Add(Card(games.Length == 1 ? "This game's options" : "Their options", optionRows.ToArray()));
 
             var bar = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 46, Padding = new Padding(10, 8, 10, 8) };
             var ok = new Button { Text = "OK", Width = 96, Height = 28, DialogResult = DialogResult.OK };
@@ -181,9 +192,10 @@ namespace LbIntegrations.Ares
                 if (!(Offset == 1 && si == 0)) AresSettings.SetGameSystem(id, si <= Offset ? null : _systems[si - 1 - Offset]);
                 foreach (var o in AresSettings.All)
                 {
-                    int i = _choices[o.Key].SelectedIndex;
+                    if (!_choices.TryGetValue(o.Key, out var c)) continue;   // not for this game's system: left as it is
+                    int i = c.SelectedIndex;
                     if (Offset == 1 && i == _initial[o.Key]) continue;   // several games, left as each had it
-                    AresSettings.SetGameValue(id, o.Key, i <= Offset ? null : o.Values[i - 1 - Offset]);
+                    AresSettings.SetGameValue(id, o.Key, i <= Offset ? null : _values[o.Key][i - 1 - Offset]);
                 }
             }
             Log.Info("options saved for " + _games.Length + " game(s)");

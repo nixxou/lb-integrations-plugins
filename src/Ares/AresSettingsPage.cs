@@ -41,6 +41,7 @@ namespace LbIntegrations.Ares
     internal sealed class AresSettingsPage : UserControl
     {
         private readonly Dictionary<string, ComboBox> _choices = new Dictionary<string, ComboBox>();
+        private readonly Dictionary<string, string[]> _values = new Dictionary<string, string[]>();   // what each list's items stand for
         private readonly FlowLayoutPanel _bios;
         private readonly string _exe;
 
@@ -87,24 +88,32 @@ namespace LbIntegrations.Ares
                 + "whose content is the dump ares knows. A file found by name whose content is another dump is still given, and marked.", 600, new Padding(0, 2, 0, 4)),
                 _bios, again));
 
-            // ── the picture ──
-            var picture = new List<Control>();
-            foreach (var o in AresSettings.All)
+            // ── every game's options, a card per group ──
+            stack.Controls.Add(LbipHint.Note("Every game's options - written into settings.bml at each launch; a game's window (right-click > Nixx-ares : "
+                + "Options...) can change them for that game. \"As set in ares\" leaves ares's own menus in charge.",
+                "ares writes its settings.bml back when it quits, so an option set here is the plugin's: changed in ares's own menus, it comes back to this "
+                + "value at the next launch. One left \"as set in ares\" - and everything not listed here: the pads, the hotkeys, the paths - stays as you set "
+                + "it in ares. The options of one system (Nintendo 64, Mega Drive...) only touch that system's games.", 620, new Padding(0, 0, 0, 8)));
+            foreach (var group in AresSettings.Groups)
             {
-                var row = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true, Margin = new Padding(0, 2, 0, 2) };
-                row.Controls.Add(new Label { Text = o.Label, Width = 150, Height = 24, TextAlign = ContentAlignment.MiddleLeft, UseMnemonic = false });
-                var c = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
-                c.Items.AddRange(o.Texts.Select(t => (object)t).ToArray());
-                c.SelectedIndex = Math.Max(0, Array.IndexOf(o.Values, AresSettings.Value(o.Key)));
-                LbipHint.Attach(c, o.Hint);
-                _choices[o.Key] = c;
-                row.Controls.Add(c);
-                picture.Add(row);
+                var rows = new List<Control>();
+                foreach (var o in AresSettings.All.Where(x => x.Group == group))
+                {
+                    var row = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true, Margin = new Padding(0, 2, 0, 2) };
+                    row.Controls.Add(new Label { Text = o.Label, Width = 170, Height = 24, TextAlign = ContentAlignment.MiddleLeft, UseMnemonic = false });
+                    var current = AresSettings.Value(o.Key);
+                    var (values, texts) = AresSettings.Choices(o, _exe, current);
+                    var c = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300, MaxDropDownItems = 20 };
+                    c.Items.AddRange(texts.Select(t => (object)t).ToArray());
+                    c.SelectedIndex = Math.Max(0, Array.FindIndex(values, v => string.Equals(v, current, StringComparison.OrdinalIgnoreCase)));
+                    LbipHint.Attach(c, o.Hint);
+                    _choices[o.Key] = c;
+                    _values[o.Key] = values;
+                    row.Controls.Add(c);
+                    rows.Add(row);
+                }
+                stack.Controls.Add(Card(group + (group == "Picture" ? " - every game" : ""), rows.ToArray()));
             }
-            picture.Add(LbipHint.Note("Written into settings.bml at each launch; a game's window can change them for that game.",
-                "ares writes its settings.bml back when it quits, so these settings are the plugin's: changed in ares's own menus, they come back to these values "
-                + "at the next launch. Everything else - the pads, the hotkeys, the sound, the paths - stays as you set it in ares.", 600, new Padding(0, 4, 0, 2)));
-            stack.Controls.Add(Card("Picture and start - every game", picture.ToArray()));
 
             Controls.Add(stack);
         }
@@ -131,7 +140,7 @@ namespace LbIntegrations.Ares
         {
             foreach (var o in AresSettings.All)
             {
-                var value = o.Values[Math.Max(0, _choices[o.Key].SelectedIndex)];
+                var value = _values[o.Key][Math.Max(0, _choices[o.Key].SelectedIndex)];
                 if (AresSettings.Value(o.Key) != value) AresSettings.SetValue(o.Key, value);
             }
         }
