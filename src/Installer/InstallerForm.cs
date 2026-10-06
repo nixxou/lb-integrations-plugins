@@ -647,6 +647,7 @@ internal sealed class InstallerForm : Form
     private static string What(string folder) => folder switch
     {
         Payload.Cxbx => "Xbox",
+        Payload.Ares => "Many consoles: Nintendo, Sega, NEC, SNK, PlayStation",
         Payload.Bsnes => "Super Nintendo, accurate (nightly)",
         Payload.Demul => "Dreamcast, Naomi, Hikaru",
         Payload.Flycast => "Dreamcast, Naomi",

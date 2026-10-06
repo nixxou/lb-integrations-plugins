@@ -18,6 +18,7 @@ is published by Unbroken Software), so these are installed by hand.
 | `src/MelonDs` | melonDS | Nintendo DS | download / update, BIOS, DS/DSi mode, per-title DSi NAND, save management (GPL-3.0) |
 | `src/NoGba` | no$gba | Nintendo Game Boy Advance, Nintendo DS | download / update, BIOS, **raw save format**, save management |
 | `src/Vita3k` | Vita3K | Sony Playstation Vita | download / update, firmware, **a disposable console per session**, save management |
+| `src/Ares` | ares | 32 platforms: Nintendo (NES to N64, the Game Boys), Sega (SG-1000 to Mega CD and 32X), NEC, SNK, PlayStation, MSX, ZX Spectrum, WonderSwan, LaserActive | download / update the latest release, the system per platform line and per game, BIOS found and given, launch, saves and save states |
 | `src/Bsnes` | bsnes (nightly) | Super Nintendo Entertainment System | download / update the project's nightly build, launch, saves and save states |
 | `src/Demul` | Demul | Sega Dreamcast, Sega Naomi, Sega Naomi 2, Sammy Atomiswave, Sega Hikaru (+ System SP, CV1000, Gaelco by platform name) | download / update (the 2025 build, kept in `vendor/demul`), launch - **closed source** |
 | `src/RaSnes9x` | RASnes9x (RetroAchievements' Snes9x) | Super Nintendo Entertainment System | download / update (1.2, from retroachievements.org or `vendor/rasnes9x`), launch, RetroAchievements login, saves and save states |
@@ -268,6 +269,7 @@ file is there. Before LaunchBox 14, `Plugins\` is the only option. `<Name>` is t
 | project | plugin folder, and manifest `Name` | catalogue row | emulator installed into |
 |---|---|---|---|
 | `src/Cxbx` | `Nixx-Cxbx` | `Nixx-Cxbx` | `Emulators\Nixx-Cxbx` |
+| `src/Ares` | `Nixx-ares` | `Nixx-ares` | `Emulators\Nixx-ares` |
 | `src/Bsnes` | `Nixx-bsnes` | `Nixx-bsnes` | `Emulators\Nixx-bsnes` |
 | `src/Demul` | `Nixx-Demul` | `Nixx-Demul` | `Emulators\Nixx-Demul` |
 | `src/Xemu` | `Nixx-Xemu` | `Nixx-Xemu` | `Emulators\Nixx-Xemu` |

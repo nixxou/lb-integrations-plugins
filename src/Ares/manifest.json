@@ -1,0 +1,19 @@
+{
+  "SchemaVersion": 1,
+  "PluginId": "531ec195-8bd6-4df5-acc0-645dd8a71645",
+  "UserId": 0,
+  "Name": "Nixx-ares",
+  "Developer": "nixxou",
+  "Description": "Download, update, launch, BIOS and save integration for ares, the accurate multi-system emulator (Nintendo, Sega, NEC, SNK, Sony and more).",
+  "Credits": "Many thanks to Near, who began ares, and to the ares team who carry it on.",
+  "OperatingSystemFamily": "Windows",
+  "InstalledVersion": "1.1.1",
+  "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
+  "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
+  "HomePageUrl": "https://ares-emu.net/",
+  "TipJarUrl": "",
+  "SourceKind": "Local",
+  "Tags": [
+    "5aae585f-ffc5-42bc-9f95-e5e190ef99e2"
+  ]
+}

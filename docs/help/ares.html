@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ares - Nixx plugin guide</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#ffffff; --ink:#1d1d1f; --muted:#5f6368; --line:#e3e3e0; --accent:#0a6ed1; --ok:#1e8e3e; --warn:#b06000; --no:#c5221f; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17181a; --card:#1f2124; --ink:#e8e8e6; --muted:#a0a3a7; --line:#33363a; --accent:#5aa9ff; --ok:#5bc27a; --warn:#e3a34a; --no:#ff7b72; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 "Segoe UI", system-ui, sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 64px; }
+  header h1 { margin:0 0 4px; font-size:30px; }
+  header p { margin:0; color:var(--muted); }
+  nav { margin:20px 0 8px; display:flex; flex-wrap:wrap; gap:8px; }
+  nav a { font-size:14px; color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; background:var(--card); }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 24px; margin:18px 0; }
+  h2 { margin:0 0 10px; font-size:21px; }
+  h3 { margin:18px 0 6px; font-size:17px; }
+  ul { padding-left:22px; } li { margin:4px 0; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .yes { color:var(--ok); font-weight:600; } .partly { color:var(--warn); font-weight:600; } .no { color:var(--no); font-weight:600; }
+  .tip, .warn { border-left:4px solid var(--accent); padding:8px 14px; margin:12px 0; background:color-mix(in srgb, var(--accent) 8%, transparent); border-radius:0 8px 8px 0; }
+  .warn { border-color:var(--warn); background:color-mix(in srgb, var(--warn) 10%, transparent); }
+  code, kbd { font-family:Consolas, monospace; font-size:14px; background:color-mix(in srgb, var(--ink) 8%, transparent); padding:1px 5px; border-radius:4px; }
+  footer { color:var(--muted); font-size:13px; text-align:center; margin-top:30px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>ares</h1>
+  <p>What the Nixx plugin does for you, and what to expect.</p>
+</header>
+<nav>
+  <a href="#overview">In short</a><a href="#start">Getting started</a><a href="#systems">Systems</a><a href="#bios">BIOS</a><a href="#options">Options</a>
+  <a href="#saves">Saves</a><a href="#limits">Limits</a><a href="#trouble">If something goes wrong</a>
+</nav>
+
+<section id="overview"><h2>In short</h2>
+  <p>ares is the accurate multi-system emulator that grew out of higan: Nintendo (NES to Nintendo 64 and the Game Boys), Sega
+  (Master System to Saturn), NEC (PC Engine and its CD), SNK (Neo Geo and the Pocket), Sony PlayStation, MSX, ZX Spectrum and more.</p>
+  <p>The plugin installs its latest release, tells it which system each game is, finds your BIOS files and hands them to it,
+  writes the picture you chose before every game, and shows its saves and save states in LaunchBox.</p>
+</section>
+
+<section id="start"><h2>Getting started</h2>
+  <ul>
+    <li><b>Tools &gt; Manage &gt; Emulators &gt; Add</b>, pick <b>Nixx-ares</b> and <b>Download</b>: the latest release goes into
+    <code>Emulators\Nixx-ares</code>, with a row for each platform it runs. It becomes the default emulator only of the platforms that had none.</li>
+    <li>The BIOS files you already have (RetroArch's system folder, the other emulators' bios folders) are copied into
+    <code>Emulators\Nixx-ares\Firmware</code> and given to ares.</li>
+  </ul>
+</section>
+
+<section id="systems"><h2>Which system a game runs as</h2>
+  <p>ares must be told the system; the plugin always tells it, from the first of these that says:</p>
+  <ol>
+    <li>the game's own choice - right-click, <b>Nixx-ares : Options...</b>, "System" (a Sega CD game that needs the 32X, a NES game as Dendy...);</li>
+    <li>the platform's line in LaunchBox - <b>Edit Emulator &gt; Associated Platforms</b>, the command line <code>--system "Mega CD"</code>, as RetroArch's cores;</li>
+    <li>the plugin's own choice for the platform, and a few extensions that say it: <code>.32x</code>, <code>.sgx</code>, <code>.ndd</code>, <code>.fds</code>.</li>
+  </ol>
+</section>
+
+<section id="bios">
+  <h2>BIOS</h2>
+  <p>ares asks for no file name: each BIOS is a path in its settings, which the plugin sets. It looks for the usual names
+  (<code>scph5501.bin</code>, <code>bios_CD_U.bin</code>, <code>syscard3.pce</code>, <code>gba_bios.bin</code>, <code>neogeo.zip</code>...), and in
+  <code>Firmware\</code> for any file whose content is the dump ares knows. The ares page of the Nixx window lists what was found;
+  a game whose BIOS is missing says so instead of starting.</p>
+</section>
+
+<section id="options"><h2>Options</h2>
+  <p>The ares page of <b>Tools &gt; Nixx Integration Plugins Configuration...</b> sets every game's; a game's window sets its own: screen (full,
+  borderless, windowed), scaling, aspect correction, VSync, video driver, preferred region, fast boot. They are written into
+  <code>settings.bml</code> before each game - change them there, not in ares's menus, which the next launch overwrites.</p>
+</section>
+
+<section id="saves"><h2>Saves and save states</h2>
+  <ul>
+    <li>Each system's save files (<code>.ram</code>, <code>.eeprom</code>, <code>.bram</code>, the PlayStation's <code>.card</code>...), beside the game
+    unless you set a saves folder in ares.</li>
+    <li>Save states: <code>.bs1</code> to <code>.bs9</code>. ares ships no key for them: the plugin binds <kbd>F5</kbd> (save) and <kbd>F7</kbd> (load)
+    when they are empty, and LaunchBox's pause screen uses them.</li>
+  </ul>
+</section>
+
+<section id="limits"><h2>Limits and things to know</h2>
+  <ul>
+    <li>No RetroAchievements in ares.</li>
+    <li>ares reads <code>.zip</code>, <code>.cue</code> and <code>.chd</code>; a cartridge in a <code>.7z</code> is unpacked by the plugin, a disc in one
+    is refused. A <code>.m3u</code> starts on its first disc - ares has no playlists.</li>
+    <li>Satellaview and Sufami Turbo games need two cartridges at once: not handled yet.</li>
+  </ul>
+</section>
+
+<section id="trouble"><h2>If something goes wrong</h2>
+  <ul><li>The plugin's log: <code>%LOCALAPPDATA%\lb-integrations-plugins\ares.log</code> (General tab: "Open the logs folder").</li></ul>
+</section>
+
+<footer>Nixx integration plugins for LaunchBox</footer>
+</main>
+</body>
+</html>

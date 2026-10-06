@@ -118,6 +118,12 @@
       <LogicalName>payload/Nixx-Xemu/manifest.json</LogicalName>
     </EmbeddedResource>
 
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-ares\Ares.dll">
+      <LogicalName>payload/Nixx-ares/Ares.dll</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-ares\manifest.json">
+      <LogicalName>payload/Nixx-ares/manifest.json</LogicalName>
+    </EmbeddedResource>
     <EmbeddedResource Include="$(PayloadDir)\Nixx-bsnes\Bsnes.dll">
       <LogicalName>payload/Nixx-bsnes/Bsnes.dll</LogicalName>
     </EmbeddedResource>

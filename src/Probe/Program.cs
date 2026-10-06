@@ -153,6 +153,13 @@ namespace LbIntegrations.Probe
             if (Has(args, "--xemu")) return XemuCheck.Run(asm) ? 0 : 1;
             // Xenia's compatibility list: --xenia-compat [--online].
             // The compatibility lists embedded in a plugin, read with nothing downloaded: --compat-embedded [--also <Xemu.dll>].
+            // The ares plugin's pieces, without a host - see AresCheck.
+            if (Has(args, "--ares-names")) return AresCheck.Names(asm, Path.GetFullPath(Arg(args, "--ares-names"))) ? 0 : 1;
+            if (Has(args, "--ares-line")) return AresCheck.Line(asm) ? 0 : 1;
+            if (Has(args, "--ares-settings")) return AresCheck.Settings(asm, Path.GetFullPath(Arg(args, "--ares-settings")), Arg(args, "--settings")) ? 0 : 1;
+            if (Has(args, "--ares-firmware")) return AresCheck.Firmware(asm, Path.GetFullPath(Arg(args, "--ares-firmware"))) ? 0 : 1;
+            if (Has(args, "--ares-saves")) { int at = Array.IndexOf(args, "--ares-saves"); return AresCheck.Saves(asm, Path.GetFullPath(args[at + 1]), args[at + 2], Path.GetFullPath(args[at + 3])) ? 0 : 1; }
+            if (Has(args, "--ares-latest")) return AresCheck.Latest(asm) ? 0 : 1;
             // The bsnes plugin's pieces, without a host - see BsnesCheck.
             if (Has(args, "--bsnes-settings")) return BsnesCheck.Settings(asm, Path.GetFullPath(Arg(args, "--bsnes-settings")), Arg(args, "--settings")) ? 0 : 1;
             if (Has(args, "--bsnes-saves")) { int at = Array.IndexOf(args, "--bsnes-saves"); return BsnesCheck.Saves(asm, Path.GetFullPath(args[at + 1]), Path.GetFullPath(args[at + 2])) ? 0 : 1; }

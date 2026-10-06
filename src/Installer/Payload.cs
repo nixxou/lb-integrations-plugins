@@ -20,6 +20,7 @@ internal static class Payload
 {
     public const string Cxbx    = "Nixx-Cxbx";
     public const string Xemu    = "Nixx-Xemu";
+    public const string Ares    = "Nixx-ares";
     public const string Bsnes   = "Nixx-bsnes";
     public const string Demul   = "Nixx-Demul";
     public const string Flycast = "Nixx-Flycast";
@@ -32,7 +33,7 @@ internal static class Payload
     public const string RaSnes9x = "Nixx-RASnes9x";
 
     public static readonly string[] Folders =
-        { Bsnes, Cxbx, Demul, Flycast, MelonDs, NoGba, Ppsspp, RaSnes9x, SuperZsnes, Vita3k, Xemu, Xenia };
+        { Ares, Bsnes, Cxbx, Demul, Flycast, MelonDs, NoGba, Ppsspp, RaSnes9x, SuperZsnes, Vita3k, Xemu, Xenia };
 
     /// <summary>Every folder name this pack has been installed under before the rename. They are
     /// swept on install, because PluginLoader dedupes by FILE NAME across plugin roots: a stale
@@ -60,7 +61,7 @@ internal static class Payload
     /// deleting it on the strength of its name alone is how an installer destroys something it was
     /// never told about.</summary>
     public static readonly string[] Assemblies =
-        { "Bsnes.dll", "Cxbx.dll", "Demul.dll", "Flycast.dll", "MelonDs.dll", "NoGba.dll", "Ppsspp.dll", "RaSnes9x.dll", "SuperZsnes.dll", "Vita3k.dll", "Xemu.dll", "Xenia.dll", "NixxMenus.dll" };
+        { "Ares.dll", "Bsnes.dll", "Cxbx.dll", "Demul.dll", "Flycast.dll", "MelonDs.dll", "NoGba.dll", "Ppsspp.dll", "RaSnes9x.dll", "SuperZsnes.dll", "Vita3k.dll", "Xemu.dll", "Xenia.dll", "NixxMenus.dll" };
 
     /// <summary>The menu relay: the pack's right-click entries on games, shown for the plugins.
     ///
@@ -115,6 +116,9 @@ internal static class Payload
         new("payload/Nixx-Xemu/manifest.json",      Xemu,    "manifest.json"),
         new(Contract,                               Xemu,    "LbIntegrations.Catalog.dll"),
 
+        new("payload/Nixx-ares/Ares.dll",           Ares,    "Ares.dll"),
+        new("payload/Nixx-ares/manifest.json",      Ares,    "manifest.json"),
+        new(Contract,                               Ares,    "LbIntegrations.Catalog.dll"),
         new("payload/Nixx-bsnes/Bsnes.dll",         Bsnes,   "Bsnes.dll"),
         new("payload/Nixx-bsnes/manifest.json",     Bsnes,   "manifest.json"),
         new(Contract,                               Bsnes,   "LbIntegrations.Catalog.dll"),
