@@ -235,9 +235,19 @@ namespace LbIntegrations.Xenia
             var ok = new Button { Text = "OK", Width = 90 };
             var cancel = new Button { Text = "Cancel", Width = 90, DialogResult = DialogResult.Cancel };
             ok.Click += (_, _) => Apply();
+            // "Reset to defaults" (Mehdi, 06/10): every option back to unset, the optimized settings too - nothing saved before OK.
+            var reset = OptionMarks.ResetButton(() =>
+            {
+                _rows.Fill(new Dictionary<string, string>());
+                FillOptimized(null);
+                ShowOptimized(null);
+                ShowLine();
+            });
+            reset.Margin = new Padding(3, 3, 24, 3);
             var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 42, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(8, 8, 8, 4) };
             buttons.Controls.Add(cancel);
             buttons.Controls.Add(ok);
+            buttons.Controls.Add(reset);
             AcceptButton = ok;
             CancelButton = cancel;
 

@@ -73,7 +73,11 @@ namespace LbIntegrations.Lbip
         public static Control Legend(string emulator, bool gameConfig, bool hereLoses) => Legend(emulator, gameConfig, hereLoses, false);
 
         /// <summary>The same, and - a window over several games - the purple "various values" apart.</summary>
-        public static Control Legend(string emulator, bool gameConfig, bool hereLoses, bool various)
+        public static Control Legend(string emulator, bool gameConfig, bool hereLoses, bool various) => Legend(emulator, gameConfig, hereLoses, various, null);
+
+        /// <summary>The same, the grey item said otherwise when it is not the emulator's settings - "As every game" for a
+        /// window whose unset options follow every game's values set in the pack (bsnes, RASnes9x).</summary>
+        public static Control Legend(string emulator, bool gameConfig, bool hereLoses, bool various, string greyText)
         {
             var row = new FlowLayoutPanel
             {
@@ -89,7 +93,7 @@ namespace LbIntegrations.Lbip
             Item(HereColor, "Set here");
             Over();
             if (gameConfig) { Item(GameConfigColor, "The game's own " + emulator + " config"); Over(); }
-            Item(EmulatorColor, emulator + "'s settings");
+            Item(EmulatorColor, greyText ?? emulator + "'s settings");
             if (hereLoses)
             {
                 row.Controls.Add(new Label { Text = "", AutoSize = true, Margin = new Padding(0, 0, 8, 0) });

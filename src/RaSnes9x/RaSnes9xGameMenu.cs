@@ -150,7 +150,7 @@ namespace LbIntegrations.RaSnes9x
             var ok = new Button { Text = "OK", Width = 96, Height = 28 };
             var cancel = new Button { Text = "Cancel", Width = 96, Height = 28, DialogResult = DialogResult.Cancel };
             ok.Click += (_, _) => { try { if (Save()) { DialogResult = DialogResult.OK; Close(); } } catch (Exception ex) { MessageBox.Show(this, "The options could not be written: " + ex.Message, "Nixx-RASnes9x"); } };
-            var bottom = OptionMarks.Bottom(OptionMarks.Legend("RASnes9x", false, false, various: Several), OptionMarks.ResetButton(Reset), ok, cancel);
+            var bottom = OptionMarks.Bottom(OptionMarks.Legend("RASnes9x", false, false, Several, "As every game"), OptionMarks.ResetButton(Reset), ok, cancel);
             AcceptButton = ok;
             CancelButton = cancel;
             Controls.Add(page);
