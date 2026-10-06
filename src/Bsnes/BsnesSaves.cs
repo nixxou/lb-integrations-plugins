@@ -1,0 +1,247 @@
+// Save management for bsnes - the cartridge save and the save states, one FILE each (as RaSnes9xSaves, after
+// SuperZsnesSaves).
+//
+//   Cartridge save   <name>.srm    in Path/Saves, else beside the game   (and <name>.rtc - the clock of S-RTC/SPC7110
+//                                                                        carts - and <name>.psr - Satellaview's -
+//                                                                        beside it: its companions)
+//   Save states      <name>.bsz    in Path/States, else beside the game  ONE zip holding them all: Quick/Slot 1..N.bst,
+//                                                                        Quick/Undo, Quick/Redo, Managed/<name>.bst
+//
+// Read off bsnes's code (target-bsnes/program/paths.cpp, game-rom.cpp, states.cpp, 06/10): path("Saves", location,
+// ".srm") is the folder of Path/Saves when it is set, else the game's, then the game's file name without its last
+// extension - for a .zip or a .7z the archive's own. A state is saved by rewriting the whole .bsz with the new one in
+// it, so the file is the unit LaunchBox backs up and restores.
+
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using Unbroken.LaunchBox.Plugins;
+using Unbroken.LaunchBox.Plugins.Data;
+
+namespace LbIntegrations.Bsnes
+{
+    public partial class BsnesPlugin
+    {
+        private const string SavePrefix = "bsnes:save:";
+        private const string StatePrefix = "bsnes:states:";
+        private const string SaveGroupName = "Cartridge save";
+        private const string SaveChipText = "SRM";
+        private const string StateGroupName = "Save states (all slots, one file)";
+        private const string StateChipText = "BSZ";
+
+        public override bool SupportsSaveManagement() => true;
+
+        public override IReadOnlyDictionary<int, string> GetPotentialSaveSlots() => new Dictionary<int, string>();
+
+        // ── where bsnes keeps a game's ───────────────────────────────────────
+
+        internal sealed class Folders { public string SaveDir, StateDir; }
+
+        internal static Folders FoldersFor(string exePath, string romPath)
+        {
+            var romDir = string.IsNullOrWhiteSpace(romPath) ? null : Path.GetDirectoryName(Path.GetFullPath(romPath));
+            var bml = BsnesBml.Load(BsnesBml.Of(exePath));
+            string Dir(string node)
+            {
+                var v = bml.Get(node);
+                if (string.IsNullOrWhiteSpace(v)) return romDir;
+                try { return Path.GetFullPath(v.Replace('/', Path.DirectorySeparatorChar)); }
+                catch { return romDir; }
+            }
+            return new Folders { SaveDir = Dir("Path/Saves"), StateDir = Dir("Path/States") };
+        }
+
+        internal static string NameOf(string romPath) => Path.GetFileNameWithoutExtension(romPath ?? "");
+
+        // ── listing ──────────────────────────────────────────────────────────
+
+        public override GetSavesResponse GetSaves(GetSavesArgs args)
+        {
+            try
+            {
+                if (args?.Emulator == null) return new GetSavesResponse("No emulator was supplied.");
+                var exe = ResolveFullPath(Safe(() => args.Emulator.ApplicationPath));
+                if (!BsnesLaunch.IsBsnesExe(exe)) return new GetSavesResponse("This emulator is not bsnes.");
+
+                var found = new List<GameSaveBase>();
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var app in args.AdditionalApplications ?? (IReadOnlyCollection<IAdditionalApplication>)Array.Empty<IAdditionalApplication>())
+                    Collect(found, seen, exe, Safe(() => app.ApplicationPath), Safe(() => app.GameId), Safe(() => app.Id));
+                foreach (var game in args.Games ?? (IReadOnlyCollection<IGame>)Array.Empty<IGame>())
+                    Collect(found, seen, exe, Safe(() => game.ApplicationPath), Safe(() => game.Id), null);
+
+                Log.Verbose("found " + found.Count + " file(s) for " + exe);
+                return new GetSavesResponse(found);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("GetSaves failed", ex);
+                return new GetSavesResponse("Could not read bsnes saves: " + ex.Message);
+            }
+        }
+
+        private static void Collect(List<GameSaveBase> into, HashSet<string> seen, string exe, string romPath, string gameId, string appId)
+        {
+            if (string.IsNullOrWhiteSpace(gameId) || string.IsNullOrWhiteSpace(romPath)) return;
+            var rom = ResolveFullPath(romPath);
+            var name = NameOf(rom);
+            if (name.Length == 0) return;
+            var folders = FoldersFor(exe, rom);
+            var context = appId ?? gameId;
+
+            var srm = folders.SaveDir == null ? null : Path.Combine(folders.SaveDir, name + ".srm");
+            if (srm != null && File.Exists(srm) && seen.Add("save|" + srm + "|" + context))
+                into.Add(Row(srm, gameId, appId, SavePrefix + name, SaveGroupName, SaveChipText));
+
+            var bsz = folders.StateDir == null ? null : Path.Combine(folders.StateDir, name + ".bsz");
+            if (bsz != null && File.Exists(bsz) && seen.Add("states|" + bsz + "|" + context))
+                into.Add(Row(bsz, gameId, appId, StatePrefix + name, StateGroupName, StateChipText));
+        }
+
+        private static GameSaveGame Row(string path, string gameId, string appId, string groupId, string groupName, string chip)
+        {
+            long size = 0; DateTime when = default;
+            try { var i = new FileInfo(path); size = i.Length; when = i.LastWriteTimeUtc; } catch { }
+            return new GameSaveGame
+            {
+                GameId = gameId, AdditionalApplicationId = appId, FileLocation = path, IsDirectory = false,
+                OriginalFileName = Path.GetFileName(path), SaveGroupId = groupId,
+                SaveGroupName = groupName, DisplayChipText = chip,
+                ReportedFileSizeBytes = size > 0 ? size : (long?)null, ReportedLastModifiedUtc = when == default ? (DateTime?)null : when,
+            };
+        }
+
+        // ── the contract ─────────────────────────────────────────────────────
+
+        public override bool IsSaveContainer(GameSaveBase save) => false;
+
+        public override bool UseSaveGroupIdForPersistedMatch(GameSaveBase save) => IsOurs(save);
+
+        public override bool TryBackupSave(GameSaveBase save, string emulatorApplicationPath, string destinationFolder, out string error)
+        {
+            error = "A bsnes save is one file, not a container.";
+            return false;
+        }
+
+        public override bool IsSecondarySaveFile(string filePath) => false;
+
+        /// <summary>A cartridge save's clock (.rtc) and Satellaview data (.psr) travel with it.</summary>
+        public override IReadOnlyList<string> GetCompanionSaveFiles(string primaryFilePath)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(primaryFilePath) || !primaryFilePath.EndsWith(".srm", StringComparison.OrdinalIgnoreCase)) return Array.Empty<string>();
+                return new[] { ".rtc", ".psr" }.Select(e => Path.ChangeExtension(primaryFilePath, e)).Where(File.Exists).ToArray();
+            }
+            catch { return Array.Empty<string>(); }
+        }
+
+        public override bool IsSaveActive(GameSaveBase save, string emulatorApplicationPath)
+        {
+            try
+            {
+                if (!IsOurs(save) || string.IsNullOrWhiteSpace(save.FileLocation)) return true;
+                var exe = ResolveFullPath(emulatorApplicationPath);
+                if (!BsnesLaunch.IsBsnesExe(exe) || !File.Exists(save.FileLocation)) return File.Exists(save.FileLocation);
+                var target = TargetDirFor(save, exe);
+                return target == null || string.Equals(Path.GetFullPath(Path.GetDirectoryName(save.FileLocation)).TrimEnd('\\'),
+                                                       Path.GetFullPath(target).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return true; }
+        }
+
+        // ── restore ──────────────────────────────────────────────────────────
+
+        public override AddSaveResponse AddSaveFile(AddSaveArgs args)
+        {
+            try
+            {
+                var save = args?.SaveToAdd;
+                if (save == null) return new AddSaveResponse("No save was supplied.");
+                var source = save.FileLocation;
+                if (string.IsNullOrWhiteSpace(source) || !File.Exists(source)) return new AddSaveResponse("This bsnes backup is not a file: " + source);
+
+                var name = new[] { save.OriginalFileName, Path.GetFileName(source) }.FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
+                var game = PluginHelper.DataManager?.GetGameById(save.GameId);
+                var exe = ExecutableOf(game);
+                var targetDir = exe == null ? null : TargetDirFor(save, exe, game);
+                if (targetDir == null) return new AddSaveResponse("Could not work out where bsnes reads this save from.");
+                if (BsnesLaunch.Running(exe)) return new AddSaveResponse("bsnes is running: it would write the game's own over this one. Close it first.");
+
+                var target = Path.Combine(targetDir, name);
+                if (File.Exists(target))
+                {
+                    bool overwrite = true;
+                    try { overwrite = args.ShouldOverwriteFunc?.Invoke() ?? true; } catch { }
+                    if (!overwrite) return new AddSaveResponse("Restore cancelled.");
+                }
+                Directory.CreateDirectory(targetDir);
+                File.Copy(source, target, overwrite: true);
+                Log.Info("restored " + name + " -> " + targetDir);
+                bool states = (save.SaveGroupId ?? "").StartsWith(StatePrefix, StringComparison.OrdinalIgnoreCase);
+                return new AddSaveResponse(Row(target, save.GameId, save.AdditionalApplicationId, save.SaveGroupId,
+                                               states ? StateGroupName : SaveGroupName, states ? StateChipText : SaveChipText));
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("AddSaveFile failed", ex);
+                return new AddSaveResponse("Could not restore this bsnes save: " + ex.Message);
+            }
+        }
+
+        private static string TargetDirFor(GameSaveBase save, string exe, IGame game = null)
+        {
+            game = game ?? PluginHelper.DataManager?.GetGameById(save.GameId);
+            var rom = ResolveFullPath(Safe(() => game?.ApplicationPath));
+            var folders = FoldersFor(exe, rom);
+            return (save.SaveGroupId ?? "").StartsWith(StatePrefix, StringComparison.OrdinalIgnoreCase) ? folders.StateDir : folders.SaveDir;
+        }
+
+        private static string ExecutableOf(IGame game)
+        {
+            try
+            {
+                var dm = PluginHelper.DataManager;
+                var id = Safe(() => game?.EmulatorId);
+                var own = string.IsNullOrEmpty(id) ? null : dm?.GetEmulatorById(id);
+                var path = Safe(() => own?.ApplicationPath);
+                if (!BsnesLaunch.IsBsnesExe(path))
+                    path = Safe(() => dm?.GetAllEmulators()?.FirstOrDefault(e => BsnesLaunch.IsBsnesExe(Safe(() => e.ApplicationPath)))?.ApplicationPath);
+                return string.IsNullOrEmpty(path) ? null : ResolveFullPath(path);
+            }
+            catch { return null; }
+        }
+
+        // ── delete ───────────────────────────────────────────────────────────
+
+        public override PluginResponse RemoveSave(GameSaveBase save)
+        {
+            try
+            {
+                if (!IsOurs(save)) return base.RemoveSave(save);
+                var loc = save?.FileLocation;
+                if (string.IsNullOrWhiteSpace(loc)) return new PluginResponse(false, "This save has no location.");
+                try { if (File.Exists(loc)) File.Delete(loc); }
+                catch (Exception ex) { Log.Warn("could not delete " + loc, ex); return new PluginResponse(false, "Could not delete " + Path.GetFileName(loc) + "."); }
+                Log.Info("deleted " + Path.GetFileName(loc));
+                return new PluginResponse(true);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("RemoveSave failed", ex);
+                return new PluginResponse(false, "Could not delete this bsnes save: " + ex.Message);
+            }
+        }
+
+        private static bool IsOurs(GameSaveBase save)
+            => save?.SaveGroupId != null && (save.SaveGroupId.StartsWith(SavePrefix, StringComparison.OrdinalIgnoreCase)
+                                             || save.SaveGroupId.StartsWith(StatePrefix, StringComparison.OrdinalIgnoreCase));
+
+        private static string Safe(Func<string> read)
+        {
+            try { return read(); } catch { return null; }
+        }
+    }
+}

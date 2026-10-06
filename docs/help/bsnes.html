@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bsnes - Nixx plugin guide</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#ffffff; --ink:#1d1d1f; --muted:#5f6368; --line:#e3e3e0; --accent:#0a6ed1; --ok:#1e8e3e; --warn:#b06000; --no:#c5221f; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17181a; --card:#1f2124; --ink:#e8e8e6; --muted:#a0a3a7; --line:#33363a; --accent:#5aa9ff; --ok:#5bc27a; --warn:#e3a34a; --no:#ff7b72; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 "Segoe UI", system-ui, sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 64px; }
+  header h1 { margin:0 0 4px; font-size:30px; }
+  header p { margin:0; color:var(--muted); }
+  nav { margin:20px 0 8px; display:flex; flex-wrap:wrap; gap:8px; }
+  nav a { font-size:14px; color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; background:var(--card); }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 24px; margin:18px 0; }
+  h2 { margin:0 0 10px; font-size:21px; }
+  h3 { margin:18px 0 6px; font-size:17px; }
+  ul { padding-left:22px; } li { margin:4px 0; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .yes { color:var(--ok); font-weight:600; } .partly { color:var(--warn); font-weight:600; } .no { color:var(--no); font-weight:600; }
+  .tip, .warn { border-left:4px solid var(--accent); padding:8px 14px; margin:12px 0; background:color-mix(in srgb, var(--accent) 8%, transparent); border-radius:0 8px 8px 0; }
+  .warn { border-color:var(--warn); background:color-mix(in srgb, var(--warn) 10%, transparent); }
+  code, kbd { font-family:Consolas, monospace; font-size:14px; background:color-mix(in srgb, var(--ink) 8%, transparent); padding:1px 5px; border-radius:4px; }
+  footer { color:var(--muted); font-size:13px; text-align:center; margin-top:30px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>bsnes</h1>
+  <p>What the Nixx plugin does for you, and what to expect.</p>
+</header>
+<nav>
+  <a href="#overview">In short</a><a href="#start">Getting started</a><a href="#play">Playing</a><a href="#options">Options</a>
+  <a href="#saves">Saves</a><a href="#support">What works</a><a href="#limits">Limits</a><a href="#trouble">If something goes wrong</a>
+</nav>
+
+<section id="overview"><h2>In short</h2>
+  <p>bsnes is the accurate Super Nintendo emulator Near wrote. Its last numbered release is v115 (2020); the community
+  keeps it going and publishes a nightly build, which is what the plugin installs and updates.</p>
+  <p>The plugin installs it, writes the picture you chose before every game, starts it full screen, and shows its saves and
+  save states in LaunchBox's save management.</p>
+</section>
+
+<section id="start"><h2>Getting started</h2>
+  <ul>
+    <li>In LaunchBox, <b>Tools &gt; Manage &gt; Emulators &gt; Add</b>, pick <b>Nixx-bsnes</b> and <b>Download</b>: the latest nightly is
+    installed into <code>Emulators\Nixx-bsnes</code>, set as the Super Nintendo emulator.</li>
+    <li>A newer nightly: the same window's Download button offers it. Your <code>settings.bml</code> (pads, hotkeys, folders) is kept.</li>
+  </ul>
+</section>
+
+<section id="play"><h2>Playing a game</h2>
+  <p>bsnes opens <code>.sfc</code>, <code>.smc</code>, <code>.zip</code> and <code>.7z</code> itself. Before the game starts the plugin
+  writes your picture options into <code>settings.bml</code> and adds <code>--fullscreen</code> when you want full screen.
+  Quitting from the pause screen closes the window, as its own close button does: bsnes writes the game's save then.</p>
+</section>
+
+<section id="options"><h2>Options</h2>
+  <p><b>Tools &gt; Nixx Integration Plugins Configuration...</b>, page bsnes, sets every game's; right-click a game,
+  <b>Nixx-bsnes : Options...</b>, sets one game's own.</p>
+  <table><tr><th>Option</th><th>Choices</th></tr>
+  <tr><td>Screen</td><td>Full screen or windowed</td></tr>
+  <tr><td>Aspect</td><td>4:3 as on a TV (bsnes's aspect correction), or 8:7 square pixels</td></tr>
+  <tr><td>Scaling</td><td>Fill the screen keeping the shape, integer only, or stretched</td></tr>
+  <tr><td>Smoothing</td><td>Blur on, or sharp pixels (bsnes's default)</td></tr>
+  <tr><td>VSync</td><td>Against tearing</td></tr>
+  <tr><td>HD Mode 7</td><td>Off, 2x, 3x, 4x - F-Zero, Mario Kart, Pilotwings in high resolution</td></tr></table>
+  <div class="tip">These settings are the plugin's: change them in bsnes's menus and they come back at the next launch. Everything else -
+  pads, hotkeys, sound, folders - is yours, set in bsnes.</div>
+</section>
+
+<section id="saves"><h2>Saves and save states</h2>
+  <ul>
+    <li><b>Cartridge save</b>: <code>&lt;game&gt;.srm</code> (and <code>.rtc</code>, <code>.psr</code> when the cart has them), in
+    bsnes's saves folder if you set one, else beside the game.</li>
+    <li><b>Save states</b>: bsnes keeps every state of a game in one file, <code>&lt;game&gt;.bsz</code>. LaunchBox's save management
+    backs it up and restores it as one.</li>
+    <li>bsnes ships no save-state key: the plugin binds <kbd>F5</kbd> (save) and <kbd>F7</kbd> (load) when they are empty, and
+    LaunchBox's pause screen uses them.</li>
+  </ul>
+</section>
+
+<section id="support"><h2>What works</h2>
+  <table><tr><th>Feature</th><th></th><th>Notes</th></tr>
+  <tr><td>Install and update</td><td class="yes">Yes</td><td>The nightly build from GitHub</td></tr>
+  <tr><td>Saves and save states</td><td class="yes">Yes</td><td>The states as one file per game</td></tr>
+  <tr><td>RetroAchievements</td><td class="no">No</td><td>bsnes has none - use RASnes9x for achievements</td></tr></table>
+</section>
+
+<section id="limits"><h2>Limits and things to know</h2>
+  <ul><li>A nightly is the project's latest build: newer, and tested less than a release.</li>
+  <li>A save restored while bsnes runs would be overwritten when it quits: close it first.</li></ul>
+</section>
+
+<section id="trouble"><h2>If something goes wrong</h2>
+  <ul><li>The plugin's log: <code>%LOCALAPPDATA%\lb-integrations-plugins\bsnes.log</code> (General tab: "Open the logs folder").</li></ul>
+</section>
+
+<footer>Nixx integration plugins for LaunchBox</footer>
+</main>
+</body>
+</html>

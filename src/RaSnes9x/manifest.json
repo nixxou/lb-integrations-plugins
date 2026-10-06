@@ -1,0 +1,19 @@
+{
+  "SchemaVersion": 1,
+  "PluginId": "d1494f7d-fb7a-4a0c-8f8a-9e05929527b1",
+  "UserId": 0,
+  "Name": "Nixx-RASnes9x",
+  "Developer": "nixxou",
+  "Description": "Download, update, launch and save integration for RASnes9x - RetroAchievements' own Snes9x (Super Nintendo).",
+  "Credits": "Many thanks to the Snes9x team, and to RetroAchievements, who keep RASnes9x.",
+  "OperatingSystemFamily": "Windows",
+  "InstalledVersion": "1.1.1",
+  "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
+  "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
+  "HomePageUrl": "https://github.com/RetroAchievements/RASnes9x",
+  "TipJarUrl": "",
+  "SourceKind": "Local",
+  "Tags": [
+    "5aae585f-ffc5-42bc-9f95-e5e190ef99e2"
+  ]
+}

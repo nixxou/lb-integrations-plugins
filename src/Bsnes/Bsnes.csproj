@@ -1,0 +1,76 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <!-- net9 and not net10: a net9 assembly loads on the .NET 9 runtime AND on .NET 10, so one build covers every host. -->
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Platforms>AnyCPU;x64</Platforms>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>Bsnes</AssemblyName>
+    <RootNamespace>LbIntegrations.Bsnes</RootNamespace>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <!-- true so the dependencies land in bin\ for the merge step below. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- MSB3277: the vendored SDK and a host's newer one differ in version; that is the point of Private=false. -->
+    <MSBuildWarningsAsMessages>MSB3277</MSBuildWarningsAsMessages>
+    <!-- Shared.Lbip and Shared.Menu use WinForms (the notice a refused launch shows, the menu icon). -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- And WPF: LaunchBox's Import ROM Files wizard is WPF, watched from its windows - see Shared.Lbip\LbipImportWatch.cs. -->
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- THE CATALOGUE CONTRACT, referenced and SHIPPED rather than merged - see src\Catalog\LbCatalog.cs. -->
+    <ProjectReference Include="..\Catalog\Catalog.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- THE SHARED ROW INJECTION, compiled in rather than referenced - see src\Shared.Lbip. -->
+    <Compile Include="..\Shared.Lbip\**\*.cs" />
+    <!-- And the menu helpers: the right-click entry's icon (LbipMenuIcon). -->
+    <Compile Include="..\Shared.Menu\**\*.cs" />
+    <!-- The look of the Nixx windows, LiteBox's: the theme and the shell of a game's window. -->
+    <Compile Include="..\Shared.Ui\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Same version as the other plugins, so HarmonySharedState is shared and they coordinate. -->
+    <PackageReference Include="Lib.Harmony" Version="2.4.2" />
+    <!-- The emulator's zip. Same version as the other plugins. -->
+    <PackageReference Include="SharpCompress" Version="0.41.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Reference the SDK but DON'T copy it: the host loads the plugin into ITS assembly load context and provides the SDK. -->
+    <Reference Include="Unbroken.LaunchBox.Plugins">
+      <HintPath>..\..\vendor\Unbroken.LaunchBox.Plugins.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Fold every dependency INTO Bsnes.dll, internalized. See Xenia.csproj for why. -->
+  <Target Name="MergePlugin" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <PropertyGroup>
+      <MergedDir>$(OutDir)merged\</MergedDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <MergeInput Include="$(OutDir)$(AssemblyName).dll" />
+      <MergeInput Include="$(OutDir)*.dll" Exclude="$(OutDir)$(AssemblyName).dll;$(OutDir)LbIntegrations.Catalog.dll" />
+      <!-- The trailing "." keeps a directory ending in \ from escaping the closing quote. -->
+      <MergeLib Include="@(ReferencePath->'%(RootDir)%(Directory).')" />
+    </ItemGroup>
+    <MakeDir Directories="$(MergedDir)" />
+    <Exec Command="dotnet ilrepack /out:&quot;$(MergedDir)$(AssemblyName).dll&quot; /internalize @(MergeLib->Distinct()->'/lib:&quot;%(Identity)&quot;', ' ') @(MergeInput->'&quot;%(FullPath)&quot;', ' ')"
+          WorkingDirectory="$(MSBuildProjectDirectory)" StandardOutputImportance="low" />
+    <Message Importance="high" Text="  merged -> $(MergedDir)$(AssemblyName).dll" />
+  </Target>
+
+  <ItemGroup>
+    <!-- The plugin's user guide, shown from the General tab of the Nixx window (src\Menus\Settings.cs). -->
+    <EmbeddedResource Include="..\..\docs\help\bsnes.html" LogicalName="help.html" />
+  </ItemGroup>
+
+</Project>

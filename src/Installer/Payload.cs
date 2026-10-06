@@ -20,6 +20,7 @@ internal static class Payload
 {
     public const string Cxbx    = "Nixx-Cxbx";
     public const string Xemu    = "Nixx-Xemu";
+    public const string Bsnes   = "Nixx-bsnes";
     public const string Demul   = "Nixx-Demul";
     public const string Flycast = "Nixx-Flycast";
     public const string MelonDs = "Nixx-melonDS";
@@ -28,9 +29,10 @@ internal static class Payload
     public const string Vita3k  = "Nixx-Vita3K";
     public const string Xenia   = "Nixx-Xenia";
     public const string SuperZsnes = "Nixx-SuperZSNES";
+    public const string RaSnes9x = "Nixx-RASnes9x";
 
     public static readonly string[] Folders =
-        { Cxbx, Demul, Flycast, MelonDs, NoGba, Ppsspp, SuperZsnes, Vita3k, Xemu, Xenia };
+        { Bsnes, Cxbx, Demul, Flycast, MelonDs, NoGba, Ppsspp, RaSnes9x, SuperZsnes, Vita3k, Xemu, Xenia };
 
     /// <summary>Every folder name this pack has been installed under before the rename. They are
     /// swept on install, because PluginLoader dedupes by FILE NAME across plugin roots: a stale
@@ -58,7 +60,7 @@ internal static class Payload
     /// deleting it on the strength of its name alone is how an installer destroys something it was
     /// never told about.</summary>
     public static readonly string[] Assemblies =
-        { "Cxbx.dll", "Demul.dll", "Flycast.dll", "MelonDs.dll", "NoGba.dll", "Ppsspp.dll", "SuperZsnes.dll", "Vita3k.dll", "Xemu.dll", "Xenia.dll", "NixxMenus.dll" };
+        { "Bsnes.dll", "Cxbx.dll", "Demul.dll", "Flycast.dll", "MelonDs.dll", "NoGba.dll", "Ppsspp.dll", "RaSnes9x.dll", "SuperZsnes.dll", "Vita3k.dll", "Xemu.dll", "Xenia.dll", "NixxMenus.dll" };
 
     /// <summary>The menu relay: the pack's right-click entries on games, shown for the plugins.
     ///
@@ -113,6 +115,9 @@ internal static class Payload
         new("payload/Nixx-Xemu/manifest.json",      Xemu,    "manifest.json"),
         new(Contract,                               Xemu,    "LbIntegrations.Catalog.dll"),
 
+        new("payload/Nixx-bsnes/Bsnes.dll",         Bsnes,   "Bsnes.dll"),
+        new("payload/Nixx-bsnes/manifest.json",     Bsnes,   "manifest.json"),
+        new(Contract,                               Bsnes,   "LbIntegrations.Catalog.dll"),
         new("payload/Nixx-Demul/Demul.dll",         Demul,   "Demul.dll"),
         new("payload/Nixx-Demul/manifest.json",     Demul,   "manifest.json"),
         new(Contract,                               Demul,   "LbIntegrations.Catalog.dll"),
@@ -138,6 +143,9 @@ internal static class Payload
         new("payload/Nixx-PPSSPP/manifest.json",    Ppsspp,  "manifest.json"),
         new(Contract,                               Ppsspp,  "LbIntegrations.Catalog.dll"),
 
+        new("payload/Nixx-RASnes9x/RaSnes9x.dll",      RaSnes9x,   "RaSnes9x.dll"),
+        new("payload/Nixx-RASnes9x/manifest.json",     RaSnes9x,   "manifest.json"),
+        new(Contract,                                   RaSnes9x,   "LbIntegrations.Catalog.dll"),
         new("payload/Nixx-SuperZSNES/SuperZsnes.dll",   SuperZsnes, "SuperZsnes.dll"),
         new("payload/Nixx-SuperZSNES/manifest.json",    SuperZsnes, "manifest.json"),
         new(Contract,                                   SuperZsnes, "LbIntegrations.Catalog.dll"),

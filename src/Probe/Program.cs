@@ -153,6 +153,18 @@ namespace LbIntegrations.Probe
             if (Has(args, "--xemu")) return XemuCheck.Run(asm) ? 0 : 1;
             // Xenia's compatibility list: --xenia-compat [--online].
             // The compatibility lists embedded in a plugin, read with nothing downloaded: --compat-embedded [--also <Xemu.dll>].
+            // The bsnes plugin's pieces, without a host - see BsnesCheck.
+            if (Has(args, "--bsnes-settings")) return BsnesCheck.Settings(asm, Path.GetFullPath(Arg(args, "--bsnes-settings")), Arg(args, "--settings")) ? 0 : 1;
+            if (Has(args, "--bsnes-saves")) { int at = Array.IndexOf(args, "--bsnes-saves"); return BsnesCheck.Saves(asm, Path.GetFullPath(args[at + 1]), Path.GetFullPath(args[at + 2])) ? 0 : 1; }
+            if (Has(args, "--bsnes-latest")) return BsnesCheck.Latest(asm) ? 0 : 1;
+            if (Has(args, "--bsnes-extract")) { int at = Array.IndexOf(args, "--bsnes-extract"); return BsnesCheck.Extract(asm, Path.GetFullPath(args[at + 1]), Path.GetFullPath(args[at + 2])) ? 0 : 1; }
+            // The RASnes9x plugin's pieces, without a host - see RaSnes9xCheck.
+            if (Has(args, "--rasnes9x-conf")) return RaSnes9xCheck.Conf(asm, Path.GetFullPath(Arg(args, "--rasnes9x-conf")), Arg(args, "--settings")) ? 0 : 1;
+            if (Has(args, "--rasnes9x-saves")) { int at = Array.IndexOf(args, "--rasnes9x-saves"); return RaSnes9xCheck.Saves(asm, Path.GetFullPath(args[at + 1]), Path.GetFullPath(args[at + 2])) ? 0 : 1; }
+            if (Has(args, "--rasnes9x-7z")) return RaSnes9xCheck.SevenZip(asm, Path.GetFullPath(Arg(args, "--rasnes9x-7z"))) ? 0 : 1;
+            if (Has(args, "--rasnes9x-cheevos")) return RaSnes9xCheck.Cheevos(asm) ? 0 : 1;
+            if (Has(args, "--rasnes9x-toolset")) return RaSnes9xCheck.Toolset(asm, Path.GetFullPath(Arg(args, "--rasnes9x-toolset"))) ? 0 : 1;
+            if (Has(args, "--rasnes9x-fetch")) return RaSnes9xCheck.Fetch(asm) ? 0 : 1;
             if (Has(args, "--compat-embedded")) return CompatEmbeddedCheck.Run(asm, Arg(args, "--also") is string ca ? Path.GetFullPath(ca) : null) ? 0 : 1;
             if (Has(args, "--xenia-compat")) return XeniaCompatCheck.Run(asm, Has(args, "--online")) ? 0 : 1;
             // What a first install of Xenia sets up, and the options at launch: --xenia-setup [--xconfig f] [--account f] [--toml f].

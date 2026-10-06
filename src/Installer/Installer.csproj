@@ -118,6 +118,18 @@
       <LogicalName>payload/Nixx-Xemu/manifest.json</LogicalName>
     </EmbeddedResource>
 
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-bsnes\Bsnes.dll">
+      <LogicalName>payload/Nixx-bsnes/Bsnes.dll</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-bsnes\manifest.json">
+      <LogicalName>payload/Nixx-bsnes/manifest.json</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-RASnes9x\RaSnes9x.dll">
+      <LogicalName>payload/Nixx-RASnes9x/RaSnes9x.dll</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-RASnes9x\manifest.json">
+      <LogicalName>payload/Nixx-RASnes9x/manifest.json</LogicalName>
+    </EmbeddedResource>
     <EmbeddedResource Include="$(PayloadDir)\Nixx-Demul\Demul.dll">
       <LogicalName>payload/Nixx-Demul/Demul.dll</LogicalName>
     </EmbeddedResource>

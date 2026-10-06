@@ -1,4 +1,4 @@
-﻿# Build a plugin and drop it into a LaunchBox / LiteBox install.
+# Build a plugin and drop it into a LaunchBox / LiteBox install.
 #
 # The deployed file is verified BY HASH, not by "Copy-Item didn't throw": a copy onto a file held
 # open by a running host silently leaves the old bytes in place, and a deploy script that reports
@@ -46,6 +46,7 @@ $repo = Split-Path -Parent $MyInvocation.MyCommand.Path
 #
 # Keep this in step with src\Installer\Payload.cs. They are the two places a folder name is decided.
 $Pack = @{
+    'Bsnes'   = @{ Folder = 'Nixx-bsnes';   Old = @() }
     'Cxbx'    = @{ Folder = 'Nixx-Cxbx';    Old = @() }
     'Demul'   = @{ Folder = 'Nixx-Demul';   Old = @() }
     'Flycast' = @{ Folder = 'Nixx-Flycast'; Old = @('Flycast Integration') }
@@ -56,10 +57,11 @@ $Pack = @{
     'Xenia'   = @{ Folder = 'Nixx-Xenia';   Old = @('Xenia Integration') }
     'Vita3k'  = @{ Folder = 'Nixx-Vita3K';  Old = @() }
     'SuperZsnes' = @{ Folder = 'Nixx-SuperZSNES'; Old = @() }
+    'RaSnes9x' = @{ Folder = 'Nixx-RASnes9x'; Old = @() }
 }
 
 if ($All) {
-    foreach ($name in @('Cxbx', 'Demul', 'Flycast', 'MelonDs', 'NoGba', 'Ppsspp', 'SuperZsnes', 'Vita3k', 'Xemu', 'Xenia')) {
+    foreach ($name in @('Bsnes', 'Cxbx', 'Demul', 'Flycast', 'MelonDs', 'NoGba', 'Ppsspp', 'RaSnes9x', 'SuperZsnes', 'Vita3k', 'Xemu', 'Xenia')) {
         Write-Host ""
         Write-Host ("=== " + $name) -ForegroundColor Magenta
         & $MyInvocation.MyCommand.Path -Plugin $name -LbRoot $LbRoot -Configuration $Configuration -SuperZsnesDir $SuperZsnesDir
@@ -92,10 +94,11 @@ if ($Plugin -eq 'SuperZsnes') {
 # this repository's main branch, so a branch that adds or changes it cannot be tried until it is pushed.
 # The copy goes beside the pack's logs - never into the plugin folder, which LaunchBox 14 checks against
 # the manifest - and the plugin takes it only when its SHA-256 is the one it pins (DemulBuild).
-if ($Plugin -eq 'Demul') {
+if ($Plugin -eq 'Demul' -or $Plugin -eq 'RaSnes9x') {
     $devDir = Join-Path $env:LOCALAPPDATA 'lb-integrations-plugins\dev'
     New-Item -ItemType Directory -Force -Path $devDir | Out-Null
-    Get-ChildItem (Join-Path $repo 'vendor\demul') -Filter '*.7z' | ForEach-Object {
+    $vendored = if ($Plugin -eq 'Demul') { Get-ChildItem (Join-Path $repo 'vendor\demul') -Filter '*.7z' } else { Get-ChildItem (Join-Path $repo 'vendor\rasnes9x') -Filter '*.zip' }
+    $vendored | ForEach-Object {
         Copy-Item $_.FullName (Join-Path $devDir $_.Name) -Force
         Write-Host ("  dev copy of {0} -> {1}" -f $_.Name, $devDir)
     }

@@ -1,0 +1,19 @@
+{
+  "SchemaVersion": 1,
+  "PluginId": "652457a1-9a00-4701-9801-14e1c01144c2",
+  "UserId": 0,
+  "Name": "Nixx-bsnes",
+  "Developer": "nixxou",
+  "Description": "Download, update, launch and save integration for bsnes, the accurate Super Nintendo emulator (its nightly builds).",
+  "Credits": "Many thanks to Near, who wrote bsnes, and to everyone who keeps it going.",
+  "OperatingSystemFamily": "Windows",
+  "InstalledVersion": "1.1.1",
+  "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
+  "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
+  "HomePageUrl": "https://github.com/bsnes-emu/bsnes",
+  "TipJarUrl": "",
+  "SourceKind": "Local",
+  "Tags": [
+    "5aae585f-ffc5-42bc-9f95-e5e190ef99e2"
+  ]
+}

@@ -647,12 +647,14 @@ internal sealed class InstallerForm : Form
     private static string What(string folder) => folder switch
     {
         Payload.Cxbx => "Xbox",
+        Payload.Bsnes => "Super Nintendo, accurate (nightly)",
         Payload.Demul => "Dreamcast, Naomi, Hikaru",
         Payload.Flycast => "Dreamcast, Naomi",
         Payload.MelonDs => "DS, DSi",
         Payload.NoGba => "DS, DSi",
         Payload.Ppsspp => "PSP",
         Payload.SuperZsnes => "Super Nintendo",
+        Payload.RaSnes9x => "Super Nintendo, with RetroAchievements",
         Payload.Vita3k => "PS Vita",
         Payload.Xemu => "Xbox",
         Payload.Xenia => "Xbox 360",

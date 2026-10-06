@@ -1,4 +1,4 @@
-﻿# Build the whole pack into ONE file: release\NixxIntegrations.exe.
+# Build the whole pack into ONE file: release\NixxIntegrations.exe.
 #
 # Three steps, in this order and for a reason. The plugins are built first, because the release
 # is made of their merged DLLs and nothing else. Their files are then staged into one directory -
@@ -35,12 +35,14 @@ $repo = Split-Path -Parent $MyInvocation.MyCommand.Path
 # Project -> the folder its files are staged under. These names ARE the plugin folder names the
 # installer creates.
 $Stage = [ordered]@{
+    'Bsnes'   = 'Nixx-bsnes'
     'Cxbx'    = 'Nixx-Cxbx'
     'Demul'   = 'Nixx-Demul'
     'Flycast' = 'Nixx-Flycast'
     'MelonDs' = 'Nixx-melonDS'
     'NoGba'   = 'Nixx-nogba'
     'Ppsspp'  = 'Nixx-PPSSPP'
+    'RaSnes9x' = 'Nixx-RASnes9x'
     'SuperZsnes' = 'Nixx-SuperZSNES'
     'Vita3k'  = 'Nixx-Vita3K'
     'Xemu'    = 'Nixx-Xemu'

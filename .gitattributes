@@ -11,3 +11,6 @@ vendor/aim/** binary
 
 # Demul as Batocera ships it, byte for byte (see vendor/demul/SOURCE.md).
 vendor/demul/*.7z binary
+
+# RASnes9x as RetroAchievements ships it, byte for byte (see vendor/rasnes9x/SOURCE.md).
+vendor/rasnes9x/*.zip binary

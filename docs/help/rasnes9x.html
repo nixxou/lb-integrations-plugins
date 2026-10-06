@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RASnes9x - Nixx plugin guide</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#ffffff; --ink:#1d1d1f; --muted:#5f6368; --line:#e3e3e0; --accent:#0a6ed1; --ok:#1e8e3e; --warn:#b06000; --no:#c5221f; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17181a; --card:#1f2124; --ink:#e8e8e6; --muted:#a0a3a7; --line:#33363a; --accent:#5aa9ff; --ok:#5bc27a; --warn:#e3a34a; --no:#ff7b72; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 "Segoe UI", system-ui, sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 64px; }
+  header h1 { margin:0 0 4px; font-size:30px; }
+  header p { margin:0; color:var(--muted); }
+  nav { margin:20px 0 8px; display:flex; flex-wrap:wrap; gap:8px; }
+  nav a { font-size:14px; color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; background:var(--card); }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 24px; margin:18px 0; }
+  h2 { margin:0 0 10px; font-size:21px; }
+  h3 { margin:18px 0 6px; font-size:17px; }
+  ul { padding-left:22px; } li { margin:4px 0; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .yes { color:var(--ok); font-weight:600; } .partly { color:var(--warn); font-weight:600; } .no { color:var(--no); font-weight:600; }
+  .tip, .warn { border-left:4px solid var(--accent); padding:8px 14px; margin:12px 0; background:color-mix(in srgb, var(--accent) 8%, transparent); border-radius:0 8px 8px 0; }
+  .warn { border-color:var(--warn); background:color-mix(in srgb, var(--warn) 10%, transparent); }
+  code, kbd { font-family:Consolas, monospace; font-size:14px; background:color-mix(in srgb, var(--ink) 8%, transparent); padding:1px 5px; border-radius:4px; }
+  footer { color:var(--muted); font-size:13px; text-align:center; margin-top:30px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>RASnes9x</h1>
+  <p>What the Nixx plugin does for you, and what to expect.</p>
+</header>
+<nav>
+  <a href="#overview">In short</a><a href="#start">Getting started</a><a href="#play">Playing</a><a href="#cheevos">RetroAchievements</a><a href="#options">Options</a>
+  <a href="#saves">Saves</a><a href="#support">What works</a><a href="#limits">Limits</a><a href="#trouble">If something goes wrong</a>
+</nav>
+
+<section id="overview"><h2>In short</h2>
+  <p>RASnes9x is RetroAchievements' own version of Snes9x, the Super Nintendo emulator: Snes9x 1.63 with achievements, leaderboards
+  and hardcore mode built in. It is the standalone Super Nintendo emulator RetroAchievements supports.</p>
+  <p>The plugin installs it, logs it in to RetroAchievements with LaunchBox's account, writes the picture you chose before every
+  game, and shows its saves and save states in LaunchBox's save management.</p>
+</section>
+
+<section id="start"><h2>Getting started</h2>
+  <ul>
+    <li>In LaunchBox, <b>Tools &gt; Manage &gt; Emulators &gt; Add</b>, pick <b>Nixx-RASnes9x</b> and <b>Download</b>: RASnes9x 1.2 is
+    installed into <code>Emulators\Nixx-RASnes9x</code>, set as the Super Nintendo emulator.</li>
+    <li>RetroAchievements' own library (<code>RA_Integration.dll</code>) is downloaded with it, and brought up to date before
+    each game - exactly as RASnes9x would ask to. Without network, RASnes9x asks itself when it starts.</li>
+  </ul>
+</section>
+
+<section id="play"><h2>Playing a game</h2>
+  <p>Before the game starts, the plugin writes your picture options into Snes9x's <code>snes9x.conf</code> and your
+  RetroAchievements login into the toolset's file. Snes9x opens <code>.sfc</code>, <code>.smc</code>, <code>.zip</code> and the
+  other ROM types itself; a <code>.7z</code> is unpacked by the plugin first, under the archive's own name.</p>
+  <p>Quitting from the pause screen closes the window, as its own close button does: Snes9x writes the game's save then.</p>
+</section>
+
+<section id="cheevos"><h2>RetroAchievements</h2>
+  <ul>
+    <li>Log in once in LaunchBox (<b>Tools &gt; Options &gt; RetroAchievements</b>): the plugin hands that login to RASnes9x at each
+    launch. Logging in inside RASnes9x's own menu works too.</li>
+    <li><b>Hardcore</b> follows the switch on the emulator in LaunchBox. In hardcore, RetroAchievements forbids loading a save state:
+    RASnes9x asks whether to leave hardcore first.</li>
+  </ul>
+</section>
+
+<section id="options"><h2>Options</h2>
+  <p><b>Tools &gt; Nixx Integration Plugins Configuration...</b>, page RASnes9x, sets every game's picture; right-click a game,
+  <b>Nixx-RASnes9x : Options...</b>, sets one game's own.</p>
+  <table><tr><th>Option</th><th>Choices</th></tr>
+  <tr><td>Screen</td><td>Full screen (a borderless window over the screen) or windowed</td></tr>
+  <tr><td>Aspect</td><td>4:3 as on a TV, 8:7 square pixels, or stretched</td></tr>
+  <tr><td>Integer scaling</td><td>Whole multiples only - every pixel the same size</td></tr>
+  <tr><td>Smoothing</td><td>Bilinear on (Snes9x's default) or sharp pixels</td></tr>
+  <tr><td>VSync</td><td>Against tearing</td></tr>
+  <tr><td>Video output</td><td>Direct3D (default), OpenGL, DirectDraw</td></tr></table>
+  <div class="tip">These keys are the plugin's: change them in Snes9x's menus and they come back at the next launch. Everything else -
+  pads, hotkeys, sound, folders - is yours, set in Snes9x.</div>
+</section>
+
+<section id="saves"><h2>Saves and save states</h2>
+  <ul>
+    <li><b>Cartridge save</b>: <code>&lt;game&gt;.srm</code> (and <code>.rtc</code> for the few carts with a clock), in Snes9x's
+    saves folder - <code>Saves\</code> beside the emulator unless you changed it.</li>
+    <li><b>Save states</b>: <code>&lt;game&gt;.000</code> to <code>.009</code>, the ten slots: <kbd>Shift</kbd>+<kbd>F1</kbd>..<kbd>F10</kbd>
+    save, <kbd>F1</kbd>..<kbd>F10</kbd> load. LaunchBox's pause screen saves and loads slot 0.</li>
+    <li>LaunchBox's save management lists both, backs them up and restores them.</li>
+  </ul>
+</section>
+
+<section id="support"><h2>What works</h2>
+  <table><tr><th>Feature</th><th></th><th>Notes</th></tr>
+  <tr><td>Install and update</td><td class="yes">Yes</td><td>RASnes9x 1.2, from retroachievements.org or the copy kept by the pack</td></tr>
+  <tr><td>RetroAchievements</td><td class="yes">Yes</td><td>LaunchBox's login and hardcore switch</td></tr>
+  <tr><td>Saves and save states</td><td class="yes">Yes</td><td>Listed, backed up, restored</td></tr>
+  <tr><td>.7z games</td><td class="partly">Partly</td><td>One ROM per archive, or the one named after the archive</td></tr>
+  <tr><td>Satellaview, Sufami Turbo</td><td class="no">No</td><td>Super Nintendo only</td></tr></table>
+</section>
+
+<section id="limits"><h2>Limits and things to know</h2>
+  <ul>
+    <li>RASnes9x is Snes9x 1.63, the last release; the newer fixes of Snes9x's nightly builds are not in it.</li>
+    <li>A save restored while RASnes9x is running would be overwritten when it quits: close it first.</li>
+  </ul>
+</section>
+
+<section id="trouble"><h2>If something goes wrong</h2>
+  <ul><li>The plugin's log: <code>%LOCALAPPDATA%\lb-integrations-plugins\rasnes9x.log</code> (General tab: "Open the logs folder").</li>
+  <li>Snes9x's own output: <code>stdout.txt</code> beside <code>RASnes9x.exe</code>.</li></ul>
+</section>
+
+<footer>Nixx integration plugins for LaunchBox</footer>
+</main>
+</body>
+</html>
