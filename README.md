@@ -25,7 +25,7 @@ is published by Unbroken Software), so these are installed by hand.
 | `src/SuperZsnes` | SUPER ZSNES | Super Nintendo Entertainment System | download / update from zsnes.com, launch - **closed source**, see its notes for what is measured and what is not |
 
 Five folders are shared sources rather than plugins: `src/Shared.Lbip` (the row injection, used by
-all seven), `src/Shared.Dsi` (the DSi NAND engine, melonDS and no$gba), `src/Shared.Psf` (PARAM.SFO,
+all of them), `src/Shared.Dsi` (the DSi NAND engine, melonDS and no$gba), `src/Shared.Psf` (PARAM.SFO,
 PPSSPP and Vita3K), `src/Shared.RamDisk` (below) and `src/Shared.Snapshot` (the walk, the difference
 and the deterministic container — Vita3K today, anything that needs a session diff tomorrow).
 
@@ -435,6 +435,19 @@ It writes nothing unless you ask it to. These modes do — the last three only i
     version - the highest of three framed strings, as in the real build, hotfix letter
     dropped, a token inside a longer string ignored - that 0.310 is newer than 0.230
     numerically, and that the catalogue row says what the emulator's own extension table says.
+
+--e2e-launch <plugin dll> <emulator exe>
+    a launch as LaunchBox makes it, for RASnes9x, bsnes and ares, on a COPY of the install: the
+    emulator claimed, its hotkey scripts and (ares) its platform lines filled, then the line
+    PrepareEmulatorForLaunch hands back - one --system, the user's switches kept, the game
+    last, a game without its BIOS refused with the message caught.
+
+--rasnes9x-conf / -saves / -7z / -cheevos / -toolset / -fetch
+--bsnes-settings / -saves / -latest / -extract
+--ares-names / -line / -settings / -firmware / -saves / -latest
+    each plugin's pieces one by one. --ares-names runs the exe's own `ares --help` and checks
+    every system of the plugin's table against it. --rasnes9x-toolset and --ares-firmware WRITE
+    into the install they are pointed at (the RetroAchievements toolset, the BIOS copies).
 ```
 
 Point the first two at a throwaway install and a throwaway account.
@@ -1838,6 +1851,69 @@ dotnet build tools\superzsnes-bepinex -c Release -p:SuperZsnesDir=<the emulator 
 The output lands straight in `<SuperZsnesDir>\BepInEx\plugins\`. Not shipped by the installer yet:
 how BepInEx itself is put into an installation - downloaded like the emulator, or carried - is the
 next decision, and it is an LGPL redistribution question as much as a technical one.
+
+## Notes on RASnes9x
+
+**RetroAchievements' own Snes9x.** RASnes9x 1.2 is Snes9x 1.63 - the last numbered release - with
+RetroAchievements' toolset built in: login, achievements, leaderboards, hardcore. It is the one
+standalone Super Nintendo emulator RetroAchievements supports; the plain Snes9x is not.
+
+**Where it comes from.** The GitHub release carries no file: RetroAchievements publishes the build on
+its own site, whose API answers a program with 403. The plugin downloads `retroachievements.org/bin/
+RASnes9x-x64.zip` first and falls back to the copy in `vendor/rasnes9x`; the SHA-256 is checked
+either way.
+
+**The toolset, as the emulator fetches it.** `RA_Integration.dll` is not in the zip: at its first
+start RASnes9x asks to download it. The plugin does it before, exactly as RAInterface's
+`RA_Interface.cpp` does - WinHTTP, the agent `RetroAchievements Client Bootstrap`, a POST of
+`r=latestintegration` to `dorequest.php`, then the GET of `LatestVersionUrlX64` written through
+`RA_Integration.download` - at install and before each launch, only when a newer one exists.
+LaunchBox's RetroAchievements login and the emulator's hardcore switch are written into
+`RAPrefs_RASnes9X.cfg` before each launch, every other key kept.
+
+**snes9x.conf is rewritten whole when Snes9x quits**, so the picture keys the plugin manages are
+written before every launch and are the plugin's; everything else stays the user's. Snes9x opens
+`.zip` but not `.7z`: a `.7z` holding one ROM is unpacked under the archive's name, so its `.srm`
+keeps that name.
+
+## Notes on bsnes
+
+**The nightly, not v115.** bsnes's last release is v115 (2020); the project is kept up by its
+community, which publishes one rolling GitHub release tagged `nightly`. Its version is the asset's
+date. GitHub's API allows 60 anonymous requests an hour; when it refuses, the download's own
+`Last-Modified` gives the same date.
+
+**settings.bml, portable.** bsnes takes the file beside its executable first and writes it back
+whole when it quits. Full screen is `--fullscreen` on the line, which bsnes does not store. bsnes
+ships the Save State and Load State hotkeys unbound; the plugin binds F5 and F7 when they are
+empty, and the pause screen's scripts send them. All the states of a game live in ONE file,
+`<game>.bsz` - a zip of `Quick/Slot N.bst` and the managed states - listed and restored as one.
+
+## Notes on ares
+
+**A system per game, three levels.** ares must be told what it runs: without `--system` it guesses
+from the extension and cannot tell `.bin`, `.cue` or `.chd` apart, nor ever pick Neo Geo, Mega CD
+32X, SuperGrafx CD, Dendy or ZX Spectrum 128. The plugin always passes it, from the first that
+says: the game's window (a Sega CD game as Mega CD 32X); the platform's line in LaunchBox - each
+platform row carries `--system "<name>"` in its command line, as RetroArch's carry their core,
+written on the rows of an emulator the plugin creates and on any row still empty; else the plugin's
+table and a few extensions (`.32x`, `.sgx`, `.ndd`, `.fds`). The names are ares's exactly - case
+included - and `--ares-names` checks them against the exe: "Mega LD", "Neo Geo" and "Sufami
+Turbo", which other frontends still use, are not ares's any more. Saturn and Atari 5200 are in
+ares's source but not in its Windows build, so they are not offered.
+
+**BIOS by path.** ares asks for no file name: each firmware is a path in `settings.bml`,
+`<System>/Firmware/<type>.<region>`, and its own scan skips files of 10 MiB and more and cannot find
+Saturn's or Neo Geo's. The plugin looks for the usual names, then in `Firmware\` for any file whose
+SHA-256 is the dump ares knows, copies what is missing from RetroArch's system folder and the other
+emulators' bios folders, and writes the paths. A game whose system has no BIOS says so instead of
+starting.
+
+**The rest.** `--settings-file` always, so `%LOCALAPPDATA%\ares` can never take over; `--no-file-prompt`
+always, else ares opens a file dialog for a 64DD disk or a Super Game Boy slot. Hotkeys ship
+unbound: F5 and F7 are bound when empty. Saves sit beside the game unless a saves folder is set:
+`.ram`, `.eeprom`, `.bram`, the PlayStation's `.card`..., and the states `.bs1` to `.bs9`. ares reads
+`.zip`, `.cue` and `.chd`; a cartridge in a `.7z` is unpacked, a `.m3u` starts its first disc.
 
 ## License
 
