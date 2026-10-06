@@ -146,6 +146,8 @@ namespace LbIntegrations.Probe
             if (Has(args, "--xbox-save-keys")) return XemuCheck.MoveSaveKeys(asm, args.SkipWhile(a => a != "--xbox-save-keys").Skip(1).Select(Path.GetFullPath)) ? 0 : 1;
             if (Has(args, "--xemu")) return XemuCheck.Run(asm) ? 0 : 1;
             // Xenia's compatibility list: --xenia-compat [--online].
+            // The compatibility lists embedded in a plugin, read with nothing downloaded: --compat-embedded [--also <Xemu.dll>].
+            if (Has(args, "--compat-embedded")) return CompatEmbeddedCheck.Run(asm, Arg(args, "--also") is string ca ? Path.GetFullPath(ca) : null) ? 0 : 1;
             if (Has(args, "--xenia-compat")) return XeniaCompatCheck.Run(asm, Has(args, "--online")) ? 0 : 1;
             // What a first install of Xenia sets up, and the options at launch: --xenia-setup [--xconfig f] [--account f] [--toml f].
             // A first install's setup run for real on a Xenia folder (XeniaSetup.AfterFirstInstall): --xenia-firstrun <xenia_canary.exe>.

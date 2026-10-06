@@ -1,0 +1,67 @@
+9617675538	25afbe	anisotrophic bug	
+920343248	d93f0b	audio bug	
+2563026562	bfd4f2	audio missing	
+3824740901	bfdadc	audio quality	when game have problem on quality sound
+3824743245	bfd4f2	audio speed	when audio is too speed/slow
+2176340004	c2e0c6	black screen	
+1344750319	621fa5	Bootable	Games that boot but display nothing more than a black screen with a FPS counter. State label
+3011534157	DA6168	camera	For games that use camera/AR features
+10186632315	6b8d46	camera bug	
+2978717191	5CEE03	color bug	
+5171985847	fef2c0	controller issue	
+920343454	b60205	crash	
+9775301337	0366d6	dependencies	Pull requests that update a dependency file
+3966756549	805416	duplicate issue	
+3579431535	b60205	dynarmic crash	
+5505522409	e99695	dynarmic error	
+1667910832	e99695	fiber crash	
+3824734717	0041DC	frame jumping	
+2713149354	6CD584	function missing	
+927870278	81b5d3	gamemaker	For games that use the gamemaker engine
+9775301341	000000	github_actions	Pull requests that update GitHub Actions code
+920343647	0fbfaa	graphics bug	
+1344752299	e08a1e	Ingame -	Games that go ingame but have major issues that prevents it from going further early on. State label
+1260231985	FBCA04	Ingame +	Games that go far ingame but have glitches or have non-playable performance. State label
+920343736	00bff9	input bug	
+1260231381	C71585	Intro	Games that display any image on screen but doesn't reach to menus. State label
+927578032	b76e21	invalid app	Not a commercial app, etc.
+5099388650	1d76db	invalid issue	
+3819620525	E622D0	invalid setup	Reports which have been done with an improper emulator setup, game dump or hardware.
+10858310371	f17921	io bug	
+2781283879	fef2c0	kernel issue	
+1344751053	1D76DB	Menu	Games that work properly but can't enter Ingame. State label
+920348168	c7cafc	module loading bug	
+5553374478	c2e0c6	motion missing	
+1396353409	006b75	mutex error	
+920343850	0ed672	networking bug	
+1387705360	fbca04	ngs crash	
+4225080103	fbca04	ngs freeze	
+1294598815	f9d0c4	NID missing	
+1260231569	FF0000	Nothing	Games that don't boot at all, not displaying an initial black screen with a FPS counter. State label
+5696848242	D4C5F9	online-only	For games that cant be played without an internet connection or in singleplayer
+3819783597	006b75	outdated	Games whose last report was done more than 6 months ago and/or might be outdated.
+3824708291	fbca04	patch bug	
+920344019	0E8A16	Playable	Games that can be played from start to finish with playable performance. State label
+2071376907	1d76db	precomp missing	
+1658005199	b60205	regression	
+1267246426	e99695	savedata bug	
+2988735957	50F32A	screen flashing	
+3044690321	5319e7	sensor missing	
+1260342271	5319e7	shader bug	
+1260234363	1d76db	shader crash	
+1371536201	0e8a16	slow	
+920344210	f7517b	softlock bug	
+3347588318	b60205	text missing	
+2662666120	0e8a16	too fast	
+3011533277	b60205	touchscreen issues	For games that have issues or don't detect emulated touchscreen inputs properly
+1267246507	e261c4	trophy bug	
+1392149818	bfd4f2	trophy crash	
+1391359723	b60205	unicorn error	
+1267247113	e28458	unity	For games that use the unity engine
+4250205569	b60205	upscaling issue	
+1392167868	0052cc	video missing	
+1658033591	d4c5f9	video player bug	
+5173295657	bfdadc	vulkan crash	
+5229654123	e99695	vulkan error	
+5173295989	47F1CE	vulkan issue	
+7814938370	B69723	🥔potato	Device used for testing is too old/low.

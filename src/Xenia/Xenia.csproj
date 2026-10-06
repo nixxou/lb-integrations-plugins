@@ -116,4 +116,9 @@
     <EmbeddedResource Include="..\..\docs\help\xenia.html" LogicalName="help.html" />
   </ItemGroup>
 
+  <!-- Xenia's compatibility list as downloaded on 05/10 - a fallback until the first download (XeniaCompat). -->
+  <ItemGroup>
+    <EmbeddedResource Include="xenia-compat.json" LogicalName="xenia-compat.json" />
+  </ItemGroup>
+
 </Project>

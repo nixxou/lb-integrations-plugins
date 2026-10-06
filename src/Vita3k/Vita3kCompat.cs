@@ -73,10 +73,16 @@ namespace LbIntegrations.Vita3k
             try
             {
                 var db = DbPath(layout);
-                if (string.IsNullOrWhiteSpace(titleId) || db == null || !File.Exists(db)) return null;
+                if (string.IsNullOrWhiteSpace(titleId)) return null;
+                // Vita3K's own list in its cache first (it or this plugin downloads it); the copy embedded in the plugin only
+                // while there is none - a fallback (06/10).
+                bool cached = db != null && File.Exists(db);
+                using var embedded = cached ? null : typeof(Vita3kCompat).Assembly.GetManifestResourceStream("app_compat_db.xml");
+                if (!cached && embedded == null) return null;
                 VitaCompat found = null;
                 var labelIds = new List<long>();
-                using (var reader = XmlReader.Create(db, new XmlReaderSettings { IgnoreComments = true, IgnoreWhitespace = true }))
+                var settings = new XmlReaderSettings { IgnoreComments = true, IgnoreWhitespace = true };
+                using (var reader = cached ? XmlReader.Create(db, settings) : XmlReader.Create(embedded, settings))
                 {
                     while (reader.ReadToFollowing("app"))
                     {
@@ -133,8 +139,16 @@ namespace LbIntegrations.Vita3k
             try
             {
                 var path = LabelsPath(layout);
-                if (path == null || !File.Exists(path)) return labels;
-                foreach (var line in File.ReadAllLines(path))
+                IEnumerable<string> lines;
+                if (path != null && File.Exists(path)) lines = File.ReadAllLines(path);
+                else
+                {
+                    // No labels downloaded yet: the plugin's copy (06/10).
+                    using var s = typeof(Vita3kCompat).Assembly.GetManifestResourceStream("lbip-compat-labels.tsv");
+                    if (s == null) return labels;
+                    lines = new StreamReader(s).ReadToEnd().Split('\n').Select(l => l.TrimEnd('\r'));
+                }
+                foreach (var line in lines)
                 {
                     var f = line.Split('\t');
                     if (f.Length >= 4 && long.TryParse(f[0], out var id)) labels[id] = new Label { Color = f[1], Name = f[2], Description = f[3] };

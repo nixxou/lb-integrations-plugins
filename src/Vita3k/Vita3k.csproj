@@ -139,4 +139,10 @@
     <EmbeddedResource Include="..\..\docs\help\vita3k.html" LogicalName="help.html" />
   </ItemGroup>
 
+  <!-- Vita3K's compatibility list and its labels' names as on 04/10 - read when Vita3K's cache has none yet (Vita3kCompat). -->
+  <ItemGroup>
+    <EmbeddedResource Include="app_compat_db.xml" LogicalName="app_compat_db.xml" />
+    <EmbeddedResource Include="lbip-compat-labels.tsv" LogicalName="lbip-compat-labels.tsv" />
+  </ItemGroup>
+
 </Project>

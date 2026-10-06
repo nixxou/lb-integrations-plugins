@@ -174,23 +174,26 @@ namespace LbIntegrations.Xbox
             {
                 try
                 {
+                    // Nixx-Xemu's download, else the copy embedded in this assembly (Nixx-Xemu's, 05/10) - a fallback until the first.
                     var rp = Find(XemuPluginId, ReportsFile);
-                    if (rp == null) _reports = null;
-                    else if (_reports == null || _reportsKey != KeyOf(rp))
+                    var rk = rp != null ? KeyOf(rp) : "embedded";
+                    if (_reports == null || _reportsKey != rk)
                     {
-                        _reports = ParseReports(File.ReadAllText(rp)).GroupBy(r => r.TitleId).ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.When).First());
-                        _reportsKey = KeyOf(rp);
+                        var text = rp != null ? File.ReadAllText(rp) : EmbeddedText(ReportsFile);
+                        _reports = text == null ? null : ParseReports(text).GroupBy(r => r.TitleId).ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.When).First());
+                        _reportsKey = rk;
                     }
                 }
                 catch { _reports = null; }
                 try
                 {
                     var tp = Find(XemuPluginId, TitlesFile);
-                    if (tp == null) _titles = null;
-                    else if (_titles == null || _titlesKey != KeyOf(tp))
+                    var tk = tp != null ? KeyOf(tp) : "embedded";
+                    if (_titles == null || _titlesKey != tk)
                     {
-                        _titles = ParseTitles(File.ReadAllText(tp)).GroupBy(t => t.TitleId).ToDictionary(g => g.Key, g => g.First());
-                        _titlesKey = KeyOf(tp);
+                        var text = tp != null ? File.ReadAllText(tp) : EmbeddedText(TitlesFile);
+                        _titles = text == null ? null : ParseTitles(text).GroupBy(t => t.TitleId).ToDictionary(g => g.Key, g => g.First());
+                        _titlesKey = tk;
                     }
                 }
                 catch { _titles = null; }
@@ -199,7 +202,30 @@ namespace LbIntegrations.Xbox
         }
 
         /// <summary>Is there an xemu list at all (to say "not in it" rather than "no list")?</summary>
-        public static bool HasXemuList() => Find(XemuPluginId, ReportsFile) != null || Find(XemuPluginId, TitlesFile) != null;
+        public static bool HasXemuList() => Find(XemuPluginId, ReportsFile) != null || Find(XemuPluginId, TitlesFile) != null || EmbeddedText(ReportsFile) != null;
+
+        private static readonly Dictionary<string, string> _embedded = new Dictionary<string, string>();
+
+        /// <summary>A list embedded in this assembly, else in another plugin loaded beside it (Cxbx shows xemu's state: the copy
+        /// is in Xemu.dll), or null - read once found.</summary>
+        private static string EmbeddedText(string name)
+        {
+            lock (_embedded)
+            {
+                if (_embedded.TryGetValue(name, out var t)) return t;
+                foreach (var a in new[] { typeof(XboxCompat).Assembly }.Concat(AppDomain.CurrentDomain.GetAssemblies()))
+                {
+                    try
+                    {
+                        if (a.IsDynamic) continue;
+                        using var s = a.GetManifestResourceStream(name);
+                        if (s != null) return _embedded[name] = new StreamReader(s).ReadToEnd();
+                    }
+                    catch { }
+                }
+                return null;   // not kept: Nixx-Xemu may load later
+            }
+        }
 
         /// <summary>The state to show: the report's rating, else the site's, else Unknown.</summary>
         public static string XemuState(XemuCompatReport r, XemuCompatTitle t)

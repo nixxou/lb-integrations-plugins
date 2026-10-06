@@ -83,4 +83,10 @@
     <EmbeddedResource Include="insignia-games.tsv" LogicalName="insignia-games.tsv" />
   </ItemGroup>
 
+  <!-- xemu's compatibility list as downloaded on 05/10 - what a game's window shows until the first download (Shared.Xbox\XboxCompat). -->
+  <ItemGroup>
+    <EmbeddedResource Include="xemu-compat-reports.json" LogicalName="xemu-compat-reports.json" />
+    <EmbeddedResource Include="xemu-compat-titles.json" LogicalName="xemu-compat-titles.json" />
+  </ItemGroup>
+
 </Project>

@@ -252,8 +252,16 @@ namespace LbIntegrations.Ppsspp
                 var stamp = File.Exists(DbPath) ? File.GetLastWriteTimeUtc(DbPath) : DateTime.MinValue;
                 if (_db != null && stamp == _dbStamp) return _db;
                 var db = new Dictionary<string, PspCompat>(StringComparer.OrdinalIgnoreCase);
-                if (File.Exists(DbPath))
-                    foreach (var line in File.ReadAllLines(DbPath, Encoding.UTF8))
+                // No build yet: the copy embedded in the plugin (04/10) - a fallback until the first.
+                IEnumerable<string> lines = null;
+                if (File.Exists(DbPath)) lines = File.ReadAllLines(DbPath, Encoding.UTF8);
+                else
+                {
+                    using var s = typeof(PpssppCompat).Assembly.GetManifestResourceStream("ppsspp-compat.tsv");
+                    if (s != null) lines = new StreamReader(s, Encoding.UTF8).ReadToEnd().Split('\n').Select(l => l.TrimEnd('\r'));
+                }
+                if (lines != null)
+                    foreach (var line in lines)
                     {
                         var c = line.Split('\t');
                         if (c.Length < 4) continue;

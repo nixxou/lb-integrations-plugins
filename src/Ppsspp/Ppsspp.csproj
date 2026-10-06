@@ -118,4 +118,9 @@
     <EmbeddedResource Include="..\..\docs\help\ppsspp.html" LogicalName="help.html" />
   </ItemGroup>
 
+  <!-- PPSSPP's compatibility list as built on 04/10 - a fallback until the first build (PpssppCompat). -->
+  <ItemGroup>
+    <EmbeddedResource Include="ppsspp-compat.tsv" LogicalName="ppsspp-compat.tsv" />
+  </ItemGroup>
+
 </Project>

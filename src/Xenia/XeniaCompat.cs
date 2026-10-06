@@ -101,7 +101,17 @@ namespace LbIntegrations.Xenia
             {
                 try
                 {
-                    if (!File.Exists(JsonPath)) return new List<XeniaCompatEntry>();
+                    // No download yet: the copy embedded in the plugin (05/10) - a fallback until the first, read once.
+                    if (!File.Exists(JsonPath))
+                    {
+                        if (_cache == null || _cacheStamp != DateTime.MinValue)
+                        {
+                            using var s = typeof(XeniaCompat).Assembly.GetManifestResourceStream("xenia-compat.json");
+                            _cache = s == null ? new List<XeniaCompatEntry>() : Parse(new StreamReader(s, Encoding.UTF8).ReadToEnd(), out _);
+                            _cacheStamp = DateTime.MinValue;
+                        }
+                        return _cache;
+                    }
                     var stamp = File.GetLastWriteTimeUtc(JsonPath);
                     if (_cache == null || stamp != _cacheStamp)
                     {
