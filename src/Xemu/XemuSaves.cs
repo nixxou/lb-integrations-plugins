@@ -337,7 +337,7 @@ namespace LbIntegrations.Xemu
                 var titleId = XemuDisc.TitleIdOf(ResolveFullPath(rom), exe);
                 if (titleId == null) return;
                 // A game in Live mode plays on the Live console: no save of its own handled (XemuLive).
-                if (XemuOptions.Effective(gameId).TryGetValue("live", out var live) && live == "on") return;
+                if (XemuOptions.Effective(gameId).TryGetValue("live", out var live) && live == "on" && XemuInsignia.Of(titleId) != null) return;
                 var pack = XemuSaveFiles.Capture(exe, titleId);
                 if (!seen.Add(titleId + "|" + gameId + "|" + appId)) return;
                 if (pack != null && File.Exists(pack))

@@ -59,13 +59,24 @@ namespace LbIntegrations.Xemu
 
         /// <summary>An empty image over <paramref name="backing"/> at <paramref name="path"/> - through a temporary file, so a
         /// cut write never leaves a half disk. Null when made; otherwise why not. Never over an existing file.</summary>
-        public static string Create(string backing, string path)
+        /// <param name="rawAllowed">A RAW base taken too - the Live console over a real Xbox's disk image (XemuLive); a game's
+        /// console never: its base is xemu's qcow2, and a file that is not one is an error.</param>
+        public static string Create(string backing, string path, bool rawAllowed = false)
         {
             try
             {
                 if (File.Exists(path)) return "it already exists";
+                // A qcow2 base, or a RAW one (a real Xbox's disk image, the Live console - XemuLive): its size the file's, its format said.
                 long size = VirtualSize(backing);
-                if (size <= 0) return "the base disk is not a qcow2: " + backing;
+                string format = "qcow2";
+                if (size <= 0)
+                {
+                    if (!rawAllowed) return "the base disk is not a qcow2: " + backing;
+                    if (!File.Exists(backing)) return "the base disk is not there: " + backing;
+                    size = new FileInfo(backing).Length;
+                    if (size < 0xABE80000L + 0x1000) return "the base disk is too small for an Xbox disk: " + backing;
+                    format = "raw";
+                }
                 var dir = Path.GetDirectoryName(Path.GetFullPath(path));
                 Directory.CreateDirectory(dir);
                 var name = Path.GetRelativePath(dir, Path.GetFullPath(backing)).Replace('\\', '/');
@@ -98,7 +109,7 @@ namespace LbIntegrations.Xemu
                 img[104] = 0;                                    // compression type: zlib
                 // ── header extensions: the backing format, then the end ──
                 int at = 112;
-                var fmt = Encoding.ASCII.GetBytes("qcow2");
+                var fmt = Encoding.ASCII.GetBytes(format);
                 PutU32(img, at, BackingFormatExt); PutU32(img, at + 4, (uint)fmt.Length);
                 Buffer.BlockCopy(fmt, 0, img, at + 8, fmt.Length);
                 at += 8 + ((fmt.Length + 7) / 8) * 8;

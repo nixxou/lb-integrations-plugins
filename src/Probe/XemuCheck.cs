@@ -820,11 +820,87 @@ namespace LbIntegrations.Probe
             return path != null;
         }
 
+        /// <summary>--xemu-insignia: Insignia's list downloaded as the plugin does it (XemuInsignia.Fetch, into a temp data folder) and
+        /// read back - Halo 2 in it, Batman: Rise of Sin Tzu (no online) not; "Run with Insignia"'s flag taken once.</summary>
+        public static bool Insignia(Assembly asm)
+        {
+            _asm = asm;
+            var data = Path.Combine(Path.GetTempPath(), "lbip-xemu-insignia-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            T("XemuSettings").GetField("DirOverride", Any).SetValue(null, data);
+            try
+            {
+                var embedded = ((System.Collections.ICollection)T("XemuInsignia").GetProperty("All", Any).GetValue(null)).Count;
+                Console.WriteLine("  the embedded copy: " + embedded + " games");
+                Check("the embedded copy is there (over 150 games)", embedded > 150);
+                T("XemuInsignia").GetField("_all", Any).SetValue(null, null);
+                var why = (string)Call("XemuInsignia", "Fetch");
+                Check("downloaded from insignia.live", why == null, why);
+                var all = (System.Collections.ICollection)T("XemuInsignia").GetProperty("All", Any).GetValue(null);
+                Console.WriteLine("  downloaded: " + all.Count + " games, " + Directory.GetFiles(data).Select(Path.GetFileName).FirstOrDefault());
+                var halo = Call("XemuInsignia", "Of", "4D530064");
+                Check("Halo 2 (4d530064) in it, case aside", halo != null, null);
+                if (halo != null) Console.WriteLine("    " + Get(halo, "Name") + " " + Get(halo, "Serial") + " - " + Get(halo, "Features"));
+                Check("Batman: Rise of Sin Tzu (5553001c) not in it", Call("XemuInsignia", "Of", "5553001c") == null);
+                T("XemuLive").GetField("Forced", Any).GetValue(null).GetType();
+                var forced = (System.Collections.IDictionary)T("XemuLive").GetField("Forced", Any).GetValue(null);
+                forced["probe-game"] = DateTime.UtcNow;
+                Check("Run with Insignia's flag taken once", (bool)Call("XemuLive", "TakeForced", "probe-game") && !(bool)Call("XemuLive", "TakeForced", "probe-game"));
+                forced["probe-old"] = DateTime.UtcNow.AddMinutes(-5);
+                Check("... and not after two minutes", !(bool)Call("XemuLive", "TakeForced", "probe-old"));
+            }
+            finally { try { Directory.Delete(data, true); } catch { } }
+            return _bad == 0;
+        }
+        /// <summary>--xemu-insignia-parse <games.html> <out.tsv>: Insignia's page read as the plugin reads it (XemuInsignia.Parse) - for its
+        /// embedded copy - with a few games shown.</summary>
+        public static bool InsigniaParse(Assembly asm, string html, string tsv)
+        {
+            _asm = asm;
+            var games = (System.Collections.IList)Call("XemuInsignia", "Parse", File.ReadAllText(html));
+            Console.WriteLine("  " + games.Count + " games");
+            foreach (var g in games.Cast<object>().Where(g => new[] { "4d530064", "4d530036", "55530036" }.Contains((string)Get(g, "TitleId"))))
+                Console.WriteLine("    " + Get(g, "TitleId") + " " + Get(g, "Serial") + " " + Get(g, "Name") + " - " + Get(g, "Features"));
+            File.WriteAllText(tsv, ((string)Call("XemuInsignia", "ToTsv", games)).Replace("\n", "\r\n"));
+            return games.Count > 50;
+        }
+        /// <summary>--xemu-live-identity <eeprom.bin>...: each EEPROM's serial, MAC, HDD key, online key set beside your console's
+        /// (PackIdentity's seed). Reads only.</summary>
+        public static bool LiveIdentity(Assembly asm, string[] eeproms)
+        {
+            _asm = asm;
+            var pi = asm.GetType("LbIntegrations.Identity.PackIdentity", true);
+            var seed = pi.GetMethod("Load", Any).Invoke(null, null);
+            var xbox = seed == null ? null : seed.GetType().GetMethod("Xbox", Any).Invoke(seed, null);
+            string H(object b) => b is byte[] a ? BitConverter.ToString(a).Replace("-", "") : "?";
+            Console.WriteLine("  your console (seed): " + (xbox == null ? "NO SEED - the pack's HDD key " + H(pi.GetMethod("XboxHddKey", Any).Invoke(null, null))
+                : "serial " + Get(xbox, "Serial") + ", MAC " + H(Get(xbox, "Mac")) + ", HDD key " + H(Get(xbox, "HddKey")) + ", online key " + H(Get(xbox, "OnlineKey"))));
+            var eep = T("Eeprom.XemuEeprom");
+            foreach (var p in eeproms)
+            {
+                var bytes = File.ReadAllBytes(p);
+                var e = eep.GetMethod("Open", Any).Invoke(null, new object[] { bytes });
+                if (e == null) { Console.WriteLine("  " + p + ": not an EEPROM an Xbox key opens"); continue; }
+                var data = (byte[])Get(e, "Data");
+                var serial = System.Text.Encoding.ASCII.GetString(data, 0x34, 12);
+                var mac = data.Skip(0x40).Take(6).ToArray(); var online = data.Skip(0x48).Take(16).ToArray();
+                Console.WriteLine("  " + p + ": serial " + serial + ", MAC " + H(mac) + ", HDD key " + H(Get(e, "HddKey")) + ", online key " + H(online));
+                if (xbox != null) Console.WriteLine("    = your console's: serial " + (serial == (string)Get(xbox, "Serial")) + ", MAC " + mac.SequenceEqual((byte[])Get(xbox, "Mac"))
+                                                    + ", HDD key " + ((byte[])Get(e, "HddKey")).SequenceEqual((byte[])Get(xbox, "HddKey")) + ", online key " + online.SequenceEqual((byte[])Get(xbox, "OnlineKey")));
+            }
+            return true;
+        }
         /// <summary>--xemu-live-boot --emu <xemu.exe> [--setup]: the Nixx window's button as it is (XemuLive.Boot) - then the session's toml
         /// looked through for control characters, xemu closed after 20 s. STARTS XEMU.</summary>
         public static bool LiveBoot(Assembly asm, string exe, bool setup)
         {
             _asm = asm;
+            string Sha(string p) { using var s = new FileStream(p, FileMode.Open, FileAccess.Read, FileShare.ReadWrite); using var h = System.Security.Cryptography.SHA256.Create(); return BitConverter.ToString(h.ComputeHash(s)).Replace("-", ""); }
+            var hddBefore = (string)Call("XemuLive", "Hdd", exe);
+            var base_ = (string)Call("XemuLive", "Base", exe);
+            Check("a clean base under the Live console", base_ != null && (File.GetAttributes(base_) & FileAttributes.ReadOnly) != 0, base_);
+            Check("the Live console a differential image over it", hddBefore != null && Path.GetFileName(hddBefore) == "live.qcow2" && Call("Qcow2Overlay", "BackingName", hddBefore) as string == Path.GetFileName(base_),
+                  hddBefore + " -> " + Call("Qcow2Overlay", "BackingName", hddBefore));
+            var baseHash = base_ != null ? Sha(base_) : null;
             var why = (string)Call("XemuLive", "Boot", exe, setup);
             Check("XemuLive.Boot started xemu", why == null, why);
             var session = Path.Combine(Path.GetDirectoryName(exe), "xemu-session.toml");
@@ -843,6 +919,7 @@ namespace LbIntegrations.Probe
             System.Threading.Thread.Sleep(20000);
             foreach (var p in System.Diagnostics.Process.GetProcessesByName("xemu")) { try { if (p.MainModule.FileName.Equals(exe, StringComparison.OrdinalIgnoreCase)) { Console.WriteLine("  xemu alive after 20 s: " + !p.HasExited + ", window \"" + p.MainWindowTitle + "\""); p.CloseMainWindow(); p.WaitForExit(10000); } } catch { } }
             System.Threading.Thread.Sleep(5000);
+            if (base_ != null) Check("the clean base untouched by the session", Sha(base_) == baseHash);
             return _bad == 0;
         }
         /// <summary>--xemu-live-session --emu <xemu.exe of a lab> --disk <console disk> [--eeprom <eeprom.bin>] --rom <game> [--seconds n]: a

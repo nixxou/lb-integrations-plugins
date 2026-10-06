@@ -82,16 +82,60 @@ namespace LbIntegrations.Menus
         }
     }
 
+    /// <summary>BIGBOX'S GAME MENU (06/10: "une option menu run with insignia" in LaunchBox and BigBox): BigBox shows a plugin's
+    /// IGameMenuItemPlugin entries, one caption per class, and none of the multi-item kind the relay uses in LaunchBox. So one
+    /// entry here, for one game, asked of the plugins' optional GameMenu.BigBoxEntry(IGame) -> caption or null: the first
+    /// plugin that offers one for the game is the one shown and run. Hidden in LaunchBox, where NixxGameMenus has it.</summary>
+    public sealed class NixxBigBoxMenu : IGameMenuItemPlugin
+    {
+        private Provider _provider;
+        private string _caption = "Nixx: Run with Insignia";
+
+        public bool SupportsMultipleGames => false;
+        public string Caption => _caption;
+        public Image IconImage => _provider?.Icon ?? SystemIcons.Application.ToBitmap();
+        public bool ShowInLaunchBox => false;
+        public bool ShowInBigBox => true;
+
+        public bool GetIsValidForGame(IGame selectedGame)
+        {
+            if (selectedGame == null) return false;
+            foreach (var provider in Providers.All().Where(p => p.BigBoxEntryMethod != null))
+            {
+                string caption = null;
+                try { caption = provider.BigBoxEntry(selectedGame); }
+                catch (Exception ex) { RelayLog.Warn(provider.Name + ".BigBoxEntry", ex); }
+                if (string.IsNullOrWhiteSpace(caption)) continue;
+                _provider = provider; _caption = caption;
+                return true;
+            }
+            return false;
+        }
+
+        public bool GetIsValidForGames(IGame[] selectedGames) => false;
+
+        public void OnSelected(IGame selectedGame)
+        {
+            try { if (_provider != null && selectedGame != null) _provider.Selected(_caption, new[] { selectedGame }); }
+            catch (Exception ex) { RelayLog.Warn(_provider?.Name + ".Selected (BigBox)", ex); }
+        }
+
+        public void OnSelected(IGame[] selectedGames) { if (selectedGames?.Length == 1) OnSelected(selectedGames[0]); }
+    }
+
     /// <summary>One plugin's GameMenu class, bound once.</summary>
     internal sealed class Provider
     {
         public string Name;
         public MethodInfo EntriesMethod, SelectedMethod;
+        /// <summary>Optional: string BigBoxEntry(IGame) - the one entry it offers that game in BigBox, or null (NixxBigBoxMenu).</summary>
+        public MethodInfo BigBoxEntryMethod;
         public PropertyInfo IconProperty;
         private Image _icon;
 
         public string[] Entries(IGame[] games) => (string[])EntriesMethod.Invoke(null, new object[] { games });
         public void Selected(string entry, IGame[] games) => SelectedMethod.Invoke(null, new object[] { entry, games });
+        public string BigBoxEntry(IGame game) => (string)BigBoxEntryMethod?.Invoke(null, new object[] { game });
 
         /// <summary>The plugin's own icon, or the application one. NEVER NULL: a host turns it into
         /// its own menu image.</summary>
@@ -153,6 +197,7 @@ namespace LbIntegrations.Menus
                 {
                     Name = name, EntriesMethod = entries, SelectedMethod = selected,
                     IconProperty = type.GetProperty("Icon", flags),
+                    BigBoxEntryMethod = type.GetMethod("BigBoxEntry", flags, null, new[] { typeof(IGame) }, null) is MethodInfo bbe && bbe.ReturnType == typeof(string) ? bbe : null,
                 };
             }
             catch (Exception ex) { RelayLog.Warn("looking at " + asm.FullName, ex); return null; }

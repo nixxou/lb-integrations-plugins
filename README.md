@@ -561,6 +561,8 @@ imported) and kept as it is - the registered console - the game's region and vid
 `[net] enable = true`, `backend = 'nat'` for the session (xemu cannot give the guest another DNS - it is set once in the
 dashboard); no save, no savestate. Measured 06/10: a disk with the 5960 dashboard, all the Setup Assistant's checks green
 through NAT, registered, an account made, Halo 2 updated by Insignia and signed in - on the plugin's own session too.
+
+Only the games of Insignia's list (`XemuInsignia`: https://insignia.live/games read row by row - title id, serial, name, Live Aware / matchmaking / leaderboards / user content / clans; kept a day, refused when far shorter than the copy kept, a copy of 06/10 embedded) get the option; for them, "Nixx-Xemu : Run with Insignia" (the GameMenu entry in LaunchBox, the relay's `NixxBigBoxMenu` through `GameMenu.BigBoxEntry` in Big Box) launches once in Live mode through `PlayGame`, a flag taken at the next launch. The disk chosen is copied once to `live\base.*` (read-only) and the console works in `live\live.qcow2`, a differential image over it (`Qcow2Overlay`, a raw base allowed for the Live console only).
 **A CHD decoded on several cores** (`src/Shared.Disc/ChdParallel.cs`, `chd_threads=0|2|4|8` in `ramdisk.ini`, default 4,
 helper 1.13): read in sequence, the next 32 MB are decoded ahead by worker threads, each with its own `ChdFile`, by batches
 of 64 hunks; a read at random stays one hunk on the caller's thread. Measured 06/10 on Batman's CHD (891 200 hunks of 4 KB):

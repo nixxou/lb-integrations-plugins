@@ -5,11 +5,16 @@
 // xemu) checks the console and registers it, but the Xbox Live ACCOUNT is made in the Xbox Live section of Microsoft's own
 // dashboard (5960), and the DNS Insignia needs (46.101.64.175) is set in its network settings - xemu's NAT cannot hand the
 // guest another DNS (slirp relays Windows'). xemu's dashboard has neither, and Microsoft's is not ours to ship: the user
-// brings a console disk that has it (a qcow2, or a raw image of a real Xbox's disk), COPIED here - never an overlay of the
-// pristine base, never the user's file written to.
+// brings a console disk that has it (a qcow2, or a raw image of a real Xbox's disk), COPIED here once and kept CLEAN - the
+// console works in a differential image over it (Mehdi, 06/10: "on fait une copie du hdd dans live, mais ensuite il bosse sur
+// un différentiel de celui-ci"); the user's own file is never written to.
 //
-//   <xemu>\live\live.qcow2 (or live.img)   the Live console: dashboard, registration, account, DNS, kept across games
-//   <xemu>\live\eeprom.bin                 the EEPROM of the console the disk came from, when given - kept as it is
+//   <xemu>\live\base.qcow2 (or base.img)   the imported disk, as it was imported - read-only, never written
+//   <xemu>\live\live.qcow2                 the Live console: a differential image over base.* (Qcow2Overlay) - registration,
+//                                          account, DNS, the games' updates; deleted, the console is the imported one again
+//   <xemu>\live\eeprom.bin                 the console's EEPROM: a COPY of the one chosen (optional), else made once with your
+//                                          console's identity - kept as it is from then on
+//   <xemu>\live\sources.txt                the files chosen (disk=, eeprom=), for the Nixx window to show them
 //   <xemu>\live\Insignia-Setup.iso         the Setup Assistant, downloaded from Insignia's release
 //
 // A game in Live mode (its option "live") boots on that console with xemu's network on (NAT), no save or savestate of
@@ -47,13 +52,67 @@ namespace LbIntegrations.Xemu
 
         public static string Dir(string exe) => XemuPaths.Dir(exe) is string d ? System.IO.Path.Combine(d, "live") : null;
 
-        /// <summary>The Live console's disk, or null when there is none (live.qcow2 first, else a raw live.img).</summary>
+        /// <summary>The imported disk, clean (base.qcow2, else a raw base.img), or null.</summary>
+        public static string Base(string exe)
+        {
+            var d = Dir(exe);
+            if (d == null) return null;
+            foreach (var n in new[] { "base.qcow2", "base.img" }) { var p = System.IO.Path.Combine(d, n); if (File.Exists(p)) return p; }
+            return null;
+        }
+
+        /// <summary>The Live console's disk - the differential image over the imported one, made when it is not there - or null
+        /// when nothing was imported. A Live console imported whole before the differential (06/10: live.qcow2 or live.img with no
+        /// backing file) becomes the clean base first, the console then working over it.</summary>
         public static string Hdd(string exe)
         {
             var d = Dir(exe);
             if (d == null) return null;
-            foreach (var n in new[] { "live.qcow2", "live.img" }) { var p = System.IO.Path.Combine(d, n); if (File.Exists(p)) return p; }
-            return null;
+            var overlay = System.IO.Path.Combine(d, "live.qcow2");
+            if (Base(exe) == null)
+            {
+                foreach (var n in new[] { "live.qcow2", "live.img" })
+                {
+                    var whole = System.IO.Path.Combine(d, n);
+                    if (!File.Exists(whole) || (n == "live.qcow2" && Qcow2Overlay.BackingName(whole) != null)) continue;
+                    var b = System.IO.Path.Combine(d, n == "live.img" ? "base.img" : "base.qcow2");
+                    File.Move(whole, b);
+                    File.SetAttributes(b, File.GetAttributes(b) | FileAttributes.ReadOnly);
+                    Log.Info("live: " + n + " (imported whole) is now the clean base " + System.IO.Path.GetFileName(b));
+                    break;
+                }
+            }
+            var base_ = Base(exe);
+            if (base_ == null) return null;
+            if (!File.Exists(overlay))
+            {
+                var error = Qcow2Overlay.Create(base_, overlay, rawAllowed: true);
+                if (error != null) { Log.Warn("live: its differential image could not be made: " + error); return null; }
+                Log.Info("live: a differential image made over " + System.IO.Path.GetFileName(base_));
+            }
+            return overlay;
+        }
+
+        /// <summary>The file chosen for "disk" or "eeprom" in the Nixx window (live\sources.txt), or null.</summary>
+        public static string Source(string exe, string what)
+        {
+            try
+            {
+                var p = Dir(exe) is string d ? System.IO.Path.Combine(d, "sources.txt") : null;
+                if (p == null || !File.Exists(p)) return null;
+                return File.ReadAllLines(p).Where(l => l.StartsWith(what + "=", StringComparison.OrdinalIgnoreCase)).Select(l => l.Substring(what.Length + 1)).FirstOrDefault(v => v.Length > 0);
+            }
+            catch { return null; }
+        }
+
+        private static void SetSource(string exe, string what, string value)
+        {
+            var d = Dir(exe);
+            Directory.CreateDirectory(d);
+            var p = System.IO.Path.Combine(d, "sources.txt");
+            var lines = File.Exists(p) ? File.ReadAllLines(p).Where(l => !l.StartsWith(what + "=", StringComparison.OrdinalIgnoreCase)).ToList() : new List<string>();
+            if (!string.IsNullOrEmpty(value)) lines.Add(what + "=" + value);
+            File.WriteAllLines(p, lines);
         }
 
         public static string Eeprom(string exe) => Dir(exe) is string d && File.Exists(System.IO.Path.Combine(d, "eeprom.bin")) ? System.IO.Path.Combine(d, "eeprom.bin") : null;
@@ -119,8 +178,10 @@ namespace LbIntegrations.Xemu
 
         // ── import ──
 
-        /// <summary>A console disk copied in as the Live console (live.qcow2, or live.img for a raw image). One already there is
-        /// put aside (live\previous-<date>.<ext>), never deleted: it carries the account. Null when done, else why not.</summary>
+        /// <summary>A console disk COPIED in as the Live console's clean base (base.qcow2, or base.img for a raw image), read-only;
+        /// the console then works in a differential image over it (Hdd). A Live console already there - its base, its
+        /// differential image (the registration, the account), its EEPROM - is put aside together (live\previous-<date>\),
+        /// never deleted; the EEPROM goes too, so the new console is not given the old one's identity unasked. Null when done.</summary>
         public static string ImportDisk(string exe, string source, Action<double> progress = null)
         {
             var d = Inspect(source);
@@ -128,7 +189,7 @@ namespace LbIntegrations.Xemu
             var dir = Dir(exe);
             if (dir == null) return "the emulator's folder is not known";
             Directory.CreateDirectory(dir);
-            var target = System.IO.Path.Combine(dir, d.Format == "qcow2" ? "live.qcow2" : "live.img");
+            var target = System.IO.Path.Combine(dir, d.Format == "qcow2" ? "base.qcow2" : "base.img");
             var part = target + ".part";
             using (var from = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 1 << 20))
             using (var to = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20))
@@ -136,14 +197,18 @@ namespace LbIntegrations.Xemu
                 var buf = new byte[1 << 20]; long done = 0; int n;
                 while ((n = from.Read(buf, 0, buf.Length)) > 0) { to.Write(buf, 0, n); done += n; progress?.Invoke(from.Length > 0 ? (double)done / from.Length : 0); }
             }
-            PutAside(Hdd(exe));
+            PutAside(exe, "base.qcow2", "base.img", "live.qcow2", "live.img", "eeprom.bin");
+            SetSource(exe, "eeprom", null);
             File.Move(part, target);
-            File.SetAttributes(target, File.GetAttributes(target) & ~FileAttributes.ReadOnly);
-            Log.Info("live: " + source + " imported as the Live console (" + d.Format + ", dashboard " + (d.DashboardVersion ?? d.DashboardTitle) + ")");
+            File.SetAttributes(target, File.GetAttributes(target) | FileAttributes.ReadOnly);
+            SetSource(exe, "disk", System.IO.Path.GetFullPath(source));
+            if (Hdd(exe) == null) return "the disk was copied, but its differential image could not be made - see xemu.log";
+            Log.Info("live: " + source + " imported as the Live console's base (" + d.Format + ", dashboard " + (d.DashboardVersion ?? d.DashboardTitle) + ")");
             return null;
         }
 
-        /// <summary>The EEPROM of the console the disk came from (256 bytes an Xbox key opens), kept as it is. Null when done.</summary>
+        /// <summary>The EEPROM of the console the disk came from (optional): 256 bytes an Xbox key opens, COPIED to live\eeprom.bin -
+        /// the console works on the copy, the chosen file is never written. The one there before is put aside. Null when done.</summary>
         public static string ImportEeprom(string exe, string source)
         {
             var bytes = File.ReadAllBytes(source);
@@ -151,19 +216,92 @@ namespace LbIntegrations.Xemu
             var dir = Dir(exe);
             if (dir == null) return "the emulator's folder is not known";
             Directory.CreateDirectory(dir);
-            var target = System.IO.Path.Combine(dir, "eeprom.bin");
-            PutAside(File.Exists(target) ? target : null);
-            File.WriteAllBytes(target, bytes);
-            Log.Info("live: " + source + " imported as the Live console's EEPROM");
+            PutAside(exe, "eeprom.bin");
+            File.WriteAllBytes(System.IO.Path.Combine(dir, "eeprom.bin"), bytes);
+            SetSource(exe, "eeprom", System.IO.Path.GetFullPath(source));
+            Log.Info("live: " + source + " copied as the Live console's EEPROM");
             return null;
         }
 
-        private static void PutAside(string path)
+        /// <summary>Back to an EEPROM made with your console's identity (at the next start): the copy of the chosen one put aside.</summary>
+        public static string ClearEeprom(string exe)
         {
-            if (path == null || !File.Exists(path)) return;
-            var aside = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(path), "previous-" + DateTime.Now.ToString("yyyy-MM-dd-HHmmss") + "-" + System.IO.Path.GetFileName(path));
-            File.Move(path, aside);
-            Log.Info("live: " + System.IO.Path.GetFileName(path) + " put aside as " + System.IO.Path.GetFileName(aside));
+            if (Dir(exe) == null) return "the emulator's folder is not known";
+            PutAside(exe, "eeprom.bin");
+            SetSource(exe, "eeprom", null);
+            Log.Info("live: the chosen EEPROM put aside - one made with your console's identity at the next start");
+            return null;
+        }
+
+        /// <summary>These files of live\, those there, moved together into live\previous-<date>\ - never deleted.</summary>
+        private static void PutAside(string exe, params string[] names)
+        {
+            var dir = Dir(exe);
+            var there = names.Select(n => System.IO.Path.Combine(dir, n)).Where(File.Exists).ToList();
+            if (there.Count == 0) return;
+            var aside = System.IO.Path.Combine(dir, "previous-" + DateTime.Now.ToString("yyyy-MM-dd-HHmmss"));
+            Directory.CreateDirectory(aside);
+            foreach (var p in there)
+            {
+                File.SetAttributes(p, File.GetAttributes(p) & ~FileAttributes.ReadOnly);
+                File.Move(p, System.IO.Path.Combine(aside, System.IO.Path.GetFileName(p)));
+            }
+            Log.Info("live: " + string.Join(", ", there.Select(System.IO.Path.GetFileName)) + " put aside in " + System.IO.Path.GetFileName(aside));
+        }
+        // ── "Run with Insignia" (06/10): a game of Insignia's list launched online, whatever its own option says ──
+
+        public const string RunCaption = "Nixx-Xemu : Run with Insignia";
+        private static readonly Dictionary<string, DateTime> Forced = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Insignia set up: a Live console chosen.</summary>
+        public static bool Configured(string exe)
+            => exe != null && (Base(exe) != null || (Dir(exe) is string d && File.Exists(System.IO.Path.Combine(d, "live.qcow2"))));
+
+        /// <summary>The menu's entry for this game - when it is one of ours, in Insignia's list, and a Live console is there - or null.</summary>
+        public static string RunEntry(Unbroken.LaunchBox.Plugins.Data.IGame game)
+        {
+            try
+            {
+                if (game == null || !XemuGameMenu.IsOurs(game)) return null;
+                var exe = XemuLibrary.For(game);
+                if (!Configured(exe)) return null;
+                var rom = XemuPlugin.ResolveFullPath(XemuPlugin.Safe(() => game.ApplicationPath));
+                return rom != null && XemuInsignia.Of(XemuDisc.TitleIdOf(rom, exe)) != null ? RunCaption : null;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>The game launched now - by LaunchBox or BigBox, on our xemu - its next launch in Live mode (TakeForced).</summary>
+        public static void Run(Unbroken.LaunchBox.Plugins.Data.IGame game)
+        {
+            var id = XemuPlugin.Safe(() => game.Id);
+            if (string.IsNullOrEmpty(id)) return;
+            lock (Forced) Forced[id] = DateTime.UtcNow;
+            var dm = Unbroken.LaunchBox.Plugins.PluginHelper.DataManager;
+            Unbroken.LaunchBox.Plugins.Data.IEmulator emulator = null;
+            try
+            {
+                var own = string.IsNullOrWhiteSpace(game.EmulatorId) ? null : dm?.GetEmulatorById(game.EmulatorId);
+                emulator = own != null && XemuPaths.IsOurs(XemuPlugin.ResolveFullPath(own.ApplicationPath)) ? own
+                         : (dm?.GetAllEmulators() ?? new Unbroken.LaunchBox.Plugins.Data.IEmulator[0]).FirstOrDefault(e => e != null && XemuPaths.IsOurs(XemuPlugin.ResolveFullPath(e.ApplicationPath)));
+            }
+            catch { }
+            Log.Info("live: \"" + XemuPlugin.Safe(() => game.Title) + "\" run with Insignia");
+            var bigBox = Unbroken.LaunchBox.Plugins.PluginHelper.BigBoxMainViewModel;
+            if (bigBox != null) bigBox.PlayGame(game, null, emulator, null);
+            else Unbroken.LaunchBox.Plugins.PluginHelper.LaunchBoxMainViewModel?.PlayGame(game, null, emulator, null);
+        }
+
+        /// <summary>Was this game's launch asked by "Run with Insignia" (in the last two minutes)? Taken once.</summary>
+        public static bool TakeForced(string gameId)
+        {
+            if (string.IsNullOrEmpty(gameId)) return false;
+            lock (Forced)
+            {
+                if (!Forced.TryGetValue(gameId, out var at)) return false;
+                Forced.Remove(gameId);
+                return DateTime.UtcNow - at < TimeSpan.FromMinutes(2);
+            }
         }
 
         // ── Insignia's Setup Assistant ──
@@ -195,7 +333,7 @@ namespace LbIntegrations.Xemu
                 if (exe == null) return "there is no xemu of this plugin in the library";
                 if (XemuPaths.Running(exe)) return "xemu is already running - close it first";
                 if (XemuPaths.McpxPath(exe) == null || XemuPaths.FlashPath(exe) == null) return "the Xbox's BIOS is not in " + XemuPaths.BiosDir(exe);
-                if (Hdd(exe) == null) return "there is no Live console yet - import a console disk first";
+                if (Hdd(exe) == null) return "there is no Live console yet - choose a console disk first";
                 string dvd = null;
                 if (setup)
                 {

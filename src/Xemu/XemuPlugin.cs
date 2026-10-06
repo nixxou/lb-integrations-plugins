@@ -390,8 +390,14 @@ namespace LbIntegrations.Xemu
                 // ITS OWN CONSOLE: made over the pristine one at the game's first launch.
                 var titleId = info.Xbe?.TitleId > 0 ? info.Xbe.TitleIdText : null;
                 if (titleId == null) { XemuDisc.Release(info); return Refuse(Path.GetFileName(rom) + " cannot be launched: its title id could not be read."); }
-                // LIVE MODE (its option "live"): on the Live console, online, no save or savestate of its own (XemuLive).
-                bool live = options.TryGetValue("live", out var lv) && lv == "on";
+                // LIVE MODE (its option "live", or "Run with Insignia" from its menu): on the Live console, online, no save or
+                // savestate of its own (XemuLive) - only for a game Insignia serves (XemuInsignia, its list by title id).
+                bool forced = XemuLive.TakeForced(gameId);
+                bool asked = forced || (options.TryGetValue("live", out var lv) && lv == "on");
+                var insignia = XemuInsignia.Of(titleId);
+                bool live = asked && insignia != null;
+                if (asked) Log.Info(live ? "live: " + (forced ? "run with Insignia" : "its option") + " - \"" + insignia.Name + "\" (" + insignia.Features + ")"
+                                         : "live: asked, but " + titleId + " is not in Insignia's list - played offline, on its own console");
                 var problemConsole = MakeSession(exe, titleId, info.Xbe, options, dvd, out var hdd, out var set, live);
                 if (problemConsole != null) { XemuDisc.Release(info); return Refuse(Path.GetFileName(rom) + " cannot be launched: " + problemConsole); }
                 Log.Info("launch: " + Path.GetFileName(rom) + " (" + titleId + " \"" + info.Xbe?.TitleName + "\", " + info.Kind + ") on " + Path.GetFileName(hdd)

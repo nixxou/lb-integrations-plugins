@@ -40,12 +40,20 @@ namespace LbIntegrations.Xemu
     public static class GameMenu
     {
         public static string[] Entries(IGame[] games)
-            => games != null && games.Any(XemuGameMenu.IsOurs) ? new[] { XemuGameMenu.Caption } : new string[0];
+        {
+            if (games == null || !games.Any(XemuGameMenu.IsOurs)) return new string[0];
+            // "Run with Insignia": one game of Insignia's list, a Live console there (XemuLive.RunEntry).
+            return games.Length == 1 && XemuLive.RunEntry(games[0]) != null ? new[] { XemuGameMenu.Caption, XemuLive.RunCaption } : new[] { XemuGameMenu.Caption };
+        }
 
         public static void Selected(string entry, IGame[] games)
         {
             if (entry == XemuGameMenu.Caption) XemuGameMenu.Open(games ?? new IGame[0]);
+            else if (entry == XemuLive.RunCaption && games?.Length == 1) XemuLive.Run(games[0]);
         }
+
+        /// <summary>BigBox's game menu (the relay's NixxBigBoxMenu): "Run with Insignia" for this game, or null.</summary>
+        public static string BigBoxEntry(IGame game) => XemuLive.RunEntry(game);
 
         public static Image Icon => LbIntegrations.Lbip.LbipMenuIcon.Of(XemuPaths.IsOurs, XemuPlugin.ResolveFullPath);
     }
@@ -214,6 +222,7 @@ namespace LbIntegrations.Xemu
                         about.Add("\"" + d.Xbe.TitleName + "\", title id " + d.Xbe.TitleIdText + ", regions " + Eeprom.XemuEeprom.Name(d.Xbe.Region & 7));
                         titleId = d.Xbe.TitleIdText;
                         xbe = d.Xbe;
+                        if (XemuInsignia.Of(titleId) is InsigniaGame ig) about.Add("On Insignia, online: " + (ig.Features.Length > 0 ? ig.Features : "listed") + (exe != null && XemuLive.Configured(exe) ? "" : " - choose a Live console in the Nixx window to play it there"));
                     }
                 }
             }
@@ -269,7 +278,9 @@ namespace LbIntegrations.Xemu
             console.Controls.Add(LbIntegrations.Lbip.LbipHint.Note("For this game only; unset, the Nixx window's choice applies.",
                 "The console this game runs on and its disc, made for the time of the game - your files are never written. "
                 + "Unset: every game's (the Nixx window's xemu tab), else the default.", 580, new Padding(4, 0, 0, 6)));
-            _consoleRows = new XemuOptionRows(choice, XemuOptionRows.GameFallback(every, toml), o => !o.IsXemuSetting);
+            // "Play online (Insignia)" only for a game Insignia serves (XemuInsignia, by its title id).
+            var onInsignia = XemuInsignia.Of(titleId);
+            _consoleRows = new XemuOptionRows(choice, XemuOptionRows.GameFallback(every, toml), o => !o.IsXemuSetting && (o.Key != "live" || onInsignia != null));
             console.Controls.Add(XemuOptionRows.Legend("Not set: every game's, else the default"));
             console.Controls.Add(Reset(_consoleRows, "The console and disc options of this game"));
             console.Controls.Add(_consoleRows);

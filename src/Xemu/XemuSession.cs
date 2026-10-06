@@ -59,6 +59,8 @@ namespace LbIntegrations.Xemu
                     else Log.Info("session: on the Live console - no save, no savestate");
                     // The compatibility list asked again when it is older than a day (XemuCompat).
                     XemuCompat.RefreshSoon();
+                    // Insignia's list of games, asked again when older than a day (XemuInsignia).
+                    XemuInsignia.RefreshSoon();
                 }
             });
         }

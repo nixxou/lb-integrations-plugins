@@ -115,6 +115,9 @@ namespace LbIntegrations.Probe
             // xemu: --xemu (discs, a game's console, xemu.toml and the launch line, all made here).
             if (Has(args, "--xdvdfs-diff")) { int at = Array.IndexOf(args, "--xdvdfs-diff"); return XemuCheck.Diff(asm, Path.GetFullPath(args[at + 1]), Path.GetFullPath(args[at + 2])) ? 0 : 1; }
             if (Has(args, "--disc-bench")) return DiscBench.Run(asm, Path.GetFullPath(Arg(args, "--disc-bench"))) ? 0 : 1;
+            if (Has(args, "--xemu-insignia")) return XemuCheck.Insignia(asm) ? 0 : 1;
+            if (Has(args, "--xemu-insignia-parse")) { int at = Array.IndexOf(args, "--xemu-insignia-parse"); return XemuCheck.InsigniaParse(asm, Path.GetFullPath(args[at + 1]), Path.GetFullPath(args[at + 2])) ? 0 : 1; }
+            if (Has(args, "--xemu-live-identity")) return XemuCheck.LiveIdentity(asm, args.SkipWhile(x => x != "--xemu-live-identity").Skip(1).Select(Path.GetFullPath).ToArray()) ? 0 : 1;
             if (Has(args, "--xemu-live-boot")) return XemuCheck.LiveBoot(asm, Path.GetFullPath(emuPath), Has(args, "--setup")) ? 0 : 1;
             if (Has(args, "--xemu-live-session")) return XemuCheck.LiveSession(asm, Path.GetFullPath(emuPath), Path.GetFullPath(Arg(args, "--disk")), Arg(args, "--eeprom") is string le ? Path.GetFullPath(le) : null, Path.GetFullPath(Arg(args, "--rom")), int.TryParse(Arg(args, "--seconds"), out var lsec) ? lsec : 0) ? 0 : 1;
             if (Has(args, "--xemu-live-inspect")) return XemuCheck.LiveInspect(asm, Path.GetFullPath(Arg(args, "--xemu-live-inspect"))) ? 0 : 1;
