@@ -47,6 +47,14 @@ namespace LbIntegrations.Ares
         public const string SaveKey = "0x1/0/5;;";   // F5
         public const string LoadKey = "0x1/0/7;;";   // F7
 
+        /// <summary>The hotkeys bound when ares has none: F5 save state, F7 load it, F6 / F8 the slot down / up, F11 full
+        /// screen, Escape quits (its window closes: the game's save written).</summary>
+        internal static readonly (string Node, string Key)[] Hotkeys =
+        {
+            ("SaveState", SaveKey), ("LoadState", LoadKey), ("DecrementStateSlot", "0x1/0/6;;"), ("IncrementStateSlot", "0x1/0/8;;"),
+            ("ToggleFullscreen", "0x1/0/11;;"), ("QuitEmulator", "0x1/0/0;;"),
+        };
+
         public static bool IsAresExe(string path)
         {
             try { return string.Equals(Path.GetFileName((path ?? "").Trim().Trim('"')), ExecutableName, StringComparison.OrdinalIgnoreCase); }
@@ -108,11 +116,16 @@ namespace LbIntegrations.Ares
                 // The options are not written here any more: they go on the line (AresSettings.SettingArgs). Only what has to
                 // last is: the state hotkeys, bound when ares has none.
                 var bml = AresBml.Load(SettingsOf(exe));
-                if (string.IsNullOrWhiteSpace(bml.Get("Hotkey/SaveState")) || bml.Get("Hotkey/SaveState") == ";;") bml.Set("Hotkey/SaveState", SaveKey);
-                if (string.IsNullOrWhiteSpace(bml.Get("Hotkey/LoadState")) || bml.Get("Hotkey/LoadState") == ";;") bml.Set("Hotkey/LoadState", LoadKey);
+                // ares ships every hotkey unbound (Mehdi, 06/10: "no key works"): the usual ones, each only when ares has none.
+                // Keyboard = device 0x1, group 0, the key's index in ruby's list (keyboard\rawinput.cpp: Escape 0, F1..F12 1..12).
+                foreach (var (node, key) in Hotkeys)
+                {
+                    var v = bml.Get("Hotkey/" + node);
+                    if (string.IsNullOrWhiteSpace(v) || v.Trim(';').Length == 0) bml.Set("Hotkey/" + node, key);
+                }
                 bool changed = bml.Changed;
                 bml.SaveIfChanged();
-                if (changed) Log.Info("settings.bml: the state hotkeys bound (F5 / F7)");
+                if (changed) Log.Info("settings.bml: the empty hotkeys bound (F5/F7 states, F6/F8 slot, F11 full screen, Escape quit)");
             }
             catch (Exception ex) { Log.Warn("settings.bml could not be written - the game starts with it as it was", ex); }
         }

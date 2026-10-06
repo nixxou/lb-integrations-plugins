@@ -11,6 +11,8 @@
 //   HereLoses   red     set here, but the game's own config wins all the same: Flycast, for a game whose id
 //                       cannot be named on its command line (a space in it - an arcade board's title)
 //   Unused      no bar  a setting not used as things stand (a text set by hand is in use instead)
+//   Various     purple  a window over several games, "All selected games": they do not agree on it - left as it
+//                       is, each keeps its own; changed, it goes to all (Mehdi, 06/10)
 //
 // A bar sits in the setting's own parent, just left of it: it follows it into a hidden tab or group box.
 
@@ -21,7 +23,7 @@ using System.Windows.Forms;
 
 namespace LbIntegrations.Lbip
 {
-    internal enum OptionLevel { Unused, Emulator, GameConfig, Here, HereLoses }
+    internal enum OptionLevel { Unused, Emulator, GameConfig, Here, HereLoses, Various }
 
     internal sealed class OptionMarks
     {
@@ -29,10 +31,15 @@ namespace LbIntegrations.Lbip
         public static readonly Color GameConfigColor = Color.FromArgb(222, 150, 0);
         public static readonly Color EmulatorColor = Color.FromArgb(175, 175, 175);
         public static readonly Color HereLosesColor = Color.FromArgb(205, 45, 45);
+        public static readonly Color VariousColor = Color.FromArgb(155, 95, 215);
+
+        /// <summary>What a list shows for a setting the selected games do not agree on.</summary>
+        public const string VariousText = "Various";
 
         public static Color ColorOf(OptionLevel level)
             => level == OptionLevel.Here ? HereColor : level == OptionLevel.GameConfig ? GameConfigColor
-             : level == OptionLevel.Emulator ? EmulatorColor : level == OptionLevel.HereLoses ? HereLosesColor : Color.Empty;
+             : level == OptionLevel.Emulator ? EmulatorColor : level == OptionLevel.HereLoses ? HereLosesColor
+             : level == OptionLevel.Various ? VariousColor : Color.Empty;
 
         private readonly Dictionary<Control, Panel> _bars = new Dictionary<Control, Panel>();
 
@@ -63,7 +70,10 @@ namespace LbIntegrations.Lbip
 
         /// <summary>The legend: the colours in the order they win, and the red one apart when the window can
         /// show it.</summary>
-        public static Control Legend(string emulator, bool gameConfig, bool hereLoses)
+        public static Control Legend(string emulator, bool gameConfig, bool hereLoses) => Legend(emulator, gameConfig, hereLoses, false);
+
+        /// <summary>The same, and - a window over several games - the purple "various values" apart.</summary>
+        public static Control Legend(string emulator, bool gameConfig, bool hereLoses, bool various)
         {
             var row = new FlowLayoutPanel
             {
@@ -84,6 +94,11 @@ namespace LbIntegrations.Lbip
             {
                 row.Controls.Add(new Label { Text = "", AutoSize = true, Margin = new Padding(0, 0, 8, 0) });
                 Item(HereLosesColor, "Set here, but its config wins");
+            }
+            if (various)
+            {
+                row.Controls.Add(new Label { Text = "", AutoSize = true, Margin = new Padding(0, 0, 8, 0) });
+                Item(VariousColor, "Various: each game keeps its own");
             }
             return row;
         }

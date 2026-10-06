@@ -303,8 +303,18 @@ namespace LbIntegrations.Probe
             {
                 try
                 {
-                    var game = StubGame.With(StubGame.Create("probe-window", Path.GetFileNameWithoutExtension(rom), rom), "Platform", platform);
-                    var arr = Array.CreateInstance(typeof(Unbroken.LaunchBox.Plugins.Data.IGame), 1); arr.SetValue(game, 0);
+                    // Several games: "a.sfc|b.sfc" - the second set its own scaling and shader, so the first two rows vary.
+                    var roms = rom.Split('|');
+                    var arr = Array.CreateInstance(typeof(Unbroken.LaunchBox.Plugins.Data.IGame), roms.Length);
+                    for (int g = 0; g < roms.Length; g++)
+                    {
+                        arr.SetValue(StubGame.With(StubGame.Create("probe-window-" + g, Path.GetFileNameWithoutExtension(roms[g]), roms[g]), "Platform", platform), g);
+                        if (g == 1)
+                        {
+                            Directory.CreateDirectory(Path.Combine(data, "games"));
+                            File.WriteAllLines(Path.Combine(data, "games", "probe-window-1.ini"), new[] { "Output=fixed3", "Shader=crt/crt-geom.slangp" });
+                        }
+                    }
                     using var form = (System.Windows.Forms.Form)Activator.CreateInstance(T(asm, "AresGameForm"), BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance, null, new object[] { arr }, null);
                     form.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
                     form.Location = new System.Drawing.Point(-4000, -4000);
