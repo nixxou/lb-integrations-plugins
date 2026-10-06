@@ -200,6 +200,33 @@ namespace LbIntegrations.Ares
         /// WHAT IT CANNOT GIVE BACK (Mehdi, 06/10: "qui vivra verra"): a cooked (2048) image has no CD audio tracks and, on
         /// the PlayStation, no XA / Form 2 sectors; a raw image of a whole disc has its audio tracks, but no record of where
         /// each starts - all of it is one track then. Said in the log; the game is launched anyway.</summary>
+        /// <summary>The discs a .m3u lists, full paths, in order (they may not all be there).</summary>
+        internal static List<string> M3uDiscs(string m3u)
+        {
+            var list = new List<string>();
+            try
+            {
+                var dir = Path.GetDirectoryName(Path.GetFullPath(m3u));
+                foreach (var raw in File.ReadAllLines(m3u))
+                {
+                    var l = raw.Trim().Trim('﻿');
+                    if (l.Length == 0 || l.StartsWith("#")) continue;
+                    list.Add(Path.IsPathRooted(l) ? l : Path.GetFullPath(Path.Combine(dir, l)));
+                }
+            }
+            catch (Exception ex) { Log.Warn("could not read " + m3u, ex); }
+            return list;
+        }
+
+        /// <summary>The file ares opens for a disc: its hidden .cue when it is an .iso/.bin/.img with none, else itself.</summary>
+        internal static string DiscFile(string disc, AresSystem system)
+        {
+            var e = Path.GetExtension(disc ?? "").ToLowerInvariant();
+            if (system == null || !system.Disc || !(e == ".iso" || e == ".bin" || e == ".img")) return disc;
+            var cue = Path.Combine(Path.GetDirectoryName(disc), Path.GetFileNameWithoutExtension(disc) + ".cue");
+            return File.Exists(cue) ? cue : disc;
+        }
+
         internal static string CueFor(string image, out string problem)
         {
             problem = null;
@@ -248,13 +275,20 @@ namespace LbIntegrations.Ares
             {
                 if (ext == ".m3u")
                 {
-                    var dir = Path.GetDirectoryName(rom);
-                    var first = File.ReadAllLines(rom).Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0 && !l.StartsWith("#"));
-                    if (first == null) { problem = Path.GetFileName(rom) + " lists no disc."; return null; }
-                    var disc = Path.IsPathRooted(first) ? first : Path.GetFullPath(Path.Combine(dir, first));
-                    if (!File.Exists(disc)) { problem = Path.GetFileName(rom) + " names " + first + ", which is not there."; return null; }
-                    Log.Info("a .m3u: ares has no playlists - its first disc, " + Path.GetFileName(disc));
-                    return disc;
+                    var discs = M3uDiscs(rom);
+                    if (discs.Count == 0) { problem = Path.GetFileName(rom) + " lists no disc."; return null; }
+                    if (!File.Exists(discs[0])) { problem = Path.GetFileName(rom) + " names " + Path.GetFileName(discs[0]) + ", which is not there."; return null; }
+                    // Every disc an .iso/.bin/.img gets its .cue now, not only the first: ares's Change Disc opens the others.
+                    string first = null;
+                    foreach (var d in discs.Where(File.Exists))
+                    {
+                        var e = Path.GetExtension(d).ToLowerInvariant();
+                        var playable = system != null && system.Disc && (e == ".iso" || e == ".bin" || e == ".img") ? CueFor(d, out _) : d;
+                        first = first ?? playable;
+                    }
+                    if (first == null) { problem = Path.GetFileName(rom) + ": its first disc cannot be given to ares."; return null; }
+                    Log.Info("a .m3u: ares has no playlists - its first disc, " + Path.GetFileName(first));
+                    return first;
                 }
                 if (system != null && system.Disc && (ext == ".iso" || ext == ".bin" || ext == ".img")) return CueFor(rom, out problem);
                 if (ext != ".7z") return rom;

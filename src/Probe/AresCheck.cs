@@ -176,6 +176,128 @@ namespace LbIntegrations.Probe
             return _bad == 0;
         }
 
+        /// <summary>--ares-console &lt;ares.exe&gt;: each game its own console, on a COPY of the install (its settings.bml)
+        /// with a stand-in exe - what ares would write is written by hand between Begin and Recover.</summary>
+        public static bool Console_(Assembly asm, string exe)
+        {
+            _bad = 0;
+            Console.WriteLine("-- each game its own console --");
+            var copy = Path.Combine(Path.GetTempPath(), "lbip-ares-con-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(copy);
+            var session = T(asm, "AresConsoleSession");
+            object Sys(string n) => T(asm, "AresSystems").GetMethod("System", Any).Invoke(null, new object[] { n });
+            void Begin(string sys, string rom, string played) => session.GetMethod("Begin", Any).Invoke(null, new object[] { Path.Combine(copy, "ares.exe"), Sys(sys), rom, played });
+            void Recover() => session.GetMethod("Recover", Any).Invoke(null, null);
+            string Read(string p) => File.Exists(p) ? File.ReadAllText(p) : "(none)";
+            try
+            {
+                File.Copy(Path.Combine(Path.GetDirectoryName(exe), "settings.bml"), Path.Combine(copy, "settings.bml"));
+                File.WriteAllText(Path.Combine(copy, "ares.exe"), "");
+                T(asm, "AresSettings").GetField("PathOverride", Any).SetValue(null, Path.Combine(copy, "data", "settings.ini"));
+                var games = Path.Combine(copy, "games"); Directory.CreateDirectory(games);
+                var live = Path.Combine(copy, "Systems", "Mega CD.sys", "backup.ram");
+                Directory.CreateDirectory(Path.GetDirectoryName(live));
+                File.WriteAllText(live, "SHARED");   // the memory before the plugin took it over
+
+                var sonic = Path.Combine(games, "Sonic CD.cue"); File.WriteAllText(sonic, "x");
+                var snatcher = Path.Combine(games, "Snatcher.cue"); File.WriteAllText(snatcher, "x");
+                Begin("Mega CD", sonic, sonic);
+                Check("the memory as it was kept once", Read(live + ".before-nixx") == "SHARED");
+                Check("a game with no copy yet starts from it", Read(live) == "SHARED");
+                File.WriteAllText(live, "SONIC");   // ares saved
+                Recover();
+                Check("taken back to the game", Read(Path.Combine(games, "Sonic CD.bram")) == "SONIC");
+                Begin("Mega CD", snatcher, snatcher);
+                Check("another game does not see it", Read(live) == "SHARED", Read(live));
+                File.WriteAllText(live, "SNATCHER"); Recover();
+                Begin("Mega CD", sonic, sonic);
+                Check("the first game finds its own again", Read(live) == "SONIC", Read(live));
+                Recover();
+                Check("the second keeps its own", Read(Path.Combine(games, "Snatcher.bram")) == "SNATCHER");
+
+                // A PlayStation game in a .m3u: the card under the launched disc's name, the newest brought back.
+                var d1 = Path.Combine(games, "Final Fantasy VII (Disc 1).cue"); var d2 = Path.Combine(games, "Final Fantasy VII (Disc 2).cue");
+                File.WriteAllText(d1, "x"); File.WriteAllText(d2, "x");
+                var m3u = Path.Combine(games, "Final Fantasy VII.m3u");
+                File.WriteAllLines(m3u, new[] { "Final Fantasy VII (Disc 1).cue", "Final Fantasy VII (Disc 2).cue" });
+                var card = Path.Combine(games, "Final Fantasy VII.card");
+                Begin("PlayStation", m3u, d1);
+                File.WriteAllText(Path.Combine(games, "Final Fantasy VII (Disc 2).card"), "AFTER-CHANGE-DISC");   // ares, at unload on disc 2
+                Recover();
+                Check("the card of the disc played last is the game's", Read(card) == "AFTER-CHANGE-DISC", Read(card));
+                Check("the discs' copies deleted", !File.Exists(Path.Combine(games, "Final Fantasy VII (Disc 2).card")));
+                Begin("PlayStation", m3u, d1);
+                Check("at the next launch, under disc 1's name", Read(Path.Combine(games, "Final Fantasy VII (Disc 1).card")) == "AFTER-CHANGE-DISC");
+                Recover();
+                Check("nothing lost when nothing changed", Read(card) == "AFTER-CHANGE-DISC" && !File.Exists(Path.Combine(games, "Final Fantasy VII (Disc 1).card")));
+
+                // The 64DD: the clock the game's, travelling with its disk.
+                var ndd = Path.Combine(games, "Sim City 64.ndd"); File.WriteAllText(ndd, "x");
+                var clock = Path.Combine(copy, "Systems", "Nintendo 64DD.sys", "time.rtc");
+                Begin("Nintendo 64DD", ndd, ndd);
+                Directory.CreateDirectory(Path.GetDirectoryName(clock)); File.WriteAllText(clock, "TIME"); File.WriteAllText(Path.ChangeExtension(ndd, ".disk"), "DISK");
+                Recover();
+                Check("the clock is the game's", Read(Path.Combine(games, "Sim City 64.rtc")) == "TIME");
+                var plugin = Activator.CreateInstance(asm.GetTypes().First(t => typeof(Unbroken.LaunchBox.Plugins.EmulatorPlugin).IsAssignableFrom(t) && !t.IsAbstract));
+                var companions = (System.Collections.Generic.IReadOnlyList<string>)plugin.GetType().GetMethod("GetCompanionSaveFiles").Invoke(plugin, new object[] { Path.ChangeExtension(ndd, ".disk") });
+                Check("it travels with the .disk", companions.Count == 1 && companions[0].EndsWith("Sim City 64.rtc"));
+
+                // LaunchBox gone mid-session: the next Begin finishes the last one first.
+                Begin("Mega CD", sonic, sonic);
+                File.WriteAllText(live, "SONIC-2");
+                Begin("Mega CD", snatcher, snatcher);   // no Recover in between
+                Check("an unfinished session finished before the next", Read(Path.Combine(games, "Sonic CD.bram")) == "SONIC-2" && Read(live) == "SNATCHER");
+                Recover();
+            }
+            catch (Exception ex) { Check("ran", false, (ex.InnerException ?? ex).ToString()); }
+            finally
+            {
+                T(asm, "AresSettings").GetField("PathOverride", Any).SetValue(null, null);
+                try { Directory.Delete(copy, true); } catch { }
+            }
+            Console.WriteLine(_bad == 0 ? "  all good" : "  " + _bad + " FAILED");
+            return _bad == 0;
+        }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
+
+        /// <summary>--ares-console-real &lt;ares.exe&gt; &lt;system&gt; &lt;game&gt;: the REAL ares of a lab install run on the game
+        /// between Begin and Recover - WRITES that install's Systems\ folder (its .before-nixx kept) and the game's own copy.</summary>
+        public static bool ConsoleReal(Assembly asm, string exe, string system, string rom)
+        {
+            _bad = 0;
+            Console.WriteLine("-- " + Path.GetFileName(rom) + " as " + system + ", the real ares --");
+            var session = T(asm, "AresConsoleSession");
+            var sys = T(asm, "AresSystems").GetMethod("System", Any).Invoke(null, new object[] { system });
+            var data = Path.Combine(Path.GetTempPath(), "lbip-ares-real-" + Guid.NewGuid().ToString("N"));
+            T(asm, "AresSettings").GetField("PathOverride", Any).SetValue(null, Path.Combine(data, "settings.ini"));
+            try
+            {
+                var files = (System.Collections.IEnumerable)sys.GetType().GetField("ConsoleFiles").GetValue(sys);
+                var cf = files.Cast<object>().First();
+                var live = (string)T(asm, "AresPlugin").GetMethod("ConsolePath", Any).Invoke(null, new[] { exe, cf });
+                var own = (string)session.GetMethod("OwnCopy", Any).Invoke(null, new[] { exe, rom, sys, cf });
+                Console.WriteLine("  live " + live + "\n  own  " + own);
+                if (File.Exists(own)) File.Delete(own);
+                var before = File.Exists(live) ? File.GetLastWriteTimeUtc(live) : DateTime.MinValue;
+                session.GetMethod("Begin", Any).Invoke(null, new object[] { exe, sys, rom, rom });
+                var p = Process.Start(new ProcessStartInfo(exe, "--settings-file \"" + Path.Combine(Path.GetDirectoryName(exe), "settings.bml") + "\" --system \"" + system + "\" \"" + rom + "\"") { UseShellExecute = false });
+                for (int i = 0; i < 40 && p.MainWindowHandle == IntPtr.Zero; i++) { System.Threading.Thread.Sleep(250); p.Refresh(); }
+                System.Threading.Thread.Sleep(10000);
+                PostMessage(p.MainWindowHandle, 0x10, IntPtr.Zero, IntPtr.Zero);
+                if (!p.WaitForExit(10000)) { p.Kill(); Check("ares quit on WM_CLOSE", false); }
+                System.Threading.Thread.Sleep(500);
+                Check("ares wrote the console's memory at unload", File.Exists(live) && File.GetLastWriteTimeUtc(live) > before, File.Exists(live) ? File.GetLastWriteTimeUtc(live).ToString("HH:mm:ss") : "(none)");
+                session.GetMethod("Recover", Any).Invoke(null, null);
+                Check("taken back to the game, byte for byte", File.Exists(own) && File.ReadAllBytes(own).SequenceEqual(File.ReadAllBytes(live)), own);
+                Check("the memory as it was before kept", File.Exists(live + ".before-nixx") || before == DateTime.MinValue);
+            }
+            catch (Exception ex) { Check("ran", false, (ex.InnerException ?? ex).ToString()); }
+            finally { T(asm, "AresSettings").GetField("PathOverride", Any).SetValue(null, null); try { Directory.Delete(data, true); } catch { } }
+            Console.WriteLine(_bad == 0 ? "  all good" : "  " + _bad + " FAILED");
+            return _bad == 0;
+        }
+
         /// <summary>A settings.bml's leaves, by path ("Video/Shader").</summary>
         internal static System.Collections.Generic.Dictionary<string, string> AresBmlLines(string path)
         {
@@ -200,7 +322,7 @@ namespace LbIntegrations.Probe
         {
             Console.WriteLine("-- the BIOS for " + exe + " --");
             var all = T(asm, "AresSystems").GetField("All", Any).GetValue(null);
-            var states = (IEnumerable)T(asm, "AresFirmware").GetMethod("Ensure", Any).Invoke(null, new object[] { exe, all, null });
+            var states = (IEnumerable)T(asm, "AresFirmware").GetMethod("Ensure", Any).Invoke(null, new object[] { exe, all, null, true, false });
             foreach (var st in states)
             {
                 var spec = F(st, "Spec");

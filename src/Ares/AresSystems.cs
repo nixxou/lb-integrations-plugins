@@ -46,6 +46,11 @@ namespace LbIntegrations.Ares
     internal sealed class AresConsoleFile
     {
         public string Pak, File, Ext;
+        /// <summary>The games' saves are in it (the backup RAM) or it goes with them (the 64DD's clock): each game has its
+        /// own copy, <game><Ext> beside its saves, put in place before ares starts and taken back when it quits
+        /// (AresConsoleSession). False: the console's settings alone (the Neo Geo Pocket's language and clock, the
+        /// WonderSwan's owner) - one console, set once, never listed as a game's save.</summary>
+        public bool PerGame;
     }
 
     internal sealed class AresSystem
@@ -82,7 +87,7 @@ namespace LbIntegrations.Ares
 
         private static readonly string[] Cart = { ".ram", ".eeprom", ".flash", ".rtc" };
 
-        private static AresConsoleFile[] Backup(string pak) => new[] { new AresConsoleFile { Pak = pak, File = "backup.ram", Ext = ".bram" } };
+        private static AresConsoleFile[] Backup(string pak) => new[] { new AresConsoleFile { Pak = pak, File = "backup.ram", Ext = ".bram", PerGame = true } };
         private static AresConsoleFile[] PocketRam(string pak) => new[] { new AresConsoleFile { Pak = pak, File = "cpu.ram", Ext = ".cram" },
                                                                          new AresConsoleFile { Pak = pak, File = "apu.ram", Ext = ".aram" } };
         private static AresConsoleFile[] SwanEeprom(string pak) => new[] { new AresConsoleFile { Pak = pak, File = "save.eeprom", Ext = ".eeprom" } };
@@ -99,7 +104,7 @@ namespace LbIntegrations.Ares
             new AresSystem { Name = "Super Famicom", Extensions = new[] { ".sfc", ".smc", ".swc", ".fig" }, SaveExtensions = new[] { ".ram", ".iram", ".bsx", ".rtc", ".dram" } },
             new AresSystem { Name = "Nintendo 64", Extensions = new[] { ".z64", ".n64", ".v64" }, SaveExtensions = new[] { ".ram", ".eeprom", ".flash", ".rtc", ".pak" } },
             new AresSystem { Name = "Nintendo 64DD", Extensions = new[] { ".ndd", ".n64dd", ".d64" }, SaveExtensions = new[] { ".disk", ".pak" }, StateFolder = "Nintendo 64",
-                ConsoleFiles = new[] { new AresConsoleFile { Pak = "Nintendo 64DD", File = "time.rtc", Ext = ".rtc" } },
+                ConsoleFiles = new[] { new AresConsoleFile { Pak = "Nintendo 64DD", File = "time.rtc", Ext = ".rtc", PerGame = true } },
                 Firmware = new[] {
                     F("BIOS", "Japan", "806400ec0df94b0755de6c5b8249d6b6a9866124c5ddbdac198bde22499bfb8b", "IPL_JAP.n64", "64DD_IPL.bin", "IPL.n64"),
                     F("BIOS", "US", "e9fec87a45fba02399e88064b9e2f8cf0f2106e351c58279a87f05da5bc984ad", "IPL_USA.n64", "64DD_IPL_US.bin"),

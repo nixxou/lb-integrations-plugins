@@ -13,11 +13,13 @@
 //   Engine's HuCard: .ram), .d1a.. for the Famicom Disk System, .disk for the 64DD, .sav for the Neo Geo Pocket, a tape's
 //   recording as <game>.wav (MSX, ZX Spectrum, SC-3000) - and two files ares writes beside the game for its pads:
 //   the PlayStation's memory card <game>.card, the Nintendo 64's Controller Pak <game>.pak. Each its own row.
-//   THE CONSOLE'S OWN (mia\system\*.cpp: Pak::save without a location): ONE file for every game of the system - the
-//   Mega CD's, the PC Engine's (HuCard and CD alike) and the LaserActive's backup RAM, the Neo Geo Pocket's cpu/apu RAM,
-//   the WonderSwan's owner EEPROM, the 64DD's clock - in <home>\<Pak>.sys\<file> (home: Paths/Home, else ares's
-//   Systems\ folder), or <Saves><Pak>\<Pak><ext> when Paths/Saves is set. Listed under every game of that system, said
-//   shared; a restore puts it back for all of them, as swapping the memory on the real console would.
+//   THE CONSOLE'S OWN (mia\system\*.cpp: Pak::save without a location): ONE file for every game of the system, in
+//   <home>\<Pak>.sys\<file> (home: Paths/Home, else ares's Systems\ folder), or <Saves><Pak>\<Pak><ext> with Paths/Saves.
+//   Made each game's (AresConsoleSession): the backup RAM of the Mega CD, the PC Engine (HuCard and CD) and the
+//   LaserActive is the game's <game>.bram beside its saves, a row of its own; the 64DD's clock, <game>.rtc, travels with
+//   the game's .disk (a companion). The Neo Geo Pocket's cpu/apu RAM and the WonderSwan's owner EEPROM hold the
+//   console's settings and no game's save (the games save on their cartridge): one console, never listed.
+//   A DISC GAME is named by its .m3u (its identity): <m3u>.card; the states keep each disc's name.
 //   NOTHING: the Neo Geo's memory card (ares\ng\card\slot.cpp: save() is empty - not kept between sessions), Atari 2600,
 //   ColecoVision, a game's CD.
 //   STATES: .bs1 .. .bs9, slots 1 to 9 (presentation.cpp: range(9); the current slot is 1 at every load). .bsu and .blu,
@@ -140,6 +142,7 @@ namespace LbIntegrations.Ares
                 var exe = ResolveFullPath(Safe(() => args.Emulator.ApplicationPath));
                 if (!AresLaunch.IsAresExe(exe)) return new GetSavesResponse("This emulator is not ares.");
 
+                AresConsoleSession.Recover();   // a session LaunchBox did not see end: its memory taken back first
                 var found = new List<GameSaveBase>();
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var dm = PluginHelper.DataManager;
@@ -167,33 +170,40 @@ namespace LbIntegrations.Ares
         {
             if (system == null || string.IsNullOrWhiteSpace(gameId) || string.IsNullOrWhiteSpace(romPath)) return;
             var rom = ResolveFullPath(romPath);
-            var name = NameOf(rom, exe);
-            if (name.Length == 0) return;
+            var identity = AresConsoleSession.IdentityOf(rom, exe);
+            if (identity.Length == 0) return;
+            // The game's name first, then its discs' (a .m3u's): a card not yet brought back, the states of each disc.
+            var names = new[] { identity }.Concat(system.Disc ? AresConsoleSession.DiscNames(rom, system, exe) : new List<string>())
+                                          .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             var folders = FoldersFor(exe, rom, system);
             var context = appId ?? gameId;
 
-            foreach (var dir in folders.SaveDirs)
-                foreach (var ext in system.SaveExtensions)
+            foreach (var name in names)
+                foreach (var dir in folders.SaveDirs)
+                    foreach (var ext in system.SaveExtensions)
+                    {
+                        var path = Path.Combine(dir, name + ext);
+                        if (string.Equals(path, rom, StringComparison.OrdinalIgnoreCase)) continue;   // a .wav tape is the game, not its recording
+                        if (File.Exists(path) && seen.Add("save|" + path + "|" + context))
+                            into.Add(SaveRow(path, gameId, appId, SavePrefix + system.Node + ":" + name + ext, SaveGroupName + " (" + ext.TrimStart('.') + ")", ext.TrimStart('.').ToUpperInvariant()));
+                    }
+            foreach (var name in names)
+                foreach (var dir in folders.StateDirs)
+                    for (int slot = 1; slot <= 9; slot++)
+                    {
+                        var path = Path.Combine(dir, name + ".bs" + slot);
+                        if (File.Exists(path) && seen.Add("state|" + path + "|" + context))
+                            into.Add(StateRow(path, gameId, appId, slot, StatePrefix + system.Node + ":" + name + ":" + slot));
+                    }
+            // The game's own copy of its console's memory (AresConsoleSession) - the 64DD's clock travels with its .disk
+            // instead (GetCompanionSaveFiles). The console's settings alone (PerGame false) are no game's save.
+            foreach (var cf in system.ConsoleFiles.Where(c => c.PerGame && c.Ext != ".rtc"))
+                foreach (var dir in folders.SaveDirs)
                 {
-                    var path = Path.Combine(dir, name + ext);
-                    if (string.Equals(path, rom, StringComparison.OrdinalIgnoreCase)) continue;   // a .wav tape is the game, not its recording
+                    var path = Path.Combine(dir, identity + cf.Ext);
                     if (File.Exists(path) && seen.Add("save|" + path + "|" + context))
-                        into.Add(SaveRow(path, gameId, appId, SavePrefix + system.Node + ":" + name + ext, SaveGroupName + " (" + ext.TrimStart('.') + ")", ext.TrimStart('.').ToUpperInvariant()));
+                        into.Add(SaveRow(path, gameId, appId, SavePrefix + system.Node + ":" + identity + cf.Ext, "Console memory (" + cf.Pak + " " + cf.File + ")", "BRAM"));
                 }
-            foreach (var dir in folders.StateDirs)
-                for (int slot = 1; slot <= 9; slot++)
-                {
-                    var path = Path.Combine(dir, name + ".bs" + slot);
-                    if (File.Exists(path) && seen.Add("state|" + path + "|" + context))
-                        into.Add(StateRow(path, gameId, appId, slot, StatePrefix + system.Node + ":" + name + ":" + slot));
-                }
-            foreach (var cf in system.ConsoleFiles)
-            {
-                var path = ConsolePath(exe, cf);
-                if (path != null && File.Exists(path) && seen.Add("console|" + path + "|" + context))
-                    into.Add(SaveRow(path, gameId, appId, ConsolePrefix + cf.Pak + ":" + cf.File,
-                                     "Console memory (" + cf.File + ", shared by every " + cf.Pak + " game)", "CONSOLE"));
-            }
         }
 
         private static GameSaveGame SaveRow(string path, string gameId, string appId, string groupId, string groupName, string chip)
@@ -232,9 +242,25 @@ namespace LbIntegrations.Ares
             return false;
         }
 
-        public override bool IsSecondarySaveFile(string filePath) => false;
+        /// <summary>The 64DD's clock beside its disk: part of the disk's save, not a save of its own.</summary>
+        public override bool IsSecondarySaveFile(string filePath)
+        {
+            try { return filePath != null && filePath.EndsWith(".rtc", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.ChangeExtension(filePath, ".disk")); }
+            catch { return false; }
+        }
 
-        public override IReadOnlyList<string> GetCompanionSaveFiles(string primaryFilePath) => Array.Empty<string>();
+        /// <summary>A 64DD disk's save takes its clock along (the game's copy of the console's time.rtc, AresConsoleSession):
+        /// backed up and restored together, so the time the game sees goes on from the save's.</summary>
+        public override IReadOnlyList<string> GetCompanionSaveFiles(string primaryFilePath)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(primaryFilePath) || !primaryFilePath.EndsWith(".disk", StringComparison.OrdinalIgnoreCase)) return Array.Empty<string>();
+                var clock = Path.ChangeExtension(primaryFilePath, ".rtc");
+                return File.Exists(clock) ? new[] { clock } : Array.Empty<string>();
+            }
+            catch { return Array.Empty<string>(); }
+        }
 
         public override bool IsSaveActive(GameSaveBase save, string emulatorApplicationPath)
         {
@@ -264,13 +290,16 @@ namespace LbIntegrations.Ares
                 var folders = FoldersFor(exe, ResolveFullPath(Safe(() => game?.ApplicationPath)), system);
                 var targetDir = save is GameSaveState ? folders.StateTarget : folders.SaveTarget;
                 string target = null;
-                // The console's own file goes back where ares keeps it - for every game of the system.
+                // A session left unfinished is finished first: taking its memory back later would undo this restore.
+                AresConsoleSession.Recover();
+                // A copy of the shared console memory (a build of 06/10 listed it so): it becomes the game's own.
                 if (save.SaveGroupId != null && save.SaveGroupId.StartsWith(ConsolePrefix, StringComparison.OrdinalIgnoreCase))
                 {
                     var parts = save.SaveGroupId.Substring(ConsolePrefix.Length).Split(new[] { ':' }, 2);
                     var cf = parts.Length == 2 ? system?.ConsoleFiles.FirstOrDefault(c => c.Pak == parts[0] && c.File == parts[1]) : null;
-                    target = ConsolePath(exe, cf ?? (parts.Length == 2 ? new AresConsoleFile { Pak = parts[0], File = parts[1], Ext = Path.GetExtension(name) } : null));
-                    if (target == null) return new AddSaveResponse("Could not work out where ares keeps this console's memory.");
+                    var rom = ResolveFullPath(Safe(() => game?.ApplicationPath));
+                    target = cf == null || !cf.PerGame ? null : AresConsoleSession.OwnCopy(exe, rom, system, cf);
+                    if (target == null) return new AddSaveResponse("This copy of the console's memory belongs to no game.");
                     targetDir = Path.GetDirectoryName(target);
                 }
                 if (targetDir == null) return new AddSaveResponse("Could not work out where ares reads this save from.");
@@ -285,6 +314,13 @@ namespace LbIntegrations.Ares
                 Directory.CreateDirectory(targetDir);
                 File.Copy(source, target, overwrite: true);
                 Log.Info("restored " + name + " -> " + targetDir);
+                // Its companions, found beside the copy by its stem (the 64DD's clock with its disk).
+                foreach (var companion in GetCompanionSaveFiles(source))
+                {
+                    var to = Path.Combine(targetDir, Path.GetFileNameWithoutExtension(target) + Path.GetExtension(companion));
+                    File.Copy(companion, to, overwrite: true);
+                    Log.Info("restored with it " + Path.GetFileName(to));
+                }
                 if (save is GameSaveState state) return new AddSaveResponse(StateRow(target, state.GameId, state.AdditionalApplicationId, state.Slot ?? 1, state.SaveGroupId));
                 return new AddSaveResponse(SaveRow(target, save.GameId, save.AdditionalApplicationId, save.SaveGroupId, save.SaveGroupName, save.DisplayChipText));
             }

@@ -158,6 +158,8 @@ namespace LbIntegrations.Probe
             // The ares plugin's pieces, without a host - see AresCheck.
             if (Has(args, "--ares-names")) return AresCheck.Names(asm, Path.GetFullPath(Arg(args, "--ares-names"))) ? 0 : 1;
             if (Has(args, "--ares-line")) return AresCheck.Line(asm) ? 0 : 1;
+            if (Has(args, "--ares-console-real")) { int at = Array.IndexOf(args, "--ares-console-real"); return AresCheck.ConsoleReal(asm, Path.GetFullPath(args[at + 1]), args[at + 2], Path.GetFullPath(args[at + 3])) ? 0 : 1; }
+            if (Has(args, "--ares-console")) return AresCheck.Console_(asm, Path.GetFullPath(Arg(args, "--ares-console"))) ? 0 : 1;
             if (Has(args, "--ares-options")) { int at = Array.IndexOf(args, "--ares-options"); return AresCheck.Options(asm, Path.GetFullPath(args[at + 1]), at + 2 < args.Length && !args[at + 2].StartsWith("--") ? Path.GetFullPath(args[at + 2]) : null) ? 0 : 1; }
             if (Has(args, "--ares-settings")) return AresCheck.Settings(asm, Path.GetFullPath(Arg(args, "--ares-settings")), Arg(args, "--settings")) ? 0 : 1;
             if (Has(args, "--ares-firmware")) return AresCheck.Firmware(asm, Path.GetFullPath(Arg(args, "--ares-firmware"))) ? 0 : 1;
