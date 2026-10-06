@@ -820,6 +820,31 @@ namespace LbIntegrations.Probe
             return path != null;
         }
 
+        /// <summary>--xemu-live-boot --emu <xemu.exe> [--setup]: the Nixx window's button as it is (XemuLive.Boot) - then the session's toml
+        /// looked through for control characters, xemu closed after 20 s. STARTS XEMU.</summary>
+        public static bool LiveBoot(Assembly asm, string exe, bool setup)
+        {
+            _asm = asm;
+            var why = (string)Call("XemuLive", "Boot", exe, setup);
+            Check("XemuLive.Boot started xemu", why == null, why);
+            var session = Path.Combine(Path.GetDirectoryName(exe), "xemu-session.toml");
+            if (File.Exists(session))
+            {
+                var lines = File.ReadAllLines(session);
+                Console.WriteLine("  " + session + ": " + lines.Length + " lines");
+                bool clean = true;
+                for (int i = 0; i < lines.Length; i++)
+                    if (lines[i].Any(c => c < 32 && c != 9)) { clean = false; Console.WriteLine("  CONTROL CHAR line " + (i + 1) + ": " + string.Concat(lines[i].Select(c => c < 32 ? "<" + ((int)c).ToString("X2") + ">" : c.ToString()))); }
+                Check("no control character in the session's toml", clean);
+                var open = lines.Where(l => System.Text.RegularExpressions.Regex.IsMatch(l, @"^\s*[\w.]+\s*=\s*'") && (l.Count(c => c == (char)39) % 2 != 0)).ToList();
+                Check("every literal value in it closed", open.Count == 0, string.Join(" | ", open));
+                File.Copy(session, Path.Combine(Path.GetTempPath(), "lbip-live-session.toml"), true);
+            }
+            System.Threading.Thread.Sleep(20000);
+            foreach (var p in System.Diagnostics.Process.GetProcessesByName("xemu")) { try { if (p.MainModule.FileName.Equals(exe, StringComparison.OrdinalIgnoreCase)) { Console.WriteLine("  xemu alive after 20 s: " + !p.HasExited + ", window \"" + p.MainWindowTitle + "\""); p.CloseMainWindow(); p.WaitForExit(10000); } } catch { } }
+            System.Threading.Thread.Sleep(5000);
+            return _bad == 0;
+        }
         /// <summary>--xemu-live-session --emu <xemu.exe of a lab> --disk <console disk> [--eeprom <eeprom.bin>] --rom <game> [--seconds n]: a
         /// game in Live mode as the plugin makes it (XemuLive, MakeSession live) - the disk and EEPROM imported when the Live console
         /// is not there yet, the session's toml and EEPROM checked, xemu started on it for n seconds (0: not started), the user's
@@ -830,7 +855,8 @@ namespace LbIntegrations.Probe
             var dir = Path.GetDirectoryName(exe);
             string Sha(string p) { using var s = File.OpenRead(p); using var h = System.Security.Cryptography.SHA256.Create(); return BitConverter.ToString(h.ComputeHash(s)).Replace("-", ""); }
             string SavesHash() { var d = Path.Combine(dir, "lbip-saves"); return !Directory.Exists(d) ? "none" : string.Join("|", Directory.GetFiles(d, "*", SearchOption.AllDirectories).OrderBy(f => f).Select(f => Path.GetFileName(f) + ":" + Sha(f))); }
-            if (Call("XemuLive", "Hdd", exe) == null)
+            bool imported = Call("XemuLive", "Hdd", exe) == null;
+            if (imported)
             {
                 var w = System.Diagnostics.Stopwatch.StartNew();
                 var why = (string)Call("XemuLive", "ImportDisk", exe, disk, null);
@@ -839,13 +865,15 @@ namespace LbIntegrations.Probe
                 if (eeprom != null) { why = (string)Call("XemuLive", "ImportEeprom", exe, eeprom); Check("its EEPROM imported", why == null, why); }
             }
             var hdd = (string)Call("XemuLive", "Hdd", exe);
-            Check("the imported disk is the source's, byte for byte", hdd != null && new FileInfo(hdd).Length == new FileInfo(disk).Length && Sha(hdd) == Sha(disk));
+            if (imported) Check("the imported disk is the source's, byte for byte", hdd != null && new FileInfo(hdd).Length == new FileInfo(disk).Length && Sha(hdd) == Sha(disk));
+            else Console.WriteLine("  the Live console already there: " + hdd);
             var savesBefore = SavesHash();
             var toml = Path.Combine(dir, "xemu.toml");
             var tomlBefore = File.ReadAllText(toml);
 
-            var d = Call("XemuDisc", "Describe", rom);
-            var xbe = Get(d, "Xbe");
+            var none = rom.EndsWith("\\none", StringComparison.OrdinalIgnoreCase);
+            var xbe = none ? null : Get(Call("XemuDisc", "Describe", rom), "Xbe");
+            if (none) rom = null;
             var options = (Dictionary<string, string>)Call("XemuOptions", "Effective", "probe-live");
             var m = T("XemuPlugin").GetMethod("MakeSession", Any);
             var args = new object[] { exe, "live", xbe, options, rom, null, null, true };
@@ -854,7 +882,10 @@ namespace LbIntegrations.Probe
             Check("the Live session made", problem == null, problem);
             Check("on the Live console", (string)args[5] == hdd, args[5] as string);
             var session = File.ReadAllText(Path.Combine(dir, "xemu-session.toml"));
+            var lines = File.ReadAllLines(Path.Combine(dir, "xemu-session.toml"));
+            for (int li = 0; li < lines.Length; li++) if (lines[li].Any(c => c < 32 && c != 9)) Console.WriteLine("  CONTROL CHAR line " + (li + 1) + ": " + string.Concat(lines[li].Select(c => c < 32 ? "<" + ((int)c).ToString("X2") + ">" : c.ToString())));
             Check("the session's toml: hdd_path the Live console", session.Contains("hdd_path = " + Call("XemuToml", "Literal", hdd)));
+            Check("no disc: dvd_path = '' (an empty literal, closed)", rom != null || session.Contains("dvd_path = " + (char)39 + (char)39 + "\n") || session.Contains("dvd_path = " + (char)39 + (char)39 + "\r"));
             Check("the session's toml: [net] enable = true, backend = 'nat'", System.Text.RegularExpressions.Regex.IsMatch(session, @"\[net\][^\[]*enable = true[^\[]*backend = 'nat'"));
             var eep = T("Eeprom.XemuEeprom");
             byte[] Key(string p) => (byte[])Get(eep.GetMethod("Open", Any).Invoke(null, new object[] { File.ReadAllBytes(p) }), "HddKey");

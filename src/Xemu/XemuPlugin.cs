@@ -435,7 +435,7 @@ namespace LbIntegrations.Xemu
                 ("sys.files", "flashrom_path", XemuToml.Literal(XemuPaths.FlashPath(exe))),
                 ("sys.files", "eeprom_path", XemuToml.Literal(eeprom ?? baseEeprom)),
                 ("sys.files", "hdd_path", XemuToml.Literal(hdd)),
-                ("sys.files", "dvd_path", dvd != null ? XemuToml.Literal(dvd) : "'"),
+                ("sys.files", "dvd_path", dvd != null ? XemuToml.Literal(dvd) : "''"),
             };
             set.AddRange(XemuOptions.TomlOf(options));
             set.Add(("net", "enable", "true"));
