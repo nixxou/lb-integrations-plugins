@@ -107,6 +107,9 @@ namespace LbIntegrations.Xemu
             states.Controls.Add(sp);
             stack.Controls.Add(states);
 
+            // Xbox Live on Insignia (XemuLive, 06/10): the Live console, its setup.
+            stack.Controls.Add(XemuLiveCard.Create(exe));
+
             // The compatibility list, every game's (Mehdi, 05/10): downloaded whole again here too, the date of the last one.
             var compat = XemuGameForm.Group("xemu's compatibility list (xemu.app)");
             var cl = LbIntegrations.Lbip.LbipListRefresh.Row("xemu's compatibility list",
@@ -125,7 +128,8 @@ namespace LbIntegrations.Xemu
                 + "for every game in xemu's own window, for one game in its Options window.",
                 560, new Padding(4, 2, 0, 4)));
             var toml = exe != null ? XemuTomlDoc.Load(XemuPaths.TomlOf(exe)) : null;
-            _rows = new XemuOptionRows(s, XemuOptionRows.EveryGameFallback(toml), o => !o.IsXemuSetting);
+            // Live mode is a game's own choice (XemuLive): not on this page.
+            _rows = new XemuOptionRows(s, XemuOptionRows.EveryGameFallback(toml), o => !o.IsXemuSetting && o.Key != "live");
             stack.Controls.Add(XemuOptionRows.Legend("Not set: the default"));
             stack.Controls.Add(_rows);
 

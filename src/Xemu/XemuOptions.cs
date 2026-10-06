@@ -176,11 +176,18 @@ namespace LbIntegrations.Xemu
             new XemuOption { Key = "disc.media_patch", Group = "Disc", Label = "Media patch", Bool = true, Default = "on",
                              Help = "extract-xiso's patch, made on the fly in the disc's .xbe files: some games stay on a black screen without it "
                                     + "(Batman: Rise of Sin Tzu). Your files are never written." },
+
+            // ── Xbox Live (XemuLive) - a game's own option only, never every game's ──
+            new XemuOption { Key = "live", Group = "Xbox Live", Label = "Play online (Insignia)", Bool = true, Default = "off",
+                             Help = "The game starts on the Live console - the console disk with Microsoft's dashboard you imported in the Nixx "
+                                    + "window, registered with Insignia, its account and the game's updates on it - with xemu's network on. "
+                                    + "No save and no savestate of the game are handled then: its own console and its save stay as they were." },
         };
 
         /// <summary>The short sentences a window shows (Mehdi, 05/10), the option's whole Help in its tooltip.</summary>
         private static readonly Dictionary<string, string> Shorts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
+            ["live"] = "On the Live console, online - no save or savestate handled.",
             ["display.gpu"] = "Vulkan only. On a machine with two cards, xemu may pick the slower one.",
             ["display.menubar"] = "Hidden by default: no Machine / View / Debug / Help bar over the game.",
             ["console.region"] = "The game's own: an Xbox shows a black screen for a game of another region.",

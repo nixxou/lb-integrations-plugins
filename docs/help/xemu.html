@@ -59,6 +59,17 @@
   </ul>
 </section>
 
+<section id="live"><h2>Playing online (Insignia)</h2>
+  <p><a href="https://insignia.live">Insignia</a> brings back Xbox Live for the original Xbox. The plugin plays online games on <b>one Live console</b>, kept apart from the games' own consoles. Once:</p>
+  <ol>
+    <li>Get a console disk that has <b>Microsoft's dashboard</b> (5960) - a <code>.qcow2</code>, or a raw image of your Xbox's disk. xemu's own dashboard has no Xbox Live section, and Microsoft's is not ours to ship.</li>
+    <li>In <b>Tools &gt; Nixx Integration Plugins Configuration</b>, page <b>xemu</b>, card <b>Xbox Live (Insignia)</b>: <b>Import a console disk...</b> It is copied; your file is never written. If the disk comes from a real Xbox, import its <code>eeprom.bin</code> too.</li>
+    <li><b>Run Insignia setup</b>: the Setup Assistant (downloaded from Insignia) starts on the Live console. <b>Troubleshoot</b> checks it, <b>Register Xbox</b> registers it.</li>
+    <li>Ask <a href="https://insignia.live">insignia.live</a> for a subscription code (by e-mail). <b>Start the Live console</b>, go to <b>Xbox Live</b> and make your account: gamertag, the code, the <b>same e-mail</b>, and the test card <code>4111 1111 1111 1111</code>. If the Setup Assistant said the DNS was wrong, set <code>46.101.64.175</code> in Settings &gt; Network.</li>
+  </ol>
+  <p>Then, in a game's window (right-click, <b>Nixx-Xemu : Options...</b>, tab <b>Console &amp; disc</b>), tick <b>Play online (Insignia)</b>. That game now starts on the Live console with xemu's network on. Its updates come from Insignia and stay on that console. <b>No save and no savestate of it are handled</b> while it is in Live mode: its own console and its save stay as they were.</p>
+  <p>The Live console's EEPROM is made once, with your console's identity, and never changes after: it is the console Insignia registered.</p>
+</section>
 <section id="saves"><h2>Saves</h2>
   <p>A game's console is one small file, <code>hdd\games\&lt;game id&gt;.qcow2</code>. It holds everything the game saved. LaunchBox's <b>Backup</b> and <b>Restore</b> work with that file. Deleting the save gives the game a fresh console next time.</p>
 </section>

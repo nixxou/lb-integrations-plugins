@@ -552,6 +552,15 @@ reboot every loopback connection of AIM's driver was refused (STATUS_CONNECTION_
 memory unaffected. Batman's XISO through it: 1.9 GB/s, 0.054 ms per random 2 KB read (the port: 0.8 GB/s, 0.24 ms, 04/10);
 its ZArchive 0.8 GB/s, 0.10 ms, byte-identical; its CHD 54 MB/s, 0.59 ms - decompression, not the transport, dominates.
 
+**Playing online on Insignia - the Live console** (`src/Xemu/XemuLive.cs`, 06/10). Insignia's Setup Assistant
+(`insignia-live/setup-assistant-release`, `Insignia-Setup.iso` for xemu) checks the console (EEPROM, a non-zero HDD key,
+DNS) and registers it; the account is made in the Xbox Live section of Microsoft's dashboard, which xemu's has not and
+which is not ours to ship. So the user imports a console disk that has it (copied into `<xemu>\live\`), and ONE Live
+console serves every game whose option `live` is on: its EEPROM made once with the pack's identity (or the source console's,
+imported) and kept as it is - the registered console - the game's region and video put on the session's copy; xemu's
+`[net] enable = true`, `backend = 'nat'` for the session (xemu cannot give the guest another DNS - it is set once in the
+dashboard); no save, no savestate. Measured 06/10: a disk with the 5960 dashboard, all the Setup Assistant's checks green
+through NAT, registered, an account made, Halo 2 updated by Insignia and signed in - on the plugin's own session too.
 **A CHD decoded on several cores** (`src/Shared.Disc/ChdParallel.cs`, `chd_threads=0|2|4|8` in `ramdisk.ini`, default 4,
 helper 1.13): read in sequence, the next 32 MB are decoded ahead by worker threads, each with its own `ChdFile`, by batches
 of 64 hunks; a read at random stays one hunk on the caller's thread. Measured 06/10 on Batman's CHD (891 200 hunks of 4 KB):

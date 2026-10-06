@@ -390,7 +390,9 @@ namespace LbIntegrations.Xemu
                 // ITS OWN CONSOLE: made over the pristine one at the game's first launch.
                 var titleId = info.Xbe?.TitleId > 0 ? info.Xbe.TitleIdText : null;
                 if (titleId == null) { XemuDisc.Release(info); return Refuse(Path.GetFileName(rom) + " cannot be launched: its title id could not be read."); }
-                var problemConsole = MakeSession(exe, titleId, info.Xbe, options, dvd, out var hdd, out var set);
+                // LIVE MODE (its option "live"): on the Live console, online, no save or savestate of its own (XemuLive).
+                bool live = options.TryGetValue("live", out var lv) && lv == "on";
+                var problemConsole = MakeSession(exe, titleId, info.Xbe, options, dvd, out var hdd, out var set, live);
                 if (problemConsole != null) { XemuDisc.Release(info); return Refuse(Path.GetFileName(rom) + " cannot be launched: " + problemConsole); }
                 Log.Info("launch: " + Path.GetFileName(rom) + " (" + titleId + " \"" + info.Xbe?.TitleName + "\", " + info.Kind + ") on " + Path.GetFileName(hdd)
                          + ", " + Path.GetFileName(sessionToml) + " with " + string.Join(", ", set.Skip(6).Select(s => s.Item1 + "." + s.Item2 + "=" + s.Item3)));
@@ -398,7 +400,7 @@ namespace LbIntegrations.Xemu
 
                 var line = CommandLineFor(Safe(() => args?.CurrentCommandLine) ?? "", dvd, rom, sessionToml);
                 Log.Info("command line: " + line);
-                XemuSession.Watch(exe, hdd, info);
+                XemuSession.Watch(exe, hdd, info, live);
                 return new PrepareForLaunchResponse(success: true) { NewCommandLine = line };
             }
             catch (Exception ex)
@@ -408,12 +410,47 @@ namespace LbIntegrations.Xemu
             }
         }
 
+        /// <summary>A session on THE LIVE CONSOLE (XemuLive - a game in Live mode, or the console booted from the Nixx window): its
+        /// disk, no save put in, no savestate, no save key (Mehdi, 06/10: "pas de gestion save/savestate pour celles-là"); its
+        /// EEPROM the one Insignia registered (XemuLive.EnsureEeprom), kept as it is but for the game's region and video;
+        /// xemu's network on, NAT - [net] goes back to the user's own when the session ends (XemuSessionConfig).</summary>
+        private static string MakeLiveSession(string exe, XbeInfo xbe, Dictionary<string, string> options, string dvd,
+                                              out string hdd, out List<(string, string, string)> set)
+        {
+            set = null;
+            hdd = XemuLive.Hdd(exe);
+            if (hdd == null) return "there is no Live console - import a console disk with Microsoft's dashboard in the Nixx window, page xemu, card \"Xbox Live (Insignia)\".";
+            var said = new List<string> { "the Live console" };
+            var baseEeprom = XemuLive.EnsureEeprom(exe, said) ?? XemuPaths.Eeprom(exe);
+            options["console.hddkey"] = "xemu";              // its identity as Insignia registered it
+            options.Remove("console.hddkey.bytes");
+            string eeprom = null;
+            try { eeprom = Eeprom.XemuEeprom.Prepare(baseEeprom, XemuPaths.SessionEeprom(exe), xbe, options, said); }
+            catch (Exception ex) { Log.Warn("live: its settings could not be made", ex); }
+            Log.Info("console: " + string.Join(", ", said));
+            set = new List<(string, string, string)>
+            {
+                ("general", "show_welcome", "false"),
+                ("sys.files", "bootrom_path", XemuToml.Literal(XemuPaths.McpxPath(exe))),
+                ("sys.files", "flashrom_path", XemuToml.Literal(XemuPaths.FlashPath(exe))),
+                ("sys.files", "eeprom_path", XemuToml.Literal(eeprom ?? baseEeprom)),
+                ("sys.files", "hdd_path", XemuToml.Literal(hdd)),
+                ("sys.files", "dvd_path", dvd != null ? XemuToml.Literal(dvd) : "'"),
+            };
+            set.AddRange(XemuOptions.TomlOf(options));
+            set.Add(("net", "enable", "true"));
+            set.Add(("net", "backend", XemuToml.Literal("nat")));
+            XemuSessionConfig.Make(XemuPaths.TomlOf(exe), XemuSessionConfig.SessionPath(exe), set);
+            return null;
+        }
+
         /// <summary>A game's session made ready - shared by its launch and by booting its console without a disc (the game's
         /// menu): its save into its console, its console made, its EEPROM, its certificate key, its session's xemu.toml.
         /// <paramref name="dvd"/> null: no disc. Null when ready, else why not.</summary>
         internal static string MakeSession(string exe, string titleId, XbeInfo xbe, Dictionary<string, string> options, string dvd,
-                                           out string hdd, out List<(string, string, string)> set)
+                                           out string hdd, out List<(string, string, string)> set, bool live = false)
         {
+            if (live) return MakeLiveSession(exe, xbe, options, dvd, out hdd, out set);
             var mcpx = XemuPaths.McpxPath(exe);
             var flash = XemuPaths.FlashPath(exe);
             var base_ = XemuPaths.BaseHdd(exe);

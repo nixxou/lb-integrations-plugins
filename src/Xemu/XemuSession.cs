@@ -18,7 +18,8 @@ namespace LbIntegrations.Xemu
     {
         private const int AppearSeconds = 60, GoneSeconds = 2;
 
-        public static void Watch(string exe, string gameHdd, XemuDiscInfo disc = null)
+        /// <summary><paramref name="live"/>: a session on the Live console (XemuLive) - no save captured, no savestate exported.</summary>
+        public static void Watch(string exe, string gameHdd, XemuDiscInfo disc = null, bool live = false)
         {
             var hold = LbipLaunchGate.HoldOpen();
             Task.Run(() =>
@@ -47,11 +48,15 @@ namespace LbIntegrations.Xemu
                     Standalone(exe, "its game is over");
                     XemuDiscLink.Remove(exe);
                     XemuDisc.Release(disc);
-                    // The save the host sees, brought up to date with the console the game just wrote (XemuSaves).
-                    try { XemuSaveFiles.Sync(exe, System.IO.Path.GetFileNameWithoutExtension(gameHdd), LbIntegrations.Xbox.XboxSyncMode.SessionEnd); }
-                    catch (Exception ex) { Log.Warn("session: the save could not be captured", ex); }
-                    // The snapshots made during it, exported for LaunchBox (Saves\XemuStates).
-                    XemuSaveFiles.States(exe, System.IO.Path.GetFileNameWithoutExtension(gameHdd), rewrite: false);
+                    if (!live)
+                    {
+                        // The save the host sees, brought up to date with the console the game just wrote (XemuSaves).
+                        try { XemuSaveFiles.Sync(exe, System.IO.Path.GetFileNameWithoutExtension(gameHdd), LbIntegrations.Xbox.XboxSyncMode.SessionEnd); }
+                        catch (Exception ex) { Log.Warn("session: the save could not be captured", ex); }
+                        // The snapshots made during it, exported for LaunchBox (Saves\XemuStates).
+                        XemuSaveFiles.States(exe, System.IO.Path.GetFileNameWithoutExtension(gameHdd), rewrite: false);
+                    }
+                    else Log.Info("session: on the Live console - no save, no savestate");
                     // The compatibility list asked again when it is older than a day (XemuCompat).
                     XemuCompat.RefreshSoon();
                 }

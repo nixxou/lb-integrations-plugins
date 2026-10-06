@@ -820,6 +820,70 @@ namespace LbIntegrations.Probe
             return path != null;
         }
 
+        /// <summary>--xemu-live-session --emu <xemu.exe of a lab> --disk <console disk> [--eeprom <eeprom.bin>] --rom <game> [--seconds n]: a
+        /// game in Live mode as the plugin makes it (XemuLive, MakeSession live) - the disk and EEPROM imported when the Live console
+        /// is not there yet, the session's toml and EEPROM checked, xemu started on it for n seconds (0: not started), the user's
+        /// toml put back, the saves folder untouched. STARTS XEMU when n > 0.</summary>
+        public static bool LiveSession(Assembly asm, string exe, string disk, string eeprom, string rom, int seconds)
+        {
+            _asm = asm;
+            var dir = Path.GetDirectoryName(exe);
+            string Sha(string p) { using var s = File.OpenRead(p); using var h = System.Security.Cryptography.SHA256.Create(); return BitConverter.ToString(h.ComputeHash(s)).Replace("-", ""); }
+            string SavesHash() { var d = Path.Combine(dir, "lbip-saves"); return !Directory.Exists(d) ? "none" : string.Join("|", Directory.GetFiles(d, "*", SearchOption.AllDirectories).OrderBy(f => f).Select(f => Path.GetFileName(f) + ":" + Sha(f))); }
+            if (Call("XemuLive", "Hdd", exe) == null)
+            {
+                var w = System.Diagnostics.Stopwatch.StartNew();
+                var why = (string)Call("XemuLive", "ImportDisk", exe, disk, null);
+                Check("the disk imported as the Live console", why == null, why);
+                Console.WriteLine("    in " + w.Elapsed.TotalSeconds.ToString("0.0") + " s: " + Call("XemuLive", "Hdd", exe));
+                if (eeprom != null) { why = (string)Call("XemuLive", "ImportEeprom", exe, eeprom); Check("its EEPROM imported", why == null, why); }
+            }
+            var hdd = (string)Call("XemuLive", "Hdd", exe);
+            Check("the imported disk is the source's, byte for byte", hdd != null && new FileInfo(hdd).Length == new FileInfo(disk).Length && Sha(hdd) == Sha(disk));
+            var savesBefore = SavesHash();
+            var toml = Path.Combine(dir, "xemu.toml");
+            var tomlBefore = File.ReadAllText(toml);
+
+            var d = Call("XemuDisc", "Describe", rom);
+            var xbe = Get(d, "Xbe");
+            var options = (Dictionary<string, string>)Call("XemuOptions", "Effective", "probe-live");
+            var m = T("XemuPlugin").GetMethod("MakeSession", Any);
+            var args = new object[] { exe, "live", xbe, options, rom, null, null, true };
+            string problem;
+            try { problem = (string)m.Invoke(null, args); } catch (TargetInvocationException ex) { throw ex.InnerException ?? ex; }
+            Check("the Live session made", problem == null, problem);
+            Check("on the Live console", (string)args[5] == hdd, args[5] as string);
+            var session = File.ReadAllText(Path.Combine(dir, "xemu-session.toml"));
+            Check("the session's toml: hdd_path the Live console", session.Contains("hdd_path = " + Call("XemuToml", "Literal", hdd)));
+            Check("the session's toml: [net] enable = true, backend = 'nat'", System.Text.RegularExpressions.Regex.IsMatch(session, @"\[net\][^\[]*enable = true[^\[]*backend = 'nat'"));
+            var eep = T("Eeprom.XemuEeprom");
+            byte[] Key(string p) => (byte[])Get(eep.GetMethod("Open", Any).Invoke(null, new object[] { File.ReadAllBytes(p) }), "HddKey");
+            var liveEeprom = Path.Combine(dir, "live", "eeprom.bin");
+            Check("the session's EEPROM keeps the Live console's HDD key", Key(Path.Combine(dir, "eeprom-session.bin")).SequenceEqual(Key(liveEeprom)));
+            if (eeprom != null) Check("... the imported EEPROM's, as it is", Sha(liveEeprom) == Sha(eeprom));
+
+            if (seconds > 0)
+            {
+                var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe, "-config_path \"" + Path.Combine(dir, "xemu-session.toml") + "\"") { UseShellExecute = false, WorkingDirectory = dir });
+                Console.WriteLine("  xemu started, pid " + p.Id + "; " + seconds + " s");
+                System.Threading.Thread.Sleep(seconds * 1000);
+                p.CloseMainWindow();
+                if (!p.WaitForExit(15000)) { p.Kill(); p.WaitForExit(); }
+            }
+            Call("XemuSessionConfig", "MergeBack", toml, Path.Combine(dir, "xemu-session.toml"));
+            var tomlAfter = File.ReadAllText(toml);
+            Check("the user's xemu.toml has no [net] it did not have", tomlBefore.Contains("[net]") || !tomlAfter.Contains("[net]"), tomlAfter.Contains("[net]") ? "a [net] table was left" : null);
+            Check("the saves folder untouched", SavesHash() == savesBefore);
+            return _bad == 0;
+        }
+        /// <summary>--xemu-live-inspect <disk>: what a console disk would be as the Live console (XemuLive.Inspect). Reads only.</summary>
+        public static bool LiveInspect(Assembly asm, string disk)
+        {
+            _asm = asm;
+            var d = Call("XemuLive", "Inspect", disk);
+            foreach (var f in d.GetType().GetFields(Any)) { var v = f.GetValue(d); Console.WriteLine("  " + f.Name + " = " + (v is string[] a ? string.Join(", ", a) : v)); }
+            return Get(d, "Problem") == null;
+        }
         /// <summary>--xemu-zar &lt;zar&gt; --out &lt;dir&gt; [--iso &lt;reference&gt;]: a ZArchive as xemu gets it (05/10) - told a ZArchive with
         /// its game read, its volume BUILT (ZarXiso) listed back by the XDVDFS reader with the same files, the media patch's
         /// places found in it (as in the reference image's, when given), then the copy made by Present (no disk attached) and
