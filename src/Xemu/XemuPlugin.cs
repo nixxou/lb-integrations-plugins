@@ -61,7 +61,7 @@ namespace LbIntegrations.Xemu
 
         private static IEnumerable<LbCatalogEmulator> MetadataRows()
         {
-            const string extensions = ".iso; .xiso; .cso; .cci; .chd; .zip; .7z";
+            const string extensions = ".iso; .xiso; .cso; .cci; .chd; .zar; .zip; .7z";   // .zar: a ZArchive, served as an XISO (XemuDisc)
             yield return new LbCatalogEmulator
             {
                 Name = PackName,

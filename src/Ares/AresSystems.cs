@@ -74,7 +74,7 @@ namespace LbIntegrations.Ares
         public static readonly AresSystem[] All =
         {
             new AresSystem { Name = "Atari 2600", Extensions = new[] { ".a26", ".bin" } },
-            new AresSystem { Name = "ColecoVision", Extensions = new[] { ".col", ".rom", ".bin" },
+            new AresSystem { Name = "ColecoVision", Extensions = new[] { ".col" },
                 Firmware = new[] { F("BIOS", "World", "990bf1956f10207d8781b619eb74f89b00d921c8d45c95c334c16c8cceca09ad", "colecovision.rom", "coleco.rom", "bios.col") } },
             new AresSystem { Name = "Famicom", Extensions = new[] { ".nes", ".fc", ".unf", ".unif", ".unh" }, SaveExtensions = new[] { ".ram", ".eeprom", ".flash" } },
             new AresSystem { Name = "Dendy", Extensions = new[] { ".nes", ".fc" }, SaveExtensions = new[] { ".ram", ".eeprom", ".flash" }, SaveFolder = "Famicom", StateFolder = "Famicom" },
@@ -100,7 +100,7 @@ namespace LbIntegrations.Ares
                     new AresFirmwareSpec { Type = "BIOS", Region = "Europe", Sha256 = "477617917a12a30f9f43844909dc2de6e6a617430f5c9a36306c86414a670d50", Names = new[] { "bios_E.sms", "bios_U.sms", "bios.sms" }, Optional = true } } },
             new AresSystem { Name = "Game Gear", Extensions = new[] { ".gg" }, SaveExtensions = new[] { ".ram" },
                 Firmware = new[] { new AresFirmwareSpec { Type = "BIOS", Region = "World", Sha256 = "8c8a21335038285cfa03dc076100c1f0bfadf3e4ff70796f11f3dfaaab60eee2", Names = new[] { "bios.gg", "majesco.gg" }, Optional = true } } },
-            new AresSystem { Name = "Mega Drive", Extensions = new[] { ".md", ".gen", ".bin", ".smd" }, SaveExtensions = new[] { ".ram", ".eeprom" } },
+            new AresSystem { Name = "Mega Drive", Extensions = new[] { ".md", ".gen", ".bin" }, SaveExtensions = new[] { ".ram", ".eeprom" } },
             new AresSystem { Name = "Mega 32X", Extensions = new[] { ".32x" }, SaveExtensions = new[] { ".ram", ".eeprom" }, StateFolder = "Mega Drive" },
             new AresSystem { Name = "Mega CD", Extensions = new[] { ".cue", ".chd" }, SaveExtensions = new[] { ".bram" }, Disc = true, StateFolder = "Mega Drive",
                 Firmware = new[] {
