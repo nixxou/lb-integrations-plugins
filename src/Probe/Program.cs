@@ -153,6 +153,8 @@ namespace LbIntegrations.Probe
             if (Has(args, "--xemu")) return XemuCheck.Run(asm) ? 0 : 1;
             // Xenia's compatibility list: --xenia-compat [--online].
             // The compatibility lists embedded in a plugin, read with nothing downloaded: --compat-embedded [--also <Xemu.dll>].
+            // A launch as LaunchBox makes it, for RASnes9x, bsnes and ares - see SnesFamilyE2E.
+            if (Has(args, "--e2e-launch")) return SnesFamilyE2E.Run(asm, Path.GetFullPath(Arg(args, "--e2e-launch"))) ? 0 : 1;
             // The ares plugin's pieces, without a host - see AresCheck.
             if (Has(args, "--ares-names")) return AresCheck.Names(asm, Path.GetFullPath(Arg(args, "--ares-names"))) ? 0 : 1;
             if (Has(args, "--ares-line")) return AresCheck.Line(asm) ? 0 : 1;
