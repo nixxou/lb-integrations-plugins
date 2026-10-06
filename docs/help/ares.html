@@ -94,8 +94,15 @@
 
 <section id="saves"><h2>Saves and save states</h2>
   <ul>
-    <li>Each system's save files (<code>.ram</code>, <code>.eeprom</code>, <code>.bram</code>, the PlayStation's <code>.card</code>...), beside the game
-    unless you set a saves folder in ares.</li>
+    <li>Each game's save files, beside the game unless you set a saves folder in ares: a cartridge's <code>.ram</code>, <code>.eeprom</code>,
+    <code>.flash</code>, <code>.rtc</code> (and the Super Famicom's <code>.iram</code>, <code>.bsx</code>, <code>.dram</code>), the Famicom Disk System's
+    <code>.d1a</code>..<code>.d2b</code>, the 64DD's <code>.disk</code>, the Neo Geo Pocket's <code>.sav</code>, a tape's recording <code>.wav</code>, the
+    PlayStation's memory card <code>.card</code> and the Nintendo 64's Controller Pak <code>.pak</code>.</li>
+    <li>The console's own memory, ONE file for all its games as on the real machine: the Mega CD's, PC Engine's (HuCard and CD) and
+    LaserActive's backup RAM, the Neo Geo Pocket's system RAM, the WonderSwan's owner EEPROM, the 64DD's clock - in ares's
+    <code>Systems\&lt;console&gt;.sys\</code> folder. It shows under each game of that console as "Console memory (shared...)": restoring it
+    puts back the saves of every game of that console at once.</li>
+    <li>The Neo Geo's memory card is not kept by ares between sessions.</li>
     <li>Save states: <code>.bs1</code> to <code>.bs9</code>. ares ships no key for them: the plugin binds <kbd>F5</kbd> (save) and <kbd>F7</kbd> (load)
     when they are empty, and LaunchBox's pause screen uses them.</li>
   </ul>

@@ -1,16 +1,27 @@
 // Save management for ares - each system's save files and the save states, one FILE each (as the bsnes and RASnes9x
 // plugins, after SuperZsnesSaves).
 //
-// WHERE (ares v148, mia\pak\pak.cpp:154-172 and desktop-ui\program\states.cpp, read 06/10):
+// WHERE (ares v148 - mia\pak\pak.cpp Pak::saveLocation, desktop-ui\emulator\emulator.cpp Emulator::locate,
+// desktop-ui\program\states.cpp; checked file by file against the v148 tag on 06/10):
 //   Paths/Saves empty (ares's default)   beside the game: <game without its extension><ext>, and <game>.bs1 .. .bs9
-//   Paths/Saves set ("D:/Saves/")        <Saves><system>/<game><ext>, the states in <Saves><core>/ - the core's folder
-//                                        is the family's ("Mega Drive" for the 32X and the Mega CD: AresSystems'
-//                                        SaveFolder / StateFolder). Both places are looked in.
-//   THE EXTENSIONS are the system's (mia\medium\*.cpp): .ram .eeprom .flash .rtc for cartridges, .bram for the Mega CD and
-//   the PC Engine CD, .card for the PlayStation's memory card, .d1a.. for the Famicom Disk System - each its own row, so a
-//   cartridge's .ram and its .rtc are both kept.
-//   STATES: .bs1 .. .bs9, slots 1 to 9 (the current slot is 1 at every load). .bsu and .blu, ares's undo copies, are
-//   deleted by ares itself at unload and are not listed.
+//   Paths/Saves set ("D:/Saves/")        <Saves><medium>/<game><ext> - the GAME MEDIUM's saveName() ("Game Boy" for a
+//                                        Game Boy Color game, "Famicom" for Dendy): AresSystems' SaveFolder; the
+//                                        states in <Saves><core>/ - the core's root node ("Mega Drive" for the 32X and
+//                                        the Mega CD, but "Game Boy Color", "SuperGrafx", "MSX2"...: StateFolder).
+//                                        Both places are looked in.
+//   THE EXTENSIONS are the game medium's (mia\medium\*.cpp save()): .ram .eeprom .flash .rtc for cartridges (the PC
+//   Engine's HuCard: .ram), .d1a.. for the Famicom Disk System, .disk for the 64DD, .sav for the Neo Geo Pocket, a tape's
+//   recording as <game>.wav (MSX, ZX Spectrum, SC-3000) - and two files ares writes beside the game for its pads:
+//   the PlayStation's memory card <game>.card, the Nintendo 64's Controller Pak <game>.pak. Each its own row.
+//   THE CONSOLE'S OWN (mia\system\*.cpp: Pak::save without a location): ONE file for every game of the system - the
+//   Mega CD's, the PC Engine's (HuCard and CD alike) and the LaserActive's backup RAM, the Neo Geo Pocket's cpu/apu RAM,
+//   the WonderSwan's owner EEPROM, the 64DD's clock - in <home>\<Pak>.sys\<file> (home: Paths/Home, else ares's
+//   Systems\ folder), or <Saves><Pak>\<Pak><ext> when Paths/Saves is set. Listed under every game of that system, said
+//   shared; a restore puts it back for all of them, as swapping the memory on the real console would.
+//   NOTHING: the Neo Geo's memory card (ares\ng\card\slot.cpp: save() is empty - not kept between sessions), Atari 2600,
+//   ColecoVision, a game's CD.
+//   STATES: .bs1 .. .bs9, slots 1 to 9 (presentation.cpp: range(9); the current slot is 1 at every load). .bsu and .blu,
+//   ares's undo copies, are deleted by ares itself at unload and are not listed.
 // THE GAME'S NAME is the file ares was given: a zip's or a .7z's own name (the .7z is unpacked under it), a .m3u's first
 // disc.
 
@@ -29,6 +40,7 @@ namespace LbIntegrations.Ares
     {
         private const string SavePrefix = "ares:save:";
         private const string StatePrefix = "ares:state:";
+        private const string ConsolePrefix = "ares:console:";
         private const string SaveGroupName = "Save";
         private const string StateGroupName = "Save states";
         private const string StateChipText = "STATE";
@@ -80,6 +92,31 @@ namespace LbIntegrations.Ares
             f.SaveTarget = saveUnder ?? beside;   // pak.cpp:154-172: every system's saves under Paths/Saves when it is set
             f.StateTarget = stateUnder ?? beside;
             return f;
+        }
+
+        /// <summary>Where ares keeps a console's own file (desktop-ui.cpp: mia home = Paths/Home, else locate("Systems/") -
+        /// the exe's folder, then %LOCALAPPDATA%\ares, else the exe's; pak.cpp saveLocation with Paths/Saves set).</summary>
+        internal static string ConsolePath(string exe, AresConsoleFile f)
+        {
+            if (exe == null || f == null) return null;
+            string saves = null, home = null;
+            try
+            {
+                var bml = AresBml.Load(AresLaunch.SettingsOf(exe));
+                saves = bml.Get("Paths/Saves");
+                home = bml.Get("Paths/Home");
+            }
+            catch { }
+            if (!string.IsNullOrWhiteSpace(saves)) return Path.Combine(Path.GetFullPath(saves.Replace('/', Path.DirectorySeparatorChar)), f.Pak, f.Pak + f.Ext);
+            string root;
+            if (!string.IsNullOrWhiteSpace(home)) root = Path.GetFullPath(home.Replace('/', Path.DirectorySeparatorChar));
+            else
+            {
+                var beside = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(exe)), "Systems");
+                var user = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ares", "Systems");
+                root = Directory.Exists(beside) || !Directory.Exists(user) ? beside : user;
+            }
+            return Path.Combine(root, f.Pak + ".sys", f.File);
         }
 
         /// <summary>The system a game runs as, from what the host knows of it - see AresLaunch.SystemFor.</summary>
@@ -139,6 +176,7 @@ namespace LbIntegrations.Ares
                 foreach (var ext in system.SaveExtensions)
                 {
                     var path = Path.Combine(dir, name + ext);
+                    if (string.Equals(path, rom, StringComparison.OrdinalIgnoreCase)) continue;   // a .wav tape is the game, not its recording
                     if (File.Exists(path) && seen.Add("save|" + path + "|" + context))
                         into.Add(SaveRow(path, gameId, appId, SavePrefix + system.Node + ":" + name + ext, SaveGroupName + " (" + ext.TrimStart('.') + ")", ext.TrimStart('.').ToUpperInvariant()));
                 }
@@ -149,6 +187,13 @@ namespace LbIntegrations.Ares
                     if (File.Exists(path) && seen.Add("state|" + path + "|" + context))
                         into.Add(StateRow(path, gameId, appId, slot, StatePrefix + system.Node + ":" + name + ":" + slot));
                 }
+            foreach (var cf in system.ConsoleFiles)
+            {
+                var path = ConsolePath(exe, cf);
+                if (path != null && File.Exists(path) && seen.Add("console|" + path + "|" + context))
+                    into.Add(SaveRow(path, gameId, appId, ConsolePrefix + cf.Pak + ":" + cf.File,
+                                     "Console memory (" + cf.File + ", shared by every " + cf.Pak + " game)", "CONSOLE"));
+            }
         }
 
         private static GameSaveGame SaveRow(string path, string gameId, string appId, string groupId, string groupName, string chip)
@@ -218,9 +263,19 @@ namespace LbIntegrations.Ares
                 var system = SystemOf(emu, Safe(() => game?.Id), Safe(() => game?.Platform), Safe(() => game?.ApplicationPath));
                 var folders = FoldersFor(exe, ResolveFullPath(Safe(() => game?.ApplicationPath)), system);
                 var targetDir = save is GameSaveState ? folders.StateTarget : folders.SaveTarget;
+                string target = null;
+                // The console's own file goes back where ares keeps it - for every game of the system.
+                if (save.SaveGroupId != null && save.SaveGroupId.StartsWith(ConsolePrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    var parts = save.SaveGroupId.Substring(ConsolePrefix.Length).Split(new[] { ':' }, 2);
+                    var cf = parts.Length == 2 ? system?.ConsoleFiles.FirstOrDefault(c => c.Pak == parts[0] && c.File == parts[1]) : null;
+                    target = ConsolePath(exe, cf ?? (parts.Length == 2 ? new AresConsoleFile { Pak = parts[0], File = parts[1], Ext = Path.GetExtension(name) } : null));
+                    if (target == null) return new AddSaveResponse("Could not work out where ares keeps this console's memory.");
+                    targetDir = Path.GetDirectoryName(target);
+                }
                 if (targetDir == null) return new AddSaveResponse("Could not work out where ares reads this save from.");
 
-                var target = Path.Combine(targetDir, name);
+                target = target ?? Path.Combine(targetDir, name);
                 if (File.Exists(target))
                 {
                     bool overwrite = true;
@@ -277,7 +332,8 @@ namespace LbIntegrations.Ares
 
         private static bool IsOurs(GameSaveBase save)
             => save?.SaveGroupId != null && (save.SaveGroupId.StartsWith(SavePrefix, StringComparison.OrdinalIgnoreCase)
-                                             || save.SaveGroupId.StartsWith(StatePrefix, StringComparison.OrdinalIgnoreCase));
+                                             || save.SaveGroupId.StartsWith(StatePrefix, StringComparison.OrdinalIgnoreCase)
+                                             || save.SaveGroupId.StartsWith(ConsolePrefix, StringComparison.OrdinalIgnoreCase));
 
         private static string Safe(Func<string> read)
         {
