@@ -144,12 +144,14 @@ namespace LbIntegrations.Probe
                 Check("the install's shaders listed, as ares names them", shaders.Count > 10 && shaders.All(s => s.EndsWith(".slangp") && !s.Contains('\\')));
                 var shader = shaders.FirstOrDefault(s => s.StartsWith("crt/")) ?? shaders.FirstOrDefault();
                 // Every game's: a few; the game's own: more, one of them over every game's.
-                var own = new[] { "Output=fixed3", "Shader=" + shader, "Aspect=anamorphic", "AudioDriver=xaudio", "N64ControllerPak=1984", "MdTmss=true", "Defocus=allow" };
-                File.WriteAllLines(Path.Combine(copy, "settings.ini"), new[] { "Driver=opengl46", "Region=pal-ntsc-j", "Luminance=0.75", "N64Quality=hd", "Output=integer" });
+                var own = new[] { "Output=fixed3", "Shader=" + shader, "Aspect=anamorphic", "AudioDriver=xaudio", "N64ControllerPak=1984", "MdTmss=true", "Defocus=allow",
+                                  "Driver=opengl46", "Region=pal-ntsc-j", "Luminance=0.75", "N64Quality=hd" };
+                // Every game's: the screen alone is the page's; a value an older build kept for another option is not read.
+                File.WriteAllLines(Path.Combine(copy, "settings.ini"), new[] { "Screen=windowed", "Driver=d3d", "Output=integer" });
                 File.WriteAllLines(Path.Combine(copy, "games", "probe-game.ini"), own);
                 T(asm, "AresSettings").GetField("PathOverride", Any).SetValue(null, Path.Combine(copy, "settings.ini"));
                 var before = AresBmlLines(target);
-                var args = (System.Collections.Generic.List<string>)T(asm, "AresSettings").GetMethod("SettingArgs", Any).Invoke(null, new object[] { "probe-game" });
+                var args = (System.Collections.Generic.List<string>)T(asm, "AresSettings").GetMethod("SettingArgs", Any, null, new[] { typeof(string) }, null).Invoke(null, new object[] { "probe-game" });
                 Console.WriteLine("  " + string.Join("  ", args));
                 foreach (var kv in new (string, string)[] {
                     ("Video/Driver", "OpenGL 4.6"), ("Boot/Prefer", "PAL,NTSC-J,NTSC-U"), ("Video/Luminance", "0.75"), ("Video/Quality", "HD"),
@@ -173,14 +175,14 @@ namespace LbIntegrations.Probe
                 Check("a value with spaces quoted", line.Contains("--setting \"Video/Driver=OpenGL 4.6\"") && line.Contains("\"Nintendo64/ControllerPakBankString=1984KiB (Maximum)\""));
                 // A game with none of its own: every game's integer scale, no shader given.
                 File.Delete(Path.Combine(copy, "games", "probe-game.ini"));
-                var plain = (System.Collections.Generic.List<string>)T(asm, "AresSettings").GetMethod("SettingArgs", Any).Invoke(null, new object[] { "probe-game" });
-                Check("every game's: Integer, no shader", plain.Contains("Video/Output=Integer") && !plain.Any(a => a.StartsWith("Video/Shader=")), string.Join(" ", plain));
+                var plain = (System.Collections.Generic.List<string>)T(asm, "AresSettings").GetMethod("SettingArgs", Any, null, new[] { typeof(string) }, null).Invoke(null, new object[] { "probe-game" });
+                Check("a game with none of its own: nothing passed (every game's settings are ares's own; an old Driver/Output in settings.ini ignored)", plain.Count == 0, string.Join(" ", plain));
                 // The real ares on a game with them: it runs, and puts its file back as it was.
                 if (keep != null && File.Exists(keep))
                 {
                     var rom = Path.Combine(copy, Path.GetFileName(keep)); File.Copy(keep, rom);
                     File.WriteAllLines(Path.Combine(copy, "games", "probe-game.ini"), own);
-                    var real = (System.Collections.Generic.List<string>)T(asm, "AresSettings").GetMethod("SettingArgs", Any).Invoke(null, new object[] { "probe-game" });
+                    var real = (System.Collections.Generic.List<string>)T(asm, "AresSettings").GetMethod("SettingArgs", Any, null, new[] { typeof(string) }, null).Invoke(null, new object[] { "probe-game" });
                     var fileBefore = File.ReadAllBytes(target);
                     var p = Process.Start(new ProcessStartInfo(exe, "--settings-file \"" + target + "\" " + string.Join(" ", real.Select(a => "--setting \"" + a + "\"")) + " --system \"Super Famicom\" \"" + rom + "\"") { UseShellExecute = false });
                     for (int i = 0; i < 40 && p.MainWindowHandle == IntPtr.Zero && !p.HasExited; i++) { System.Threading.Thread.Sleep(250); p.Refresh(); }
@@ -286,6 +288,66 @@ namespace LbIntegrations.Probe
         }
 
         [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
+
+        /// <summary>--ares-window &lt;ares.exe&gt; &lt;out dir&gt; &lt;platform&gt; &lt;rom&gt;: a game's window, built off screen with
+        /// a stub game - one picture per tab in out dir, the shader menu's first levels printed.</summary>
+        public static bool Window(Assembly asm, string exe, string outDir, string platform, string rom)
+        {
+            _bad = 0;
+            Directory.CreateDirectory(outDir);
+            var data = Path.Combine(Path.GetTempPath(), "lbip-ares-win-" + Guid.NewGuid().ToString("N"));
+            T(asm, "AresSettings").GetField("PathOverride", Any).SetValue(null, Path.Combine(data, "settings.ini"));
+            T(asm, "AresGameForm").GetField("ExeForProbe", Any).SetValue(null, exe);
+            Exception failed = null;
+            var thread = new System.Threading.Thread(() =>
+            {
+                try
+                {
+                    var game = StubGame.With(StubGame.Create("probe-window", Path.GetFileNameWithoutExtension(rom), rom), "Platform", platform);
+                    var arr = Array.CreateInstance(typeof(Unbroken.LaunchBox.Plugins.Data.IGame), 1); arr.SetValue(game, 0);
+                    using var form = (System.Windows.Forms.Form)Activator.CreateInstance(T(asm, "AresGameForm"), BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance, null, new object[] { arr }, null);
+                    form.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
+                    form.Location = new System.Drawing.Point(-4000, -4000);
+                    form.ShowInTaskbar = false;
+                    form.Show();
+                    System.Windows.Forms.Application.DoEvents();
+                    var tabs = Find<System.Windows.Forms.TabControl>(form);
+                    for (int i = 0; i < tabs.TabCount; i++)
+                    {
+                        tabs.SelectedIndex = i;
+                        System.Windows.Forms.Application.DoEvents();
+                        using var bmp = new System.Drawing.Bitmap(form.Width, form.Height);
+                        form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, form.Width, form.Height));
+                        var png = Path.Combine(outDir, (i + 1) + "-" + tabs.TabPages[i].Text.Replace(' ', '-') + ".png");
+                        bmp.Save(png);
+                        Console.WriteLine("  tab " + tabs.TabPages[i].Text + " -> " + png);
+                    }
+                    // The shader menu, as built when the button is clicked.
+                    var rows = (System.Collections.IEnumerable)form.GetType().GetField("_rows", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(form);
+                    var shaderRow = rows.Cast<object>().First(r => (string)F(F(r, "O"), "Key") == "Shader");
+                    var menu = (System.Windows.Forms.ContextMenuStrip)form.GetType().GetMethod("ShaderMenu", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(form, new[] { shaderRow });
+                    var top = menu.Items.Cast<System.Windows.Forms.ToolStripItem>().ToList();
+                    Console.WriteLine("  shader menu: " + string.Join(" | ", top.Take(12).Select(it => it.Text + (it is System.Windows.Forms.ToolStripMenuItem m && m.DropDownItems.Count > 0 ? " >" + m.DropDownItems.Count : ""))) + " ... (" + top.Count + " at the top)");
+                    var crt = top.OfType<System.Windows.Forms.ToolStripMenuItem>().FirstOrDefault(m => m.Text == "crt");
+                    Check("folders as sub-menus, as ares (a crt sub-menu)", crt != null && crt.DropDownItems.Count > 5, crt == null ? "none" : crt.DropDownItems.Count + " in crt");
+                    Check("the root presets before the folders (bilinear, nearest)", top.FindIndex(t => t.Text == "bilinear") > 0 && top.FindIndex(t => t.Text == "bilinear") < top.FindIndex(t => t.Text == "crt"));
+                    form.Close();
+                }
+                catch (Exception ex) { failed = ex; }
+            });
+            thread.SetApartmentState(System.Threading.ApartmentState.STA);
+            thread.Start(); thread.Join();
+            T(asm, "AresSettings").GetField("PathOverride", Any).SetValue(null, null);
+            if (failed != null) Check("ran", false, (failed.InnerException ?? failed).ToString());
+            Console.WriteLine(_bad == 0 ? "  all good" : "  " + _bad + " FAILED");
+            return _bad == 0;
+        }
+
+        private static TC Find<TC>(System.Windows.Forms.Control root) where TC : System.Windows.Forms.Control
+        {
+            foreach (System.Windows.Forms.Control c in root.Controls) { if (c is TC hit) return hit; var deeper = Find<TC>(c); if (deeper != null) return deeper; }
+            return null;
+        }
 
         /// <summary>--ares-console-real &lt;ares.exe&gt; &lt;system&gt; &lt;game&gt;: the REAL ares of a lab install run on the game
         /// between Begin and Recover - WRITES that install's Systems\ folder (its .before-nixx kept) and the game's own copy.</summary>

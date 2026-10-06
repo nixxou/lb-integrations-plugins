@@ -6,7 +6,8 @@
 //         string[] Emulators()  /  string OpenEmulator(string path)      (optional: the window's Open buttons)
 //
 // WHAT IT HOLDS: the install (the release), the BIOS of every system that needs one - found, missing, not the dump ares
-// knows - with a button that looks again, and the picture every game gets (AresSettings.All).
+// knows - with a button that looks again, and the screen every game gets. Kept simple (Mehdi, 06/10): every game's
+// settings are ares's own, set in its menus; a game's window chooses the rest for that game (AresSettings.OnPage).
 
 using System;
 using System.Collections.Generic;
@@ -89,15 +90,14 @@ namespace LbIntegrations.Ares
                 _bios, again));
 
             // ── every game's options, a card per group ──
-            stack.Controls.Add(LbipHint.Note("Every game's options - given to ares at each launch; a game's window (right-click > Nixx-ares : "
-                + "Options...) can change them for that game. \"As set in ares\" leaves ares's own menus in charge.",
-                "They go on ares's command line (--setting), not into its settings.bml: ares puts its own values back when it quits, so what one game "
-                + "chose never stays for the next. One left \"as set in ares\" - and everything not listed here: the pads, the hotkeys, the paths - is what "
-                + "you set in ares's menus. The options of one system (Nintendo 64, Mega Drive...) only touch that system's games.", 620, new Padding(0, 0, 0, 8)));
-            foreach (var group in AresSettings.Groups)
+            // Every game's settings are ares's own, set in its menus (Mehdi, 06/10): here the screen alone; a game's window
+            // (right-click > Nixx-ares : Options...) sets the rest for that game.
             {
                 var rows = new List<Control>();
-                foreach (var o in AresSettings.All.Where(x => x.Group == group))
+                rows.Add(LbipHint.Note("Every other setting is ares's own: set it in ares's menus. A game's window sets its own.",
+                    "Right-click a game > Nixx-ares : Options... - its picture, colour, sound, emulation and system options, given to ares on its command line "
+                    + "(--setting) for that game alone; ares's own settings come back when it quits.", 600, new Padding(0, 0, 0, 6)));
+                foreach (var o in AresSettings.All.Where(x => x.OnPage))
                 {
                     var row = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true, Margin = new Padding(0, 2, 0, 2) };
                     row.Controls.Add(new Label { Text = o.Label, Width = 170, Height = 24, TextAlign = ContentAlignment.MiddleLeft, UseMnemonic = false });
@@ -112,7 +112,7 @@ namespace LbIntegrations.Ares
                     row.Controls.Add(c);
                     rows.Add(row);
                 }
-                stack.Controls.Add(Card(group + (group == "Picture" ? " - every game" : ""), rows.ToArray()));
+                stack.Controls.Add(Card("Every game", rows.ToArray()));
             }
 
             Controls.Add(stack);
@@ -138,7 +138,7 @@ namespace LbIntegrations.Ares
 
         public void Save()
         {
-            foreach (var o in AresSettings.All)
+            foreach (var o in AresSettings.All.Where(x => x.OnPage))
             {
                 var value = _values[o.Key][Math.Max(0, _choices[o.Key].SelectedIndex)];
                 if (AresSettings.Value(o.Key) != value) AresSettings.SetValue(o.Key, value);

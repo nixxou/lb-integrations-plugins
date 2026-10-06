@@ -73,12 +73,14 @@
 </section>
 
 <section id="options"><h2>Options</h2>
-  <p>The ares page of <b>Tools &gt; Nixx Integration Plugins Configuration...</b> sets every game's; a game's window sets its own. They are
-  written into <code>settings.bml</code> before each game:</p>
+  <p>Every game's settings are ares's own: set them in ares's menus. The ares page of <b>Tools &gt; Nixx Integration Plugins
+  Configuration...</b> sets the screen alone (full, borderless, windowed). A game's window - right-click, <b>Nixx-ares : Options...</b> - sets
+  that game's, in tabs, with what goes on ares's command line shown at the bottom:</p>
   <ul>
-    <li><b>Picture</b> - screen (full, borderless, windowed), video driver (OpenGL 3.2, OpenGL 4.6, Direct3D 9.0), scaling (best fit, integer
-    auto or fixed 1x-7x, stretch), aspect (standard, none, anamorphic 16:9), shader (every <code>.slangp</code> preset of ares's
-    <code>Shaders</code> folder), VSync, exclusive full screen;</li>
+    <li><b>Game</b> - the system ares runs it as, its file, BIOS and saves, its screen;</li>
+    <li><b>Picture</b> - video driver (OpenGL 3.2, OpenGL 4.6, Direct3D 9.0), scaling (best fit, integer auto or fixed 1x-7x, stretch),
+    aspect (standard, none, anamorphic 16:9), shader (picked as in ares's own Shader menu, its folders as sub-menus), VSync, exclusive
+    full screen;</li>
     <li><b>Colour and effects</b> - luminance, saturation, gamma, colour emulation, colour bleed, interframe blending, overscan, pixel accuracy;</li>
     <li><b>Sound</b> - driver, volume, mute, dynamic rate;</li>
     <li><b>Start and emulation</b> - region order, fast boot, what happens when ares loses the focus, rewind, run-ahead, periodic save,
@@ -88,8 +90,8 @@
     system only.</li>
   </ul>
   <p>They are given on ares's command line (<code>--setting</code>), not written into its <code>settings.bml</code>: ares puts its own values
-  back when it quits, so what one game chose never stays for the next. Screen, driver, scaling, aspect, VSync, region and fast boot are
-  always given; every other option starts as <b>As set in ares</b>: then nothing is given, and what you set in ares's own menus is used.
+  back when it quits, so what one game chose never stays for the next. Every option starts as <b>As set in ares</b>: then nothing is given,
+  and what you set in ares's own menus is used.
   A <code>--setting</code> you put on the platform's line in LaunchBox (Edit Emulator &gt; Associated Platforms) comes after the plugin's and wins.</p>
 </section>
 

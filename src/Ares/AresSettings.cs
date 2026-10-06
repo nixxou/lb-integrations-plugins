@@ -30,6 +30,7 @@ namespace LbIntegrations.Ares
         public string[] Writes;           // what goes into that node for each value - null: the value itself
         public string[] Systems;          // the systems it means anything for - null: every one
         public bool Free;                 // a value outside Values is kept (the shader: a file of the install, as written)
+        public bool OnPage;               // set for every game on the Nixx page; the others are a game's alone, else ares's own
 
         public string TextOf(string value) { int i = Array.IndexOf(Values, value); return i < 0 ? ShaderText(value) : Texts[i]; }
 
@@ -57,35 +58,34 @@ namespace LbIntegrations.Ares
 
         // Every value below is what ares v148 itself writes (its menus, settings.bml, the strings of ares.exe - measured on
         // 06/10: OpenGL 3.2, OpenGL 4.6 and Direct3D 9.0 draw a game, GDI draws nothing, a name ares does not know stops it).
-        // The options this plugin has had since its first build keep their defaults; every one added since is "as set in
-        // ares" until chosen, so an install already tuned in ares's own menus is left as it is.
+        // Every game's settings are ares's own, set in its menus (Mehdi, 06/10: "the general options are set on the emulator
+        // itself"): the Nixx page sets the screen alone (OnPage); every other option is "as set in ares" until a game's window
+        // chooses one for that game.
         public static readonly AresOption[] All =
         {
             // -- Picture --
-            new AresOption { Key = "Screen", Group = "Picture", Label = "Screen", Default = "full",
+            new AresOption { Key = "Screen", Group = "Picture", Label = "Screen", Default = "full", OnPage = true,
                 Values = new[] { "full", "pseudo", "windowed" }, Texts = new[] { "Full screen", "Borderless window over the screen", "Windowed" },
                 Hint = "Full screen is ares's --fullscreen; the borderless window (--pseudofullscreen) covers the screen without changing its mode." },
-            new AresOption { Key = "Driver", Group = "Picture", Label = "Video driver", Default = "opengl", Bml = "Video/Driver",
-                Values = new[] { "opengl", "opengl46", "d3d" }, Texts = new[] { "OpenGL 3.2 (ares's default)", "OpenGL 4.6", "Direct3D 9.0" },
-                Writes = new[] { "OpenGL 3.2", "OpenGL 4.6", "Direct3D 9.0" },
-                Hint = "ares's video driver (Settings > Drivers). OpenGL is its default on Windows; the shaders run on OpenGL. Direct3D 9 for a card OpenGL troubles." },
-            new AresOption { Key = "Output", Group = "Picture", Label = "Scaling", Default = "scale",
-                Values = new[] { "scale", "integer", "fixed1", "fixed2", "fixed3", "fixed4", "fixed5", "fixed6", "fixed7", "stretch" },
-                Texts = new[] { "Best fit, keep the shape", "Integer (auto)", "Integer, fixed 1x", "Integer, fixed 2x", "Integer, fixed 3x", "Integer, fixed 4x",
-                                "Integer, fixed 5x", "Integer, fixed 6x", "Integer, fixed 7x", "Stretch to fill" },
+            Pick("Driver", "Picture", "Video driver", "Video/Driver", new[] { "opengl", "opengl46", "d3d" }, new[] { "OpenGL 3.2", "OpenGL 4.6", "Direct3D 9.0" },
+                 new[] { "OpenGL 3.2", "OpenGL 4.6", "Direct3D 9.0" },
+                 "ares's video driver (Settings > Drivers). OpenGL 3.2 is its default on Windows; the shaders run on OpenGL. Direct3D 9 for a card OpenGL troubles."),
+            // The scaling has two nodes (Output, and FixedScale for a fixed integer): SettingArgs writes it, Bml stays null.
+            new AresOption { Key = "Output", Group = "Picture", Label = "Scaling", Default = Ares,
+                Values = new[] { Ares, "scale", "integer", "fixed1", "fixed2", "fixed3", "fixed4", "fixed5", "fixed6", "fixed7", "stretch" },
+                Texts = new[] { "As set in ares", "Best fit, keep the shape", "Integer (auto)", "Integer, fixed 1x", "Integer, fixed 2x", "Integer, fixed 3x",
+                                "Integer, fixed 4x", "Integer, fixed 5x", "Integer, fixed 6x", "Integer, fixed 7x", "Stretch to fill" },
                 Hint = "ares's Settings > Output: Best Fit fills the screen keeping the aspect; Integer scales by whole numbers only, every pixel the same size "
                      + "(auto: the largest that fits; fixed: that one); Stretch fills it all." },
-            new AresOption { Key = "Aspect", Group = "Picture", Label = "Aspect", Default = "standard", Bml = "Video/AspectCorrectionMode",
-                Values = new[] { "standard", "none", "anamorphic" }, Texts = new[] { "Standard (as on a TV)", "No correction (square pixels)", "Anamorphic (16:9)" },
-                Writes = new[] { "Standard", "None", "Anamorphic" },
-                Hint = "ares's Aspect: Standard gives the picture the console gave on a television; No correction keeps its pixels square; Anamorphic stretches "
-                     + "it to 16:9 - for the games made for a widescreen TV." },
+            Pick("Aspect", "Picture", "Aspect", "Video/AspectCorrectionMode", new[] { "standard", "none", "anamorphic" },
+                 new[] { "Standard (as on a TV)", "No correction (square pixels)", "Anamorphic (16:9)" }, new[] { "Standard", "None", "Anamorphic" },
+                 "ares's Aspect: Standard gives the picture the console gave on a television; No correction keeps its pixels square; Anamorphic stretches "
+                 + "it to 16:9 - for the games made for a widescreen TV."),
             new AresOption { Key = "Shader", Group = "Picture", Label = "Shader", Default = Ares, Bml = "Video/Shader", Free = true,
                 Values = new[] { Ares, "none" }, Texts = new[] { "As set in ares", "None" },
-                Hint = "ares's Settings > Shader: the .slangp presets of its Shaders folder (CRT, scanlines, LCD, smoothing...). They run on the OpenGL drivers." },
-            new AresOption { Key = "VSync", Group = "Picture", Label = "VSync", Default = "false", Bml = "Video/Blocking",
-                Values = new[] { "true", "false" }, Texts = new[] { "On - against tearing", "Off" },
-                Hint = "ares's Drivers > Synchronize (video): waits for the screen's refresh. Off is ares's default." },
+                Hint = "ares's Settings > Shader: the .slangp presets of its Shaders folder (CRT, scanlines, LCD, smoothing...), picked as in ares's menu. "
+                     + "They run on the OpenGL drivers." },
+            Bool("VSync", "Picture", "VSync", "Video/Blocking", "against tearing", "ares's Drivers > Synchronize (video): waits for the screen's refresh. Off is ares's default."),
             Bool("Exclusive", "Picture", "Exclusive full screen", "Video/Exclusive", "the screen is ares's alone",
                  "ares's Drivers > Exclusive mode (Direct3D): full screen takes the display for itself - less latency, a slower switch out of the game."),
 
@@ -119,15 +119,13 @@ namespace LbIntegrations.Ares
                  "ares's Drivers > Dynamic rate: bends the sound's rate a little to keep it in step with the picture - against crackles with VSync on."),
 
             // -- Start and emulation --
-            new AresOption { Key = "Region", Group = "Start and emulation", Label = "Preferred region", Default = "ntsc-u", Bml = "Boot/Prefer",
-                Values = new[] { "ntsc-u", "ntsc-u-pal", "ntsc-j", "ntsc-j-pal", "pal", "pal-ntsc-j" },
-                Texts = new[] { "NTSC-U, then NTSC-J, then PAL", "NTSC-U, then PAL, then NTSC-J", "NTSC-J, then NTSC-U, then PAL",
-                                "NTSC-J, then PAL, then NTSC-U", "PAL, then NTSC-U, then NTSC-J", "PAL, then NTSC-J, then NTSC-U" },
-                Writes = new[] { "NTSC-U,NTSC-J,PAL", "NTSC-U,PAL,NTSC-J", "NTSC-J,NTSC-U,PAL", "NTSC-J,PAL,NTSC-U", "PAL,NTSC-U,NTSC-J", "PAL,NTSC-J,NTSC-U" },
-                Hint = "ares's Boot Options > Region Preference: the region a console starts as when the game runs on several - and the BIOS it then takes." },
-            new AresOption { Key = "FastBoot", Group = "Start and emulation", Label = "Fast boot", Default = "false", Bml = "Boot/Fast",
-                Values = new[] { "true", "false" }, Texts = new[] { "On - skip the BIOS intro", "Off" },
-                Hint = "ares's Boot Options > Fast Boot: straight to the game, past the console's logo where ares can." },
+            Pick("Region", "Start and emulation", "Preferred region", "Boot/Prefer", new[] { "ntsc-u", "ntsc-u-pal", "ntsc-j", "ntsc-j-pal", "pal", "pal-ntsc-j" },
+                 new[] { "NTSC-U, then NTSC-J, then PAL", "NTSC-U, then PAL, then NTSC-J", "NTSC-J, then NTSC-U, then PAL",
+                         "NTSC-J, then PAL, then NTSC-U", "PAL, then NTSC-U, then NTSC-J", "PAL, then NTSC-J, then NTSC-U" },
+                 new[] { "NTSC-U,NTSC-J,PAL", "NTSC-U,PAL,NTSC-J", "NTSC-J,NTSC-U,PAL", "NTSC-J,PAL,NTSC-U", "PAL,NTSC-U,NTSC-J", "PAL,NTSC-J,NTSC-U" },
+                 "ares's Boot Options > Region Preference: the region a console starts as when the game runs on several - and the BIOS it then takes."),
+            Bool("FastBoot", "Start and emulation", "Fast boot", "Boot/Fast", "skip the BIOS intro",
+                 "ares's Boot Options > Fast Boot: straight to the game, past the console's logo where ares can."),
             Pick("Defocus", "Start and emulation", "When ares loses focus", "Input/Defocus", new[] { "pause", "block", "allow" },
                  new[] { "Pause the game (ares's default)", "Keep running, ignore the pads", "Keep running, pads still work" }, new[] { "Pause", "Block", "Allow" },
                  "ares's Drivers > When focus is lost. \"Pads still work\" for a game played while another window has the focus."),
@@ -178,15 +176,18 @@ namespace LbIntegrations.Ares
         /// fixed integer); nothing for an option left "as set in ares". desktop-ui.cpp (v148): each --setting sets the node
         /// after settings.bml is read, the last of a key wins, and at exit ares puts back what the file had - measured 06/10
         /// on all of them: the game ran with them, the file came back as it was.</summary>
-        public static List<string> SettingArgs(string gameId)
+        public static List<string> SettingArgs(string gameId) => SettingArgs(key => For(gameId, key));
+
+        /// <summary>The same, from values given (a game's window, before it saves them).</summary>
+        public static List<string> SettingArgs(Func<string, string> valueOf)
         {
             var list = new List<string>();
-            var output = For(gameId, "Output");
+            var output = valueOf("Output") ?? Ares;
             if (output.StartsWith("fixed")) { list.Add("Video/Output=IntegerFixed"); list.Add("Video/FixedScale=" + output.Substring(5)); }
-            else list.Add("Video/Output=" + (output == "integer" ? "Integer" : output == "stretch" ? "Stretch" : "Scale"));
+            else if (output != Ares) list.Add("Video/Output=" + (output == "integer" ? "Integer" : output == "stretch" ? "Stretch" : "Scale"));
             foreach (var o in All)
             {
-                var value = For(gameId, o.Key);
+                var value = valueOf(o.Key);
                 if (o.Bml == null || value == null || value == Ares) continue;
                 if (o.Key == "Shader") { list.Add(o.Bml + "=" + (value == "none" ? "None" : value.Replace('\\', '/'))); continue; }
                 int i = Array.IndexOf(o.Values, value);
@@ -253,10 +254,13 @@ namespace LbIntegrations.Ares
 
         // ── every game's ──
 
-        /// <summary>Every game's value of <paramref name="key"/>: what the Nixx window set, else the option's default.</summary>
+        /// <summary>Every game's value of <paramref name="key"/>: what the Nixx window set (the options it shows), else the
+        /// option's default - "as set in ares" for all but the screen. A value an older build kept for another option is
+        /// not read: every game's settings are ares's own now.</summary>
         public static string Value(string key)
         {
             var o = Option(key);
+            if (!o.OnPage) return o.Default;
             return (Read(SettingsPath).TryGetValue(key, out var s) ? Stored(o, s) : null) ?? o.Default;
         }
 
