@@ -1,7 +1,12 @@
 // The right-click entry on the games RASnes9x can run - one game or a selection: "Nixx-RASnes9x : Options...". The
 // window, dressed as every Nixx window (NixxShell): the game's file and saves, and its own picture options, each "as
 // every game" until changed - kept in games\<game id>.ini beside settings.ini (RaSnes9xSettings) and written into
-// snes9x.conf at its launch.
+// snes9x.conf at its launch. At the bottom, the pack's legend, "Reset to defaults", OK and Cancel (OptionMarks).
+//
+// SEVERAL GAMES (the pack's rule, Mehdi, 06/10 - LbipSelection): at the top, "All selected games", the default, then the
+// games grouped by identical options, to start from a group's. "All selected games" shows an option they agree on as it
+// is, one they do not as "Various (n of N)" (purple): left so, each keeps its own; changed, it goes to all. OK asks
+// first, then writes only what was changed. The file, the .7z note and the saves - one game's - are not shown.
 //
 // NOT AN IGameMenuItemPlugin, as for the other plugins of the pack: LaunchBox 14 gives a plugin of Local\Plugins its
 // emulator role only; Nixx-Menus relays to the GameMenu class below by its name - src\Menus\Menus.cs has the contract.
@@ -55,17 +60,27 @@ namespace LbIntegrations.RaSnes9x
 
     internal sealed class RaSnes9xGameForm : Form
     {
-        private readonly IGame[] _games;
-        private readonly Dictionary<string, ComboBox> _choices = new Dictionary<string, ComboBox>();
-        private readonly Dictionary<string, int> _initial = new Dictionary<string, int>();
-        /// <summary>Several games: the first item keeps each game's own value, and only a combo the user changed is written.</summary>
-        private int Offset => _games.Length > 1 ? 1 : 0;
+        /// <summary>One option: its list, what the list's items stand for (Various, null = as every game, a value), its bar.</summary>
+        private sealed class Row
+        {
+            public RaSnes9xOption O;
+            public ComboBox Combo;
+            public readonly List<string> Values = new List<string>();
+            public Panel Bar;
+            public string Chosen() => Combo.SelectedIndex < 0 ? null : Values[Combo.SelectedIndex];
+        }
+
+        private readonly LbipSelection _sel;
+        private readonly List<Row> _rows = new List<Row>();
+        private Dictionary<string, string> _atOpen;   // what the window showed once filled - OK writes only the differences
+        private bool Several => _sel.Several;
+        private static IEnumerable<string> Keys => RaSnes9xSettings.All.Select(o => o.Key);
 
         public RaSnes9xGameForm(IGame[] games)
         {
-            _games = games;
+            _sel = new LbipSelection(games.Select(g => new LbipSelection.Member { Title = Safe(() => g.Title) ?? "?", Stored = StoredOf(Safe(() => g.Id)), Tag = g }));
             var game = games[0];
-            Text = games.Length == 1 ? "Nixx-RASnes9x - " + Safe(() => game.Title) : "Nixx-RASnes9x - " + games.Length + " games";
+            Text = !Several ? "Nixx-RASnes9x - " + Safe(() => game.Title) : "Nixx-RASnes9x - " + games.Length + " games";
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.Sizable;
             MinimizeBox = false;
@@ -83,11 +98,13 @@ namespace LbIntegrations.RaSnes9x
             }
             Label Line(string text) => new Label { Text = text, AutoSize = true, MaximumSize = new Size(620, 0), UseMnemonic = false, Margin = new Padding(0, 2, 0, 2) };
 
-            page.Controls.Add(new Label { Text = games.Length == 1 ? Safe(() => game.Title) : games.Length + " games - the options below go to each of them",
-                                          AutoSize = true, UseMnemonic = false, Font = new Font("Segoe UI Semibold", 12f), Margin = new Padding(0, 2, 0, 10) });
+            // ── the top: one game's title, or the list of where to start from ──
+            var top = _sel.Top(Keys, Describe, ShowValues);
+            if (!Several)
+                page.Controls.Add(new Label { Text = Safe(() => game.Title), AutoSize = true, UseMnemonic = false, Font = new Font("Segoe UI Semibold", 12f), Margin = new Padding(0, 2, 0, 10) });
 
-            // ── the game to RASnes9x ──
-            if (games.Length == 1)
+            // ── the game to RASnes9x: one game's, not shown for several ──
+            if (!Several)
             {
                 var rom = Safe(() => game.ApplicationPath) ?? "";
                 var rows = new List<Control> { Line("File: " + rom) };
@@ -110,57 +127,115 @@ namespace LbIntegrations.RaSnes9x
                 page.Controls.Add(Card("The game", rows.ToArray()));
             }
 
-            // ── its own options ──
-            var id = Safe(() => game.Id);
+            // ── the options ──
             var optionRows = new List<Control>();
             foreach (var o in RaSnes9xSettings.All)
             {
-                var row = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true, Margin = new Padding(0, 2, 0, 2) };
-                row.Controls.Add(new Label { Text = o.Label, Width = 150, Height = 24, TextAlign = ContentAlignment.MiddleLeft, UseMnemonic = false });
-                var c = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 320 };
-                if (games.Length > 1) c.Items.Add("Each game keeps its own");
-                c.Items.Add("As every game (" + o.TextOf(RaSnes9xSettings.Value(o.Key)) + ")");
-                c.Items.AddRange(o.Texts.Select(t => (object)t).ToArray());
-                var own = games.Length == 1 ? RaSnes9xSettings.GameValue(id, o.Key) : null;
-                c.SelectedIndex = games.Length > 1 ? 0 : own == null ? 0 : Array.IndexOf(o.Values, own) + 1;
-                LbipHint.Attach(c, o.Hint);
-                _choices[o.Key] = c;
-                _initial[o.Key] = c.SelectedIndex;
-                row.Controls.Add(c);
-                optionRows.Add(row);
+                var r = new Row { O = o, Bar = new Panel { Width = 4, Height = 18, Margin = new Padding(0, 3, 8, 0) } };
+                var line = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true, Margin = new Padding(0, 2, 0, 2) };
+                line.Controls.Add(r.Bar);
+                line.Controls.Add(new Label { Text = o.Label, Width = 150, Height = 24, TextAlign = ContentAlignment.MiddleLeft, UseMnemonic = false });
+                r.Combo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 320 };
+                r.Combo.SelectedIndexChanged += (_, _) => r.Bar.BackColor = LbipSelection.BarOf(r.Chosen());
+                LbipHint.Attach(r.Combo, o.Hint);
+                line.Controls.Add(r.Combo);
+                _rows.Add(r);
+                optionRows.Add(line);
             }
             optionRows.Add(LbipHint.Note("Written into snes9x.conf when the game starts.", "Every game's values are in the Nixx window, page RASnes9x. "
-                                         + "These are kept for this game alone (games\\<game id>.ini).", 620, new Padding(0, 4, 0, 2)));
-            page.Controls.Add(Card(games.Length == 1 ? "This game's options" : "Their options", optionRows.ToArray()));
+                                         + (Several ? "These are kept per game" : "These are kept for this game alone") + " (games\\<game id>.ini).", 620, new Padding(0, 4, 0, 2)));
+            page.Controls.Add(Card(!Several ? "This game's options" : "Their options", optionRows.ToArray()));
 
-            // ── the footer ──
-            var bar = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 46, Padding = new Padding(10, 8, 10, 8) };
-            var ok = new Button { Text = "OK", Width = 96, Height = 28, DialogResult = DialogResult.OK };
+            // ── the bottom: the pack's legend, reset, OK and Cancel ──
+            var ok = new Button { Text = "OK", Width = 96, Height = 28 };
             var cancel = new Button { Text = "Cancel", Width = 96, Height = 28, DialogResult = DialogResult.Cancel };
-            ok.Click += (_, _) => { try { Save(); } catch (Exception ex) { MessageBox.Show(this, "The options could not be written: " + ex.Message, "Nixx-RASnes9x"); DialogResult = DialogResult.None; } };
-            bar.Controls.Add(ok);
-            bar.Controls.Add(cancel);
+            ok.Click += (_, _) => { try { if (Save()) { DialogResult = DialogResult.OK; Close(); } } catch (Exception ex) { MessageBox.Show(this, "The options could not be written: " + ex.Message, "Nixx-RASnes9x"); } };
+            var bottom = OptionMarks.Bottom(OptionMarks.Legend("RASnes9x", false, false, various: Several), OptionMarks.ResetButton(Reset), ok, cancel);
             AcceptButton = ok;
             CancelButton = cancel;
             Controls.Add(page);
-            Controls.Add(bar);
+            if (top != null) Controls.Add(top);
+            Controls.Add(bottom);
+            if (_sel.Source != null) _sel.Source.SelectedIndex = 0; else ShowValues(_sel.From(_sel.Members[0], Keys));
             LbIntegrations.Ui.NixxShell.Dress(this);
         }
 
-        private void Save()
+        // ── a game's stored values ───────────────────────────────────────────
+
+        private static Dictionary<string, string> StoredOf(string id)
         {
-            foreach (var g in _games)
+            var d = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (string.IsNullOrEmpty(id)) return d;
+            foreach (var o in RaSnes9xSettings.All) { var v = RaSnes9xSettings.GameValue(id, o.Key); if (v != null) d[o.Key] = v; }
+            return d;
+        }
+
+        private static string Describe(LbipSelection.Member m)
+        {
+            var mine = RaSnes9xSettings.All.Where(o => m.Stored.ContainsKey(o.Key)).Select(o => o.Label).ToList();
+            return mine.Count == 0 ? "as every game" : "its own: " + string.Join(", ", mine.Take(4)) + (mine.Count > 4 ? " and " + (mine.Count - 4) + " more" : "");
+        }
+
+        // ── filling ──────────────────────────────────────────────────────────
+
+        private void ShowValues(Dictionary<string, string> shown)
+        {
+            foreach (var r in _rows) Fill(r, shown.TryGetValue(r.O.Key, out var v) ? v : null);
+            _atOpen = ShownNow();
+        }
+
+        /// <summary>A row's list: "Various (n of N)" first only when the games do not agree, then "as every game", then the values.</summary>
+        private void Fill(Row r, string value)
+        {
+            var o = r.O;
+            r.Combo.Items.Clear(); r.Values.Clear();
+            if (value == LbipSelection.Various) { r.Combo.Items.Add(_sel.VariousText(o.Key)); r.Values.Add(LbipSelection.Various); }
+            r.Combo.Items.Add("As every game (" + o.TextOf(RaSnes9xSettings.Value(o.Key)) + ")"); r.Values.Add(null);
+            for (int i = 0; i < o.Values.Length; i++) { r.Combo.Items.Add(o.Texts[i]); r.Values.Add(o.Values[i]); }
+            r.Combo.SelectedIndex = Math.Max(0, r.Values.IndexOf(value));
+            r.Bar.BackColor = LbipSelection.BarOf(r.Chosen());
+        }
+
+        /// <summary>"Reset to defaults": every option back to "as every game". Nothing is saved before OK.</summary>
+        private void Reset()
+        {
+            foreach (var r in _rows) Fill(r, null);
+        }
+
+        /// <summary>What the window shows, every key present: Various, null (as every game) or a value.</summary>
+        private Dictionary<string, string> ShownNow()
+        {
+            var d = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var r in _rows) d[r.O.Key] = r.Chosen();
+            return d;
+        }
+
+        /// <summary>OK: over several games, asked first; then each game gets only what the user changed - a "Various" left
+        /// as it is writes nothing.</summary>
+        private bool Save()
+        {
+            var now = ShownNow();
+            if (!LbipSelection.Changed(_atOpen, now)) return true;
+            if (!_sel.Confirm(this, Text)) return false;
+            int written = 0;
+            foreach (var m in _sel.Members)
             {
-                var id = Safe(() => g.Id);
+                var id = Safe(() => ((IGame)m.Tag).Id);
                 if (string.IsNullOrEmpty(id)) continue;
+                var merged = _sel.MergeFor(m, _atOpen, now);
+                bool any = false;
                 foreach (var o in RaSnes9xSettings.All)
                 {
-                    int i = _choices[o.Key].SelectedIndex;
-                    if (Offset == 1 && i == _initial[o.Key]) continue;   // several games, left as each had it
-                    RaSnes9xSettings.SetGameValue(id, o.Key, i <= Offset ? null : o.Values[i - 1 - Offset]);
+                    merged.TryGetValue(o.Key, out var v);
+                    m.Stored.TryGetValue(o.Key, out var before);
+                    if (string.Equals(v, before, StringComparison.Ordinal)) continue;
+                    RaSnes9xSettings.SetGameValue(id, o.Key, v);
+                    any = true;
                 }
+                if (any) written++;
             }
-            Log.Info("options saved for " + _games.Length + " game(s)");
+            Log.Info("options saved: " + written + " of " + _sel.Members.Count + " game(s) changed");
+            return true;
         }
 
         private static T Safe<T>(Func<T> get) { try { return get(); } catch { return default; } }

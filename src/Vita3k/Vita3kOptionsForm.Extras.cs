@@ -6,7 +6,7 @@
 //   - the DLC: one box each, ticked unless left out. A DLC found later is installed: the choice
 //     records what is LEFT OUT (Vita3kExtrasChoice).
 //
-// ONE GAME AT A TIME: a selection gets a sentence saying so. Read when the tab is first shown, not when
+// ONE GAME AT A TIME: over a selection the tab is not there (Mehdi, 06/10, the pack's rule). Read when the tab is first shown, not when
 // the window opens - every candidate archive is opened, and the Session tab should not wait for that.
 //
 // AS CARDS (Mehdi, 05/10): "Update" and "DLC", one under the other; the grey line above them short, its whole on hover.
@@ -36,16 +36,9 @@ namespace LbIntegrations.Vita3k
 
         private TabPage ExtrasTab(TabControl tabs)
         {
+            // One game's tab: not added over several (Mehdi, 06/10) - rather than a tab saying to pick one.
+            if (_games.Count != 1) return null;
             _extrasTab = new TabPage("Updates & DLC") { Padding = new Padding(12), UseVisualStyleBackColor = true, AutoScroll = true };
-            if (_games.Count != 1)
-            {
-                _extrasTab.Controls.Add(new Label
-                {
-                    Dock = DockStyle.Fill, ForeColor = SystemColors.GrayText,
-                    Text = "Select a single game to choose the update and the DLC it is launched with.",
-                });
-                return _extrasTab;
-            }
             _extrasTab.Controls.Add(new Label { Dock = DockStyle.Fill, Text = "Looking for the game's updates and DLC...", ForeColor = SystemColors.GrayText });
             tabs.SelectedIndexChanged += (_, _) => { if (tabs.SelectedTab == _extrasTab) LoadExtras(); };
             return _extrasTab;

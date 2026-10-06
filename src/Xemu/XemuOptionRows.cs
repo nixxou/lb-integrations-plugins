@@ -4,18 +4,23 @@
 // ONE CONTROL PER OPTION, AND IT SHOWS THE STATE: until set, an option is what it falls back to, and the control says so with
 // the value - a three-state box reading "xemu's own: on" / "on" / "off", a list whose first entry is "<xemu's own: OpenGL>"
 // or "<every game's: Vulkan>". The bar at the left of a row: blue, set here; grey, not.
+//
+// OVER SEVERAL GAMES (the pack's rule, Mehdi 06/10 - Shared.Menu\LbipSelection): an on / off option is a short list too
+// (<its fallback>, on, off), never the three-state box - its grey square already means "not set", so it could not also say
+// "the games do not agree". A list then starts with "Various (n of N)" when they do not, its bar purple.
 
 using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
+using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Xemu
 {
     internal sealed class XemuOptionRows : FlowLayoutPanel
     {
-        public static readonly Color SetHere = Color.FromArgb(0, 120, 215), NotSet = Color.FromArgb(175, 175, 175);
+        public static readonly Color SetHere = OptionMarks.HereColor, NotSet = OptionMarks.EmulatorColor;
 
         private sealed class Row
         {
@@ -23,6 +28,7 @@ namespace LbIntegrations.Xemu
             public Control Editor;
             public Panel Bar;
             public string Fallback;
+            public List<string> Values = new List<string>();   // a list's items stand for: Various, null (not set), a value
         }
 
         private readonly List<Row> _rows = new List<Row>();
@@ -30,7 +36,8 @@ namespace LbIntegrations.Xemu
         /// <param name="saved">this level's values (keys "opt.&lt;key&gt;")</param>
         /// <param name="fallback">what an unset option stands for, in words - "xemu's own: on", "every game's: 2x"</param>
         /// <param name="include">the options shown here - null: all of them</param>
-        public XemuOptionRows(IDictionary<string, string> saved, Func<XemuOption, string> fallback, Func<XemuOption, bool> include = null)
+        /// <param name="several">a window over several games: lists only, filled by <see cref="Fill(IDictionary{string, string}, Func{string, string})"/></param>
+        public XemuOptionRows(IDictionary<string, string> saved, Func<XemuOption, string> fallback, Func<XemuOption, bool> include = null, bool several = false)
         {
             FlowDirection = FlowDirection.TopDown;
             WrapContents = false;
@@ -46,7 +53,8 @@ namespace LbIntegrations.Xemu
                 foreach (var o in group)
                 {
                     var row = new Row { Option = o, Fallback = fallback(o) };
-                    row.Editor = Editor(row, XemuOptions.Get(saved, o.Key));
+                    row.Editor = Editor(row, several);
+                    Fill(row, XemuOptions.Get(saved, o.Key), null);
                     row.Bar = new Panel { Width = 4, Height = 18, Margin = new Padding(0, 6, 8, 0) };
                     var label = new Label { Text = o.Label, AutoSize = true, MaximumSize = new Size(186, 0), Margin = new Padding(0, 7, 4, 0) };
                     Hook(row.Editor, () => Show(row));
@@ -72,29 +80,39 @@ namespace LbIntegrations.Xemu
             }
         }
 
-        private static Control Editor(Row row, string current)
+        private static Control Editor(Row row, bool several)
+        {
+            if (row.Option.Bool && !several)
+                return new CheckBox { AutoSize = true, ThreeState = true, Margin = new Padding(3, 6, 0, 0) };
+            return new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 290, Margin = new Padding(3, 3, 0, 0) };
+        }
+
+        /// <summary>A row's control shows a value: Various (the list's first item says so), null (not set) or a value.</summary>
+        private static void Fill(Row row, string current, string variousText)
         {
             var o = row.Option;
-            if (o.Bool)
-                return new CheckBox
-                {
-                    AutoSize = true, ThreeState = true, Margin = new Padding(3, 6, 0, 0),
-                    CheckState = current == null ? CheckState.Indeterminate : current == "on" ? CheckState.Checked : CheckState.Unchecked,
-                };
-            var c = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 290, Margin = new Padding(3, 3, 0, 0) };
-            c.Items.Add("<" + row.Fallback + ">");
-            foreach (var ch in o.Choices) c.Items.Add(ch.Label);
-            int at = o.Choices.FindIndex(x => string.Equals(x.Value, current, StringComparison.OrdinalIgnoreCase));
+            if (row.Editor is CheckBox box)
+            {
+                box.CheckState = current == null ? CheckState.Indeterminate : current == "on" ? CheckState.Checked : CheckState.Unchecked;
+                return;
+            }
+            var c = (ComboBox)row.Editor;
+            c.Items.Clear(); row.Values.Clear();
+            if (current == LbipSelection.Various) { c.Items.Add(variousText ?? OptionMarks.VariousText); row.Values.Add(LbipSelection.Various); }
+            c.Items.Add("<" + row.Fallback + ">"); row.Values.Add(null);
+            if (o.Bool) { c.Items.Add("on"); row.Values.Add("on"); c.Items.Add("off"); row.Values.Add("off"); }
+            else foreach (var ch in o.Choices) { c.Items.Add(ch.Label); row.Values.Add(ch.Value); }
+            if (o.Bool && current != null && current != LbipSelection.Various) current = current == "on" ? "on" : "off";
+            int at = current == null ? row.Values.IndexOf(null) : current == LbipSelection.Various ? 0
+                   : row.Values.FindIndex(v => v != null && v != LbipSelection.Various && string.Equals(v, current, StringComparison.OrdinalIgnoreCase));
             if (at < 0 && !string.IsNullOrWhiteSpace(current))
             {
                 // Set, but no entry of the list any more (a graphics card since removed): shown as it is and kept - not read as
                 // unset, then emptied at the next OK.
-                c.Tag = current.Trim();
-                c.Items.Add(current.Trim() + " (not in this list)");
-                c.SelectedIndex = c.Items.Count - 1;
+                c.Items.Add(current.Trim() + " (not in this list)"); row.Values.Add(current.Trim());
+                at = c.Items.Count - 1;
             }
-            else c.SelectedIndex = 1 + at;
-            return c;
+            c.SelectedIndex = Math.Max(0, at);
         }
 
         private static void Hook(Control editor, Action changed)
@@ -108,9 +126,10 @@ namespace LbIntegrations.Xemu
 
         private static void Show(Row row)
         {
+            if (row.Bar == null) return;
             if (row.Editor is CheckBox c)
                 c.Text = c.CheckState == CheckState.Indeterminate ? row.Fallback : c.Checked ? "on" : "off";
-            row.Bar.BackColor = ValueOf(row) != null ? SetHere : NotSet;
+            row.Bar.BackColor = LbipSelection.BarOf(ValueOf(row));
         }
 
         private static string ValueOf(Row row)
@@ -118,16 +137,34 @@ namespace LbIntegrations.Xemu
             switch (row.Editor)
             {
                 case CheckBox c: return c.CheckState == CheckState.Indeterminate ? null : c.Checked ? "on" : "off";
-                case ComboBox b:
-                    if (b.SelectedIndex <= 0) return null;
-                    return b.SelectedIndex - 1 < row.Option.Choices.Count ? row.Option.Choices[b.SelectedIndex - 1].Value : b.Tag as string;
+                case ComboBox b: return b.SelectedIndex < 0 || b.SelectedIndex >= row.Values.Count ? null : row.Values[b.SelectedIndex];
             }
             return null;
         }
 
         /// <summary>Every row, keyed "opt.&lt;key&gt;" - "" for unset, so that a row emptied is removed from the file.</summary>
         public Dictionary<string, string> Values()
-            => _rows.ToDictionary(r => XemuOptions.Prefix + r.Option.Key, r => ValueOf(r) ?? "", StringComparer.OrdinalIgnoreCase);
+            => _rows.ToDictionary(r => XemuOptions.Prefix + r.Option.Key, r => ValueOf(r) is string v && v != LbipSelection.Various ? v : "", StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The keys of the rows, "opt.&lt;key&gt;".</summary>
+        public IEnumerable<string> Keys => _rows.Select(r => XemuOptions.Prefix + r.Option.Key);
+
+        /// <summary>What the rows show, keyed "opt.&lt;key&gt;": null (not set), Various or a value - for LbipSelection.</summary>
+        public Dictionary<string, string> Shown()
+            => _rows.ToDictionary(r => XemuOptions.Prefix + r.Option.Key, ValueOf, StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The rows show these values (keyed "opt.&lt;key&gt;"; a key absent: not set) - the window over several games.</summary>
+        public void Fill(IDictionary<string, string> shown, Func<string, string> variousText)
+        {
+            foreach (var r in _rows)
+            {
+                var key = XemuOptions.Prefix + r.Option.Key;
+                string v = null;
+                shown?.TryGetValue(key, out v);
+                Fill(r, v, variousText?.Invoke(key));
+                Show(r);
+            }
+        }
 
         /// <summary>Every row back to unset - nothing saved before OK.</summary>
         public void Reset()
@@ -135,12 +172,12 @@ namespace LbIntegrations.Xemu
             foreach (var r in _rows)
             {
                 if (r.Editor is CheckBox c) c.CheckState = CheckState.Indeterminate;
-                else if (r.Editor is ComboBox b) b.SelectedIndex = 0;
+                else if (r.Editor is ComboBox b) b.SelectedIndex = Math.Max(0, r.Values.IndexOf(null));
             }
         }
 
-        /// <summary>A legend for the bars.</summary>
-        public static Control Legend(string unsetMeans)
+        /// <summary>A legend for the bars - and, over several games, the purple of "Various".</summary>
+        public static Control Legend(string unsetMeans, bool various = false)
         {
             var legend = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, Margin = new Padding(4, 2, 0, 6) };
             void Item(Color c, string text)
@@ -150,6 +187,7 @@ namespace LbIntegrations.Xemu
             }
             Item(SetHere, "Set here");
             Item(NotSet, unsetMeans);
+            if (various) Item(OptionMarks.VariousColor, "Various: each game keeps its own");
             return legend;
         }
 

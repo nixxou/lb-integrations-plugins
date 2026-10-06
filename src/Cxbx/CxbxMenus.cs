@@ -248,28 +248,85 @@ namespace LbIntegrations.Cxbx
         }
     }
 
-    /// <summary>A game's placement - RAM disk or disk, and why - and its copy on the disk. A selection of several games
-    /// takes the same choice; what is shown is the first one's.</summary>
+    /// <summary>A game's placement - RAM disk or disk, and why - and its copy on the disk. Over several games, the pack's rule
+    /// (Mehdi, 06/10 - Shared.Menu\LbipSelection): at the top "All selected games" - the default - then each group of games
+    /// with the same options; a setting they do not agree on reads "Various (n of N)", purple, and each game keeps its own
+    /// unless it is changed. What is about one game only - its file and title, its compatibility, its next launch, its copy
+    /// and its size - is not shown then; the placement, the AIM mount and the keep are lists (a "Various" item, a bar).</summary>
     internal sealed class CxbxGameForm : Form
     {
         private readonly List<IGame> _games;
+        private readonly LbIntegrations.Lbip.LbipSelection _sel;
         private readonly RadioButton _auto, _ram, _disk;
         private readonly CheckBox _keep, _attachGame;
+        private readonly Choice _placeList, _attachList, _keepList;    // over several games, in their place
         private readonly Label _plan, _onDisk;
         private readonly Button _delete;
         private readonly string _exe, _rom;
         private readonly CxbxRom _described;      // read once: an archive's directory is not reread at each click
         private readonly CxbxOptionRows _rows;
+        private Dictionary<string, string> _atOpen;
+
+        /// <summary>Over several games, one of the window's own settings as a list: its items stand for Various, null (the
+        /// default) or a value; its bar says which.</summary>
+        private sealed class Choice
+        {
+            public (string Value, string Text)[] Items;
+            public ComboBox Combo;
+            public Panel Bar;
+            public List<string> Values = new List<string>();
+            public string Value => Combo.SelectedIndex < 0 || Combo.SelectedIndex >= Values.Count ? null : Values[Combo.SelectedIndex];
+        }
+
+        private static Choice ChoiceRow(Control into, string label, params (string Value, string Text)[] items)
+        {
+            var c = new Choice
+            {
+                Items = items,
+                Combo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 380, Margin = new Padding(3, 3, 0, 3) },
+                Bar = new Panel { Width = 4, Height = 18, Margin = new Padding(0, 6, 8, 0) },
+            };
+            c.Combo.SelectedIndexChanged += (_, _) => c.Bar.BackColor = LbIntegrations.Lbip.LbipSelection.BarOf(c.Value);
+            var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty };
+            row.Controls.Add(c.Bar);
+            row.Controls.Add(new Label { Text = label, AutoSize = false, Width = 120, Height = 26, TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(0, 0, 4, 0) });
+            row.Controls.Add(c.Combo);
+            into.Controls.Add(row);
+            return c;
+        }
+
+        private static void Fill(Choice c, string value, string variousText)
+        {
+            if (c == null) return;
+            c.Combo.Items.Clear(); c.Values.Clear();
+            if (value == LbIntegrations.Lbip.LbipSelection.Various) { c.Combo.Items.Add(variousText); c.Values.Add(value); }
+            foreach (var (v, text) in c.Items) { c.Combo.Items.Add(text); c.Values.Add(v); }
+            c.Combo.SelectedIndex = Math.Max(0, c.Values.IndexOf(value));
+            c.Bar.BackColor = LbIntegrations.Lbip.LbipSelection.BarOf(c.Value);
+        }
+
+        /// <summary>A game's stored values for what the window shows - placement, mount, keep, its options - each only when set.</summary>
+        private static Dictionary<string, string> StoredOf(IDictionary<string, string> raw, IEnumerable<string> optionKeys)
+        {
+            var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var p = CxbxSettings.Placement(raw);
+            if (p != "auto") d["placement"] = p;
+            if (raw.TryGetValue("attach_discs", out var a) && (a == "on" || a == "off")) d["attach_discs"] = a;
+            if (CxbxSettings.Keep(raw)) d["keep"] = "on";
+            foreach (var k in optionKeys) if (CxbxOptions.Get(raw, k.Substring(CxbxOptions.Prefix.Length)) is string v) d[k] = v;
+            return d;
+        }
 
         public CxbxGameForm(List<IGame> games)
         {
             _games = games;
             var first = games[0];
+            bool several = games.Count > 1;
             _exe = CxbxLibrary.LoaderFor(first);
-            _rom = CxbxPlugin.ResolveFullPathForUi(CxbxPlugin.Safe(() => first.ApplicationPath));
+            _rom = several ? null : CxbxPlugin.ResolveFullPathForUi(CxbxPlugin.Safe(() => first.ApplicationPath));
             var choice = CxbxSettings.ReadGame(CxbxPlugin.Safe(() => first.Id));
 
-            Text = "Nixx-Cxbx - Options" + (games.Count > 1 ? " (" + games.Count + " games)" : " - " + CxbxPlugin.Safe(() => first.Title));
+            Text = "Nixx-Cxbx - Options" + (several ? " (" + games.Count + " games)" : " - " + CxbxPlugin.Safe(() => first.Title));
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.Sizable;
             MinimizeBox = false; MaximizeBox = false; ShowInTaskbar = false;
@@ -279,18 +336,18 @@ namespace LbIntegrations.Cxbx
 
             var stack = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
             var d = _described = _rom != null ? CxbxGame.Describe(_rom) : null;
-            var facts = new List<string> { _rom ?? "(no file)" };
+            // One game's facts; over several games none - its file, its title, its compatibility are one game's.
+            var facts = several ? new List<string>() : new List<string> { _rom ?? "(no file)" };
             if (d != null)
             {
                 facts.Add(KindText(d.Kind) + (d.Bytes > 0 ? ", " + Mb(d.Bytes) + (d.Kind == CxbxRomKind.ImageInArchive && d.Xbe == null ? " (the image: its files are known once it is unpacked)" : "") : ""));
                 if (d.Xbe != null) facts.Add("Title " + d.Xbe.TitleIdText + (d.Xbe.TitleName.Length > 0 ? "  \"" + d.Xbe.TitleName + "\"" : "") + "  - its saves: E:\\UDATA\\" + d.Xbe.TitleIdText);
                 if (d.Problem != null && d.Kind != CxbxRomKind.ImageInArchive) facts.Add("Cannot be launched: " + d.Problem);
             }
-            if (games.Count > 1) facts.Add("The " + games.Count + " games selected take the same choices; what is shown is the first one's.");
             // Above the pages, as Nixx-Xemu's window has it (Mehdi, 05/10: "uniformiser l'ensemble"): what the game is, read once,
             // whichever page is shown.
             var header = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(8, 6, 8, 4) };
-            header.Controls.Add(new Label { Text = string.Join("\n", facts), AutoSize = true, MaximumSize = new Size(620, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(2, 0, 0, 2), UseMnemonic = false });
+            if (facts.Count > 0) header.Controls.Add(new Label { Text = string.Join("\n", facts), AutoSize = true, MaximumSize = new Size(620, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(2, 0, 0, 2), UseMnemonic = false });
 
             // Its state in Cxbx-Reloaded's compatibility list - this very version, then the game's others - asked again in
             // the background as the window opens (at most every 6 hours), and redrawn if the site says something new.
@@ -317,43 +374,62 @@ namespace LbIntegrations.Cxbx
             // Read where it is (AIM) - a bare ISO / XISO / CSO / CCI / CHD, or a ZArchive. Three states: on, off, every game's (the grey square).
             var noSupport = CxbxRamSession.DiscSupport(_exe != null ? Path.GetDirectoryName(_exe) : null, d?.Path);
             bool bareImage = d == null || d.Kind == CxbxRomKind.Image || d.Kind == CxbxRomKind.Zar;
-            choice.TryGetValue("attach_discs", out var own);
-            _attachGame = new CheckBox
-            {
-                Text = "Mount the ISO / XISO / CSO / CCI / CHD / ZAR directly through AIM - no copy, no RAM disk", AutoSize = true, ThreeState = true,
-                CheckState = own == "on" ? CheckState.Checked : own == "off" ? CheckState.Unchecked : CheckState.Indeterminate,
-                Enabled = noSupport == null && bareImage,
-            };
-            var attachGrey = "Grey: as every game (the Cxbx-Reloaded tab of the Nixx window, now "
-                             + (CxbxSettings.On(CxbxSettings.Read(), "attach_discs", true) ? "on" : "off") + ").";
-            w.Controls.Add(_attachGame);
+            var everyAttach = CxbxSettings.On(CxbxSettings.Read(), "attach_discs", true) ? "on" : "off";
             // A short sentence under it, the whole of it on hover (Mehdi, 05/10) - over the choice too.
             const string attachOnlyFull = "Only for a bare disc image (ISO, XISO, CSO, CCI, CHD) or a .zar - a zip or a 7z is unpacked.";
             const string attachFull = "Grey: as every game. When it is mounted, the choice below is not used - nothing is unpacked.";
-            var attachNote = noSupport != null ? LbIntegrations.Lbip.LbipHint.Note("Unavailable: " + noSupport + ".", null, 520, new Padding(20, 0, 3, 8))
-                           : !bareImage ? LbIntegrations.Lbip.LbipHint.Note("Only for a bare disc image or a .zar; zips and 7z are unpacked.", attachOnlyFull, 520, new Padding(20, 0, 3, 8))
-                           : LbIntegrations.Lbip.LbipHint.Note("Grey: as every game. When mounted, nothing is unpacked.", attachFull, 520, new Padding(20, 0, 3, 8));
-            LbIntegrations.Lbip.LbipHint.Attach(_attachGame, attachGrey + (noSupport != null ? "" : "\n" + (!bareImage ? attachOnlyFull : attachFull)));
-            w.Controls.Add(attachNote);
-            _auto = new RadioButton { Text = "Automatic - a RAM disk when it fits under the threshold, else the disk", AutoSize = true, Checked = placement == "auto" };
-            _ram = new RadioButton { Text = "Always a RAM disk, whatever its size (when one can be had)", AutoSize = true, Checked = placement == "ram" };
-            _disk = new RadioButton { Text = "Always the disk", AutoSize = true, Checked = placement == "disk" };
-            _keep = new CheckBox { Text = "Keep its copy on the disk - never removed to make room", AutoSize = true, Checked = CxbxSettings.Keep(choice), Margin = new Padding(3, 8, 3, 3) };
-            _plan = new Label { AutoSize = true, MaximumSize = new Size(540, 0), Margin = new Padding(3, 8, 3, 3) };
-            w.Controls.AddRange(new Control[] { _auto, _ram, _disk, _plan });
-            _attachGame.CheckStateChanged += (_, _) => ShowPlan();
+            if (!several)
+            {
+                choice.TryGetValue("attach_discs", out var own);
+                _attachGame = new CheckBox
+                {
+                    Text = "Mount the ISO / XISO / CSO / CCI / CHD / ZAR directly through AIM - no copy, no RAM disk", AutoSize = true, ThreeState = true,
+                    CheckState = own == "on" ? CheckState.Checked : own == "off" ? CheckState.Unchecked : CheckState.Indeterminate,
+                    Enabled = noSupport == null && bareImage,
+                };
+                var attachGrey = "Grey: as every game (the Cxbx-Reloaded tab of the Nixx window, now " + everyAttach + ").";
+                w.Controls.Add(_attachGame);
+                var attachNote = noSupport != null ? LbIntegrations.Lbip.LbipHint.Note("Unavailable: " + noSupport + ".", null, 520, new Padding(20, 0, 3, 8))
+                               : !bareImage ? LbIntegrations.Lbip.LbipHint.Note("Only for a bare disc image or a .zar; zips and 7z are unpacked.", attachOnlyFull, 520, new Padding(20, 0, 3, 8))
+                               : LbIntegrations.Lbip.LbipHint.Note("Grey: as every game. When mounted, nothing is unpacked.", attachFull, 520, new Padding(20, 0, 3, 8));
+                LbIntegrations.Lbip.LbipHint.Attach(_attachGame, attachGrey + (noSupport != null ? "" : "\n" + (!bareImage ? attachOnlyFull : attachFull)));
+                w.Controls.Add(attachNote);
+                _auto = new RadioButton { Text = "Automatic - a RAM disk when it fits under the threshold, else the disk", AutoSize = true, Checked = placement == "auto" };
+                _ram = new RadioButton { Text = "Always a RAM disk, whatever its size (when one can be had)", AutoSize = true, Checked = placement == "ram" };
+                _disk = new RadioButton { Text = "Always the disk", AutoSize = true, Checked = placement == "disk" };
+                _keep = new CheckBox { Text = "Keep its copy on the disk - never removed to make room", AutoSize = true, Checked = CxbxSettings.Keep(choice), Margin = new Padding(3, 8, 3, 3) };
+                _plan = new Label { AutoSize = true, MaximumSize = new Size(540, 0), Margin = new Padding(3, 8, 3, 3) };
+                w.Controls.AddRange(new Control[] { _auto, _ram, _disk, _plan });
+                _attachGame.CheckStateChanged += (_, _) => ShowPlan();
+            }
+            else
+            {
+                // Over several games (Mehdi, 06/10): lists, so that "Various (n of N)" can be said - the check box's grey square
+                // already means "as every game". Each game's next launch is its own: not shown.
+                _attachList = ChoiceRow(w, "Mount through AIM", (null, "As every game (" + everyAttach + ")"), ("on", "On - no copy, no RAM disk"), ("off", "Off - unpacked"));
+                _attachList.Combo.Enabled = noSupport == null;
+                LbIntegrations.Lbip.LbipHint.Attach(_attachList.Combo, attachOnlyFull);
+                w.Controls.Add(noSupport != null ? LbIntegrations.Lbip.LbipHint.Note("Unavailable: " + noSupport + ".", null, 520, new Padding(20, 0, 3, 8))
+                                                 : LbIntegrations.Lbip.LbipHint.Note("Bare disc images and .zar only; when mounted, nothing is unpacked.", attachOnlyFull, 520, new Padding(20, 0, 3, 8)));
+                _placeList = ChoiceRow(w, "Placement", (null, "Automatic - a RAM disk when it fits, else the disk"), ("ram", "Always a RAM disk (when one can be had)"), ("disk", "Always the disk"));
+            }
             where.Controls.Add(w);
             stack.Controls.Add(where);
 
-            var disk = CxbxSettingsPage.Group("Its copy on the disk");
-            // Its copy, and whether it stays: one card (Mehdi, 05/10: "hésite pas à réorganiser").
+            var disk = CxbxSettingsPage.Group(several ? "Their copy on the disk" : "Its copy on the disk");
+            // Its copy, and whether it stays: one card (Mehdi, 05/10: "hésite pas à réorganiser"). Its size and Delete are one
+            // game's: not over several.
             var copy = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Location = new Point(8, 20) };
-            var k = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true, Margin = Padding.Empty };
-            _onDisk = new Label { AutoSize = true, Margin = new Padding(3, 7, 8, 3) };
-            _delete = new Button { Text = "Delete it", AutoSize = true };
-            _delete.Click += (_, _) => DeleteCopy();
-            k.Controls.Add(_onDisk); k.Controls.Add(_delete);
-            copy.Controls.Add(k); copy.Controls.Add(_keep);
+            if (!several)
+            {
+                var k = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true, Margin = Padding.Empty };
+                _onDisk = new Label { AutoSize = true, Margin = new Padding(3, 7, 8, 3) };
+                _delete = new Button { Text = "Delete it", AutoSize = true };
+                _delete.Click += (_, _) => DeleteCopy();
+                k.Controls.Add(_onDisk); k.Controls.Add(_delete);
+                copy.Controls.Add(k); copy.Controls.Add(_keep);
+            }
+            else _keepList = ChoiceRow(copy, "Keep it", (null, "No - removed to make room"), ("on", "Yes - never removed to make room"));
             disk.Controls.Add(copy);
             stack.Controls.Add(disk);
 
@@ -369,14 +445,13 @@ namespace LbIntegrations.Cxbx
             var optionsScroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(8) };
             var optionsStack = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
             // The page's title says what it is: one sentence, the whole of it on hover (Mehdi, 05/10).
-            optionsStack.Controls.Add(LbIntegrations.Lbip.LbipHint.Note("For this game only; unset, the Nixx window's choice applies.",
-                (games.Count > 1 ? "The options of the " + games.Count + " games selected, shown from the first. " : "This game's own options. ")
+            optionsStack.Controls.Add(LbIntegrations.Lbip.LbipHint.Note((several ? "For these games" : "For this game only") + "; unset, the Nixx window's choice applies.",
+                (several ? "The options of the " + games.Count + " games selected. " : "This game's own options. ")
                 + "Unset, an option is every game's (the Nixx window's Cxbx-Reloaded tab), else Cxbx-Reloaded's own setting. "
                 + "They are written into Cxbx-Reloaded's settings for the time of the game, then put back.",
                 580, new Padding(4, 0, 0, 6)));
-            _rows = new CxbxOptionRows(choice, CxbxOptionRows.GameFallback(CxbxSettings.Read(), CxbxOwn.Read(_exe)));
-            _rowsAtOpen = _rows.Values();
-            optionsStack.Controls.Add(CxbxOptionRows.Legend("Not set: every game's, else the default, else Cxbx-Reloaded's own"));
+            _rows = new CxbxOptionRows(choice, CxbxOptionRows.GameFallback(CxbxSettings.Read(), CxbxOwn.Read(_exe)), several: several);
+            optionsStack.Controls.Add(CxbxOptionRows.Legend("Not set: every game's, else the default, else Cxbx-Reloaded's own", several));
             var reset = new Button { Text = "Reset to defaults", AutoSize = true, Margin = new Padding(4, 0, 0, 6) };
             LbIntegrations.Lbip.LbipHint.Attach(reset, "Every option of this game back to unset. Nothing is saved until OK.");
             reset.Click += (_, _) => _rows.Reset();
@@ -386,10 +461,31 @@ namespace LbIntegrations.Cxbx
             optionsTab.Controls.Add(optionsScroll);
             tabs.TabPages.Add(optionsTab);
 
+            // The selection: each game's stored values for what the window shows.
+            var optionKeys = _rows.Keys.ToList();
+            var keys = new[] { "placement", "attach_discs", "keep" }.Concat(optionKeys).ToList();
+            _sel = new LbIntegrations.Lbip.LbipSelection(games.Select(g => new LbIntegrations.Lbip.LbipSelection.Member
+            {
+                Title = CxbxPlugin.Safe(() => g.Title) ?? "?", Tag = g,
+                Stored = StoredOf(CxbxSettings.ReadGame(CxbxPlugin.Safe(() => g.Id)), optionKeys),
+            }), StringComparer.OrdinalIgnoreCase);
+            var top = _sel.Top(keys, Describe, shown =>
+            {
+                Fill(_placeList, shown["placement"], _sel.VariousText("placement"));
+                Fill(_attachList, shown["attach_discs"], _sel.VariousText("attach_discs"));
+                Fill(_keepList, shown["keep"], _sel.VariousText("keep"));
+                _rows.Fill(shown, _sel.VariousText);
+                _atOpen = Shown();
+            });
+
             var bottom = new Panel { Dock = DockStyle.Bottom, Height = 46 };
             var ok = new Button { Text = "OK", Width = 90, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
             var cancel = new Button { Text = "Cancel", Width = 90, DialogResult = DialogResult.Cancel, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
-            ok.Click += (_, _) => { SaveChoice(); DialogResult = DialogResult.OK; Close(); };
+            ok.Click += (_, _) =>
+            {
+                try { if (SaveChoice()) { DialogResult = DialogResult.OK; Close(); } }
+                catch (Exception ex) { Log.Warn("game options save", ex); MessageBox.Show(this, "The options could not be written: " + ex.Message, Text); }
+            };
             bottom.Controls.AddRange(new Control[] { ok, cancel });
             bottom.Layout += (_, _) =>
             {
@@ -398,13 +494,45 @@ namespace LbIntegrations.Cxbx
             };
             AcceptButton = ok; CancelButton = cancel;
             Controls.Add(tabs);
-            Controls.Add(header);
+            if (header.Controls.Count > 0) Controls.Add(header);
+            if (top != null) Controls.Add(top);
             Controls.Add(bottom);
 
-            foreach (var r in new[] { _auto, _ram, _disk }) r.CheckedChanged += (_, _) => ShowPlan();
+            if (!several) foreach (var r in new[] { _auto, _ram, _disk }) r.CheckedChanged += (_, _) => ShowPlan();
             ShowPlan();
+            if (_sel.Source != null) _sel.Source.SelectedIndex = 0; else _atOpen = Shown();
             // Dressed as the Nixx window (Mehdi, 05/10): LiteBox's look, its tabs a page bar at the left.
             LbIntegrations.Ui.NixxShell.Dress(this);
+        }
+
+        /// <summary>What the window shows: placement, mount, keep and the options - null (not set), Various or a value.</summary>
+        private Dictionary<string, string> Shown()
+        {
+            var d = _rows.Shown();
+            if (_placeList != null)
+            {
+                d["placement"] = _placeList.Value;
+                d["attach_discs"] = _attachList.Value;
+                d["keep"] = _keepList.Value;
+            }
+            else
+            {
+                d["placement"] = Placement == "auto" ? null : Placement;
+                d["attach_discs"] = AttachChoice.Length == 0 ? null : AttachChoice;
+                d["keep"] = _keep.Checked ? "on" : null;
+            }
+            return d;
+        }
+
+        /// <summary>A group of the top's list: what its games set of their own - short.</summary>
+        private static string Describe(LbIntegrations.Lbip.LbipSelection.Member m)
+        {
+            var mine = new List<string>();
+            if (m.Stored.ContainsKey("placement")) mine.Add("Placement");
+            if (m.Stored.ContainsKey("attach_discs")) mine.Add("AIM");
+            if (m.Stored.ContainsKey("keep")) mine.Add("Keep");
+            mine.AddRange(CxbxOptions.All.Where(o => m.Stored.ContainsKey(CxbxOptions.Prefix + o.Key)).Select(o => o.Label));
+            return mine.Count == 0 ? "nothing of its own" : "its own: " + string.Join(", ", mine.Take(4)) + (mine.Count > 4 ? " and " + (mine.Count - 4) + " more" : "");
         }
 
         private string Placement => _ram.Checked ? "ram" : _disk.Checked ? "disk" : "auto";
@@ -496,6 +624,7 @@ namespace LbIntegrations.Cxbx
 
         private void ShowPlan()
         {
+            if (_plan == null) return;      // over several games: each one's next launch is its own, not shown
             try
             {
                 if (_exe == null || _rom == null) { _plan.Text = "No Cxbx-Reloaded for this game in the library."; _onDisk.Text = ""; _delete.Enabled = false; return; }
@@ -512,27 +641,41 @@ namespace LbIntegrations.Cxbx
             catch (Exception ex) { _plan.Text = "The next launch could not be worked out: " + ex.Message; }
         }
 
-        // What the option rows showed at opening: OK changes only what was changed (LbipGameEdit, Mehdi 04/10) - over
-        // several games, each keeps what it has of its own and the user did not change.
-        private Dictionary<string, string> _rowsAtOpen;
-
-        private void SaveChoice()
+        /// <summary>OK changes only what was changed (LbipGameEdit, Mehdi 04/10): over several games, asked first, then each
+        /// keeps what it has of its own and the user did not change - a "Various" left as it is writes nothing (Mehdi, 06/10).
+        /// False: not confirmed.</summary>
+        private bool SaveChoice()
         {
-            foreach (var g in _games)
+            var now = Shown();
+            bool changed = LbIntegrations.Lbip.LbipSelection.Changed(_atOpen, now);
+            if (changed && !_sel.Confirm(this, Text)) return false;
+            int written = 0;
+            foreach (var m in _sel.Members)
             {
+                var g = (IGame)m.Tag;
                 var id = CxbxPlugin.Safe(() => g.Id);
                 if (string.IsNullOrEmpty(id)) continue;
+                var merged = changed ? _sel.MergeFor(m, _atOpen, now) : new Dictionary<string, string>(m.Stored, StringComparer.OrdinalIgnoreCase);
                 var values = CxbxSettings.ReadGame(id);
-                values["placement"] = Placement == "auto" ? "" : Placement;
-                values["keep"] = _keep.Checked ? "on" : "";
-                values["attach_discs"] = AttachChoice;
-                foreach (var kv in _rows.Values())
-                    if (_rowsAtOpen == null || !_rowsAtOpen.TryGetValue(kv.Key, out var before) || before != kv.Value) values[kv.Key] = kv.Value;
-                CxbxSettings.WriteGame(id, values);
+                bool any = false;
+                foreach (var key in now.Keys)
+                {
+                    merged.TryGetValue(key, out var v);
+                    m.Stored.TryGetValue(key, out var before);
+                    if (string.Equals(v, before, StringComparison.Ordinal)) continue;
+                    values[key] = v ?? "";
+                    any = true;
+                }
+                if (any) { CxbxSettings.WriteGame(id, values); written++; }
+                // The copy's own mark: as before for one game, at each OK; over several, for a game whose keep changed.
+                merged.TryGetValue("keep", out var keep);
+                m.Stored.TryGetValue("keep", out var keepWas);
+                if (_sel.Several && keep == keepWas) continue;
                 var rom = CxbxPlugin.ResolveFullPathForUi(CxbxPlugin.Safe(() => g.ApplicationPath));
-                if (_exe != null && rom != null) CxbxPlace.SetKeep(CxbxPlace.GameFolder(Path.GetDirectoryName(_exe), rom), _keep.Checked);
+                if (_exe != null && rom != null) CxbxPlace.SetKeep(CxbxPlace.GameFolder(Path.GetDirectoryName(_exe), rom), keep == "on");
             }
-            Log.Info("game options of " + _games.Count + " game(s): placement " + Placement + ", keep " + (_keep.Checked ? "on" : "off"));
+            Log.Info("game options saved: " + written + " of " + _sel.Members.Count + " game(s) changed");
+            return true;
         }
 
         private void DeleteCopy()

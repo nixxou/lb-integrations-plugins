@@ -162,15 +162,15 @@ namespace LbIntegrations.Probe
                 File.WriteAllText(toml, "[3D]\r\nRenderer = 0\r\n\r\n[3D.GL]\r\nScaleFactor = 1\r\nBetterPolygons = false\r\n\r\n[Screen]\r\nVSync = false\r\n");
                 var own = new Dictionary<string, string> { ["Renderer"] = "1", ["ScaleFactor"] = "4", ["VSync"] = "true" };
                 video.GetMethod("Save", BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { install, "game-1", own });
-                var loaded = (Dictionary<string, string>)video.GetMethod("Load", BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { install, "game-1" });
+                var loaded = (Dictionary<string, string>)video.GetMethod("Load", BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { install, "game-1", false });
                 ok &= Check("a game's own settings are kept, and read back", loaded != null && loaded["ScaleFactor"] == "4" && loaded.Count == 3);
-                ok &= Check("another game has none", video.GetMethod("Load").Invoke(null, new object[] { install, "game-2" }) == null);
+                ok &= Check("another game has none", video.GetMethod("Load").Invoke(null, new object[] { install, "game-2", false }) == null);
 
                 var apply = video.GetMethod("Apply", BindingFlags.Public | BindingFlags.Static);
                 var restore = video.GetMethod("Restore", BindingFlags.Public | BindingFlags.Static);
-                ok &= Check("a game without its own: nothing written", !(bool)apply.Invoke(null, new object[] { layout, "game-2" }) && !File.Exists(note));
+                ok &= Check("a game without its own: nothing written", !(bool)apply.Invoke(null, new object[] { layout, "game-2", false }) && !File.Exists(note));
 
-                ok &= Check("its session: the game's settings written", (bool)apply.Invoke(null, new object[] { layout, "game-1" })
+                ok &= Check("its session: the game's settings written", (bool)apply.Invoke(null, new object[] { layout, "game-1", false })
                             && Val("3D", "Renderer") == "1" && Val("3D.GL", "ScaleFactor") == "4" && Val("Screen", "VSync") == "true");
                 ok &= Check("melonDS's own written down first", File.Exists(note));
                 ok &= Check("and a key the game does not set left alone", Val("3D.GL", "BetterPolygons") == "false");
@@ -179,12 +179,12 @@ namespace LbIntegrations.Probe
                 ok &= Check("once it is over, melonDS's own are back", Val("3D", "Renderer") == "0" && Val("3D.GL", "ScaleFactor") == "1" && Val("Screen", "VSync") == "false" && !File.Exists(note));
 
                 // A session that never ended: the next launch puts them back before anything else.
-                apply.Invoke(null, new object[] { layout, "game-1" });
+                apply.Invoke(null, new object[] { layout, "game-1", false });
                 restore.Invoke(null, new object[] { layout, "left behind by a session that did not end", null });
                 ok &= Check("after a session that never ended, the next one puts them back", Val("3D", "Renderer") == "0" && !File.Exists(note));
 
                 video.GetMethod("Save").Invoke(null, new object[] { install, "game-1", null });
-                ok &= Check("and a game given back melonDS's settings has none of its own", video.GetMethod("Load").Invoke(null, new object[] { install, "game-1" }) == null);
+                ok &= Check("and a game given back melonDS's settings has none of its own", video.GetMethod("Load").Invoke(null, new object[] { install, "game-1", false }) == null);
             }
             finally
             {

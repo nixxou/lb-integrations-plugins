@@ -1705,11 +1705,14 @@ namespace LbIntegrations.Probe
                 var vhdx = (System.Windows.Forms.RadioButton)formType.GetField("_useVhdx", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(form);
                 var disk = (System.Windows.Forms.RadioButton)formType.GetField("_diskOnly", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(form);
                 var ram = (System.Windows.Forms.RadioButton)formType.GetField("_ramDisk", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(form);
-                Check("the window builds on three games in two groups, with a combo box of two", source != null && source.Items.Count == 2);
+                // The pack's rule (Mehdi, 06/10): "All selected games" first and chosen, then the groups.
+                Check("the window builds on three games in two groups: All selected games, then the two groups", source != null && source.Items.Count == 3);
                 Console.WriteLine("            " + string.Join(" | ", source.Items.Cast<object>()));
-                Check("the first group names its games", source.Items[0].ToString().StartsWith("Game A <and 1 other>"));
-                Check("it starts from the first group: nothing of ours", !vhdx.Checked && preview.Text.StartsWith("(none"), preview.Text);
+                Check("it starts on All selected games", source.SelectedIndex == 0 && source.Items[0].ToString().StartsWith("All selected games (3)"));
+                Check("the first group names its games", source.Items[1].ToString().StartsWith("Game A <and 1 other>"));
                 source.SelectedIndex = 1;
+                Check("the first group: nothing of ours", !vhdx.Checked && preview.Text.StartsWith("(none"), preview.Text);
+                source.SelectedIndex = 2;
                 Check("choosing the other group loads its options - what the launch applies, kept by the plugin", vhdx.Checked && preview.Text == "--use-vhdx", preview.Text);
                 Check("three exclusive choices: VHDX alone is checked", vhdx.Checked && !disk.Checked && !ram.Checked);
                 disk.Checked = true;
@@ -3050,8 +3053,9 @@ namespace LbIntegrations.Probe
 
             using (var several = (System.Windows.Forms.Form)Activator.CreateInstance(formType, Entries(2)))
             {
+                // A tab about one game only is not there over several (Mehdi, 06/10).
                 var tab = F<System.Windows.Forms.TabPage>(several, "_extrasTab");
-                Check("for several games, the tab says to pick one", tab.Controls.Count == 1 && tab.Controls[0].Text.Contains("single game"));
+                Check("for several games, the Updates & DLC tab is not there", tab == null);
             }
 
             using var form = (System.Windows.Forms.Form)Activator.CreateInstance(formType, Entries(1));

@@ -19,6 +19,10 @@
 // that a screen option set there keeps it off that game's line (SuperZsnesSettings.ForLaunch).
 // The bar at the left of each row says it at a glance: blue, passed on the command line; grey, not. The
 // command line the page adds up to is shown live at the bottom, so what will be passed is never a guess.
+// SEVERAL GAMES (the pack's rule, Mehdi 06/10 - LbipSelection): the game window refills the page (Fill) from "All selected
+// games" or a group; a setting the games do not agree on shows "Various (n of N)" with the purple bar - a list's extra first
+// item, a box's grey tick reading so (a click goes on, off[, SUPER ZSNES's own], back to Various), a field's grey hint until
+// typed in - and passes nothing on the line shown.
 
 using System;
 using System.Collections.Generic;
@@ -73,9 +77,15 @@ namespace LbIntegrations.SuperZsnes
             public Shape Shape;
             public Control Editor;
             public Panel Bar;
+            public List<string> Values = new List<string>();   // a list's items: Various, null (SUPER ZSNES's own), a value
+            public bool Various;                               // a box or a field showing Various now
+            public string VariousText = LbIntegrations.Lbip.OptionMarks.VariousText;
+            public string Hint;                                // a field's grey hint when it is not Various
         }
 
+        private const string Various = LbIntegrations.Lbip.LbipSelection.Various;
         private readonly List<Row> _rows = new List<Row>();
+        private bool _loading;
 
         /// <summary>What SUPER ZSNES runs on when nothing is passed, by IniKey - read off its files (SuperZsnesCurrent).</summary>
         private static Dictionary<string, string> _current = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -114,9 +124,10 @@ namespace LbIntegrations.SuperZsnes
 
         /// <summary>The options <paramref name="show"/> picks, with <paramref name="saved"/>'s values; the in-process plugin's
         /// box under them when <paramref name="deploy"/>; <paramref name="where"/> at the bottom. <paramref name="intro"/> is one
-        /// short sentence, <paramref name="introFull"/> - when given - the whole of it on hover.</summary>
+        /// short sentence, <paramref name="introFull"/> - when given - the whole of it on hover. <paramref name="several"/>: a
+        /// window over several games, its legend says the purple Various.</summary>
         public SuperZsnesSettingsPage(Func<Option, bool> show, Dictionary<string, string> saved, string intro, bool deploy, string where,
-                                      Dictionary<string, string> running = null, string introFull = null)
+                                      Dictionary<string, string> running = null, string introFull = null, bool several = false)
         {
             saved = saved ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             _current = running ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -149,14 +160,15 @@ namespace LbIntegrations.SuperZsnes
                 {
                     saved.TryGetValue(o.IniKey, out var current);
                     var row = new Row { Option = o, Shape = ShapeOf(o) };
-                    row.Editor = Editor(row, current);
+                    row.Editor = Editor(row);
+                    Fill(row, current);
                     row.Bar = new Panel { Width = 4, Height = 18, Margin = new Padding(0, 6, 8, 0) };
                     var label = new Label { Text = o.Label, AutoSize = true, MaximumSize = new Size(236, 0), Margin = new Padding(0, 7, 4, 0) };
                     // A short sentence under it, the whole of it on hover (Mehdi, 05/10) - over the row: its name, its control, its sentence.
                     var tip = Tip(o.Help, o.IniKey);
                     Tips.SetToolTip(label, tip);
                     Tips.SetToolTip(row.Editor, tip);
-                    Hook(row.Editor, () => { Show(row); Refresh(); });
+                    Hook(row.Editor, () => { if (!_loading) Touched(row); Show(row); Refresh(); });
                     Show(row);
 
                     int r = table.RowCount++;
@@ -189,6 +201,7 @@ namespace LbIntegrations.SuperZsnes
             }
             Item(Passed, "Passed on the command line");
             Item(NotPassed, "Not passed: " + Own + ", or the pack's default");
+            if (several) Item(LbIntegrations.Lbip.OptionMarks.VariousColor, "Various: each keeps its own");
             _count = new Label { Dock = DockStyle.Top, Height = 20, ForeColor = SystemColors.GrayText };
             _line = new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Font = new Font("Consolas", 9f), BackColor = SystemColors.Window };
             // A text box, not a label: a long path in a label wraps at its first space and the line is lost (01/10).
@@ -217,54 +230,128 @@ namespace LbIntegrations.SuperZsnes
 
         private static bool OnByDefault(Option o) => SuperZsnesSettings.IsTrue(o.Default);
 
-        private static Control Editor(Row row, string current)
+        /// <summary>The row's control, empty - Fill puts the value in.</summary>
+        private Control Editor(Row row)
         {
             var o = row.Option;
             switch (row.Shape)
             {
                 case Shape.Ours when o.Kind == OptionKind.Bool:
-                    return new CheckBox { AutoSize = true, Checked = current != null ? SuperZsnesSettings.IsTrue(current) : OnByDefault(o), Margin = new Padding(3, 6, 0, 0) };
-                case Shape.Ours:
-                    return Field(string.IsNullOrEmpty(current) ? o.Default ?? "" : current, o.Default != null ? "the default, " + o.Default : null);
                 case Shape.Switch:
-                    return new CheckBox { AutoSize = true, Checked = current != null && SuperZsnesSettings.IsTrue(current), Margin = new Padding(3, 6, 0, 0) };
                 case Shape.Tri:
-                    return new CheckBox
-                    {
-                        AutoSize = true, ThreeState = true, Margin = new Padding(3, 6, 0, 0),
-                        CheckState = current == null ? CheckState.Indeterminate : SuperZsnesSettings.IsTrue(current) ? CheckState.Checked : CheckState.Unchecked,
-                    };
-                case Shape.Choice:
                 {
-                    var c = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200, Margin = new Padding(3, 3, 0, 0) };
-                    c.Items.Add("<" + OwnOf(o) + ">");
-                    c.Items.AddRange(o.Choices);
-                    int at = Array.FindIndex(o.Choices, x => string.Equals(x, current, StringComparison.OrdinalIgnoreCase));
+                    var c = new CheckBox { AutoSize = true, ThreeState = row.Shape == Shape.Tri, Margin = new Padding(3, 6, 0, 0) };
+                    // A box that showed Various cycles by hand, Various among its states (AutoCheck off - see Fill).
+                    c.Click += (_, _) => { if (c.AutoCheck) return; Cycle(row, c); Show(row); Refresh(); };
+                    return c;
+                }
+                case Shape.Choice:
+                    return new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200, Margin = new Padding(3, 3, 0, 0) };
+                case Shape.Ours:
+                    row.Hint = o.Default != null ? "the default, " + o.Default : null;
+                    return Field(row);
+                default:
+                    row.Hint = (_current.ContainsKey(o.IniKey) ? OwnOf(o) : Own + (o.Default != null ? ": " + o.Default : ""))
+                               + (o.Kind != OptionKind.Text ? " (" + Range(o) + ")" : "");
+                    return Field(row);
+            }
+        }
+
+        /// <summary>The row's control set to a stored value - null for none, Various for games that do not agree.</summary>
+        private void Fill(Row row, string current)
+        {
+            var o = row.Option;
+            bool various = current == Various;
+            row.Various = various && !(row.Editor is ComboBox);
+            switch (row.Editor)
+            {
+                case CheckBox c:
+                    c.AutoCheck = !various;
+                    c.ThreeState = row.Shape == Shape.Tri || various;
+                    c.CheckState = various ? CheckState.Indeterminate
+                                 : row.Shape == Shape.Ours ? ((current != null ? SuperZsnesSettings.IsTrue(current) : OnByDefault(o)) ? CheckState.Checked : CheckState.Unchecked)
+                                 : row.Shape == Shape.Switch ? (current != null && SuperZsnesSettings.IsTrue(current) ? CheckState.Checked : CheckState.Unchecked)
+                                 : current == null ? CheckState.Indeterminate : SuperZsnesSettings.IsTrue(current) ? CheckState.Checked : CheckState.Unchecked;
+                    break;
+                case ComboBox b:
+                {
+                    b.Items.Clear(); row.Values.Clear();
+                    if (various) { b.Items.Add(row.VariousText); row.Values.Add(Various); }
+                    b.Items.Add("<" + OwnOf(o) + ">"); row.Values.Add(null);
+                    foreach (var choice in o.Choices) { b.Items.Add(choice); row.Values.Add(choice); }
+                    int at = various ? 0 : current == null ? row.Values.IndexOf(null)
+                           : row.Values.FindIndex(x => x != null && x != Various && string.Equals(x, current, StringComparison.OrdinalIgnoreCase));
                     if (at < 0 && !string.IsNullOrWhiteSpace(current))
                     {
                         // Set, but no entry of the list any more (Mehdi, 04/10): shown as it is and kept, never read as unset.
-                        c.Tag = current.Trim();
-                        c.Items.Add(current.Trim() + " (not in this list)");
-                        c.SelectedIndex = c.Items.Count - 1;
+                        b.Items.Add(current.Trim() + " (not in this list)"); row.Values.Add(current.Trim());
+                        at = row.Values.Count - 1;
                     }
-                    else c.SelectedIndex = 1 + at;
-                    return c;
+                    b.SelectedIndex = Math.Max(0, at);
+                    break;
                 }
-                default:
-                    return Field(current ?? "", (_current.ContainsKey(o.IniKey) ? OwnOf(o) : Own + (o.Default != null ? ": " + o.Default : ""))
-                                               + (o.Kind != OptionKind.Text ? " (" + Range(o) + ")" : ""));
+                case TextBox t:
+                    t.Text = various ? "" : row.Shape == Shape.Ours && string.IsNullOrEmpty(current) ? o.Default ?? "" : current ?? "";
+                    Cue(row);
+                    break;
             }
+            Show(row);
         }
+
+        /// <summary>A box that showed Various, clicked: Various, on, off[, SUPER ZSNES's own], Various again.</summary>
+        private static void Cycle(Row row, CheckBox c)
+        {
+            if (row.Various) { row.Various = false; c.CheckState = CheckState.Checked; }
+            else if (c.CheckState == CheckState.Checked) c.CheckState = CheckState.Unchecked;
+            else if (row.Shape == Shape.Tri && c.CheckState == CheckState.Unchecked) c.CheckState = CheckState.Indeterminate;
+            else { row.Various = true; c.CheckState = CheckState.Indeterminate; }
+        }
+
+        /// <summary>Typed in: a field that showed Various is the value typed now - for every game, empty or not.</summary>
+        private static void Touched(Row row)
+        {
+            if (!row.Various || !(row.Editor is TextBox)) return;
+            row.Various = false;
+            Cue(row);
+        }
+
+        /// <summary>The page over several games, refilled: "All selected games" or a group (LbipSelection) - each key's value,
+        /// Various for one they do not agree on, said by <paramref name="variousText"/>.</summary>
+        public void Fill(IDictionary<string, string> shown, Func<string, string> variousText)
+        {
+            _loading = true;
+            try
+            {
+                foreach (var row in _rows)
+                {
+                    shown.TryGetValue(row.Option.IniKey, out var v);
+                    row.VariousText = variousText?.Invoke(row.Option.IniKey) ?? LbIntegrations.Lbip.OptionMarks.VariousText;
+                    Fill(row, v);
+                }
+            }
+            finally { _loading = false; }
+            Refresh();
+        }
+
+        /// <summary>The keys the page shows.</summary>
+        public IEnumerable<string> Keys => _rows.Select(r => r.Option.IniKey);
 
         private static string Range(Option o)
             => o.Min.ToString(CultureInfo.InvariantCulture) + " to " + o.Max.ToString(CultureInfo.InvariantCulture);
 
         /// <summary>A text field with a grey hint while it is empty - what an empty one means.</summary>
-        private static TextBox Field(string text, string hint)
+        private static TextBox Field(Row row)
         {
-            var t = new TextBox { Text = text, Width = 200, Margin = new Padding(3, 3, 0, 0) };
-            if (hint != null) t.HandleCreated += (_, _) => SendMessage(t.Handle, 0x1501 /* EM_SETCUEBANNER */, (IntPtr)1, hint);
+            var t = new TextBox { Width = 200, Margin = new Padding(3, 3, 0, 0) };
+            t.HandleCreated += (_, _) => Cue(row);
             return t;
+        }
+
+        /// <summary>The field's grey hint: "Various (n of N)" while it is so, else what an empty one means.</summary>
+        private static void Cue(Row row)
+        {
+            if (!(row.Editor is TextBox t) || !t.IsHandleCreated) return;
+            SendMessage(t.Handle, 0x1501 /* EM_SETCUEBANNER */, (IntPtr)1, (row.Various ? row.VariousText : row.Hint) ?? "");
         }
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
@@ -286,16 +373,23 @@ namespace LbIntegrations.SuperZsnes
             if (row.Editor is CheckBox c)
             {
                 bool on = c.CheckState == CheckState.Checked;
-                c.Text = row.Shape == Shape.Tri && c.CheckState == CheckState.Indeterminate ? OwnOf(row.Option)
+                c.Text = row.Various ? row.VariousText
+                       : row.Shape == Shape.Tri && c.CheckState == CheckState.Indeterminate ? OwnOf(row.Option)
                        : (on ? "on" : "off") + (row.Shape == Shape.Ours && on == OnByDefault(row.Option) ? " (default)" : "");
             }
-            if (row.Bar != null) row.Bar.BackColor = ValueOf(row) != null ? Passed : NotPassed;
+            if (row.Bar != null)
+            {
+                var v = ValueOf(row);
+                row.Bar.BackColor = v == Various ? LbIntegrations.Lbip.OptionMarks.VariousColor : v != null ? Passed : NotPassed;
+            }
         }
 
-        /// <summary>What the row writes, or null for nothing: the emulator's own value, or the pack's default.</summary>
+        /// <summary>What the row writes, or null for nothing: the emulator's own value, or the pack's default - Various for
+        /// a row the selected games do not agree on, left so.</summary>
         private static string ValueOf(Row row)
         {
             var o = row.Option;
+            if (row.Various) return Various;
             switch (row.Editor)
             {
                 case CheckBox c when row.Shape == Shape.Tri:
@@ -305,8 +399,7 @@ namespace LbIntegrations.SuperZsnes
                 case CheckBox c:
                     return c.Checked ? "true" : null;
                 case ComboBox b:
-                    if (b.SelectedIndex <= 0) return null;
-                    return b.SelectedIndex > row.Option.Choices.Length && b.Tag is string kept ? kept : b.SelectedItem?.ToString();
+                    return b.SelectedIndex < 0 || b.SelectedIndex >= row.Values.Count ? null : row.Values[b.SelectedIndex];
                 case TextBox t:
                 {
                     var v = t.Text.Trim();
@@ -318,7 +411,8 @@ namespace LbIntegrations.SuperZsnes
             return null;
         }
 
-        /// <summary>Every row shown - null for one that passes nothing - for LbipGameEdit: OK changes only what changed.</summary>
+        /// <summary>Every row shown - null for one that passes nothing, Various for one left so - for LbipGameEdit: OK changes
+        /// only what changed.</summary>
         public Dictionary<string, string> Shown()
         {
             var shown = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -326,14 +420,14 @@ namespace LbIntegrations.SuperZsnes
             return shown;
         }
 
-        /// <summary>What Save writes: the rows that pass something.</summary>
+        /// <summary>What Save writes: the rows that pass something (a Various one passes nothing the page can say).</summary>
         public Dictionary<string, string> Values()
         {
             var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var row in _rows)
             {
                 var v = ValueOf(row);
-                if (v != null) values[row.Option.IniKey] = v;
+                if (v != null && v != Various) values[row.Option.IniKey] = v;
             }
             return values;
         }
@@ -367,7 +461,7 @@ namespace LbIntegrations.SuperZsnes
             if (display?.Editor is CheckBox shown && shown.Checked) flags.Add(SuperZsnesSettings.DisplayFlag);
             if (_screenNote != null)
             {
-                var set = _rows.Where(r => SuperZsnesOptions.ScreenKeys.Contains(r.Option.IniKey, StringComparer.OrdinalIgnoreCase) && ValueOf(r) != null)
+                var set = _rows.Where(r => SuperZsnesOptions.ScreenKeys.Contains(r.Option.IniKey, StringComparer.OrdinalIgnoreCase) && ValueOf(r) != null && ValueOf(r) != Various)
                                .Select(r => r.Option.Label).ToList();
                 _screenNote.ForeColor = set.Count > 0 ? Color.Firebrick : SystemColors.GrayText;
                 // Short, the whole of it on hover (Mehdi, 05/10).
@@ -378,7 +472,9 @@ namespace LbIntegrations.SuperZsnes
                     ? "Overridden: \"Always full screen on the primary display\" (the SUPER ZSNES tab) is not passed for this game - " + string.Join(", ", set) + " set here."
                     : "Set any of these, and \"Always full screen on the primary display\" (the SUPER ZSNES tab) is not passed for this game.");
             }
-            _count.Text = flags.Count == 0 ? "Nothing added to the command line." : flags.Count + " option(s) added to the command line, before the ROM path:";
+            int various = _rows.Count(r => ValueOf(r) == Various);
+            _count.Text = (flags.Count == 0 ? "Nothing added to the command line" : flags.Count + " option(s) added to the command line, before the ROM path")
+                        + (various > 0 ? " (" + various + " vary, kept per game)" : "") + (flags.Count == 0 ? "." : ":");
             _line.Text = string.Join(" ", flags.Select(f => f.Text));
         }
 

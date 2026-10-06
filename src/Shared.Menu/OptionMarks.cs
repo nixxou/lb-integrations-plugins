@@ -134,7 +134,7 @@ namespace LbIntegrations.Lbip
         public static Button ResetButton(Action reset)
         {
             var button = new Button { Text = "Reset to defaults", AutoSize = true };
-            new ToolTip().SetToolTip(button, "Every setting of this window back to <Default>, and \"Edit by hand\" off.\nNothing is saved until OK.");
+            new ToolTip().SetToolTip(button, "Every setting of this window back to its default.\nNothing is saved until OK.");
             button.Click += (_, _) => reset();
             return button;
         }

@@ -4,6 +4,11 @@
 // every option of this pack, applied IN MEMORY by the in-process plugin: never written into the emulator's
 // own settings file.
 //
+// SEVERAL GAMES (the pack's rule, Mehdi 06/10 - LbipSelection): at the top "All selected games", the default, then each group
+// of games with identical options, to start from its values; a setting they do not agree on reads "Various (n of N)" in
+// purple - left so, each keeps its own. OK asks first, then each game gets only what was changed. What is one game's alone
+// (its options file) is not shown then.
+//
 // NOT AN IGameMenuItemPlugin, as for PPSSPP: a plugin in LaunchBox 14's Local\Plugins gets its emulator role and
 // nothing else; Nixx-Menus relays to the GameMenu class below by its name - src\Menus\Menus.cs has the contract.
 
@@ -71,39 +76,49 @@ namespace LbIntegrations.SuperZsnes
         private static extern IntPtr GetForegroundWindow();
     }
 
-    /// <summary>One game's options - or a selection's, which then all get the same.</summary>
+    /// <summary>One game's options - or a selection's (LbipSelection: All selected games, or a group to start from).</summary>
     internal sealed class SuperZsnesGameOptionsForm : Form
     {
         private readonly List<(string Id, string Title)> _games;
+        private readonly LbIntegrations.Lbip.LbipSelection _selection;
         private readonly SuperZsnesSettingsPage _page;
 
         public SuperZsnesGameOptionsForm(List<IGame> games)
         {
             _games = games.Select(g => (Safe(() => g.Id), Safe(() => g.Title))).Where(g => g.Item1.Length > 0).ToList();
             var first = _games.FirstOrDefault();
+            _selection = new LbIntegrations.Lbip.LbipSelection(
+                _games.Select(g => new LbIntegrations.Lbip.LbipSelection.Member { Title = g.Title, Stored = SuperZsnesSettings.ReadGame(g.Id), Tag = g.Id }),
+                StringComparer.OrdinalIgnoreCase);
+            bool several = _selection.Several;
             var saved = SuperZsnesSettings.ReadGame(first.Id);
-            bool differ = _games.Skip(1).Any(g => !Same(SuperZsnesSettings.ReadGame(g.Id), saved));
 
-            Text = "Nixx-SuperZSNES - Options" + (_games.Count > 1 ? " (" + _games.Count + " games)" : " - " + first.Title);
+            Text = "Nixx-SuperZSNES - Options" + (several ? " (" + _games.Count + " games)" : " - " + first.Title);
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MinimizeBox = MaximizeBox = false;
             ShowInTaskbar = false;
             Font = new Font("Segoe UI", 9f);
-            ClientSize = new Size(700, 780);
+            ClientSize = new Size(700, several ? 838 : 780);   // several: the top list's 58
 
             // One sentence (Mehdi, 05/10), the whole of it on hover.
-            var who = _games.Count == 1 ? first.Title + "'s own options" : _games.Count + " games" + (differ ? " - their options differ: shown from " + first.Title : ", all with the same options");
+            var who = several ? "Each game's own options" : first.Title + "'s own options";
             var intro = who + "; unset, SUPER ZSNES's own applies.";
             var introFull = who + ". " + "Each stays SUPER ZSNES's own until set here; set, it goes on the game's command line at launch, "
-                            + "and is never written into the emulator's settings.";
+                            + "and is never written into the emulator's settings."
+                            + (several ? " Various: the games differ - left so, each keeps its own; changed, it goes to all." : "");
             // What SUPER ZSNES runs on without these: its settings file and Unity's registry values (SuperZsnesCurrent).
             var exe = ExecutableFor(games.FirstOrDefault());
             var current = exe != null ? SuperZsnesCurrent.Read(exe) : null;
             _page = new SuperZsnesSettingsPage(o => o.Scope == OptionScope.Game, saved, intro, deploy: false,
-                                               where: _games.Count == 1 ? "Options file: " + SuperZsnesSettings.GamePath(first.Id) : "", running: current, introFull: introFull);
-            _atOpen = _page.Shown();
+                                               where: several ? "" : "Options file: " + SuperZsnesSettings.GamePath(first.Id), running: current, introFull: introFull,
+                                               several: several);
             _page.Dock = DockStyle.Fill;
+            // Several games: the list at the top refills the page - All selected games at once, a group when picked - and what it
+            // shows then is what OK compares with.
+            var top = _selection.Top(_page.Keys, Describe, shown => { _page.Fill(shown, _selection.VariousText); _atOpen = _page.Shown(); });
+            if (top != null) _selection.Source.SelectedIndex = 0;
+            else _atOpen = _page.Shown();
 
             var ok = new Button { Text = "OK", Width = 90 };
             var cancel = new Button { Text = "Cancel", Width = 90, DialogResult = DialogResult.Cancel };
@@ -115,6 +130,7 @@ namespace LbIntegrations.SuperZsnes
             CancelButton = cancel;
 
             Controls.Add(_page);
+            if (top != null) Controls.Add(top);
             Controls.Add(buttons);
             // Dressed as the Nixx window (Mehdi, 05/10): LiteBox's look. One page of cards, no tabs: only themed.
             LbIntegrations.Ui.NixxShell.Dress(this);
@@ -137,27 +153,34 @@ namespace LbIntegrations.SuperZsnes
             catch { return null; }
         }
 
-        // What the page showed once built - see LbipGameEdit.
-        private readonly Dictionary<string, string> _atOpen;
+        /// <summary>A group in the top list: the options its games have of their own.</summary>
+        private static string Describe(LbIntegrations.Lbip.LbipSelection.Member m)
+        {
+            var mine = m.Stored.Where(kv => kv.Value != null).Select(kv => SuperZsnesOptions.Find(kv.Key))
+                               .Where(o => o != null && o.Scope == OptionScope.Game).Select(o => o.Label).ToList();
+            return mine.Count == 0 ? "SUPER ZSNES's own" : "its own: " + string.Join(", ", mine.Take(4)) + (mine.Count > 4 ? " and " + (mine.Count - 4) + " more" : "");
+        }
+
+        // What the page showed once filled - see LbipGameEdit.
+        private Dictionary<string, string> _atOpen;
 
         private void Apply()
         {
             var problem = _page.Problem();
             if (problem != null) { MessageBox.Show(this, problem, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
-            if (_games.Count > 1
-                && MessageBox.Show(this, "Your changes will be applied to all " + _games.Count + " selected games; what each one has of its own and you did not change stays as it is.", Text,
-                                   MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) != DialogResult.OK)
-                return;
-            // OK changes only what was changed (LbipGameEdit, Mehdi 04/10): a key the page does not show, a choice no longer
-            // in its list, stays as the game has it.
             var shown = _page.Shown();
+            if (!LbIntegrations.Lbip.LbipSelection.Changed(_atOpen, shown)) { DialogResult = DialogResult.OK; Close(); return; }
+            if (!_selection.Confirm(this, Text)) return;
+            // OK changes only what was changed (LbipGameEdit, Mehdi 04/10): a key the page does not show, a choice no longer
+            // in its list, a Various left so (06/10), stays as the game has it.
             int changed = 0;
-            foreach (var g in _games)
+            foreach (var m in _selection.Members)
             {
-                var stored = SuperZsnesSettings.ReadGame(g.Id);
-                var values = LbIntegrations.Lbip.LbipGameEdit.Merge(stored, _atOpen, shown);
+                var id = (string)m.Tag;
+                var stored = SuperZsnesSettings.ReadGame(id);
+                var values = _selection.MergeFor(m, _atOpen, shown);
                 if (Same(stored, values)) continue;
-                SuperZsnesSettings.WriteGame(g.Id, values);
+                SuperZsnesSettings.WriteGame(id, values);
                 changed++;
             }
             Log.Info("game options window: " + changed + " change(s), of " + _games.Count + " game(s)");

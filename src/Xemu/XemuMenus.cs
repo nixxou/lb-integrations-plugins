@@ -184,22 +184,25 @@ namespace LbIntegrations.Xemu
         }
     }
 
-    /// <summary>A game's options - a selection of several games takes the same choice; what is shown is the first one's.</summary>
+    /// <summary>A game's options. Over several games, the pack's rule (Mehdi, 06/10 - Shared.Menu\LbipSelection): at the top
+    /// "All selected games" - the default - then each group of games with the same options; a setting they do not agree on
+    /// reads "Various (n of N)", purple, and each game keeps its own unless it is changed. What is about one game only - its
+    /// disc, its compatibility, its console and files (the Game tab), its Insignia line - is not shown then.</summary>
     internal sealed class XemuGameForm : Form
     {
-        private readonly List<IGame> _games;
+        private readonly LbIntegrations.Lbip.LbipSelection _sel;
         private readonly XemuOptionRows _xemuRows, _consoleRows;
-        private readonly Dictionary<string, string> _rowsAtOpen;
+        private Dictionary<string, string> _atOpen;
 
         public XemuGameForm(List<IGame> games)
         {
-            _games = games;
             var first = games[0];
+            bool several = games.Count > 1;
             var exe = XemuLibrary.For(first);
-            var rom = XemuPlugin.ResolveFullPath(XemuPlugin.Safe(() => first.ApplicationPath));
+            var rom = several ? null : XemuPlugin.ResolveFullPath(XemuPlugin.Safe(() => first.ApplicationPath));
             var choice = XemuSettings.ReadGame(XemuPlugin.Safe(() => first.Id));
 
-            Text = "Nixx-Xemu - " + (games.Count > 1 ? games.Count + " games" : XemuPlugin.Safe(() => first.Title));
+            Text = "Nixx-Xemu - " + (several ? games.Count + " games" : XemuPlugin.Safe(() => first.Title));
             StartPosition = FormStartPosition.CenterParent;
             Font = new Font("Segoe UI", 9f);
             ClientSize = new Size(640, 720);
@@ -207,7 +210,7 @@ namespace LbIntegrations.Xemu
 
             // THREE TABS (Mehdi, 05/10: "le pergame menu est un gros bordel"): the game - its compatibility, its console; xemu's
             // settings for it; its console and disc. What it is, above them all.
-            // What the game is, read once: its disc's kind, its title, its regions - and its console.
+            // What the game is, read once: its disc's kind, its title, its regions - and its console. One game only.
             var about = new List<string>();
             string titleId = null;
             LbIntegrations.Cxbx.XbeInfo xbe = null;
@@ -228,12 +231,14 @@ namespace LbIntegrations.Xemu
             }
             catch (Exception ex) { about.Add("The game could not be read: " + ex.Message); }
             if (exe == null) about.Add("No xemu of this plugin in the library.");
-            if (games.Count > 1) about.Add("The " + games.Count + " games selected take the same choice; what is shown is the first one's.");
             // Above the tabs: what it is, and its compatibility at a glance (Mehdi, 05/10) - drawn again with the Game tab's.
             var header = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(8, 6, 8, 4) };
-            header.Controls.Add(new Label { Text = string.Join("\n", about), AutoSize = true, MaximumSize = new Size(620, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(2, 0, 0, 2) });
-            _pills = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty };
-            header.Controls.Add(_pills);
+            if (about.Count > 0) header.Controls.Add(new Label { Text = string.Join("\n", about), AutoSize = true, MaximumSize = new Size(620, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(2, 0, 0, 2) });
+            if (!several)
+            {
+                _pills = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty };
+                header.Controls.Add(_pills);
+            }
 
             // A tab: a scrolling page, its controls stacked.
             FlowLayoutPanel Tab(TabControl tabs, string title)
@@ -246,7 +251,6 @@ namespace LbIntegrations.Xemu
                 tabs.TabPages.Add(page);
                 return stack;
             }
-            Label Explain(string text) => new Label { AutoSize = true, MaximumSize = new Size(580, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(4, 0, 0, 6), Text = text };
             Button Reset(XemuOptionRows rows, string what)
             {
                 var b = new Button { Text = "Reset to defaults", AutoSize = true, Margin = new Padding(4, 0, 0, 6) };
@@ -256,41 +260,64 @@ namespace LbIntegrations.Xemu
             }
             var tabs = new TabControl { Dock = DockStyle.Fill };
 
-            // ── Game: its compatibility, its console ──
-            var game = Tab(tabs, "Game");
-            if (xbe != null) game.Controls.Add(CompatGroup(exe, xbe));
-            if (exe != null) game.Controls.Add(ConsoleGroup(exe, titleId ?? (rom != null ? XemuDisc.XbeForConsole(rom, exe, out _)?.TitleIdText : null), first, rom));
+            // ── Game: its compatibility, its console - one game's, not added over several ──
+            if (!several)
+            {
+                var game = Tab(tabs, "Game");
+                if (xbe != null) game.Controls.Add(CompatGroup(exe, xbe));
+                if (exe != null) game.Controls.Add(ConsoleGroup(exe, titleId ?? (rom != null ? XemuDisc.XbeForConsole(rom, exe, out _)?.TitleIdText : null), first, rom));
+            }
+            var forWhom = several ? "For these games" : "For this game only";
 
             // ── xemu's settings for this game ──
             var toml = exe != null ? XemuTomlDoc.Load(XemuPaths.TomlOf(exe)) : null;
             var every = XemuSettings.Read();
             var settings = Tab(tabs, "xemu settings");
-            settings.Controls.Add(LbIntegrations.Lbip.LbipHint.Note("For this game only; unset, xemu's own setting applies.",
+            settings.Controls.Add(LbIntegrations.Lbip.LbipHint.Note(forWhom + "; unset, xemu's own setting applies.",
                 "xemu's own settings, for this game only. Unset: xemu's own - its own window sets them for every game. Given "
                 + "to xemu for the time of the game: your xemu.toml is left as it is.", 580, new Padding(4, 0, 0, 6)));
-            _xemuRows = new XemuOptionRows(choice, XemuOptionRows.GameFallback(every, toml), o => o.IsXemuSetting);
-            settings.Controls.Add(XemuOptionRows.Legend("Not set: xemu's own (its xemu.toml), else the default"));
+            _xemuRows = new XemuOptionRows(choice, XemuOptionRows.GameFallback(every, toml), o => o.IsXemuSetting, several);
+            settings.Controls.Add(XemuOptionRows.Legend("Not set: xemu's own (its xemu.toml), else the default", several));
             settings.Controls.Add(Reset(_xemuRows, "Every xemu setting of this game"));
             settings.Controls.Add(_xemuRows);
 
             // ── its console and disc ──
             var console = Tab(tabs, "Console & disc");
-            console.Controls.Add(LbIntegrations.Lbip.LbipHint.Note("For this game only; unset, the Nixx window's choice applies.",
+            console.Controls.Add(LbIntegrations.Lbip.LbipHint.Note(forWhom + "; unset, the Nixx window's choice applies.",
                 "The console this game runs on and its disc, made for the time of the game - your files are never written. "
                 + "Unset: every game's (the Nixx window's xemu tab), else the default.", 580, new Padding(4, 0, 0, 6)));
-            // "Play online (Insignia)" only for a game Insignia serves (XemuInsignia, by its title id).
+            // "Play online (Insignia)" only for a game Insignia serves (XemuInsignia, by its title id) - so never over several
+            // games: knowing would mean reading every disc.
             var onInsignia = XemuInsignia.Of(titleId);
-            _consoleRows = new XemuOptionRows(choice, XemuOptionRows.GameFallback(every, toml), o => !o.IsXemuSetting && (o.Key != "live" || onInsignia != null));
-            console.Controls.Add(XemuOptionRows.Legend("Not set: every game's, else the default"));
+            _consoleRows = new XemuOptionRows(choice, XemuOptionRows.GameFallback(every, toml), o => !o.IsXemuSetting && (o.Key != "live" || onInsignia != null), several);
+            console.Controls.Add(XemuOptionRows.Legend("Not set: every game's, else the default", several));
             console.Controls.Add(Reset(_consoleRows, "The console and disc options of this game"));
             console.Controls.Add(_consoleRows);
 
-            _rowsAtOpen = Values();
+            // The selection: each game's stored values for the rows shown (a value blank in its file is not one).
+            var keys = _xemuRows.Keys.Concat(_consoleRows.Keys).ToList();
+            _sel = new LbIntegrations.Lbip.LbipSelection(games.Select(g =>
+            {
+                var raw = XemuSettings.ReadGame(XemuPlugin.Safe(() => g.Id));
+                var stored = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var k in keys) if (XemuOptions.Get(raw, k.Substring(XemuOptions.Prefix.Length)) is string v) stored[k] = v;
+                return new LbIntegrations.Lbip.LbipSelection.Member { Title = XemuPlugin.Safe(() => g.Title) ?? "?", Stored = stored, Tag = XemuPlugin.Safe(() => g.Id) };
+            }), StringComparer.OrdinalIgnoreCase);
+            var top = _sel.Top(keys, Describe, shown =>
+            {
+                _xemuRows.Fill(shown, _sel.VariousText);
+                _consoleRows.Fill(shown, _sel.VariousText);
+                _atOpen = Shown();
+            });
 
             var bottom = new Panel { Dock = DockStyle.Bottom, Height = 46 };
             var ok = new Button { Text = "OK", Width = 90, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
             var cancel = new Button { Text = "Cancel", Width = 90, DialogResult = DialogResult.Cancel, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
-            ok.Click += (_, _) => { SaveChoice(); DialogResult = DialogResult.OK; Close(); };
+            ok.Click += (_, _) =>
+            {
+                try { if (SaveChoice()) { DialogResult = DialogResult.OK; Close(); } }
+                catch (Exception ex) { Log.Warn("game options save", ex); MessageBox.Show(this, "The options could not be written: " + ex.Message, Text); }
+            };
             bottom.Controls.AddRange(new Control[] { ok, cancel });
             bottom.Layout += (_, _) =>
             {
@@ -299,33 +326,58 @@ namespace LbIntegrations.Xemu
             };
             AcceptButton = ok; CancelButton = cancel;
             Controls.Add(tabs);
-            Controls.Add(header);
+            if (header.Controls.Count > 0) Controls.Add(header);
+            if (top != null) Controls.Add(top);
             Controls.Add(bottom);
+            if (_sel.Source != null) _sel.Source.SelectedIndex = 0; else _atOpen = Shown();
             // Dressed as the Nixx window (Mehdi, 05/10): LiteBox's look, its tabs a page bar at the left.
             LbIntegrations.Ui.NixxShell.Dress(this);
         }
 
-        private Dictionary<string, string> Values()
+        /// <summary>What the rows show, keyed "opt.&lt;key&gt;": null (not set), Various or a value.</summary>
+        private Dictionary<string, string> Shown()
         {
-            var all = new Dictionary<string, string>(_xemuRows.Values(), StringComparer.OrdinalIgnoreCase);
-            foreach (var kv in _consoleRows.Values()) all[kv.Key] = kv.Value;
+            var all = new Dictionary<string, string>(_xemuRows.Shown(), StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in _consoleRows.Shown()) all[kv.Key] = kv.Value;
             return all;
         }
 
-        /// <summary>OK changes only what was changed (LbipGameEdit's rule): over several games, each keeps what it has of its own
-        /// and the user did not change.</summary>
-        private void SaveChoice()
+        /// <summary>A group of the top's list: what its games set of their own - short.</summary>
+        private static string Describe(LbIntegrations.Lbip.LbipSelection.Member m)
         {
-            foreach (var g in _games)
+            var mine = XemuOptions.All.Where(o => m.Stored.ContainsKey(XemuOptions.Prefix + o.Key)).Select(o => o.Label).ToList();
+            return mine.Count == 0 ? "nothing of its own" : "its own: " + string.Join(", ", mine.Take(4)) + (mine.Count > 4 ? " and " + (mine.Count - 4) + " more" : "");
+        }
+
+        /// <summary>OK changes only what was changed (LbipGameEdit's rule): over several games, asked first, then each keeps what
+        /// it has of its own and the user did not change - a "Various" left as it is writes nothing. False: not confirmed.</summary>
+        private bool SaveChoice()
+        {
+            var now = Shown();
+            if (!LbIntegrations.Lbip.LbipSelection.Changed(_atOpen, now)) return true;
+            if (!_sel.Confirm(this, Text)) return false;
+            int written = 0;
+            foreach (var m in _sel.Members)
             {
-                var id = XemuPlugin.Safe(() => g.Id);
+                var id = m.Tag as string;
                 if (string.IsNullOrEmpty(id)) continue;
+                var merged = _sel.MergeFor(m, _atOpen, now);
                 var values = XemuSettings.ReadGame(id);
-                foreach (var kv in Values())
-                    if (!_rowsAtOpen.TryGetValue(kv.Key, out var before) || before != kv.Value) values[kv.Key] = kv.Value;
+                bool changed = false;
+                foreach (var key in now.Keys)
+                {
+                    merged.TryGetValue(key, out var v);
+                    m.Stored.TryGetValue(key, out var before);
+                    if (string.Equals(v, before, StringComparison.Ordinal)) continue;
+                    values[key] = v ?? "";
+                    changed = true;
+                }
+                if (!changed) continue;
                 XemuSettings.WriteGame(id, values);
+                written++;
             }
-            Log.Info("game options of " + _games.Count + " game(s) saved");
+            Log.Info("game options saved: " + written + " of " + _sel.Members.Count + " game(s) changed");
+            return true;
         }
 
         /// <summary>The game's own console (Mehdi, 05/10): its disk, where its save stands, and a button to boot it without a disc -
