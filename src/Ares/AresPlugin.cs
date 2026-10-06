@@ -130,11 +130,17 @@ namespace LbIntegrations.Ares
             catch (Exception ex) { Log.Warn("could not describe the hotkeys on the emulator entry", ex); }
         }
 
+        /// <summary>A script set when empty - or when it is, word for word, one an earlier build of this plugin wrote
+        /// (AresAhk.Superseded: the F5/F7 keys). One the user changed is never touched.</summary>
         private static bool Fill(Func<string> get, Action<string> set, string value)
         {
             try
             {
-                if (!string.IsNullOrWhiteSpace(get())) return false;
+                var now = get();
+                string Norm(string s) => (s ?? "").Replace("\r\n", "\n").Trim();
+                bool ours = AresAhk.Superseded.Any(old => Norm(old) == Norm(now));
+                if (!string.IsNullOrWhiteSpace(now) && !ours) return false;
+                if (Norm(now) == Norm(value)) return false;
                 set(value);
                 return true;
             }

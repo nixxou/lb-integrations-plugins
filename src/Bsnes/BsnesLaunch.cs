@@ -10,8 +10,9 @@
 //   Screen   --fullscreen on the command line (bsnes.cpp: program.startFullScreen) - nothing kept in the file
 //
 // THE STATE HOTKEYS: bsnes ships Hotkey/SaveState and Hotkey/LoadState UNBOUND, so the pause screens of LaunchBox and
-// BigBox would have nothing to press. When - and only when - one is empty, it is bound: F5 saves the quick state of the
-// current slot, F7 loads it (BsnesAhk sends the same). A key the user bound is never changed.
+// BigBox would have nothing to press. When - and only when - one is empty (or still an earlier build's F5/F7), it is
+// bound to RetroArch's keys: F2 saves the quick state of the current slot, F4 loads it (BsnesAhk sends the same). A key
+// the user bound is never changed.
 //
 // GAMES: bsnes opens .sfc/.smc, .zip and .7z itself (game.cpp, Program::loadSuperFamicom), so nothing is unpacked.
 
@@ -28,9 +29,9 @@ namespace LbIntegrations.Bsnes
         // bsnes binds "0x<device id>/<group>/<input>" (input\input.cpp, InputMapping::bind: token[0].natural() is the
         // device id) - the keyboard is 0x1, group 0, F1..F12 = 1..12, as in ares. What an earlier build of this plugin
         // wrote ("Keyboard/1/Button/F5", which bind() reads as device 0 - nothing) is replaced.
-        public const string SaveKey = "0x1/0/5";
-        public const string LoadKey = "0x1/0/7";
-        private static readonly string[] Superseded = { "Keyboard/1/Button/F5", "Keyboard/1/Button/F7" };
+        public const string SaveKey = "0x1/0/2";   // F2, RetroArch's key (Mehdi, 06/10)
+        public const string LoadKey = "0x1/0/4";   // F4
+        private static readonly string[] Superseded = { "Keyboard/1/Button/F5", "Keyboard/1/Button/F7", "0x1/0/5", "0x1/0/7" };   // F5/F7 of earlier builds
 
         private static bool Unbound(string v) => string.IsNullOrWhiteSpace(v) || Array.IndexOf(Superseded, v.Trim()) >= 0;
 
