@@ -10,8 +10,12 @@
 // tell .bin, .cue or .chd apart, nor ever pick Neo Geo, Mega CD 32X, SuperGrafx CD, Dendy or ZX Spectrum 128.
 //
 // THE LINE: --settings-file <the install's settings.bml> (so %LOCALAPPDATA%\ares\ can never take over), --system,
-// --fullscreen or --pseudofullscreen, --no-file-prompt (else ares opens a file dialog for a 64DD disk, a Super Game Boy or
-// Sufami Turbo slot...), then the game. Anything else the user put on the line is kept.
+// --fullscreen or --pseudofullscreen, --no-file-prompt for a CARTRIDGE system (else ares opens a file dialog for a 64DD
+// disk, a Super Game Boy or Sufami Turbo slot...), then the game. Anything else the user put on the line is kept.
+// NOT for a disc system: --no-file-prompt also silences the dialog of System > Change Disc (desktop-ui\emulator\
+// emulator.cpp, Emulator::load: the dialog only "else if(!program.noFilePrompt)"), the one way ares changes discs - and a
+// disc system asks for no second medium at start. The dialog opens in the game's own folder: ares keeps
+// <System>/Path = the folder of the last game it loaded, the one on the line included.
 //
 // THE OPTIONS (AresSettings.All) go into settings.bml before the launch - ares writes the file back whole at every unload
 // and at exit (AresBml), so a node the plugin manages is the plugin's. The state hotkeys are bound when empty: ares ships
@@ -118,7 +122,7 @@ namespace LbIntegrations.Ares
 
         // ── the line ─────────────────────────────────────────────────────────
 
-        public static string CommandLine(string current, string exe, string system, string screen, string oldRom, string newRom)
+        public static string CommandLine(string current, string exe, string system, string screen, string oldRom, string newRom, bool noFilePrompt = true)
         {
             var t = Tokenize(current);
             // Ours out, wherever they were.
@@ -141,7 +145,7 @@ namespace LbIntegrations.Ares
             if (system != null) { head.Add("--system"); head.Add(system); }
             if (screen == "full") head.Add("--fullscreen");
             else if (screen == "pseudo") head.Add("--pseudofullscreen");
-            head.Add("--no-file-prompt");
+            if (noFilePrompt) head.Add("--no-file-prompt");
             return string.Join(" ", head.Concat(t).Select(Quote));
         }
 

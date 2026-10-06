@@ -349,7 +349,8 @@ namespace LbIntegrations.Ares
             }
 
             AresLaunch.PrepareSettings(exe, gameId);
-            var line = AresLaunch.CommandLine(current, exe, systemName, AresSettings.For(gameId, "Screen"), rom, played == rom ? null : played);
+            var line = AresLaunch.CommandLine(current, exe, systemName, AresSettings.For(gameId, "Screen"), rom, played == rom ? null : played,
+                                              noFilePrompt: !(system?.Disc ?? false));
             Log.Info("launch: " + line);
             return new PrepareForLaunchResponse(success: true) { NewCommandLine = line };
         }

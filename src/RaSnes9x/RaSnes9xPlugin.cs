@@ -29,9 +29,10 @@ namespace LbIntegrations.RaSnes9x
         /// screen is snes9x.conf's, written at each launch - not -fullscreen, which would stay set when Snes9x saves its file.</summary>
         private const string DefaultCommandLine = "";
 
-        /// <summary>What Snes9x opens (memmap.cpp: .zip and .jma itself) and the ROM types of its Open dialog, plus .7z,
-        /// which the plugin unpacks for it (RaSnes9xLaunch.RomFor).</summary>
-        private const string Extensions = ".sfc; .smc; .swc; .fig; .bs; .st; .zip; .jma; .7z";
+        /// <summary>What Snes9x opens (memmap.cpp: .zip, .jma and .msu1 - an MSU-1 pack, a zip of the ROM, its .msu and
+        /// .pcm and a patch.bps - itself) and the ROM types of its Open dialog, plus .7z, which the plugin unpacks for it
+        /// (RaSnes9xLaunch.RomFor).</summary>
+        private const string Extensions = ".sfc; .smc; .swc; .fig; .bs; .st; .zip; .jma; .msu1; .7z";
 
         /// <summary>The name this pack publishes under: the catalogue row, the Add Emulator entry, the title of an emulator
         /// this plugin creates, and the folder it is installed into.</summary>
