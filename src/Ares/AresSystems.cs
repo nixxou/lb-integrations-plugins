@@ -102,25 +102,25 @@ namespace LbIntegrations.Ares
                 Firmware = new[] { new AresFirmwareSpec { Type = "BIOS", Region = "World", Sha256 = "8c8a21335038285cfa03dc076100c1f0bfadf3e4ff70796f11f3dfaaab60eee2", Names = new[] { "bios.gg", "majesco.gg" }, Optional = true } } },
             new AresSystem { Name = "Mega Drive", Extensions = new[] { ".md", ".gen", ".bin" }, SaveExtensions = new[] { ".ram", ".eeprom" } },
             new AresSystem { Name = "Mega 32X", Extensions = new[] { ".32x" }, SaveExtensions = new[] { ".ram", ".eeprom" }, StateFolder = "Mega Drive" },
-            new AresSystem { Name = "Mega CD", Extensions = new[] { ".cue", ".chd" }, SaveExtensions = new[] { ".bram" }, Disc = true, StateFolder = "Mega Drive",
+            new AresSystem { Name = "Mega CD", Extensions = new[] { ".cue", ".chd", ".iso", ".bin", ".img" }, SaveExtensions = new[] { ".bram" }, Disc = true, StateFolder = "Mega Drive",
                 Firmware = new[] {
                     F("BIOS", "US", "fb477cdbf94c84424c2feca4fe40656d85393fe7b7b401911b45ad2eb991258c", "bios_CD_U.bin", "us_scd2_9306.bin", "segacd_bios_us.bin"),
                     F("BIOS", "Japan", "7133fc2dd2fe5b7d0acd53a5f10f3d00b5d31270239ad20d74ef32393e24af88", "bios_CD_J.bin", "jp_mcd2_9306.bin", "megacd_bios_jp.bin"),
                     F("BIOS", "Europe", "fe608a2a07676a23ab5fd5eee2f53c9e2526d69a28aa16ccd85c0ec42e6933cb", "bios_CD_E.bin", "eu_mcd2_9306.bin", "megacd_bios_eu.bin") } },
-            new AresSystem { Name = "Mega CD 32X", Extensions = new[] { ".cue", ".chd" }, SaveExtensions = new[] { ".bram" }, Disc = true, FirmwareOf = "Mega CD", StateFolder = "Mega Drive" },
+            new AresSystem { Name = "Mega CD 32X", Extensions = new[] { ".cue", ".chd", ".iso", ".bin", ".img" }, SaveExtensions = new[] { ".bram" }, Disc = true, FirmwareOf = "Mega CD", StateFolder = "Mega Drive" },
             new AresSystem { Name = "LaserActive (SEGA PAC)", Extensions = new[] { ".mmi" }, SaveExtensions = new[] { ".bram" }, Disc = true, StateFolder = "Mega Drive",
                 Firmware = new[] {
                     F("BIOS", "US", "e89b5a319f66406611ec82fe5c4aa6827c175a05135bd7bd177366cba0465021", "[BIOS] LaserActive PAC-S10 (USA) (v1.04).bin"),
                     F("BIOS", "Japan", "dca942d977217f703d8d1c6eb1aeb6b32c78ecc421486bbb46c459d385161c94", "[BIOS] LaserActive PAC-S1 (Japan) (v1.02).bin") } },
             new AresSystem { Name = "PC Engine", Extensions = new[] { ".pce" }, SaveExtensions = new[] { ".bram" } },
             new AresSystem { Name = "SuperGrafx", Extensions = new[] { ".sgx" }, SaveExtensions = new[] { ".bram" }, StateFolder = "PC Engine" },
-            new AresSystem { Name = "PC Engine CD", Extensions = new[] { ".cue", ".chd" }, SaveExtensions = new[] { ".bram" }, Disc = true, StateFolder = "PC Engine",
+            new AresSystem { Name = "PC Engine CD", Extensions = new[] { ".cue", ".chd", ".iso", ".bin", ".img" }, SaveExtensions = new[] { ".bram" }, Disc = true, StateFolder = "PC Engine",
                 Firmware = new[] {
                     new AresFirmwareSpec { Type = "System-Card 1.0", Region = "Japan", Sha256 = "afe9f27f91ac918348555b86298b4f984643eafa2773196f2c5441ea84f0c3bb", Names = new[] { "syscard1.pce" }, Optional = true },
                     F("System Card 3.0", "Japan", "e11527b3b96ce112a037138988ca72fd117a6b0779c2480d9e03eaebece3d9ce", "syscard3.pce", "syscard3j.pce"),
                     new AresFirmwareSpec { Type = "System Card 3.0", Region = "US", Sha256 = "cadac2725711b3c442bcf237b02f5a5210c96f17625c35fa58f009e0ed39e4db", Names = new[] { "syscard3u.pce" }, FallbackKey = "System-Card-3.0.Japan" },
                     new AresFirmwareSpec { Type = "Games Express", Region = "Japan", Sha256 = "4b86bb96a48a4ca8375fc0109631d0b1d64f255a03b01de70594d40788ba6c3d", Names = new[] { "gexpress.pce" }, Optional = true } } },
-            new AresSystem { Name = "SuperGrafx CD", Extensions = new[] { ".cue", ".chd" }, SaveExtensions = new[] { ".bram" }, Disc = true, StateFolder = "PC Engine",
+            new AresSystem { Name = "SuperGrafx CD", Extensions = new[] { ".cue", ".chd", ".iso", ".bin", ".img" }, SaveExtensions = new[] { ".bram" }, Disc = true, StateFolder = "PC Engine",
                 Firmware = new[] { F("Arcade Card", "Japan", "e11527b3b96ce112a037138988ca72fd117a6b0779c2480d9e03eaebece3d9ce", "syscard3.pce", "syscard3j.pce") } },
             new AresSystem { Name = "LaserActive (NEC PAC)", Extensions = new[] { ".mmi" }, SaveExtensions = new[] { ".bram" }, Disc = true, StateFolder = "PC Engine",
                 Firmware = new[] {
@@ -137,7 +137,7 @@ namespace LbIntegrations.Ares
             new AresSystem { Name = "WonderSwan", Extensions = new[] { ".ws" }, SaveExtensions = new[] { ".ram", ".eeprom", ".rtc", ".flash" } },
             new AresSystem { Name = "WonderSwan Color", Extensions = new[] { ".wsc" }, SaveExtensions = new[] { ".ram", ".eeprom", ".rtc", ".flash" }, StateFolder = "WonderSwan" },
             new AresSystem { Name = "Pocket Challenge V2", Extensions = new[] { ".pc2", ".pcv2" }, StateFolder = "WonderSwan" },
-            new AresSystem { Name = "PlayStation", Extensions = new[] { ".cue", ".chd", ".exe", ".ps-exe" }, SaveExtensions = new[] { ".card" }, Disc = true,
+            new AresSystem { Name = "PlayStation", Extensions = new[] { ".cue", ".chd", ".iso", ".bin", ".img", ".exe", ".ps-exe" }, SaveExtensions = new[] { ".card" }, Disc = true,
                 Firmware = new[] {
                     F("BIOS", "US", "11052b6499e466bbf0a709b1f9cb6834a9418e66680387912451e971cf8a1fef", "scph5501.bin", "scph1001.bin", "scph7001.bin", "scph7003.bin", "scph101.bin"),
                     F("BIOS", "Japan", "9c0421858e217805f4abe18698afea8d5aa36ff0727eb8484944e00eb5e7eadb", "scph5500.bin", "scph1000.bin", "scph7000.bin"),

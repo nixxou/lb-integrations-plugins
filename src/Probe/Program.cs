@@ -161,6 +161,7 @@ namespace LbIntegrations.Probe
             if (Has(args, "--ares-settings")) return AresCheck.Settings(asm, Path.GetFullPath(Arg(args, "--ares-settings")), Arg(args, "--settings")) ? 0 : 1;
             if (Has(args, "--ares-firmware")) return AresCheck.Firmware(asm, Path.GetFullPath(Arg(args, "--ares-firmware"))) ? 0 : 1;
             if (Has(args, "--ares-saves")) { int at = Array.IndexOf(args, "--ares-saves"); return AresCheck.Saves(asm, Path.GetFullPath(args[at + 1]), args[at + 2], Path.GetFullPath(args[at + 3])) ? 0 : 1; }
+            if (Has(args, "--ares-cue")) { var cueFor = asm.GetType("LbIntegrations.Ares.AresLaunch", true).GetMethod("CueFor", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static); var cueArgs = new object[] { Path.GetFullPath(Arg(args, "--ares-cue")), null }; var cue = (string)cueFor.Invoke(null, cueArgs); Console.WriteLine(cue != null ? cue + Environment.NewLine + File.ReadAllText(cue) : "refused: " + cueArgs[1]); return cue != null ? 0 : 1; }
             if (Has(args, "--ares-latest")) return AresCheck.Latest(asm) ? 0 : 1;
             // The bsnes plugin's pieces, without a host - see BsnesCheck.
             if (Has(args, "--bsnes-settings")) return BsnesCheck.Settings(asm, Path.GetFullPath(Arg(args, "--bsnes-settings")), Arg(args, "--settings")) ? 0 : 1;

@@ -90,6 +90,9 @@
 <section id="limits"><h2>Limits and things to know</h2>
   <ul>
     <li>No RetroAchievements in ares.</li>
+    <li>A disc as an <code>.iso</code>, <code>.bin</code> or <code>.img</code> with no <code>.cue</code>: ares opens discs only through a .cue, so the plugin writes a hidden
+    <code>&lt;game&gt;.cue</code> beside it, once. A cooked (2048-byte) ISO has no CD audio tracks - and on the PlayStation no XA sound or video sectors -
+    so a game may play without its music, or not at all: a <code>.bin/.cue</code> or <code>.chd</code> dump is the safe choice.</li>
     <li>ares reads <code>.zip</code>, <code>.cue</code> and <code>.chd</code>; a cartridge in a <code>.7z</code> is unpacked by the plugin into
     <code>Emulators\Nixx-ares\Unpacked</code>, where its saves and states then live; a disc in one is refused. A <code>.m3u</code> starts on its first disc - ares has no playlists.</li>
     <li>To change discs (PlayStation, Mega CD): leave full screen, then <b>PlayStation</b> (or <b>Mega CD</b>) <b>&gt; Change Disc</b> - the file dialog opens in the game's folder. The PC Engine CD has no disc change in ares.</li>

@@ -1913,7 +1913,9 @@ starting.
 always, else ares opens a file dialog for a 64DD disk or a Super Game Boy slot. Hotkeys ship
 unbound: F5 and F7 are bound when empty. Saves sit beside the game unless a saves folder is set:
 `.ram`, `.eeprom`, `.bram`, the PlayStation's `.card`..., and the states `.bs1` to `.bs9`. ares reads
-`.zip`, `.cue` and `.chd`; a cartridge in a `.7z` is unpacked into `Unpacked\<name>-<hash of its path>\` of the
+`.zip`, `.cue` and `.chd`; a disc as a bare `.iso`/`.bin`/`.img` gets a hidden `<game>.cue` written beside it, once (ares opens a disc only through a
+`.cue` and follows no absolute path in one - measured; a cooked 2048-byte ISO keeps no CD audio and, on the PlayStation, no XA
+sectors, so it plays as far as it can); a cartridge in a `.7z` is unpacked into `Unpacked\<name>-<hash of its path>\` of the
 install - a stable folder, because ares writes the saves and states beside the file it is given - and a `.m3u` starts its
 first disc.
 

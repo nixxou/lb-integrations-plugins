@@ -194,6 +194,53 @@ namespace LbIntegrations.Ares
             catch { return null; }
         }
 
+        /// <summary>A disc image with no .cue (an .iso, a .bin, an .img): ares opens a disc only through a .cue or a .chd
+        /// (mia\medium: cue, chd), and follows no absolute path in a .cue's FILE (measured 06/10) - so a hidden
+        /// "&lt;name&gt;.cue" is written BESIDE it, once, naming it relatively: one track, its mode read off the content.
+        /// Measured on Sonic CD (Mega CD): a 2048-byte ISO through such a .cue boots; the ISO alone does not.
+        /// WHAT IT CANNOT GIVE BACK (Mehdi, 06/10: "qui vivra verra"): a cooked (2048) image has no CD audio tracks and, on
+        /// the PlayStation, no XA / Form 2 sectors; a raw image of a whole disc has its audio tracks, but no record of where
+        /// each starts - all of it is one track then. Said in the log; the game is launched anyway.</summary>
+        internal static string CueFor(string image, out string problem)
+        {
+            problem = null;
+            var dir = Path.GetDirectoryName(image);
+            var cue = Path.Combine(dir, Path.GetFileNameWithoutExtension(image) + ".cue");
+            if (File.Exists(cue)) return cue;   // the user's own, or ours of an earlier launch
+            try
+            {
+                long size = new FileInfo(image).Length;
+                var head = new byte[16];
+                using (var s = File.OpenRead(image)) s.Read(head, 0, 16);
+                bool sync = head[0] == 0 && head[11] == 0 && head.Skip(1).Take(10).All(b => b == 0xFF);
+                string mode;
+                if (sync && size % 2352 == 0) mode = head[15] == 2 ? "MODE2/2352" : "MODE1/2352";
+                else if (size % 2048 == 0) mode = "MODE1/2048";
+                else if (size % 2352 == 0) mode = "MODE2/2352";
+                else { problem = Path.GetFileName(image) + " is not a disc image ares can read (" + size + " bytes: neither 2048- nor 2352-byte sectors)."; return null; }
+
+                if (mode == "MODE1/2048") Log.Info(Path.GetFileName(image) + ": a 2048-byte image - no CD audio tracks in it, nor XA sectors for a PlayStation game");
+                else
+                {
+                    // Audio after the data: the last sector carries no sync - the disc's audio tracks, one track for ares.
+                    var tail = new byte[12];
+                    using (var s = File.OpenRead(image)) { s.Seek(size - 2352, SeekOrigin.Begin); s.Read(tail, 0, 12); }
+                    bool tailSync = tail[0] == 0 && tail[11] == 0 && tail.Skip(1).Take(10).All(b => b == 0xFF);
+                    if (!tailSync) Log.Info(Path.GetFileName(image) + ": audio after the data track, with no .cue saying where each track starts - read as one track");
+                }
+                File.WriteAllText(cue, "FILE \"" + Path.GetFileName(image) + "\" BINARY\r\n  TRACK 01 " + mode + "\r\n    INDEX 01 00:00:00\r\n");
+                try { File.SetAttributes(cue, File.GetAttributes(cue) | FileAttributes.Hidden); } catch { }
+                Log.Info("wrote " + cue + " (hidden, " + mode + ") - ares opens a disc only through a .cue");
+                return cue;
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("could not write a .cue beside " + image, ex);
+                problem = "ares opens a disc only through a .cue, and none could be written beside " + Path.GetFileName(image) + ": " + ex.Message;
+                return null;
+            }
+        }
+
         public static string RomFor(string rom, AresSystem system, string exe, out string problem)
         {
             problem = null;
@@ -210,6 +257,7 @@ namespace LbIntegrations.Ares
                     Log.Info("a .m3u: ares has no playlists - its first disc, " + Path.GetFileName(disc));
                     return disc;
                 }
+                if (system != null && system.Disc && (ext == ".iso" || ext == ".bin" || ext == ".img")) return CueFor(rom, out problem);
                 if (ext != ".7z") return rom;
                 if (system != null && system.Disc) { problem = "ares cannot read a disc from a .7z - extract it (.cue and its tracks, or a .chd)."; return null; }
 
