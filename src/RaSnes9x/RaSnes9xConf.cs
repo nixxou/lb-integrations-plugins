@@ -97,12 +97,18 @@ namespace LbIntegrations.RaSnes9x
             Changed = false;
         }
 
-        /// <summary>The value of a "key = value  # comment" line, trimmed, its comment off.</summary>
+        /// <summary>The value of a "key = value  # comment" line, trimmed, its comment off - a quoted value (Snes9x quotes one
+        /// that holds a '#') taken whole and unquoted.</summary>
         private static string ValueOf(string line)
         {
             int eq = line.IndexOf('=');
             if (eq < 0) return "";
-            var rest = line.Substring(eq + 1);
+            var rest = line.Substring(eq + 1).TrimStart();
+            if (rest.StartsWith("\""))
+            {
+                int close = rest.IndexOf('"', 1);
+                if (close > 0) return rest.Substring(1, close - 1);
+            }
             int hash = rest.IndexOf('#');
             return (hash < 0 ? rest : rest.Substring(0, hash)).Trim();
         }

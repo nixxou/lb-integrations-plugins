@@ -215,6 +215,14 @@ namespace LbIntegrations.Bsnes
         {
             var dm = PluginHelper.DataManager;
             if (dm == null) return null;
+            // The default of the platform only when no emulator of the library is yet - an existing choice is the user's.
+            bool taken = false;
+            try
+            {
+                taken = (dm.GetAllEmulators() ?? Array.Empty<IEmulator>()).Any(e => (e.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>())
+                            .Any(r => r.IsDefault && string.Equals(r.Platform, SnesPlatform, StringComparison.OrdinalIgnoreCase)));
+            }
+            catch { }
             var emu = dm.AddNewEmulator();
             emu.Title = PackName;
             emu.ApplicationPath = MakeRelativeToLaunchBox(exePath);
@@ -223,7 +231,7 @@ namespace LbIntegrations.Bsnes
             // DefaultPlatform IS NOT SET - see XeniaPlugin.CreateEmulator. IsDefault on the row is what counts.
             var platform = emu.AddNewEmulatorPlatform();
             platform.Platform = SnesPlatform;
-            platform.IsDefault = true;
+            platform.IsDefault = !taken;
             try { dm.Save(false); } catch (Exception ex) { Log.Warn("data manager save failed", ex); }
             Log.Info("created emulator entry \"" + PackName + "\" -> " + emu.ApplicationPath);
             return emu;

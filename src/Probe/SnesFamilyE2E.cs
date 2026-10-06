@@ -87,6 +87,29 @@ namespace LbIntegrations.Probe
                     r = Launch("Sega CD", cue, "--system \"Mega CD\"");
                     Check("a Sega CD game without its BIOS is refused, said", (!r.WasSuccess && said.Count == 1 && said[0].Contains("bios_CD_U.bin")) || r.WasSuccess,
                           r.WasSuccess ? "(a BIOS was found: launched) " + r.NewCommandLine : said.FirstOrDefault()?.Split('\n')[0]);
+                    // A cartridge in a .7z: unpacked into the install's stable Unpacked\ folder, its save found beside it.
+                    var sevenZip = @"C:\Program Files\7-Zip\7z.exe";
+                    if (File.Exists(sevenZip))
+                    {
+                        var inner = Path.Combine(roms, "Zelda Seven.sfc"); File.WriteAllBytes(inner, new byte[2048]);
+                        var archive = Path.Combine(roms, "Zelda Seven.7z");
+                        using (var z = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(sevenZip, "a -bso0 \"" + archive + "\" \"" + inner + "\"") { UseShellExecute = false, CreateNoWindow = true })) z.WaitForExit(30000);
+                        File.Delete(inner);
+                        r = Launch("Super Nintendo Entertainment System", archive, "--system \"Super Famicom\"");
+                        var unpackedDir = Path.Combine(copy, "Unpacked");
+                        var unpacked = Directory.Exists(unpackedDir) ? Directory.GetFiles(unpackedDir, "Zelda Seven.sfc", SearchOption.AllDirectories).FirstOrDefault() : null;
+                        Check("a .7z cartridge unpacked into Unpacked, under the archive's name", r.WasSuccess && unpacked != null && r.NewCommandLine.Contains(unpacked), unpacked ?? r.NewCommandLine);
+                        if (unpacked != null)
+                        {
+                            File.WriteAllBytes(Path.ChangeExtension(unpacked, ".ram"), new byte[8192]);   // what ares writes beside it
+                            var listed = plugin.GetSaves(new GetSavesArgs { Emulator = emu, Games = new[] { StubGame.With(StubGame.Create("e2e-7z", "Zelda Seven", archive), "Platform", "Super Nintendo Entertainment System") } });
+                            Check("its save found beside it", listed.FoundSaves?.Any(s => s.FileLocation.EndsWith("Zelda Seven.ram")) == true,
+                                  string.Join(", ", listed.FoundSaves?.Select(s => Path.GetFileName(s.FileLocation)) ?? new string[0]));
+                            File.SetLastWriteTimeUtc(archive, DateTime.UtcNow.AddMinutes(1));   // the archive changed: unpacked again
+                            Launch("Super Nintendo Entertainment System", archive, "--system \"Super Famicom\"");
+                            Check("unpacked again, the save kept", File.Exists(Path.ChangeExtension(unpacked, ".ram")));
+                        }
+                    }
                     var unknown = Launch("Commodore 64", Path.Combine(roms, "x.d64"), null);
                     Check("a platform it does not map is refused", !unknown.WasSuccess);
                 }

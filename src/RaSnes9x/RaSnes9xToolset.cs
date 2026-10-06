@@ -20,7 +20,10 @@
 // THE VERSION INSTALLED: the emulator asks the DLL itself (_RA_IntegrationVersion) - loading it here would load it into
 // LaunchBox, so its file version is read instead, compared the same way (ParseVersion: up to four numbers).
 //
-// NEVER FAILS A LAUNCH: no network, a refusal, a running emulator - nothing is done, the emulator asks as it would.
+// NEVER FAILS A LAUNCH: no network, a refusal, a running emulator - nothing is done, the emulator asks as it would. And
+// never HOLDS one: short timeouts (5 s to resolve and connect, 10 s to send and to receive - WinHTTP's defaults are
+// minutes), and once a day at most while the toolset is there (the emulator checks again at its own start anyway). A
+// download is installed only whole: its length is the one announced and it starts "MZ".
 
 using System;
 using System.ComponentModel;
@@ -53,15 +56,20 @@ namespace LbIntegrations.RaSnes9x
 
         /// <summary>The toolset brought up to RetroAchievements' latest when it is older or missing. Null when nothing had to
         /// be done or it was done; else why not.</summary>
-        public static string Ensure(string exe)
+        /// <param name="always">At install: whatever the last check. At a launch: once a day while the toolset is there.</param>
+        public static string Ensure(string exe, bool always = true)
         {
             try
             {
                 var dir = Path.GetDirectoryName(Path.GetFullPath(exe));
+                var stamp = Path.Combine(Path.GetDirectoryName(RaSnes9xSettings.SettingsPath), "toolset-checked.txt");
+                if (!always && Installed(exe) != null && File.Exists(stamp) && DateTime.UtcNow - File.GetLastWriteTimeUtc(stamp) < TimeSpan.FromDays(1))
+                    return null;
                 if (RaSnes9xLaunch.Running(exe)) return "RASnes9x is running - its toolset is loaded";
 
                 if (!Call(Host, "dorequest.php", "r=latestintegration", out var status, out var body))
                     return "retroachievements.org could not be reached (status " + status + ")";
+                try { Directory.CreateDirectory(Path.GetDirectoryName(stamp)); File.WriteAllText(stamp, DateTime.UtcNow.ToString("o")); } catch { }
                 var json = Encoding.UTF8.GetString(body);
                 var latest = Field(json, "LatestVersion");
                 var url = Field(json, "LatestVersionUrlX64");
@@ -81,6 +89,8 @@ namespace LbIntegrations.RaSnes9x
                 var download = Path.Combine(dir, "RA_Integration.download");
                 if (!Call(url.Substring(0, slash), url.Substring(slash + 1), null, out status, out var dll) || status != 200)
                     return "the toolset could not be downloaded (status " + status + ")";
+                if (dll.Length < 2 || dll[0] != (byte)'M' || dll[1] != (byte)'Z')
+                    return "what was downloaded is not a DLL (" + dll.Length + " bytes) - the toolset is left as it was";
                 File.WriteAllBytes(download, dll);
 
                 var target = Path.Combine(dir, FileName);
@@ -149,6 +159,7 @@ namespace LbIntegrations.RaSnes9x
             {
                 session = WinHttpOpen(Agent, 0 /* WINHTTP_ACCESS_TYPE_DEFAULT_PROXY */, null, null, 0);
                 if (session == IntPtr.Zero) { status = (uint)Marshal.GetLastWin32Error(); return false; }
+                WinHttpSetTimeouts(session, 5000, 5000, 10000, post != null ? 10000 : 30000);
                 connect = WinHttpConnect(session, host, port, 0);
                 if (connect == IntPtr.Zero) { status = (uint)Marshal.GetLastWin32Error(); return false; }
                 request = WinHttpOpenRequest(connect, post != null ? "POST" : "GET", page, null, null, IntPtr.Zero,
@@ -170,12 +181,15 @@ namespace LbIntegrations.RaSnes9x
                 uint code = 0, size = 4, index = 0;
                 WinHttpQueryHeaders(request, 19 | 0x20000000 /* WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER */, null, ref code, ref size, ref index);
                 status = code;
+                uint announced = 0; size = 4; index = 0;
+                bool hasLength = WinHttpQueryHeaders(request, 5 | 0x20000000 /* WINHTTP_QUERY_CONTENT_LENGTH | WINHTTP_QUERY_FLAG_NUMBER */, null, ref announced, ref size, ref index);
 
                 using var ms = new MemoryStream();
                 var buffer = new byte[16384];
                 while (true)
                 {
-                    if (!WinHttpQueryDataAvailable(request, out uint available) || available == 0) break;
+                    if (!WinHttpQueryDataAvailable(request, out uint available)) { status = (uint)Marshal.GetLastWin32Error(); return false; }
+                    if (available == 0) break;
                     while (available > 0)
                     {
                         uint want = Math.Min(available, (uint)buffer.Length);
@@ -186,6 +200,7 @@ namespace LbIntegrations.RaSnes9x
                     }
                 }
                 body = ms.ToArray();
+                if (hasLength && body.Length != announced) { status = 998; return false; }   // cut short: RAInterface's own "998"
                 return true;
             }
             finally
@@ -222,5 +237,8 @@ namespace LbIntegrations.RaSnes9x
 
         [DllImport("winhttp.dll", SetLastError = true)]
         private static extern bool WinHttpCloseHandle(IntPtr handle);
+
+        [DllImport("winhttp.dll", SetLastError = true)]
+        private static extern bool WinHttpSetTimeouts(IntPtr handle, int resolve, int connect, int send, int receive);
     }
 }

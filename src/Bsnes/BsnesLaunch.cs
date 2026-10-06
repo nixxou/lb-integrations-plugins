@@ -25,8 +25,14 @@ namespace LbIntegrations.Bsnes
     internal static class BsnesLaunch
     {
         public const string ExecutableName = "bsnes.exe";
-        public const string SaveKey = "Keyboard/1/Button/F5";
-        public const string LoadKey = "Keyboard/1/Button/F7";
+        // bsnes binds "0x<device id>/<group>/<input>" (input\input.cpp, InputMapping::bind: token[0].natural() is the
+        // device id) - the keyboard is 0x1, group 0, F1..F12 = 1..12, as in ares. What an earlier build of this plugin
+        // wrote ("Keyboard/1/Button/F5", which bind() reads as device 0 - nothing) is replaced.
+        public const string SaveKey = "0x1/0/5";
+        public const string LoadKey = "0x1/0/7";
+        private static readonly string[] Superseded = { "Keyboard/1/Button/F5", "Keyboard/1/Button/F7" };
+
+        private static bool Unbound(string v) => string.IsNullOrWhiteSpace(v) || Array.IndexOf(Superseded, v.Trim()) >= 0;
 
         public static bool IsBsnesExe(string path)
         {
@@ -55,15 +61,16 @@ namespace LbIntegrations.Bsnes
             {
                 var bml = BsnesBml.Load(BsnesBml.Of(exe));
                 bml.SetBool("Video/AspectCorrection", BsnesSettings.For(gameId, "Aspect") == "4:3");
-                bml.Set("Video/Output", BsnesSettings.For(gameId, "Output"));
+                var output = BsnesSettings.For(gameId, "Output");
+                bml.Set("Video/Output", output == "center" ? "Center" : output == "stretch" ? "Stretch" : "Scale");
                 bml.SetBool("Video/Blur", BsnesSettings.BoolFor(gameId, "Smooth"));
                 bml.SetBool("Video/Blocking", BsnesSettings.BoolFor(gameId, "VSync"));
                 var mode7 = BsnesSettings.For(gameId, "Mode7");
                 bml.Set("Emulator/Hack/PPU/Mode7/Scale", mode7);
                 if (mode7 != "1") bml.SetBool("Emulator/Hack/PPU/Fast", true);   // HD Mode 7 is the fast PPU's
 
-                if (string.IsNullOrWhiteSpace(bml.Get("Hotkey/SaveState"))) bml.Set("Hotkey/SaveState", SaveKey);
-                if (string.IsNullOrWhiteSpace(bml.Get("Hotkey/LoadState"))) bml.Set("Hotkey/LoadState", LoadKey);
+                if (Unbound(bml.Get("Hotkey/SaveState"))) bml.Set("Hotkey/SaveState", SaveKey);
+                if (Unbound(bml.Get("Hotkey/LoadState"))) bml.Set("Hotkey/LoadState", LoadKey);
 
                 bool changed = bml.Changed;
                 bml.SaveIfChanged();
@@ -77,10 +84,29 @@ namespace LbIntegrations.Bsnes
         public static string CommandLine(string current, bool fullscreen)
         {
             var line = (current ?? "").Trim();
-            bool has = line.Split(' ').Any(a => a.Trim('"') == "--fullscreen");
+            // Tokens as Windows cuts them: a game path holding " --fullscreen " inside its quotes is one token, kept.
+            var tokens = Tokenize(line);
+            bool has = tokens.Contains("--fullscreen");
             if (fullscreen && !has) return ("--fullscreen " + line).Trim();
-            if (!fullscreen && has) return string.Join(" ", line.Split(' ').Where(a => a.Trim('"') != "--fullscreen")).Trim();
+            if (!fullscreen && has) return string.Join(" ", tokens.Where(a => a != "--fullscreen").Select(Quote));
             return line;
+        }
+
+        private static string Quote(string a) => a.StartsWith("--") && !a.Any(char.IsWhiteSpace) ? a : "\"" + a + "\"";
+
+        internal static System.Collections.Generic.List<string> Tokenize(string line)
+        {
+            var list = new System.Collections.Generic.List<string>();
+            var cur = new System.Text.StringBuilder();
+            bool quoted = false, any = false;
+            foreach (var c in line ?? "")
+            {
+                if (c == '"') { quoted = !quoted; any = true; continue; }
+                if (char.IsWhiteSpace(c) && !quoted) { if (any || cur.Length > 0) list.Add(cur.ToString()); cur.Clear(); any = false; continue; }
+                cur.Append(c);
+            }
+            if (any || cur.Length > 0) list.Add(cur.ToString());
+            return list;
         }
     }
 }

@@ -324,7 +324,7 @@ namespace LbIntegrations.Ares
             // Its BIOS.
             if (system != null)
             {
-                var firmware = AresFirmware.Ensure(exe, new[] { system });
+                var firmware = AresFirmware.Ensure(exe, new[] { system }, optional: false);
                 if (!AresFirmware.Enough(firmware))
                 {
                     var (owner, specs) = AresSystems.FirmwareFor(system);
@@ -340,7 +340,7 @@ namespace LbIntegrations.Ares
             string played = rom;
             if (!string.IsNullOrEmpty(rom))
             {
-                played = AresLaunch.RomFor(rom, system, out var problem);
+                played = AresLaunch.RomFor(rom, system, exe, out var problem);
                 if (played == null)
                 {
                     LbipNotice.Show(PackName + " - " + (title ?? Path.GetFileName(rom)), "This game cannot be started: " + problem);

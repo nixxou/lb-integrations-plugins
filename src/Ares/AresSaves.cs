@@ -48,20 +48,23 @@ namespace LbIntegrations.Ares
 
         internal sealed class Folders { public List<string> SaveDirs = new List<string>(), StateDirs = new List<string>(); public string SaveTarget, StateTarget; }
 
-        /// <summary>The file ares is given for a game: a .m3u's first disc, else the game's own file.</summary>
-        internal static string PlayedFile(string rom)
+        /// <summary>The file ares is given for a game: a .m3u's first disc, a .7z's unpacked cartridge (or where it would
+        /// go), else the game's own file.</summary>
+        internal static string PlayedFile(string rom, string exe)
         {
-            if (!string.Equals(Path.GetExtension(rom ?? ""), ".m3u", StringComparison.OrdinalIgnoreCase)) return rom;
-            var played = AresLaunch.RomFor(rom, null, out _);
-            return played ?? rom;
+            var ext = Path.GetExtension(rom ?? "");
+            if (string.Equals(ext, ".m3u", StringComparison.OrdinalIgnoreCase)) return AresLaunch.RomFor(rom, null, exe, out _) ?? rom;
+            if (string.Equals(ext, ".7z", StringComparison.OrdinalIgnoreCase) && exe != null)
+                return AresLaunch.Unpacked(exe, rom) ?? Path.Combine(AresLaunch.UnpackDir(exe, rom), Path.GetFileNameWithoutExtension(rom) + ".rom");
+            return rom;
         }
 
-        internal static string NameOf(string rom) => Path.GetFileNameWithoutExtension(PlayedFile(rom) ?? "");
+        internal static string NameOf(string rom, string exe = null) => Path.GetFileNameWithoutExtension(PlayedFile(rom, exe) ?? "");
 
         internal static Folders FoldersFor(string exe, string rom, AresSystem system)
         {
             var f = new Folders();
-            var beside = string.IsNullOrWhiteSpace(rom) ? null : Path.GetDirectoryName(Path.GetFullPath(PlayedFile(rom)));
+            var beside = string.IsNullOrWhiteSpace(rom) ? null : Path.GetDirectoryName(Path.GetFullPath(PlayedFile(rom, exe)));
             string saves = null;
             try
             {
@@ -74,7 +77,7 @@ namespace LbIntegrations.Ares
             var stateUnder = Under(system?.StateFolder);
             foreach (var d in new[] { saveUnder, beside }) if (d != null && !f.SaveDirs.Contains(d, StringComparer.OrdinalIgnoreCase)) f.SaveDirs.Add(d);
             foreach (var d in new[] { stateUnder, beside }) if (d != null && !f.StateDirs.Contains(d, StringComparer.OrdinalIgnoreCase)) f.StateDirs.Add(d);
-            f.SaveTarget = system != null && system.Disc ? beside : saveUnder ?? beside;
+            f.SaveTarget = saveUnder ?? beside;   // pak.cpp:154-172: every system's saves under Paths/Saves when it is set
             f.StateTarget = stateUnder ?? beside;
             return f;
         }
@@ -127,7 +130,7 @@ namespace LbIntegrations.Ares
         {
             if (system == null || string.IsNullOrWhiteSpace(gameId) || string.IsNullOrWhiteSpace(romPath)) return;
             var rom = ResolveFullPath(romPath);
-            var name = NameOf(rom);
+            var name = NameOf(rom, exe);
             if (name.Length == 0) return;
             var folders = FoldersFor(exe, rom, system);
             var context = appId ?? gameId;

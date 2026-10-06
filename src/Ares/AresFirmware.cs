@@ -81,7 +81,10 @@ namespace LbIntegrations.Ares
 
         /// <summary>The firmware of <paramref name="systems"/> found, copied when it has to be, and written into settings.bml.
         /// Never throws. One state per firmware entry, in the systems' order.</summary>
-        public static List<AresFirmwareState> Ensure(string exe, IEnumerable<AresSystem> systems, Action<string> report = null)
+        /// <param name="optional">Copy the optional ones too (at install and from the Nixx page; a launch leaves them out - a
+        /// Master System game must not search every emulator's folders each time for a BIOS it does not need).</param>
+        /// <param name="readOnly">Only say what is there: nothing copied, nothing written (a game's window).</param>
+        public static List<AresFirmwareState> Ensure(string exe, IEnumerable<AresSystem> systems, Action<string> report = null, bool optional = true, bool readOnly = false)
         {
             var states = new List<AresFirmwareState>();
             try
@@ -91,14 +94,16 @@ namespace LbIntegrations.Ares
                 var owners = systems.Where(s => s != null).Select(s => AresSystems.FirmwareFor(s).Owner).Where(o => o != null && o.Firmware.Length > 0)
                                     .Distinct().ToList();
                 if (owners.Count == 0) return states;
-                Directory.CreateDirectory(target);
+                // ares writes settings.bml back when it quits: while it runs nothing is written (nor copied - said only).
+                if (!readOnly && AresLaunch.Running(exe)) readOnly = true;
+                if (!readOnly) Directory.CreateDirectory(target);
 
                 // What is missing from the Firmware folder, copied there first - one pass for all.
                 var bml = AresBml.Load(AresLaunch.SettingsOf(exe));
                 var wanted = new List<LbipBiosImport.Wanted>();
                 foreach (var o in owners)
                     foreach (var spec in o.Firmware)
-                        if (Given(bml, o, spec) == null && Local(target, spec) == null && spec.Names.Length > 0)
+                        if (!readOnly && (optional || !spec.Optional) && Given(bml, o, spec) == null && Local(target, spec) == null && spec.Names.Length > 0)
                             wanted.Add(new LbipBiosImport.Wanted { Name = spec.Names[0], Aliases = spec.Names.Skip(1).ToArray() });
                 if (wanted.Count > 0)
                 {
@@ -112,18 +117,25 @@ namespace LbIntegrations.Ares
                     foreach (var spec in o.Firmware)
                     {
                         var path = Given(bml, o, spec) ?? Local(target, spec);
+                        bool borrowed = false;
+                        if (path == null && spec.FallbackKey != null)
+                        {
+                            var other = o.Firmware.FirstOrDefault(s => s.Key == spec.FallbackKey);
+                            path = other == null ? null : Given(bml, o, other) ?? Local(target, other);
+                            borrowed = path != null;
+                        }
                         var state = new AresFirmwareState { Spec = spec, Path = path };
                         if (path != null)
                         {
                             var sha = spec.Sha256 == null ? null : Sha256Of(path);
-                            state.HashOk = spec.Sha256 == null || string.Equals(sha, spec.Sha256, StringComparison.OrdinalIgnoreCase)
-                                           || path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
+                            state.HashOk = !borrowed && (spec.Sha256 == null || string.Equals(sha, spec.Sha256, StringComparison.OrdinalIgnoreCase)
+                                           || path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
                             if (!state.HashOk) Log.Info("firmware: " + o.Name + " " + spec.Label + " is " + path + ", whose SHA-256 " + sha + " is not the dump ares knows - given anyway");
-                            bml.Set(o.Node + "/Firmware/" + spec.Key, path.Replace('\\', '/'));
+                            if (!readOnly) bml.Set(o.Node + "/Firmware/" + spec.Key, path.Replace('\\', '/'));
                         }
                         states.Add(state);
                     }
-                bml.SaveIfChanged();
+                if (!readOnly) bml.SaveIfChanged();
             }
             catch (Exception ex) { Log.Warn("firmware", ex); }
             return states;

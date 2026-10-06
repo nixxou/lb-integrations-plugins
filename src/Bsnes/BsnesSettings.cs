@@ -41,8 +41,8 @@ namespace LbIntegrations.Bsnes
             new BsnesOption { Key = "Aspect", Label = "Aspect", Default = "4:3",
                 Values = new[] { "4:3", "8:7" }, Texts = new[] { "4:3, as on a TV", "8:7, square pixels" },
                 Hint = "bsnes's Aspect Correction: on, the picture a Super Nintendo gave on a television; off, the console's pixels square (256 x 224)." },
-            new BsnesOption { Key = "Output", Label = "Scaling", Default = "Scale",
-                Values = new[] { "Scale", "Center", "Stretch" }, Texts = new[] { "Fill the screen, keep the shape", "Integer only (Center)", "Stretch to the screen" },
+            new BsnesOption { Key = "Output", Label = "Scaling", Default = "scale",
+                Values = new[] { "scale", "center", "stretch" }, Texts = new[] { "Fill the screen, keep the shape", "Integer only (Center)", "Stretch to the screen" },
                 Hint = "bsnes's Output: Scale fills the screen and keeps the aspect; Center scales by whole numbers only, every pixel the same size, "
                      + "with borders; Stretch fills it all." },
             new BsnesOption { Key = "Smooth", Label = "Smoothing", Default = "false",

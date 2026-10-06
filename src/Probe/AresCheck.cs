@@ -73,7 +73,11 @@ namespace LbIntegrations.Probe
             a = Sys("Sega Genesis", @"C:\g\Knuckles Chaotix.32x", "");
             Check("an extension that says it", a.Item1 == "Mega 32X", a.Item1 + " from " + a.Item2);
             a = Sys("Sega Genesis", @"C:\g\Knuckles Chaotix.32x", "--system \"Mega Drive\" x");
-            Check("the platform's line before the extension", a.Item1 == "Mega Drive", a.Item1 + " from " + a.Item2);
+            Check("the plugin's own line (the default) does not hide an extension", a.Item1 == "Mega 32X", a.Item1 + " from " + a.Item2);
+            a = Sys("Sega CD", @"C:\g\Fahrenheit.chd", "--system \"Mega CD 32X\" x");
+            Check("a line the user changed wins", a.Item1 == "Mega CD 32X", a.Item1 + " from " + a.Item2);
+            a = Sys("Sega Genesis", @"C:\g\x.md", "--system \"Mega Drive Next\" x");
+            Check("an unknown --system is passed as it is", a.Item1 == "Mega Drive Next", a.Item1 + " from " + a.Item2);
             a = Sys("Commodore 64", @"C:\g\x.d64", "");
             Check("a platform the plugin does not map: nothing", a.Item1 == null);
 

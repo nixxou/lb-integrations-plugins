@@ -33,7 +33,7 @@ namespace LbIntegrations.Ares
                 if (key.Length == 0) continue;
 
                 string target = Path.GetFullPath(Path.Combine(root, key.Replace('/', Path.DirectorySeparatorChar)));
-                if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                if (!target.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                     throw new IOException("Archive entry escapes the destination: " + entry.Key);
                 if (KeptIfPresent(key) && File.Exists(target)) { kept++; continue; }
 

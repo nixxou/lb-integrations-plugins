@@ -19,7 +19,10 @@
 // F1..F12 = 1..12 - RetroBat's Ares.Generator.cs).
 //
 // FILES ares cannot open: a .7z (it reads zip, gzip, chd, cue - nall\decode) is unpacked when it holds a cartridge, under
-// the archive's name so its save keeps that name; a .m3u (no playlist support) gives its first disc.
+// the archive's name, into a STABLE folder of the install - <ares>\Unpacked\<name>-<hash of the archive's path>\ - because
+// ares writes the game's saves and states beside the file it is given (Paths/Saves empty): they live there, are found
+// there by AresSaves, and are never deleted - only the ROM is replaced when the archive changes. A .m3u (no playlist
+// support) gives its first disc.
 
 using System;
 using System.Collections.Generic;
@@ -66,12 +69,19 @@ namespace LbIntegrations.Ares
             var own = AresSettings.GameSystem(gameId);
             if (own != null) return (own, "the game's window");
             var given = SystemOnLine(currentLine);
-            if (given != null && AresSystems.System(given) != null) return (given, "the platform's command line");
             var p = AresSystems.Platform(platform);
             var ext = Path.GetExtension(rom ?? "");
-            if (p != null && p.ByExtension.TryGetValue(ext, out var byExt)) return (byExt, "the file's extension");
+            bool byExtension = p != null && p.ByExtension.TryGetValue(ext, out _);
+            // The line the PLUGIN writes is the platform's default: an extension that says otherwise (.32x among Genesis
+            // games) still wins over it. A line the user changed to another system is the user's and wins.
+            if (given != null && !(byExtension && string.Equals(given, p.Default, StringComparison.Ordinal)))
+            {
+                if (AresSystems.System(given) == null) Log.Info("--system \"" + given + "\" on the line is not in the plugin's table - passed to ares as it is");
+                return (given, "the platform's command line");
+            }
+            if (byExtension) return (p.ByExtension[ext], "the file's extension");
             if (p != null) return (p.Default, "the platform");
-            return (given, given != null ? "the command line (not a system this plugin knows)" : null);
+            return (null, null);
         }
 
         /// <summary>The value of --system on a line, or null.</summary>
@@ -119,7 +129,12 @@ namespace LbIntegrations.Ares
             }
             if (newRom != null && oldRom != null)
             {
-                int at = t.FindLastIndex(a => string.Equals(a, oldRom, StringComparison.OrdinalIgnoreCase));
+                // The game LaunchBox put on the line, however it spelt it (relative, forward slashes): compared as full
+                // paths, else the last token that is a path - never a second game added beside the first.
+                string Full(string a) { try { return Path.GetFullPath(a.Replace('/', '\\')); } catch { return a; } }
+                var full = Full(oldRom);
+                int at = t.FindLastIndex(a => string.Equals(Full(a), full, StringComparison.OrdinalIgnoreCase));
+                if (at < 0) at = t.FindLastIndex(a => !a.StartsWith("--") && (a.Contains('\\') || a.Contains('/') || a.Contains('.')));
                 if (at >= 0) t[at] = newRom; else t.Add(newRom);
             }
             var head = new List<string> { "--settings-file", SettingsOf(exe) };
@@ -153,7 +168,29 @@ namespace LbIntegrations.Ares
 
         /// <summary>For a .7z: the cartridge inside, unpacked under the archive's name; for a .m3u: its first disc. Any other
         /// file as it is. Null with <paramref name="problem"/> said when it cannot be played.</summary>
-        public static string RomFor(string rom, AresSystem system, out string problem)
+        /// <summary>Where a .7z of <paramref name="rom"/> is unpacked for the ares at <paramref name="exe"/>: one folder per
+        /// archive path, so two archives of the same name never share it.</summary>
+        public static string UnpackDir(string exe, string rom)
+        {
+            var name = Path.GetFileNameWithoutExtension(rom);
+            using var md5 = System.Security.Cryptography.MD5.Create();
+            var hash = Convert.ToHexString(md5.ComputeHash(Encoding.UTF8.GetBytes(Path.GetFullPath(rom).ToLowerInvariant()))).Substring(0, 8).ToLowerInvariant();
+            return Path.Combine(Path.GetDirectoryName(Path.GetFullPath(exe)), "Unpacked", name + "-" + hash);
+        }
+
+        /// <summary>The file a .7z was or would be unpacked to, when it is there (for the saves beside it), or null.</summary>
+        public static string Unpacked(string exe, string rom)
+        {
+            try
+            {
+                var dir = UnpackDir(exe, rom);
+                var name = Path.GetFileNameWithoutExtension(rom);
+                return Directory.Exists(dir) ? Directory.GetFiles(dir, name + ".*").FirstOrDefault(f => AresSystems.All.Any(s => !s.Disc && s.Extensions.Contains(Path.GetExtension(f).ToLowerInvariant()))) : null;
+            }
+            catch { return null; }
+        }
+
+        public static string RomFor(string rom, AresSystem system, string exe, out string problem)
         {
             problem = null;
             var ext = Path.GetExtension(rom ?? "").ToLowerInvariant();
@@ -183,10 +220,11 @@ namespace LbIntegrations.Ares
                             : Path.GetFileName(rom) + " holds " + inside.Count + " games and none is named after the archive - keep one per archive.";
                     return null;
                 }
-                var target = Path.Combine(Path.GetTempPath(), "lbip-ares", name, name + Path.GetExtension(pick.Key).ToLowerInvariant());
+                var target = Path.Combine(UnpackDir(exe, rom), name + Path.GetExtension(pick.Key).ToLowerInvariant());
                 if (File.Exists(target) && new FileInfo(target).Length == pick.Size && File.GetLastWriteTimeUtc(target) >= File.GetLastWriteTimeUtc(rom)) return target;
                 Directory.CreateDirectory(Path.GetDirectoryName(target));
-                foreach (var old in Directory.GetFiles(Path.GetDirectoryName(target))) try { File.Delete(old); } catch { }
+                // Only the ROM goes: the saves and states beside it are the game's.
+                if (File.Exists(target)) File.Delete(target);
                 using (var src = pick.OpenEntryStream())
                 using (var dst = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None))
                     src.CopyTo(dst);

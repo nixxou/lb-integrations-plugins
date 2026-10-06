@@ -98,7 +98,11 @@ namespace LbIntegrations.RaSnes9x
                               + "Keep one ROM per archive, or name the one to play \"" + name + Path.GetExtension(roms[0].Key) + "\".";
                     return null;
                 }
-                var dir = Path.Combine(Path.GetTempPath(), "lbip-rasnes9x", name);
+                // One folder per archive PATH: two archives of the same name never share an unpacked ROM.
+                string hash;
+                using (var md5 = System.Security.Cryptography.MD5.Create())
+                    hash = Convert.ToHexString(md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(rom).ToLowerInvariant()))).Substring(0, 8).ToLowerInvariant();
+                var dir = Path.Combine(Path.GetTempPath(), "lbip-rasnes9x", name + "-" + hash);
                 var target = Path.Combine(dir, name + Path.GetExtension(pick.Key).ToLowerInvariant());
                 if (File.Exists(target) && new FileInfo(target).Length == pick.Size && File.GetLastWriteTimeUtc(target) >= File.GetLastWriteTimeUtc(rom))
                     return target;
@@ -127,7 +131,12 @@ namespace LbIntegrations.RaSnes9x
                 int at = line.LastIndexOf(form, StringComparison.OrdinalIgnoreCase);
                 if (at >= 0) return line.Substring(0, at) + "\"" + newRom + "\"" + line.Substring(at + form.Length);
             }
-            return (line.Trim() + " \"" + newRom + "\"").Trim();
+            // Spelt otherwise by the host (relative, forward slashes): the last quoted token, else the last token - never a
+            // second game beside the first.
+            var m = System.Text.RegularExpressions.Regex.Match(line, "\"[^\"]*\"\\s*$");
+            if (m.Success) return line.Substring(0, m.Index) + "\"" + newRom + "\"";
+            var cut = line.TrimEnd().LastIndexOf(' ');
+            return cut < 0 ? "\"" + newRom + "\"" : line.Substring(0, cut) + " \"" + newRom + "\"";
         }
     }
 }

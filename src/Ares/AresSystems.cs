@@ -31,6 +31,9 @@ namespace LbIntegrations.Ares
         public string Type, Region, Sha256;
         public string[] Names;
         public bool Optional;
+        /// <summary>Another entry of the same system given in its place when it has no file of its own - said as another dump
+        /// (the US System Card: the Japanese one, which the other emulators use for both).</summary>
+        public string FallbackKey;
 
         /// <summary>"BIOS.US", "System-Card-3.0.US" - the end of its settings key.</summary>
         public string Key => (Type + "." + Region).Replace(' ', '-');
@@ -115,7 +118,7 @@ namespace LbIntegrations.Ares
                 Firmware = new[] {
                     new AresFirmwareSpec { Type = "System-Card 1.0", Region = "Japan", Sha256 = "afe9f27f91ac918348555b86298b4f984643eafa2773196f2c5441ea84f0c3bb", Names = new[] { "syscard1.pce" }, Optional = true },
                     F("System Card 3.0", "Japan", "e11527b3b96ce112a037138988ca72fd117a6b0779c2480d9e03eaebece3d9ce", "syscard3.pce", "syscard3j.pce"),
-                    F("System Card 3.0", "US", "cadac2725711b3c442bcf237b02f5a5210c96f17625c35fa58f009e0ed39e4db", "syscard3u.pce", "syscard3.pce"),
+                    new AresFirmwareSpec { Type = "System Card 3.0", Region = "US", Sha256 = "cadac2725711b3c442bcf237b02f5a5210c96f17625c35fa58f009e0ed39e4db", Names = new[] { "syscard3u.pce" }, FallbackKey = "System-Card-3.0.Japan" },
                     new AresFirmwareSpec { Type = "Games Express", Region = "Japan", Sha256 = "4b86bb96a48a4ca8375fc0109631d0b1d64f255a03b01de70594d40788ba6c3d", Names = new[] { "gexpress.pce" }, Optional = true } } },
             new AresSystem { Name = "SuperGrafx CD", Extensions = new[] { ".cue", ".chd" }, SaveExtensions = new[] { ".bram" }, Disc = true, StateFolder = "PC Engine",
                 Firmware = new[] { F("Arcade Card", "Japan", "e11527b3b96ce112a037138988ca72fd117a6b0779c2480d9e03eaebece3d9ce", "syscard3.pce", "syscard3j.pce") } },

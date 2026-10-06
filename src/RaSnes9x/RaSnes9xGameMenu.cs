@@ -57,6 +57,9 @@ namespace LbIntegrations.RaSnes9x
     {
         private readonly IGame[] _games;
         private readonly Dictionary<string, ComboBox> _choices = new Dictionary<string, ComboBox>();
+        private readonly Dictionary<string, int> _initial = new Dictionary<string, int>();
+        /// <summary>Several games: the first item keeps each game's own value, and only a combo the user changed is written.</summary>
+        private int Offset => _games.Length > 1 ? 1 : 0;
 
         public RaSnes9xGameForm(IGame[] games)
         {
@@ -115,12 +118,14 @@ namespace LbIntegrations.RaSnes9x
                 var row = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true, Margin = new Padding(0, 2, 0, 2) };
                 row.Controls.Add(new Label { Text = o.Label, Width = 150, Height = 24, TextAlign = ContentAlignment.MiddleLeft, UseMnemonic = false });
                 var c = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 320 };
+                if (games.Length > 1) c.Items.Add("Each game keeps its own");
                 c.Items.Add("As every game (" + o.TextOf(RaSnes9xSettings.Value(o.Key)) + ")");
                 c.Items.AddRange(o.Texts.Select(t => (object)t).ToArray());
                 var own = games.Length == 1 ? RaSnes9xSettings.GameValue(id, o.Key) : null;
-                c.SelectedIndex = own == null ? 0 : Array.IndexOf(o.Values, own) + 1;
+                c.SelectedIndex = games.Length > 1 ? 0 : own == null ? 0 : Array.IndexOf(o.Values, own) + 1;
                 LbipHint.Attach(c, o.Hint);
                 _choices[o.Key] = c;
+                _initial[o.Key] = c.SelectedIndex;
                 row.Controls.Add(c);
                 optionRows.Add(row);
             }
@@ -151,7 +156,8 @@ namespace LbIntegrations.RaSnes9x
                 foreach (var o in RaSnes9xSettings.All)
                 {
                     int i = _choices[o.Key].SelectedIndex;
-                    RaSnes9xSettings.SetGameValue(id, o.Key, i <= 0 ? null : o.Values[i - 1]);
+                    if (Offset == 1 && i == _initial[o.Key]) continue;   // several games, left as each had it
+                    RaSnes9xSettings.SetGameValue(id, o.Key, i <= Offset ? null : o.Values[i - 1 - Offset]);
                 }
             }
             Log.Info("options saved for " + _games.Length + " game(s)");

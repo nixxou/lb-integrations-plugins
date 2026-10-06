@@ -57,6 +57,9 @@ namespace LbIntegrations.Ares
     {
         private readonly IGame[] _games;
         private readonly Dictionary<string, ComboBox> _choices = new Dictionary<string, ComboBox>();
+        private readonly Dictionary<string, int> _initial = new Dictionary<string, int>();
+        /// <summary>Several games: the first item keeps each game's own value, and only a combo the user changed is written.</summary>
+        private int Offset => _games.Length > 1 ? 1 : 0;
         private readonly ComboBox _system;
         private readonly List<string> _systems = new List<string>();
 
@@ -101,13 +104,17 @@ namespace LbIntegrations.Ares
             var rom = Safe(() => game.ApplicationPath) ?? "";
             var asPlatform = AresPlugin.SystemOfForUi(emu, null, Safe(() => game.Platform), rom);
             _system = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 320 };
+            // Several games: a system only when they share a platform - the choice is the platform's systems.
+            bool samePlatform = games.All(g => string.Equals(Safe(() => g.Platform), Safe(() => game.Platform), StringComparison.OrdinalIgnoreCase));
+            if (games.Length > 1) _system.Items.Add(samePlatform ? "Each game keeps its own" : "Each game keeps its own (they are of different platforms)");
             _system.Items.Add("As its platform (" + (asPlatform ?? "none") + ")");
             if (platform != null)
                 foreach (var s in platform.Systems.Concat(platform.ByExtension.Values).Distinct())
                     if (!_systems.Contains(s)) { _systems.Add(s); _system.Items.Add(s); }
             var own = games.Length == 1 ? AresSettings.GameSystem(id) : null;
             if (own != null && !_systems.Contains(own)) { _systems.Add(own); _system.Items.Add(own); }
-            _system.SelectedIndex = own == null ? 0 : _systems.IndexOf(own) + 1;
+            _system.SelectedIndex = games.Length > 1 ? 0 : own == null ? 0 : _systems.IndexOf(own) + 1;
+            _system.Enabled = samePlatform;
             LbipHint.Attach(_system, "As its platform: the --system on the platform's line in LaunchBox (Edit Emulator > Associated Platforms), else the plugin's "
                                    + "choice for the platform and the file's extension. A system chosen here is this game's alone.");
             var systemRows = new List<Control> { Row("System", _system) };
@@ -120,7 +127,7 @@ namespace LbIntegrations.Ares
                     var (owner, specs) = AresSystems.FirmwareFor(system);
                     if (specs.Length > 0)
                     {
-                        var states = AresFirmware.Ensure(exe, new[] { system });
+                        var states = AresFirmware.Ensure(exe, new[] { system }, readOnly: true);
                         systemRows.Add(Line("BIOS (" + owner.Name + "): " + string.Join(";  ", states.Select(st => st.Spec.Region + ": " + (st.Path == null ? (st.Spec.Optional ? "-" : "missing") : Path.GetFileName(st.Path))))
                                              + (AresFirmware.Enough(states) ? "" : "  -  the game will not start without one")));
                     }
@@ -137,12 +144,14 @@ namespace LbIntegrations.Ares
             foreach (var o in AresSettings.All)
             {
                 var c = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 320 };
+                if (games.Length > 1) c.Items.Add("Each game keeps its own");
                 c.Items.Add("As every game (" + o.TextOf(AresSettings.Value(o.Key)) + ")");
                 c.Items.AddRange(o.Texts.Select(t => (object)t).ToArray());
                 var mine = games.Length == 1 ? AresSettings.GameValue(id, o.Key) : null;
-                c.SelectedIndex = mine == null ? 0 : Array.IndexOf(o.Values, mine) + 1;
+                c.SelectedIndex = games.Length > 1 ? 0 : mine == null ? 0 : Array.IndexOf(o.Values, mine) + 1;
                 LbipHint.Attach(c, o.Hint);
                 _choices[o.Key] = c;
+                _initial[o.Key] = c.SelectedIndex;
                 optionRows.Add(Row(o.Label, c));
             }
             optionRows.Add(LbipHint.Note("Written into settings.bml when the game starts.", "Every game's values are in the Nixx window, page ares. "
@@ -168,11 +177,13 @@ namespace LbIntegrations.Ares
             {
                 var id = Safe(() => g.Id);
                 if (string.IsNullOrEmpty(id)) continue;
-                AresSettings.SetGameSystem(id, _system.SelectedIndex <= 0 ? null : _systems[_system.SelectedIndex - 1]);
+                int si = _system.SelectedIndex;
+                if (!(Offset == 1 && si == 0)) AresSettings.SetGameSystem(id, si <= Offset ? null : _systems[si - 1 - Offset]);
                 foreach (var o in AresSettings.All)
                 {
                     int i = _choices[o.Key].SelectedIndex;
-                    AresSettings.SetGameValue(id, o.Key, i <= 0 ? null : o.Values[i - 1]);
+                    if (Offset == 1 && i == _initial[o.Key]) continue;   // several games, left as each had it
+                    AresSettings.SetGameValue(id, o.Key, i <= Offset ? null : o.Values[i - 1 - Offset]);
                 }
             }
             Log.Info("options saved for " + _games.Length + " game(s)");

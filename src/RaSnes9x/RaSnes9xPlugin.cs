@@ -177,6 +177,8 @@ namespace LbIntegrations.RaSnes9x
                     ? Path.GetDirectoryName(ResolveFullPath(args.ExistingEmulator.ApplicationPath))
                     : Path.Combine(LaunchBoxRoot(), "Emulators", PackName);
                 if (string.IsNullOrWhiteSpace(targetDir)) return new EmulatorInstallResponse("Couldn't work out where to install RASnes9x.");
+                if (RaSnes9xLaunch.Running(Path.Combine(targetDir, RaSnes9xLaunch.ExecutableName)))
+                    return new EmulatorInstallResponse("RASnes9x is running from " + targetDir + ": close it, then update again.");
 
                 Report(args, "Downloading RASnes9x " + RaSnes9xBuild.Version + "...", 0);
                 archive = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".zip");
@@ -199,7 +201,7 @@ namespace LbIntegrations.RaSnes9x
                 if (reinstall)
                 {
                     try { args.ExistingEmulator.ApplicationPath = MakeRelativeToLaunchBox(exe); } catch { }
-                    return new EmulatorInstallResponse(args.ExistingEmulator, "RASnes9x updated.");
+                    return new EmulatorInstallResponse(args.ExistingEmulator, "RASnes9x updated." + note);
                 }
                 if (args != null && !args.ShouldCreateEmulator)
                     return new EmulatorInstallResponse("RASnes9x was installed to " + targetDir + ", but no emulator entry was requested." + note);
@@ -226,6 +228,14 @@ namespace LbIntegrations.RaSnes9x
             var dm = PluginHelper.DataManager;
             if (dm == null) return null;
 
+            // The default of the platform only when no emulator of the library is yet - an existing choice is the user's.
+            bool taken = false;
+            try
+            {
+                taken = (dm.GetAllEmulators() ?? Array.Empty<IEmulator>()).Any(e => (e.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>())
+                            .Any(r => r.IsDefault && string.Equals(r.Platform, SnesPlatform, StringComparison.OrdinalIgnoreCase)));
+            }
+            catch { }
             var emu = dm.AddNewEmulator();
             emu.Title = PackName;
             emu.ApplicationPath = MakeRelativeToLaunchBox(exePath);
@@ -236,7 +246,7 @@ namespace LbIntegrations.RaSnes9x
             // duplicate platform row from it. IsDefault on the row says "the default for that platform".
             var platform = emu.AddNewEmulatorPlatform();
             platform.Platform = SnesPlatform;
-            platform.IsDefault = true;
+            platform.IsDefault = !taken;
 
             try { dm.Save(false); } catch (Exception ex) { Log.Warn("data manager save failed", ex); }
             Log.Info("created emulator entry \"" + PackName + "\" -> " + emu.ApplicationPath);
@@ -323,7 +333,7 @@ namespace LbIntegrations.RaSnes9x
             catch (Exception ex) { Log.Warn("RetroAchievements login at launch", ex); }
 
             // RetroAchievements' toolset brought to the latest, as the emulator would ask to - see RaSnes9xToolset.
-            var toolset = RaSnes9xToolset.Ensure(exe);
+            var toolset = RaSnes9xToolset.Ensure(exe, always: false);
             if (toolset != null) Log.Info("toolset not updated before the launch: " + toolset + " - the emulator asks itself");
 
             RaSnes9xLaunch.PrepareConf(exe, gameId);
