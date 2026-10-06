@@ -114,7 +114,7 @@ namespace LbIntegrations.Bsnes
         }
 
         /// <summary>A script set when empty - or when it is, word for word, one an earlier build of this plugin wrote
-        /// (BsnesAhk.Superseded: the F5/F7 keys). One the user changed is never touched.</summary>
+        /// (BsnesAhk.Superseded: the F5/F7 keys, the F2/F4 note). One the user changed is never touched.</summary>
         private static bool Fill(Func<string> get, Action<string> set, string value)
         {
             try
@@ -268,6 +268,8 @@ namespace LbIntegrations.Bsnes
             if (BsnesLaunch.Running(exe)) Log.Warn("bsnes is already running from " + Path.GetDirectoryName(exe) + " - what is written now is lost when it quits");
 
             BsnesLaunch.PrepareSettings(exe, gameId);
+            // The states' thumbnail (<name>.bsz.png), from bsnes's own preview once it has quit - BsnesStateThumbs.
+            try { BsnesStateThumbs.AfterSession(exe, ResolveFullPath(args?.GameBeingLaunched?.ApplicationPath)); } catch { }
             var current = args?.CurrentCommandLine ?? "";
             var line = BsnesLaunch.CommandLine(current, BsnesSettings.BoolFor(gameId, "Fullscreen"));
             if (line != current.Trim())

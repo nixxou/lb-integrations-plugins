@@ -27,6 +27,12 @@
 // stolen, and the table we return describes what the file SAYS once written - so the AutoHotkey
 // scripts built from it are true even when the user had bound F5 himself.
 //
+// F11 IS ALREADY FULL SCREEN, and there is nothing to bind (Mehdi, 07/10: F11 = toggle full screen
+// across the pack). Flycast has no EMU_BTN for it - core/input/gamepad.h:47-60 and the option table
+// in core/input/mapping.cpp:34-71 carry none - because core/sdl/sdl.cpp:372-390 (v2.7, unchanged on
+// master) hard-wires F11 without modifiers and Alt+Return to SDL_SetWindowFullscreen, then breaks
+// before the key reaches the mapping. So F11 stays out of OurKeys: a binding on it would never fire.
+//
 // Flycast does not rewrite this file behind us: save_mapping() is reached only from the Controls
 // screen (core/ui/settings_controls.cpp:897) and a gamepad-only path (core/sdl/sdl_gamepad.cpp:683).
 

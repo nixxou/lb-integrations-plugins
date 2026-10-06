@@ -80,6 +80,26 @@ namespace LbIntegrations.RaSnes9x
 
         public void SetBool(string section, string key, bool on) => Set(section, key, on ? "TRUE" : "FALSE");
 
+        /// <summary>Every "key = value" of <paramref name="section"/>, in the file's order, comments off.</summary>
+        public List<(string Key, string Value)> Entries(string section)
+        {
+            var list = new List<(string, string)>();
+            bool inside = false;
+            foreach (var raw in _lines)
+            {
+                var t = raw.Trim();
+                if (t.StartsWith("[") && t.EndsWith("]"))
+                {
+                    if (inside) break;
+                    inside = string.Equals(t.Substring(1, t.Length - 2).Trim(), section, StringComparison.OrdinalIgnoreCase);
+                    continue;
+                }
+                int eq = t.IndexOf('=');
+                if (inside && eq > 0 && !t.StartsWith("#")) list.Add((t.Substring(0, eq).Trim(), ValueOf(t)));
+            }
+            return list;
+        }
+
         public bool? GetBool(string section, string key)
         {
             var v = Get(section, key)?.Trim().ToUpperInvariant();

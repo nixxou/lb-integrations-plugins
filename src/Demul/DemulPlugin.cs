@@ -108,7 +108,9 @@ namespace LbIntegrations.Demul
                 if (emu == null) continue;
                 string path;
                 try { path = emu.ApplicationPath; } catch { continue; }
-                if (IsDemul(path)) claimed.Add(emu);
+                if (!IsDemul(path)) continue;
+                claimed.Add(emu);
+                EnsureHotkeyScripts(emu);
             }
             var signature = string.Join("|", claimed.Select(e => { try { return e.Title; } catch { return "?"; } }).OrderBy(t => t));
             if (signature != _lastClaimed)
@@ -117,6 +119,34 @@ namespace LbIntegrations.Demul
                 Log.Info("GetApplicableEmulators: claimed " + claimed.Count + " emulator(s)");
             }
             return claimed;
+        }
+
+        /// <summary>The AutoHotkey scripts of the pack's keys (Mehdi, 07/10) - see DemulAhk. Each one set when its field is
+        /// blank, or still a script an earlier build of this plugin wrote (DemulAhk.Previous: none yet); one the user wrote
+        /// is never touched. On the object the host hands over each time, as AresPlugin does.</summary>
+        private static void EnsureHotkeyScripts(IEmulator emu)
+        {
+            try
+            {
+                var set = new List<string>();
+                if (Fill(() => emu.AutoHotkeyScript, v => emu.AutoHotkeyScript = v, DemulAhk.Running)) set.Add("running");
+                if (Fill(() => emu.ExitAutoHotkeyScript, v => emu.ExitAutoHotkeyScript = v, DemulAhk.Exit)) set.Add("exit");
+                if (Fill(() => emu.SaveStateAutoHotkeyScript, v => emu.SaveStateAutoHotkeyScript = v, DemulAhk.SaveState)) set.Add("save");
+                if (Fill(() => emu.LoadStateAutoHotkeyScript, v => emu.LoadStateAutoHotkeyScript = v, DemulAhk.LoadState)) set.Add("load");
+                if (set.Count > 0) Log.Info("hotkey scripts set: " + string.Join(", ", set));
+            }
+            catch (Exception ex) { Log.Warn("could not describe the hotkeys on the emulator entry", ex); }
+        }
+
+        private static bool Fill(Func<string> get, Action<string> set, string value)
+        {
+            try
+            {
+                if (!LbipAhk.Ours(get(), value, DemulAhk.Previous)) return false;
+                set(value);
+                return true;
+            }
+            catch { return false; }
         }
 
         private static bool IsDemul(string applicationPath)
@@ -193,6 +223,8 @@ namespace LbIntegrations.Demul
                     return new EmulatorInstallResponse("Demul was downloaded and extracted to " + targetDir + " but " + ExecutableName + " is not there.");
                 DemulBuild.Stamp(targetDir);
                 Log.Info("installed " + DemulBuild.Version + " to " + targetDir);
+                // The state keys at once, so a Demul opened by itself has them too - and again at each launch.
+                DemulHotkeys.Ensure(targetDir);
 
                 // THE USER'S BIOS SETS into roms\, from where they already are - only what roms\ is missing. See DemulBios.
                 DemulBios.Import(targetDir, null, m => Report(args, m, null),
@@ -321,6 +353,10 @@ namespace LbIntegrations.Demul
                 try
                 {
                     DemulLaunch.PrepareIni(exe, system, disc, Safe(() => args?.GameBeingLaunched?.Id));
+                    // The state keys in padDemul.ini, when Demul has none (Mehdi, 07/10) - see DemulHotkeys. Never throws.
+                    DemulHotkeys.Ensure(Path.GetDirectoryName(exe));
+                    // A PNG of the screen beside each state Demul writes (Mehdi, 07/10) - see WatchStateThumbs.
+                    WatchStateThumbs(exe);
                     var line = DemulLaunch.CommandLine(Safe(() => args?.CurrentCommandLine) ?? "", system, disc);
                     Log.Info("command line: " + line);
                     DemulSession.Watch(exe, served);
@@ -334,6 +370,30 @@ namespace LbIntegrations.Demul
                 Log.Warn("PrepareEmulatorForLaunch", ex);
                 return Refuse("Something went wrong while preparing the game for Demul: " + ex.Message);
             }
+        }
+
+        /// <summary>Demul keeps its states in sstates\ beside demul.exe (the folder its archive ships, and the "sstates\"
+        /// in demul.exe), and draws no picture of them: the window is captured as a state is written there
+        /// (LbipStateThumbs.Watch), &lt;state&gt;.png beside it. Every file written there is taken for a state - their
+        /// names are not measured yet - but our PNGs and their .part.</summary>
+        private static void WatchStateThumbs(string exe)
+        {
+            try
+            {
+                var dir = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(exe)) ?? "", StatesFolder);
+                LbipStateThumbs.Watch(exe, new[] { dir }, IsStateFile, Log.Info);
+            }
+            catch (Exception ex) { Log.Warn("state thumbnails", ex); }
+        }
+
+        private const string StatesFolder = "sstates";
+
+        /// <summary>A file in sstates\ that is a state: not one of our thumbnails, nor the one being written.</summary>
+        internal static bool IsStateFile(string path)
+        {
+            var name = Path.GetFileName(path ?? "");
+            return name.Length > 0 && !LbipStateThumbs.IsThumb(name)
+                   && !name.EndsWith(LbipStateThumbs.Suffix + ".part", StringComparison.OrdinalIgnoreCase);
         }
 
         private static PrepareForLaunchResponse Refuse(string message)

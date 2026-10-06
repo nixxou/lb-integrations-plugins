@@ -114,6 +114,21 @@ namespace LbIntegrations.Bsnes
 
         public void SetBool(string path, bool on) => Set(path, on ? "true" : "false");
 
+        /// <summary>Whether a node other than <paramref name="except"/> holds <paramref name="binding"/> among its
+        /// ';'-separated assignments - a hotkey or a pad button the user put on that key.</summary>
+        public bool BoundElsewhere(string binding, string except)
+        {
+            var names = except.Split('/');
+            int skip = Find(names, names.Length, out _);
+            for (int i = 0; i < _lines.Count; i++)
+            {
+                if (i == skip) continue;
+                foreach (var a in ValueOf(_lines[i]).Split(';'))
+                    if (string.Equals(a.Trim(), binding, StringComparison.Ordinal)) return true;
+            }
+            return false;
+        }
+
         /// <summary>Written only when something changed: UTF-8 without a BOM, LF, as bsnes's own.</summary>
         public void SaveIfChanged()
         {

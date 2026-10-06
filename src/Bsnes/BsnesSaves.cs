@@ -6,6 +6,8 @@
 //                                                                        beside it: its companions)
 //   Save states      <name>.bsz    in Path/States, else beside the game  ONE zip holding them all: Quick/Slot 1..N.bst,
 //                                                                        Quick/Undo, Quick/Redo, Managed/<name>.bst
+//                                                                        (and <name>.bsz.png beside it: the picture of
+//                                                                        the newest, BsnesStateThumbs - its companion)
 //
 // Read off bsnes's code (target-bsnes/program/paths.cpp, game-rom.cpp, states.cpp, 06/10): path("Saves", location,
 // ".srm") is the folder of Path/Saves when it is set, else the game's, then the game's file name without its last
@@ -17,6 +19,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using LbIntegrations.Lbip;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 
@@ -97,7 +100,10 @@ namespace LbIntegrations.Bsnes
 
             var bsz = folders.StateDir == null ? null : Path.Combine(folders.StateDir, name + ".bsz");
             if (bsz != null && File.Exists(bsz) && seen.Add("states|" + bsz + "|" + context))
+            {
+                BsnesStateThumbs.Refresh(bsz);
                 into.Add(Row(bsz, gameId, appId, StatePrefix + name, StateGroupName, StateChipText));
+            }
         }
 
         private static GameSaveGame Row(string path, string gameId, string appId, string groupId, string groupName, string chip)
@@ -125,13 +131,15 @@ namespace LbIntegrations.Bsnes
             return false;
         }
 
-        public override bool IsSecondarySaveFile(string filePath) => false;
+        /// <summary>The states' thumbnail is part of the .bsz's save, not a save of its own.</summary>
+        public override bool IsSecondarySaveFile(string filePath) => BsnesStateThumbs.IsThumbOfStates(filePath);
 
-        /// <summary>A cartridge save's clock (.rtc) and Satellaview data (.psr) travel with it.</summary>
+        /// <summary>A cartridge save's clock (.rtc) and Satellaview data (.psr) travel with it; the states' thumbnail with the .bsz.</summary>
         public override IReadOnlyList<string> GetCompanionSaveFiles(string primaryFilePath)
         {
             try
             {
+                if (primaryFilePath != null && primaryFilePath.EndsWith(".bsz", StringComparison.OrdinalIgnoreCase)) return LbipStateThumbs.Companion(primaryFilePath);
                 if (string.IsNullOrWhiteSpace(primaryFilePath) || !primaryFilePath.EndsWith(".srm", StringComparison.OrdinalIgnoreCase)) return Array.Empty<string>();
                 return new[] { ".rtc", ".psr" }.Select(e => Path.ChangeExtension(primaryFilePath, e)).Where(File.Exists).ToArray();
             }
@@ -181,6 +189,13 @@ namespace LbIntegrations.Bsnes
                 File.Copy(source, target, overwrite: true);
                 Log.Info("restored " + name + " -> " + targetDir);
                 bool states = (save.SaveGroupId ?? "").StartsWith(StatePrefix, StringComparison.OrdinalIgnoreCase);
+                if (states)
+                {
+                    // Its thumbnail with it; without one, the old would be a picture of another moment - made again from the .bsz.
+                    var thumb = GetCompanionSaveFiles(source).FirstOrDefault(LbipStateThumbs.IsThumb);
+                    if (thumb != null) File.Copy(thumb, LbipStateThumbs.PathOf(target), overwrite: true);
+                    else { LbipStateThumbs.Remove(target); BsnesStateThumbs.Refresh(target); }
+                }
                 return new AddSaveResponse(Row(target, save.GameId, save.AdditionalApplicationId, save.SaveGroupId,
                                                states ? StateGroupName : SaveGroupName, states ? StateChipText : SaveChipText));
             }
@@ -225,6 +240,7 @@ namespace LbIntegrations.Bsnes
                 if (string.IsNullOrWhiteSpace(loc)) return new PluginResponse(false, "This save has no location.");
                 try { if (File.Exists(loc)) File.Delete(loc); }
                 catch (Exception ex) { Log.Warn("could not delete " + loc, ex); return new PluginResponse(false, "Could not delete " + Path.GetFileName(loc) + "."); }
+                if (loc.EndsWith(".bsz", StringComparison.OrdinalIgnoreCase)) LbipStateThumbs.Remove(loc);
                 Log.Info("deleted " + Path.GetFileName(loc));
                 return new PluginResponse(true);
             }

@@ -113,6 +113,7 @@
     <li><b>Dreamcast:</b> the game's memory card (VMU in port A1). Flycast names it after the disc's product number, read from the disc image, so it is found whatever the file name of your game.</li>
     <li><b>Arcade games:</b> the board's saved data (high scores, settings, card files), named after the game's zip. A backup, restore or delete always takes the whole set of files together.</li>
     <li><b>Save states:</b> 10 slots (0 to 9) per game, named after the game's file.</li>
+    <li>Each state gets a picture beside it (<code>&lt;state&gt;.png</code>), Flycast's own screenshot of the moment, backed up and restored with it.</li>
     <li>A memory card coming from Argosy (named <code>&lt;id&gt;.A1.bin</code>) is restored under the name Flycast actually reads.</li>
   </ul>
   <h3>Keys</h3>
@@ -121,7 +122,8 @@
   <tr><td><kbd>F2</kbd></td><td>Save state</td></tr>
   <tr><td><kbd>F4</kbd></td><td>Load state</td></tr>
   <tr><td><kbd>F6</kbd> / <kbd>F7</kbd></td><td>Previous / next state slot</td></tr>
-  <tr><td><kbd>Escape</kbd></td><td>Quit Flycast</td></tr></table>
+  <tr><td><kbd>Escape</kbd></td><td>Quit Flycast</td></tr>
+  <tr><td><kbd>F11</kbd> or <kbd>Alt</kbd>+<kbd>Enter</kbd></td><td>Toggle full screen (built into Flycast, always on)</td></tr></table>
   <p>Flycast's normal controls are kept. A key you already use is never taken, an action you already bound keeps your key, and a keyboard mapping file you already have is never rewritten. The emulator entry's pause-screen scripts (save state, load state, exit) are filled with the keys Flycast really has, so LaunchBox's and Big Box's pause screen work. Only empty scripts are filled.</p>
 </section>
 

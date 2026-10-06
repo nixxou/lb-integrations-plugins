@@ -555,6 +555,16 @@ namespace LbIntegrations.SuperZsnes
                 }
                 catch (Exception ex) { Log.Warn("bepinex at launch", ex); }
 
+                // A PNG beside each slot state (X.szst0 -> X.szst0.png), from the screenshot the state carries, once
+                // SUPER ZSNES has quit - SuperZsnesStateThumbs.
+                try
+                {
+                    var exe = ResolveFullPath(args?.EmulatorBeingLaunched?.ApplicationPath);
+                    if (SuperZsnesPaths.IsSuperZsnesExecutable(exe))
+                        SuperZsnesStateThumbs.AfterSession(exe, ResolveFullPath(args?.GameBeingLaunched?.ApplicationPath));
+                }
+                catch (Exception ex) { Log.Warn("state thumbnails", ex); }
+
                 string gameId = null;
                 try { gameId = args?.GameBeingLaunched?.Id; } catch { }
                 var flags = SuperZsnesSettings.ForLaunch(gameId);

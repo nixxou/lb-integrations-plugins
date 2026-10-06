@@ -3,6 +3,10 @@
 // states at all (none in its source, measured 28/09), and a script for a key that does nothing would
 // only pretend otherwise.
 //
+// FULL SCREEN IS ALREADY F11, the pack's key (Mehdi, 07/10): keyboard-gui-fullscreen in config.yml,
+// F11 by default (config.h; ctrl_keyboard_filter.cpp toggles on it). Nothing is bound: a config.yml
+// that says otherwise was changed by the user. No slot keys either - no save states.
+//
 // QUITTING IS CLOSING THE WINDOW. Vita3K binds no quit key, and a frontend's Exit sends Escape - so
 // Escape, and the Exit script, close Vita3K's window, which is what its own close button does: the
 // game is stopped, and the plugin's watcher ends a Vita3K still there five seconds after its log says

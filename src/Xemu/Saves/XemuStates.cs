@@ -11,6 +11,13 @@
 //                         without reading the state; a file without it is the same file (05/10)
 // Measured 05/10 on Batman: a snapshot's VM state 35 MB (QEMU skips the empty pages).
 //
+// ITS PICTURE BESIDE IT TOO (Mehdi, 07/10: a PNG of the same name beside each savestate - LbipStateThumbs): slot-1.xemustate.png,
+// the very picture xemu took of the snapshot - a PNG of the frame, 320x240 (ui/xemu-snapshots.c: xemu_snapshots_save_extra_data
+// writes it in the VM state, after the magic 'xemu', the disc path and the XBE title) - copied as it is, never captured: the
+// snapshot is the moment, its own picture is the one. Written with the file (Export); for a file that carries no thumbnail.png
+// (exported before 05/10), taken from its snapshot in the console once (Thumb). A snapshot made off xemu's window (QEMU's
+// monitor savevm, measured 07/10 on Batman's lbip-test-2) has no picture at all: its file has no PNG. A file deleted takes it along.
+//
 // THE CONSOLE IS WHAT XEMU LOADS, THE FILES WHAT LAUNCHBOX SEES; an index beside the console (hdd\games\<title id>.states)
 // says which snapshot each file was made from, and its slot - so whichever side changed is known:
 //   a snapshot with no file                    exported (made in xemu since)
@@ -31,6 +38,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Text;
+using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Xemu.Saves
 {
@@ -166,6 +174,7 @@ namespace LbIntegrations.Xemu.Saves
                     .Append("vm_clock=").Append(sn.VmClockNsec).Append('\n')
                     .Append("disk_size=").Append(console.Length).Append('\n')
                     .Append("keys=").Append(keys ?? "").Append('\n').ToString();
+                byte[] png = null;
                 using (var fs = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None))
                 using (var z = new ZipArchive(fs, ZipArchiveMode.Create))
                 {
@@ -176,7 +185,6 @@ namespace LbIntegrations.Xemu.Saves
                     e.LastWriteTime = new DateTimeOffset(1980, 1, 1, 0, 0, 0, TimeSpan.Zero);
                     using (var src = File.OpenRead(qcow)) using (var dst = e.Open()) src.CopyTo(dst);
                     // Its picture beside it, when it can be had (Mehdi, 05/10) - never in the way: without it the file is the same.
-                    byte[] png = null;
                     try { png = console.SnapshotThumbnail(sn); } catch { }
                     if (png != null)
                     {
@@ -187,6 +195,7 @@ namespace LbIntegrations.Xemu.Saves
                     }
                 }
                 File.Move(part, target, overwrite: true);
+                WriteThumb(target, png);
             }
             finally
             {
@@ -288,6 +297,45 @@ namespace LbIntegrations.Xemu.Saves
             catch { return null; }
         }
 
+        // ── its PNG beside it (LbipStateThumbs) ──────────────────────────────
+
+        /// <summary>The state file's PNG written from <paramref name="png"/> - without one, an older PNG beside it removed: a
+        /// picture of another moment is worse than none. Never throws.</summary>
+        internal static void WriteThumb(string file, byte[] png)
+        {
+            try
+            {
+                if (png == null || png.Length == 0) { LbipStateThumbs.Remove(file); return; }
+                var to = LbipStateThumbs.PathOf(file);
+                var part = to + ".part";
+                File.WriteAllBytes(part, png);
+                File.Move(part, to, overwrite: true);
+            }
+            catch (Exception ex) { LbIntegrations.Xemu.Log.Info("savestates: no thumbnail beside " + System.IO.Path.GetFileName(file) + " - " + ex.Message); }
+        }
+
+        // The files looked at with no picture found (path | write time): the console's VM state is not read again for them.
+        private static readonly HashSet<string> NoPicture = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The state file's PNG made when it has none, or one older than the file: the picture the file carries, else
+        /// <paramref name="fromSnapshot"/>'s (its snapshot in the console - its VM state read, once). Never throws.</summary>
+        internal static void Thumb(string file, Func<byte[]> fromSnapshot = null)
+        {
+            try
+            {
+                var thumb = LbipStateThumbs.PathOf(file);
+                var written = File.GetLastWriteTimeUtc(file);
+                if (File.Exists(thumb) && File.GetLastWriteTimeUtc(thumb) >= written) return;
+                var key = file + "|" + written.Ticks;
+                if (NoPicture.Contains(key)) return;
+                var png = FileThumbnail(file);
+                if (png == null) try { png = fromSnapshot?.Invoke(); } catch { }
+                if (png == null) NoPicture.Add(key);
+                WriteThumb(file, png);
+            }
+            catch { }
+        }
+
         // ── the mirror ───────────────────────────────────────────────────────
 
         /// <summary>The game's snapshots and state files put in step. <paramref name="rewrite"/>: the console may be rewritten
@@ -324,7 +372,7 @@ namespace LbIntegrations.Xemu.Saves
                     foreach (var f in files)
                     {
                         if (snaps.ContainsKey(f.Identity)) continue;
-                        if (index.ContainsKey(f.Identity)) { File.Delete(f.Path); live.Remove(f); index.Remove(f.Identity); said.Add("\"" + f.Name + "\" deleted in xemu: its file removed"); }
+                        if (index.ContainsKey(f.Identity)) { File.Delete(f.Path); LbipStateThumbs.Remove(f.Path); live.Remove(f); index.Remove(f.Identity); said.Add("\"" + f.Name + "\" deleted in xemu: its file removed"); }
                         else toImport.Add(f);
                     }
                     foreach (var (identity, sn) in snaps)
@@ -346,6 +394,10 @@ namespace LbIntegrations.Xemu.Saves
                         said.Add("\"" + sn.Name + "\" exported as slot " + slot);
                     }
                     WriteSlots(slotsPath, slots);
+                    // The files already there given their picture when they lack it (exported ones have theirs) - from the snapshot
+                    // still in the console for a file that carries none.
+                    foreach (var f in live)
+                        if (f.Path != null) Thumb(f.Path, snaps.TryGetValue(f.Identity, out var s) ? () => console.SnapshotThumbnail(s) : (Func<byte[]>)null);
                     if (!rewrite || (toImport.Count == 0 && toDrop.Count == 0))
                     {
                         if (toImport.Count + toDrop.Count > 0) said.Add((toImport.Count + toDrop.Count) + " change(s) wait for the next launch");

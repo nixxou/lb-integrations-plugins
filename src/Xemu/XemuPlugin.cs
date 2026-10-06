@@ -142,8 +142,12 @@ namespace LbIntegrations.Xemu
             try
             {
                 var set = new List<string>();
-                if (LbipAhk.Ours(emu.AutoHotkeyScript, XemuAhk.Running, Array.Empty<string>())) { emu.AutoHotkeyScript = XemuAhk.Running; set.Add("running"); }
+                // The pack's keys (Mehdi, 07/10): the running script replaced when blank or, word for word, the Escape-only one
+                // of the builds before (XemuAhk.PreviousRunning); the others only when blank - no build wrote them before.
+                if (LbipAhk.Ours(emu.AutoHotkeyScript, XemuAhk.Running, XemuAhk.PreviousRunning)) { emu.AutoHotkeyScript = XemuAhk.Running; set.Add("running"); }
                 if (string.IsNullOrWhiteSpace(emu.ExitAutoHotkeyScript)) { emu.ExitAutoHotkeyScript = XemuAhk.Exit; set.Add("exit"); }
+                if (string.IsNullOrWhiteSpace(emu.SaveStateAutoHotkeyScript)) { emu.SaveStateAutoHotkeyScript = XemuAhk.SaveState; set.Add("save"); }
+                if (string.IsNullOrWhiteSpace(emu.LoadStateAutoHotkeyScript)) { emu.LoadStateAutoHotkeyScript = XemuAhk.LoadState; set.Add("load"); }
                 if (set.Count > 0) Log.Info("hotkey scripts set: " + string.Join(", ", set));
             }
             catch (Exception ex) { Log.Warn("could not describe the hotkeys on the emulator entry", ex); }
@@ -258,6 +262,7 @@ namespace LbIntegrations.Xemu
             XemuToml.Set(toml, "general", "show_welcome", "false");
             XemuToml.Set(toml, "general", "skip_boot_anim", "true", onlyIfAbsent: true);
             XemuToml.Set(toml, "general.updates", "check", "false");
+            XemuAhk.BindSnapshotSlots(toml);
 
             // THE BIOS: the user's, copied in from where they are already - Unbroken's plugin's folder, RetroArch's (recursive).
             Report(args, "Looking for the Xbox BIOS...", null);
@@ -456,6 +461,9 @@ namespace LbIntegrations.Xemu
         internal static string MakeSession(string exe, string titleId, XbeInfo xbe, Dictionary<string, string> options, string dvd,
                                            out string hdd, out List<(string, string, string)> set, bool live = false)
         {
+            // xemu's snapshot keys named where the user has none (Mehdi, 07/10: F2 / F4 states, XemuAhk) - an install from before
+            // has none until its next launch.
+            XemuAhk.BindSnapshotSlots(XemuPaths.TomlOf(exe));
             if (live) return MakeLiveSession(exe, xbe, options, dvd, out hdd, out set);
             var mcpx = XemuPaths.McpxPath(exe);
             var flash = XemuPaths.FlashPath(exe);

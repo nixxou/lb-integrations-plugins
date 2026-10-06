@@ -21,6 +21,11 @@
 // Until a snapshot is observed on disk, declaring slots would mean describing a file format and a
 // naming scheme that have not been seen. The folder is scanned and what turns up is logged, so the
 // first person to produce one tells us what it is called.
+//
+// A SNAPSHOT WOULD STILL GET ITS PICTURE (Mehdi, 07/10: a PNG of the same name beside each state).
+// SNAP\ is watched while no$gba runs, and a file written there gets <its name>.png, taken from the
+// emulator's window (LbipStateThumbs.Watch). Nothing more is wired - no companion, no restore - since
+// nothing is listed; once a snapshot has been seen and is listed, its PNG is its companion.
 
 using System;
 using System.Collections.Generic;
@@ -28,6 +33,7 @@ using System.IO;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 using LbIntegrations.Dsi;
+using LbIntegrations.Lbip;
 
 namespace LbIntegrations.NoGba
 {
@@ -186,16 +192,35 @@ namespace LbIntegrations.NoGba
             try
             {
                 if (layout?.SnapDir == null || !Directory.Exists(layout.SnapDir)) return;
-                var files = Directory.GetFiles(layout.SnapDir);
-                if (files.Length == 0) return;
-
+                // Our own thumbnails are not what this is asking about.
                 var names = new List<string>();
-                foreach (var f in files) names.Add(Path.GetFileName(f));
-                Log.Info("SNAP holds " + files.Length + " file(s) - " + string.Join(", ", names)
+                foreach (var f in Directory.GetFiles(layout.SnapDir))
+                    if (IsSnapshotCandidate(f)) names.Add(Path.GetFileName(f));
+                if (names.Count == 0) return;
+
+                Log.Info("SNAP holds " + names.Count + " file(s) - " + string.Join(", ", names)
                          + ". Snapshots are not listed as saves yet: none had ever been observed on "
                          + "disk when this was written. Please report these names.");
             }
             catch { }
+        }
+
+        /// <summary>A file in SNAP\ that could be a snapshot: anything but one of our thumbnails,
+        /// finished (.png) or being written (.png.part).</summary>
+        private static bool IsSnapshotCandidate(string path)
+            => path != null && !LbipStateThumbs.IsThumb(path)
+               && !path.EndsWith(LbipStateThumbs.Suffix + ".part", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>For the session: a thumbnail beside each file no$gba writes into SNAP\. Its name
+        /// is not known (see the header), so any file there counts.</summary>
+        internal static void WatchSnapshotThumbs(string exe, NoGbaLayout layout)
+        {
+            try
+            {
+                if (layout?.SnapDir == null || string.IsNullOrWhiteSpace(exe)) return;
+                LbipStateThumbs.Watch(exe, new[] { layout.SnapDir }, IsSnapshotCandidate, Log.Info);
+            }
+            catch (Exception ex) { Log.Warn("snapshot thumbnails", ex); }
         }
 
         // ── the contract ─────────────────────────────────────────────────────

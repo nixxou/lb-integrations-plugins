@@ -5,6 +5,11 @@
 // Key 96 = F3 - the user's own account of the defaults on 30/09, and F2 was seen writing <rom>.szst0. They are the
 // user's to rebind in Config > Input; a rebound key makes these scripts send the old one.
 //
+// THE PACK'S KEYS (Mehdi, 07/10: F2/F4 states, F6/F7 slot, Esc quit, F11 full screen): F2 and F4 already are. The rest
+// cannot be: GameInput (Run, SaveState, LoadState, StateSelect, Exit, FastForward, Rewind, Screenshot, the BG/OBJ
+// toggles, the pad) has ONE slot input, no previous / next, and no full-screen one - so F3 stays the slot, and F11 is
+// not bound. Documented in superzsnes.html, nothing faked.
+//
 // QUITTING IS Alt+F4. It is a Unity windowed application, and Alt+F4 closes one from the window
 // manager whatever the game does with its keys. Escape is NOT remapped to it: in SUPER ZSNES, Escape
 // leaves the game for the emulator's own menu (its handler is literally named EscapeBackToMenu), and

@@ -15,6 +15,11 @@
 // thing unprompted, so the running script has nothing to fix - and saying so is more useful than
 // leaving the field empty, because an empty field is indistinguishable from a plugin that forgot.
 //
+// THE PACK'S KEYS (Mehdi, 07/10: F2 / F4 states, F6 / F7 slot, Esc quit, F11 full screen) are out of
+// reach: these are fixed menu accelerators, NO$GBA.INI holds three options ("do not edit") and NO$GBA.INP
+// is an undocumented binary pad map. So F8 / F7 stay, Esc already matches, and there is one snapshot -
+// no slot to step through.
+//
 // THE SNAPSHOT KEYS ARE NOT AN ENDORSEMENT. F8 creates the SNAP folder and, across several sessions
 // including clean exits, left nothing in it. The scripts send what the menu says; whether a file
 // appears is the emulator's business, and NoGbaSaves deliberately does not claim to manage what has

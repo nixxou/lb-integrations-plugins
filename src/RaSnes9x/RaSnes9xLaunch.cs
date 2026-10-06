@@ -1,9 +1,20 @@
-// What a launch writes: the game's options into snes9x.conf, and a .7z game unpacked for Snes9x.
+// What a launch writes: the game's options and the pack's free hotkeys into snes9x.conf, and a .7z game unpacked for Snes9x.
 //
 // THE OPTIONS (RaSnes9xSettings.All) go into [Display\Win] before every launch - Snes9x reads the file when it starts
 // and writes it back whole when it quits (RaSnes9xConf), so a key the plugin manages is the plugin's: changed in
 // Snes9x's own menus, it comes back to the Nixx window's value at the next launch. Every other key - the pads, the
-// hotkeys, the sound, the folders - is the user's and is never touched.
+// hotkeys, the sound, the folders - is the user's: only an UNASSIGNED hotkey is ever bound, below.
+//
+// THE HOTKEYS, the pack's keys (Mehdi, 07/10) where Snes9x lets them be bound ([Controls\Win\Hotkeys], "Key:<name> =
+// F2" + "Mods:<name> = none", wconfig.cpp ADD/ADDN): F2 SlotSave, F4 SlotLoad (the CURRENT slot, kept in
+// [Settings\Win] CurrentSaveSlot), F6 SlotMinus, F7 SlotPlus - all four Unassigned in Snes9x (wsnes9x.cpp, CustomKeys).
+// Each is bound only while it is Unassigned and no pad button or other hotkey of the user's holds the key. Snes9x fires
+// EVERY hotkey matching a key (wsnes9x.cpp, the hotkey ifs of WM_KEYDOWN are independent), and its defaults put "load
+// slot 1 / 3 / 5 / 6" on F2 / F4 / F6 / F7: such a LoadSlotN still on its default is set Unassigned when its key is
+// taken - else F2 would save AND load. Shift+F1..F10 (save slot N) and F1, F3, F5, F8..F10 stay.
+// NOT BINDABLE: Esc is never a hotkey (wsnes9x.cpp: "if(!(wParam == 0 || wParam == VK_ESCAPE))" - Esc shows or hides
+// the menu bar); full screen has no hotkey, only the Alt+Enter accelerator (rsrc\snes9x.rc) - F11 is Snes9x's "load
+// from a dialog" and stays so. Quitting is the window's close (the Exit script), as QuitS9X would do (WM_CLOSE).
 //
 //   Fullscreen  Fullscreen:Enabled, and Fullscreen:EmulateFullscreen = TRUE (a borderless window over the screen)
 //   Aspect      Stretch:Enabled = TRUE; Stretch:MaintainAspectRatio; Stretch:AspectRatioBaseWidth 299 (4:3) or 256 (8:7)
@@ -15,6 +26,7 @@
 // so its .srm and its states carry the same name a zip would give them, and a game moved from .7z to .zip keeps them.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -69,6 +81,7 @@ namespace LbIntegrations.RaSnes9x
                 conf.SetBool(Display, "Vsync", RaSnes9xSettings.BoolFor(gameId, "VSync"));
                 var output = RaSnes9xSettings.For(gameId, "Output");
                 conf.Set(Display, "OutputMethod", output == "opengl" ? "2" : output == "ddraw" ? "0" : "1");
+                BindHotkeys(conf);
 
                 bool changed = conf.Changed;
                 conf.SaveIfChanged();
@@ -76,6 +89,60 @@ namespace LbIntegrations.RaSnes9x
                          + (RaSnes9xSettings.BoolFor(gameId, "IntegerScaling") ? ", integer" : "") + ", " + output);
             }
             catch (Exception ex) { Log.Warn("snes9x.conf could not be written - the game starts with it as it was", ex); }
+        }
+
+        private const string HotkeySection = "Controls\\Win\\Hotkeys";
+
+        /// <summary>The pack's keys, Snes9x's hotkey names (Mehdi, 07/10).</summary>
+        internal static readonly (string Name, string Key)[] Hotkeys =
+        {
+            ("SlotSave", "F2"), ("SlotLoad", "F4"), ("SlotMinus", "F6"), ("SlotPlus", "F7"),
+        };
+
+        /// <summary>Snes9x's own defaults on those keys (wsnes9x.cpp, CustomKeys: Load[1], [3], [5], [6] = VK_F2, F4, F6, F7
+        /// with no modifier): given up when still so, since Snes9x would fire both.</summary>
+        private static readonly Dictionary<string, string> DefaultOnKey = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["F2"] = "LoadSlot1", ["F4"] = "LoadSlot3", ["F6"] = "LoadSlot5", ["F7"] = "LoadSlot6",
+        };
+
+        private static bool NoMods(string mods) => string.IsNullOrWhiteSpace(mods) || string.Equals(mods.Trim(), "none", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>The pack's hotkeys bound where Snes9x has them Unassigned (a missing line is Snes9x's default:
+        /// Unassigned for these four), and never over a key the user put on something else.</summary>
+        private static void BindHotkeys(RaSnes9xConf conf)
+        {
+            var entries = conf.Entries(HotkeySection);
+            var pads = conf.Entries("Controls\\Win");
+            string Value(string key) => entries.FirstOrDefault(e => string.Equals(e.Key, key, StringComparison.OrdinalIgnoreCase)).Value;
+            foreach (var (name, key) in Hotkeys)
+            {
+                var now = Value("Key:" + name);
+                if (!string.IsNullOrWhiteSpace(now) && !string.Equals(now, "Unassigned", StringComparison.OrdinalIgnoreCase)) continue;
+
+                DefaultOnKey.TryGetValue(key, out var dflt);
+                var dfltKey = Value("Key:" + dflt);
+                bool dfltStill = dfltKey == null || (string.Equals(dfltKey, key, StringComparison.OrdinalIgnoreCase) && NoMods(Value("Mods:" + dflt)));
+                // Anyone else on the key with no modifier: a hotkey ("Key:X = F2", "Mods:X = none") or a pad button.
+                var taken = entries.Where(e => e.Key.StartsWith("Key:", StringComparison.OrdinalIgnoreCase) && string.Equals(e.Value, key, StringComparison.OrdinalIgnoreCase)
+                                               && NoMods(Value("Mods:" + e.Key.Substring(4))))
+                                   .Select(e => e.Key.Substring(4))
+                                   .Where(n => !(dfltStill && string.Equals(n, dflt, StringComparison.OrdinalIgnoreCase)))
+                                   .Concat(pads.Where(e => string.Equals(e.Value, key, StringComparison.OrdinalIgnoreCase)).Select(e => e.Key))
+                                   .FirstOrDefault();
+                if (taken != null) { Log.Info("snes9x.conf: " + name + " left Unassigned - " + key + " is already " + taken + "'s"); continue; }
+
+                conf.Set(HotkeySection, "Key:" + name, key);
+                conf.Set(HotkeySection, "Mods:" + name, "none");
+                if (dflt != null && dfltStill)
+                {
+                    conf.Set(HotkeySection, "Key:" + dflt, "Unassigned");
+                    conf.Set(HotkeySection, "Mods:" + dflt, "none");
+                    Log.Info("snes9x.conf: " + key + " bound to " + name + " - " + dflt + " (Snes9x's default on " + key + ") set Unassigned");
+                }
+                else Log.Info("snes9x.conf: " + key + " bound to " + name);
+                entries = conf.Entries(HotkeySection);
+            }
         }
 
         /// <summary>For a .7z: the ROM inside, unpacked under the archive's name, or null with <paramref name="problem"/>

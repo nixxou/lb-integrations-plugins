@@ -143,6 +143,46 @@ namespace LbIntegrations.MelonDs
             catch { return false; }
         }
 
+        /// <summary>F11 full screen - the pack's key (Mehdi, 07/10: F2 / F4 states, F6 / F7 slot, Esc quit, F11 full
+        /// screen). Of that list melonDS 1.1 lets only this one be bound: HK_FullscreenToggle (EmuInstance.h). Its states
+        /// are menu shortcuts set in code (Window.cpp: F1..F8 load, Shift+F1..F8 save, no slot keys, no "current slot"),
+        /// so F2 / F4 / F6 / F7 stay what melonDS makes them - loading slots 2, 4, 6 and 7 - and Esc goes through the
+        /// Running script. Qt::Key_F11, no modifier (getEventKeyVal: key | modifiers).</summary>
+        private const int F11 = 0x0100003A;         // 16777274
+
+        /// <summary>Bind HK_FullscreenToggle to F11 when it is unbound (-1 or missing) and no other key of the table
+        /// already holds F11 - a key the user gave to something else is never taken. An earlier build never wrote it, so
+        /// there is no older value to bring up to date. Not while a melonDS is open: it would rewrite the file at its exit.
+        /// True when it was written.</summary>
+        public static bool EnsureHotkeys(MelonDsLayout layout)
+        {
+            try
+            {
+                if (layout?.ConfigFile == null || !System.IO.File.Exists(layout.ConfigFile) || Log.Disabled(KillSwitch)) return false;
+                const string Fullscreen = "HK_FullscreenToggle";
+                var keys = new List<string> { Fullscreen };
+                if (MelonDsToml.Keys(layout.ConfigFile).TryGetValue(KeyboardTable, out var inTable))
+                    foreach (var k in inTable) if (!keys.Contains(k)) keys.Add(k);
+                if (!MelonDsToml.TryRead(layout.ConfigFile, KeyboardTable, out var current, keys.ToArray())) return false;
+
+                if (!ShouldBind(current.TryGetValue(Fullscreen, out var now) ? now : null)) return false;
+                var f11 = F11.ToString(CultureInfo.InvariantCulture);
+                foreach (var kv in current)
+                    if (kv.Key != Fullscreen && string.Equals(kv.Value?.Trim(), f11, StringComparison.Ordinal))
+                    {
+                        Log.Info(KeyboardTable + ": F11 is already " + kv.Key + " - full screen left unbound");
+                        return false;
+                    }
+
+                var error = MelonDsToml.Write(layout.ConfigFile, KeyboardTable,
+                                              new Dictionary<string, string>(StringComparer.Ordinal) { [Fullscreen] = f11 });
+                if (error != null) { Log.Info("full screen key not bound: " + error); return false; }
+                Log.Info(KeyboardTable + ": " + Fullscreen + " bound to F11 (it had no key)");
+                return true;
+            }
+            catch (Exception ex) { Log.Warn("could not bind the full screen key", ex); return false; }
+        }
+
         /// <summary>Absent, blank, or melonDS's own "nothing here" value.</summary>
         private static bool ShouldBind(string value)
         {

@@ -9,14 +9,17 @@
 //   Mode7    Emulator/Hack/PPU/Mode7/Scale (1 = native)
 //   Screen   --fullscreen on the command line (bsnes.cpp: program.startFullScreen) - nothing kept in the file
 //
-// THE STATE HOTKEYS: bsnes ships Hotkey/SaveState and Hotkey/LoadState UNBOUND, so the pause screens of LaunchBox and
-// BigBox would have nothing to press. When - and only when - one is empty (or still an earlier build's F5/F7), it is
-// bound to RetroArch's keys: F2 saves the quick state of the current slot, F4 loads it (BsnesAhk sends the same). A key
-// the user bound is never changed.
+// THE HOTKEYS: bsnes ships every hotkey UNBOUND (input\hotkeys.cpp reads them from settings.bml, settings.cpp gives
+// none), so the pause screens of LaunchBox and BigBox would have nothing to press. The pack's keys (Mehdi, 07/10): F2
+// saves the quick state of the current slot, F4 loads it (BsnesAhk sends the same), F6 / F7 the slot down / up, F11
+// full screen, Esc quits. Each node is bound only when it is empty or still what an earlier build wrote (F5/F7 for the
+// states), and only when no other node - a hotkey or a pad button - already holds that key. A key the user bound is
+// never changed.
 //
 // GAMES: bsnes opens .sfc/.smc, .zip and .7z itself (game.cpp, Program::loadSuperFamicom), so nothing is unpacked.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -31,9 +34,30 @@ namespace LbIntegrations.Bsnes
         // wrote ("Keyboard/1/Button/F5", which bind() reads as device 0 - nothing) is replaced.
         public const string SaveKey = "0x1/0/2";   // F2, RetroArch's key (Mehdi, 06/10)
         public const string LoadKey = "0x1/0/4";   // F4
-        private static readonly string[] Superseded = { "Keyboard/1/Button/F5", "Keyboard/1/Button/F7", "0x1/0/5", "0x1/0/7" };   // F5/F7 of earlier builds
 
-        private static bool Unbound(string v) => string.IsNullOrWhiteSpace(v) || Array.IndexOf(Superseded, v.Trim()) >= 0;
+        /// <summary>The pack's hotkeys (Mehdi, 07/10). Node names: "Hotkey/" + the InputHotkey's name without spaces
+        /// (input\hotkeys.cpp). Keys: the index in bsnes's ruby keyboard list (ruby\input\keyboard\rawinput.cpp: Escape 0,
+        /// F1..F10 1..10, F11 11) - the same as ares's. Esc cannot be bound from bsnes's own Hotkeys page (Escape there
+        /// clears a binding, input.cpp), but a binding read from the file works.</summary>
+        internal static readonly (string Node, string Key)[] Hotkeys =
+        {
+            ("SaveState", SaveKey), ("LoadState", LoadKey), ("DecrementStateSlot", "0x1/0/6"), ("IncrementStateSlot", "0x1/0/7"),
+            ("ToggleFullscreen", "0x1/0/11"), ("QuitEmulator", "0x1/0/0"),
+        };
+
+        /// <summary>What earlier builds of this plugin wrote, node by node: replaced by the keys above.</summary>
+        private static readonly Dictionary<string, string[]> Superseded = new Dictionary<string, string[]>
+        {
+            ["SaveState"] = new[] { "Keyboard/1/Button/F5", "0x1/0/5" },   // F5, the builds of 06/10
+            ["LoadState"] = new[] { "Keyboard/1/Button/F7", "0x1/0/7" },   // F7
+        };
+
+        /// <summary>Empty, or still an earlier build's value - bsnes writes a node's assignments joined with ';'.</summary>
+        private static bool Ours(string node, string v)
+        {
+            var set = (v ?? "").Split(';').Select(a => a.Trim()).Where(a => a.Length > 0).ToList();
+            return set.Count == 0 || (set.Count == 1 && Superseded.TryGetValue(node, out var old) && old.Contains(set[0]));
+        }
 
         public static bool IsBsnesExe(string path)
         {
@@ -55,7 +79,7 @@ namespace LbIntegrations.Bsnes
             return false;
         }
 
-        /// <summary>The game's options written into settings.bml, the state keys bound when unbound. Never throws.</summary>
+        /// <summary>The game's options written into settings.bml, the pack's hotkeys bound when unbound. Never throws.</summary>
         public static void PrepareSettings(string exe, string gameId)
         {
             try
@@ -70,8 +94,14 @@ namespace LbIntegrations.Bsnes
                 bml.Set("Emulator/Hack/PPU/Mode7/Scale", mode7);
                 if (mode7 != "1") bml.SetBool("Emulator/Hack/PPU/Fast", true);   // HD Mode 7 is the fast PPU's
 
-                if (Unbound(bml.Get("Hotkey/SaveState"))) bml.Set("Hotkey/SaveState", SaveKey);
-                if (Unbound(bml.Get("Hotkey/LoadState"))) bml.Set("Hotkey/LoadState", LoadKey);
+                // In the table's order: LoadState leaves F7 before IncrementStateSlot looks for it.
+                foreach (var (node, key) in Hotkeys)
+                {
+                    var path = "Hotkey/" + node;
+                    if (!Ours(node, bml.Get(path))) continue;
+                    if (bml.BoundElsewhere(key, path)) { Log.Info("settings.bml: " + node + " left unbound - its key " + key + " is already used"); continue; }
+                    bml.Set(path, key);
+                }
 
                 bool changed = bml.Changed;
                 bml.SaveIfChanged();

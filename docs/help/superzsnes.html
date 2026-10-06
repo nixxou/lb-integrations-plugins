@@ -89,7 +89,9 @@
     <li><kbd>Esc</kbd> no longer opens the menu at once. The first press shows <i>"Press ESC again to quit"</i>.
     A second press within 2.5 seconds lets the emulator save, then quits. You can turn this off.</li>
     <li><kbd>F1</kbd> opens the emulator's own menu (save states, cheats, its settings). You can choose another key.</li>
-    <li><kbd>F2</kbd> saves a state, <kbd>F4</kbd> loads it, <kbd>F3</kbd> changes the slot. These are the emulator's own keys.</li>
+    <li><kbd>F2</kbd> saves a state, <kbd>F4</kbd> loads it, <kbd>F3</kbd> changes the slot. These are the emulator's own keys.
+    It has a single slot key, not a previous / next pair, so the pack's <kbd>F6</kbd>/<kbd>F7</kbd> are not used.</li>
+    <li>No full-screen key: SUPER ZSNES has none to bind, so <kbd>F11</kbd> is not one here. Full screen is set in the Window options below.</li>
     <li>A controller Exit button, if you set one in the emulator, still quits at once, without asking.</li>
   </ul>
   <h3>Pop-ups</h3>
@@ -157,6 +159,8 @@
     <li>LaunchBox shows the <b>cartridge save</b> (marked SRM) and the <b>save states</b> (marked STATE, with their slot number).</li>
     <li>You can back them up, restore them and delete them. A restore puts the file back where the emulator reads it, and asks before replacing one.</li>
     <li>The plugin looks where the emulator's settings say, so it follows folders you changed in the emulator.</li>
+    <li>Beside each state, <code>&lt;game&gt;.szst0.png</code> is its thumbnail, the screenshot the emulator keeps in it. It is made
+    after you quit SUPER ZSNES, and travels with the state in backups.</li>
     <li>Not listed on purpose: the "last state" the emulator rewrites each time you open its menu or quit, and its rewind history.</li>
   </ul>
   <h3>Pause screen hotkeys</h3>

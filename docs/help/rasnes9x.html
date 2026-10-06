@@ -89,8 +89,13 @@
   <ul>
     <li><b>Cartridge save</b>: <code>&lt;game&gt;.srm</code> (and <code>.rtc</code> for the few carts with a clock), in Snes9x's
     saves folder - <code>Saves\</code> beside the emulator unless you changed it.</li>
-    <li><b>Save states</b>: <code>&lt;game&gt;.000</code> to <code>.009</code>, the ten slots: <kbd>Shift</kbd>+<kbd>F1</kbd>..<kbd>F10</kbd>
-    save, <kbd>F1</kbd>..<kbd>F10</kbd> load. LaunchBox's pause screen saves and loads slot 0.</li>
+    <li><b>Save states</b>: <code>&lt;game&gt;.000</code> to <code>.009</code>, the ten slots. When free, the plugin binds the pack's keys:
+    <kbd>F2</kbd> save, <kbd>F4</kbd> load the current slot, <kbd>F6</kbd> / <kbd>F7</kbd> change it (Snes9x's own "load slot"
+    on those four keys is cleared). LaunchBox's pause screen uses F2 / F4. <kbd>Shift</kbd>+<kbd>F1</kbd>..<kbd>F10</kbd> still save
+    a slot directly.</li>
+    <li>Beside each state, <code>&lt;game&gt;.000.png</code> is its thumbnail, taken from the picture Snes9x keeps in it. It is made
+    after you quit RASnes9x, and travels with the state in backups.</li>
+    <li>Snes9x cannot bind <kbd>Esc</kbd> or a full-screen key: full screen is <kbd>Alt</kbd>+<kbd>Enter</kbd>, quit by closing the window.</li>
     <li>LaunchBox's save management lists both, backs them up and restores them.</li>
   </ul>
 </section>

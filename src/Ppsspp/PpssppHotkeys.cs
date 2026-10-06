@@ -45,6 +45,14 @@
 //
 // Both changes happen only while the defaults are untouched: Pause must still hold exactly Escape,
 // and the key we want must be free. A user who moved either has already decided.
+//
+// F11 IS ALREADY FULL SCREEN, and "Toggle Fullscreen" stays unbound on purpose (Mehdi, 07/10: F11 =
+// toggle full screen across the pack). The action exists (VIRTKEY_TOGGLE_FULLSCREEN, Core/KeyMap.cpp:505)
+// and has no default key, but on Windows PPSSPP's accelerator table already maps F11 and Alt+Return
+// to ID_OPTIONS_FULLSCREEN (Windows/ppsspp.rc:72-73, v1.20.4 and master), live whenever
+// SystemControls is on - its default (Core/Config.cpp:1039). Unlike the F2/F4/F3 accelerators, whose
+// handlers stand down once the matching action has a mapping (Windows/MainWindowMenu.cpp:585-635),
+// the fullscreen one has no such guard (:884), so binding F11 here as well would toggle twice.
 
 using System;
 using System.Collections.Generic;

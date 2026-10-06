@@ -34,11 +34,17 @@
 // returns the sibling .jpg, because the SDK contract asks for it and LaunchBox honours it - but
 // under LiteBox a restored state comes back without its screenshot. PPSSPP writes a fresh one the
 // next time that slot is saved, so the cost is cosmetic.
+//
+// A PNG beside each state, <slot>.ppst.png (Mehdi, 07/10: a thumbnail beside every state): PPSSPP's own .jpg of it,
+// converted (LbipStateThumbs.FromImage) when the states are listed - no capture is watched for at launch, PPSSPP's
+// picture is the game's frame. The PNG is stamped with the .jpg's time, so a listing costs one look at its date; a
+// slot saved again, or swapped back by PPSSPP's undo, has a .jpg of another time and is converted again.
 
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using LbIntegrations.Lbip;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 
@@ -159,6 +165,7 @@ namespace LbIntegrations.Ppsspp
                 // Same rule as a save: one row per slot per context, so a game and one of its
                 // versions pointing at the same disc do not list the slot twice.
                 if (!seen.Add(st.DiscId + "|" + st.Slot + "|" + context)) continue;
+                StateThumb(st);
 
                 into.Add(new GameSaveState
                 {
@@ -180,6 +187,19 @@ namespace LbIntegrations.Ppsspp
                 added++;
             }
             return added;
+        }
+
+        /// <summary>The state's PNG, from PPSSPP's .jpg, when it is missing or not the .jpg's (see the header). Never throws.</summary>
+        private static void StateThumb(PpssppState st)
+        {
+            try
+            {
+                if (st.ThumbnailPath == null || st.ThumbnailWriteUtc == default) return;
+                var thumb = LbipStateThumbs.PathOf(st.Path);
+                if (File.GetLastWriteTimeUtc(thumb) == st.ThumbnailWriteUtc) return;
+                if (LbipStateThumbs.FromImage(st.ThumbnailPath, st.Path)) File.SetLastWriteTimeUtc(thumb, st.ThumbnailWriteUtc);
+            }
+            catch (Exception ex) { Log.Info("state thumbnail of " + st.FileName + ": " + ex.Message); }
         }
 
         private GameSaveGame SaveFor(PpssppLayout layout, string romPath, IGame game,
@@ -274,7 +294,8 @@ namespace LbIntegrations.Ppsspp
                 var dir = Path.GetFileName(Path.GetDirectoryName(filePath) ?? "");
                 if (string.Equals(dir, PpssppPaths.SaveStateDirName, StringComparison.OrdinalIgnoreCase))
                     return PpssppStates.IsUndo(name)
-                           || name.EndsWith(PpssppStates.ThumbnailExtension, StringComparison.OrdinalIgnoreCase);
+                           || name.EndsWith(PpssppStates.ThumbnailExtension, StringComparison.OrdinalIgnoreCase)
+                           || LbipStateThumbs.IsThumb(name);
 
                 var parent = Path.GetFileName(Path.GetDirectoryName(Path.GetDirectoryName(filePath)) ?? "");
                 return string.Equals(parent, "SAVEDATA", StringComparison.OrdinalIgnoreCase);
@@ -284,7 +305,7 @@ namespace LbIntegrations.Ppsspp
 
         /// <summary>For a SAVEDATA unit, nothing: it is a set of DIRECTORIES, and the companion
         /// mechanism is for sibling FILES - CompanionsOf filters on File.Exists, so a folder would be
-        /// dropped. For a STATE, the sibling screenshot, which is a file and does qualify.
+        /// dropped. For a STATE, the sibling screenshot and our PNG of it, which are files and do qualify.
         ///
         /// LiteBox ignores this for states (it hands back an empty companion list for every one), so
         /// the screenshot only really follows under LaunchBox. Returning it anyway is the contract,
@@ -297,7 +318,10 @@ namespace LbIntegrations.Ppsspp
                 if (!primaryFilePath.EndsWith(PpssppStates.Extension, StringComparison.OrdinalIgnoreCase))
                     return Array.Empty<string>();
                 var jpg = PpssppStates.ThumbnailFor(primaryFilePath);
-                return jpg == null ? Array.Empty<string>() : new[] { jpg };
+                var all = new List<string>();
+                if (jpg != null) all.Add(jpg);
+                all.AddRange(LbipStateThumbs.Companion(primaryFilePath));
+                return all;
             }
             catch { return Array.Empty<string>(); }
         }
@@ -502,6 +526,21 @@ namespace LbIntegrations.Ppsspp
                 try { File.Copy(jpg, Path.ChangeExtension(target, PpssppStates.ThumbnailExtension), overwrite: true); }
                 catch (Exception ex) { Log.Warn("could not restore the state screenshot", ex); }
             }
+            // Without one, the slot's old screenshot goes: a picture of another moment, which our PNG would be taken from.
+            else
+            {
+                try { var old = Path.ChangeExtension(target, PpssppStates.ThumbnailExtension); if (File.Exists(old)) File.Delete(old); }
+                catch (Exception ex) { Log.Warn("could not remove the old state screenshot", ex); }
+            }
+            // Our PNG of it the same way. A backup without one takes the old one away; the next listing converts the
+            // .jpg again, when there is one.
+            try
+            {
+                var png = LbipStateThumbs.Companion(source).FirstOrDefault();
+                if (png != null) File.Copy(png, LbipStateThumbs.PathOf(target), overwrite: true);
+                else LbipStateThumbs.Remove(target);
+            }
+            catch (Exception ex) { Log.Warn("could not restore the state thumbnail", ex); }
             Log.Info("restored state " + discId + " slot " + slot.Value + " -> " + target);
 
             return new AddSaveResponse(new GameSaveState
@@ -551,8 +590,8 @@ namespace LbIntegrations.Ppsspp
             }
         }
 
-        /// <summary>Delete one state slot: the file, its screenshot, and the undo pair PPSSPP keeps
-        /// for that same slot.
+        /// <summary>Delete one state slot: the file, its screenshot, our PNG of it, and the undo pair PPSSPP
+        /// keeps for that same slot.
         ///
         /// The undo pair goes too, and that is a decision rather than an obvious truth. It is the
         /// state this slot held before it was last overwritten, so leaving it behind would let
@@ -571,6 +610,7 @@ namespace LbIntegrations.Ppsspp
             {
                 stem + PpssppStates.Extension,
                 stem + PpssppStates.ThumbnailExtension,
+                LbipStateThumbs.PathOf(stem + PpssppStates.Extension),
                 stem + ".undo" + PpssppStates.Extension,
                 stem + ".undo" + PpssppStates.ThumbnailExtension,
             };

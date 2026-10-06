@@ -16,6 +16,12 @@
 // So there is nothing to write, nothing to measure, and nothing that can drift - but the shortcuts
 // are also nobody's to change, which is why the comments name the file they come from.
 //
+// THE PACK'S KEYS (Mehdi, 07/10: F2 / F4 states, F6 / F7 slot, Esc quit, F11 full screen) cannot be had
+// here, checked against melonDS 1.1 (the release the plugin installs): no "save / load the current slot"
+// and no slot keys exist, and F2 / F4 / F6 / F7 already LOAD slots 2, 4, 6 and 7. So these scripts keep
+// melonDS's own keys, unchanged - nothing to supersede. Esc quits through the Running script; F11 is bound
+// to HK_FullscreenToggle when it has no key (MelonDsInput.EnsureHotkeys).
+//
 // SLOT 1, because a host's Save State button is one button and melonDS gives one key per slot. Slot
 // 1 is what its own menu lists first, and F1 / Shift+F1 are the pair a user would reach for.
 //

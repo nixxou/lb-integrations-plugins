@@ -36,7 +36,7 @@
 </header>
 <nav>
   <a href="#overview">In short</a><a href="#start">Getting started</a><a href="#play">Playing</a>
-  <a href="#saves">Saves</a><a href="#support">What works</a><a href="#limits">Limits</a><a href="#trouble">If something goes wrong</a>
+  <a href="#saves">Saves</a><a href="#keys">Keys</a><a href="#support">What works</a><a href="#limits">Limits</a><a href="#trouble">If something goes wrong</a>
 </nav>
 
 <section id="overview"><h2>In short</h2>
@@ -69,6 +69,17 @@
 
 <section id="saves"><h2>Saves and save states</h2>
   <p>Not handled by the plugin yet: Demul keeps the arcade games' saves in its <code>nvram</code> folder and the Dreamcast memory cards in <code>memsaves</code>.</p>
+  <p>A state saved during a game launched from LaunchBox gets a picture of the screen beside it, in <code>sstates</code> (<code>&lt;state&gt;.png</code>).</p>
+</section>
+
+<section id="keys"><h2>Keys</h2>
+  <table><tr><th>Key</th><th>Does</th></tr>
+  <tr><td><kbd>F2</kbd> / <kbd>F4</kbd></td><td>Save / load a state, in the current slot (<b>File &gt; Save States</b>, 0 to 9).</td></tr>
+  <tr><td><kbd>F6</kbd> / <kbd>F7</kbd></td><td>Previous / next slot.</td></tr>
+  <tr><td><kbd>Esc</kbd></td><td>Quit, through Demul's <b>File &gt; Exit</b>, so the nvram is written. LaunchBox's and Big Box's Exit do the same.</td></tr>
+  <tr><td><kbd>F11</kbd></td><td>Full screen on or off (Demul's <kbd>Alt</kbd>+<kbd>Enter</kbd>).</td></tr>
+  <tr><td><kbd>F1</kbd> / <kbd>F5</kbd></td><td>The arcade boards' Service and Test buttons, moved there from Demul's <kbd>F2</kbd> / <kbd>F4</kbd>.</td></tr></table>
+  <p>The state keys are written into Demul's <code>padDemul.ini</code> only when they have no key yet, and never on a key you gave to something else (the log says which one held it). The pause screen's Save State / Load State send whichever key <code>padDemul.ini</code> holds. Your own scripts on the emulator entry are kept.</p>
 </section>
 
 <section id="support"><h2>What works</h2>

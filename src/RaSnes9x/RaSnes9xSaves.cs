@@ -3,8 +3,11 @@
 //
 //   Battery save   <name>.srm     in the SRAM folder         (and <name>.rtc beside it: the clock of the few carts
 //                                                            that have one - S-RTC, SPC7110 - its companion)
-//   Save states    <name>.000     in the savestates folder   .000 to .009 the ten slots (Shift+F1..F10 save, F1..F10
-//                                                            load); a higher number is a slot of another bank
+//   Save states    <name>.000     in the savestates folder   .000 to .009 the ten slots (Shift+F1..F10 save; F2 / F4
+//                                                            the current slot, F6 / F7 pick it - RaSnes9xLaunch); a
+//                                                            higher number is a slot of another bank (and
+//                                                            <name>.000.png beside each: its picture,
+//                                                            RaSnes9xStateThumbs - its companion)
 //
 // THE NAME is the file name Snes9x was given, its last extension off (S9xGetFilename): for a .zip the archive's; a .7z
 // is unpacked under its own name (RaSnes9xLaunch.RomFor), so it gives the same.
@@ -22,6 +25,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using LbIntegrations.Lbip;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 
@@ -113,18 +117,40 @@ namespace LbIntegrations.RaSnes9x
                 into.Add(SaveRow(srm, gameId, appId, SavePrefix + name));
 
             int states = 0;
-            if (folders.StateDir == null || !Directory.Exists(folders.StateDir)) return 0;
-            foreach (var path in Directory.GetFiles(folders.StateDir, name + ".*"))
+            foreach (var (path, slot) in StateFilesIn(folders.StateDir, name))
             {
-                if (!string.Equals(Path.GetFileNameWithoutExtension(path), name, StringComparison.OrdinalIgnoreCase)) continue;   // "Zelda 2.000" is not Zelda's
-                var m = StateFile.Match(path);
-                if (!m.Success || !int.TryParse(m.Groups["slot"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var slot)) continue;
                 if (!seen.Add("state|" + path + "|" + context)) continue;
+                RaSnes9xStateThumbs.Refresh(path);
                 into.Add(StateRow(path, gameId, appId, slot, StatePrefix + name + ":" + slot, StateGroupName));
                 states++;
             }
             return states;
         }
+
+        /// <summary>A game's states in the folder Snes9x keeps them: &lt;name&gt;.000 and up - never its .oops, nor the
+        /// thumbnail beside a state ("Zelda.000.png" is "Zelda.000" without its extension).</summary>
+        private static IEnumerable<(string Path, int Slot)> StateFilesIn(string dir, string name)
+        {
+            if (dir == null || string.IsNullOrEmpty(name) || !Directory.Exists(dir)) yield break;
+            foreach (var path in Directory.GetFiles(dir, name + ".*"))
+            {
+                if (!string.Equals(Path.GetFileNameWithoutExtension(path), name, StringComparison.OrdinalIgnoreCase)) continue;   // "Zelda 2.000" is not Zelda's
+                var m = StateFile.Match(path);
+                if (!m.Success || !int.TryParse(m.Groups["slot"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var slot)) continue;
+                yield return (path, slot);
+            }
+        }
+
+        /// <summary>For the session's thumbnails: the state files of the game this ROM is.</summary>
+        internal static IEnumerable<string> StatesOf(string exe, string rom)
+        {
+            var name = NameOf(ResolveFullPath(rom));
+            return StateFilesIn(FoldersFor(exe, rom).StateDir, name).Select(s => s.Path).ToList();
+        }
+
+        /// <summary>One of our thumbnails, beside a state: "&lt;name&gt;.000.png".</summary>
+        private static bool IsStateThumb(string path)
+            => LbipStateThumbs.IsThumb(path) && StateFile.IsMatch(path.Substring(0, path.Length - LbipStateThumbs.Suffix.Length));
 
         private static GameSaveGame SaveRow(string path, string gameId, string appId, string groupId, string groupName = null, string chip = null)
         {
@@ -165,14 +191,16 @@ namespace LbIntegrations.RaSnes9x
             return false;
         }
 
-        /// <summary>A plugin must never call its own save secondary.</summary>
-        public override bool IsSecondarySaveFile(string filePath) => false;
+        /// <summary>A plugin must never call its own save secondary - only a state's thumbnail, part of the state's save.</summary>
+        public override bool IsSecondarySaveFile(string filePath) => IsStateThumb(filePath);
 
-        /// <summary>A cartridge save's clock (.rtc beside the .srm) travels with it; a state carries its own picture.</summary>
+        /// <summary>A cartridge save's clock (.rtc beside the .srm) travels with it; a state its thumbnail, the picture it
+        /// carries made a PNG beside it (RaSnes9xStateThumbs).</summary>
         public override IReadOnlyList<string> GetCompanionSaveFiles(string primaryFilePath)
         {
             try
             {
+                if (primaryFilePath != null && StateFile.IsMatch(primaryFilePath)) return LbipStateThumbs.Companion(primaryFilePath);
                 if (string.IsNullOrWhiteSpace(primaryFilePath) || !primaryFilePath.EndsWith(".srm", StringComparison.OrdinalIgnoreCase)) return Array.Empty<string>();
                 var rtc = Path.ChangeExtension(primaryFilePath, ".rtc");
                 return File.Exists(rtc) ? new[] { rtc } : Array.Empty<string>();
@@ -226,6 +254,13 @@ namespace LbIntegrations.RaSnes9x
                 File.Copy(source, target, overwrite: true);
                 Log.Info("restored " + name + " -> " + targetDir);
 
+                if (save is GameSaveState)
+                {
+                    // Its thumbnail with it; without one, the old would be a picture of another moment - made again from the state.
+                    var thumb = GetCompanionSaveFiles(source).FirstOrDefault(LbipStateThumbs.IsThumb);
+                    if (thumb != null) File.Copy(thumb, LbipStateThumbs.PathOf(target), overwrite: true);
+                    else { LbipStateThumbs.Remove(target); RaSnes9xStateThumbs.Refresh(target); }
+                }
                 if (save is GameSaveState state)
                     return new AddSaveResponse(StateRow(target, state.GameId, state.AdditionalApplicationId, state.Slot ?? 0, state.SaveGroupId,
                                                         string.IsNullOrWhiteSpace(state.SaveGroupName) ? StateGroupName : state.SaveGroupName));
@@ -274,6 +309,7 @@ namespace LbIntegrations.RaSnes9x
                 if (string.IsNullOrWhiteSpace(loc)) return new PluginResponse(false, "This save has no location.");
                 try { if (File.Exists(loc)) File.Delete(loc); }
                 catch (Exception ex) { Log.Warn("could not delete " + loc, ex); return new PluginResponse(false, "Could not delete " + Path.GetFileName(loc) + "."); }
+                if (save is GameSaveState) LbipStateThumbs.Remove(loc);
                 Log.Info("deleted " + Path.GetFileName(loc));
                 return new PluginResponse(true);
             }

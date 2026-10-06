@@ -20,6 +20,13 @@
 //
 // The $ prefix matters: without it the hotkey would fire on the keystroke the script itself sends
 // and loop.
+//
+// THE PACK'S KEYS (Mehdi, 07/10: F2 / F4 save / load state, F6 / F7 slot, Esc quit, F11 full screen),
+// checked against canary_experimental@7347cd12e, the build installed: every key above is a case of
+// EmulatorWindow::OnKeyDown, and Xenia has no setting to bind one ([HID.Key] keybind_* are the pad's
+// buttons, not the window's keys). F11 is full screen already - its Display menu says so too - and Esc
+// quits through the script. F2 / F4 / F6 stay Xenia's (build commit, a GPU trace of one frame written
+// under scratch\gpu, the post-processing dialog): there is no state for them to save or load.
 
 namespace LbIntegrations.Xenia
 {

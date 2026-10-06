@@ -15,6 +15,7 @@
 //   Save states     data\<rom file name without extension>[_1..9].state
 //                   Identity is the file name again, this time WITHOUT the extension
 //                   (get_file_basename, core/stdclass.h:135).
+//                   Beside each, <state>.png: its thumbnail, taken out of the state itself (StateThumb).
 //
 // So a Dreamcast game carries TWO identities: its disc id for the save, its file name for the
 // states. That is not our design, it is Flycast's, and pretending otherwise would break one of them.
@@ -47,6 +48,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
+using LbIntegrations.Lbip;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 
@@ -301,8 +304,58 @@ namespace LbIntegrations.Flycast
                 long size = 0; DateTime when = default;
                 try { var i = new FileInfo(path); size = i.Length; when = i.LastWriteTimeUtc; } catch { }
                 found.Add(new StateFile(path, slot, size, when));
+                StateThumb(path, when);
             }
             return found;
+        }
+
+        /// <summary>A state's thumbnail, &lt;state&gt;.png beside it (Mehdi, 07/10: a PNG beside every state), taken
+        /// out of the state ITSELF: Flycast's save writes the frame at the head of the file (SavestateHeader,
+        /// core/nullDC.cpp: "FLYSAVE1", a u64 date, a u32 version, a u32 PNG size, then the PNG, 640 wide - gui.cpp's
+        /// savestate()). The game's own frame, without the window around it, so no capture is watched for at launch.
+        ///
+        /// The PNG is stamped with its state's time. One that matches costs a single look at its date per listing;
+        /// one that does not (missing, or the slot saved again since) is taken again. A state with no picture in it
+        /// (a Lua save, an older Flycast) loses a stale one and is read again - 24 bytes - at the next listing.</summary>
+        private static void StateThumb(string statePath, DateTime stateUtc)
+        {
+            try
+            {
+                var thumb = LbipStateThumbs.PathOf(statePath);
+                if (stateUtc == default || File.GetLastWriteTimeUtc(thumb) == stateUtc) return;
+                var png = EmbeddedPng(statePath);
+                if (png == null) { LbipStateThumbs.Remove(statePath); return; }
+                var tmp = Path.Combine(Path.GetTempPath(), "lbip-flycast-" + Guid.NewGuid().ToString("N") + ".png");
+                try
+                {
+                    File.WriteAllBytes(tmp, png);
+                    if (LbipStateThumbs.FromImage(tmp, statePath)) File.SetLastWriteTimeUtc(thumb, stateUtc);
+                }
+                finally { try { File.Delete(tmp); } catch { } }
+            }
+            catch (Exception ex) { Log.Verbose("state thumbnail of " + Path.GetFileName(statePath) + ": " + ex.Message); }
+        }
+
+        /// <summary>The PNG a state carries in its header, or null.</summary>
+        private static byte[] EmbeddedPng(string statePath)
+        {
+            using (var f = new FileStream(statePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+            {
+                var head = new byte[24];
+                if (ReadFully(f, head) != head.Length) return null;
+                if (Encoding.ASCII.GetString(head, 0, 8) != "FLYSAVE1") return null;
+                long size = BitConverter.ToUInt32(head, 20);
+                if (size == 0 || size > 16 * 1024 * 1024 || size > f.Length - head.Length) return null;
+                var png = new byte[size];
+                return ReadFully(f, png) == png.Length ? png : null;
+            }
+        }
+
+        private static int ReadFully(Stream s, byte[] into)
+        {
+            int got = 0, n;
+            while (got < into.Length && (n = s.Read(into, got, into.Length - got)) > 0) got += n;
+            return got;
         }
 
         /// <summary>The stem and slot behind a state file name, or null.</summary>
@@ -386,6 +439,9 @@ namespace LbIntegrations.Flycast
                 if (SharedVmuNames.Any(n => string.Equals(n, name, StringComparison.OrdinalIgnoreCase)))
                     return true;
                 if (IsMachineFile(name)) return true;
+                // A state's thumbnail: part of the state.
+                if (LbipStateThumbs.IsThumb(name)
+                    && name.Substring(0, name.Length - LbipStateThumbs.Suffix.Length).EndsWith(StateExtension, StringComparison.OrdinalIgnoreCase)) return true;
                 if (name.EndsWith(".state.net", StringComparison.OrdinalIgnoreCase)
                     || name.EndsWith(".state.tmp", StringComparison.OrdinalIgnoreCase)) return true;
 
@@ -419,13 +475,13 @@ namespace LbIntegrations.Flycast
             return false;
         }
 
-        /// <summary>The rest of an arcade set. A VMU and a state have no companions: one file each,
-        /// and a state carries its screenshot INSIDE itself (the FLYSAVE1 header holds the PNG), so
-        /// there is nothing beside it to carry.</summary>
+        /// <summary>The rest of an arcade set, and a state's thumbnail (StateThumb). A VMU has none: one file.</summary>
         public override IReadOnlyList<string> GetCompanionSaveFiles(string primaryFilePath)
         {
             try
             {
+                if (primaryFilePath != null && primaryFilePath.EndsWith(StateExtension, StringComparison.OrdinalIgnoreCase))
+                    return LbipStateThumbs.Companion(primaryFilePath);
                 var stem = ArcadeStemOf(primaryFilePath);
                 if (stem == null) return Array.Empty<string>();
 
@@ -521,6 +577,17 @@ namespace LbIntegrations.Flycast
                 Directory.CreateDirectory(targetDir);
                 File.Copy(source, target, overwrite: true);
                 Log.Info("restored " + name + " -> " + targetDir);
+
+                // A state's thumbnail when the backup kept one; else the old one goes - a picture of another
+                // moment - and the next listing takes it again from the state.
+                if (save is GameSaveState)
+                    try
+                    {
+                        var thumb = LbipStateThumbs.Companion(source).FirstOrDefault();
+                        if (thumb != null) File.Copy(thumb, LbipStateThumbs.PathOf(target), overwrite: true);
+                        else LbipStateThumbs.Remove(target);
+                    }
+                    catch (Exception ex) { Log.Warn("could not restore the state thumbnail", ex); }
 
                 if (save is GameSaveState state)
                     return new AddSaveResponse(new GameSaveState

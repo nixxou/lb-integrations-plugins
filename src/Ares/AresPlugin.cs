@@ -357,6 +357,8 @@ namespace LbIntegrations.Ares
             AresLaunch.PrepareSettings(exe, gameId);
             // The game's own console memory and memory card, put in place - taken back when ares quits.
             AresConsoleSession.Begin(exe, system, rom, played);
+            // A PNG of the screen beside each state ares writes (Zelda.bs1 -> Zelda.bs1.png).
+            WatchStateThumbs(exe, system, rom);
             var line = AresLaunch.CommandLine(current, exe, systemName, AresSettings.For(gameId, "Screen"), rom, played == rom ? null : played,
                                               noFilePrompt: !(system?.Disc ?? false), settings: AresSettings.SettingArgs(gameId));
             Log.Info("launch: " + line);

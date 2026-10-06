@@ -14,6 +14,12 @@
 // %AppData%\Cxbx-Reloaded; [gui] DataStorageToggle 0 = %AppData%\Cxbx-Reloaded, 1 = the loader's folder, 2 =
 // DataCustomLocation - written in hex ("0x1"), which AutoHotkey compares as a number.
 //
+// THE PACK'S KEYS DO NOT FIT HERE (Mehdi, 07/10: F2/F4 states, F6/F7 slot, Esc quit, F11 full screen). Every key of the
+// game window is hard-wired in Direct3D9.cpp (EmuMsgProc) - none is in settings.ini: Alt+Enter and Alt+F10 the faux full
+// screen, F6 stops the emulation (WM_CLOSE, so without the wait below), F11 cycles wireframe, F1 its ImGui, F2 / F7
+// shader toggles, F3 cursor clip, F8 log, F9 frame limit. No states, so no slot keys. Only Escape is redirected;
+// the rest is documented in cxbx.html, not faked.
+//
 // The $ prefix keeps the hotkey from firing on a keystroke the script itself sends. AutoHotkey v1, as LaunchBox runs it.
 
 namespace LbIntegrations.Cxbx

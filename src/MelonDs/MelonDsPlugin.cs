@@ -589,6 +589,8 @@ namespace LbIntegrations.MelonDs
                 // plugin just made cannot be played at all until somebody opens Config > Input and
                 // clicks twelve times. See MelonDsInput - it writes only what is unbound.
                 MelonDsInput.EnsureDefaults(layout, out _);
+                // And F11 full screen, the pack's key (Mehdi, 07/10) - the only one of its keys melonDS lets be bound.
+                MelonDsInput.EnsureHotkeys(layout);
 
                 if (wanted.Count == 0)
                 {
@@ -871,6 +873,8 @@ namespace LbIntegrations.MelonDs
                     var layout = MelonDsPaths.Resolve(ResolveFullPath(exe));
                     // A session that never ended properly left a game's settings in melonDS: back first.
                     MelonDsGameSettings.Restore(layout, "left behind by a session that did not end");
+                    // F11 full screen when melonDS has no key for it (Mehdi, 07/10) - see MelonDsInput.EnsureHotkeys.
+                    MelonDsInput.EnsureHotkeys(layout);
                     var gameId = Safe(() => args?.GameBeingLaunched?.Id);
                     // Known before the session is prepared: a DSiWare image started with the console's
                     // settings forced holds them - see DsiWorkspace.MarkForced.
@@ -882,6 +886,8 @@ namespace LbIntegrations.MelonDs
                     // Then this game's own, for its session, taken back once melonDS has quit.
                     if (go && MelonDsGameSettings.Apply(layout, gameId, dsiWare))
                         MelonDsGameSettings.RestoreWhenDone(layout);
+                    // A PNG of the screen beside each state melonDS writes (Foo.ml1 -> Foo.ml1.png).
+                    if (go && !dsiWare) WatchStateThumbs(ResolveFullPath(exe), layout, ResolveFullPath(rom));
                 }
             }
             catch (Exception ex) { Log.Warn("PrepareEmulatorForLaunch", ex); }

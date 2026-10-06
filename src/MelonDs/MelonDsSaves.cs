@@ -26,6 +26,10 @@
 // SLOTS ARE 1 TO 8 ON DISK AND 1 TO 8 ON SCREEN (Window.cpp:356, :372) - no off-by-one to reconcile,
 // unlike PPSSPP. Slot 0 is the file dialog's menu entry, not a slot.
 //
+// A STATE HAS A PICTURE BESIDE IT, <asset name>.ml<n>.png (Mehdi, 07/10) - melonDS writes none of
+// its own, so the plugin takes the emulator's window as a slot is written (LbipStateThumbs.Watch).
+// It is the state's companion, never a save: the listing names .ml1 .. .ml8 exactly, no glob.
+//
 // A THIRD KIND, and it is the odd one: a DSiWare save. It lives INSIDE the title's NAND, at
 // title/<category>/<id>/data/public.sav (DSi_NAND.cpp:1077-1092), and the image is 240 MB of which a
 // few kilobytes are the save. Handing the image to the host would mean hashing all of it to draw a
@@ -47,6 +51,7 @@ using System.Linq;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 using LbIntegrations.Dsi;
+using LbIntegrations.Lbip;
 
 namespace LbIntegrations.MelonDs
 {
@@ -282,13 +287,48 @@ namespace LbIntegrations.MelonDs
         /// show as vault copies. Here the question is easy: a .sav and a .ml&lt;n&gt; are each a save in
         /// their own right, one per slot, and there is no second file to demote. What this does catch
         /// is melonDS's GBA slot-2 companion, which shares the folder and the naming rule but belongs
-        /// to a cartridge this plugin does not manage.</summary>
-        public override bool IsSecondarySaveFile(string filePath) => false;
+        /// to a cartridge this plugin does not manage.
+        ///
+        /// The one file that is secondary is ours, not melonDS's: a state's thumbnail.</summary>
+        public override bool IsSecondarySaveFile(string filePath)
+        {
+            try
+            {
+                return LbipStateThumbs.IsThumb(filePath)
+                       && IsStateFile(filePath.Substring(0, filePath.Length - LbipStateThumbs.Suffix.Length));
+            }
+            catch { return false; }
+        }
 
-        /// <summary>A melonDS save has no companions: the battery save is one file, and a state
-        /// carries no sidecar - no screenshot, no undo file.</summary>
+        /// <summary>One of melonDS's slots: .ml1 .. .ml8.</summary>
+        internal static bool IsStateFile(string path)
+        {
+            var ext = Path.GetExtension(path ?? "");
+            return ext.Length == 4 && ext.StartsWith(".ml", StringComparison.OrdinalIgnoreCase)
+                   && ext[3] >= (char)('0' + FirstSlot) && ext[3] <= (char)('0' + LastSlot);
+        }
+
+        /// <summary>The battery save is one file. A state carries its thumbnail when it has one -
+        /// melonDS itself writes no sidecar, no screenshot and no undo file.</summary>
         public override IReadOnlyList<string> GetCompanionSaveFiles(string primaryFilePath)
-            => Array.Empty<string>();
+            => IsStateFile(primaryFilePath) ? LbipStateThumbs.Companion(primaryFilePath) : Array.Empty<string>();
+
+        /// <summary>For the session: the thumbnails of the slots this cartridge writes, in the folder
+        /// the listing reads them from. A DSiWare title has no states (see Collect).</summary>
+        internal static void WatchStateThumbs(string exe, MelonDsLayout layout, string romPath)
+        {
+            try
+            {
+                if (layout == null || string.IsNullOrWhiteSpace(exe)) return;
+                var rom = NdsHeader.Describe(romPath);
+                if (rom.IsDSiWare || string.IsNullOrWhiteSpace(rom.AssetName)) return;
+                var stateDir = layout.HasRedirectedStates ? layout.StateDir : rom.RomDir;
+                LbipStateThumbs.Watch(exe, new[] { stateDir },
+                    p => IsStateFile(p) && string.Equals(Path.GetFileNameWithoutExtension(p), rom.AssetName,
+                                                         StringComparison.OrdinalIgnoreCase), Log.Info);
+            }
+            catch (Exception ex) { Log.Warn("state thumbnails", ex); }
+        }
 
         /// <summary>Is this save where the emulator would actually read it?
         ///
@@ -386,6 +426,20 @@ namespace LbIntegrations.MelonDs
                 Directory.CreateDirectory(targetDir);
                 File.Copy(source, target, overwrite: true);
                 Log.Info("restored " + name + " -> " + targetDir);
+
+                // A state's thumbnail goes back with it; a state restored without one loses the old
+                // one, which would be a picture of another moment.
+                if (save is GameSaveState)
+                {
+                    bool thumb = false;
+                    foreach (var companion in GetCompanionSaveFiles(source))
+                        if (LbipStateThumbs.IsThumb(companion))
+                        {
+                            File.Copy(companion, LbipStateThumbs.PathOf(target), overwrite: true);
+                            thumb = true;
+                        }
+                    if (!thumb) LbipStateThumbs.Remove(target);
+                }
 
                 if (save is GameSaveState state)
                     return new AddSaveResponse(new GameSaveState
@@ -517,6 +571,7 @@ namespace LbIntegrations.MelonDs
                     Log.Warn("could not delete " + loc, ex);
                     return new PluginResponse(false, "Could not delete " + Path.GetFileName(loc) + ".");
                 }
+                if (IsStateFile(loc)) LbipStateThumbs.Remove(loc);
                 Log.Info("deleted " + Path.GetFileName(loc));
                 return new PluginResponse(true);
             }

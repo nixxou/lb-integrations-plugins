@@ -32,6 +32,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using LbIntegrations.Lbip;
 using System.Text.RegularExpressions;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
@@ -242,11 +243,38 @@ namespace LbIntegrations.Ares
             return false;
         }
 
-        /// <summary>The 64DD's clock beside its disk: part of the disk's save, not a save of its own.</summary>
+        /// <summary>The 64DD's clock beside its disk, a state's thumbnail beside it: part of their save, not saves of their own.</summary>
         public override bool IsSecondarySaveFile(string filePath)
         {
-            try { return filePath != null && filePath.EndsWith(".rtc", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.ChangeExtension(filePath, ".disk")); }
+            try
+            {
+                if (filePath == null) return false;
+                if (LbipStateThumbs.IsThumb(filePath)) return IsStateFile(filePath.Substring(0, filePath.Length - LbipStateThumbs.Suffix.Length));
+                return filePath.EndsWith(".rtc", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.ChangeExtension(filePath, ".disk"));
+            }
             catch { return false; }
+        }
+
+        /// <summary>One of ares's slots: .bs1 .. .bs9.</summary>
+        internal static bool IsStateFile(string path)
+        {
+            var ext = Path.GetExtension(path ?? "");
+            return ext.Length == 4 && ext.StartsWith(".bs", StringComparison.OrdinalIgnoreCase) && ext[3] >= '1' && ext[3] <= '9';
+        }
+
+        /// <summary>For the session: the thumbnails of the states this game writes (LbipStateThumbs).</summary>
+        private static void WatchStateThumbs(string exe, AresSystem system, string rom)
+        {
+            try
+            {
+                if (system == null || string.IsNullOrWhiteSpace(rom)) return;
+                var full = ResolveFullPath(rom);
+                var names = new HashSet<string>(new[] { AresConsoleSession.IdentityOf(full, exe) }
+                    .Concat(system.Disc ? AresConsoleSession.DiscNames(full, system, exe) : new List<string>()), StringComparer.OrdinalIgnoreCase);
+                LbipStateThumbs.Watch(exe, FoldersFor(exe, full, system).StateDirs,
+                    p => IsStateFile(p) && names.Contains(Path.GetFileNameWithoutExtension(p)), Log.Info);
+            }
+            catch (Exception ex) { Log.Warn("state thumbnails", ex); }
         }
 
         /// <summary>A 64DD disk's save takes its clock along (the game's copy of the console's time.rtc, AresConsoleSession):
@@ -255,6 +283,7 @@ namespace LbIntegrations.Ares
         {
             try
             {
+                if (IsStateFile(primaryFilePath)) return LbipStateThumbs.Companion(primaryFilePath);
                 if (string.IsNullOrWhiteSpace(primaryFilePath) || !primaryFilePath.EndsWith(".disk", StringComparison.OrdinalIgnoreCase)) return Array.Empty<string>();
                 var clock = Path.ChangeExtension(primaryFilePath, ".rtc");
                 return File.Exists(clock) ? new[] { clock } : Array.Empty<string>();
@@ -317,10 +346,12 @@ namespace LbIntegrations.Ares
                 // Its companions, found beside the copy by its stem (the 64DD's clock with its disk).
                 foreach (var companion in GetCompanionSaveFiles(source))
                 {
-                    var to = Path.Combine(targetDir, Path.GetFileNameWithoutExtension(target) + Path.GetExtension(companion));
+                    var to = LbipStateThumbs.IsThumb(companion) ? LbipStateThumbs.PathOf(target) : Path.Combine(targetDir, Path.GetFileNameWithoutExtension(target) + Path.GetExtension(companion));
                     File.Copy(companion, to, overwrite: true);
                     Log.Info("restored with it " + Path.GetFileName(to));
                 }
+                // A state restored without its thumbnail: the old one would be a picture of another moment.
+                if (save is GameSaveState && !GetCompanionSaveFiles(source).Any(LbipStateThumbs.IsThumb)) LbipStateThumbs.Remove(target);
                 if (save is GameSaveState state) return new AddSaveResponse(StateRow(target, state.GameId, state.AdditionalApplicationId, state.Slot ?? 1, state.SaveGroupId));
                 return new AddSaveResponse(SaveRow(target, save.GameId, save.AdditionalApplicationId, save.SaveGroupId, save.SaveGroupName, save.DisplayChipText));
             }

@@ -110,8 +110,8 @@ namespace LbIntegrations.RaSnes9x
             return claimed;
         }
 
-        /// <summary>The emulator's keys in the AutoHotkey fields the pause screens send. Only a blank field is filled: a
-        /// script the user wrote is his answer to the same question.</summary>
+        /// <summary>The emulator's keys in the AutoHotkey fields the pause screens send. Only a blank field, or one still
+        /// holding an earlier build's script, is filled: a script the user wrote is his answer to the same question.</summary>
         private static void EnsureHotkeyScripts(IEmulator emu)
         {
             try
@@ -126,11 +126,18 @@ namespace LbIntegrations.RaSnes9x
             catch (Exception ex) { Log.Warn("could not describe the hotkeys on the emulator entry", ex); }
         }
 
+        /// <summary>A script set when empty - or when it is, word for word, one an earlier build of this plugin wrote
+        /// (RaSnes9xAhk.Superseded: Snes9x's Shift+F1 / F1, before the pack's keys of 07/10). One the user changed is never
+        /// touched.</summary>
         private static bool Fill(Func<string> get, Action<string> set, string value)
         {
             try
             {
-                if (!string.IsNullOrWhiteSpace(get())) return false;
+                var now = get();
+                string Norm(string s) => (s ?? "").Replace("\r\n", "\n").Trim();
+                bool ours = RaSnes9xAhk.Superseded.Any(old => Norm(old) == Norm(now));
+                if (!string.IsNullOrWhiteSpace(now) && !ours) return false;
+                if (Norm(now) == Norm(value)) return false;
                 set(value);
                 return true;
             }
@@ -338,6 +345,8 @@ namespace LbIntegrations.RaSnes9x
             if (toolset != null) Log.Info("toolset not updated before the launch: " + toolset + " - the emulator asks itself");
 
             RaSnes9xLaunch.PrepareConf(exe, gameId);
+            // A PNG beside each state (Zelda.000 -> Zelda.000.png), from the picture Snes9x puts in it, once it has quit.
+            RaSnes9xStateThumbs.AfterSession(exe, rom);
 
             // A .7z: its ROM unpacked under the archive's name, the line pointed at it.
             if (!string.IsNullOrEmpty(rom) && string.Equals(Path.GetExtension(rom), ".7z", StringComparison.OrdinalIgnoreCase))

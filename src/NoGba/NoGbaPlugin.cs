@@ -737,6 +737,9 @@ namespace LbIntegrations.NoGba
                     // Then this game's own, for its session, taken back once no$gba has quit.
                     if (NoGbaGameSettings.Apply(layout, Safe(() => args?.GameBeingLaunched?.Id)))
                         NoGbaGameSettings.RestoreWhenDone(layout);
+
+                    // A PNG of the screen beside whatever F8 writes into SNAP\ - see NoGbaSaves.WatchSnapshotThumbs.
+                    WatchSnapshotThumbs(ResolveFullPath(exe), layout);
                 }
 
                 // An archive the host is NOT going to unpack, which is a launch that hangs with no

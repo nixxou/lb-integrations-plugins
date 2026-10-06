@@ -160,6 +160,7 @@ namespace LbIntegrations.Probe
             if (Has(args, "--ares-compat")) { int at = Array.IndexOf(args, "--ares-compat"); return AresCheck.Compat(asm, args[at + 1], args[at + 2], at + 3 < args.Length ? args[at + 3] : null) ? 0 : 1; }
             if (Has(args, "--ares-names")) return AresCheck.Names(asm, Path.GetFullPath(Arg(args, "--ares-names"))) ? 0 : 1;
             if (Has(args, "--ares-line")) return AresCheck.Line(asm) ? 0 : 1;
+            if (Has(args, "--state-thumbs")) { int at = Array.IndexOf(args, "--state-thumbs"); return StateThumbsCheck.Run(Path.GetFullPath(args[at + 1]), Path.GetFullPath(args[at + 2]), at + 3 < args.Length ? args[at + 3] : null) ? 0 : 1; }
             if (Has(args, "--ares-window")) { int at = Array.IndexOf(args, "--ares-window"); return AresCheck.Window(asm, Path.GetFullPath(args[at + 1]), Path.GetFullPath(args[at + 2]), args[at + 3], args[at + 4]) ? 0 : 1; }
             if (Has(args, "--ares-console-real")) { int at = Array.IndexOf(args, "--ares-console-real"); return AresCheck.ConsoleReal(asm, Path.GetFullPath(args[at + 1]), args[at + 2], Path.GetFullPath(args[at + 3])) ? 0 : 1; }
             if (Has(args, "--ares-console")) return AresCheck.Console_(asm, Path.GetFullPath(Arg(args, "--ares-console"))) ? 0 : 1;

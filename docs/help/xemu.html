@@ -57,6 +57,16 @@
     <li><b>A redump ISO, a CSO, a CCI, a CHD, or an ISO in a zip or a 7z</b>: xemu can not open these. The plugin makes an XISO from it the first time, in <code>Emulators\Nixx-Xemu\discs</code>. That can take a minute. The next time, the game starts at once. The oldest copies are deleted when the folder gets too big.</li>
     <li>Each game runs on <b>its own console</b>. To quit, press <kbd>Escape</kbd>.</li>
   </ul>
+  <h3>Keys</h3>
+  <p>xemu's keys can't be changed. The plugin names its four snapshot keys <b>Slot 1</b> to <b>Slot 4</b> (<kbd>F5</kbd> to <kbd>F8</kbd>, if you haven't set them yourself), and the running script adds the pack's usual keys on top:</p>
+  <table><tr><th>Key</th><th>Does</th></tr>
+  <tr><td><kbd>F2</kbd></td><td>Save a snapshot in the current slot</td></tr>
+  <tr><td><kbd>F4</kbd></td><td>Load the current slot</td></tr>
+  <tr><td><kbd>F6</kbd> / <kbd>F7</kbd></td><td>Previous / next slot (1 to 4, back to 1 at every launch)</td></tr>
+  <tr><td><kbd>F11</kbd></td><td>Full screen (xemu's own; <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd> too)</td></tr>
+  <tr><td><kbd>Esc</kbd></td><td>Quit</td></tr></table>
+  <p>xemu's own keys still work: <kbd>F5</kbd>-<kbd>F8</kbd> load a slot, <kbd>Shift</kbd>+<kbd>F5</kbd>-<kbd>F8</kbd> save it. xemu's popup menu, normally on <kbd>F2</kbd>, is still on the right click. The pause screen's Save / Load State use Slot 1. A snapshot stays in the game's console; to see it in LaunchBox, turn on xemu's snapshots as savestates in the Nixx window.</p>
+  <p>Each savestate file gets xemu's own picture of it beside it, as a PNG of the same name (<code>slot-1.xemustate.png</code>).</p>
 </section>
 
 <section id="live"><h2>Playing online (Insignia)</h2>

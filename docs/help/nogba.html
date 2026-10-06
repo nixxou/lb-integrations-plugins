@@ -149,7 +149,9 @@
   <h3>Save states</h3>
   <ul>
     <li>no$gba has one "snapshot" (no numbered slots): <kbd>F8</kbd> writes it, <kbd>F7</kbd> loads it. The plugin fills LaunchBox's pause-screen Save State / Load State with these keys, only if those fields are empty.</li>
+    <li>no$gba's keys can't be changed, so the pack's usual keys (<kbd>F2</kbd>/<kbd>F4</kbd> states, <kbd>F11</kbd> full screen) don't apply. <kbd>Esc</kbd> quits, as everywhere.</li>
     <li>Snapshots are <strong>not</strong> listed in LaunchBox's save management. In testing, F8 never left a file on disk, so there was nothing to manage.</li>
+    <li>If a snapshot does show up in the <code>SNAP</code> folder, the plugin puts a thumbnail beside it: a PNG of the same name, taken from no$gba's window when F8 is pressed.</li>
   </ul>
 </section>
 

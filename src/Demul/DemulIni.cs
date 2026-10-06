@@ -61,6 +61,19 @@ namespace LbIntegrations.Demul
             Changed = true;
         }
 
+        /// <summary>Every "key = value" line, with its section - in file order.</summary>
+        public IEnumerable<(string Section, string Key, string Value)> Entries()
+        {
+            string section = "";
+            foreach (var line in _lines)
+            {
+                var t = line.Trim();
+                if (t.StartsWith("[") && t.EndsWith("]")) { section = t.Substring(1, t.Length - 2).Trim(); continue; }
+                int eq = t.IndexOf('=');
+                if (eq > 0) yield return (section, t.Substring(0, eq).Trim(), ValueOf(t));
+            }
+        }
+
         public void Remove(string section, string key)
         {
             int at = Find(section, key, out _);

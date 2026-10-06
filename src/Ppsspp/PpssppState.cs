@@ -8,6 +8,7 @@
 //
 //     <memstick>\PSP\PPSSPP_STATE\ULUS10516_1.01_0.ppst        the state
 //     <memstick>\PSP\PPSSPP_STATE\ULUS10516_1.01_0.jpg         its screenshot
+//     <memstick>\PSP\PPSSPP_STATE\ULUS10516_1.01_0.ppst.png    ours: that screenshot as PNG (LbipStateThumbs)
 //     <memstick>\PSP\PPSSPP_STATE\ULUS10516_1.01_0.undo.ppst   PPSSPP's undo buffer
 //     <memstick>\PSP\PPSSPP_STATE\ULUS10516_1.01_0.undo.jpg
 //
@@ -35,6 +36,8 @@ namespace LbIntegrations.Ppsspp
         public string Path;
         /// <summary>The sibling screenshot, or null when PPSSPP did not write one.</summary>
         public string ThumbnailPath;
+        /// <summary>The screenshot's time, when there is one - our PNG of the state is stamped with it.</summary>
+        public DateTime ThumbnailWriteUtc;
         public string DiscId;
         /// <summary>The disc version as it appears in the file name, e.g. "1.01".</summary>
         public string Version;
@@ -90,10 +93,15 @@ namespace LbIntegrations.Ppsspp
                 FileInfo info;
                 try { info = new FileInfo(path); } catch { continue; }
 
+                // The screenshot looked at once: whether it is there and when it was written.
+                FileInfo jpg = null;
+                try { jpg = new FileInfo(System.IO.Path.ChangeExtension(path, ThumbnailExtension)); if (!jpg.Exists) jpg = null; } catch { jpg = null; }
+
                 found.Add(new PpssppState
                 {
                     Path = path,
-                    ThumbnailPath = ThumbnailFor(path),
+                    ThumbnailPath = jpg?.FullName,
+                    ThumbnailWriteUtc = jpg == null ? default : Safe(() => jpg.LastWriteTimeUtc),
                     DiscId = d,
                     Version = ver,
                     Slot = slot,

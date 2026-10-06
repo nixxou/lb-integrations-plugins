@@ -22,6 +22,7 @@ using System.IO;
 using System.Linq;
 using LbIntegrations.Xemu.Saves;
 using LbIntegrations.Xbox;
+using LbIntegrations.Lbip;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 
@@ -403,8 +404,13 @@ namespace LbIntegrations.Xemu
         }
 
         public override bool IsSaveContainer(GameSaveBase save) => false;
-        public override bool IsSecondarySaveFile(string filePath) => false;
-        public override IReadOnlyList<string> GetCompanionSaveFiles(string primaryFilePath) => Array.Empty<string>();
+        /// <summary>A savestate's PNG (slot-1.xemustate.png, Saves\XemuStates): part of its state, never a save of its own.</summary>
+        public override bool IsSecondarySaveFile(string filePath)
+            => LbipStateThumbs.IsThumb(filePath) && filePath.Substring(0, filePath.Length - LbipStateThumbs.Suffix.Length).EndsWith(XemuStates.Extension, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>A savestate's PNG goes with it - LaunchBox's backups carry it, a restore puts it back.</summary>
+        public override IReadOnlyList<string> GetCompanionSaveFiles(string primaryFilePath)
+            => primaryFilePath != null && primaryFilePath.EndsWith(XemuStates.Extension, StringComparison.OrdinalIgnoreCase) ? LbipStateThumbs.Companion(primaryFilePath) : Array.Empty<string>();
 
         public override bool IsSaveActive(GameSaveBase save, string emulatorApplicationPath)
         {
@@ -496,6 +502,7 @@ namespace LbIntegrations.Xemu
                     var exeS = EmulatorFor(save);
                     if (exeS != null && XemuPaths.Running(exeS)) return new PluginResponse(false, "xemu is running - close it first.");
                     if (File.Exists(stPath)) File.Delete(stPath);
+                    LbipStateThumbs.Remove(stPath);
                     // Its snapshot out of the console at the next launch.
                     Log.Info("removed the savestate " + stPath);
                     return new PluginResponse(true);
@@ -541,6 +548,11 @@ namespace LbIntegrations.Xemu
                 var tmp = target + ".lbip-restore";
                 File.Copy(source, tmp, overwrite: true);
                 File.Move(tmp, target, overwrite: true);
+                // Its picture: the one the file carries, else the one its backup carried - never the slot's old one.
+                LbipStateThumbs.Remove(target);
+                XemuStates.Thumb(target);
+                var carried = LbipStateThumbs.Companion(source);
+                if (!File.Exists(LbipStateThumbs.PathOf(target)) && carried.Length == 1) File.Copy(carried[0], LbipStateThumbs.PathOf(target), overwrite: true);
             }
             // Into the console at the next launch.
             Log.Info("restored the savestate " + Path.GetFileName(source) + " -> " + target);

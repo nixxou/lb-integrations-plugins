@@ -1,7 +1,9 @@
 // Save management for SUPER ZSNES - the cartridge save and the save states, as melonDS's are: one FILE each.
 //
 //   Battery save   <name>.srm                              in the SRAM folder
-//   Save states    <name>.data.szsnes\<name>.szst<slot>    in the per-game data folder
+//   Save states    <name>.data.szsnes\<name>.szst<slot>    in the per-game data folder   (and <name>.szst<slot>.png
+//                                                                                        beside each: its screenshot,
+//                                                                                        SuperZsnesStateThumbs)
 //
 // THE NAME is the file name the emulator was given, its last extension off - for an ARCHIVE the archive's, not the
 // ROM inside it (measured 01/10: zipped.zip holding inner.sfc saves to zipped.srm and zipped.data.szsnes\).
@@ -29,6 +31,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using LbIntegrations.Lbip;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 
@@ -136,19 +139,40 @@ namespace LbIntegrations.SuperZsnes
                 into.Add(SaveRow(srm, gameId, appId, SavePrefix + name));
 
             int states = 0;
-            var dir = StatesOf(folders, name);
-            if (dir == null || !Directory.Exists(dir)) return 0;
-            foreach (var path in Directory.GetFiles(dir, name + ".szst*"))
+            foreach (var (path, slot) in StateFilesIn(StatesOf(folders, name), name))
             {
-                var m = StateFile.Match(path);
-                if (!m.Success || !Path.GetFileName(path).StartsWith(name + ".szst", StringComparison.OrdinalIgnoreCase)) continue;   // -last, and anything else
-                if (!int.TryParse(m.Groups["slot"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var slot)) continue;
                 if (!seen.Add("state|" + path + "|" + context)) continue;
+                SuperZsnesStateThumbs.Refresh(path);
                 into.Add(StateRow(path, gameId, appId, slot, StatePrefix + name + ":" + slot, StateGroupName));
                 states++;
             }
             return states;
         }
+
+        /// <summary>A game's slot states in its folder: &lt;name&gt;.szst&lt;n&gt; - never -last, nor the thumbnail beside a
+        /// state ("Zelda.szst0.png" is matched by the glob, not by StateFile).</summary>
+        private static IEnumerable<(string Path, int Slot)> StateFilesIn(string dir, string name)
+        {
+            if (dir == null || string.IsNullOrEmpty(name) || !Directory.Exists(dir)) yield break;
+            foreach (var path in Directory.GetFiles(dir, name + ".szst*"))
+            {
+                var m = StateFile.Match(path);
+                if (!m.Success || !Path.GetFileName(path).StartsWith(name + ".szst", StringComparison.OrdinalIgnoreCase)) continue;   // -last, and anything else
+                if (!int.TryParse(m.Groups["slot"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var slot)) continue;
+                yield return (path, slot);
+            }
+        }
+
+        /// <summary>For the session's thumbnails: the slot states of the game this ROM is.</summary>
+        internal static IEnumerable<string> StatesOf(string exe, string rom)
+        {
+            var name = NameOf(ResolveFullPath(rom));
+            return StateFilesIn(StatesOf(FoldersFor(exe, rom), name), name).Select(s => s.Path).ToList();
+        }
+
+        /// <summary>One of our thumbnails, beside a slot state: "&lt;name&gt;.szst0.png".</summary>
+        private static bool IsStateThumb(string path)
+            => LbipStateThumbs.IsThumb(path) && StateFile.IsMatch(path.Substring(0, path.Length - LbipStateThumbs.Suffix.Length));
 
         private static GameSaveGame SaveRow(string path, string gameId, string appId, string groupId, string groupName = null, string chip = null)
         {
@@ -189,11 +213,13 @@ namespace LbIntegrations.SuperZsnes
             return false;
         }
 
-        /// <summary>A plugin must never call its own save secondary; and nothing beside a .srm or a .szst is part of it.</summary>
-        public override bool IsSecondarySaveFile(string filePath) => false;
+        /// <summary>A plugin must never call its own save secondary; beside a .srm or a .szst, only a state's thumbnail is
+        /// part of it.</summary>
+        public override bool IsSecondarySaveFile(string filePath) => IsStateThumb(filePath);
 
-        /// <summary>No companions: the state carries its own screenshot inside it (no sidecar was ever written).</summary>
-        public override IReadOnlyList<string> GetCompanionSaveFiles(string primaryFilePath) => Array.Empty<string>();
+        /// <summary>A state's thumbnail: the screenshot it carries, made a PNG beside it (SuperZsnesStateThumbs).</summary>
+        public override IReadOnlyList<string> GetCompanionSaveFiles(string primaryFilePath)
+            => primaryFilePath != null && StateFile.IsMatch(primaryFilePath) ? LbipStateThumbs.Companion(primaryFilePath) : Array.Empty<string>();
 
         /// <summary>Active when it is where the emulator reads it now - the folder its settings name - and still there.</summary>
         public override bool IsSaveActive(GameSaveBase save, string emulatorApplicationPath)
@@ -239,6 +265,13 @@ namespace LbIntegrations.SuperZsnes
                 File.Copy(source, target, overwrite: true);
                 Log.Info("restored " + name + " -> " + targetDir);
 
+                if (save is GameSaveState)
+                {
+                    // Its thumbnail with it; without one, the old would be a picture of another moment - made again from the state.
+                    var thumb = GetCompanionSaveFiles(source).FirstOrDefault(LbipStateThumbs.IsThumb);
+                    if (thumb != null) File.Copy(thumb, LbipStateThumbs.PathOf(target), overwrite: true);
+                    else { LbipStateThumbs.Remove(target); SuperZsnesStateThumbs.Refresh(target); }
+                }
                 if (save is GameSaveState state)
                     return new AddSaveResponse(StateRow(target, state.GameId, state.AdditionalApplicationId, state.Slot ?? 0, state.SaveGroupId,
                                                         string.IsNullOrWhiteSpace(state.SaveGroupName) ? StateGroupName : state.SaveGroupName));
@@ -298,6 +331,7 @@ namespace LbIntegrations.SuperZsnes
                 if (string.IsNullOrWhiteSpace(loc)) return new PluginResponse(false, "This save has no location.");
                 try { if (File.Exists(loc)) File.Delete(loc); }
                 catch (Exception ex) { Log.Warn("could not delete " + loc, ex); return new PluginResponse(false, "Could not delete " + Path.GetFileName(loc) + "."); }
+                if (save is GameSaveState) LbipStateThumbs.Remove(loc);
                 Log.Info("deleted " + Path.GetFileName(loc));
                 return new PluginResponse(true);
             }
