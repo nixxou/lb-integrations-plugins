@@ -7,8 +7,9 @@
 // window and a game's window write the files, the next launch sees them.
 //
 // THE OPTIONS are a table (All): each is a choice among a few values, with its default and the settings.bml node it
-// writes at every launch (AresLaunch; full screen: ares's --fullscreen / --pseudofullscreen). Most offer "as set in ares":
-// then nothing is written and ares's own menus decide. Some only mean something for a few systems (Systems) - a game's
+// sets, given on ares's command line as --setting "<node>=<value>" (SettingArgs; full screen: --fullscreen /
+// --pseudofullscreen) - ares puts the file back as it was when it quits, so nothing a game chose stays for the next.
+// Most offer "as set in ares": then nothing is passed and ares's own menus decide. Some only mean something for a few systems (Systems) - a game's
 // window shows those of its system alone. A game's SYSTEM is its own key, kept as it is written - ares matches names
 // exactly. The Nixx page and a game's window are built from the same table.
 
@@ -173,14 +174,25 @@ namespace LbIntegrations.Ares
                                 Values = new[] { Ares }.Concat(values).ToArray(), Texts = new[] { "As set in ares" }.Concat(texts).ToArray(),
                                 Writes = writes == null ? null : new string[] { null }.Concat(writes).ToArray() };
 
-        /// <summary>An option's value written into settings.bml - nothing when it is "as set in ares", or not one of its values.
-        /// The scaling has two nodes (Output, FixedScale): AresLaunch writes it.</summary>
-        public static void Apply(AresBml bml, AresOption o, string value)
+        /// <summary>A game's options as ares's --setting "Key=Value" pairs, the scaling first (Output, and FixedScale for a
+        /// fixed integer); nothing for an option left "as set in ares". desktop-ui.cpp (v148): each --setting sets the node
+        /// after settings.bml is read, the last of a key wins, and at exit ares puts back what the file had - measured 06/10
+        /// on all of them: the game ran with them, the file came back as it was.</summary>
+        public static List<string> SettingArgs(string gameId)
         {
-            if (o.Bml == null || value == null || value == Ares) return;
-            if (o.Key == "Shader") { bml.Set(o.Bml, value == "none" ? "None" : value.Replace('\\', '/')); return; }
-            int i = Array.IndexOf(o.Values, value);
-            if (i >= 0) bml.Set(o.Bml, o.Writes?[i] ?? value);
+            var list = new List<string>();
+            var output = For(gameId, "Output");
+            if (output.StartsWith("fixed")) { list.Add("Video/Output=IntegerFixed"); list.Add("Video/FixedScale=" + output.Substring(5)); }
+            else list.Add("Video/Output=" + (output == "integer" ? "Integer" : output == "stretch" ? "Stretch" : "Scale"));
+            foreach (var o in All)
+            {
+                var value = For(gameId, o.Key);
+                if (o.Bml == null || value == null || value == Ares) continue;
+                if (o.Key == "Shader") { list.Add(o.Bml + "=" + (value == "none" ? "None" : value.Replace('\\', '/'))); continue; }
+                int i = Array.IndexOf(o.Values, value);
+                if (i >= 0) list.Add(o.Bml + "=" + (o.Writes?[i] ?? value));
+            }
+            return list;
         }
 
         /// <summary>The .slangp presets of the install's Shaders folder, as ares names them ("crt/crt-geom.slangp"), sorted.</summary>

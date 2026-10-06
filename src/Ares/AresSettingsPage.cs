@@ -89,11 +89,11 @@ namespace LbIntegrations.Ares
                 _bios, again));
 
             // ── every game's options, a card per group ──
-            stack.Controls.Add(LbipHint.Note("Every game's options - written into settings.bml at each launch; a game's window (right-click > Nixx-ares : "
+            stack.Controls.Add(LbipHint.Note("Every game's options - given to ares at each launch; a game's window (right-click > Nixx-ares : "
                 + "Options...) can change them for that game. \"As set in ares\" leaves ares's own menus in charge.",
-                "ares writes its settings.bml back when it quits, so an option set here is the plugin's: changed in ares's own menus, it comes back to this "
-                + "value at the next launch. One left \"as set in ares\" - and everything not listed here: the pads, the hotkeys, the paths - stays as you set "
-                + "it in ares. The options of one system (Nintendo 64, Mega Drive...) only touch that system's games.", 620, new Padding(0, 0, 0, 8)));
+                "They go on ares's command line (--setting), not into its settings.bml: ares puts its own values back when it quits, so what one game "
+                + "chose never stays for the next. One left \"as set in ares\" - and everything not listed here: the pads, the hotkeys, the paths - is what "
+                + "you set in ares's menus. The options of one system (Nintendo 64, Mega Drive...) only touch that system's games.", 620, new Padding(0, 0, 0, 8)));
             foreach (var group in AresSettings.Groups)
             {
                 var rows = new List<Control>();

@@ -17,8 +17,11 @@
 // disc system asks for no second medium at start. The dialog opens in the game's own folder: ares keeps
 // <System>/Path = the folder of the last game it loaded, the one on the line included.
 //
-// THE OPTIONS (AresSettings.All) go into settings.bml before the launch - ares writes the file back whole at every unload
-// and at exit (AresBml), so a node the plugin manages is the plugin's. The state hotkeys are bound when empty: ares ships
+// THE OPTIONS (AresSettings.All) go on the line, --setting "<node>=<value>" each (desktop-ui.cpp v148: set after the file
+// is read, the last of a key wins, and put back to the file's value when ares quits - measured 06/10 on all of them: a
+// window size passed so is the window's, and settings.bml came back byte for byte). So a game's choice never stays for
+// the next game, and "as set in ares" is ares's own. What has to last is written in settings.bml: the state hotkeys,
+// bound when empty (ares ships
 // none (input\hotkeys.cpp) - F5 saves, F7 loads, as for bsnes; the binding format is "0x1/0/<key>;;" (keyboard,
 // F1..F12 = 1..12 - RetroBat's Ares.Generator.cs).
 //
@@ -102,26 +105,22 @@ namespace LbIntegrations.Ares
         {
             try
             {
+                // The options are not written here any more: they go on the line (AresSettings.SettingArgs). Only what has to
+                // last is: the state hotkeys, bound when ares has none.
                 var bml = AresBml.Load(SettingsOf(exe));
-                // The scaling: Output, and FixedScale for a fixed integer (ares's "Scale: Integer (fixed 3x)").
-                var output = AresSettings.For(gameId, "Output");
-                if (output.StartsWith("fixed")) { bml.Set("Video/Output", "IntegerFixed"); bml.Set("Video/FixedScale", output.Substring(5)); }
-                else bml.Set("Video/Output", output == "integer" ? "Integer" : output == "stretch" ? "Stretch" : "Scale");
-                // Every other option: its own node, or nothing when it is "as set in ares".
-                foreach (var o in AresSettings.All) AresSettings.Apply(bml, o, AresSettings.For(gameId, o.Key));
-                var region = AresSettings.For(gameId, "Region");
                 if (string.IsNullOrWhiteSpace(bml.Get("Hotkey/SaveState")) || bml.Get("Hotkey/SaveState") == ";;") bml.Set("Hotkey/SaveState", SaveKey);
                 if (string.IsNullOrWhiteSpace(bml.Get("Hotkey/LoadState")) || bml.Get("Hotkey/LoadState") == ";;") bml.Set("Hotkey/LoadState", LoadKey);
                 bool changed = bml.Changed;
                 bml.SaveIfChanged();
-                Log.Info("settings.bml: " + (changed ? "written" : "already as wanted") + " - " + output + ", " + AresSettings.For(gameId, "Aspect") + ", " + region);
+                if (changed) Log.Info("settings.bml: the state hotkeys bound (F5 / F7)");
             }
             catch (Exception ex) { Log.Warn("settings.bml could not be written - the game starts with it as it was", ex); }
         }
 
         // ── the line ─────────────────────────────────────────────────────────
 
-        public static string CommandLine(string current, string exe, string system, string screen, string oldRom, string newRom, bool noFilePrompt = true)
+        public static string CommandLine(string current, string exe, string system, string screen, string oldRom, string newRom, bool noFilePrompt = true,
+                                         IEnumerable<string> settings = null)
         {
             var t = Tokenize(current);
             // Ours out, wherever they were.
@@ -145,6 +144,8 @@ namespace LbIntegrations.Ares
             if (screen == "full") head.Add("--fullscreen");
             else if (screen == "pseudo") head.Add("--pseudofullscreen");
             if (noFilePrompt) head.Add("--no-file-prompt");
+            // The game's options, BEFORE what the user put on the platform's line: for ares the last --setting of a key wins.
+            foreach (var s in settings ?? Enumerable.Empty<string>()) { head.Add("--setting"); head.Add(s); }
             return string.Join(" ", head.Concat(t).Select(Quote));
         }
 

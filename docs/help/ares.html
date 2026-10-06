@@ -87,9 +87,10 @@
     Pak size), Super Famicom (deep black boost), Game Boy Advance (Game Boy Player), Mega Drive (TMSS). A game's window shows those of its
     system only.</li>
   </ul>
-  <p>Screen, driver, scaling, aspect, VSync, region and fast boot are always the plugin's: change them here, not in ares's menus, which the
-  next launch overwrites. Every other option starts as <b>As set in ares</b>: then nothing is written, and what you set in ares's own menus
-  stays.</p>
+  <p>They are given on ares's command line (<code>--setting</code>), not written into its <code>settings.bml</code>: ares puts its own values
+  back when it quits, so what one game chose never stays for the next. Screen, driver, scaling, aspect, VSync, region and fast boot are
+  always given; every other option starts as <b>As set in ares</b>: then nothing is given, and what you set in ares's own menus is used.
+  A <code>--setting</code> you put on the platform's line in LaunchBox (Edit Emulator &gt; Associated Platforms) comes after the plugin's and wins.</p>
 </section>
 
 <section id="saves"><h2>Saves and save states</h2>

@@ -352,7 +352,7 @@ namespace LbIntegrations.Ares
             // The game's own console memory and memory card, put in place - taken back when ares quits.
             AresConsoleSession.Begin(exe, system, rom, played);
             var line = AresLaunch.CommandLine(current, exe, systemName, AresSettings.For(gameId, "Screen"), rom, played == rom ? null : played,
-                                              noFilePrompt: !(system?.Disc ?? false));
+                                              noFilePrompt: !(system?.Disc ?? false), settings: AresSettings.SettingArgs(gameId));
             Log.Info("launch: " + line);
             return new PrepareForLaunchResponse(success: true) { NewCommandLine = line };
         }

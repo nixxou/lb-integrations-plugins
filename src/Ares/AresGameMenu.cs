@@ -144,8 +144,8 @@ namespace LbIntegrations.Ares
             var gameSystem = games.Length == 1 ? (own ?? asPlatform) : null;
             page.Controls.Add(LbipHint.Note("Each option starts as every game has it (the Nixx window, page ares); a value chosen here is "
                                             + (games.Length == 1 ? "this game's" : "each of these games'") + " alone.",
-                                            "Kept in games\\<game id>.ini and written into ares's settings.bml when the game starts. \"As set in ares\" writes "
-                                            + "nothing: what ares's own menus have stays.", 650, new Padding(0, 0, 0, 8)));
+                                            "Kept in games\\<game id>.ini and given to ares on its command line when the game starts - ares's own settings "
+                                            + "come back when it quits. \"As set in ares\" passes nothing: what ares's own menus have is used.", 650, new Padding(0, 0, 0, 8)));
             foreach (var group in AresSettings.Groups)
             {
                 var rows = new List<Control>();
