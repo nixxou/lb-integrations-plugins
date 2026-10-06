@@ -48,13 +48,13 @@ namespace LbIntegrations.Ares
         public const string LoadKey = "0x1/0/4;;";   // F4
 
         /// <summary>The hotkeys bound when ares has none - RetroArch's keys (Mehdi, 06/10): F2 save state, F4 load it, F6 / F7
-        /// the slot down / up, F full screen, Esc quit, P pause, H reset, F8 screenshot, F9 mute, R rewind (with ares's
+        /// the slot down / up, F11 full screen (Mehdi, 07/10: F11 rather than RetroArch's F), Esc quit, P pause, H reset, F8 screenshot, F9 mute, R rewind (with ares's
         /// Rewind option on). Keyboard = device 0x1, group 0, the key's index in ruby's list (keyboard\rawinput.cpp: Escape 0,
         /// F1..F12 1..12, F 40, H 42, P 50, R 52).</summary>
         internal static readonly (string Node, string Key)[] Hotkeys =
         {
             ("SaveState", SaveKey), ("LoadState", LoadKey), ("DecrementStateSlot", "0x1/0/6;;"), ("IncrementStateSlot", "0x1/0/7;;"),
-            ("ToggleFullscreen", "0x1/0/40;;"), ("QuitEmulator", "0x1/0/0;;"), ("PauseEmulation", "0x1/0/50;;"), ("ResetSystem", "0x1/0/42;;"),
+            ("ToggleFullscreen", "0x1/0/11;;"), ("QuitEmulator", "0x1/0/0;;"), ("PauseEmulation", "0x1/0/50;;"), ("ResetSystem", "0x1/0/42;;"),
             ("CaptureScreenshot", "0x1/0/8;;"), ("MuteAudio", "0x1/0/9;;"), ("Rewind", "0x1/0/52;;"),
         };
 
@@ -63,7 +63,7 @@ namespace LbIntegrations.Ares
         private static readonly Dictionary<string, string> Superseded = new Dictionary<string, string>
         {
             ["SaveState"] = "0x1/0/5;;", ["LoadState"] = "0x1/0/7;;", ["DecrementStateSlot"] = "0x1/0/6;;", ["IncrementStateSlot"] = "0x1/0/8;;",
-            ["ToggleFullscreen"] = "0x1/0/11;;",
+            ["ToggleFullscreen"] = "0x1/0/40;;",   // F, bound by the build of 06/10
         };
 
         public static bool IsAresExe(string path)
@@ -137,7 +137,7 @@ namespace LbIntegrations.Ares
                 }
                 bool changed = bml.Changed;
                 bml.SaveIfChanged();
-                if (changed) Log.Info("settings.bml: hotkeys bound as RetroArch's (F2/F4 states, F6/F7 slot, F full screen, Esc quit, P pause, H reset)");
+                if (changed) Log.Info("settings.bml: hotkeys bound as RetroArch's (F2/F4 states, F6/F7 slot, F11 full screen, Esc quit, P pause, H reset)");
             }
             catch (Exception ex) { Log.Warn("settings.bml could not be written - the game starts with it as it was", ex); }
         }
