@@ -89,6 +89,28 @@ namespace LbIntegrations.Ares
                 + "whose content is the dump ares knows. A file found by name whose content is another dump is still given, and marked.", 600, new Padding(0, 2, 0, 4)),
                 _bios, again));
 
+            // ── ares's compatibility list (AresCompat): what the game's window shows, and its age ──
+            var compatLine = Line("");
+            void ShowCompat()
+            {
+                var (count, when, embedded) = AresCompat.Info();
+                compatLine.Text = count + " games tested, " + (when == null ? "no date" : "from " + when.Value.ToLocalTime().ToString("d")) + (embedded ? " (built into the plugin)" : "")
+                                  + (AresCompat.Fetching ? " - updating..." : "");
+            }
+            ShowCompat();
+            var update = new Button { Text = "Update the list now", AutoSize = true, Margin = new Padding(0, 4, 0, 2) };
+            LbipHint.Attach(update, "Reads ares-emu.net/compatibility again (every system, a page at a time - a few minutes). Done by itself once a month.");
+            update.Click += (_, _) =>
+            {
+                update.Enabled = false;
+                AresCompat.Refresh(now: true, done: said => BeginInvoke(new Action(() => { update.Enabled = true; ShowCompat(); compatLine.Text += " - " + said; })));
+                ShowCompat();
+            };
+            AresCompat.Refresh();
+            stack.Controls.Add(Card("Compatibility list", LbipHint.Note("ares's own list, shown in a game's window.", "From ares-emu.net/compatibility: "
+                + "completable, in-game, starts or nothing, the ares version it was tried with and the team's notes. A game is found by its file's name "
+                + "(No-Intro), else by its title.", 600, new Padding(0, 2, 0, 4)), compatLine, update));
+
             // ── every game's options, a card per group ──
             // Every game's settings are ares's own, set in its menus (Mehdi, 06/10): here the screen alone; a game's window
             // (right-click > Nixx-ares : Options...) sets the rest for that game.

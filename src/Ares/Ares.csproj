@@ -71,6 +71,8 @@
   <ItemGroup>
     <!-- The plugin's user guide, shown from the General tab of the Nixx window (src\Menus\Settings.cs). -->
     <EmbeddedResource Include="..\..\docs\help\ares.html" LogicalName="help.html" />
+    <!-- ares-emu.net's compatibility list, as it was when the plugin was built (the probe's ares-compat-fetch) - AresCompat. -->
+    <EmbeddedResource Include="ares-compat.tsv" LogicalName="ares-compat.tsv" />
   </ItemGroup>
 
 </Project>

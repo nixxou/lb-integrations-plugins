@@ -396,6 +396,20 @@ namespace LbIntegrations.Probe
             return _bad == 0;
         }
 
+        /// <summary>--ares-compat &lt;system&gt; &lt;rom&gt; [title]: the game's entry in ares's compatibility list, and the list's size.</summary>
+        public static bool Compat(Assembly asm, string system, string rom, string title)
+        {
+            var compat = T(asm, "AresCompat");
+            var info = compat.GetMethod("Info", Any).Invoke(null, null);
+            Console.WriteLine("  the list: " + info);
+            var args = new object[] { system, rom, title, null };
+            var e = compat.GetMethod("Find", Any).Invoke(null, args);
+            if (e == null) { Console.WriteLine("  not in the list"); return false; }
+            Console.WriteLine("  " + F(e, "Title") + ": " + compat.Assembly.GetType("LbIntegrations.Ares.AresCompatEntry").GetProperty("Summary").GetValue(e)
+                              + " - " + F(e, "Notes") + "  (" + args[3] + ")");
+            return true;
+        }
+
         /// <summary>A settings.bml's leaves, by path ("Video/Shader").</summary>
         internal static System.Collections.Generic.Dictionary<string, string> AresBmlLines(string path)
         {

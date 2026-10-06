@@ -182,6 +182,19 @@ namespace LbIntegrations.Ares
                     AresPlugin.Collect(list, new HashSet<string>(StringComparer.OrdinalIgnoreCase), _exe, system, AresPlugin.ResolveFullPathForUi(rom), id ?? "x", null);
                     AddText(gameTab, "Saves", list.Count == 0 ? "none yet" : string.Join(", ", list.Select(l => Path.GetFileName(l.FileLocation))));
                 }
+                // Its line in ares's compatibility list (AresCompat) - fetched again in the background when a month old.
+                AresCompat.Refresh();
+                var entry = AresCompat.Find(gameSystem, AresPlugin.ResolveFullPathForUi(rom), _games[0].Title, out var how);
+                var compat = new Label
+                {
+                    AutoSize = true, MaximumSize = new Size(500, 0), Margin = new Padding(3, 7, 0, 4), UseMnemonic = false,
+                    Text = entry == null ? "Not in ares's list" : entry.Summary + (string.IsNullOrEmpty(entry.Notes) ? "" : " - " + entry.Notes),
+                    ForeColor = entry == null ? SystemColors.GrayText : CompatColor(entry.Status),
+                };
+                LbipHint.Attach(compat, entry == null ? "ares-emu.net/compatibility has no line for this game (or not tested)."
+                                                      : "ares-emu.net/compatibility: " + entry.Title + " - found " + how + "."
+                                                        + (entry.Issues > 0 ? " " + entry.Issues + " GitHub issue(s)." : ""));
+                AddRow(gameTab, null, "Compatibility", compat);
             }
             foreach (var o in AresSettings.All.Where(x => x.OnPage)) AddOption(gameTab, o);
             tabs.TabPages.Add(Page("Game", gameTab));
@@ -555,6 +568,11 @@ namespace LbIntegrations.Ares
             Log.Info("options saved: " + written + " of " + _games.Count + " game(s) changed");
             return true;
         }
+
+        /// <summary>A status in its colour: green completable, amber in-game, orange starts, red nothing.</summary>
+        private static Color CompatColor(string status)
+            => status == "Completable" ? Color.FromArgb(0x3C, 0xB3, 0x71) : status == "In-Game" ? Color.FromArgb(0xDE, 0x96, 0x00)
+             : status == "Starts" ? Color.FromArgb(0xE0, 0x6C, 0x20) : status == "Nothing" ? Color.FromArgb(0xCD, 0x2D, 0x2D) : SystemColors.GrayText;
 
         private static T Safe<T>(Func<T> get) { try { return get(); } catch { return default; } }
     }

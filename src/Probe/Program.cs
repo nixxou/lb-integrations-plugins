@@ -156,6 +156,8 @@ namespace LbIntegrations.Probe
             // A launch as LaunchBox makes it, for RASnes9x, bsnes and ares - see SnesFamilyE2E.
             if (Has(args, "--e2e-launch")) return SnesFamilyE2E.Run(asm, Path.GetFullPath(Arg(args, "--e2e-launch"))) ? 0 : 1;
             // The ares plugin's pieces, without a host - see AresCheck.
+            if (Has(args, "--ares-compat-fetch")) { var compat = asm.GetType("LbIntegrations.Ares.AresCompat", true); var n = (int)compat.GetMethod("Fetch", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { Path.GetFullPath(Arg(args, "--ares-compat-fetch")), new Action<string>(s => Console.WriteLine("  " + s)), default(System.Threading.CancellationToken) }); Console.WriteLine(n + " games"); return n > 0 ? 0 : 1; }
+            if (Has(args, "--ares-compat")) { int at = Array.IndexOf(args, "--ares-compat"); return AresCheck.Compat(asm, args[at + 1], args[at + 2], at + 3 < args.Length ? args[at + 3] : null) ? 0 : 1; }
             if (Has(args, "--ares-names")) return AresCheck.Names(asm, Path.GetFullPath(Arg(args, "--ares-names"))) ? 0 : 1;
             if (Has(args, "--ares-line")) return AresCheck.Line(asm) ? 0 : 1;
             if (Has(args, "--ares-window")) { int at = Array.IndexOf(args, "--ares-window"); return AresCheck.Window(asm, Path.GetFullPath(args[at + 1]), Path.GetFullPath(args[at + 2]), args[at + 3], args[at + 4]) ? 0 : 1; }
