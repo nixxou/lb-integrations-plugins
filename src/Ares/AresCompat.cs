@@ -8,7 +8,8 @@
 // the list (ZX Spectrum, PlayStation, Atari 2600...) is untested, and a game not in the list says the same.
 //
 // THE DATA: a snapshot is embedded (ares-compat.tsv, made with the probe's --ares-compat-fetch); a list fetched since
-// (ares-compat.tsv beside the plugin's settings) wins. It is fetched again in the background when older than 30 days,
+// (ares-compat.tsv beside the plugin's settings) wins. It is fetched again ONLY on the ares page's "Update the list now" (Mehdi,
+// 06/10: reading the whole site is slow - never by itself),
 // one page at a time with a pause between - the site is ares's own, not a CDN to hammer.
 //
 // A GAME is found by its file's name (No-Intro), else by its LaunchBox title with the region of its file, if any.
@@ -41,7 +42,6 @@ namespace LbIntegrations.Ares
     {
         public const string Site = "https://ares-emu.net/compatibility/";
         private const string FileName = "ares-compat.tsv";
-        private const int MaxAgeDays = 30;
         private static readonly (string Status, int Code)[] Statuses = { ("Completable", 4000), ("In-Game", 3000), ("Starts", 2000), ("Nothing", 1000) };
 
         /// <summary>The site's page of each system ares runs (its slug). Mega CD 32X and SuperGrafx CD games are in the
@@ -184,7 +184,7 @@ namespace LbIntegrations.Ares
         {
             var entries = new List<AresCompatEntry>();
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("Nixx-ares/1.0 (LaunchBox plugin; compatibility list, once a month)");
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("Nixx-ares/1.0 (LaunchBox plugin; compatibility list, on the user's request)");
             int pages = 0;
             foreach (var slug in SlugOf.Values.Distinct())
             {
@@ -250,14 +250,11 @@ namespace LbIntegrations.Ares
             }
         }
 
-        /// <summary>The list fetched again in the background when the one in use is older than 30 days (or when
-        /// <paramref name="now"/>), then used. One at a time; never throws. <paramref name="done"/> is told the result.</summary>
-        public static void Refresh(bool now = false, Action<string> done = null)
+        /// <summary>The list fetched again in the background - the page's button only - then used. One at a time; never throws. <paramref name="done"/> is told the result.</summary>
+        public static void Refresh(Action<string> done = null)
         {
             try
             {
-                var (_, when, _) = Info();
-                if (!now && when != null && (DateTime.UtcNow - when.Value).TotalDays < MaxAgeDays) return;
                 if (Interlocked.Exchange(ref _fetching, 1) == 1) return;
                 Task.Run(() =>
                 {

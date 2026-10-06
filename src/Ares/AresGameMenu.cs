@@ -182,8 +182,7 @@ namespace LbIntegrations.Ares
                     AresPlugin.Collect(list, new HashSet<string>(StringComparer.OrdinalIgnoreCase), _exe, system, AresPlugin.ResolveFullPathForUi(rom), id ?? "x", null);
                     AddText(gameTab, "Saves", list.Count == 0 ? "none yet" : string.Join(", ", list.Select(l => Path.GetFileName(l.FileLocation))));
                 }
-                // Its line in ares's compatibility list (AresCompat) - fetched again in the background when a month old.
-                AresCompat.Refresh();
+                // Its line in ares's compatibility list (AresCompat) - the list as it is: updated only from the ares page.
                 var entry = AresCompat.Find(gameSystem, AresPlugin.ResolveFullPathForUi(rom), _games[0].Title, out var how);
                 var compat = new Label
                 {
