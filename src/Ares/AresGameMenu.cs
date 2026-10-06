@@ -183,17 +183,30 @@ namespace LbIntegrations.Ares
                     AddText(gameTab, "Saves", list.Count == 0 ? "none yet" : string.Join(", ", list.Select(l => Path.GetFileName(l.FileLocation))));
                 }
                 // Its line in ares's compatibility list (AresCompat) - the list as it is: updated only from the ares page.
-                var entry = AresCompat.Find(gameSystem, AresPlugin.ResolveFullPathForUi(rom), _games[0].Title, out var how);
-                var compat = new Label
+                // Every line it matches (its regions, its versions): the one of this very file first, in bold.
+                var alts = Safe(() => game.GetAllAlternateNames())?.Select(a => a?.Name).Where(n => !string.IsNullOrWhiteSpace(n)).ToList();
+                var matches = AresCompat.FindAll(gameSystem, AresPlugin.ResolveFullPathForUi(rom), _games[0].Title, alts, Safe(() => game.LaunchBoxDbId));
+                var lines = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Margin = new Padding(0) };
+                if (matches.Count == 0)
+                    lines.Controls.Add(new Label { AutoSize = true, Margin = new Padding(3, 7, 0, 4), UseMnemonic = false, ForeColor = SystemColors.GrayText, Text = "Not in ares's list" });
+                const int Shown = 6;
+                foreach (var m in matches.Take(Shown))
                 {
-                    AutoSize = true, MaximumSize = new Size(500, 0), Margin = new Padding(3, 7, 0, 4), UseMnemonic = false,
-                    Text = entry == null ? "Not in ares's list" : entry.Summary + (string.IsNullOrEmpty(entry.Notes) ? "" : " - " + entry.Notes),
-                    ForeColor = entry == null ? SystemColors.GrayText : CompatColor(entry.Status),
-                };
-                LbipHint.Attach(compat, entry == null ? "ares-emu.net/compatibility has no line for this game (or not tested)."
-                                                      : "ares-emu.net/compatibility: " + entry.Title + " - found " + how + "."
-                                                        + (entry.Issues > 0 ? " " + entry.Issues + " GitHub issue(s)." : ""));
-                AddRow(gameTab, null, "Compatibility", compat);
+                    var e = m.Entry;
+                    var line = new Label
+                    {
+                        AutoSize = true, MaximumSize = new Size(500, 0), Margin = new Padding(3, lines.Controls.Count == 0 ? 7 : 1, 0, 1), UseMnemonic = false,
+                        Text = (matches.Count > 1 || !m.Best ? e.Title + ": " : "") + e.Summary + (string.IsNullOrEmpty(e.Notes) ? "" : " - " + e.Notes),
+                        ForeColor = CompatColor(e.Status),
+                    };
+                    if (m.Best) line.Font = new Font(Font, FontStyle.Bold);
+                    LbipHint.Attach(line, e.Title + " - found by " + m.How + "." + (e.Issues > 0 ? " " + e.Issues + " GitHub issue(s)." : ""));
+                    lines.Controls.Add(line);
+                }
+                if (matches.Count > Shown)
+                    lines.Controls.Add(new Label { AutoSize = true, Margin = new Padding(3, 1, 0, 4), UseMnemonic = false, ForeColor = SystemColors.GrayText, Text = "and " + (matches.Count - Shown) + " more" });
+                LbipHint.Attach(lines, "ares-emu.net/compatibility.");
+                AddRow(gameTab, null, "Compatibility", lines);
             }
             foreach (var o in AresSettings.All.Where(x => x.OnPage)) AddOption(gameTab, o);
             tabs.TabPages.Add(Page("Game", gameTab));

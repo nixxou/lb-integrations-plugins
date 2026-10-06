@@ -402,12 +402,17 @@ namespace LbIntegrations.Probe
             var compat = T(asm, "AresCompat");
             var info = compat.GetMethod("Info", Any).Invoke(null, null);
             Console.WriteLine("  the list: " + info);
-            var args = new object[] { system, rom, title, null };
-            var e = compat.GetMethod("Find", Any).Invoke(null, args);
-            if (e == null) { Console.WriteLine("  not in the list"); return false; }
-            Console.WriteLine("  " + F(e, "Title") + ": " + compat.Assembly.GetType("LbIntegrations.Ares.AresCompatEntry").GetProperty("Summary").GetValue(e)
-                              + " - " + F(e, "Notes") + "  (" + args[3] + ")");
-            return true;
+            var all = (System.Collections.IEnumerable)compat.GetMethod("FindAll", Any).Invoke(null, new object[] { system, rom, title, null, null });
+            var summary = compat.Assembly.GetType("LbIntegrations.Ares.AresCompatEntry").GetProperty("Summary");
+            int n = 0;
+            foreach (var m in all)
+            {
+                var e = F(m, "Entry");
+                Console.WriteLine("  " + ((bool)F(m, "Best") ? "* " : "  ") + F(e, "Title") + ": " + summary.GetValue(e) + " - " + F(e, "Notes") + "  (by " + F(m, "How") + ")");
+                n++;
+            }
+            if (n == 0) Console.WriteLine("  not in the list");
+            return n > 0;
         }
 
         /// <summary>A settings.bml's leaves, by path ("Video/Shader").</summary>

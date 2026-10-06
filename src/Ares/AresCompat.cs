@@ -12,7 +12,8 @@
 // 06/10: reading the whole site is slow - never by itself),
 // one page at a time with a pause between - the site is ares's own, not a CDN to hammer.
 //
-// A GAME is found by its file's name (No-Intro), else by its LaunchBox title with the region of its file, if any.
+// A GAME may match SEVERAL lines (its regions, its versions - Mehdi, 06/10): all are found (FindAll) - by its file's
+// No-Intro name, then by LiteBox's CompareName key of its file's name, title, alternate names and database entry.
 
 using System;
 using System.Collections.Generic;
@@ -34,8 +35,18 @@ namespace LbIntegrations.Ares
         public bool Unverified;
         public int Issues;
 
+        internal string Key;   // its CompareName (AresCompat.Key)
+
         /// <summary>"Completable (unverified), v130" - short.</summary>
         public string Summary => Status + (Unverified ? " (unverified)" : "") + (string.IsNullOrEmpty(Version) ? "" : ", " + Version);
+    }
+
+    /// <summary>A line of the list for a game, and how it was found; Best: the one that is this very file.</summary>
+    internal sealed class AresCompatMatch
+    {
+        public AresCompatEntry Entry;
+        public string How;
+        public bool Best;
     }
 
     internal static class AresCompat
@@ -66,7 +77,7 @@ namespace LbIntegrations.Ares
 
         private static readonly object Gate = new object();
         private static List<AresCompatEntry> _entries;
-        private static Dictionary<string, Dictionary<string, AresCompatEntry>> _byName;
+        private static Dictionary<string, List<AresCompatEntry>> _bySlug;
         private static DateTime? _when;
         private static bool _embedded;
         private static int _fetching;
@@ -117,13 +128,14 @@ namespace LbIntegrations.Ares
                 if (f.Length < 7) continue;
                 entries.Add(new AresCompatEntry { Slug = f[0], Title = f[1], Status = f[2], Unverified = f[3] == "1", Version = f[4], Notes = f[5], Issues = int.TryParse(f[6], out var n) ? n : 0 });
             }
-            var byName = new Dictionary<string, Dictionary<string, AresCompatEntry>>(StringComparer.Ordinal);
+            var bySlug = new Dictionary<string, List<AresCompatEntry>>(StringComparer.Ordinal);
             foreach (var e in entries)
             {
-                if (!byName.TryGetValue(e.Slug, out var d)) byName[e.Slug] = d = new Dictionary<string, AresCompatEntry>(StringComparer.Ordinal);
-                d[Norm(e.Title)] = e;
+                e.Key = Key(e.Title);
+                if (!bySlug.TryGetValue(e.Slug, out var l)) bySlug[e.Slug] = l = new List<AresCompatEntry>();
+                l.Add(e);
             }
-            _entries = entries; _byName = byName; _when = when;
+            _entries = entries; _bySlug = bySlug; _when = when;
         }
 
         /// <summary>How many games the list has, from when, and whether it is the embedded one.</summary>
@@ -137,42 +149,191 @@ namespace LbIntegrations.Ares
 
         private static string Norm(string s) => Regex.Replace((s ?? "").ToLowerInvariant().Trim(), @"\s+", " ");
 
-        /// <summary>A title as words only: "Legend of Zelda, The - A Link to the Past" and "The Legend of Zelda: A Link to
-        /// the Past" alike.</summary>
-        private static string Words(string s)
+        // THE KEY (Mehdi, 06/10): LiteBox's CompareName - a faithful copy of LbApiHost\Host\Web\Db\TitleNormalizer.cs
+        // (PerformSanitize, then NormalizeCompareName), so a title gives here the key it gives there and in ExtendDB.
+        // "Legend of Zelda, The - A Link to the Past (USA)" and "The Legend of Zelda: A Link to the Past" give one key. A
+        // key the normalizer says is not valid (under 5 characters, or more than 20% of the title dropped) falls back
+        // to the sanitized title itself, prefixed, so it only ever meets the same short title.
+        internal static string Key(string title)
         {
-            s = (s ?? "").ToLowerInvariant();
-            s = Regex.Replace(s, @"\([^)]*\)|\[[^\]]*\]", " ");
-            s = Regex.Replace(s, @",\s*the\b", " ");
-            s = Regex.Replace(s, @"^\s*the\s+", " ");
-            s = Regex.Replace(s, @"[^a-z0-9]+", " ");
-            s = Regex.Replace(s, @"^\s*the\s+", " ");
-            return Regex.Replace(s, @"\s+", " ").Trim();
+            if (string.IsNullOrWhiteSpace(title)) return null;
+            var sanitized = PerformSanitize(title);
+            var compact = NormalizeCompareName(sanitized, out var valid);
+            return valid ? compact : sanitized.Length > 0 ? "~" + sanitized : null;
         }
+
+        private static string NormalizeCompareName(string input, out bool isValid)
+        {
+            isValid = false;
+            if (string.IsNullOrEmpty(input)) return null;
+            if (input.Trim().EndsWith("+") || input.Trim().EndsWith("#")) return null;
+            int totalCharsForRatio = input.Count(c => !char.IsWhiteSpace(c));
+            string normalized = input.Normalize(NormalizationForm.FormD);
+            var sb = new StringBuilder();
+            foreach (char c in normalized)
+            {
+                var uc = CharUnicodeInfo.GetUnicodeCategory(c);
+                if (uc != UnicodeCategory.NonSpacingMark && char.IsLetterOrDigit(c)) sb.Append(char.ToUpperInvariant(c));
+            }
+            string result = Regex.Replace(sb.ToString(), @"[^A-Z0-9]", "");
+            int replacements = totalCharsForRatio - result.Length;
+            isValid = result.Length >= 5 && ((double)replacements / totalCharsForRatio) <= 0.2;
+            return string.IsNullOrEmpty(result) ? null : result;
+        }
+
+        private static string PerformSanitize(string name)
+        {
+            string sanitized = name;
+            sanitized = StripBrackets(sanitized, @"(?<=\S)?\([^)]*\)(?=\S)?");
+            sanitized = StripBrackets(sanitized, @"(?<=\S)?\[[^\]]*\](?=\S)?");
+            sanitized = StripBrackets(sanitized, @"(?<=\S)?\{[^}]*\}(?=\S)?");
+            var invalidChars = Path.GetInvalidFileNameChars().Where(c => c != '*' && c != '`' && c != '|' && c != '>' && c != '<' && c != '~').ToArray();
+            char[] toSpace = { '-', ':', '&', '!', ',', '/', '\\', '?' };
+            char[] toVoid = { '\'', '.', '"' };
+            sanitized = new string(sanitized.Select(c =>
+            {
+                if (invalidChars.Contains(c) || toSpace.Contains(c)) return ' ';
+                if (toVoid.Contains(c)) return '\0';
+                return c;
+            }).Where(c => c != '\0').ToArray());
+            sanitized = Regex.Replace(sanitized, " {2,}", " ").Trim();
+            sanitized = Regex.Replace(sanitized, @"(?<=^|\s)II(?=\s|$)", "2");
+            sanitized = Regex.Replace(sanitized, @"(?<=^|\s)III(?=\s|$)", "3");
+            sanitized = Regex.Replace(sanitized, @"(?<=^|\s)IV(?=\s|$)", "4");
+            sanitized = Regex.Replace(sanitized, @"(?<=^|\s)VIII(?=\s|$)", "8");
+            sanitized = Regex.Replace(sanitized, @"(?<=^|\s)VII(?=\s|$)", "7");
+            sanitized = Regex.Replace(sanitized, @"(?<=^|\s)VI(?=\s|$)", "6");
+            sanitized = Regex.Replace(sanitized, @"(?<=^|\s)V(?=\s|$)", "5");
+            sanitized = Regex.Replace(sanitized, @"(?<=^|\s)a(?=\s|$)", " ", RegexOptions.IgnoreCase);
+            sanitized = Regex.Replace(sanitized, @"(?<=^|\s)an(?=\s|$)", " ", RegexOptions.IgnoreCase);
+            sanitized = Regex.Replace(sanitized, @"(?<=^|\s)and(?=\s|$)", " ", RegexOptions.IgnoreCase);
+            sanitized = Regex.Replace(sanitized, @"(?<=^|\s)the(?=\s|$)", "", RegexOptions.IgnoreCase);
+            sanitized = Regex.Replace(sanitized, " {2,}", " ").Trim();
+            return sanitized.ToUpper();
+        }
+
+        private static string StripBrackets(string input, string pattern)
+            => Regex.Replace(input, pattern, match =>
+            {
+                char before = match.Index > 0 ? input[match.Index - 1] : ' ';
+                char after = match.Index + match.Length < input.Length ? input[match.Index + match.Length] : ' ';
+                return (!char.IsWhiteSpace(before) && !char.IsWhiteSpace(after)) ? "" : " ";
+            });
 
         private static readonly string[] Regions = { "USA", "Europe", "Japan", "World", "France", "Germany", "Spain", "Italy", "Korea", "Brazil", "Australia" };
 
-        /// <summary>The game's entry: by its file's name, else by its title (and the region its file says). Null when the
-        /// list does not have it. <paramref name="how"/> says which.</summary>
-        public static AresCompatEntry Find(string system, string rom, string title, out string how)
+        /// <summary>The region a No-Intro name says - "(USA)", "(Europe, Australia)" - or null.</summary>
+        private static string RegionOf(string name)
         {
-            how = null;
-            Load();
-            if (system == null || !SlugOf.TryGetValue(system, out var slug) || !_byName.TryGetValue(slug, out var names)) return null;
-            var stem = Path.GetFileNameWithoutExtension(rom ?? "");
-            if (names.TryGetValue(Norm(stem), out var hit)) { how = "by its file's name"; return hit; }
-            var noDisc = Regex.Replace(stem, @"\s*\(Disc \d+\)", "", RegexOptions.IgnoreCase);
-            if (noDisc != stem && names.TryGetValue(Norm(noDisc), out hit)) { how = "by its file's name"; return hit; }
-            foreach (var key in new[] { Words(stem), Words(title) }.Where(k => k.Length > 0).Distinct())
+            var region = Regions.FirstOrDefault(r => Regex.IsMatch(name ?? "", @"[(,]\s*" + r + @"\b", RegexOptions.IgnoreCase));
+            if (region != null) return region;
+            // GoodTools' codes - "Sonic CD (U)": the first letter of the group says the region.
+            var g = Regex.Match(name ?? "", @"\((U|E|J|F|G|S|I|K|B|W|A|UE|JU|JUE|UJ|EU)\)");
+            if (!g.Success) return null;
+            switch (g.Groups[1].Value[0])
             {
-                var candidates = names.Values.Where(e => Words(e.Title) == key).ToList();
-                if (candidates.Count == 0) continue;
-                var region = Regions.FirstOrDefault(r => stem.IndexOf("(" + r, StringComparison.OrdinalIgnoreCase) >= 0 || stem.IndexOf(", " + r, StringComparison.OrdinalIgnoreCase) >= 0);
-                hit = (region != null ? candidates.FirstOrDefault(e => e.Title.IndexOf(region, StringComparison.OrdinalIgnoreCase) >= 0) : null)
-                      ?? candidates.FirstOrDefault(e => e.Title.Contains("(USA") || e.Title.Contains("(World")) ?? candidates[0];
-                how = "by its title";
-                return hit;
+                case 'U': return "USA"; case 'E': return "Europe"; case 'J': return "Japan"; case 'F': return "France"; case 'G': return "Germany";
+                case 'S': return "Spain"; case 'I': return "Italy"; case 'K': return "Korea"; case 'B': return "Brazil"; case 'W': return "World";
+                case 'A': return "Australia"; default: return null;
             }
+        }
+
+        /// <summary>EVERY line of the list for a game (Mehdi, 06/10: a game can match several - its regions, its
+        /// versions), the best first:
+        ///   1. its file's No-Intro name, exactly (a "(Disc N)" left out) - the one;
+        ///   2. the key of its file's name, its LaunchBox title, its alternate names in the library, and the name and
+        ///      alternate names of its LaunchBox database entry (<paramref name="dbId"/>, read from LaunchBox.Metadata.db);
+        /// marked best: the exact one, else the one of its file's region. Empty when the list does not have it.</summary>
+        public static List<AresCompatMatch> FindAll(string system, string rom, string title, IEnumerable<string> altNames = null, int? dbId = null)
+        {
+            var found = new List<AresCompatMatch>();
+            Load();
+            if (system == null || !SlugOf.TryGetValue(system, out var slug) || !_bySlug.TryGetValue(slug, out var entries)) return found;
+            var stem = Path.GetFileNameWithoutExtension(rom ?? "");
+            var noDisc = Regex.Replace(stem, @"\s*\(Disc \d+\)", "", RegexOptions.IgnoreCase);
+            foreach (var e in entries)
+                if (Norm(e.Title) == Norm(stem) || Norm(e.Title) == Norm(noDisc)) found.Add(new AresCompatMatch { Entry = e, How = "its file's name", Best = true });
+
+            var keys = new List<(string Key, string How)>();
+            void Add(string name, string how) { var k = Key(name); if (k != null && !keys.Any(x => x.Key == k)) keys.Add((k, how)); }
+            Add(stem, "its file's name");
+            Add(title, "its title");
+            foreach (var a in altNames ?? Enumerable.Empty<string>()) Add(a, "an alternate name");
+            if (dbId != null)
+            {
+                var (dbName, dbAlts) = DatabaseNames(dbId.Value);
+                Add(dbName, "its LaunchBox database entry");
+                foreach (var a in dbAlts) Add(a, "an alternate name of its database entry");
+            }
+            foreach (var e in entries)
+            {
+                if (e.Key == null || found.Any(f => f.Entry == e)) continue;
+                var hit = keys.FirstOrDefault(k => k.Key == e.Key);
+                if (hit.Key != null) found.Add(new AresCompatMatch { Entry = e, How = hit.How });
+            }
+            if (!found.Any(f => f.Best))
+            {
+                var region = RegionOf(stem);
+                var best = (region != null ? found.FirstOrDefault(f => RegionOf(f.Entry.Title) == region) : null);
+                if (best != null) best.Best = true;
+            }
+            return found.OrderByDescending(f => f.Best).ThenBy(f => f.Entry.Title, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        // ── the game's LaunchBox database entry ──────────────────────────────
+
+        private static readonly Dictionary<int, (string, List<string>)> DbCache = new Dictionary<int, (string, List<string>)>();
+
+        /// <summary>The name and alternate names of a LaunchBox database entry, from LaunchBox.Metadata.db - read only,
+        /// through the SQLite LaunchBox itself loaded (the plugin may not carry its own: LbipRowInjection). Nothing when
+        /// it cannot be read (the probe, an install without the file).</summary>
+        private static (string Name, List<string> Alternates) DatabaseNames(int dbId)
+        {
+            lock (DbCache)
+            {
+                if (DbCache.TryGetValue(dbId, out var c)) return c;
+                var result = (Name: (string)null, Alternates: new List<string>());
+                try
+                {
+                    var db = MetadataDb();
+                    var type = AppDomain.CurrentDomain.GetAssemblies().Select(a => a.GetType("Microsoft.Data.Sqlite.SqliteConnection", false)).FirstOrDefault(t => t != null);
+                    if (db != null && type != null)
+                    {
+                        using var conn = (System.Data.Common.DbConnection)Activator.CreateInstance(type, "Data Source=" + db + ";Mode=ReadOnly");
+                        conn.Open();
+                        using (var cmd = conn.CreateCommand())
+                        {
+                            cmd.CommandText = "SELECT Name FROM Games WHERE DatabaseID = " + dbId;
+                            result.Name = cmd.ExecuteScalar() as string;
+                        }
+                        using (var cmd = conn.CreateCommand())
+                        {
+                            cmd.CommandText = "SELECT AlternateName FROM GameAlternateTitles WHERE DatabaseID = " + dbId;
+                            using var r = cmd.ExecuteReader();
+                            while (r.Read()) if (!r.IsDBNull(0)) result.Alternates.Add(r.GetString(0));
+                        }
+                    }
+                }
+                catch (Exception ex) { Log.Warn("compatibility: the LaunchBox database entry " + dbId + " could not be read", ex); }
+                DbCache[dbId] = result;
+                return result;
+            }
+        }
+
+        /// <summary>LaunchBox's Metadata\LaunchBox.Metadata.db, from the plugin's own place in the install.</summary>
+        private static string MetadataDb()
+        {
+            try
+            {
+                var dir = Path.GetDirectoryName(typeof(AresCompat).Assembly.Location);
+                for (int i = 0; i < 6 && !string.IsNullOrEmpty(dir); i++)
+                {
+                    var db = Path.Combine(dir, "Metadata", "LaunchBox.Metadata.db");
+                    if (File.Exists(db)) return db;
+                    dir = Path.GetDirectoryName(dir);
+                }
+            }
+            catch { }
             return null;
         }
 
