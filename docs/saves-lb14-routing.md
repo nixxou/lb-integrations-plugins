@@ -156,6 +156,9 @@ What they are for:
 - **A version on the same file as its game**: the save is NOT tied to the version (`AdditionalApplicationId` left
   empty, in our `GetSaves`, and through Harmony for RetroArch). It is the same file, nothing is lost, and LaunchBox's
   "Can't find the game" defect is avoided (test 9b: untied, the Atlantis restore went through).
+- **A version on ANOTHER file**: whether LaunchBox's defect hits it too was never measured. Never tying a save to a
+  version (relying on `ver`) would avoid it in every case, but the save would then show under the game, not the version.
+  Set aside (Mehdi, 08/10).
 - **A renamed rom is not followed at launch**: no way, through the SDK, to read LaunchBox's save rows before a launch.
   The old save is not lost (its card keeps it) and a Restore puts it under the new name. LiteBox, which does the
   renaming, can follow it.
