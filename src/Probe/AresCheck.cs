@@ -373,7 +373,7 @@ namespace LbIntegrations.Probe
             {
                 var files = (System.Collections.IEnumerable)sys.GetType().GetField("ConsoleFiles").GetValue(sys);
                 var cf = files.Cast<object>().First();
-                var live = (string)T(asm, "AresPlugin").GetMethod("ConsolePath", Any).Invoke(null, new[] { exe, cf });
+                var live = (string)T(asm, "AresPlugin").GetMethod("ConsolePath", Any, null, new[] { typeof(string), cf.GetType() }, null).Invoke(null, new[] { exe, cf });
                 var own = (string)session.GetMethod("OwnCopy", Any).Invoke(null, new[] { exe, rom, sys, cf });
                 Console.WriteLine("  live " + live + "\n  own  " + own);
                 if (File.Exists(own)) File.Delete(own);
@@ -392,6 +392,70 @@ namespace LbIntegrations.Probe
             }
             catch (Exception ex) { Check("ran", false, (ex.InnerException ?? ex).ToString()); }
             finally { T(asm, "AresSettings").GetField("PathOverride", Any).SetValue(null, null); try { Directory.Delete(data, true); } catch { } }
+            Console.WriteLine(_bad == 0 ? "  all good" : "  " + _bad + " FAILED");
+            return _bad == 0;
+        }
+
+        /// <summary>--ares-save-paths &lt;ares folder&gt; &lt;system&gt; &lt;rom&gt; [save ext]: on a COPY of the ares folder and of the game
+        /// (its save beside it, as ares wrote it before 07/10): Paths/Saves set, the save moved to Saves\&lt;system&gt;\, and the
+        /// real ares, started and closed, writes it there - nothing beside the game.</summary>
+        public static bool SavePaths(Assembly asm, string aresDir, string system, string rom, string saveExt)
+        {
+            _bad = 0;
+            var work = Path.Combine(Path.GetTempPath(), "lbip-ares-paths-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            var emu = Path.Combine(work, "ares");
+            var games = Path.Combine(work, "games");
+            Console.WriteLine("-- save folders, on a copy in " + work + " --");
+            try
+            {
+                foreach (var f in Directory.GetFiles(aresDir, "*", SearchOption.AllDirectories))
+                {
+                    var to = Path.Combine(emu, Path.GetRelativePath(aresDir, f));
+                    Directory.CreateDirectory(Path.GetDirectoryName(to));
+                    File.Copy(f, to);
+                }
+                var exe = Path.Combine(emu, "ares.exe");
+                var bml = Path.Combine(emu, "settings.bml");
+                File.WriteAllText(bml, string.Join("\n", File.ReadAllText(bml).Replace("\r\n", "\n").Split('\n')
+                    .Select(l => System.Text.RegularExpressions.Regex.IsMatch(l, @"^  (Saves|Screenshots|Debugging):") ? "  " + l.Trim().Split(':')[0] : l)));
+                Directory.CreateDirectory(games);
+                var game = Path.Combine(games, Path.GetFileName(rom));
+                File.Copy(rom, game);
+                var oldSave = Path.ChangeExtension(rom, saveExt);
+                var besideSave = Path.ChangeExtension(game, saveExt);
+                if (File.Exists(oldSave)) File.Copy(oldSave, besideSave);
+                var besideState = Path.ChangeExtension(game, ".bs1");
+                File.WriteAllBytes(besideState, new byte[] { 1, 2, 3 });
+                File.WriteAllBytes(besideState + ".png", new byte[] { 4 });
+
+                var sys = T(asm, "AresSystems").GetMethod("System", Any).Invoke(null, new object[] { system });
+                T(asm, "AresSavePaths").GetMethod("Ensure", Any).Invoke(null, new object[] { exe });
+                var text = File.ReadAllText(bml);
+                Check("Paths/Saves set to the emulator's", text.Contains("Saves: " + emu.Replace('\\', '/') + "/Saves/"));
+                Check("Paths/Screenshots set", text.Contains("Screenshots: " + emu.Replace('\\', '/') + "/Screenshots/"));
+                T(asm, "AresSavePaths").GetMethod("Migrate", Any).Invoke(null, new object[] { exe, sys, game });
+                var folders = T(asm, "AresPlugin").GetMethod("FoldersFor", Any).Invoke(null, new object[] { exe, game, sys });
+                var saveDir = (string)F(folders, "SaveTarget");
+                var stateDir = (string)F(folders, "StateTarget");
+                Console.WriteLine("  saves  " + saveDir + "\n  states " + stateDir);
+                var newSave = Path.Combine(saveDir, Path.GetFileName(besideSave));
+                Check("save moved", !File.Exists(besideSave) && File.Exists(newSave) == File.Exists(oldSave));
+                Check("state and its PNG moved", !File.Exists(besideState) && File.Exists(Path.Combine(stateDir, Path.GetFileName(besideState))) && File.Exists(Path.Combine(stateDir, Path.GetFileName(besideState) + ".png")));
+
+                var before = File.Exists(newSave) ? File.GetLastWriteTimeUtc(newSave) : DateTime.MinValue;
+                var p = Process.Start(new ProcessStartInfo(exe, "--settings-file \"" + bml + "\" --system \"" + system + "\" \"" + game + "\"") { UseShellExecute = false });
+                for (int i = 0; i < 40 && p.MainWindowHandle == IntPtr.Zero; i++) { System.Threading.Thread.Sleep(250); p.Refresh(); }
+                System.Threading.Thread.Sleep(8000);
+                PostMessage(p.MainWindowHandle, 0x10, IntPtr.Zero, IntPtr.Zero);
+                if (!p.WaitForExit(10000)) { p.Kill(); Check("ares quit on WM_CLOSE", false); }
+                System.Threading.Thread.Sleep(500);
+                Check("ares wrote the save in Saves\\" + Path.GetFileName(saveDir), File.Exists(newSave) && File.GetLastWriteTimeUtc(newSave) > before, newSave);
+                var beside = Directory.GetFiles(games).Select(Path.GetFileName).Where(n => !string.Equals(n, Path.GetFileName(game), StringComparison.OrdinalIgnoreCase)).ToList();
+                Check("nothing beside the game", beside.Count == 0, string.Join(", ", beside));
+                Check("settings.bml kept the folder after ares quit", File.ReadAllText(bml).Contains("Saves: " + emu.Replace('\\', '/') + "/Saves/"));
+            }
+            catch (Exception ex) { Check("ran", false, (ex.InnerException ?? ex).ToString()); }
+            finally { try { Directory.Delete(work, true); } catch { } }
             Console.WriteLine(_bad == 0 ? "  all good" : "  " + _bad + " FAILED");
             return _bad == 0;
         }

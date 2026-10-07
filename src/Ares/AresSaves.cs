@@ -99,14 +99,18 @@ namespace LbIntegrations.Ares
 
         /// <summary>Where ares keeps a console's own file (desktop-ui.cpp: mia home = Paths/Home, else locate("Systems/") -
         /// the exe's folder, then %LOCALAPPDATA%\ares, else the exe's; pak.cpp saveLocation with Paths/Saves set).</summary>
-        internal static string ConsolePath(string exe, AresConsoleFile f)
+        internal static string ConsolePath(string exe, AresConsoleFile f) => ConsolePath(exe, f, null);
+
+        /// <summary>The same, with Paths/Saves read as <paramref name="savesAs"/> when it is given ("" = unset): where ares
+        /// kept it before the plugin set the folder (AresSavePaths).</summary>
+        internal static string ConsolePath(string exe, AresConsoleFile f, string savesAs)
         {
             if (exe == null || f == null) return null;
             string saves = null, home = null;
             try
             {
                 var bml = AresBml.Load(AresLaunch.SettingsOf(exe));
-                saves = bml.Get("Paths/Saves");
+                saves = savesAs ?? bml.Get("Paths/Saves");
                 home = bml.Get("Paths/Home");
             }
             catch { }

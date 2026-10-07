@@ -111,13 +111,16 @@
 
 <section id="saves"><h2>Saves and save states</h2>
   <ul>
-    <li>Each game's save files, beside the game unless you set a saves folder in ares: a cartridge's <code>.ram</code>, <code>.eeprom</code>,
+    <li>Nothing is written beside the games: saves and states go to <code>Emulators\Nixx-ares\Saves\&lt;system&gt;\</code>, screenshots to
+    <code>Screenshots\&lt;system&gt;\</code> (the plugin sets ares's folders when they are empty; a folder you chose in ares is kept). A game's files
+    left beside it by an older build move there at its next launch.</li>
+    <li>Each game's save files: a cartridge's <code>.ram</code>, <code>.eeprom</code>,
     <code>.flash</code>, <code>.rtc</code> (and the Super Famicom's <code>.iram</code>, <code>.bsx</code>, <code>.dram</code>), the Famicom Disk System's
     <code>.d1a</code>..<code>.d2b</code>, the 64DD's <code>.disk</code>, the Neo Geo Pocket's <code>.sav</code>, a tape's recording <code>.wav</code>, the
     PlayStation's memory card <code>.card</code> and the Nintendo 64's Controller Pak <code>.pak</code>.</li>
     <li>Each game its own console. ares keeps ONE backup RAM for the whole Mega CD, PC Engine (HuCard and CD) or LaserActive, and one
-    clock for the 64DD, in its <code>Systems\&lt;console&gt;.sys\</code> folder. The plugin gives each game its own: <code>&lt;game&gt;.bram</code>
-    beside its saves, put in place before ares starts and taken back when it quits. A game with no copy yet starts from the memory as it was
+    clock for the 64DD, in its saves folder (<code>Saves\Mega CD\Mega CD.bram</code>...). The plugin gives each game its own: <code>&lt;game&gt;.bram</code>
+    with its saves, put in place before ares starts and taken back when it quits. A game with no copy yet starts from the memory as it was
     before the plugin (kept once as <code>backup.ram.before-nixx</code>), so nothing already saved is lost. The 64DD's clock,
     <code>&lt;game&gt;.rtc</code>, is backed up and restored with the game's <code>.disk</code>.</li>
     <li>The Neo Geo Pocket's system RAM (language, clock) and the WonderSwan's owner profile are the console's settings, not a game's
@@ -127,7 +130,7 @@
     stay per disc.</li>
     <li>The Neo Geo's memory card is not kept by ares between sessions.</li>
     <li>Save states: <code>.bs1</code> to <code>.bs9</code>. ares ships no key for them: the plugin binds <kbd>F2</kbd> (save) and <kbd>F4</kbd> (load)
-    when they are empty, and LaunchBox's pause screen uses them. Each state gets a picture of the game beside it,
+    when they are empty, and LaunchBox's pause screen uses them. Each state gets a picture of the game next to it,
     <code>Zelda.bs1.png</code>, kept with it in LaunchBox's backups.</li>
   </ul>
 </section>
@@ -139,7 +142,7 @@
     <code>&lt;game&gt;.cue</code> beside it, once. A cooked (2048-byte) ISO has no CD audio tracks - and on the PlayStation no XA sound or video sectors -
     so a game may play without its music, or not at all: a <code>.bin/.cue</code> or <code>.chd</code> dump is the safe choice.</li>
     <li>ares reads <code>.zip</code>, <code>.cue</code> and <code>.chd</code>; a cartridge in a <code>.7z</code> is unpacked by the plugin into
-    <code>Emulators\Nixx-ares\Unpacked</code>, where its saves and states then live; a disc in one is refused. A <code>.m3u</code> starts on its first disc - ares has no playlists.</li>
+    <code>Emulators\Nixx-ares\Unpacked</code>; a disc in one is refused. A <code>.m3u</code> starts on its first disc - ares has no playlists.</li>
     <li>To change discs (PlayStation, Mega CD): leave full screen, then <b>PlayStation</b> (or <b>Mega CD</b>) <b>&gt; Change Disc</b> - the file dialog opens in the game's folder. The PC Engine CD has no disc change in ares.</li>
     <li>Satellaview and Sufami Turbo games need two cartridges at once: not handled yet.</li>
   </ul>

@@ -206,6 +206,8 @@ namespace LbIntegrations.Ares
                 if (!File.Exists(exe)) return new EmulatorInstallResponse("ares was extracted to " + targetDir + " but " + AresLaunch.ExecutableName + " is not there.");
                 AresBuild.Stamp(targetDir, release.Version);
                 Log.Info("installed ares " + release.Version + " to " + targetDir);
+                // Its saves, states and screenshots in its own folders, never beside the games (AresSavePaths).
+                AresSavePaths.Ensure(exe);
 
                 // Every BIOS the user already has, given to ares now - see AresFirmware.
                 Report(args, "Looking for the BIOS files...", null);
@@ -355,6 +357,9 @@ namespace LbIntegrations.Ares
             }
 
             AresLaunch.PrepareSettings(exe, gameId);
+            // Saves and states in the emulator's folders (Mehdi, 07/10), and this game's still beside it moved there.
+            AresSavePaths.Ensure(exe);
+            AresSavePaths.Migrate(exe, system, rom);
             // The game's own console memory and memory card, put in place - taken back when ares quits.
             AresConsoleSession.Begin(exe, system, rom, played);
             // A PNG of the screen beside each state ares writes (Zelda.bs1 -> Zelda.bs1.png).
