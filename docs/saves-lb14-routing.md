@@ -167,7 +167,10 @@ Not ours to change: LaunchBox's (`pcsx2:…`, `saturn-…`, RetroArch GUIDs) and
 migration (no user base), but existing rows keep their id: start from a cleaned XML. Nothing that has to change over a
 save's life goes in the id - only what identifies it and, frozen at creation, where it came from.
 
-Still open: the slot numbering (keep the emulator's), `sys` everywhere or only where needed, extension in `id` or apart.
+Decided (Mehdi, 08/10): `slot` is the emulator's own number; `sys` only where a plugin has several systems; the
+extension stays in `id`. **One serializer** writes every id - the key order of the schema, never reordered, no
+whitespace, numbers as plain integers, the same escapes - so two identical states always give the same string
+(LaunchBox and LiteBox compare the string, never the JSON).
 
 ## 4. Defects found in our plugins (read, not reproduced)
 
@@ -179,7 +182,35 @@ Still open: the slot numbering (keep the emulator's), `sys` everywhere or only w
   ids.
 - SUPER ZSNES: the restore folder is derived from the name inside the id (an old backup restores into the old name's
   folder).
-- SUPER ZSNES writes `<game>.data.szsnes\` beside the game (against "nothing beside the game").
+- Our plugins resolve a restore's target from the game's path and ignore the row's version.
+- (Not a defect: SUPER ZSNES writes into `Emulators\Nixx-SuperZSNES\saves` and `\states`; the `.data.szsnes\` folders
+  beside two games are leftovers of 01/10, before that setting.)
+
+## 4b. The plan (decided 08/10)
+
+Decisions: **D1** LiteBox moves to .NET 10 / the LaunchBox 14 SDK only (the .NET 9 build dropped), the plugins with it -
+a preliminary step of its own. **D2** the shared machinery lives in one plugin, **Nixx-Saves**. **D3** the stock
+integrations' ids are translated to our JSON while LaunchBox runs; uninstalling through the setup puts their original
+form back in the XML. **D4** no `.<plugin>save` archives for now. **D5** as above. **D6** a stock integration without
+save support (ScummVM, RPCS3, DuckStation, MAME, Cemu, xemu, BigPEmu) answers `SupportsSaveManagement` true for a
+platform as soon as ANY save-capable plugin - ours or stock - covers that platform.
+
+| Lot | What | Done when |
+|---|---|---|
+| 0 | LiteBox net10-only on SDK 14.0.1.2; the plugins net10 on that SDK (init-only rows built in one initializer; `EmulatorFileName`, `EmulatorCore`, `SupportsSaveManagement`, `TryComputeSaveSignature`, `TryGetSaveGroupInfo`, `GetPotentialSaveSlots` available) | every plugin and LiteBox build and load on LB14 and LiteBox; probes green |
+| 1 | `Shared.Saves`: `SaveId` (the one serializer + parser, `native` field for translated ids), `RomPrint`, the registry (exe → owning plugin, ours and stock), a base for our plugins (`IsOurs`, persisted match by id, restore target from `ver`/`game` and the current path, untie a version on its game's file, cheap `IsSaveActive`) | probe self-tests: round trip, awkward characters, same state = same string |
+| 2 | The 13 plugins on JSON ids through the base, with the per-plugin fixes of §4; start from a cleaned XML | one real game per plugin: save, close, vault, restore |
+| 3 | Nixx-Saves, case "the game's emulator is ours": the game's plugin lists every other save-capable plugin's saves for the game (ours AND stock, through the registry), and every call on a row goes to its owner (`EmulatorFileName` + `EmulatorCore`) | Zelda on SUPER ZSNES: an ares save (Launch With) and the RetroArch .srm both listed, backed up at close, each restored into its own emulator's folder |
+| 4 | Harmony on RetroArch, Dolphin, PCSX2: add the other plugins' rows to their `GetSaves`, route foreign rows, **translate their own ids to JSON** (`native` keeps the original, so the way back is exact); a row with no native id (RetroArch's generic saves) gets a JSON id whose way back is a fresh GUID per group; methods found by name and signature, missing = do nothing and log; a switch file turns it off | Zelda on RetroArch with an ares save; Atlantis translated both ways (done once with the probe, 07/10) |
+| 5 | The stock integrations without save support, through the SDK's default bodies, under D6 | a PS1 game on DuckStation with a RetroArch and a Nixx save |
+| 6 | The catch-all in Nixx-Saves: claims the emulators nobody claims (stock and pack exe names excluded), passes the launch through untouched, offers nothing in the emulator screens | FakeEmu: launch and Edit Emulator unchanged, its game's saves managed |
+| 7 | The setup: on uninstall, LaunchBox closed, rows whose id is a translated JSON get their `native` id back (or a fresh GUID per group when there was none), in every platform XML, after a backup | install → play → uninstall → the XML holds only stock formats, Game Saves as before |
+| 8 | LiteBox: Nixx-Saves's layers off when the host is LiteBox (it asks every plugin itself); read our JSON (`entry` for defect 4, `ver` for the version view); fix defects 5-9 of the audit; optionally its own ids in JSON (defects 1-3) | LiteBox self-tests (EntrySaveSelfTest, RommSelfTest) + the games of lots 2-3 |
+| 9 | Nothing beside the game: SUPER ZSNES leftovers, ares's hidden `.cue` beside an `.iso`, melonDS states, bsnes, the rest | no write in a games folder on a play of each plugin |
+| 10 | The sandbox removed (§6), help pages, this document, the LaunchBox bug report followed, then the release with Mehdi | |
+
+Order: lot 0, then 1 → 2 → 3 (the main case). Lots 4, 5, 6 independent of each other; 7 right after 4; 8 can start once
+the JSON format of lot 1 is frozen.
 
 ## 5. The bug report (draft for LaunchBox, stock integrations only)
 
