@@ -133,9 +133,36 @@ out. `emu` the plugin (`xbox` for the id xemu and Cxbx share), `kind` (`save`, `
 | xemu + Cxbx | `cxbx:4d530064` / `xemustate:4d530064:1` | `{"emu":"xbox","kind":"save","by":"title","id":"4D530064"}` / `{"emu":"xemu","kind":"state","by":"title","id":"4D530064","slot":1}` (slot from the snapshot's NAME) |
 | Vita3K | `vita3k:title:PCSE00000` | `{"emu":"vita3k","kind":"save","by":"title","id":"PCSE00000"}` |
 
+**The original game, recorded in the id (Mehdi, 08/10).** A row keeps the id it was created with (measured, test 7), so
+the id is also where the save's origin is kept - no extra file (no index, no sidecar, no stream). Three more keys,
+written once at creation:
+
+- `game`: the LaunchBox game's GUID; `ver`: the additional version's GUID when the save belongs to one, else left out;
+- `rom`: `{"size":…,"head":"<CRC32 of the first MB>","tail":"<CRC32 of the last MB>"}` of **the file LaunchBox
+  launches**, as it is on disk - the version's `ApplicationPath` if the save belongs to a version, else the game's. An
+  archive is fingerprinted as the archive: nothing is opened or unpacked. No creation date (it changes with every copy).
+
+```
+{"emu":"ares","kind":"save","sys":"Super Famicom","by":"name","id":"Zelda (France).ram","game":"2cf24c23-…","rom":{"size":1048576,"head":"9A1C…","tail":"44E0…"}}
+```
+
+What they are for:
+- **Restore**: `AddSaveFile` gets the row and its id. The plugin takes the CURRENT path of the version (`ver`) or the game
+  (`game`) and writes the save under the name the emulator expects today, even after a rename; a `rom` that differs from
+  that file only warns ("this save comes from another file"). Today our plugins resolve the target from the game's path
+  and ignore the row's version - to fix.
+- **Never to match**: the listing still matches by name/path; when the rom changes, the listing's id differs, LaunchBox
+  falls back to the path and keeps the original id - the card and its history stay together.
+- **A version on the same file as its game**: the save is NOT tied to the version (`AdditionalApplicationId` left
+  empty, in our `GetSaves`, and through Harmony for RetroArch). It is the same file, nothing is lost, and LaunchBox's
+  "Can't find the game" defect is avoided (test 9b: untied, the Atlantis restore went through).
+- **A renamed rom is not followed at launch**: no way, through the SDK, to read LaunchBox's save rows before a launch.
+  The old save is not lost (its card keeps it) and a Restore puts it under the new name. LiteBox, which does the
+  renaming, can follow it.
+
 Not ours to change: LaunchBox's (`pcsx2:…`, `saturn-…`, RetroArch GUIDs) and LiteBox's (`entry:…`, `unit:…`). No
-migration (no user base), but existing rows keep their id: start from a cleaned XML. Data that changes (files' roles,
-fingerprints, versions) goes in a manifest inside a `.<plugin>save` archive, never in the id.
+migration (no user base), but existing rows keep their id: start from a cleaned XML. Nothing that has to change over a
+save's life goes in the id - only what identifies it and, frozen at creation, where it came from.
 
 Still open: the slot numbering (keep the emulator's), `sys` everywhere or only where needed, extension in `id` or apart.
 
