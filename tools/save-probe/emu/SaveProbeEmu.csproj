@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The fake emulator of the save probe: built twice, SaveProbeMain.exe and SaveProbeSecondary.exe (-p:Role=...). -->
+
+  <PropertyGroup>
+    <Role Condition="'$(Role)' == ''">Main</Role>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>SaveProbe$(Role)</AssemblyName>
+    <RootNamespace>SaveProbeEmu</RootNamespace>
+    <BaseIntermediateOutputPath>obj\$(Role)\</BaseIntermediateOutputPath>
+    <OutputPath>bin\$(Role)\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="obj\**;bin\**" />
+  </ItemGroup>
+
+</Project>

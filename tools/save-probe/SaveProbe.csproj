@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A test plugin, never shipped: what LaunchBox calls on an emulator plugin's save methods, and when (Mehdi, 07/10).
+       Built twice - -p:Role=Main and -p:Role=Secondary - so one can be a game's emulator and the other the one
+       "Launch With" picks. See README.md. -->
+
+  <PropertyGroup>
+    <Role Condition="'$(Role)' == ''">Main</Role>
+    <OutputType>Library</OutputType>
+    <!-- LaunchBox 14 runs on .NET 10 and its SDK (14.0.1.2) references System.Runtime 10: net10, against THAT SDK. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>SaveProbe$(Role)</AssemblyName>
+    <RootNamespace>LbIntegrations.SaveProbe$(Role)</RootNamespace>
+    <DefineConstants>$(DefineConstants);ROLE_$(Role.ToUpperInvariant())</DefineConstants>
+    <BaseIntermediateOutputPath>obj\$(Role)\</BaseIntermediateOutputPath>
+    <OutputPath>bin\$(Role)\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <LbCore Condition="'$(LbCore)' == ''">G:\LB1326\Core</LbCore>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="SaveProbePlugin.cs" />
+    <Compile Include="SaveProbeObserver.cs" Condition="'$(Role)' == 'Main'" />
+    <Compile Include="SaveProbeTranslator.cs" Condition="'$(Role)' == 'Main'" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(Role)' == 'Main'">
+    <!-- The observer of LaunchBox's own plugins (RetroArch, Dolphin, PCSX2, the SDK's defaults): log only. -->
+    <PackageReference Include="Lib.Harmony" Version="2.4.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Unbroken.LaunchBox.Plugins">
+      <HintPath>$(LbCore)\Unbroken.LaunchBox.Plugins.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

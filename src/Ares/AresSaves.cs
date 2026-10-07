@@ -151,17 +151,25 @@ namespace LbIntegrations.Ares
                 var found = new List<GameSaveBase>();
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var dm = PluginHelper.DataManager;
+                int games = args.Games?.Count ?? 0, apps = args.AdditionalApplications?.Count ?? 0;
                 foreach (var app in args.AdditionalApplications ?? (IReadOnlyCollection<IAdditionalApplication>)Array.Empty<IAdditionalApplication>())
                 {
                     var game = dm?.GetGameById(Safe(() => app.GameId));
-                    Collect(found, seen, exe, SystemOf(args.Emulator, Safe(() => app.GameId), Safe(() => game?.Platform), Safe(() => app.ApplicationPath)),
-                            Safe(() => app.ApplicationPath), Safe(() => app.GameId), Safe(() => app.Id));
+                    var system = SystemOf(args.Emulator, Safe(() => app.GameId), Safe(() => game?.Platform), Safe(() => app.ApplicationPath));
+                    int before = found.Count;
+                    Collect(found, seen, exe, system, Safe(() => app.ApplicationPath), Safe(() => app.GameId), Safe(() => app.Id));
+                    Trace("app \"" + Safe(() => app.Name) + "\" of \"" + Safe(() => game?.Title) + "\"", Safe(() => game?.Platform), Safe(() => app.ApplicationPath), exe, system, found.Count - before);
                 }
                 foreach (var game in args.Games ?? (IReadOnlyCollection<IGame>)Array.Empty<IGame>())
-                    Collect(found, seen, exe, SystemOf(args.Emulator, Safe(() => game.Id), Safe(() => game.Platform), Safe(() => game.ApplicationPath)),
-                            Safe(() => game.ApplicationPath), Safe(() => game.Id), null);
+                {
+                    var system = SystemOf(args.Emulator, Safe(() => game.Id), Safe(() => game.Platform), Safe(() => game.ApplicationPath));
+                    int before = found.Count;
+                    Collect(found, seen, exe, system, Safe(() => game.ApplicationPath), Safe(() => game.Id), null);
+                    Trace("game \"" + Safe(() => game.Title) + "\" (emulator " + (Safe(() => game.EmulatorId) is string e && e.Length > 0 ? Safe(() => dm?.GetEmulatorById(e)?.Title) ?? e : "none") + ")",
+                          Safe(() => game.Platform), Safe(() => game.ApplicationPath), exe, system, found.Count - before);
+                }
 
-                Log.Verbose("found " + found.Count + " file(s) for " + exe);
+                Log.Info("GetSaves: " + games + " game(s), " + apps + " app(s) asked, " + found.Count + " file(s) found for " + exe);
                 return new GetSavesResponse(found);
             }
             catch (Exception ex)
@@ -171,6 +179,19 @@ namespace LbIntegrations.Ares
             }
         }
 
+        /// <summary>One line per game a listing asks for (07/10: LaunchBox's listings answered 0 for games whose files
+        /// were there - which game it asks, as what, where it was looked for).</summary>
+        private static void Trace(string what, string platform, string rawPath, string exe, AresSystem system, int found)
+        {
+            try
+            {
+                var rom = string.IsNullOrWhiteSpace(rawPath) ? null : ResolveFullPath(rawPath);
+                var where = system == null || rom == null ? "-" : string.Join(" ; ", FoldersFor(exe, rom, system).SaveDirs.Concat(FoldersFor(exe, rom, system).StateDirs).Distinct(StringComparer.OrdinalIgnoreCase));
+                Log.Info("  " + what + " [" + (platform ?? "no platform") + "] path \"" + rawPath + "\" -> " + (rom ?? "-") + (rom != null && !File.Exists(rom) ? " (MISSING)" : "")
+                         + ", system " + (system?.Name ?? "NONE") + ", looked in " + where + ": " + found);
+            }
+            catch (Exception ex) { Log.Info("  " + what + ": trace failed - " + ex.Message); }
+        }
         internal static void Collect(List<GameSaveBase> into, HashSet<string> seen, string exe, AresSystem system, string romPath, string gameId, string appId)
         {
             if (system == null || string.IsNullOrWhiteSpace(gameId) || string.IsNullOrWhiteSpace(romPath)) return;
