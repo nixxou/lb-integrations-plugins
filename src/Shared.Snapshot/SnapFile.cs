@@ -12,8 +12,8 @@
 //   stored    no compression, on the writer and on each entry
 //   no zip64  one less extra field to vary
 //
-// Stored rather than a pinned compression level, for a reason worth keeping: this targets net9.0 and
-// .NET 9 moved to zlib-ng, so the same bytes deflated by two runtimes are not the same bytes. Storing
+// Stored rather than a pinned compression level, for a reason worth keeping: this targets net10.0 and
+// since .NET 9 the runtime moved to zlib-ng, so the same bytes deflated by two runtimes are not the same bytes. Storing
 // removes the variable instead of pinning it. At these sizes it costs nothing.
 //
 // SharpCompress rather than System.IO.Compression, deliberately: it is pinned and ILRepack folds it

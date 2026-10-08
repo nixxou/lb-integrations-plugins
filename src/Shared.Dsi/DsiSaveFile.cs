@@ -19,7 +19,7 @@
 //   dated      one constant, 1980-01-01 - the source's own timestamps are never read
 //   stored     no compression at all
 //
-// STORED RATHER THAN A FIXED COMPRESSION LEVEL. This assembly targets net9.0-windows, and .NET 9
+// STORED RATHER THAN A FIXED COMPRESSION LEVEL. This assembly targets net10.0-windows, and since .NET 9 the runtime
 // moved to zlib-ng: the same bytes deflated by two runtimes are not the same bytes. Storing removes
 // the variable instead of pinning it. The cost is nothing at this size - a measured state is about
 // 70 KB, the largest seen 4.2 MB - and the one bulky member, base.zip, is already compressed.

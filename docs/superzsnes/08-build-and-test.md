@@ -2,7 +2,7 @@
 
 ## Prérequis
 
-- .NET SDK 9 ou 10 (le pack cible net9.0-windows ; le plugin BepInEx cible net6.0 pour le runtime
+- .NET SDK 10 (le pack cible net10.0-windows depuis le 08/10 ; le plugin BepInEx cible net6.0 pour le runtime
   6.0.7 embarqué par BepInEx ; le SDK 10 le compile avec un avertissement NETSDK1138 sans
   conséquence).
 - `dotnet tool restore` à la racine (ILRepack).

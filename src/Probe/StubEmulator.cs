@@ -30,6 +30,10 @@ namespace LbIntegrations.Probe
         public bool NoSpace { get; set; }
         public bool UseStartupScreen { get; set; }
         public int StartupLoadDelay { get; set; }
+        // Added to IEmulator by the LaunchBox 14 SDK.
+        public bool ForceFrontendFocusOnShutdown { get; set; }
+        public bool MonitorStartupShutdownWithProcess { get; set; }
+        public int StartupScreenPostLaunchDisplayTime { get; set; }
 
         public string AutoHotkeyScript { get; set; }
         public string ExitAutoHotkeyScript { get; set; }

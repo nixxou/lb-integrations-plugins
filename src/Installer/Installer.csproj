@@ -2,8 +2,9 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <!-- net9 here for the same reason the plugins use it, plus one of its own: this exe ships its
-         own runtime, so the only thing the target machine has to have is Windows. -->
+    <!-- net9, left there when the plugins moved to net10 (08/10): this exe references neither the SDK nor a plugin
+         (it carries their DLLs as resources), and it ships its own runtime, so the only thing the target machine has to
+         have is Windows. -->
     <TargetFramework>net9.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>NixxIntegrations</AssemblyName>

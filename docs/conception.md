@@ -181,7 +181,7 @@ toutes les dépendances dans l'assembly et rend leurs types `internal`. Mesuré 
 la table de références du résultat ne contient **qu'une entrée non-framework** :
 
 ```
-Unbroken.LaunchBox.Plugins 13.27.0.0
+Unbroken.LaunchBox.Plugins 14.0.1.2
 ```
 
 Il ne reste donc rien à résoudre, pas même un nom. `/internalize` vaut mieux qu'un renommage

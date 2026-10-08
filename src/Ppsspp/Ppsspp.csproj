@@ -2,9 +2,9 @@
 
   <PropertyGroup>
     <OutputType>Library</OutputType>
-    <!-- net9 and not net10: a net9 assembly loads on the .NET 9 runtime (LaunchBox 13.27)
-         AND on .NET 10 (13.28+, 14), so one build covers every host. -->
-    <TargetFramework>net9.0-windows</TargetFramework>
+    <!-- net10: LaunchBox 14 runs on .NET 10 and its SDK (vendor\, 14.0.1.2) references
+         System.Runtime 10, so a net9 build no longer compiles against it. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
     <Platforms>AnyCPU;x64</Platforms>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
@@ -19,7 +19,7 @@
     <!-- true so the CHD libraries land in bin\ for the merge step below. -->
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
-    <!-- MSB3277: the vendored 13.27 SDK and a host's newer one differ in version; that is the
+    <!-- MSB3277: the vendored 14.0.1.2 SDK and a host's newer one differ in version; that is the
          point of Private=false, so the warning is noise. -->
     <MSBuildWarningsAsMessages>MSB3277</MSBuildWarningsAsMessages>
   </PropertyGroup>

@@ -1222,7 +1222,7 @@ file save by hashing its bytes, so an archive that came out different from ident
 make the freshness dot flicker at every launch. Three rules settle it - entries sorted by name, one
 constant timestamp, no compression at all - and the probe packs the same content twice, in two
 orders, from files stamped years apart, and requires the same sha256. Stored rather than a fixed
-compression level because this assembly targets `net9.0-windows` and .NET 9 moved to zlib-ng: pinning
+compression level because this assembly targets `net10.0-windows` and since .NET 9 the runtime moved to zlib-ng: pinning
 the level would not pin the bytes. The writer is SharpCompress, pinned at 0.41.0 and merged into the
 DLL, so its header layout ships with us instead of coming from whatever runtime the host is on.
 
