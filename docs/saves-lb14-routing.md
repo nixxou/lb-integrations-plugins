@@ -114,6 +114,20 @@ row's emulator (reflection; refused and logged if a function is gone). **A futur
 (Mehdi, 08/10) shares the exe name with the stock one: never route on the exe name alone (PCSX2's way), never on the
 game's emulator alone (RetroArch's and Dolphin's); the owner comes from the id (`retroarch` vs `lb.retroarch`), the
 exact emulator from `EmulatorCore` + platform.
+### Restoring a state: the slot (measured 08/10, the save probe on "SaveProbe Test")
+
+- The slot list is `GetPotentialSaveSlots()` of the plugin of the GAME's emulator, asked at each restore (`RestoreSaveCommand`), never cached. It takes no argument: a state owned by another emulator gets the front desk's list (Zelda: SUPER ZSNES's 0-9 for an ares state, ares numbers 1-9).
+- **An empty list refuses every state restore** ("The emulator for this game/app doesn't appear to support save state restoration!"), the plugin is not called. Today: xemu and bsnes, whose lists are empty.
+- The picker shows the list's LABELS and preselects its FIRST entry - not the backup's slot.
+- The pick arrives as `SaveToAdd.Slot`; the rest of the row is the backup's, its id included. -1 is passed as is.
+- A tile shows "Slot " + the row's `Slot` KEY, never the label; -1 shows "Slot Auto". Hence PPSSPP's "Slot 0" for its "1".
+- After a restore the tile shows the returned row's `Slot` at once. Returned with the picked slot and the id recomputed for it, a new tile appears for that slot and the backup's own tile is untouched - coherent.
+- The confirmation ("Promote this backup...") comes BEFORE the slot picker; `ShouldOverwriteFunc` then answers true without asking anything.
+- **The precautionary copy is of the backup's own tile, not of the destination.** Restored into another, occupied slot, the destination's state is overwritten with no copy kept (seen: slot 1 overwritten, saved only because an identical vault copy existed from 07/10). RetroArch and Dolphin, which honour the pick, have the same hole.
+- With a content signature (the probe's), a live file changed behind LaunchBox's back is seen when Game Saves is reopened; without one (our plugins) it was not, until a restart.
+
+The stock integrations: RetroArch and Dolphin list Auto (-1) and 0-9 and honour the pick (`.state<n>` / `<disc>.s<NN>` - Dolphin's Auto would make `.s-01`, not measured); RetroArch's states have no id, Dolphin drops it on the returned row; PCSX2 lists no slot (so, per the above, its states cannot be restored).
+Our plugins before the fix: ares, SUPER ZSNES, RASnes9x, Flycast, melonDS write the backup's own name (the pick ignored) and return the PICKED slot with the backup's id - three slots disagreeing; PPSSPP takes the slot from the id; xemu honours the pick; xemu and bsnes list nothing.
 ### LaunchBox defects met
 
 - A save tied to an additional application (Atlantis, "Play (FR) (Disc 1)"): **Backup Save** fails with "Can't find the
