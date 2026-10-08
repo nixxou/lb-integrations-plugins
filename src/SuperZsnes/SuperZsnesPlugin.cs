@@ -28,7 +28,7 @@ using LbIntegrations.Lbip;
 
 namespace LbIntegrations.SuperZsnes
 {
-    public partial class SuperZsnesPlugin : NixxSavePlugin, ISystemEventsPlugin, ILbCatalogSource
+    public partial class SuperZsnesPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         private const string SnesPlatform = "Super Nintendo Entertainment System";
 
@@ -52,6 +52,8 @@ namespace LbIntegrations.SuperZsnes
 
         public SuperZsnesPlugin()
         {
+            // First: the save front desk registers this plugin for the others (Shared.Saves SaveDesk).
+            _desk = new SaveDesk(this, this, SaveEmu, SaveLog);
             Log.Info("plugin constructed, assembly " + typeof(SuperZsnesPlugin).Assembly.Location);
 
             // THE SHARED ROW INJECTION LEARNS WHOSE PLUGIN IT IS IN - see LbipLog.

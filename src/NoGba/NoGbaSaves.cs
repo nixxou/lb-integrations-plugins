@@ -40,9 +40,9 @@ namespace LbIntegrations.NoGba
 {
     public partial class NoGbaPlugin
     {
-        /// <summary>The front desk (Shared.Saves NixxSavePlugin): this plugin's emu, and where it logs.</summary>
-        protected override string SaveEmu => Emu;
-        protected override void SaveLog(string message) => Log.Info(message);
+        /// <summary>The front desk (Shared.Saves SaveDesk): this plugin's emu, and where it logs.</summary>
+        private string SaveEmu => Emu;
+        private void SaveLog(string message) => Log.Info(message);
 
         /// <summary>This plugin's "emu" in the ids (Shared.Saves, docs\saves-lb14-routing.md §3):
         /// {"emu":"nogba","kind":"save","by":"name","id":"<asset name>"}, and for a DSiWare save - which lives
@@ -64,7 +64,7 @@ namespace LbIntegrations.NoGba
         public override IReadOnlyDictionary<int, string> GetPotentialSaveSlots()
             => new Dictionary<int, string>();
 
-        protected override GetSavesResponse OwnGetSaves(GetSavesArgs args)
+        GetSavesResponse IOwnSaves.OwnGetSaves(GetSavesArgs args)
         {
             try
             {
@@ -232,31 +232,31 @@ namespace LbIntegrations.NoGba
         // ── the contract ─────────────────────────────────────────────────────
 
         /// <summary>A cartridge save is one file, never a folder of parts.</summary>
-        protected override bool OwnIsSaveContainer(GameSaveBase save) => false;
+        bool IOwnSaves.OwnIsSaveContainer(GameSaveBase save) => false;
 
-        protected override bool OwnUseSaveGroupIdForPersistedMatch(GameSaveBase save) => IsOurs(save);
+        bool IOwnSaves.OwnUseSaveGroupIdForPersistedMatch(GameSaveBase save) => IsOurs(save);
 
         /// <summary>Guarded rather than decorative: saying a save is a container is a promise that
         /// TryBackupSave can extract it, and the host takes that literally - it makes a destination
         /// folder, asks, and records a backup from whatever appears. Refusing here would leave an
         /// empty folder and no backup. IsSaveContainer answers false, so this is never reached.</summary>
-        protected override bool OwnTryBackupSave(GameSaveBase save, string emulatorApplicationPath,
+        bool IOwnSaves.OwnTryBackupSave(GameSaveBase save, string emulatorApplicationPath,
                                            string destinationFolder, out string error)
         {
             error = "A no$gba cartridge save is one file, not a container.";
             return false;
         }
 
-        protected override bool OwnIsSecondarySaveFile(string filePath) => false;
+        bool IOwnSaves.OwnIsSecondarySaveFile(string filePath) => false;
 
         /// <summary>None. See the header: a companion here would cost the save its interoperability
         /// with every other DS emulator for no gain.</summary>
-        protected override IReadOnlyList<string> OwnGetCompanionSaveFiles(string primaryFilePath)
+        IReadOnlyList<string> IOwnSaves.OwnGetCompanionSaveFiles(string primaryFilePath)
             => Array.Empty<string>();
 
         /// <summary>Is this save where no$gba would actually read it? There is exactly one place it
         /// can be, so this only has to notice a copy that has wandered out of it.</summary>
-        protected override bool OwnIsSaveActive(GameSaveBase save, string emulatorApplicationPath)
+        bool IOwnSaves.OwnIsSaveActive(GameSaveBase save, string emulatorApplicationPath)
         {
             try
             {
@@ -284,7 +284,7 @@ namespace LbIntegrations.NoGba
 
         // ── restore ──────────────────────────────────────────────────────────
 
-        protected override AddSaveResponse OwnAddSaveFile(AddSaveArgs args)
+        AddSaveResponse IOwnSaves.OwnAddSaveFile(AddSaveArgs args)
         {
             try
             {
@@ -369,11 +369,11 @@ namespace LbIntegrations.NoGba
 
         // ── delete ───────────────────────────────────────────────────────────
 
-        protected override PluginResponse OwnRemoveSave(GameSaveBase save)
+        PluginResponse IOwnSaves.OwnRemoveSave(GameSaveBase save)
         {
             try
             {
-                if (!IsOurs(save)) return base.OwnRemoveSave(save);
+                if (!IsOurs(save)) return base.RemoveSave(save);
 
                 // A DSiWARE SAVE IS OURS TO DELETE PROPERLY: the file, the title's folder and the
                 // working image when it still holds the same title. Deleting the file alone would

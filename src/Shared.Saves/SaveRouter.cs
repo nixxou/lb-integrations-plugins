@@ -181,8 +181,13 @@ namespace LbIntegrations.Saves
 
         private static IReadOnlyCollection<IEmulator> Library()
         {
-            try { return PluginHelper.DataManager?.GetAllEmulators()?.Where(e => e != null).ToList() ?? new List<IEmulator>(); }
-            catch { return new List<IEmulator>(); }
+            try
+            {
+                var dm = PluginHelper.DataManager;
+                if (dm == null) { Once("library: no DataManager"); return new List<IEmulator>(); }
+                return dm.GetAllEmulators()?.Where(e => e != null).ToList() ?? new List<IEmulator>();
+            }
+            catch (Exception ex) { Once("library unreadable: " + ex.GetType().Name + ": " + ex.Message); return new List<IEmulator>(); }
         }
 
         private static readonly Regex Core = new Regex(@"-L\s+""?(?:[^""\s]*[\\/])?(?<core>[^""\\/\s]+?)(?:\.dll)?""?(?:\s|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
@@ -318,9 +323,10 @@ namespace LbIntegrations.Saves
         public static List<GameSaveBase> OthersFor(EmulatorPlugin self, GetSavesArgs args, IReadOnlyCollection<GameSaveBase> own)
         {
             var found = new List<GameSaveBase>();
-            if (!Active || _inner > 0 || args == null) return found;
+            if (!Active || _inner > 0 || args == null) { Once("others not asked: active=" + Active + " nested=" + (_inner > 0) + " args=" + (args != null)); return found; }
             var games = (args.Games ?? Array.Empty<IGame>()).Where(g => g != null).ToList();
             var apps = (args.AdditionalApplications ?? Array.Empty<IAdditionalApplication?>()).Where(a => a != null).Select(a => a!).ToList();
+            Once("first listing: " + games.Count + " game(s), " + apps.Count + " version(s), " + Library().Count + " emulator(s) in the library");
             if (games.Count == 0 && apps.Count == 0) return found;
             var selfId = Safe(() => args.Emulator?.Id);
             var mine = new HashSet<string>(own.Select(r => Safe(() => r.FileLocation) ?? "").Where(p => p.Length > 0), StringComparer.OrdinalIgnoreCase);
@@ -372,6 +378,10 @@ namespace LbIntegrations.Saves
         }
 
         private static void Say(string message) { try { Log?.Invoke("[saves] " + message); } catch { } }
+
+        private static readonly ConcurrentDictionary<string, bool> _said = new(StringComparer.Ordinal);
+        /// <summary>A diagnostic said once per process (the listing runs over the whole library).</summary>
+        private static void Once(string message) { if (_said.TryAdd(message.Split(':')[0], true)) Say(message); }
 
         private static T? Safe<T>(Func<T> f) { try { return f(); } catch { return default; } }
     }

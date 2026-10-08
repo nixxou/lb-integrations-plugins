@@ -22,7 +22,7 @@ using LbIntegrations.Lbip;
 
 namespace LbIntegrations.RaSnes9x
 {
-    public partial class RaSnes9xPlugin : NixxSavePlugin, ISystemEventsPlugin, ILbCatalogSource
+    public partial class RaSnes9xPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         internal const string SnesPlatform = "Super Nintendo Entertainment System";
 
@@ -41,6 +41,8 @@ namespace LbIntegrations.RaSnes9x
 
         public RaSnes9xPlugin()
         {
+            // First: the save front desk registers this plugin for the others (Shared.Saves SaveDesk).
+            _desk = new SaveDesk(this, this, SaveEmu, SaveLog);
             Log.Info("plugin constructed, assembly " + typeof(RaSnes9xPlugin).Assembly.Location);
             LbipLog.Use(Log.Info, Log.Warn, Log.Disabled, () => Log.Tracing);
             // As early as possible: the patch only sees connections opened AFTER it is installed.

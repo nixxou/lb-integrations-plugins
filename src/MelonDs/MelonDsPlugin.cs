@@ -28,7 +28,7 @@ using LbIntegrations.RamDisk;
 
 namespace LbIntegrations.MelonDs
 {
-    public partial class MelonDsPlugin : NixxSavePlugin, ISystemEventsPlugin, ILbCatalogSource, IGameLaunchingPlugin
+    public partial class MelonDsPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource, IGameLaunchingPlugin
     {
         private const string Repo = "melonDS-emu/melonDS";
 
@@ -72,6 +72,8 @@ namespace LbIntegrations.MelonDs
         // never asked us" from "we answered badly" is to see which members it actually calls.
         public MelonDsPlugin()
         {
+            // First: the save front desk registers this plugin for the others (Shared.Saves SaveDesk).
+            _desk = new SaveDesk(this, this, SaveEmu, SaveLog);
             Log.Info("plugin constructed, assembly " + typeof(MelonDsPlugin).Assembly.Location);
 
             // THE SHARED ENGINE LEARNS WHOSE PLUGIN IT IS IN, first of all: it is compiled into

@@ -28,9 +28,9 @@ namespace LbIntegrations.Vita3k
 {
     public partial class Vita3kPlugin : IGameLaunchingPlugin
     {
-        /// <summary>The front desk (Shared.Saves NixxSavePlugin): this plugin's emu, and where it logs.</summary>
-        protected override string SaveEmu => Emu;
-        protected override void SaveLog(string message) => Log.Info(message);
+        /// <summary>The front desk (Shared.Saves SaveDesk): this plugin's emu, and where it logs.</summary>
+        private string SaveEmu => Emu;
+        private void SaveLog(string message) => Log.Info(message);
 
         /// <summary>This plugin's "emu" in the ids (Shared.Saves, docs\saves-lb14-routing.md §3):
         /// {"emu":"vita3k","kind":"save","by":"title","id":"<title id>"} - so a title id survives the round trip
@@ -531,7 +531,7 @@ namespace LbIntegrations.Vita3k
 
         public override bool SupportsSaveManagement() => true;
 
-        protected override GetSavesResponse OwnGetSaves(GetSavesArgs args)
+        GetSavesResponse IOwnSaves.OwnGetSaves(GetSavesArgs args)
         {
             try
             {
@@ -645,14 +645,14 @@ namespace LbIntegrations.Vita3k
 
         /// <summary>A .vitasav is one file. See the header, and the eight defects the container path
         /// produced next door.</summary>
-        protected override bool OwnIsSaveContainer(GameSaveBase save) => false;
+        bool IOwnSaves.OwnIsSaveContainer(GameSaveBase save) => false;
 
-        protected override bool OwnIsSecondarySaveFile(string filePath) => false;
+        bool IOwnSaves.OwnIsSecondarySaveFile(string filePath) => false;
 
-        protected override IReadOnlyList<string> OwnGetCompanionSaveFiles(string primaryFilePath)
+        IReadOnlyList<string> IOwnSaves.OwnGetCompanionSaveFiles(string primaryFilePath)
             => Array.Empty<string>();
 
-        protected override bool OwnIsSaveActive(GameSaveBase save, string emulatorApplicationPath)
+        bool IOwnSaves.OwnIsSaveActive(GameSaveBase save, string emulatorApplicationPath)
         {
             try
             {
@@ -668,7 +668,7 @@ namespace LbIntegrations.Vita3k
             catch { return false; }
         }
 
-        protected override AddSaveResponse OwnAddSaveFile(AddSaveArgs args)
+        AddSaveResponse IOwnSaves.OwnAddSaveFile(AddSaveArgs args)
         {
             try
             {
@@ -733,11 +733,11 @@ namespace LbIntegrations.Vita3k
             }
         }
 
-        protected override PluginResponse OwnRemoveSave(GameSaveBase save)
+        PluginResponse IOwnSaves.OwnRemoveSave(GameSaveBase save)
         {
             try
             {
-                if (TitleIdFrom(save) == null) return base.OwnRemoveSave(save);
+                if (TitleIdFrom(save) == null) return base.RemoveSave(save);
 
                 var path = Safe(() => save?.FileLocation);
                 if (string.IsNullOrWhiteSpace(path)) return new PluginResponse(false, "This save has no location.");

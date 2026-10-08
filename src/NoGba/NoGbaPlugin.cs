@@ -35,7 +35,7 @@ using LbIntegrations.Lbip;
 
 namespace LbIntegrations.NoGba
 {
-    public partial class NoGbaPlugin : NixxSavePlugin, ISystemEventsPlugin, ILbCatalogSource, IGameLaunchingPlugin
+    public partial class NoGbaPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource, IGameLaunchingPlugin
     {
         /// <summary>Spelled as Platforms.xml spells them - read out of the file rather than typed
         /// from memory. There is no DSi platform in LaunchBox's metadata, which is a problem for a
@@ -57,6 +57,8 @@ namespace LbIntegrations.NoGba
 
         public NoGbaPlugin()
         {
+            // First: the save front desk registers this plugin for the others (Shared.Saves SaveDesk).
+            _desk = new SaveDesk(this, this, SaveEmu, SaveLog);
             Log.Info("plugin constructed, assembly " + typeof(NoGbaPlugin).Assembly.Location);
 
             // THE SHARED DSi ENGINE LEARNS WHOSE PLUGIN IT IS IN, first of all: it is compiled into

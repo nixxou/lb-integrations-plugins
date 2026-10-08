@@ -210,10 +210,10 @@ namespace LbIntegrations.Probe
             Console.WriteLine();
             Console.WriteLine("  front desk (lot 3)");
             var ours = SaveId.Write(new SaveIdData { Emu = "ares", Kind = "save", By = "name", Id = "Zelda.srm" });
-            Check("our ids start with the plugin's prefix", ours.StartsWith(NixxSavePlugin.OwnPrefix("ares"), StringComparison.Ordinal));
+            Check("our ids start with the plugin's prefix", ours.StartsWith(SaveDesk.OwnPrefix("ares"), StringComparison.Ordinal));
             var longer = SaveId.Write(new SaveIdData { Emu = "aresx", Kind = "save", By = "name", Id = "Zelda.srm" });
-            Check("another emu that starts the same is not taken for ours", !longer.StartsWith(NixxSavePlugin.OwnPrefix("ares"), StringComparison.Ordinal));
-            Check("a translated id is not ours either", !SaveId.Write(new SaveIdData { Emu = "lb.retroarch", Kind = "save" }).StartsWith(NixxSavePlugin.OwnPrefix("ares"), StringComparison.Ordinal));
+            Check("another emu that starts the same is not taken for ours", !longer.StartsWith(SaveDesk.OwnPrefix("ares"), StringComparison.Ordinal));
+            Check("a translated id is not ours either", !SaveId.Write(new SaveIdData { Emu = "lb.retroarch", Kind = "save" }).StartsWith(SaveDesk.OwnPrefix("ares"), StringComparison.Ordinal));
             Check("the desk is on outside LiteBox", SaveRouter.Active);
 
             Check("core: LaunchBox's own line", SaveRouter.CoreIn("-L \"cores\\snes9x_libretro.dll\"") == "snes9x_libretro");

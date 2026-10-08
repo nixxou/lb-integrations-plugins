@@ -27,7 +27,7 @@ using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Xemu
 {
-    public partial class XemuPlugin : NixxSavePlugin, ISystemEventsPlugin, ILbCatalogSource
+    public partial class XemuPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         private const string Repo = "xemu-project/xemu";
         private const string TagPrefix = "v";                      // the stable releases - not the rolling "pre-release"
@@ -43,6 +43,8 @@ namespace LbIntegrations.Xemu
 
         public XemuPlugin()
         {
+            // First: the save front desk registers this plugin for the others (Shared.Saves SaveDesk).
+            _desk = new SaveDesk(this, this, SaveEmu, SaveLog);
             Log.Info("plugin constructed, assembly " + typeof(XemuPlugin).Assembly.Location);
             LbipLog.Use(Log.Info, Log.Warn, Log.Disabled, () => Log.Tracing);
             LbIntegrations.RamDisk.RamDiskLog.Use(Log.Info, (m, ex) => Log.Warn(m, ex));

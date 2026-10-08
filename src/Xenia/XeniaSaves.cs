@@ -33,9 +33,9 @@ namespace LbIntegrations.Xenia
 {
     public partial class XeniaPlugin
     {
-        /// <summary>The front desk (Shared.Saves NixxSavePlugin): this plugin's emu, and where it logs.</summary>
-        protected override string SaveEmu => Emu;
-        protected override void SaveLog(string message) => Log.Info(message);
+        /// <summary>The front desk (Shared.Saves SaveDesk): this plugin's emu, and where it logs.</summary>
+        private string SaveEmu => Emu;
+        private void SaveLog(string message) => Log.Info(message);
 
         /// <summary>This plugin's "emu" in the ids (Shared.Saves, docs\saves-lb14-routing.md §3):
         /// {"emu":"xenia","kind":"save","by":"title","id":"<TITLE ID>"}, a folder (a container).</summary>
@@ -51,7 +51,7 @@ namespace LbIntegrations.Xenia
 
         // ── listing ──────────────────────────────────────────────────────────
 
-        protected override GetSavesResponse OwnGetSaves(GetSavesArgs args)
+        GetSavesResponse IOwnSaves.OwnGetSaves(GetSavesArgs args)
         {
             try
             {
@@ -168,9 +168,9 @@ namespace LbIntegrations.Xenia
 
         // ── the container contract ───────────────────────────────────────────
 
-        protected override bool OwnIsSaveContainer(GameSaveBase save) => IsOurs(save);
+        bool IOwnSaves.OwnIsSaveContainer(GameSaveBase save) => IsOurs(save);
 
-        protected override bool OwnUseSaveGroupIdForPersistedMatch(GameSaveBase save) => IsOurs(save);
+        bool IOwnSaves.OwnUseSaveGroupIdForPersistedMatch(GameSaveBase save) => IsOurs(save);
 
         /// <summary>A file INSIDE a save must not become a save of its own - but the save itself must
         /// never be called secondary.
@@ -182,7 +182,7 @@ namespace LbIntegrations.Xenia
         /// for its own unit and has always displayed correctly - that contrast is what found this.
         ///
         /// Secondary means STRICTLY INSIDE: the 00000001 segment must be followed by another.</summary>
-        protected override bool OwnIsSecondarySaveFile(string filePath)
+        bool IOwnSaves.OwnIsSecondarySaveFile(string filePath)
         {
             try
             {
@@ -197,10 +197,10 @@ namespace LbIntegrations.Xenia
         }
 
         /// <summary>Nothing. The unit is a directory; companions are the sibling-FILES mechanism.</summary>
-        protected override IReadOnlyList<string> OwnGetCompanionSaveFiles(string primaryFilePath)
+        IReadOnlyList<string> IOwnSaves.OwnGetCompanionSaveFiles(string primaryFilePath)
             => Array.Empty<string>();
 
-        protected override bool OwnIsSaveActive(GameSaveBase save, string emulatorApplicationPath)
+        bool IOwnSaves.OwnIsSaveActive(GameSaveBase save, string emulatorApplicationPath)
         {
             try
             {
@@ -232,7 +232,7 @@ namespace LbIntegrations.Xenia
         /// what Argosy roots its archive at and the hash is computed over entry names. The headers go
         /// under `.litebox-plugin`, which LiteBox excludes from the hash and from the served zip - so
         /// they survive a backup without changing what the save fingerprints as.</summary>
-        protected override bool OwnTryBackupSave(GameSaveBase save, string emulatorApplicationPath,
+        bool IOwnSaves.OwnTryBackupSave(GameSaveBase save, string emulatorApplicationPath,
                                            string destinationFolder, out string error)
         {
             error = null;
@@ -261,7 +261,7 @@ namespace LbIntegrations.Xenia
         /// This MERGES rather than replaces, matching Argosy: their restore deletes nothing for Xbox
         /// 360, so a wipe-then-extract here would make the same upload settle differently on the two
         /// devices. Headers are put back from `.litebox-plugin` when the backup carries them.</summary>
-        protected override AddSaveResponse OwnAddSaveFile(AddSaveArgs args)
+        AddSaveResponse IOwnSaves.OwnAddSaveFile(AddSaveArgs args)
         {
             try
             {
@@ -363,11 +363,11 @@ namespace LbIntegrations.Xenia
 
         /// <summary>Must be overridden: the SDK default deletes the single path in FileLocation, which
         /// here is a directory it cannot remove.</summary>
-        protected override PluginResponse OwnRemoveSave(GameSaveBase save)
+        PluginResponse IOwnSaves.OwnRemoveSave(GameSaveBase save)
         {
             try
             {
-                if (!IsOurs(save)) return base.OwnRemoveSave(save);
+                if (!IsOurs(save)) return base.RemoveSave(save);
 
                 string loc = save?.FileLocation;
                 if (string.IsNullOrWhiteSpace(loc)) return new PluginResponse(false, "This save has no location.");

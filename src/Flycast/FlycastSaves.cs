@@ -63,9 +63,9 @@ namespace LbIntegrations.Flycast
 {
     public partial class FlycastPlugin
     {
-        /// <summary>The front desk (Shared.Saves NixxSavePlugin): this plugin's emu, and where it logs.</summary>
-        protected override string SaveEmu => Emu;
-        protected override void SaveLog(string message) => Log.Info(message);
+        /// <summary>The front desk (Shared.Saves SaveDesk): this plugin's emu, and where it logs.</summary>
+        private string SaveEmu => Emu;
+        private void SaveLog(string message) => Log.Info(message);
 
         /// <summary>This plugin's "emu" in the ids (Shared.Saves).</summary>
         private const string Emu = "flycast";
@@ -109,7 +109,7 @@ namespace LbIntegrations.Flycast
 
         // ── listing ──────────────────────────────────────────────────────────
 
-        protected override GetSavesResponse OwnGetSaves(GetSavesArgs args)
+        GetSavesResponse IOwnSaves.OwnGetSaves(GetSavesArgs args)
         {
             try
             {
@@ -420,13 +420,13 @@ namespace LbIntegrations.Flycast
         /// <summary>Nothing here is a container: a VMU is one file, an arcade set is sibling files, a
         /// state is one file. Saying otherwise would make the host ask TryBackupSave to extract
         /// something that does not exist.</summary>
-        protected override bool OwnIsSaveContainer(GameSaveBase save) => false;
+        bool IOwnSaves.OwnIsSaveContainer(GameSaveBase save) => false;
 
-        protected override bool OwnUseSaveGroupIdForPersistedMatch(GameSaveBase save) => IsOurs(save);
+        bool IOwnSaves.OwnUseSaveGroupIdForPersistedMatch(GameSaveBase save) => IsOurs(save);
 
         /// <summary>Guarded, not decorative: the host should never reach this, and if it does the honest
         /// answer is that there is nothing to extract.</summary>
-        protected override bool OwnTryBackupSave(GameSaveBase save, string emulatorApplicationPath,
+        bool IOwnSaves.OwnTryBackupSave(GameSaveBase save, string emulatorApplicationPath,
                                            string destinationFolder, out string error)
         {
             error = "A Flycast save is a plain file, not a container.";
@@ -440,7 +440,7 @@ namespace LbIntegrations.Flycast
         ///   - the per-machine NVRAM and BIOS, dc_nvmem.bin / naomi_boot.bin / ...
         ///   - the netplay and temporary states, .state.net and .state.tmp
         /// and, within an arcade set, every member that is not the primary.</summary>
-        protected override bool OwnIsSecondarySaveFile(string filePath)
+        bool IOwnSaves.OwnIsSecondarySaveFile(string filePath)
         {
             try
             {
@@ -488,7 +488,7 @@ namespace LbIntegrations.Flycast
         }
 
         /// <summary>The rest of an arcade set, and a state's thumbnail (StateThumb). A VMU has none: one file.</summary>
-        protected override IReadOnlyList<string> OwnGetCompanionSaveFiles(string primaryFilePath)
+        IReadOnlyList<string> IOwnSaves.OwnGetCompanionSaveFiles(string primaryFilePath)
         {
             try
             {
@@ -512,7 +512,7 @@ namespace LbIntegrations.Flycast
 
         /// <summary>Is this save in the folder the emulator is actually configured with? Each kind is
         /// judged against its own list, because emu.cfg can redirect them independently.</summary>
-        protected override bool OwnIsSaveActive(GameSaveBase save, string emulatorApplicationPath)
+        bool IOwnSaves.OwnIsSaveActive(GameSaveBase save, string emulatorApplicationPath)
         {
             try
             {
@@ -548,7 +548,7 @@ namespace LbIntegrations.Flycast
         /// The vault keeps Flycast's own file name, so the target name is simply that name in the
         /// right folder - no translation, and what lands is what was taken. Which folder depends on
         /// the kind, and the kind is carried by the group id.</summary>
-        protected override AddSaveResponse OwnAddSaveFile(AddSaveArgs args)
+        AddSaveResponse IOwnSaves.OwnAddSaveFile(AddSaveArgs args)
         {
             try
             {
@@ -629,11 +629,11 @@ namespace LbIntegrations.Flycast
 
         /// <summary>Delete the save. For an arcade set that means the whole set: the SDK default would
         /// remove the primary and orphan its siblings in the same folder.</summary>
-        protected override PluginResponse OwnRemoveSave(GameSaveBase save)
+        PluginResponse IOwnSaves.OwnRemoveSave(GameSaveBase save)
         {
             try
             {
-                if (!IsOurs(save)) return base.OwnRemoveSave(save);
+                if (!IsOurs(save)) return base.RemoveSave(save);
 
                 var loc = save?.FileLocation;
                 if (string.IsNullOrWhiteSpace(loc)) return new PluginResponse(false, "This save has no location.");

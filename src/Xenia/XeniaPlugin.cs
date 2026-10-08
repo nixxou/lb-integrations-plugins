@@ -26,7 +26,7 @@ using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Xenia
 {
-    public partial class XeniaPlugin : NixxSavePlugin, ISystemEventsPlugin, ILbCatalogSource
+    public partial class XeniaPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         private const string CanaryRepo = "xenia-canary/xenia-canary";
         private const string Xbox360Platform = "Microsoft Xbox 360";
@@ -43,6 +43,8 @@ namespace LbIntegrations.Xenia
         // never asked us" from "we answered badly" is to see which members it actually calls.
         public XeniaPlugin()
         {
+            // First: the save front desk registers this plugin for the others (Shared.Saves SaveDesk).
+            _desk = new SaveDesk(this, this, SaveEmu, SaveLog);
             Log.Info("plugin constructed, assembly " + typeof(XeniaPlugin).Assembly.Location);
 
             // THE SHARED ROW INJECTION LEARNS WHOSE PLUGIN IT IS IN. It is compiled into all

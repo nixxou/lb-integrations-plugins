@@ -24,13 +24,15 @@ using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Ares
 {
-    public partial class AresPlugin : NixxSavePlugin, ISystemEventsPlugin, ILbCatalogSource
+    public partial class AresPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         private const string DefaultCommandLine = "";
         internal const string PackName = "Nixx-ares";
 
         public AresPlugin()
         {
+            // First: the save front desk registers this plugin for the others (Shared.Saves SaveDesk).
+            _desk = new SaveDesk(this, this, SaveEmu, SaveLog);
             Log.Info("plugin constructed, assembly " + typeof(AresPlugin).Assembly.Location);
             LbipLog.Use(Log.Info, Log.Warn, Log.Disabled, () => Log.Tracing);
             LbipRowInjection.Install("com.nixxou.lbip.ares", MetadataRows());

@@ -31,7 +31,7 @@ using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Ppsspp
 {
-    public partial class PpssppPlugin : NixxSavePlugin, ISystemEventsPlugin, ILbCatalogSource
+    public partial class PpssppPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         private const string Repo = "hrydgard/ppsspp";
         private const string PspPlatform = "Sony PSP";       // exactly as LaunchBox's metadata db spells it
@@ -56,6 +56,8 @@ namespace LbIntegrations.Ppsspp
         // never asked us" from "we answered badly" is to see which members it actually calls.
         public PpssppPlugin()
         {
+            // First: the save front desk registers this plugin for the others (Shared.Saves SaveDesk).
+            _desk = new SaveDesk(this, this, SaveEmu, SaveLog);
             Log.Info("plugin constructed, assembly " + typeof(PpssppPlugin).Assembly.Location);
 
             // THE SHARED ROW INJECTION LEARNS WHOSE PLUGIN IT IS IN. It is compiled into all

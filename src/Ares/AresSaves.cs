@@ -48,9 +48,9 @@ namespace LbIntegrations.Ares
 {
     public partial class AresPlugin
     {
-        /// <summary>The front desk (Shared.Saves NixxSavePlugin): this plugin's emu, and where it logs.</summary>
-        protected override string SaveEmu => Emu;
-        protected override void SaveLog(string message) => Log.Info(message);
+        /// <summary>The front desk (Shared.Saves SaveDesk): this plugin's emu, and where it logs.</summary>
+        private string SaveEmu => Emu;
+        private void SaveLog(string message) => Log.Info(message);
 
         /// <summary>This plugin's "emu" in the ids (Shared.Saves).</summary>
         private const string Emu = "ares";
@@ -149,7 +149,7 @@ namespace LbIntegrations.Ares
 
         // ── listing ──────────────────────────────────────────────────────────
 
-        protected override GetSavesResponse OwnGetSaves(GetSavesArgs args)
+        GetSavesResponse IOwnSaves.OwnGetSaves(GetSavesArgs args)
         {
             try
             {
@@ -273,18 +273,18 @@ namespace LbIntegrations.Ares
 
         // ── the contract ─────────────────────────────────────────────────────
 
-        protected override bool OwnIsSaveContainer(GameSaveBase save) => false;
+        bool IOwnSaves.OwnIsSaveContainer(GameSaveBase save) => false;
 
-        protected override bool OwnUseSaveGroupIdForPersistedMatch(GameSaveBase save) => IsOurs(save);
+        bool IOwnSaves.OwnUseSaveGroupIdForPersistedMatch(GameSaveBase save) => IsOurs(save);
 
-        protected override bool OwnTryBackupSave(GameSaveBase save, string emulatorApplicationPath, string destinationFolder, out string error)
+        bool IOwnSaves.OwnTryBackupSave(GameSaveBase save, string emulatorApplicationPath, string destinationFolder, out string error)
         {
             error = "An ares save is one file, not a container.";
             return false;
         }
 
         /// <summary>The 64DD's clock beside its disk, a state's thumbnail beside it: part of their save, not saves of their own.</summary>
-        protected override bool OwnIsSecondarySaveFile(string filePath)
+        bool IOwnSaves.OwnIsSecondarySaveFile(string filePath)
         {
             try
             {
@@ -319,7 +319,7 @@ namespace LbIntegrations.Ares
 
         /// <summary>A 64DD disk's save takes its clock along (the game's copy of the console's time.rtc, AresConsoleSession):
         /// backed up and restored together, so the time the game sees goes on from the save's.</summary>
-        protected override IReadOnlyList<string> OwnGetCompanionSaveFiles(string primaryFilePath)
+        IReadOnlyList<string> IOwnSaves.OwnGetCompanionSaveFiles(string primaryFilePath)
         {
             try
             {
@@ -331,7 +331,7 @@ namespace LbIntegrations.Ares
             catch { return Array.Empty<string>(); }
         }
 
-        protected override bool OwnIsSaveActive(GameSaveBase save, string emulatorApplicationPath)
+        bool IOwnSaves.OwnIsSaveActive(GameSaveBase save, string emulatorApplicationPath)
         {
             try { return string.IsNullOrWhiteSpace(save?.FileLocation) || File.Exists(save.FileLocation); }
             catch { return true; }
@@ -339,7 +339,7 @@ namespace LbIntegrations.Ares
 
         // ── restore ──────────────────────────────────────────────────────────
 
-        protected override AddSaveResponse OwnAddSaveFile(AddSaveArgs args)
+        AddSaveResponse IOwnSaves.OwnAddSaveFile(AddSaveArgs args)
         {
             try
             {
@@ -445,11 +445,11 @@ namespace LbIntegrations.Ares
 
         // ── delete ───────────────────────────────────────────────────────────
 
-        protected override PluginResponse OwnRemoveSave(GameSaveBase save)
+        PluginResponse IOwnSaves.OwnRemoveSave(GameSaveBase save)
         {
             try
             {
-                if (!IsOurs(save)) return base.OwnRemoveSave(save);
+                if (!IsOurs(save)) return base.RemoveSave(save);
                 var loc = save?.FileLocation;
                 if (string.IsNullOrWhiteSpace(loc)) return new PluginResponse(false, "This save has no location.");
                 try { if (File.Exists(loc)) File.Delete(loc); }

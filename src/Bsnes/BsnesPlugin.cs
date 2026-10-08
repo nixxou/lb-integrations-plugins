@@ -22,7 +22,7 @@ using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Bsnes
 {
-    public partial class BsnesPlugin : NixxSavePlugin, ISystemEventsPlugin, ILbCatalogSource
+    public partial class BsnesPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         internal const string SnesPlatform = "Super Nintendo Entertainment System";
 
@@ -36,6 +36,8 @@ namespace LbIntegrations.Bsnes
 
         public BsnesPlugin()
         {
+            // First: the save front desk registers this plugin for the others (Shared.Saves SaveDesk).
+            _desk = new SaveDesk(this, this, SaveEmu, SaveLog);
             Log.Info("plugin constructed, assembly " + typeof(BsnesPlugin).Assembly.Location);
             LbipLog.Use(Log.Info, Log.Warn, Log.Disabled, () => Log.Tracing);
             LbipRowInjection.Install("com.nixxou.lbip.bsnes", MetadataRows());

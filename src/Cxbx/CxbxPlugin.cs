@@ -25,7 +25,7 @@ using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Cxbx
 {
-    public partial class CxbxPlugin : NixxSavePlugin, ISystemEventsPlugin, ILbCatalogSource
+    public partial class CxbxPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         private const string Repo = "Cxbx-Reloaded/Cxbx-Reloaded";
         private const string TagPrefix = "CI-";
@@ -41,6 +41,8 @@ namespace LbIntegrations.Cxbx
 
         public CxbxPlugin()
         {
+            // First: the save front desk registers this plugin for the others (Shared.Saves SaveDesk).
+            _desk = new SaveDesk(this, this, SaveEmu, SaveLog);
             Log.Info("plugin constructed, assembly " + typeof(CxbxPlugin).Assembly.Location);
             LbipLog.Use(Log.Info, Log.Warn, Log.Disabled, () => Log.Tracing);
             LbIntegrations.RamDisk.RamDiskLog.Use(Log.Info, (m, ex) => Log.Warn(m, ex));

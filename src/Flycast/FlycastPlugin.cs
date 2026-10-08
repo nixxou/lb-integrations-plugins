@@ -77,7 +77,7 @@ namespace LbIntegrations.Flycast
         }
     }
 
-    public partial class FlycastPlugin : NixxSavePlugin, ISystemEventsPlugin, ILbCatalogSource
+    public partial class FlycastPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         private const string Repo = "flyinghead/flycast";
 
@@ -95,6 +95,8 @@ namespace LbIntegrations.Flycast
 
         public FlycastPlugin()
         {
+            // First: the save front desk registers this plugin for the others (Shared.Saves SaveDesk).
+            _desk = new SaveDesk(this, this, SaveEmu, SaveLog);
             Log.Info("plugin constructed, assembly " + typeof(FlycastPlugin).Assembly.Location);
 
             // THE SHARED ROW INJECTION LEARNS WHOSE PLUGIN IT IS IN. It is compiled into all

@@ -34,7 +34,7 @@ using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Vita3k
 {
-    public partial class Vita3kPlugin : NixxSavePlugin, ISystemEventsPlugin, ILbCatalogSource
+    public partial class Vita3kPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         private const string Repo = "Vita3K/Vita3K";
         private const string VitaPlatform = "Sony Playstation Vita";
@@ -53,6 +53,8 @@ namespace LbIntegrations.Vita3k
 
         public Vita3kPlugin()
         {
+            // First: the save front desk registers this plugin for the others (Shared.Saves SaveDesk).
+            _desk = new SaveDesk(this, this, SaveEmu, SaveLog);
             Log.Info("plugin constructed, assembly " + typeof(Vita3kPlugin).Assembly.Location);
 
             // THE SHARED ROW INJECTION LEARNS WHOSE PLUGIN IT IS IN. It is compiled into every

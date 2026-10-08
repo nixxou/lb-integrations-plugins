@@ -39,9 +39,9 @@ namespace LbIntegrations.RaSnes9x
 {
     public partial class RaSnes9xPlugin
     {
-        /// <summary>The front desk (Shared.Saves NixxSavePlugin): this plugin's emu, and where it logs.</summary>
-        protected override string SaveEmu => Emu;
-        protected override void SaveLog(string message) => Log.Info(message);
+        /// <summary>The front desk (Shared.Saves SaveDesk): this plugin's emu, and where it logs.</summary>
+        private string SaveEmu => Emu;
+        private void SaveLog(string message) => Log.Info(message);
 
         /// <summary>This plugin's "emu" in the ids (Shared.Saves).</summary>
         private const string Emu = "rasnes9x";
@@ -86,7 +86,7 @@ namespace LbIntegrations.RaSnes9x
 
         // ── listing ──────────────────────────────────────────────────────────
 
-        protected override GetSavesResponse OwnGetSaves(GetSavesArgs args)
+        GetSavesResponse IOwnSaves.OwnGetSaves(GetSavesArgs args)
         {
             try
             {
@@ -199,22 +199,22 @@ namespace LbIntegrations.RaSnes9x
         // ── the contract ─────────────────────────────────────────────────────
 
         /// <summary>Neither is a container: each is one file, which the host copies itself.</summary>
-        protected override bool OwnIsSaveContainer(GameSaveBase save) => false;
+        bool IOwnSaves.OwnIsSaveContainer(GameSaveBase save) => false;
 
-        protected override bool OwnUseSaveGroupIdForPersistedMatch(GameSaveBase save) => IsOurs(save);
+        bool IOwnSaves.OwnUseSaveGroupIdForPersistedMatch(GameSaveBase save) => IsOurs(save);
 
-        protected override bool OwnTryBackupSave(GameSaveBase save, string emulatorApplicationPath, string destinationFolder, out string error)
+        bool IOwnSaves.OwnTryBackupSave(GameSaveBase save, string emulatorApplicationPath, string destinationFolder, out string error)
         {
             error = "A RASnes9x save is one file, not a container.";
             return false;
         }
 
         /// <summary>A plugin must never call its own save secondary - only a state's thumbnail, part of the state's save.</summary>
-        protected override bool OwnIsSecondarySaveFile(string filePath) => IsStateThumb(filePath);
+        bool IOwnSaves.OwnIsSecondarySaveFile(string filePath) => IsStateThumb(filePath);
 
         /// <summary>A cartridge save's clock (.rtc beside the .srm) travels with it; a state its thumbnail, the picture it
         /// carries made a PNG beside it (RaSnes9xStateThumbs).</summary>
-        protected override IReadOnlyList<string> OwnGetCompanionSaveFiles(string primaryFilePath)
+        IReadOnlyList<string> IOwnSaves.OwnGetCompanionSaveFiles(string primaryFilePath)
         {
             try
             {
@@ -227,7 +227,7 @@ namespace LbIntegrations.RaSnes9x
         }
 
         /// <summary>Active when it is where Snes9x reads it now - the folder its settings name - and still there.</summary>
-        protected override bool OwnIsSaveActive(GameSaveBase save, string emulatorApplicationPath)
+        bool IOwnSaves.OwnIsSaveActive(GameSaveBase save, string emulatorApplicationPath)
         {
             try
             {
@@ -244,7 +244,7 @@ namespace LbIntegrations.RaSnes9x
         // ── restore ──────────────────────────────────────────────────────────
 
         /// <summary>A vault copy back where Snes9x reads it, under its own file name.</summary>
-        protected override AddSaveResponse OwnAddSaveFile(AddSaveArgs args)
+        AddSaveResponse IOwnSaves.OwnAddSaveFile(AddSaveArgs args)
         {
             try
             {
@@ -327,11 +327,11 @@ namespace LbIntegrations.RaSnes9x
 
         // ── delete ───────────────────────────────────────────────────────────
 
-        protected override PluginResponse OwnRemoveSave(GameSaveBase save)
+        PluginResponse IOwnSaves.OwnRemoveSave(GameSaveBase save)
         {
             try
             {
-                if (!IsOurs(save)) return base.OwnRemoveSave(save);
+                if (!IsOurs(save)) return base.RemoveSave(save);
                 var loc = save?.FileLocation;
                 if (string.IsNullOrWhiteSpace(loc)) return new PluginResponse(false, "This save has no location.");
                 try { if (File.Exists(loc)) File.Delete(loc); }
