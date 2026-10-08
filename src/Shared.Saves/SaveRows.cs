@@ -7,9 +7,11 @@
 //   2. else the id's "ver";
 //   3. else the game.
 // Its CURRENT ApplicationPath is taken, so a renamed rom is followed. When that file's fingerprint is
-// not the id's "rom", the game's file and every version's are fingerprinted and the one that matches
-// wins (a version and the game whose files were swapped). None matching only warns: LaunchBox's own
-// Make Default, for one, drops the old file altogether (measured 08/10) and there is nothing to find.
+// not the id's "rom", the game's file and every version's are fingerprinted, and ONE matching file
+// wins (a version and the game whose files were swapped). Several matching - two copies, or two
+// variants of a disc the sampled print of a big file cannot tell apart - or none: the ids' target is
+// kept, with a warning (Mehdi, 08/10: no dialog, the save stays in the vault). LaunchBox's own Make
+// Default, for one, drops the old file altogether (measured 08/10) and there is nothing to find.
 //
 // A VERSION ON ITS GAME'S FILE is not tied to the version: same file, nothing lost, and it avoids
 // LaunchBox's "Can't find the game for this save item" defect (test 9b, 07/10).
@@ -58,12 +60,13 @@ namespace LbIntegrations.Saves
             => SamePath(full(gamePath), full(versionPath));
 
         /// <summary>The origin keys of a new row: the game, the version when it is on ANOTHER file (else null,
-        /// see the header), and the fingerprint of the file that row's rom is.</summary>
+        /// see the header), and the fingerprint of the file that row's rom is.
+        /// <paramref name="print"/> false leaves the fingerprint out - a plugin whose launched file changes by design.</summary>
         public static (string? Game, string? Ver, RomPrintData? Rom) Origin(
-            string? gameId, string? gamePath, string? versionId, string? versionPath, Func<string?, string?> full)
+            string? gameId, string? gamePath, string? versionId, string? versionPath, Func<string?, string?> full, bool print = true)
         {
             bool tie = !string.IsNullOrEmpty(versionId) && !OnGamesFile(gamePath, versionPath, full);
-            var rom = RomPrint.Of(full(tie ? versionPath : gamePath));
+            var rom = print ? RomPrint.Of(full(tie ? versionPath : gamePath)) : null;
             return (NullIfEmpty(gameId), tie ? versionId : null, rom);
         }
 
@@ -85,17 +88,24 @@ namespace LbIntegrations.Saves
             if (print == null) return new RestoreTarget { RomPath = full(path), VersionId = verId };
             if (print.SameAs(RomPrint.Of(full(path)))) return new RestoreTarget { RomPath = full(path), VersionId = verId };
 
-            // Not the file it was made on: look for that file among the game's.
-            if (print.SameAs(RomPrint.Of(full(gamePath))))
-                return new RestoreTarget { RomPath = full(gamePath), FoundByPrint = true };
+            // Not the file it was made on: look for that file among the game's, and act only on ONE match.
+            var matches = new List<(string? Path, string? VersionId)>();
+            if (print.SameAs(RomPrint.Of(full(gamePath)))) matches.Add((full(gamePath), null));
             foreach (var v in list)
-                if (print.SameAs(RomPrint.Of(full(v.Path))))
-                    return new RestoreTarget { RomPath = full(v.Path), VersionId = v.Id, FoundByPrint = true };
+            {
+                var vp = full(v.Path);
+                if (matches.Exists(m => SamePath(m.Path, vp))) continue;   // a version on the game's file
+                if (print.SameAs(RomPrint.Of(vp))) matches.Add((vp, v.Id));
+            }
+            if (matches.Count == 1)
+                return new RestoreTarget { RomPath = matches[0].Path, VersionId = matches[0].VersionId, FoundByPrint = true };
 
             return new RestoreTarget
             {
                 RomPath = full(path), VersionId = verId, Matches = false,
-                Warning = "This save comes from another file than the one the game launches now.",
+                Warning = matches.Count == 0
+                    ? "This save comes from another file than the one the game launches now."
+                    : "This save comes from another file than the one the game launches now, and several files of this game match it.",
             };
         }
 
@@ -116,8 +126,11 @@ namespace LbIntegrations.Saves
         }
 
         private static bool SamePath(string? a, string? b)
-            => !string.IsNullOrEmpty(a) && !string.IsNullOrEmpty(b)
-               && string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
+        {
+            if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return false;
+            try { return string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase); }
+            catch { return false; }
+        }
 
         private static string? NullIfEmpty(string? s) => string.IsNullOrEmpty(s) ? null : s;
 

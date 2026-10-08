@@ -150,10 +150,14 @@ written once at creation:
 - `game`: the LaunchBox game's GUID; `ver`: the additional version's GUID when the save belongs to one, else left out;
 - `rom`, the fingerprint of **the file LaunchBox launches**, as it is on disk - the version's `ApplicationPath` if
   the save belongs to a version, else the game's: `{"size":…,"crc":"<CRC32 of the whole file>"}` up to 10 MB,
-  `{"size":…,"head":"<CRC32 of the first MB>","tail":"<CRC32 of the last MB>"}` above (the end is reached by a seek:
-  2 MB read whatever the size). An archive is fingerprinted as the archive: nothing is opened or unpacked. No creation
-  date (it changes with every copy). Kept in memory per session, keyed on path + size + last write time: an unchanged
-  file is never read twice; no file on disk.
+  `{"size":…,"head":…,"mid":…,"tail":…}` above, the CRC32 of the first, the middle and the last MB, reached by seeks
+  (3 MB read whatever the size) - a SAMPLE, not a proof: two variants of one disc of the same size patched outside the
+  samples print the same (Codex review, 08/10). An archive is fingerprinted as the archive: nothing is opened or
+  unpacked. No creation date (it changes with every copy). Kept in memory per session, keyed on path + size + last
+  write time: an unchanged file is never read twice; no file on disk. **No `rom` at all** for a disk image the
+  emulator writes to (`.vhdx`, `.vhd`, `.qcow2`, `.vmdk`, `.vdi`...), when the plugin asks for none, or when the file
+  cannot be read safely: it is opened with no other writer allowed, its size taken from that handle, a short read
+  refused, its write time compared before and after - any doubt, no print, since a wrong one would be frozen for ever.
 
 ```
 {"emu":"ares","kind":"save","sys":"Super Famicom","by":"name","id":"Zelda (France).ram","game":"2cf24c23-…","rom":{"size":1048576,"head":"9A1C…","tail":"44E0…"}}
@@ -162,8 +166,10 @@ written once at creation:
 What they are for:
 - **Restore**: `AddSaveFile` gets the row and its id. The plugin takes the CURRENT path of the version (`ver`) or the game
   (`game`) and writes the save under the name the emulator expects today, even after a rename. When that file's
-  fingerprint is not `rom`, the game's and its versions' files are fingerprinted and the one that matches is taken (an
-  additional version promoted to main, or the reverse); none matching only warns ("this save comes from another file").
+  fingerprint is not `rom`, the game's and its versions' files are fingerprinted, and ONE matching file is taken (files
+  swapped between the game and a version); none or several matching keep the target above with a warning ("this save
+  comes from another file") - never a dialog, the save stays in the vault (Mehdi, 08/10). Only the game's own files are
+  searched, never a folder: a game whose path is broken in LaunchBox is LaunchBox's to fix.
   The target is taken in this order: the version the ROW is tied to today (`AdditionalApplicationId`, which LiteBox's
   Make Default updates), else `ver`, else `game`. Today our plugins resolve the target from the game's path and ignore
   the row's version - to fix.

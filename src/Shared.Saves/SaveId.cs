@@ -30,19 +30,21 @@ using System.Text.Unicode;
 namespace LbIntegrations.Saves
 {
     /// <summary>The fingerprint of the file LaunchBox launches, frozen when the row is created (see RomPrint).
-    /// Up to 10 MB: <see cref="Crc"/> of the whole file. Above: <see cref="Head"/> and <see cref="Tail"/>,
-    /// the CRC32 of its first and last MB. CRCs are 8 upper-case hex digits.</summary>
+    /// Up to 10 MB: <see cref="Crc"/> of the whole file, a proof. Above: <see cref="Head"/>, <see cref="Mid"/> and
+    /// <see cref="Tail"/>, the CRC32 of its first, middle and last MB - a sample. CRCs are 8 upper-case hex digits.</summary>
     internal sealed class RomPrintData
     {
         [JsonPropertyOrder(0)] public long Size { get; init; }
         [JsonPropertyOrder(1)] public string? Crc { get; init; }
         [JsonPropertyOrder(2)] public string? Head { get; init; }
-        [JsonPropertyOrder(3)] public string? Tail { get; init; }
+        [JsonPropertyOrder(3)] public string? Mid { get; init; }
+        [JsonPropertyOrder(4)] public string? Tail { get; init; }
 
         public bool SameAs(RomPrintData? other)
             => other != null && Size == other.Size
                && string.Equals(Crc, other.Crc, StringComparison.OrdinalIgnoreCase)
                && string.Equals(Head, other.Head, StringComparison.OrdinalIgnoreCase)
+               && string.Equals(Mid, other.Mid, StringComparison.OrdinalIgnoreCase)
                && string.Equals(Tail, other.Tail, StringComparison.OrdinalIgnoreCase);
     }
 

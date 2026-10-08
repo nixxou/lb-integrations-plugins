@@ -84,10 +84,10 @@ namespace LbIntegrations.Probe
                 {
                     Emu = "ppsspp", Kind = "save", By = "disc", Id = "ULUS10041",
                     Game = "2cf24c23-0000-4000-8000-000000000002", Ver = "5a7e0000-5a7e-4000-8000-00000000c001",
-                    Rom = new RomPrintData { Size = 1503238553, Head = "01234567", Tail = "89ABCDEF" },
+                    Rom = new RomPrintData { Size = 1503238553, Head = "01234567", Mid = "13579BDF", Tail = "89ABCDEF" },
                 },
                 "{\"emu\":\"ppsspp\",\"kind\":\"save\",\"by\":\"disc\",\"id\":\"ULUS10041\",\"game\":\"2cf24c23-0000-4000-8000-000000000002\","
-                + "\"ver\":\"5a7e0000-5a7e-4000-8000-00000000c001\",\"rom\":{\"size\":1503238553,\"head\":\"01234567\",\"tail\":\"89ABCDEF\"}}");
+                + "\"ver\":\"5a7e0000-5a7e-4000-8000-00000000c001\",\"rom\":{\"size\":1503238553,\"head\":\"01234567\",\"mid\":\"13579BDF\",\"tail\":\"89ABCDEF\"}}");
             Pin("a translated LaunchBox id",
                 new SaveIdData { Emu = "lb.pcsx2", Kind = "save", Native = "pcsx2:SLUS-20062" },
                 "{\"emu\":\"lb.pcsx2\",\"kind\":\"save\",\"native\":\"pcsx2:SLUS-20062\"}");
@@ -213,9 +213,18 @@ namespace LbIntegrations.Probe
             var bigBytes = new byte[RomPrint.WholeLimit + 5 * 1024 * 1024 + 3]; rnd.NextBytes(bigBytes); File.WriteAllBytes(big, bigBytes);
             var q = RomPrint.Of(big);
             string head = Hex(Crc32.HashToUInt32(bigBytes.AsSpan(0, RomPrint.Chunk)));
+            string mid = Hex(Crc32.HashToUInt32(bigBytes.AsSpan((int)(bigBytes.Length / 2 - RomPrint.Chunk / 2), RomPrint.Chunk)));
             string tail = Hex(Crc32.HashToUInt32(bigBytes.AsSpan(bigBytes.Length - RomPrint.Chunk)));
-            Check("above 10 MB: CRC32 of the first and the last MB",
-                  q != null && q.Size == bigBytes.Length && q.Crc == null && q.Head == head && q.Tail == tail, Describe(q));
+            Check("above 10 MB: CRC32 of the first, the middle and the last MB",
+                  q != null && q.Size == bigBytes.Length && q.Crc == null && q.Head == head && q.Mid == mid && q.Tail == tail, Describe(q));
+
+            // The limit of a sample, stated rather than hidden: a variant patched between the samples prints the same.
+            var variant = Path.Combine(root, "big (patched).iso");
+            var variantBytes = (byte[])bigBytes.Clone(); variantBytes[2 * RomPrint.Chunk + 10] ^= 0xFF; File.WriteAllBytes(variant, variantBytes);
+            Check("a big variant patched between the samples prints the same (known limit)", RomPrint.Of(variant)!.SameAs(q));
+            var variantMid = Path.Combine(root, "big (patched mid).iso");
+            var midBytes = (byte[])bigBytes.Clone(); midBytes[bigBytes.Length / 2] ^= 0xFF; File.WriteAllBytes(variantMid, midBytes);
+            Check("a big variant patched in the middle MB prints differently", !RomPrint.Of(variantMid)!.SameAs(q));
 
             var zip = Path.Combine(root, "game.zip");
             using (var z = ZipFile.Open(zip, ZipArchiveMode.Create)) using (var w = z.CreateEntry("game.sfc").Open()) w.Write(smallBytes, 0, 4096);
@@ -231,6 +240,26 @@ namespace LbIntegrations.Probe
             Check("a changed file is read again", RomPrint.Reads == reads + 1 && p2?.Crc == Hex(Crc32.HashToUInt32(smallBytes)) && !p2.SameAs(p));
 
             Check("a missing file has no fingerprint", RomPrint.Of(Path.Combine(root, "nope.bin")) == null);
+
+            var vhdx = Path.Combine(root, "disk.vhdx"); File.WriteAllBytes(vhdx, new byte[4096]);
+            Check("a writable disk image has no fingerprint", RomPrint.Of(vhdx) == null && RomPrint.IsWritableImage("x.QCOW2"));
+
+            // Somebody is writing to it: no print rather than a print of a moving file.
+            var busy = Path.Combine(root, "busy.sfc"); File.WriteAllBytes(busy, smallBytes);
+            using (new FileStream(busy, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
+                Check("a file open for writing elsewhere has no fingerprint", RomPrint.Of(busy) == null);
+            Check("once closed, it is printed", RomPrint.Of(busy) != null);
+
+            // During the read: a writer is refused, and a change of the file's time drops the print.
+            var during = Path.Combine(root, "during.sfc"); File.WriteAllBytes(during, smallBytes);
+            bool refused = false;
+            RomPrint.DuringRead = f => { try { File.WriteAllBytes(f, new byte[] { 1 }); } catch (IOException) { refused = true; } };
+            var d1 = RomPrint.Of(during);
+            Check("a writer is locked out while the file is read", refused && d1 != null && d1.Crc == Hex(Crc32.HashToUInt32(smallBytes)));
+            var during2 = Path.Combine(root, "during2.iso"); File.WriteAllBytes(during2, bigBytes);
+            RomPrint.DuringRead = f => File.SetLastWriteTimeUtc(f, DateTime.UtcNow.AddHours(1));
+            Check("a file whose time changes during the read gets no print", RomPrint.Of(during2) == null);
+            RomPrint.DuringRead = null;
         }
 
         // ── 6. where a restore writes ────────────────────────────────────────────────────────────
@@ -264,6 +293,14 @@ namespace LbIntegrations.Probe
             t = SaveRows.ChooseTarget(null, madeOnA, b, new[] { (V, (string?)a) }, Full);
             Check("swapped files: found by fingerprint", t.RomPath == a && t.VersionId == V && t.FoundByPrint && t.Matches);
 
+            // Two files of the game match: never chosen automatically.
+            var a2 = Path.Combine(root, "Game (France) copy.sfc"); File.WriteAllBytes(a2, new byte[] { 1, 2, 3 });
+            t = SaveRows.ChooseTarget(null, madeOnA, b, new[] { (V, (string?)a), (V2, (string?)a2) }, Full);
+            Check("two matching files: the ids' target is kept, with a warning",
+                  t.RomPath == b && !t.Matches && !t.FoundByPrint && t.Warning != null && t.Warning.Contains("several"));
+            t = SaveRows.ChooseTarget(null, madeOnA, b, new[] { (V, (string?)a), (V2, (string?)a) }, Full);
+            Check("two versions on the same matching file count once", t.RomPath == a && t.FoundByPrint);
+
             // LaunchBox's Make Default: the game and its version both launch B, A is referenced nowhere.
             t = SaveRows.ChooseTarget(V, madeOnA, b, new[] { (V, (string?)b) }, Full);
             Check("LaunchBox's Make Default: nothing matches, it warns", !t.Matches && t.Warning != null && t.RomPath == b);
@@ -272,6 +309,8 @@ namespace LbIntegrations.Probe
             Check("a version on its game's file is not tied", o.Ver == null && o.Game == "g" && o.Rom!.SameAs(RomPrint.Of(a)));
             o = SaveRows.Origin("g", a, V, b, Full);
             Check("a version on another file is tied, and printed on its own file", o.Ver == V && o.Rom!.SameAs(RomPrint.Of(b)));
+            o = SaveRows.Origin("g", a, null, null, Full, print: false);
+            Check("a plugin can leave the fingerprint out", o.Rom == null && o.Game == "g");
             o = SaveRows.Origin("g", a, null, null, Full);
             Check("a game save: no ver, the game's file", o.Ver == null && o.Rom!.SameAs(RomPrint.Of(a)));
 
