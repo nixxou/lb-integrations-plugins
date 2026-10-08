@@ -331,10 +331,58 @@ namespace LbIntegrations.Ares
             catch { return Array.Empty<string>(); }
         }
 
+        /// <summary>Active when the file is where ares reads it: under its Paths/Saves, or beside the rom - and still
+        /// there. Not merely "the file exists" (measured 08/10: a backup in LaunchBox's vault was then "Active" and
+        /// its Restore never offered). Called hundreds of times: the settings are read once per exe.</summary>
         bool IOwnSaves.OwnIsSaveActive(GameSaveBase save, string emulatorApplicationPath)
         {
-            try { return string.IsNullOrWhiteSpace(save?.FileLocation) || File.Exists(save.FileLocation); }
+            try
+            {
+                if (!IsOurs(save) || string.IsNullOrWhiteSpace(save.FileLocation)) return true;
+                var file = ResolveFullPath(save.FileLocation);
+                if (!File.Exists(file)) return false;
+                var dir = Path.GetDirectoryName(file)?.TrimEnd(Path.DirectorySeparatorChar) ?? "";
+                var exe = string.IsNullOrWhiteSpace(emulatorApplicationPath) ? null : ResolveFullPath(emulatorApplicationPath);
+                var root = exe == null ? null : SavesRootOf(exe);
+                if (root != null && dir.StartsWith(root, StringComparison.OrdinalIgnoreCase)
+                    && (dir.Length == root.Length || dir[root.Length] == Path.DirectorySeparatorChar)) return true;
+                foreach (var rom in RomsOf(save))
+                {
+                    var beside = Path.GetDirectoryName(Path.GetFullPath(PlayedFile(rom, exe)))?.TrimEnd(Path.DirectorySeparatorChar);
+                    if (beside != null && string.Equals(beside, dir, StringComparison.OrdinalIgnoreCase)) return true;
+                }
+                return false;
+            }
             catch { return true; }
+        }
+
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _savesRoot = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>ares's Paths/Saves for <paramref name="exe"/>, full; null when it is not set (saves beside the rom).</summary>
+        private static string SavesRootOf(string exe) => _savesRoot.GetOrAdd(exe, e =>
+        {
+            try
+            {
+                var v = AresBml.Load(AresLaunch.SettingsOf(e)).Get("Paths/Saves");
+                return string.IsNullOrWhiteSpace(v) ? null : Path.GetFullPath(v.Replace('/', Path.DirectorySeparatorChar)).TrimEnd(Path.DirectorySeparatorChar);
+            }
+            catch { return null; }
+        });
+
+        /// <summary>The roms a row can belong to: its version's when it names one, and its game's.</summary>
+        private static IEnumerable<string> RomsOf(GameSaveBase save)
+        {
+            IGame game = null;
+            try { game = PluginHelper.DataManager?.GetGameById(save.GameId); } catch { }
+            if (game == null) yield break;
+            if (!string.IsNullOrEmpty(save.AdditionalApplicationId))
+            {
+                string ap = null;
+                try { ap = game.GetAllAdditionalApplications()?.FirstOrDefault(a => a?.Id == save.AdditionalApplicationId)?.ApplicationPath; } catch { }
+                if (!string.IsNullOrWhiteSpace(ap)) yield return ResolveFullPath(ap);
+            }
+            var gp = Safe(() => game.ApplicationPath);
+            if (!string.IsNullOrWhiteSpace(gp)) yield return ResolveFullPath(gp);
         }
 
         // ── restore ──────────────────────────────────────────────────────────
