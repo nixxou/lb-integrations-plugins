@@ -99,6 +99,21 @@ asked. LaunchBox's help names RetroArch, Dolphin and PCSX2 as the only save-mana
   `AddSaveFile`), our JSON again on the way out (the row `AddSaveFile` returns). LaunchBox stored only the JSON; the
   restore wrote the set, companions included.
 
+### How the stock integrations find the emulator at restore (read 08/10, decompiled)
+
+`AddSaveFile` carries the row only, never the emulator. Each integration finds it its own way:
+
+| Integration | Restore finds the emulator by | From another plugin's front desk (lot 3) |
+|---|---|---|
+| RetroArch | the GAME's emulator (`game.EmulatorId`, or the version's), the core from the game's command line | wrong folders; listing fine (gets `args.Emulator`) except the Saturn detection (game's core) |
+| Dolphin | the GAME's emulator (`TryResolveContext`), then `BuildUserRoots(emulator)` | wrong GameCube/Wii folders; listing fine |
+| PCSX2 | `save.EmulatorFileName`, an exe NAME matched against the library, first found | fine once the row carries the right exe name |
+
+Lot 3 restores RetroArch and Dolphin rows itself, through their internal folder/restore functions called with the
+row's emulator (reflection; refused and logged if a function is gone). **A future Nixx-RetroArch or Nixx-Dolphin**
+(Mehdi, 08/10) shares the exe name with the stock one: never route on the exe name alone (PCSX2's way), never on the
+game's emulator alone (RetroArch's and Dolphin's); the owner comes from the id (`retroarch` vs `lb.retroarch`), the
+exact emulator from `EmulatorCore` + platform.
 ### LaunchBox defects met
 
 - A save tied to an additional application (Atlantis, "Play (FR) (Disc 1)"): **Backup Save** fails with "Can't find the
