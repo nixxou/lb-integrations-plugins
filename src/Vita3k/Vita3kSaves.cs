@@ -22,14 +22,18 @@ using System.Linq;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 using LbIntegrations.Snapshot;
+using LbIntegrations.Saves;
 
 namespace LbIntegrations.Vita3k
 {
     public partial class Vita3kPlugin : IGameLaunchingPlugin
     {
-        /// <summary>What a Vita save's group id starts with, so a title id survives the round trip
-        /// through the host - AddSaveArgs carries neither the emulator nor the game's rom.</summary>
-        private const string SavePrefix = "vita3k:title:";
+        /// <summary>This plugin's "emu" in the ids (Shared.Saves, docs\saves-lb14-routing.md §3):
+        /// {"emu":"vita3k","kind":"save","by":"title","id":"<title id>"} - so a title id survives the round trip
+        /// through the host, AddSaveArgs carrying neither the emulator nor the game's rom.</summary>
+        private const string Emu = "vita3k";
+
+        private static string IdOf(string titleId) => SaveId.Write(new SaveIdData { Emu = Emu, Kind = "save", By = "title", Id = titleId });
 
         private const string SaveGroupName = "Vita save";
         private const string SaveChipText = "VITA";
@@ -543,7 +547,11 @@ namespace LbIntegrations.Vita3k
                                     ?? (IReadOnlyCollection<IAdditionalApplication>)Array.Empty<IAdditionalApplication>())
                 {
                     var rom = Safe(() => app.ApplicationPath);
-                    Collect(layout, rom, Safe(() => app.GameId), Safe(() => app.Id), found, seen);
+                    // A version on its game's own file is not tied to the version (SaveRows.TieTo).
+                    var gamePath = Safe(() => PluginHelper.DataManager?.GetGameById(app.GameId)?.ApplicationPath);
+                    Collect(layout, rom, Safe(() => app.GameId),
+                            SaveRows.TieTo(Safe(() => app.Id), gamePath, rom, p => string.IsNullOrWhiteSpace(p) ? null : ResolveFullPath(p)),
+                            found, seen);
                 }
                 foreach (var game in args.Games ?? (IReadOnlyCollection<IGame>)Array.Empty<IGame>())
                 {
@@ -584,7 +592,7 @@ namespace LbIntegrations.Vita3k
                     FileLocation = save,
                     IsDirectory = false,
                     OriginalFileName = Path.GetFileName(save),
-                    SaveGroupId = SavePrefix + titleId,
+                    SaveGroupId = IdOf(titleId),
                     SaveGroupName = SaveGroupName,
                     DisplayChipText = SaveChipText,
                     ReportedFileSizeBytes = size > 0 ? size : (long?)null,
@@ -625,9 +633,8 @@ namespace LbIntegrations.Vita3k
         {
             try
             {
-                var group = Safe(() => save?.SaveGroupId);
-                return group != null && group.StartsWith(SavePrefix, StringComparison.Ordinal)
-                    ? group.Substring(SavePrefix.Length) : null;
+                return SaveRows.IsOurs(Safe(() => save?.SaveGroupId), Emu) && SaveId.TryRead(save.SaveGroupId, out var d) && d.Kind == "save"
+                    ? d.Id : null;
             }
             catch { return null; }
         }
@@ -708,7 +715,7 @@ namespace LbIntegrations.Vita3k
                     FileLocation = target,
                     IsDirectory = false,
                     OriginalFileName = Path.GetFileName(target),
-                    SaveGroupId = SavePrefix + titleId,
+                    SaveGroupId = IdOf(titleId),
                     SaveGroupName = Safe(() => save.SaveGroupName) ?? SaveGroupName,
                     DisplayChipText = SaveChipText,
                     ReportedFileSizeBytes = size > 0 ? size : (long?)null,

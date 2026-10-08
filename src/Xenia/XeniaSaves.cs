@@ -27,12 +27,15 @@ using System.IO;
 using System.Linq;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
+using LbIntegrations.Saves;
 
 namespace LbIntegrations.Xenia
 {
     public partial class XeniaPlugin
     {
-        private const string GroupPrefix = "xenia:";
+        /// <summary>This plugin's "emu" in the ids (Shared.Saves, docs\saves-lb14-routing.md §3):
+        /// {"emu":"xenia","kind":"save","by":"title","id":"<TITLE ID>"}, a folder (a container).</summary>
+        private const string Emu = "xenia";
         private const string ChipText = "Saved Game";
 
         /// <summary>The folder LiteBox keeps out of every hash and out of the zip it serves. Mirrors
@@ -99,7 +102,10 @@ namespace LbIntegrations.Xenia
             if (unit == null) return null;
 
             string gameId = Safe(() => game.Id) ?? "";
-            string appId = app != null ? Safe(() => app.Id) : null;
+            // A version on its game's own file is not tied to the version (SaveRows.TieTo).
+            string appId = app == null ? null
+                : SaveRows.TieTo(Safe(() => app.Id), Safe(() => game.ApplicationPath), Safe(() => app.ApplicationPath),
+                                 p => string.IsNullOrWhiteSpace(p) ? null : ResolveFullPath(p));
             if (!seen.Add(unit.TitleId + "|" + (appId ?? gameId))) return null;
 
             return new GameSaveGame
@@ -117,7 +123,7 @@ namespace LbIntegrations.Xenia
                 // `save.IsDirectory || Directory.Exists(path)` and so covered for the missing flag.
                 IsDirectory = true,
                 OriginalFileName = XeniaContent.SavedGameType,
-                SaveGroupId = GroupPrefix + unit.TitleId,
+                SaveGroupId = SaveId.Write(new SaveIdData { Emu = Emu, Kind = "save", By = "title", Id = unit.TitleId.ToUpperInvariant() }),
                 SaveGroupName = SaveNameOf(unit, game) + UpdateTag(layout, unit.TitleId),
                 DisplayChipText = ChipText,
                 ReportedFileSizeBytes = unit.SizeBytes > 0 ? unit.SizeBytes : (long?)null,
@@ -304,7 +310,7 @@ namespace LbIntegrations.Xenia
                     FileLocation = destination,
                     IsDirectory = true,          // the unit is a folder - see the note above
                     OriginalFileName = XeniaContent.SavedGameType,
-                    SaveGroupId = GroupPrefix + titleId,
+                    SaveGroupId = SaveId.Write(new SaveIdData { Emu = Emu, Kind = "save", By = "title", Id = titleId.ToUpperInvariant() }),
                     SaveGroupName = save.SaveGroupName,
                     DisplayChipText = ChipText,
                 });
@@ -392,15 +398,12 @@ namespace LbIntegrations.Xenia
             try { return Directory.Exists(path) || File.Exists(path); } catch { return false; }
         }
 
-        private static bool IsOurs(GameSaveBase save)
-            => save?.SaveGroupId != null
-               && save.SaveGroupId.StartsWith(GroupPrefix, StringComparison.OrdinalIgnoreCase);
+        private static bool IsOurs(GameSaveBase save) => SaveRows.IsOurs(save?.SaveGroupId, Emu);
 
         private static string TitleIdOf(GameSaveBase save)
         {
-            var id = save?.SaveGroupId;
-            if (id == null || !id.StartsWith(GroupPrefix, StringComparison.OrdinalIgnoreCase)) return null;
-            var rest = id.Substring(GroupPrefix.Length).Trim();
+            if (!IsOurs(save) || !SaveId.TryRead(save.SaveGroupId, out var d) || d.Id == null) return null;
+            var rest = d.Id.Trim();
             return XeniaContent.IsHex(rest, 8) ? rest.ToUpperInvariant() : null;
         }
 
