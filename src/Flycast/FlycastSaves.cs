@@ -43,6 +43,11 @@
 //     would sit beside the one Flycast reads and never be seen - so a VMU is always restored under
 //     Flycast's own name (VmuTargetName): from the group's product id when the save carries one,
 //     otherwise translated from Argosy's form.
+//
+// THE IDS are the pack's JSON (Shared.Saves, docs\saves-lb14-routing.md §3): {"emu":"flycast","kind":"vmu",
+// "by":"product","id":"<product id>"}, {"kind":"nvram","by":"set","id":"<rom file name>"} for an arcade set, and
+// {"kind":"state","by":"name","id":"<stem>","slot":n}. Where a restore goes depends on the kind, never on the rom's
+// path. A version on its game's own file is not tied to the version (SaveRows.TieTo).
 
 using System;
 using System.Collections.Generic;
@@ -50,6 +55,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using LbIntegrations.Lbip;
+using LbIntegrations.Saves;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 
@@ -57,9 +63,8 @@ namespace LbIntegrations.Flycast
 {
     public partial class FlycastPlugin
     {
-        private const string VmuPrefix = "flycast-vmu:";
-        private const string ArcadePrefix = "flycast-arcade:";
-        private const string StatePrefix = "flycast-state:";
+        /// <summary>This plugin's "emu" in the ids (Shared.Saves).</summary>
+        private const string Emu = "flycast";
 
         private const string VmuChipText = "VMU";
         private const string ArcadeChipText = "NVRAM";
@@ -145,7 +150,10 @@ namespace LbIntegrations.Flycast
             if (game == null || string.IsNullOrWhiteSpace(romPath)) return;
 
             string gameId = Safe(() => game.Id) ?? "";
-            string appId = app != null ? Safe(() => app.Id) : null;
+            // A version on its game's own file is not tied to the version (SaveRows.TieTo).
+            string appId = app == null ? null
+                : SaveRows.TieTo(Safe(() => app.Id), Safe(() => game.ApplicationPath), Safe(() => app.ApplicationPath),
+                                 p => LbIntegrations.Lbip.LbipImportWatch.Full(p));
             string context = appId ?? gameId;
 
             string fileName = SafeFileName(romPath);
@@ -160,14 +168,14 @@ namespace LbIntegrations.Flycast
                 var vmuName = Ipbin.SanitizeForFileName(product) + VmuSuffix;
                 var vmuPath = FlycastPaths.FirstExisting(layout.VmuDirs, vmuName);
                 if (vmuPath != null && seen.Add("vmu|" + product + "|" + context))
-                    into.Add(Row(vmuPath, gameId, appId, VmuPrefix + product,
+                    into.Add(Row(vmuPath, gameId, appId, SaveId.Write(new SaveIdData { Emu = Emu, Kind = "vmu", By = "product", Id = product }),
                                  "Visual Memory Unit", VmuChipText));
             }
 
             // The arcade set: the primary first, companions follow it through GetCompanionSaveFiles.
             var arcade = ArcadeMembers(layout, fileName);
             if (arcade.Count > 0 && seen.Add("arcade|" + fileName + "|" + context))
-                into.Add(Row(arcade[0], gameId, appId, ArcadePrefix + fileName,
+                into.Add(Row(arcade[0], gameId, appId, SaveId.Write(new SaveIdData { Emu = Emu, Kind = "nvram", By = "set", Id = fileName }),
                              "Cartridge memory", ArcadeChipText));
 
             // States, one row per occupied slot.
@@ -181,7 +189,7 @@ namespace LbIntegrations.Flycast
                     FileLocation = state.Path,
                     OriginalFileName = Path.GetFileName(state.Path),
                     Slot = state.Slot,
-                    SaveGroupId = StatePrefix + stem + ":" + state.Slot,
+                    SaveGroupId = SaveId.Write(new SaveIdData { Emu = Emu, Kind = "state", By = "name", Id = stem, Slot = state.Slot }),
                     SaveGroupName = StateGroupName,
                     DisplayChipText = StateChipText,
                     ReportedFileSizeBytes = state.SizeBytes > 0 ? state.SizeBytes : (long?)null,
@@ -510,7 +518,7 @@ namespace LbIntegrations.Flycast
 
                 var layout = FlycastPaths.Resolve(emulatorApplicationPath);
                 var dirs = save is GameSaveState ? layout.StateDirs
-                         : StartsWith(save.SaveGroupId, ArcadePrefix) ? layout.ArcadeDirs
+                         : IsArcade(save) ? layout.ArcadeDirs
                          : layout.VmuDirs;
 
                 var full = Path.GetFullPath(loc);
@@ -554,7 +562,7 @@ namespace LbIntegrations.Flycast
                 string name = FirstNonBlank(save.OriginalFileName, Path.GetFileName(source));
                 // A VMU goes back under the name Flycast reads, whatever name it came under (Argosy's
                 // "<product>.A1.bin" - see the header).
-                if (!(save is GameSaveState) && !StartsWith(save.SaveGroupId, ArcadePrefix))
+                if (!(save is GameSaveState) && !IsArcade(save))
                 {
                     var flycastName = VmuTargetName(save.SaveGroupId, name);
                     if (!string.Equals(flycastName, name, StringComparison.Ordinal))
@@ -562,7 +570,7 @@ namespace LbIntegrations.Flycast
                     name = flycastName;
                 }
                 var dirs = save is GameSaveState ? layout.StateDirs
-                         : StartsWith(save.SaveGroupId, ArcadePrefix) ? layout.ArcadeDirs
+                         : IsArcade(save) ? layout.ArcadeDirs
                          : layout.VmuDirs;
                 string targetDir = dirs.FirstOrDefault() ?? layout.DataDir;
                 string target = Path.Combine(targetDir, name);
@@ -661,8 +669,8 @@ namespace LbIntegrations.Flycast
         /// way), else from Argosy's "&lt;product&gt;.A1.bin", else the name as it came.</summary>
         internal static string VmuTargetName(string saveGroupId, string incoming)
         {
-            if (StartsWith(saveGroupId, VmuPrefix) && saveGroupId.Length > VmuPrefix.Length)
-                return Ipbin.SanitizeForFileName(saveGroupId.Substring(VmuPrefix.Length)) + VmuSuffix;
+            if (SaveId.TryRead(saveGroupId, out var id) && id.Kind == "vmu" && !string.IsNullOrEmpty(id.Id))
+                return Ipbin.SanitizeForFileName(id.Id) + VmuSuffix;
             if (incoming != null && incoming.EndsWith(ArgosyVmuSuffix, StringComparison.OrdinalIgnoreCase)
                 && !incoming.EndsWith(VmuSuffix, StringComparison.OrdinalIgnoreCase)
                 && incoming.Length > ArgosyVmuSuffix.Length)
@@ -670,11 +678,11 @@ namespace LbIntegrations.Flycast
             return incoming;
         }
 
-        private static bool IsOurs(GameSaveBase save)
-            => save?.SaveGroupId != null
-               && (StartsWith(save.SaveGroupId, VmuPrefix)
-                   || StartsWith(save.SaveGroupId, ArcadePrefix)
-                   || StartsWith(save.SaveGroupId, StatePrefix));
+        private static bool IsOurs(GameSaveBase save) => SaveRows.IsOurs(save?.SaveGroupId, Emu);
+
+        /// <summary>An arcade set's memory: our id, "kind":"nvram".</summary>
+        private static bool IsArcade(GameSaveBase save)
+            => IsOurs(save) && SaveId.TryRead(save.SaveGroupId, out var d) && d.Kind == "nvram";
 
         private static bool StartsWith(string value, string prefix)
             => value != null && value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);

@@ -30,6 +30,12 @@ namespace LbIntegrations.Probe
 {
     internal static class FlycastCheck
     {
+        /// <summary>The "kind" of one of the plugin's ids (Shared.Saves), or null.</summary>
+        private static string KindOf(string id) => LbIntegrations.Saves.SaveId.TryRead(id, out var d) ? d.Kind : null;
+
+        /// <summary>A VMU id as the plugin writes it.</summary>
+        private static string VmuId(string product) => LbIntegrations.Saves.SaveId.Write(new LbIntegrations.Saves.SaveIdData { Emu = "flycast", Kind = "vmu", By = "product", Id = product });
+
         private const string Product = "MK-51035";
         private const string DiscRom = "Crazy Taxi (USA).gdi";
         private const string ArcadeRom = "crzytaxi.zip";
@@ -192,19 +198,19 @@ namespace LbIntegrations.Probe
 
             bool ok = true;
 
-            vmu = files.FirstOrDefault(s => (s.SaveGroupId ?? "").StartsWith("flycast-vmu:", StringComparison.OrdinalIgnoreCase));
+            vmu = files.FirstOrDefault(s => KindOf(s.SaveGroupId) == "vmu");
             if (vmu == null) { Console.WriteLine("  FAIL - no Dreamcast VMU row"); ok = false; }
             else
             {
                 bool named = string.Equals(Path.GetFileName(vmu.FileLocation),
                                            Product + "_vmu_save_A1.bin", StringComparison.Ordinal);
-                bool byId = (vmu.SaveGroupId ?? "").EndsWith(Product, StringComparison.Ordinal);
+                bool byId = LbIntegrations.Saves.SaveId.TryRead(vmu.SaveGroupId, out var vmuGroup) && vmuGroup.Id == Product;
                 if (!named || !byId)
                 { Console.WriteLine("  FAIL - the VMU was not found by its disc id"); ok = false; }
                 else Console.WriteLine("  the VMU was found by the disc id read at offset 0x9A00   OK");
             }
 
-            arcade = files.FirstOrDefault(s => (s.SaveGroupId ?? "").StartsWith("flycast-arcade:", StringComparison.OrdinalIgnoreCase));
+            arcade = files.FirstOrDefault(s => KindOf(s.SaveGroupId) == "nvram");
             if (arcade == null) { Console.WriteLine("  FAIL - no arcade row"); ok = false; }
             else if (!string.Equals(Path.GetFileName(arcade.FileLocation), ArcadeRom + ".nvmem", StringComparison.Ordinal))
             { Console.WriteLine("  FAIL - the arcade primary is " + Path.GetFileName(arcade.FileLocation)); ok = false; }
@@ -323,7 +329,7 @@ namespace LbIntegrations.Probe
 
                 // THE SAME CARD, PUSHED FROM ARGOSY: named "<product>.A1.bin" (the libretro core's
                 // name). It must land under Flycast's, over the card Flycast reads.
-                string product = (vmu.SaveGroupId ?? "").Substring("flycast-vmu:".Length);
+                string product = LbIntegrations.Saves.SaveId.TryRead(vmu.SaveGroupId, out var vmuId) ? vmuId.Id : "";
                 string argosyName = product + ".A1.bin";
                 string argosyCopy = Path.Combine(vault, argosyName);
                 File.WriteAllBytes(argosyCopy, Enumerable.Reverse(File.ReadAllBytes(copy)).ToArray());   // other bytes, to see them land
@@ -420,8 +426,7 @@ namespace LbIntegrations.Probe
                 Console.WriteLine("    " + (row is GameSaveState st ? "slot " + st.Slot + "  " : "          ")
                                   + Path.GetFileName(row.FileLocation) + "   group=" + row.SaveGroupId);
 
-            var vmu = all.FirstOrDefault(r => (r.SaveGroupId ?? "")
-                        .StartsWith("flycast-vmu:", StringComparison.OrdinalIgnoreCase));
+            var vmu = all.FirstOrDefault(r => KindOf(r.SaveGroupId) == "vmu");
             if (vmu == null)
             {
                 Console.WriteLine("  FAIL - no VMU row: the disc id we read does not match what Flycast named");
@@ -500,11 +505,11 @@ namespace LbIntegrations.Probe
             Directory.CreateDirectory(data);
             if (!File.Exists(real)) File.WriteAllBytes(real, new byte[128]);
 
-            var present = new GameSaveGame { FileLocation = real, SaveGroupId = "flycast-vmu:T44102N" };
+            var present = new GameSaveGame { FileLocation = real, SaveGroupId = VmuId("T44102N") };
             var gone = new GameSaveGame
             {
                 FileLocation = Path.Combine(data, "GONE_vmu_save_A1.bin"),
-                SaveGroupId = "flycast-vmu:GONE",
+                SaveGroupId = VmuId("GONE"),
             };
 
             // IsDirectory must say what the save IS. A host that believes a folder is a file finds
@@ -531,7 +536,7 @@ namespace LbIntegrations.Probe
             var elsewhere = new GameSaveGame
             {
                 FileLocation = Path.Combine(Path.GetTempPath(), "somewhere-else.bin"),
-                SaveGroupId = "flycast-vmu:T44102N",
+                SaveGroupId = VmuId("T44102N"),
             };
             Check("a save outside the emulator is NOT active", !plugin.IsSaveActive(elsewhere, exe));
             return ok;
@@ -807,7 +812,7 @@ namespace LbIntegrations.Probe
 
             var response = plugin.GetSaves(new GetSavesArgs { Emulator = emulator, Games = new[] { game } });
             var all = (response?.FoundSaves ?? (IReadOnlyCollection<GameSaveBase>)Array.Empty<GameSaveBase>()).ToList();
-            bool anyVmu = all.Any(s => (s.SaveGroupId ?? "").StartsWith("flycast-vmu:", StringComparison.OrdinalIgnoreCase));
+            bool anyVmu = all.Any(s => KindOf(s.SaveGroupId) == "vmu");
 
             Console.WriteLine("  a disc with no IP.BIN yields no VMU row   " + (anyVmu ? "FAIL" : "OK"));
             return !anyVmu;
