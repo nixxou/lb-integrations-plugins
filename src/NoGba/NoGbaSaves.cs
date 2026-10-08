@@ -34,18 +34,19 @@ using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 using LbIntegrations.Dsi;
 using LbIntegrations.Lbip;
+using LbIntegrations.Saves;
 
 namespace LbIntegrations.NoGba
 {
     public partial class NoGbaPlugin
     {
-        internal const string SavePrefix = "nogba:save:";
-
-        /// <summary>A DSiWare save lives INSIDE the NAND, not in BATTERY\, and what comes out is a
-        /// set of files rather than one - so it is packed into a single .dsisave. The prefix is the
-        /// same shape melonDS uses, with the emulator's own name in front, because the two never
-        /// share a row even when they share a console.</summary>
-        internal const string DsiWarePrefix = "nogba:dsiware:";
+        /// <summary>This plugin's "emu" in the ids (Shared.Saves, docs\saves-lb14-routing.md §3):
+        /// {"emu":"nogba","kind":"save","by":"name","id":"<asset name>"}, and for a DSiWare save - which lives
+        /// INSIDE the NAND, not in BATTERY\, packed into a single .dsisave - "kind":"nand","by":"title".
+        /// The same shape as melonDS's, under the emulator's own "emu": the two never share a row even
+        /// when they share a console. A restore goes to the version the row is tied to, else the game
+        /// (SaveRows.TargetFor), under that rom's asset name today.</summary>
+        private const string Emu = "nogba";
         private const string DsiWareGroupName = "DSiWare save";
         private const string DsiWareChipText = "NAND";
         private const string SaveGroupName = "Cartridge save";
@@ -104,7 +105,9 @@ namespace LbIntegrations.NoGba
             if (game == null || string.IsNullOrWhiteSpace(romPath)) return;
 
             string gameIdEarly = Safe(() => game.Id) ?? "";
-            string appIdEarly = app != null ? Safe(() => app.Id) : null;
+            // A version on its game's own file is not tied to the version (SaveRows.TieTo).
+            string appIdEarly = app == null ? null
+                : SaveRows.TieTo(Safe(() => app.Id), Safe(() => game.ApplicationPath), Safe(() => app.ApplicationPath), Full);
 
             // A DSiWARE TITLE KEEPS ITS SAVE INSIDE ITS NAND, at title/<cat>/<id>/data/public.sav,
             // and the image is 240 MB of which a few kilobytes are the save. So what is listed is
@@ -129,7 +132,7 @@ namespace LbIntegrations.NoGba
                         FileLocation = state,
                         IsDirectory = false,
                         OriginalFileName = Path.GetFileName(state),
-                        SaveGroupId = DsiWarePrefix + header.TitleId,
+                        SaveGroupId = SaveId.Write(new SaveIdData { Emu = Emu, Kind = "nand", By = "title", Id = header.TitleId }),
                         SaveGroupName = DsiWareGroupName,
                         DisplayChipText = DsiWareChipText,
                         ReportedFileSizeBytes = bytes > 0 ? bytes : (long?)null,
@@ -145,8 +148,8 @@ namespace LbIntegrations.NoGba
             var path = Path.Combine(layout.BatteryDir, asset + NoGbaPaths.SaveExtension);
             if (!File.Exists(path)) return;
 
-            string gameId = Safe(() => game.Id) ?? "";
-            string appId = app != null ? Safe(() => app.Id) : null;
+            string gameId = gameIdEarly;
+            string appId = appIdEarly;
             if (!seen.Add(path + "|" + (appId ?? gameId))) return;
 
             long size = 0; DateTime when = default;
@@ -159,7 +162,7 @@ namespace LbIntegrations.NoGba
                 FileLocation = path,
                 IsDirectory = false,
                 OriginalFileName = Path.GetFileName(path),
-                SaveGroupId = SavePrefix + asset,
+                SaveGroupId = SaveId.Write(new SaveIdData { Emu = Emu, Kind = "save", By = "name", Id = asset }),
                 SaveGroupName = SaveGroupName,
                 DisplayChipText = SaveChipText,
                 ReportedFileSizeBytes = size > 0 ? size : (long?)null,
@@ -178,11 +181,10 @@ namespace LbIntegrations.NoGba
 
         /// <summary>Is this one of ours AND a DSiWare one?</summary>
         private static bool IsDsiWare(GameSaveBase save)
-            => save?.SaveGroupId != null
-               && save.SaveGroupId.StartsWith(DsiWarePrefix, StringComparison.OrdinalIgnoreCase);
+            => IsOurs(save) && SaveId.TryRead(save.SaveGroupId, out var d) && d.Kind == "nand";
 
         private static string TitleIdOf(GameSaveBase save)
-            => IsDsiWare(save) ? save.SaveGroupId.Substring(DsiWarePrefix.Length) : null;
+            => IsDsiWare(save) && SaveId.TryRead(save.SaveGroupId, out var d) ? d.Id : null;
 
         /// <summary>Say what is in SNAP\, once per listing, and nothing more. Snapshots are not
         /// declared as saves because none has ever been seen; if one shows up, this is the line that
@@ -261,6 +263,14 @@ namespace LbIntegrations.NoGba
                 var layout = NoGbaPaths.Resolve(ResolveFullPath(emulatorApplicationPath));
                 if (layout?.BatteryDir == null) return true;
 
+                // A DSiWare save is active when it sits where it is pulled out of the NAND - not in BATTERY\.
+                // (It used to be answered true for every one: IsOurs did not know the DSiWare ids.)
+                if (IsDsiWare(save))
+                {
+                    var mine = DsiWorkspace.SavePathFor(layout, TitleIdOf(save));
+                    return mine != null && string.Equals(Path.GetFullPath(loc), Path.GetFullPath(mine), StringComparison.OrdinalIgnoreCase);
+                }
+
                 var here = Path.GetDirectoryName(Path.GetFullPath(loc));
                 return string.Equals(here, Path.GetFullPath(layout.BatteryDir),
                                      StringComparison.OrdinalIgnoreCase);
@@ -312,7 +322,13 @@ namespace LbIntegrations.NoGba
                     });
                 }
 
-                var name = FirstNonBlank(save.OriginalFileName, Path.GetFileName(source));
+                // The rom it goes to - the row's version's, else its game's (SaveRows.TargetFor) - and that rom's
+                // asset name TODAY: a renamed rom gets its save back.
+                var to = SaveRows.TargetFor(save, PluginHelper.DataManager, Full);
+                if (to.Warning != null) Log.Warn("restore of " + save.OriginalFileName + ": " + to.Warning);
+                var original = FirstNonBlank(save.OriginalFileName, Path.GetFileName(source));
+                var asset = string.IsNullOrWhiteSpace(to.RomPath) ? null : NoGbaRoms.AssetName(to.RomPath);
+                var name = string.IsNullOrWhiteSpace(asset) ? original : asset + Path.GetExtension(original);
                 var target = Path.Combine(layout.BatteryDir, name);
 
                 if (File.Exists(target))
@@ -395,9 +411,12 @@ namespace LbIntegrations.NoGba
 
         private static bool IsOursDsiWare(GameSaveBase save) => IsDsiWare(save);
 
-        private static bool IsOurs(GameSaveBase save)
-            => save?.SaveGroupId != null
-               && save.SaveGroupId.StartsWith(SavePrefix, StringComparison.OrdinalIgnoreCase);
+        /// <summary>Ours: the cartridge saves AND the DSiWare ones (the DSiWare ids used to be left out, so their
+        /// delete went to the host's default and the .dsisave came back from the NAND at the next listing).</summary>
+        private static bool IsOurs(GameSaveBase save) => SaveRows.IsOurs(save?.SaveGroupId, Emu);
+
+        /// <summary>A path as LaunchBox stores it, made full; null for nothing.</summary>
+        private static string Full(string path) => string.IsNullOrWhiteSpace(path) ? null : ResolveFullPath(path);
 
         /// <summary>The installation a save belongs to. From the save's own location when it is in a
         /// BATTERY folder - which is where ours always are - and from the library otherwise.</summary>

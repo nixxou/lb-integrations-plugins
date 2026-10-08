@@ -43,6 +43,11 @@
 // not tidiness: IsSaveContainer picks between a path that copies a directory into the vault and a
 // path that copies a file, and the container path is where every defect this file ever had came
 // from. See DsiSaveFile.
+//
+// THE IDS are the pack's JSON (Shared.Saves, docs\saves-lb14-routing.md §3): {"emu":"melonds","kind":"save",
+// "by":"name","id":"<asset name>"}, "kind":"state" with its "slot", and {"emu":"melonds","kind":"nand","by":"title",
+// "id":"<title id>"} for a DSiWare save. A restore goes to the version the row is tied to, else the game
+// (SaveRows.TargetFor), under that rom's asset name today. A version on its game's own file is not tied to it.
 
 using System;
 using System.Collections.Generic;
@@ -52,15 +57,15 @@ using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 using LbIntegrations.Dsi;
 using LbIntegrations.Lbip;
+using LbIntegrations.Saves;
 
 namespace LbIntegrations.MelonDs
 {
     public partial class MelonDsPlugin
     {
         internal const string SaveExtension = ".sav";
-        internal const string StatePrefix = "melonds:state:";
-        internal const string SavePrefix = "melonds:save:";
-        internal const string DsiWarePrefix = "melonds:dsiware:";
+        /// <summary>This plugin's "emu" in the ids (Shared.Saves).</summary>
+        private const string Emu = "melonds";
 
         private const string SaveGroupName = "Cartridge save";
         private const string SaveChipText = "SAV";
@@ -135,7 +140,9 @@ namespace LbIntegrations.MelonDs
             if (string.IsNullOrWhiteSpace(rom.AssetName)) return 0;
 
             string gameId = Safe(() => game.Id) ?? "";
-            string appId = app != null ? Safe(() => app.Id) : null;
+            // A version on its game's own file is not tied to the version (SaveRows.TieTo).
+            string appId = app == null ? null
+                : SaveRows.TieTo(Safe(() => app.Id), Safe(() => game.ApplicationPath), Safe(() => app.ApplicationPath), Full);
             string context = appId ?? gameId;
 
             // A DSiWare title keeps its save INSIDE its NAND, not beside the ROM, and what comes
@@ -148,7 +155,7 @@ namespace LbIntegrations.MelonDs
                 var state = DsiWorkspace.RefreshSave(layout, rom.TitleId, Bios7Of(layout));
                 if (state != null && File.Exists(state)
                     && seen.Add("dsiware|" + state + "|" + context))
-                    into.Add(Row(state, gameId, appId, DsiWarePrefix + rom.TitleId,
+                    into.Add(Row(state, gameId, appId, SaveId.Write(new SaveIdData { Emu = Emu, Kind = "nand", By = "title", Id = rom.TitleId }),
                                  DsiWareGroupName, DsiWareChipText));
                 return 0;                                 // no .sav and no .ml<n> for DSiWare
             }
@@ -158,7 +165,7 @@ namespace LbIntegrations.MelonDs
 
             var savePath = Combine(saveDir, rom.AssetName + SaveExtension);
             if (savePath != null && File.Exists(savePath) && seen.Add("save|" + savePath + "|" + context))
-                into.Add(Row(savePath, gameId, appId, SavePrefix + rom.AssetName,
+                into.Add(Row(savePath, gameId, appId, SaveId.Write(new SaveIdData { Emu = Emu, Kind = "save", By = "name", Id = rom.AssetName }),
                              SaveGroupName, SaveChipText));
 
             int states = 0;
@@ -179,7 +186,7 @@ namespace LbIntegrations.MelonDs
                     IsDirectory = false,
                     OriginalFileName = Path.GetFileName(statePath),
                     Slot = slot,
-                    SaveGroupId = StatePrefix + rom.AssetName + ":" + slot,
+                    SaveGroupId = SaveId.Write(new SaveIdData { Emu = Emu, Kind = "state", By = "name", Id = rom.AssetName, Slot = slot }),
                     SaveGroupName = StateGroupName,
                     DisplayChipText = StateChipText,
                     ReportedFileSizeBytes = size > 0 ? size : (long?)null,
@@ -410,8 +417,14 @@ namespace LbIntegrations.MelonDs
                 if (!File.Exists(source))
                     return new AddSaveResponse("This melonDS backup is not a file: " + source);
 
-                string name = FirstNonBlank(save.OriginalFileName, Path.GetFileName(source));
-                var targetDir = RestoreDirFor(save, name);
+                // The rom it goes to - the row's version's, else its game's (SaveRows.TargetFor) - and that rom's
+                // asset name TODAY, with the backup's own extension (.sav, .ml3...): a renamed rom gets its save back.
+                var to = SaveRows.TargetFor(save, PluginHelper.DataManager, Full);
+                if (to.Warning != null) Log.Warn("restore of " + save.OriginalFileName + ": " + to.Warning);
+                string original = FirstNonBlank(save.OriginalFileName, Path.GetFileName(source));
+                var asset = string.IsNullOrWhiteSpace(to.RomPath) ? null : NdsHeader.Describe(to.RomPath).AssetName;
+                string name = string.IsNullOrWhiteSpace(asset) ? original : asset + Path.GetExtension(original);
+                var targetDir = RestoreDirFor(save, name, to.RomPath);
                 if (targetDir == null)
                     return new AddSaveResponse("Could not work out where melonDS reads this save from.");
 
@@ -505,7 +518,7 @@ namespace LbIntegrations.MelonDs
         /// <summary>Where a restored save belongs. The configured folder when the install has one;
         /// otherwise beside the game's own ROM, which has to be found through the data manager because
         /// AddSaveArgs carries neither the emulator nor the ROM.</summary>
-        private static string RestoreDirFor(GameSaveBase save, string fileName)
+        private static string RestoreDirFor(GameSaveBase save, string fileName, string romPath)
         {
             try
             {
@@ -519,7 +532,6 @@ namespace LbIntegrations.MelonDs
                     if (!string.IsNullOrWhiteSpace(configured)) return configured;
                 }
 
-                var romPath = ResolveFullPath(Safe(() => game?.ApplicationPath));
                 var romDir = string.IsNullOrWhiteSpace(romPath) ? null : Path.GetDirectoryName(romPath);
                 if (!string.IsNullOrWhiteSpace(romDir)) return romDir;
 
@@ -589,18 +601,18 @@ namespace LbIntegrations.MelonDs
             try { return File.Exists(path) || Directory.Exists(path); } catch { return false; }
         }
 
-        private static bool IsOurs(GameSaveBase save)
-            => save?.SaveGroupId != null
-               && (StartsWith(save.SaveGroupId, SavePrefix)
-                   || StartsWith(save.SaveGroupId, StatePrefix)
-                   || StartsWith(save.SaveGroupId, DsiWarePrefix));
+        private static bool IsOurs(GameSaveBase save) => SaveRows.IsOurs(save?.SaveGroupId, Emu);
 
+        /// <summary>A DSiWare save: our id, "kind":"nand".</summary>
         private static bool IsDsiWare(GameSaveBase save)
-            => save?.SaveGroupId != null && StartsWith(save.SaveGroupId, DsiWarePrefix);
+            => IsOurs(save) && SaveId.TryRead(save.SaveGroupId, out var d) && d.Kind == "nand";
 
-        /// <summary>The title id carried by a DSiWare save's group id.</summary>
+        /// <summary>The title id carried by a DSiWare save's id.</summary>
         private static string TitleIdOf(GameSaveBase save)
-            => IsDsiWare(save) ? save.SaveGroupId.Substring(DsiWarePrefix.Length) : null;
+            => IsDsiWare(save) && SaveId.TryRead(save.SaveGroupId, out var d) ? d.Id : null;
+
+        /// <summary>A path as LaunchBox stores it, made full; null for nothing.</summary>
+        private static string Full(string path) => string.IsNullOrWhiteSpace(path) ? null : ResolveFullPath(path);
 
         /// <summary>DSi.BIOS7Path, resolved, or null. Without it a NAND cannot be opened at all.</summary>
         internal static string Bios7Of(MelonDsLayout layout)

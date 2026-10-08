@@ -216,13 +216,13 @@ namespace LbIntegrations.Probe
                 File.WriteAllText(toml, "[Instance0.Firmware]\r\nOverrideSettings = false\r\nUsername = 'Mehdi'\r\nLanguage = 2\r\n");
                 var own = new Dictionary<string, string> { ["FwUsername"] = "Nixx", ["FwLanguage"] = "3", ["FwMessage"] = "a;b=c %20 d" };
                 M("Save").Invoke(null, new object[] { install, "game-fw", own });
-                var loaded = (Dictionary<string, string>)M("Load").Invoke(null, new object[] { install, "game-fw" });
+                var loaded = (Dictionary<string, string>)M("Load").Invoke(null, new object[] { install, "game-fw", false });
                 ok &= Check("kept with the override on, and a message with ; = and % read back as it was",
                             loaded != null && loaded["FwOverride"] == "true" && loaded["FwMessage"] == "a;b=c %20 d", loaded == null ? null : string.Join(",", loaded));
-                ok &= Check("the game will force the console's settings", (bool)Call(M("ForcesFirmware"), new object[] { layout, "game-fw" }));
-                ok &= Check("another game will not - melonDS's override is off", !(bool)Call(M("ForcesFirmware"), new object[] { layout, "game-2" }));
+                ok &= Check("the game will force the console's settings", (bool)Call(M("ForcesFirmware"), new object[] { layout, "game-fw", true }));
+                ok &= Check("another game will not - melonDS's override is off", !(bool)Call(M("ForcesFirmware"), new object[] { layout, "game-2", true }));
 
-                ok &= Check("its session: override on, its name and language, quoted", (bool)Call(M("Apply"), new object[] { layout, "game-fw" })
+                ok &= Check("its session: override on, its name and language, quoted", (bool)Call(M("Apply"), new object[] { layout, "game-fw", false })
                             && Val("OverrideSettings") == "true" && Val("Username") == "Nixx" && Val("Language") == "3"
                             && File.ReadAllText(toml).Contains("Username = 'Nixx'"), File.ReadAllText(toml));
                 ok &= Check("the message as melonDS reads it", Val("Message") == "a;b=c %20 d", Val("Message"));
@@ -233,12 +233,12 @@ namespace LbIntegrations.Probe
                 // melonDS's own, changed by the configuration window.
                 var err = (string)Call(M("WriteOwn"), new object[] { layout, new Dictionary<string, string> { ["FwOverride"] = "true", ["FwColour"] = "11" } });
                 ok &= Check("melonDS's own written by the configuration window", err == null && Val("OverrideSettings") == "true" && Val("FavouriteColour") == "11", err);
-                ok &= Check("now every game without its own forces them", (bool)Call(M("ForcesFirmware"), new object[] { layout, "game-2" }));
+                ok &= Check("now every game without its own forces them", (bool)Call(M("ForcesFirmware"), new object[] { layout, "game-2", true }));
 
                 // The first version's store, under its old name.
                 File.Delete(store);
                 File.WriteAllText(Path.Combine(install, "lbip-video.tsv"), "game-old\tRenderer=1;ScaleFactor=3\r\n");
-                var old = (Dictionary<string, string>)M("Load").Invoke(null, new object[] { install, "game-old" });
+                var old = (Dictionary<string, string>)M("Load").Invoke(null, new object[] { install, "game-old", false });
                 ok &= Check("the first version's lbip-video.tsv is picked up, renamed",
                             old != null && old["ScaleFactor"] == "3" && File.Exists(store) && !File.Exists(Path.Combine(install, "lbip-video.tsv")));
             }
@@ -276,13 +276,13 @@ namespace LbIntegrations.Probe
                 var args = new object[] { install, "game-t", false };
                 var back = (string)M("LoadAdvanced").Invoke(null, args);
                 ok &= Check("the text kept, and in use", back == hand.Trim() && (bool)args[2]);
-                ok &= Check("it forces the console's settings (its OverrideSettings)", (bool)Call(M("ForcesFirmware"), new object[] { layout, "game-t" }));
+                ok &= Check("it forces the console's settings (its OverrideSettings)", (bool)Call(M("ForcesFirmware"), new object[] { layout, "game-t", true }));
 
                 var parsed = M("ParseHand").Invoke(null, new object[] { hand, null });
                 var pv = new object[] { layout, parsed, null, null };
                 var preview = (string)Call(M("Preview"), pv);
                 ok &= Check("the preview writes nothing", File.ReadAllText(toml) == original && !File.Exists(note), (string)pv[3]);
-                ok &= Check("its session applied", (bool)Call(M("Apply"), new object[] { layout, "game-t" }));
+                ok &= Check("its session applied", (bool)Call(M("Apply"), new object[] { layout, "game-t", false }));
                 var text = File.ReadAllText(toml);
                 ok &= Check("the preview is exactly what the launch wrote", preview == text, preview);
                 ok &= Check("the text's, not the tab's: 5", TomlValues(toml, "3D.GL")["ScaleFactor"] == "5", text);
@@ -300,7 +300,7 @@ namespace LbIntegrations.Probe
                 // changed in melonDS kept, ours back (30/09).
                 var saved = Path.Combine(install, "lbip-settings.original.toml");
                 File.WriteAllText(toml, original);
-                Call(M("Apply"), new object[] { layout, "game-t" });
+                Call(M("Apply"), new object[] { layout, "game-t", false });
                 ok &= Check("the session keeps the file as it was, beside the note", File.Exists(saved) && File.ReadAllText(saved) == original && File.Exists(note));
                 File.WriteAllText(toml, "[3D.GL]\nScaleFactor = 9\n\n[DSi]\nNANDPath = 'C:\\nand.bin'\nVolume = 50\n\n[Instance0.Firmware]\nOverrideSettings = true\nUsername = \"Nixx\"\n\n[Screen]\nNewKey = 3\n");
                 Call(M("Restore"), new object[] { layout, "the session is over" });
@@ -312,7 +312,7 @@ namespace LbIntegrations.Probe
 
                 // melonDS could not parse it, and wrote an empty document over it: the whole file back.
                 File.WriteAllText(toml, original);
-                Call(M("Apply"), new object[] { layout, "game-t" });
+                Call(M("Apply"), new object[] { layout, "game-t", false });
                 File.WriteAllText(toml, "");
                 Call(M("Restore"), new object[] { layout, "the session is over" });
                 ok &= Check("melonDS emptied its file: put back whole, byte for byte, nothing of ours", File.ReadAllText(toml) == original && !File.Exists(note) && !File.Exists(saved), File.ReadAllText(toml));
@@ -321,10 +321,10 @@ namespace LbIntegrations.Probe
                 // That watcher must not put launch 2's settings back before its emulator has read them.
                 var lastSession = gs.GetField("LastSession", BindingFlags.NonPublic | BindingFlags.Static);
                 File.WriteAllText(toml, original);
-                Call(M("Apply"), new object[] { layout, "game-t" });
+                Call(M("Apply"), new object[] { layout, "game-t", false });
                 var first = (string)lastSession.GetValue(null);
                 Call(M("Restore"), new object[] { layout, "left behind by a session that did not end" });   // launch 2, first thing
-                Call(M("Apply"), new object[] { layout, "game-t" });
+                Call(M("Apply"), new object[] { layout, "game-t", false });
                 var second = (string)lastSession.GetValue(null);
                 Call(M("Restore"), new object[] { layout, "melonDS never started", first });                // launch 1's watcher, late
                 ok &= Check("a late watcher of an earlier launch leaves the later one's settings in place",
@@ -341,7 +341,7 @@ namespace LbIntegrations.Probe
                             !P("\"oops") && !P("\"a\"b\"") && !P("\"\\q\"") && !P("\"a\nb\"") && !P("[1, 2]") && !P("yes") && !P("012") && !P("1.") && !P("'it's'"));
 
                 M("SaveAdvanced").Invoke(null, new object[] { install, "game-t", hand, false });
-                Call(M("Apply"), new object[] { layout, "game-t" });
+                Call(M("Apply"), new object[] { layout, "game-t", false });
                 ok &= Check("not in use: the tab's values again (2)", TomlValues(toml, "3D.GL")["ScaleFactor"] == "2" && !File.ReadAllText(toml).Contains("NewKey"));
                 Call(M("Restore"), new object[] { layout, "the session is over" });
 
@@ -1951,7 +1951,7 @@ namespace LbIntegrations.Probe
                 FileLocation = save,
                 IsDirectory = false,
                 OriginalFileName = "state.dsisave",
-                SaveGroupId = "melonds:dsiware:" + titleId,
+                SaveGroupId = LbIntegrations.Saves.SaveId.Write(new LbIntegrations.Saves.SaveIdData { Emu = "melonds", Kind = "nand", By = "title", Id = titleId }),
                 SaveGroupName = "DSiWare save",
             };
 
@@ -1963,7 +1963,7 @@ namespace LbIntegrations.Probe
                         {
                             GameId = "probe",
                             FileLocation = Path.Combine(install, "whatever.sav"),
-                            SaveGroupId = "melonds:save:whatever",
+                            SaveGroupId = LbIntegrations.Saves.SaveId.Write(new LbIntegrations.Saves.SaveIdData { Emu = "melonds", Kind = "save", By = "name", Id = "whatever" }),
                         }));
 
             bool done = plugin.TryBackupSave(row, exe, Path.Combine(install, "nowhere"), out var error);
@@ -2028,7 +2028,7 @@ namespace LbIntegrations.Probe
                     FileLocation = save,
                     IsDirectory = false,
                     OriginalFileName = "state.dsisave",
-                    SaveGroupId = "melonds:dsiware:" + titleId,
+                    SaveGroupId = LbIntegrations.Saves.SaveId.Write(new LbIntegrations.Saves.SaveIdData { Emu = "melonds", Kind = "nand", By = "title", Id = titleId }),
                     SaveGroupName = "DSiWare save",
                 };
 
@@ -2055,7 +2055,7 @@ namespace LbIntegrations.Probe
                         FileLocation = vault,
                         IsDirectory = false,
                         OriginalFileName = Path.GetFileName(vault),
-                        SaveGroupId = "melonds:dsiware:" + titleId,
+                        SaveGroupId = LbIntegrations.Saves.SaveId.Write(new LbIntegrations.Saves.SaveIdData { Emu = "melonds", Kind = "nand", By = "title", Id = titleId }),
                         SaveGroupName = "DSiWare save",
                     },
                     ShouldOverwriteFunc = () => true,
