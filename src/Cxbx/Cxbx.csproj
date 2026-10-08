@@ -27,6 +27,8 @@
 
   <ItemGroup>
     <Compile Include="..\Shared.Lbip\**\*.cs" />
+    <!-- THE SAVE IDS, shared by every plugin of the pack (docs\saves-lb14-routing.md §3, §4c). -->
+    <Compile Include="..\Shared.Saves\**\*.cs" />
     <!-- The look of the Nixx windows, LiteBox's: the theme and the shell of a game's window. -->
     <Compile Include="..\Shared.Ui\**\*.cs" />
     <!-- The pack's console identity ("Your console") - see src\Shared.Identity\PackIdentity.cs. -->

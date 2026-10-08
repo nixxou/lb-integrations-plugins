@@ -29,12 +29,17 @@ using SharpCompress.Common;
 using SharpCompress.Writers.Zip;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
+using LbIntegrations.Saves;
 
 namespace LbIntegrations.Cxbx
 {
     internal static class CxbxSaves
     {
-        public const string GroupPrefix = "cxbx:";
+        /// <summary>This plugin's "emu" in the ids (Shared.Saves, docs\saves-lb14-routing.md §3):
+        /// {"emu":"cxbx","kind":"save","by":"title","id":"<TITLE ID>"} - its own, no longer shared with xemu's (Mehdi,
+        /// 08/10: a save both emulators can read is no reason to share an owner). Reading one stays shared: xemu's
+        /// plugin writes the same format, so a backup of either restores on either (TitleIdFrom).</summary>
+        public const string Emu = "cxbx";
         public const string Extension = ".cxbxsave";
         private static readonly DateTime Stamp = new DateTime(1980, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         private static readonly object Gate = new object();
@@ -208,7 +213,13 @@ namespace LbIntegrations.Cxbx
                 var found = new List<GameSaveBase>();
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var app in args.AdditionalApplications ?? (IReadOnlyCollection<IAdditionalApplication>)Array.Empty<IAdditionalApplication>())
-                    Collect(exe, Safe(() => app.ApplicationPath), Safe(() => app.GameId), Safe(() => app.Id), Safe(() => PluginHelper.DataManager?.GetGameById(app.GameId)?.Title), found, seen);
+                {
+                    // A version on its game's own file is not tied to the version (SaveRows.TieTo).
+                    var game = Safe(() => PluginHelper.DataManager?.GetGameById(app.GameId));
+                    Collect(exe, Safe(() => app.ApplicationPath), Safe(() => app.GameId),
+                            SaveRows.TieTo(Safe(() => app.Id), Safe(() => game?.ApplicationPath), Safe(() => app.ApplicationPath), Full),
+                            Safe(() => game?.Title), found, seen);
+                }
                 foreach (var game in args.Games ?? (IReadOnlyCollection<IGame>)Array.Empty<IGame>())
                     Collect(exe, Safe(() => game.ApplicationPath), Safe(() => game.Id), null, Safe(() => game.Title), found, seen);
                 Log.Verbose("found " + found.Count + " save(s)");
@@ -239,14 +250,14 @@ namespace LbIntegrations.Cxbx
         private static GameSaveGame Row(string gameId, string appId, string pack, string titleId, string name, long size, DateTime when)
             => new GameSaveGame
             {
-                // Whose it is, said (Mehdi, 05/10): left empty, LaunchBox names whichever emulator played last - xemu's saves share the group.
+                // Whose it is, said (Mehdi, 05/10): left empty, LaunchBox names whichever emulator played last.
                 EmulatorFileName = CxbxPaths.Loader,
                 GameId = gameId,
                 AdditionalApplicationId = appId,
                 FileLocation = pack,
                 IsDirectory = false,
                 OriginalFileName = Path.GetFileName(pack),
-                SaveGroupId = CxbxSaves.GroupPrefix + titleId,
+                SaveGroupId = SaveId.Write(new SaveIdData { Emu = CxbxSaves.Emu, Kind = "save", By = "title", Id = titleId.ToUpperInvariant() }),
                 SaveGroupName = string.IsNullOrWhiteSpace(name) ? "Xbox save " + titleId : name,
                 DisplayChipText = ChipText,
                 ReportedFileSizeBytes = size > 0 ? size : (long?)null,
@@ -280,10 +291,10 @@ namespace LbIntegrations.Cxbx
                 var source = Safe(() => save.FileLocation);
                 if (string.IsNullOrWhiteSpace(source) || !File.Exists(source)) return new AddSaveResponse("This Xbox backup is not a file: " + source);
                 // An xemu savestate is xemu's plugin's, never a save of this one: its zip would be laid out as the game's save.
-                if (save is GameSaveState || (Safe(() => save.SaveGroupId) ?? "").StartsWith("xemustate:", StringComparison.OrdinalIgnoreCase))
+                if (save is GameSaveState || (SaveId.TryRead(Safe(() => save.SaveGroupId), out var kindOf) && kindOf.Kind == "state"))
                     return new AddSaveResponse("This is an xemu savestate - restore it on the game's xemu (Nixx-Xemu), not on Cxbx-Reloaded.");
                 // A backup of a save group says its game; a file imported by hand (Import Save Game File...) may not - then the
-                // game it is imported for says it, by its disc. A save of xemu's plugin ("xemu:") is the same format.
+                // game it is imported for says it, by its disc. A save of xemu's plugin is the same format.
                 var titleId = TitleIdFrom(save) ?? TitleIdOfGame(save);
                 if (titleId == null) return new AddSaveResponse("This backup does not say which Xbox game it belongs to, and the game's disc could not be read.");
                 if (!CxbxSaves.IsZip(source)) return new AddSaveResponse("That file is not an Xbox save of this plugin.");
@@ -339,16 +350,17 @@ namespace LbIntegrations.Cxbx
             }
         }
 
+        /// <summary>The title id (lower case, as the files are named) of an Xbox save's id - this plugin's or xemu's, the
+        /// same format.</summary>
         private static string TitleIdFrom(GameSaveBase save)
         {
-            var g = Safe(() => save?.SaveGroupId);
-            if (g == null) return null;
-            string id = null;
-            if (g.StartsWith(CxbxSaves.GroupPrefix, StringComparison.OrdinalIgnoreCase)) id = g.Substring(CxbxSaves.GroupPrefix.Length);
-            else if (g.StartsWith("xemu:", StringComparison.OrdinalIgnoreCase)) id = g.Substring("xemu:".Length);
-            id = id?.Trim().ToLowerInvariant();
+            if (!SaveId.TryRead(Safe(() => save?.SaveGroupId), out var d) || d.Kind != "save" || (d.Emu != CxbxSaves.Emu && d.Emu != "xemu")) return null;
+            var id = d.Id?.Trim().ToLowerInvariant();
             return id != null && id.Length == 8 && uint.TryParse(id, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out _) ? id : null;
         }
+
+        /// <summary>A path as LaunchBox stores it, made full; null for nothing.</summary>
+        private static string Full(string path) => string.IsNullOrWhiteSpace(path) ? null : ResolveFullPath(path);
 
         /// <summary>The title id of the game a save is added for, read from its disc - for a file imported without its group.</summary>
         private static string TitleIdOfGame(GameSaveBase save)
