@@ -64,6 +64,8 @@ namespace LbIntegrations.Saves
 
         private void Say(string message) { try { _log("[saves] " + message); } catch { } }
 
+        private static string SafeExe(GetSavesArgs? args) { try { return args?.Emulator?.ApplicationPath ?? ""; } catch { return ""; } }
+
         /// <summary>The route of a row that is not the plugin's; null for its own (and when the desk is off).</summary>
         private SaveOwnerRoute? Route(GameSaveBase? save)
         {
@@ -78,9 +80,14 @@ namespace LbIntegrations.Saves
             try
             {
                 var mine = own?.WasSuccess == true ? own.FoundSaves ?? Array.Empty<GameSaveBase>() : (IReadOnlyCollection<GameSaveBase>)Array.Empty<GameSaveBase>();
-                var others = SaveRouter.OthersFor(_plugin, args, mine);
-                if (others.Count == 0) return own!;
-                return new GetSavesResponse(mine.Concat(others).ToList());
+                // The plugin's rows carry its exe name (measured 08/10: left empty, LaunchBox showed another row's
+                // "retroarch.exe (snes9x_libretro)" on SUPER ZSNES's card), and the router's last resort reads it.
+                var exe = System.IO.Path.GetFileName(SafeExe(args));
+                var named = string.IsNullOrEmpty(exe) ? mine.ToList()
+                            : mine.Select(r => r != null && string.IsNullOrEmpty(r.EmulatorFileName) ? SaveRows.With(r, exe, null) : r).ToList();
+                var others = SaveRouter.OthersFor(_plugin, args, named);
+                if (others.Count == 0 && named.SequenceEqual(mine)) return own!;
+                return new GetSavesResponse(named.Concat(others).ToList());
             }
             catch (Exception ex) { Say("others not listed: " + ex.Message); return own!; }
         }
