@@ -187,7 +187,7 @@ namespace LbIntegrations.Probe
             Check("LiteBox's Make Default: the old save follows the old rom", t.RomPath == a && t.VersionId == V2 && t.Warning == null);
 
             t = SaveRows.ChooseTarget("c999", a, new[] { (V, (string?)b) }, Full);
-            Check("a version that no longer exists: the game, with a warning", t.RomPath == a && t.VersionId == null && t.Warning != null);
+            Check("a version that no longer exists: refused, nothing written", t.Refused && t.RomPath == null && t.Warning != null);
 
             t = SaveRows.ChooseTarget(null, gone, new[] { (V, (string?)b) }, Full);
             Check("the game's file is missing: kept, with a warning", t.RomPath == gone && t.Warning != null);

@@ -421,6 +421,7 @@ namespace LbIntegrations.MelonDs
                 // asset name TODAY, with the backup's own extension (.sav, .ml3...): a renamed rom gets its save back.
                 var to = SaveRows.TargetFor(save, PluginHelper.DataManager, Full);
                 if (to.Warning != null) Log.Warn("restore of " + save.OriginalFileName + ": " + to.Warning);
+                if (to.Refused) return new AddSaveResponse(to.Warning);
                 string original = FirstNonBlank(save.OriginalFileName, Path.GetFileName(source));
                 var asset = string.IsNullOrWhiteSpace(to.RomPath) ? null : NdsHeader.Describe(to.RomPath).AssetName;
                 string name = string.IsNullOrWhiteSpace(asset) ? original : asset + Path.GetExtension(original);

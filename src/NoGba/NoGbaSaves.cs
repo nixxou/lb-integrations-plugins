@@ -326,6 +326,7 @@ namespace LbIntegrations.NoGba
                 // asset name TODAY: a renamed rom gets its save back.
                 var to = SaveRows.TargetFor(save, PluginHelper.DataManager, Full);
                 if (to.Warning != null) Log.Warn("restore of " + save.OriginalFileName + ": " + to.Warning);
+                if (to.Refused) return new AddSaveResponse(to.Warning);
                 var original = FirstNonBlank(save.OriginalFileName, Path.GetFileName(source));
                 var asset = string.IsNullOrWhiteSpace(to.RomPath) ? null : NoGbaRoms.AssetName(to.RomPath);
                 var name = string.IsNullOrWhiteSpace(asset) ? original : asset + Path.GetExtension(original);

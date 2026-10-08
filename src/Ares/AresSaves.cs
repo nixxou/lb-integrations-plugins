@@ -353,6 +353,7 @@ namespace LbIntegrations.Ares
                 if (AresLaunch.Running(exe)) return new AddSaveResponse("ares is running: it would write the game's own over this one. Close it first.");
                 var to = SaveRows.TargetFor(save, dm, Full);
                 if (to.Warning != null) Log.Warn("restore of " + original + ": " + to.Warning);
+                if (to.Refused) return new AddSaveResponse(to.Warning);
                 var rom = to.RomPath;
                 var system = SystemOf(emu, Safe(() => game?.Id), Safe(() => game?.Platform), rom);
                 var folders = FoldersFor(exe, rom, system);
@@ -391,23 +392,36 @@ namespace LbIntegrations.Ares
             }
         }
 
-        /// <summary>The file name a restored save takes for this rom TODAY. Named after one of its names already (the
-        /// game's, a disc's): kept. Otherwise a save or a console copy takes the game's name with its own extension
-        /// (".srm", ".bram"...); a state of a disc game keeps its name - which disc it was is not known any more.</summary>
+        /// <summary>The file name a restored save takes for this rom TODAY - see <see cref="NameFor"/>.</summary>
         private static string NameNow(string original, bool state, string rom, string exe, AresSystem system)
         {
             if (string.IsNullOrWhiteSpace(rom) || system == null) return original;
             var identity = AresConsoleSession.IdentityOf(rom, exe);
             if (identity.Length == 0) return original;
             var names = new[] { identity }.Concat(system.Disc ? AresConsoleSession.DiscNames(rom, system, exe) : new List<string>()).ToList();
-            var ext = Path.GetExtension(original);
-            var stem = original.Substring(0, original.Length - ext.Length);
-            // A save's extension may be compound (".d1a" is one, but a name like "x.sav" is plain): matched on the names.
-            if (names.Any(n => original.StartsWith(n + ".", StringComparison.OrdinalIgnoreCase) || string.Equals(stem, n, StringComparison.OrdinalIgnoreCase))) return original;
-            if (state && system.Disc) return original;
-            return identity + ext;
+            var exts = system.SaveExtensions
+                .Concat(system.ConsoleFiles.Select(c => c.Ext))
+                .Concat(Enumerable.Range(1, 9).Select(n => ".bs" + n.ToString(CultureInfo.InvariantCulture)));
+            return NameFor(original, names, exts, keepUnknown: state && system.Disc);
         }
 
+        /// <summary>The rule, apart from ares's files so the probe can hold it to cases. The backup's extension is
+        /// one ares writes (<paramref name="exts"/>, the longest that fits - ".d1a" and the like are not
+        /// Path.GetExtension's); what is left of the name is compared WHOLE with the game's names today (Codex
+        /// review, 08/10: a "starts with" test kept "Zelda.rev1.srm" after the rom became "Zelda.sfc", and ares never
+        /// read it). Named after one of them: kept. Otherwise it takes <paramref name="names"/>[0], the game's name -
+        /// unless <paramref name="keepUnknown"/> (a disc game's state: which disc it was is not known any more).</summary>
+        internal static string NameFor(string original, IReadOnlyList<string> names, IEnumerable<string> exts, bool keepUnknown)
+        {
+            if (string.IsNullOrEmpty(original) || names == null || names.Count == 0) return original;
+            var ext = exts?.Where(e => !string.IsNullOrEmpty(e) && original.Length > e.Length && original.EndsWith(e, StringComparison.OrdinalIgnoreCase))
+                           .OrderByDescending(e => e.Length).FirstOrDefault()
+                      ?? Path.GetExtension(original);
+            var stem = original.Substring(0, original.Length - ext.Length);
+            if (names.Any(n => string.Equals(stem, n, StringComparison.OrdinalIgnoreCase))) return original;
+            if (keepUnknown) return original;
+            return names[0] + original.Substring(original.Length - ext.Length);
+        }
         /// <summary>A path as LaunchBox stores it, made full; null for nothing.</summary>
         private static string Full(string path) => string.IsNullOrWhiteSpace(path) ? null : ResolveFullPath(path);
 

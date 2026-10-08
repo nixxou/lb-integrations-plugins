@@ -513,6 +513,32 @@ namespace LbIntegrations.Probe
             return true;
         }
 
+        /// <summary>The name a restored save takes (AresPlugin.NameFor): kept when it is one of the game's names
+        /// today, else the game's name with the backup's own extension.</summary>
+        public static bool NameRule(Assembly asm)
+        {
+            Console.WriteLine("-- the name a restored ares save takes --");
+            var m = T(asm, "AresPlugin").GetMethod("NameFor", Any);
+            int bad = 0;
+            void Case(string what, string original, string[] names, string[] exts, bool keep, string expected)
+            {
+                var got = (string)m.Invoke(null, new object[] { original, names, exts, keep });
+                bool ok = got == expected;
+                if (!ok) bad++;
+                Console.WriteLine((ok ? "  OK    " : "  FAIL  ") + what + (ok ? "" : "   got \"" + got + "\", expected \"" + expected + "\""));
+            }
+            var cart = new[] { ".srm", ".ram", ".rtc", ".bs1", ".bs2" };
+            Case("already the game's name: kept", "Zelda.srm", new[] { "Zelda" }, cart, false, "Zelda.srm");
+            Case("an old name: the game's name, its extension kept", "Zelda (Rev 1).srm", new[] { "Zelda" }, cart, false, "Zelda.srm");
+            Case("an old DOTTED name is not mistaken for the new one", "Zelda.rev1.srm", new[] { "Zelda" }, cart, false, "Zelda.srm");
+            Case("a dotted name that IS the game's: kept", "Zelda.rev1.srm", new[] { "Zelda.rev1" }, cart, false, "Zelda.rev1.srm");
+            Case("a state renamed with its slot", "Old Name.bs2", new[] { "Zelda" }, cart, false, "Zelda.bs2");
+            Case("a disc's state named after that disc: kept", "Game (Disc 2).bs1", new[] { "Game", "Game (Disc 1)", "Game (Disc 2)" }, cart, true, "Game (Disc 2).bs1");
+            Case("a disc game's state of an unknown disc: kept", "Old (Disc 1).bs1", new[] { "Game", "Game (Disc 1)" }, cart, true, "Old (Disc 1).bs1");
+            Case("a compound extension of ares's is taken whole", "Old.d1a", new[] { "Zelda" }, new[] { ".d1a" }, false, "Zelda.d1a");
+            Console.WriteLine(bad == 0 ? "  all good" : "  " + bad + " FAILED");
+            return bad == 0;
+        }
         public static bool Saves(Assembly asm, string exe, string system, string rom)
         {
             Console.WriteLine("-- saves of " + Path.GetFileName(rom) + " as " + system + " --");

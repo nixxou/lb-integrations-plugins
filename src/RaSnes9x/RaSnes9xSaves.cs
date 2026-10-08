@@ -253,6 +253,7 @@ namespace LbIntegrations.RaSnes9x
                 var exe = ExecutableOf(game);
                 var to = SaveRows.TargetFor(save, PluginHelper.DataManager, Full);
                 if (to.Warning != null) Log.Warn("restore of " + save.OriginalFileName + ": " + to.Warning);
+                if (to.Refused) return new AddSaveResponse(to.Warning);
                 var targetDir = exe == null ? null : TargetDirFor(save, exe, to.RomPath);
                 if (targetDir == null) return new AddSaveResponse("Could not work out where RASnes9x reads this save from.");
                 // The name of the rom it goes to TODAY, with the backup's own extension (.srm, .rtc, .003...).

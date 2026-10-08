@@ -8,9 +8,13 @@
 // the old rom, its combine re-points them to the absorbing game). AddSaveFile hands the row over.
 //
 // THE RESTORE TARGET: the version the row is tied to, else the game - its CURRENT ApplicationPath, so
-// a rom renamed (and updated in LaunchBox) is followed. A row tied to a version that no longer exists
-// falls back to the game WITH a warning, never silently: written there, the save of one rom could
-// overwrite the live save of another.
+// a rom renamed (and updated in LaunchBox) is followed.
+//
+// REFUSED, NOT REDIRECTED (Codex review, 08/10): a row tied to a version that no longer exists, a game no
+// longer in LaunchBox, or versions that could not be read. Sent to the game instead, a version's save would
+// be written under the game's rom name over the game's live save - a save of ANOTHER card, which LaunchBox's
+// precautionary backup (the restored card's own) never copies. LiteBox and the RomM sync restore with nobody
+// watching. The caller answers the restore with the warning and writes nothing.
 //
 // A VERSION ON ITS GAME'S FILE is not tied to the version: same file, nothing lost, and it avoids
 // LaunchBox's "Can't find the game for this save item" defect (test 9b, 07/10).
@@ -34,8 +38,10 @@ namespace LbIntegrations.Saves
         public string? RomPath { get; init; }
         /// <summary>The version the target belongs to; null for the game itself.</summary>
         public string? VersionId { get; init; }
-        /// <summary>Set when the target is not the one the row asked for, or is missing - for the log and the user.</summary>
+        /// <summary>Set when the target is missing, or refused - for the log and the user.</summary>
         public string? Warning { get; init; }
+        /// <summary>True when nothing must be written: the restore is answered with <see cref="Warning"/>.</summary>
+        public bool Refused { get; init; }
     }
 
     internal static class SaveRows
@@ -66,7 +72,11 @@ namespace LbIntegrations.Saves
                 var v = (versions ?? Enumerable.Empty<(string, string?)>())
                         .FirstOrDefault(x => string.Equals(x.Id, rowVersionId, StringComparison.OrdinalIgnoreCase));
                 if (v.Id == null)
-                    return new RestoreTarget { RomPath = game, Warning = "The version this save belongs to no longer exists; it goes to the game." };
+                    return new RestoreTarget
+                    {
+                        Refused = true,
+                        Warning = "The version this save belongs to is not in LaunchBox any more, so it was not restored (it would have gone over the game's own save). To put it on the game, use Import Save Game File.",
+                    };
                 var vp = full(v.Path);
                 return new RestoreTarget { RomPath = vp, VersionId = v.Id, Warning = Exists(vp) ? null : "The file of this save's version is missing." };
             }
@@ -78,11 +88,17 @@ namespace LbIntegrations.Saves
         {
             IGame? game = null;
             try { if (!string.IsNullOrEmpty(row?.GameId)) game = dm?.GetGameById(row!.GameId); } catch { }
-            if (game == null) return new RestoreTarget { Warning = "The game of this save is not in LaunchBox any more." };
+            if (game == null) return new RestoreTarget { Refused = true, Warning = "The game of this save is not in LaunchBox any more, so it was not restored." };
 
             IAdditionalApplication[] apps;
             try { apps = game.GetAllAdditionalApplications() ?? Array.Empty<IAdditionalApplication>(); }
-            catch { apps = Array.Empty<IAdditionalApplication>(); }
+            catch
+            {
+                // Unreadable is not the same as gone: a row tied to a version is refused, never sent to the game.
+                if (!string.IsNullOrEmpty(row?.AdditionalApplicationId))
+                    return new RestoreTarget { Refused = true, Warning = "The versions of this game could not be read, so this save was not restored." };
+                apps = Array.Empty<IAdditionalApplication>();
+            }
             var versions = apps.Where(a => a != null).Select(a => (Safe(() => a.Id) ?? "", Safe(() => a.ApplicationPath)));
             return ChooseTarget(row?.AdditionalApplicationId, Safe(() => game.ApplicationPath), versions, full);
         }
