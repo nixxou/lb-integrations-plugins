@@ -124,8 +124,11 @@ asked. LaunchBox's help names RetroArch, Dolphin and PCSX2 as the only save-mana
 | no plugin (hand-added exe) | a catch-all plugin claiming the emulators nobody claims (known exe names excluded) |
 | no emulator (DOSBox, "Use ScummVM", Windows games) | nothing possible: LiteBox |
 
-**Route by `EmulatorFileName`** (+ `EmulatorCore`), as LiteBox does (`PairForCore`) - never by the `SaveGroupId`, which
-LiteBox rewrites (`entry:…` for SmartExtract) and decorates (`#cN`, `#web`, `#b:<name>`, `#<8hex>`).
+**Route by the row's owner, read from its id** (§3, `SaveOwner`): our JSON names it in `emu`, LaunchBox's integrations
+write forms of their own. `EmulatorFileName` holds the exe's NAME only (measured 08/10), so it can only be the last
+resort, with `EmulatorCore`, for an id nobody recognises. LiteBox's own forms are left to LiteBox: it rewrites ids
+(`entry:…` for SmartExtract) and decorates them (`#cN`, `#web`, `#b:<name>`, `#<8hex>`) - a `#` never occurs inside our
+JSON, so a decorated id still reads.
 
 Under LiteBox (which asks every plugin itself) the Harmony layers must stay off, or rows are listed twice.
 
@@ -167,9 +170,9 @@ the rom (`rom`: CRC32 of the whole file up to 10 MB, of three 1 MB samples above
   `GetSaves`, kept by LaunchBox, re-pointed by LiteBox (its Make Default moves a game's saves onto the version that
   keeps the old rom, its combine moves them to the absorbing game). `AddSaveFile` hands the row over. A copy frozen in
   the id would drift from it.
-- **The id must be the same string at every listing**, or LaunchBox may take it for another save (with
-  `UseSaveGroupIdForPersistedMatch`, how it falls back is still to measure, see §4b). An origin that changes - a rom
-  patched, a row moved by LiteBox - changed the id with it.
+- **The id must be the same string at every listing**: a card IS a `SaveGroupId` (tests 10-12, §1). The same file
+  under another id keeps its card through its path, but a moved file with a changed id makes a second card. An origin
+  that changes - a rom patched, a row moved by LiteBox - changed the id with it.
 - **A fingerprint costs a read of every rom at every listing**: the full scan at LaunchBox's start lists every game of
   every emulator - gigabytes on a disk or a NAS, a whole download for a OneDrive file on demand - for two rare cases (a
   warning "another file", and finding a file swapped by hand).
@@ -217,7 +220,9 @@ catch-all's exclusions (lot 6).
 
 - no$gba DSiWare: `IsOurs` misses `nogba:dsiware:` → path match instead of id, `IsSaveActive` always true, `RemoveSave`
   returns before the DSiWare branch (the `.dsisave` comes back from the NAND at the next listing).
-- Xemu, Cxbx, Vita3K: stable ids but no `UseSaveGroupIdForPersistedMatch` → matched by path, fragile if the folder moves.
+- ~~Xemu, Cxbx, Vita3K: no `UseSaveGroupIdForPersistedMatch` → matched by path, fragile if the folder moves.~~ Not a
+  defect (tests 10-12, 08/10): LaunchBox never called it on the probe, and a save listed with the same id from another
+  folder joins its card anyway. Nothing to do beyond keeping ids stable.
 - Name-based ids can contain `#` ("Shin Megami Tensei #FE"), which LiteBox cuts at.
 - xemu: the LaunchBox slot follows the order snapshots appear in, not their name - a snapshot gone can shift the others'
   ids.
@@ -239,9 +244,9 @@ platform as soon as ANY save-capable plugin - ours or stock - covers that platfo
 | Lot | What | Done when |
 |---|---|---|
 | 0 | LiteBox net10-only on SDK 14.0.1.2; the plugins net10 on that SDK (init-only rows built in one initializer; `EmulatorFileName`, `EmulatorCore`, `SupportsSaveManagement`, `TryComputeSaveSignature`, `TryGetSaveGroupInfo`, `GetPotentialSaveSlots` available) | every plugin and LiteBox build and load on LB14 and LiteBox; probes green |
-| 1 | `Shared.Saves` (compiled into each plugin): `SaveId` (System.Text.Json, an identity only, see §3), the row owner (§3), a base for our plugins (`IsOurs`, persisted match by id, restore target from the row's version or the game and their current path, untie a version on its game's file, cheap `IsSaveActive`). Measured on the way: `EmulatorFileName` is the exe's name only; LaunchBox's Make Default (§1) | probe `--saves-selftest`: pinned strings, round trip, awkward characters, same state = same string, foreign ids, restore targets |
+| 1 | **Done 08/10, see §4c.** `Shared.Saves` (compiled into each plugin): `SaveId` (System.Text.Json, an identity only, see §3), the row owner (§3), the helpers of our plugins (`IsOurs`, restore target from the row's version or the game and their current path, untie a version on its game's file, cheap `IsSaveActive`). Measured on the way: `EmulatorFileName` is the exe's name only; LaunchBox's Make Default (§1); how a listed save finds its card (tests 10-12) | probe `--saves-selftest`: pinned strings, round trip, awkward characters, same state = same string, foreign ids, restore targets |
 | 2 | The 13 plugins on JSON ids through the base, with the per-plugin fixes of §4; start from a cleaned XML | one real game per plugin: save, close, vault, restore |
-| 3 | Nixx-Saves, case "the game's emulator is ours": the game's plugin lists every other save-capable plugin's saves for the game (ours AND stock, through the registry), and every call on a row goes to its owner (`EmulatorFileName` + `EmulatorCore`) | Zelda on SUPER ZSNES: an ares save (Launch With) and the RetroArch .srm both listed, backed up at close, each restored into its own emulator's folder |
+| 3 | Nixx-Saves, case "the game's emulator is ours": the game's plugin lists every other save-capable plugin's saves for the game (ours AND stock), and every call on a row goes to its owner - read from the id (`SaveOwner`), the plugin found by its `emu` value; `EmulatorFileName` + `EmulatorCore` only for an id nobody recognises | Zelda on SUPER ZSNES: an ares save (Launch With) and the RetroArch .srm both listed, backed up at close, each restored into its own emulator's folder |
 | 4 | Harmony on RetroArch, Dolphin, PCSX2: add the other plugins' rows to their `GetSaves`, route foreign rows, **translate their own ids to JSON** (`native` keeps the original, so the way back is exact); a row with no native id (RetroArch's generic saves) gets a JSON id whose way back is a fresh GUID per group; methods found by name and signature, missing = do nothing and log; a switch file turns it off | Zelda on RetroArch with an ares save; Atlantis translated both ways (done once with the probe, 07/10) |
 | 5 | The stock integrations without save support, through the SDK's default bodies, under D6 | a PS1 game on DuckStation with a RetroArch and a Nixx save |
 | 6 | The catch-all in Nixx-Saves: claims the emulators nobody claims (stock and pack exe names excluded), passes the launch through untouched, offers nothing in the emulator screens | FakeEmu: launch and Edit Emulator unchanged, its game's saves managed |
@@ -252,6 +257,45 @@ platform as soon as ANY save-capable plugin - ours or stock - covers that platfo
 
 Order: lot 0, then 1 → 2 → 3 (the main case). Lots 4, 5, 6 independent of each other; 7 right after 4; 8 can start once
 the JSON format of lot 1 is frozen.
+
+## 4c. Lot 1 as delivered (08/10)
+
+Commits on `savegroupid`: e87bda2 (first version), 7254de8 and 2c0d1b8 (after a Codex review: a safer fingerprint, no
+redirection while the target exists), 6146281 (the id back to an identity: no `game`, `ver` or fingerprint), e3a5eea
+(tests 10-12). Nothing is wired into a plugin yet: that is lot 2.
+
+`src\Shared.Saves\`, compiled into each plugin (`<Compile Include="..\Shared.Saves\**\*.cs" />`), no package added:
+
+| File | What it does |
+|---|---|
+| `SaveId.cs` | `SaveIdData` (`emu`, `kind`, `sys`, `by`, `id`, `slot`, `native`, in that order) and `SaveId.Write` / `TryRead` / `Canonical`, all System.Text.Json: `[JsonPropertyOrder]`, camelCase, nulls left out, no indentation, every Unicode range allowed except `#` and `|` (escaped by the library). `TryRead` answers false at once for anything not starting with `{`, and reads through a `#` decoration. |
+| `SaveOwner.cs` | Who owns a row, from its id: our JSON → `emu` (`Nixx`, or `LaunchBox` for `lb.<name>`); `pcsx2:` → `lb.pcsx2`, `saturn-` → `lb.retroarch`; `entry:` / `unit:` → LiteBox; anything else (a bare GUID) unknown. |
+| `SaveRows.cs` | `IsOurs(id, emu)`; `SameId` (IsSaveActive: an ordinal string comparison, nothing else); `TieTo` (a version on its game's file is not tied); `ChooseTarget` / `TargetFor` (the restore target: the row's version, else the game, current path; a version that no longer exists → the game WITH a warning; a missing file → kept, with a warning). |
+
+The probe: `Probe --saves-selftest` (`src\Probe\SavesCheck.cs`), 51 checks - pinned strings (including what .NET
+escapes on its own: `"` `<` `>` `&` `'` `+` `` ` `` and emoji as a surrogate pair), round trip, same state = same string, a
+spaced id and a LiteBox decoration read back, awkward characters and a 1 950-character name, foreign ids and owners,
+restore targets (both Make Defaults, a version gone, a file gone, the untie rule).
+
+Decided along the way (Mehdi, 08/10), and why:
+- **JSON written and read by System.Text.Json only**: no home-made writer or parser.
+- **`emu` = the plugin that owns the row**, one value per plugin (`xemu` and `cxbx` apart, no shared `xbox`),
+  `lb.<name>` for a LaunchBox integration: two plugins may one day drive the same exe.
+- **The owner is read from the id, never from the exe**: `EmulatorFileName` is the exe's name only.
+- **No origin in the id** (`game`, `ver`, a fingerprint of the rom were tried, then dropped): the row carries and keeps
+  it, a frozen copy drifts, and a fingerprint costs a read of every rom at every listing. The id is an identity.
+- **A restore never redirects while its target exists.**
+
+Measured along the way: `EmulatorFileName` (exe name only); LaunchBox's Make Default (§1, "LaunchBox defects met" -
+to replay with RetroArch before reporting it); how a listed save finds its card (§1, tests 10-12).
+
+Effect on the rest of the plan: lot 2 has one fix less (the persisted match, §4); lot 3 routes by the owner in the id
+rather than by `EmulatorFileName`, and needs the map "`emu` value → loaded plugin"; lots 4 and 7 keep `native` as
+designed; lots 5 and 6 give the rows our layers create (a stock emulator without save support, an unclaimed one) an
+`emu` of their own (`lb.duckstation`... and one for the catch-all), and lot 7 must then decide what becomes of those
+rows at uninstall - they have no native id to give back; lot 8 reads the version from the row. The sandbox is back
+to its state before tests 10-12 (§6).
+
 
 ## 5. The bug report (draft for LaunchBox, stock integrations only)
 
