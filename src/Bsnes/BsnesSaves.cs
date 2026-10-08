@@ -28,6 +28,10 @@ namespace LbIntegrations.Bsnes
 {
     public partial class BsnesPlugin
     {
+        /// <summary>The front desk (Shared.Saves NixxSavePlugin): this plugin's emu, and where it logs.</summary>
+        protected override string SaveEmu => Emu;
+        protected override void SaveLog(string message) => Log.Info(message);
+
         /// <summary>This plugin's "emu" in the ids (Shared.Saves): {"emu":"bsnes","kind":"save","by":"name","id":"<name>"},
         /// and "kind":"state" for the .bsz - one file for every slot, so no "slot".</summary>
         private const string Emu = "bsnes";
@@ -62,7 +66,7 @@ namespace LbIntegrations.Bsnes
 
         // ── listing ──────────────────────────────────────────────────────────
 
-        public override GetSavesResponse GetSaves(GetSavesArgs args)
+        protected override GetSavesResponse OwnGetSaves(GetSavesArgs args)
         {
             try
             {
@@ -134,21 +138,21 @@ namespace LbIntegrations.Bsnes
 
         // ── the contract ─────────────────────────────────────────────────────
 
-        public override bool IsSaveContainer(GameSaveBase save) => false;
+        protected override bool OwnIsSaveContainer(GameSaveBase save) => false;
 
-        public override bool UseSaveGroupIdForPersistedMatch(GameSaveBase save) => IsOurs(save);
+        protected override bool OwnUseSaveGroupIdForPersistedMatch(GameSaveBase save) => IsOurs(save);
 
-        public override bool TryBackupSave(GameSaveBase save, string emulatorApplicationPath, string destinationFolder, out string error)
+        protected override bool OwnTryBackupSave(GameSaveBase save, string emulatorApplicationPath, string destinationFolder, out string error)
         {
             error = "A bsnes save is one file, not a container.";
             return false;
         }
 
         /// <summary>The states' thumbnail is part of the .bsz's save, not a save of its own.</summary>
-        public override bool IsSecondarySaveFile(string filePath) => BsnesStateThumbs.IsThumbOfStates(filePath);
+        protected override bool OwnIsSecondarySaveFile(string filePath) => BsnesStateThumbs.IsThumbOfStates(filePath);
 
         /// <summary>A cartridge save's clock (.rtc) and Satellaview data (.psr) travel with it; the states' thumbnail with the .bsz.</summary>
-        public override IReadOnlyList<string> GetCompanionSaveFiles(string primaryFilePath)
+        protected override IReadOnlyList<string> OwnGetCompanionSaveFiles(string primaryFilePath)
         {
             try
             {
@@ -159,7 +163,7 @@ namespace LbIntegrations.Bsnes
             catch { return Array.Empty<string>(); }
         }
 
-        public override bool IsSaveActive(GameSaveBase save, string emulatorApplicationPath)
+        protected override bool OwnIsSaveActive(GameSaveBase save, string emulatorApplicationPath)
         {
             try
             {
@@ -175,7 +179,7 @@ namespace LbIntegrations.Bsnes
 
         // ── restore ──────────────────────────────────────────────────────────
 
-        public override AddSaveResponse AddSaveFile(AddSaveArgs args)
+        protected override AddSaveResponse OwnAddSaveFile(AddSaveArgs args)
         {
             try
             {
@@ -253,11 +257,11 @@ namespace LbIntegrations.Bsnes
 
         // ── delete ───────────────────────────────────────────────────────────
 
-        public override PluginResponse RemoveSave(GameSaveBase save)
+        protected override PluginResponse OwnRemoveSave(GameSaveBase save)
         {
             try
             {
-                if (!IsOurs(save)) return base.RemoveSave(save);
+                if (!IsOurs(save)) return base.OwnRemoveSave(save);
                 var loc = save?.FileLocation;
                 if (string.IsNullOrWhiteSpace(loc)) return new PluginResponse(false, "This save has no location.");
                 try { if (File.Exists(loc)) File.Delete(loc); }

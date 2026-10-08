@@ -63,6 +63,10 @@ namespace LbIntegrations.MelonDs
 {
     public partial class MelonDsPlugin
     {
+        /// <summary>The front desk (Shared.Saves NixxSavePlugin): this plugin's emu, and where it logs.</summary>
+        protected override string SaveEmu => Emu;
+        protected override void SaveLog(string message) => Log.Info(message);
+
         internal const string SaveExtension = ".sav";
         /// <summary>This plugin's "emu" in the ids (Shared.Saves).</summary>
         private const string Emu = "melonds";
@@ -90,7 +94,7 @@ namespace LbIntegrations.MelonDs
 
         // ── listing ──────────────────────────────────────────────────────────
 
-        public override GetSavesResponse GetSaves(GetSavesArgs args)
+        protected override GetSavesResponse OwnGetSaves(GetSavesArgs args)
         {
             try
             {
@@ -241,9 +245,9 @@ namespace LbIntegrations.MelonDs
         /// plugin had in save management came from: backups that made empty folders, restores
         /// refused for not being a file, a delete that quietly did nothing. Packing the state into
         /// one .dsisave buys the other path, the one every other save in this repository takes.</summary>
-        public override bool IsSaveContainer(GameSaveBase save) => false;
+        protected override bool OwnIsSaveContainer(GameSaveBase save) => false;
 
-        public override bool UseSaveGroupIdForPersistedMatch(GameSaveBase save) => IsOurs(save);
+        protected override bool OwnUseSaveGroupIdForPersistedMatch(GameSaveBase save) => IsOurs(save);
 
         /// <summary>Guarded, not decorative. IsSaveContainer answers false, so the host never asks
         /// - and if it ever did, the honest answer is that a .dsisave IS the extract.
@@ -262,7 +266,7 @@ namespace LbIntegrations.MelonDs
         /// calls it per game, the Edit Game window rebuilds its groups - and listing is what calls
         /// RefreshSave. The residue, if some host ever backed up without listing, is one session of
         /// lag; it is not a loss.</summary>
-        public override bool TryBackupSave(GameSaveBase save, string emulatorApplicationPath,
+        protected override bool OwnTryBackupSave(GameSaveBase save, string emulatorApplicationPath,
                                            string destinationFolder, out string error)
         {
             error = "A melonDS save is one file, not a container.";
@@ -297,7 +301,7 @@ namespace LbIntegrations.MelonDs
         /// to a cartridge this plugin does not manage.
         ///
         /// The one file that is secondary is ours, not melonDS's: a state's thumbnail.</summary>
-        public override bool IsSecondarySaveFile(string filePath)
+        protected override bool OwnIsSecondarySaveFile(string filePath)
         {
             try
             {
@@ -317,7 +321,7 @@ namespace LbIntegrations.MelonDs
 
         /// <summary>The battery save is one file. A state carries its thumbnail when it has one -
         /// melonDS itself writes no sidecar, no screenshot and no undo file.</summary>
-        public override IReadOnlyList<string> GetCompanionSaveFiles(string primaryFilePath)
+        protected override IReadOnlyList<string> OwnGetCompanionSaveFiles(string primaryFilePath)
             => IsStateFile(primaryFilePath) ? LbipStateThumbs.Companion(primaryFilePath) : Array.Empty<string>();
 
         /// <summary>For the session: the thumbnails of the slots this cartridge writes, in the folder
@@ -343,7 +347,7 @@ namespace LbIntegrations.MelonDs
         /// stock one from beside the ROM. What is NOT active is a save sitting in the other one after
         /// the setting changed - which is precisely the case this has to catch, since this plugin
         /// redirects the installs it makes.</summary>
-        public override bool IsSaveActive(GameSaveBase save, string emulatorApplicationPath)
+        protected override bool OwnIsSaveActive(GameSaveBase save, string emulatorApplicationPath)
         {
             try
             {
@@ -391,7 +395,7 @@ namespace LbIntegrations.MelonDs
         /// The vault keeps melonDS's own file name, so the target name is that name in the right
         /// folder - no translation, and what lands is what was taken. Which folder depends on the
         /// kind and on how the install is configured.</summary>
-        public override AddSaveResponse AddSaveFile(AddSaveArgs args)
+        protected override AddSaveResponse OwnAddSaveFile(AddSaveArgs args)
         {
             try
             {
@@ -544,11 +548,11 @@ namespace LbIntegrations.MelonDs
 
         // ── delete ───────────────────────────────────────────────────────────
 
-        public override PluginResponse RemoveSave(GameSaveBase save)
+        protected override PluginResponse OwnRemoveSave(GameSaveBase save)
         {
             try
             {
-                if (!IsOurs(save)) return base.RemoveSave(save);
+                if (!IsOurs(save)) return base.OwnRemoveSave(save);
 
                 var loc = save?.FileLocation;
                 if (string.IsNullOrWhiteSpace(loc))

@@ -15,6 +15,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using Unbroken.LaunchBox.Plugins;
+using LbIntegrations.Saves;
 using Unbroken.LaunchBox.Plugins.Data;
 using LbIntegrations.Catalog;
 using LbIntegrations.Lbip;
@@ -76,7 +77,7 @@ namespace LbIntegrations.Flycast
         }
     }
 
-    public partial class FlycastPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
+    public partial class FlycastPlugin : NixxSavePlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         private const string Repo = "flyinghead/flycast";
 

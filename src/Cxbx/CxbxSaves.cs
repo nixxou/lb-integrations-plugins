@@ -198,11 +198,15 @@ namespace LbIntegrations.Cxbx
 
     public partial class CxbxPlugin
     {
+        /// <summary>The front desk (Shared.Saves NixxSavePlugin): this plugin's emu, and where it logs.</summary>
+        protected override string SaveEmu => CxbxSaves.Emu;
+        protected override void SaveLog(string message) => Log.Info(message);
+
         private const string ChipText = "Xbox save";
 
         public override bool SupportsSaveManagement() => true;
 
-        public override GetSavesResponse GetSaves(GetSavesArgs args)
+        protected override GetSavesResponse OwnGetSaves(GetSavesArgs args)
         {
             try
             {
@@ -264,11 +268,11 @@ namespace LbIntegrations.Cxbx
                 ReportedLastModifiedUtc = when == default ? (DateTime?)null : when,
             };
 
-        public override bool IsSaveContainer(GameSaveBase save) => false;
-        public override bool IsSecondarySaveFile(string filePath) => false;
-        public override IReadOnlyList<string> GetCompanionSaveFiles(string primaryFilePath) => Array.Empty<string>();
+        protected override bool OwnIsSaveContainer(GameSaveBase save) => false;
+        protected override bool OwnIsSecondarySaveFile(string filePath) => false;
+        protected override IReadOnlyList<string> OwnGetCompanionSaveFiles(string primaryFilePath) => Array.Empty<string>();
 
-        public override bool IsSaveActive(GameSaveBase save, string emulatorApplicationPath)
+        protected override bool OwnIsSaveActive(GameSaveBase save, string emulatorApplicationPath)
         {
             try
             {
@@ -282,7 +286,7 @@ namespace LbIntegrations.Cxbx
             catch { return false; }
         }
 
-        public override AddSaveResponse AddSaveFile(AddSaveArgs args)
+        protected override AddSaveResponse OwnAddSaveFile(AddSaveArgs args)
         {
             try
             {
@@ -324,13 +328,13 @@ namespace LbIntegrations.Cxbx
             }
         }
 
-        public override PluginResponse RemoveSave(GameSaveBase save)
+        protected override PluginResponse OwnRemoveSave(GameSaveBase save)
         {
             try
             {
                 var titleId = TitleIdFrom(save);
                 var path = Safe(() => save?.FileLocation);
-                if (titleId == null || path == null) return base.RemoveSave(save);
+                if (titleId == null || path == null) return base.OwnRemoveSave(save);
                 var exe = EmulatorFor(save);
                 var pack = exe == null ? null : CxbxSaves.PackPath(exe, titleId);
                 // Only the live save takes its folder with it - a copy elsewhere is just a file.

@@ -24,13 +24,14 @@ using System.IO.Compression;
 using System.Linq;
 using System.Reflection;
 using Unbroken.LaunchBox.Plugins;
+using LbIntegrations.Saves;
 using Unbroken.LaunchBox.Plugins.Data;
 using LbIntegrations.Catalog;
 using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Ppsspp
 {
-    public partial class PpssppPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
+    public partial class PpssppPlugin : NixxSavePlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         private const string Repo = "hrydgard/ppsspp";
         private const string PspPlatform = "Sony PSP";       // exactly as LaunchBox's metadata db spells it

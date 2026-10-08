@@ -19,6 +19,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using Unbroken.LaunchBox.Plugins;
+using LbIntegrations.Saves;
 using Unbroken.LaunchBox.Plugins.Data;
 using LbIntegrations.Dsi;
 using LbIntegrations.Catalog;
@@ -27,7 +28,7 @@ using LbIntegrations.RamDisk;
 
 namespace LbIntegrations.MelonDs
 {
-    public partial class MelonDsPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource, IGameLaunchingPlugin
+    public partial class MelonDsPlugin : NixxSavePlugin, ISystemEventsPlugin, ILbCatalogSource, IGameLaunchingPlugin
     {
         private const string Repo = "melonDS-emu/melonDS";
 

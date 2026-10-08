@@ -16,6 +16,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using LbIntegrations.Saves;
+using Unbroken.LaunchBox.Plugins.Data;
 
 namespace LbIntegrations.Probe
 {
@@ -37,6 +38,7 @@ namespace LbIntegrations.Probe
                 Awkward();
                 Foreign();
                 Targets(root);
+                Desk();
             }
             catch (Exception ex) { Check("no exception", false, ex.ToString()); }
             finally { try { Directory.Delete(root, true); } catch { } }
@@ -199,6 +201,36 @@ namespace LbIntegrations.Probe
             Check("a game save is not tied", SaveRows.TieTo(null, a, null, Full) == null);
 
             Check("IsSaveActive compares strings, exactly", SaveRows.SameId("{\"a\":1}", "{\"a\":1}") && !SaveRows.SameId("{\"a\":1}", "{\"A\":1}"));
+        }
+
+        // The front desk's pure parts (lot 3): what tells our rows from the others' without parsing, the core
+        // written on the rows it lists for others, the copy that carries them.
+        private static void Desk()
+        {
+            Console.WriteLine();
+            Console.WriteLine("  front desk (lot 3)");
+            var ours = SaveId.Write(new SaveIdData { Emu = "ares", Kind = "save", By = "name", Id = "Zelda.srm" });
+            Check("our ids start with the plugin's prefix", ours.StartsWith(NixxSavePlugin.OwnPrefix("ares"), StringComparison.Ordinal));
+            var longer = SaveId.Write(new SaveIdData { Emu = "aresx", Kind = "save", By = "name", Id = "Zelda.srm" });
+            Check("another emu that starts the same is not taken for ours", !longer.StartsWith(NixxSavePlugin.OwnPrefix("ares"), StringComparison.Ordinal));
+            Check("a translated id is not ours either", !SaveId.Write(new SaveIdData { Emu = "lb.retroarch", Kind = "save" }).StartsWith(NixxSavePlugin.OwnPrefix("ares"), StringComparison.Ordinal));
+            Check("the desk is on outside LiteBox", SaveRouter.Active);
+
+            Check("core: LaunchBox's own line", SaveRouter.CoreIn("-L \"cores\\snes9x_libretro.dll\"") == "snes9x_libretro");
+            Check("core: a full path, no quotes", SaveRouter.CoreIn("-f -L D:\\RA\\cores\\mesen_libretro.dll") == "mesen_libretro");
+            Check("core: no -L, none", SaveRouter.CoreIn("-f --verbose") == null && SaveRouter.CoreIn(null) == null);
+
+            var state = new GameSaveState { GameId = "g1", AdditionalApplicationId = "a1", SaveGroupId = "x", FileLocation = @"C:\s\Zelda.state1", Slot = 1, Title = "Zelda", EmulatorFileName = "old.exe" };
+            var copy = SaveRows.With(state, "retroarch.exe", "snes9x_libretro");
+            Check("the copy of a state keeps its slot and its fields",
+                  copy is GameSaveState c && c.Slot == 1 && c.GameId == "g1" && c.AdditionalApplicationId == "a1" && c.SaveGroupId == "x"
+                  && c.FileLocation == state.FileLocation && c.Title == "Zelda" && c.EmulatorFileName == "retroarch.exe" && c.EmulatorCore == "snes9x_libretro");
+            var game = new GameSaveGame { GameId = "g1", FileLocation = @"C:\s\Zelda.srm", EmulatorFileName = "retroarch.exe", EmulatorCore = "snes9x_libretro" };
+            Check("a row already right is handed as it is", ReferenceEquals(SaveRows.With(game, "retroarch.exe", "snes9x_libretro"), game));
+            Check("a row's own core is kept when the desk has none", SaveRows.With(game, "retroarch.exe", null).EmulatorCore == "snes9x_libretro");
+
+            Check("RetroArch and Dolphin are restored by the desk, PCSX2 is not",
+                  StockRestore.Handles("lb.retroarch") && StockRestore.Handles("lb.dolphin") && !StockRestore.Handles("lb.pcsx2") && !StockRestore.Handles("ares"));
         }
 
         private static string Short(string s) => (s.Length > 60 ? s.Substring(0, 57) + "..." : s).Replace("\n", "\\n").Replace("\t", "\\t");

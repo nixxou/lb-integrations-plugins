@@ -18,13 +18,14 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using Unbroken.LaunchBox.Plugins;
+using LbIntegrations.Saves;
 using Unbroken.LaunchBox.Plugins.Data;
 using LbIntegrations.Catalog;
 using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Cxbx
 {
-    public partial class CxbxPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
+    public partial class CxbxPlugin : NixxSavePlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         private const string Repo = "Cxbx-Reloaded/Cxbx-Reloaded";
         private const string TagPrefix = "CI-";

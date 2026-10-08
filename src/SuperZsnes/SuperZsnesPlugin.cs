@@ -21,13 +21,14 @@ using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using Unbroken.LaunchBox.Plugins;
+using LbIntegrations.Saves;
 using Unbroken.LaunchBox.Plugins.Data;
 using LbIntegrations.Catalog;
 using LbIntegrations.Lbip;
 
 namespace LbIntegrations.SuperZsnes
 {
-    public partial class SuperZsnesPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
+    public partial class SuperZsnesPlugin : NixxSavePlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         private const string SnesPlatform = "Super Nintendo Entertainment System";
 

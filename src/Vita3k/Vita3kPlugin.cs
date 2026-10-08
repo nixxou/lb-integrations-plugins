@@ -27,13 +27,14 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using Unbroken.LaunchBox.Plugins;
+using LbIntegrations.Saves;
 using Unbroken.LaunchBox.Plugins.Data;
 using LbIntegrations.Catalog;
 using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Vita3k
 {
-    public partial class Vita3kPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
+    public partial class Vita3kPlugin : NixxSavePlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         private const string Repo = "Vita3K/Vita3K";
         private const string VitaPlatform = "Sony Playstation Vita";

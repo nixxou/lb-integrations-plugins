@@ -27,6 +27,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using Unbroken.LaunchBox.Plugins;
+using LbIntegrations.Saves;
 using Unbroken.LaunchBox.Plugins.Data;
 using LbIntegrations.Dsi;
 using LbIntegrations.Catalog;
@@ -34,7 +35,7 @@ using LbIntegrations.Lbip;
 
 namespace LbIntegrations.NoGba
 {
-    public partial class NoGbaPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource, IGameLaunchingPlugin
+    public partial class NoGbaPlugin : NixxSavePlugin, ISystemEventsPlugin, ILbCatalogSource, IGameLaunchingPlugin
     {
         /// <summary>Spelled as Platforms.xml spells them - read out of the file rather than typed
         /// from memory. There is no DSi platform in LaunchBox's metadata, which is a problem for a

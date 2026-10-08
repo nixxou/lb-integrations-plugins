@@ -19,6 +19,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using Unbroken.LaunchBox.Plugins;
+using LbIntegrations.Saves;
 using Unbroken.LaunchBox.Plugins.Data;
 using LbIntegrations.Catalog;
 using LbIntegrations.Cxbx;
@@ -26,7 +27,7 @@ using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Xemu
 {
-    public partial class XemuPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
+    public partial class XemuPlugin : NixxSavePlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         private const string Repo = "xemu-project/xemu";
         private const string TagPrefix = "v";                      // the stable releases - not the rolling "pre-release"

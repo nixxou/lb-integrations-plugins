@@ -103,6 +103,35 @@ namespace LbIntegrations.Saves
             return ChooseTarget(row?.AdditionalApplicationId, Safe(() => game.ApplicationPath), versions, full);
         }
 
+        /// <summary><paramref name="row"/> with <paramref name="exe"/> and <paramref name="core"/> written on it (the front desk,
+        /// SaveRouter): the row itself when they are already there, else a copy - every field, Slot included. The type
+        /// a plugin may have derived is not kept: LaunchBox rebuilds its rows as GameSaveGame / GameSaveState anyway.</summary>
+        public static GameSaveBase With(GameSaveBase row, string? exe, string? core)
+        {
+            exe = string.IsNullOrEmpty(exe) ? row.EmulatorFileName : exe;
+            core = string.IsNullOrEmpty(core) ? row.EmulatorCore : core;
+            if (string.Equals(row.EmulatorFileName, exe, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(row.EmulatorCore, core, StringComparison.OrdinalIgnoreCase)) return row;
+            if (row is GameSaveState s)
+                return new GameSaveState
+                {
+                    Slot = s.Slot,
+                    AdditionalApplicationId = row.AdditionalApplicationId, SaveGroupId = row.SaveGroupId, MatchLineageId = row.MatchLineageId,
+                    MigrationFamilyId = row.MigrationFamilyId, EmulatorCore = core, EmulatorFileName = exe, FileLocation = row.FileLocation,
+                    GameId = row.GameId, Title = row.Title, SaveGroupName = row.SaveGroupName, DisplayChipText = row.DisplayChipText,
+                    OriginalFileName = row.OriginalFileName, ReportedFileSizeBytes = row.ReportedFileSizeBytes, IsDirectory = row.IsDirectory,
+                    ReportedLastModifiedUtc = row.ReportedLastModifiedUtc,
+                };
+            return new GameSaveGame
+            {
+                AdditionalApplicationId = row.AdditionalApplicationId, SaveGroupId = row.SaveGroupId, MatchLineageId = row.MatchLineageId,
+                MigrationFamilyId = row.MigrationFamilyId, EmulatorCore = core, EmulatorFileName = exe, FileLocation = row.FileLocation,
+                GameId = row.GameId, Title = row.Title, SaveGroupName = row.SaveGroupName, DisplayChipText = row.DisplayChipText,
+                OriginalFileName = row.OriginalFileName, ReportedFileSizeBytes = row.ReportedFileSizeBytes, IsDirectory = row.IsDirectory,
+                ReportedLastModifiedUtc = row.ReportedLastModifiedUtc,
+            };
+        }
+
         private static bool SamePath(string? a, string? b)
         {
             if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return false;

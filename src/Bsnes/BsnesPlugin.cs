@@ -15,13 +15,14 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using Unbroken.LaunchBox.Plugins;
+using LbIntegrations.Saves;
 using Unbroken.LaunchBox.Plugins.Data;
 using LbIntegrations.Catalog;
 using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Bsnes
 {
-    public partial class BsnesPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
+    public partial class BsnesPlugin : NixxSavePlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         internal const string SnesPlatform = "Super Nintendo Entertainment System";
 

@@ -308,4 +308,42 @@ namespace LbIntegrations.Catalog
     // listing - paths, the platform and the emulator chosen - on the host's thread, allowed to take
     // time (it reads every file). ADDED, NEVER CHANGED: this assembly is one copy for the whole process,
     // and every version of it must stay interchangeable (see the header).
+    // ── SAVES: WHO OWNS A ROW, AND WHERE TO REACH IT ──────────────────────────────────────────
+    //
+    // Added 08/10, never to be changed (see the header). LaunchBox lists a game's saves through the
+    // plugin of the game's OWN emulator only, and sends every call on a row to that same plugin
+    // (measured 07/10). So when a game's emulator is one of ours, that plugin answers for the others:
+    // it lists their saves too and hands each call on a row to the plugin that owns it (lot 3 of
+    // docs\saves-lb14-routing.md). A plugin of ours registers here under its "emu" - the value its
+    // save ids carry - so the others can find it. The instance is an EmulatorPlugin, held as object:
+    // this assembly knows nothing of LaunchBox's SDK. A host that asks every plugin itself (LiteBox)
+    // never reads this.
+
+    /// <summary>The pack's plugins by the "emu" of their save ids.</summary>
+    public static class LbSaveOwners
+    {
+        private static readonly object Gate = new object();
+        private static readonly Dictionary<string, object> Owners = new Dictionary<string, object>(System.StringComparer.Ordinal);
+
+        /// <summary>Register <paramref name="plugin"/> (an EmulatorPlugin) as the owner of the ids carrying
+        /// <paramref name="emu"/>. The first one stays.</summary>
+        public static void Register(string emu, object plugin)
+        {
+            if (string.IsNullOrEmpty(emu) || plugin == null) return;
+            lock (Gate) { if (!Owners.ContainsKey(emu)) Owners[emu] = plugin; }
+        }
+
+        /// <summary>The plugin registered under <paramref name="emu"/>, or null.</summary>
+        public static object Find(string emu)
+        {
+            if (string.IsNullOrEmpty(emu)) return null;
+            lock (Gate) return Owners.TryGetValue(emu, out var p) ? p : null;
+        }
+
+        /// <summary>Every registered plugin, as (emu, plugin).</summary>
+        public static List<KeyValuePair<string, object>> All()
+        {
+            lock (Gate) return new List<KeyValuePair<string, object>>(Owners);
+        }
+    }
 }

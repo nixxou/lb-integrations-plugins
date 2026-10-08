@@ -306,11 +306,15 @@ namespace LbIntegrations.Xemu
 
     public partial class XemuPlugin
     {
+        /// <summary>The front desk (Shared.Saves NixxSavePlugin): this plugin's emu, and where it logs.</summary>
+        protected override string SaveEmu => XemuSaveFiles.Emu;
+        protected override void SaveLog(string message) => Log.Info(message);
+
         private const string ChipText = "Xbox save";
 
         public override bool SupportsSaveManagement() => true;
 
-        public override GetSavesResponse GetSaves(GetSavesArgs args)
+        protected override GetSavesResponse OwnGetSaves(GetSavesArgs args)
         {
             try
             {
@@ -408,16 +412,16 @@ namespace LbIntegrations.Xemu
             return d.Id != null && d.Id.Length == 8 && d.Slot != null ? (d.Id.ToLowerInvariant(), d.Slot.Value) : ((string, int)?)null;
         }
 
-        public override bool IsSaveContainer(GameSaveBase save) => false;
+        protected override bool OwnIsSaveContainer(GameSaveBase save) => false;
         /// <summary>A savestate's PNG (slot-1.xemustate.png, Saves\XemuStates): part of its state, never a save of its own.</summary>
-        public override bool IsSecondarySaveFile(string filePath)
+        protected override bool OwnIsSecondarySaveFile(string filePath)
             => LbipStateThumbs.IsThumb(filePath) && filePath.Substring(0, filePath.Length - LbipStateThumbs.Suffix.Length).EndsWith(XemuStates.Extension, StringComparison.OrdinalIgnoreCase);
 
         /// <summary>A savestate's PNG goes with it - LaunchBox's backups carry it, a restore puts it back.</summary>
-        public override IReadOnlyList<string> GetCompanionSaveFiles(string primaryFilePath)
+        protected override IReadOnlyList<string> OwnGetCompanionSaveFiles(string primaryFilePath)
             => primaryFilePath != null && primaryFilePath.EndsWith(XemuStates.Extension, StringComparison.OrdinalIgnoreCase) ? LbipStateThumbs.Companion(primaryFilePath) : Array.Empty<string>();
 
-        public override bool IsSaveActive(GameSaveBase save, string emulatorApplicationPath)
+        protected override bool OwnIsSaveActive(GameSaveBase save, string emulatorApplicationPath)
         {
             try
             {
@@ -437,7 +441,7 @@ namespace LbIntegrations.Xemu
             catch { return false; }
         }
 
-        public override AddSaveResponse AddSaveFile(AddSaveArgs args)
+        protected override AddSaveResponse OwnAddSaveFile(AddSaveArgs args)
         {
             try
             {
@@ -498,7 +502,7 @@ namespace LbIntegrations.Xemu
             }
         }
 
-        public override PluginResponse RemoveSave(GameSaveBase save)
+        protected override PluginResponse OwnRemoveSave(GameSaveBase save)
         {
             try
             {
@@ -514,7 +518,7 @@ namespace LbIntegrations.Xemu
                 }
                 var titleId = TitleIdFrom(save);
                 var path = Safe(() => save?.FileLocation);
-                if (titleId == null || path == null) return base.RemoveSave(save);
+                if (titleId == null || path == null) return base.OwnRemoveSave(save);
                 var exe = EmulatorFor(save);
                 var pack = exe == null ? null : XemuSaveFiles.PackPath(exe, titleId);
                 // Only the live save takes the console's folder with it - a copy elsewhere is just a file.

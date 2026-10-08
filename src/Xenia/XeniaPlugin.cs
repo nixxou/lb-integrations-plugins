@@ -19,13 +19,14 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using Unbroken.LaunchBox.Plugins;
+using LbIntegrations.Saves;
 using Unbroken.LaunchBox.Plugins.Data;
 using LbIntegrations.Catalog;
 using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Xenia
 {
-    public partial class XeniaPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
+    public partial class XeniaPlugin : NixxSavePlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         private const string CanaryRepo = "xenia-canary/xenia-canary";
         private const string Xbox360Platform = "Microsoft Xbox 360";

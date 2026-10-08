@@ -53,6 +53,10 @@ namespace LbIntegrations.Ppsspp
 {
     public partial class PpssppPlugin
     {
+        /// <summary>The front desk (Shared.Saves NixxSavePlugin): this plugin's emu, and where it logs.</summary>
+        protected override string SaveEmu => Emu;
+        protected override void SaveLog(string message) => Log.Info(message);
+
         /// <summary>This plugin's "emu" in the ids (Shared.Saves, docs\saves-lb14-routing.md §3):
         /// {"emu":"ppsspp","kind":"save","by":"disc","id":"<disc id>"} for a SAVEDATA save (a folder, a container), and
         /// {"kind":"state","by":"disc","id":"<disc id>","slot":n} for a state. The container predicates key on "kind"
@@ -77,7 +81,7 @@ namespace LbIntegrations.Ppsspp
 
         // ── listing ──────────────────────────────────────────────────────────
 
-        public override GetSavesResponse GetSaves(GetSavesArgs args)
+        protected override GetSavesResponse OwnGetSaves(GetSavesArgs args)
         {
             try
             {
@@ -272,18 +276,18 @@ namespace LbIntegrations.Ppsspp
 
         /// <summary>A save is a container; a STATE is a single file and must never be one, or the host
         /// would ask TryBackupSave to extract a folder that does not exist.</summary>
-        public override bool IsSaveContainer(GameSaveBase save) => IsOurs(save);
+        protected override bool OwnIsSaveContainer(GameSaveBase save) => IsOurs(save);
 
         /// <summary>Match persisted rows by group id rather than by path: a memstick that moves, or a
         /// game whose primary folder changes name, must not orphan its backup history. True for a
         /// state too - its group id is disc id plus slot, which survives the game being patched.</summary>
-        public override bool UseSaveGroupIdForPersistedMatch(GameSaveBase save)
+        protected override bool OwnUseSaveGroupIdForPersistedMatch(GameSaveBase save)
             => IsOurs(save) || IsOurState(save);
 
         /// <summary>Defensive: LiteBox only calls this on what GetSaves returned, but the SDK contract
         /// says a file inside a save must not become a save of its own. Two kinds here: anything under
         /// a SAVEDATA unit, and - inside PPSSPP_STATE - a slot's screenshot or its undo buffer.</summary>
-        public override bool IsSecondarySaveFile(string filePath)
+        protected override bool OwnIsSecondarySaveFile(string filePath)
         {
             try
             {
@@ -309,7 +313,7 @@ namespace LbIntegrations.Ppsspp
         /// LiteBox ignores this for states (it hands back an empty companion list for every one), so
         /// the screenshot only really follows under LaunchBox. Returning it anyway is the contract,
         /// and costs nothing where it is ignored.</summary>
-        public override IReadOnlyList<string> GetCompanionSaveFiles(string primaryFilePath)
+        protected override IReadOnlyList<string> OwnGetCompanionSaveFiles(string primaryFilePath)
         {
             try
             {
@@ -327,7 +331,7 @@ namespace LbIntegrations.Ppsspp
 
         /// <summary>Is this save on the memstick the emulator is actually configured with? A state is
         /// judged against PPSSPP_STATE, a save against SAVEDATA - same question, different folder.</summary>
-        public override bool IsSaveActive(GameSaveBase save, string emulatorApplicationPath)
+        protected override bool OwnIsSaveActive(GameSaveBase save, string emulatorApplicationPath)
         {
             try
             {
@@ -364,7 +368,7 @@ namespace LbIntegrations.Ppsspp
         /// relative to the folder root - so the entries come out as "ULUS10064DATA00/PARAM.SFO",
         /// which is what Argosy zips and what RomM's hash is computed over. Measured against sigil's
         /// golden vector; see the probe's --save-unit mode.</summary>
-        public override bool TryBackupSave(GameSaveBase save, string emulatorApplicationPath,
+        protected override bool OwnTryBackupSave(GameSaveBase save, string emulatorApplicationPath,
                                            string destinationFolder, out string error)
         {
             error = null;
@@ -406,7 +410,7 @@ namespace LbIntegrations.Ppsspp
         /// Existing folders of the same disc id are removed first. That mirrors Argosy's
         /// extractDownload, and it is the only way a restore cannot leave a stale sibling behind
         /// pretending to belong to the save.</summary>
-        public override AddSaveResponse AddSaveFile(AddSaveArgs args)
+        protected override AddSaveResponse OwnAddSaveFile(AddSaveArgs args)
         {
             try
             {
@@ -560,12 +564,12 @@ namespace LbIntegrations.Ppsspp
 
         /// <summary>Must be overridden: the SDK default deletes the one path in FileLocation, which
         /// here would remove the primary folder and leave its siblings orphaned on the memstick.</summary>
-        public override PluginResponse RemoveSave(GameSaveBase save)
+        protected override PluginResponse OwnRemoveSave(GameSaveBase save)
         {
             try
             {
                 if (save is GameSaveState) return RemoveState(save);
-                if (!IsOurs(save)) return base.RemoveSave(save);
+                if (!IsOurs(save)) return base.OwnRemoveSave(save);
 
                 string loc = save?.FileLocation;
                 if (string.IsNullOrWhiteSpace(loc)) return new PluginResponse(false, "This save has no location.");

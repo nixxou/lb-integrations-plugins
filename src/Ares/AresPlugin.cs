@@ -17,13 +17,14 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using Unbroken.LaunchBox.Plugins;
+using LbIntegrations.Saves;
 using Unbroken.LaunchBox.Plugins.Data;
 using LbIntegrations.Catalog;
 using LbIntegrations.Lbip;
 
 namespace LbIntegrations.Ares
 {
-    public partial class AresPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
+    public partial class AresPlugin : NixxSavePlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         private const string DefaultCommandLine = "";
         internal const string PackName = "Nixx-ares";

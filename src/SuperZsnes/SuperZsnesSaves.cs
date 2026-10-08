@@ -45,6 +45,10 @@ namespace LbIntegrations.SuperZsnes
 {
     public partial class SuperZsnesPlugin
     {
+        /// <summary>The front desk (Shared.Saves NixxSavePlugin): this plugin's emu, and where it logs.</summary>
+        protected override string SaveEmu => Emu;
+        protected override void SaveLog(string message) => Log.Info(message);
+
         /// <summary>This plugin's "emu" in the ids (Shared.Saves).</summary>
         private const string Emu = "superzsnes";
         private const string SaveGroupName = "Cartridge save";
@@ -104,7 +108,7 @@ namespace LbIntegrations.SuperZsnes
 
         // ── listing ──────────────────────────────────────────────────────────
 
-        public override GetSavesResponse GetSaves(GetSavesArgs args)
+        protected override GetSavesResponse OwnGetSaves(GetSavesArgs args)
         {
             try
             {
@@ -215,11 +219,11 @@ namespace LbIntegrations.SuperZsnes
         // ── the contract ─────────────────────────────────────────────────────
 
         /// <summary>Neither is a container: each is one file, which the host copies itself.</summary>
-        public override bool IsSaveContainer(GameSaveBase save) => false;
+        protected override bool OwnIsSaveContainer(GameSaveBase save) => false;
 
-        public override bool UseSaveGroupIdForPersistedMatch(GameSaveBase save) => IsOurs(save);
+        protected override bool OwnUseSaveGroupIdForPersistedMatch(GameSaveBase save) => IsOurs(save);
 
-        public override bool TryBackupSave(GameSaveBase save, string emulatorApplicationPath, string destinationFolder, out string error)
+        protected override bool OwnTryBackupSave(GameSaveBase save, string emulatorApplicationPath, string destinationFolder, out string error)
         {
             error = "A SUPER ZSNES save is one file, not a container.";
             return false;
@@ -227,14 +231,14 @@ namespace LbIntegrations.SuperZsnes
 
         /// <summary>A plugin must never call its own save secondary; beside a .srm or a .szst, only a state's thumbnail is
         /// part of it.</summary>
-        public override bool IsSecondarySaveFile(string filePath) => IsStateThumb(filePath);
+        protected override bool OwnIsSecondarySaveFile(string filePath) => IsStateThumb(filePath);
 
         /// <summary>A state's thumbnail: the screenshot it carries, made a PNG beside it (SuperZsnesStateThumbs).</summary>
-        public override IReadOnlyList<string> GetCompanionSaveFiles(string primaryFilePath)
+        protected override IReadOnlyList<string> OwnGetCompanionSaveFiles(string primaryFilePath)
             => primaryFilePath != null && StateFile.IsMatch(primaryFilePath) ? LbipStateThumbs.Companion(primaryFilePath) : Array.Empty<string>();
 
         /// <summary>Active when it is where the emulator reads it now - the folder its settings name - and still there.</summary>
-        public override bool IsSaveActive(GameSaveBase save, string emulatorApplicationPath)
+        protected override bool OwnIsSaveActive(GameSaveBase save, string emulatorApplicationPath)
         {
             try
             {
@@ -251,7 +255,7 @@ namespace LbIntegrations.SuperZsnes
         // ── restore ──────────────────────────────────────────────────────────
 
         /// <summary>A vault copy back where the emulator reads it, under its own file name.</summary>
-        public override AddSaveResponse AddSaveFile(AddSaveArgs args)
+        protected override AddSaveResponse OwnAddSaveFile(AddSaveArgs args)
         {
             try
             {
@@ -332,11 +336,11 @@ namespace LbIntegrations.SuperZsnes
 
         // ── delete ───────────────────────────────────────────────────────────
 
-        public override PluginResponse RemoveSave(GameSaveBase save)
+        protected override PluginResponse OwnRemoveSave(GameSaveBase save)
         {
             try
             {
-                if (!IsOurs(save)) return base.RemoveSave(save);
+                if (!IsOurs(save)) return base.OwnRemoveSave(save);
                 var loc = save?.FileLocation;
                 if (string.IsNullOrWhiteSpace(loc)) return new PluginResponse(false, "This save has no location.");
                 try { if (File.Exists(loc)) File.Delete(loc); }
