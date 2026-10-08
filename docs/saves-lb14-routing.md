@@ -143,51 +143,43 @@ LaunchBox integration (`lb.retroarch`, `lb.pcsx2`, ...), never shared even when 
 | xemu, Cxbx | `cxbx:4d530064` (both) / `xemustate:4d530064:1` | `{"emu":"xemu","kind":"save","by":"title","id":"4D530064"}` and `{"emu":"cxbx",…}` / `{"emu":"xemu","kind":"state","by":"title","id":"4D530064","slot":1}` (slot from the snapshot's NAME) |
 | Vita3K | `vita3k:title:PCSE00000` | `{"emu":"vita3k","kind":"save","by":"title","id":"PCSE00000"}` |
 
-**The original game, recorded in the id (Mehdi, 08/10).** A row keeps the id it was created with (measured, test 7), so
-the id is also where the save's origin is kept - no extra file (no index, no sidecar, no stream). Three more keys,
-written once at creation:
+**Where a save came from is the row's, not the id's (Mehdi, 08/10, after a review of lot 1).** A first version of
+lot 1 also froze the save's origin into the id - the game's GUID (`game`), the version's (`ver`) and a fingerprint of
+the rom (`rom`: CRC32 of the whole file up to 10 MB, of three 1 MB samples above). All three were dropped:
 
-- `game`: the LaunchBox game's GUID; `ver`: the additional version's GUID when the save belongs to one, else left out;
-- `rom`, the fingerprint of **the file LaunchBox launches**, as it is on disk - the version's `ApplicationPath` if
-  the save belongs to a version, else the game's: `{"size":…,"crc":"<CRC32 of the whole file>"}` up to 10 MB,
-  `{"size":…,"head":…,"mid":…,"tail":…}` above, the CRC32 of the first, the middle and the last MB, reached by seeks
-  (3 MB read whatever the size) - a SAMPLE, not a proof: two variants of one disc of the same size patched outside the
-  samples print the same (Codex review, 08/10). An archive is fingerprinted as the archive: nothing is opened or
-  unpacked. No creation date (it changes with every copy). Kept in memory per session, keyed on path + size + last
-  write time: an unchanged file is never read twice; no file on disk. **No `rom` at all** when the plugin asks for none, or
-  when the file cannot be read safely (a disk image open in its emulator, a VHDX, falls here and needs nothing else): it is opened with no other writer allowed, its size taken from that handle, a short read
-  refused, its write time compared before and after - any doubt, no print, since a wrong one would be frozen for ever.
+- **The row already carries the origin**, and keeps it up to date: `GameId` and `AdditionalApplicationId`, filled by our
+  `GetSaves`, kept by LaunchBox, re-pointed by LiteBox (its Make Default moves a game's saves onto the version that
+  keeps the old rom, its combine moves them to the absorbing game). `AddSaveFile` hands the row over. A copy frozen in
+  the id would drift from it.
+- **The id must be the same string at every listing**, or LaunchBox may take it for another save (with
+  `UseSaveGroupIdForPersistedMatch`, how it falls back is still to measure, see §4b). An origin that changes - a rom
+  patched, a row moved by LiteBox - changed the id with it.
+- **A fingerprint costs a read of every rom at every listing**: the full scan at LaunchBox's start lists every game of
+  every emulator - gigabytes on a disk or a NAS, a whole download for a OneDrive file on demand - for two rare cases (a
+  warning "another file", and finding a file swapped by hand).
+
+So the id is an identity and nothing else - every field stable, none read from the disk:
 
 ```
-{"emu":"ares","kind":"save","sys":"Super Famicom","by":"name","id":"Zelda (France).ram","game":"2cf24c23-…","rom":{"size":1048576,"head":"9A1C…","tail":"44E0…"}}
+{"emu":"ares","kind":"save","sys":"Mega CD","by":"name","id":"Sonic CD (U).bram"}
 ```
 
-What they are for:
-- **Restore**: `AddSaveFile` gets the row and its id. The plugin takes the CURRENT path of the version (`ver`) or the game
-  (`game`) and writes the save under the name the emulator expects today, even after a rename. When that file
-  EXISTS, the save is written there whatever its fingerprint - a different one is only logged, never a
-  redirection (patch the main ISO and keep the original as a version: the save still goes to the game launched). When it
-  is GONE, the game's and its versions' files are fingerprinted, and ONE matching file is taken; none or several keep
-  the target above with a warning - never a dialog, the save stays in the vault (Mehdi, 08/10). Only the game's own files are
-  searched, never a folder: a game whose path is broken in LaunchBox is LaunchBox's to fix.
-  The target is taken in this order: the version the ROW is tied to today (`AdditionalApplicationId`, which LiteBox's
-  Make Default updates), else `ver`, else `game`. Today our plugins resolve the target from the game's path and ignore
-  the row's version - to fix.
-- **Never to match**: the listing still matches by name/path; when the rom changes, the listing's id differs, LaunchBox
-  falls back to the path and keeps the original id - the card and its history stay together.
+- **Restore**: `AddSaveFile` gets the row. The target is the version the row is tied to (`AdditionalApplicationId`),
+  else the game - its CURRENT path, so a rom renamed (and updated in LaunchBox) is followed, and LiteBox's Make Default
+  needs nothing more. A row tied to a version that no longer exists goes to the game WITH a warning, never silently; a
+  missing file is kept as the target, with a warning. Today our plugins resolve the target from the game's path and
+  ignore the row's version - to fix.
 - **A version on the same file as its game**: the save is NOT tied to the version (`AdditionalApplicationId` left
   empty, in our `GetSaves`, and through Harmony for RetroArch). It is the same file, nothing is lost, and LaunchBox's
   "Can't find the game" defect is avoided (test 9b: untied, the Atlantis restore went through).
-- **A version on ANOTHER file**: whether LaunchBox's defect hits it too was never measured. Never tying a save to a
-  version (relying on `ver`) would avoid it in every case, but the save would then show under the game, not the version.
-  Set aside (Mehdi, 08/10).
+- **A version on ANOTHER file**: whether LaunchBox's defect hits it too was never measured. Set aside (Mehdi, 08/10).
 - **A renamed rom is not followed at launch**: no way, through the SDK, to read LaunchBox's save rows before a launch.
   The old save is not lost (its card keeps it) and a Restore puts it under the new name. LiteBox, which does the
   renaming, can follow it.
 
 Not ours to change: LaunchBox's (`pcsx2:…`, `saturn-…`, RetroArch GUIDs) and LiteBox's (`entry:…`, `unit:…`). No
-migration (no user base), but existing rows keep their id: start from a cleaned XML. Nothing that has to change over a
-save's life goes in the id - only what identifies it and, frozen at creation, where it came from.
+migration (no user base), but existing rows keep their id: start from a cleaned XML. Nothing that can change over a
+save's life goes in the id.
 
 Decided (Mehdi, 08/10): `slot` is the emulator's own number; `sys` only where a plugin has several systems; the
 extension stays in `id`. **One serializer** writes every id, and it is System.Text.Json's, not ours: `JsonSerializer`
@@ -231,14 +223,14 @@ platform as soon as ANY save-capable plugin - ours or stock - covers that platfo
 | Lot | What | Done when |
 |---|---|---|
 | 0 | LiteBox net10-only on SDK 14.0.1.2; the plugins net10 on that SDK (init-only rows built in one initializer; `EmulatorFileName`, `EmulatorCore`, `SupportsSaveManagement`, `TryComputeSaveSignature`, `TryGetSaveGroupInfo`, `GetPotentialSaveSlots` available) | every plugin and LiteBox build and load on LB14 and LiteBox; probes green |
-| 1 | `Shared.Saves` (compiled into each plugin, System.IO.Hashing merged like the other packages): `SaveId` (System.Text.Json, see §3), `RomPrint` (10 MB rule, session cache), the row owner (§3), a base for our plugins (`IsOurs`, persisted match by id, restore target from `ver`/`game` and the current path then by fingerprint, untie a version on its game's file, cheap `IsSaveActive`). Before the restore part: measure in the sandbox what LaunchBox does when an additional version is promoted to main (GUIDs, save rows) | probe `--saves-selftest`: pinned strings, round trip, awkward characters, same state = same string, RomPrint both sizes + cache, foreign ids |
+| 1 | `Shared.Saves` (compiled into each plugin): `SaveId` (System.Text.Json, an identity only, see §3), the row owner (§3), a base for our plugins (`IsOurs`, persisted match by id, restore target from the row's version or the game and their current path, untie a version on its game's file, cheap `IsSaveActive`). Measured on the way: `EmulatorFileName` is the exe's name only; LaunchBox's Make Default (§1) | probe `--saves-selftest`: pinned strings, round trip, awkward characters, same state = same string, foreign ids, restore targets |
 | 2 | The 13 plugins on JSON ids through the base, with the per-plugin fixes of §4; start from a cleaned XML | one real game per plugin: save, close, vault, restore |
 | 3 | Nixx-Saves, case "the game's emulator is ours": the game's plugin lists every other save-capable plugin's saves for the game (ours AND stock, through the registry), and every call on a row goes to its owner (`EmulatorFileName` + `EmulatorCore`) | Zelda on SUPER ZSNES: an ares save (Launch With) and the RetroArch .srm both listed, backed up at close, each restored into its own emulator's folder |
 | 4 | Harmony on RetroArch, Dolphin, PCSX2: add the other plugins' rows to their `GetSaves`, route foreign rows, **translate their own ids to JSON** (`native` keeps the original, so the way back is exact); a row with no native id (RetroArch's generic saves) gets a JSON id whose way back is a fresh GUID per group; methods found by name and signature, missing = do nothing and log; a switch file turns it off | Zelda on RetroArch with an ares save; Atlantis translated both ways (done once with the probe, 07/10) |
 | 5 | The stock integrations without save support, through the SDK's default bodies, under D6 | a PS1 game on DuckStation with a RetroArch and a Nixx save |
 | 6 | The catch-all in Nixx-Saves: claims the emulators nobody claims (stock and pack exe names excluded), passes the launch through untouched, offers nothing in the emulator screens | FakeEmu: launch and Edit Emulator unchanged, its game's saves managed |
 | 7 | The setup: on uninstall, LaunchBox closed, rows whose id is a translated JSON get their `native` id back (or a fresh GUID per group when there was none), in every platform XML, after a backup | install → play → uninstall → the XML holds only stock formats, Game Saves as before |
-| 8 | LiteBox: Nixx-Saves's layers off when the host is LiteBox (it asks every plugin itself); read our JSON (`entry` for defect 4, `ver` for the version view); fix defects 5-9 of the audit; optionally its own ids in JSON (defects 1-3) | LiteBox self-tests (EntrySaveSelfTest, RommSelfTest) + the games of lots 2-3 |
+| 8 | LiteBox: Nixx-Saves's layers off when the host is LiteBox (it asks every plugin itself); read our JSON (`entry` for defect 4); the version view from the row's `AdditionalApplicationId`; offer to re-tie a save to another version (LiteBox owns its rows, LaunchBox's SDK does not let a plugin); fix defects 5-9 of the audit; optionally its own ids in JSON (defects 1-3) | LiteBox self-tests (EntrySaveSelfTest, RommSelfTest) + the games of lots 2-3 |
 | 9 | Nothing beside the game: SUPER ZSNES leftovers, ares's hidden `.cue` beside an `.iso`, melonDS states, bsnes, the rest | no write in a games folder on a play of each plugin |
 | 10 | The sandbox removed (§6), help pages, this document, the LaunchBox bug report followed, then the release with Mehdi | |
 

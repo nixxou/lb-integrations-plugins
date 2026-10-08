@@ -3,8 +3,7 @@
 // The ids are compared AS STRINGS by LaunchBox and LiteBox, so the exact bytes are the contract:
 // every example is pinned to the string it must produce, and a .NET update that changed one byte
 // would fail here first. Then: a read and a rewrite give the same string back, awkward characters
-// survive, LaunchBox's and LiteBox's forms are recognised as not ours, the fingerprint reads what it
-// says it reads (and only once for an unchanged file), and a restore finds the right file.
+// survive, LaunchBox's and LiteBox's forms are recognised as not ours, and a restore finds the right file.
 //
 // The files are forged under the temp folder and deleted afterwards. No emulator, no LaunchBox.
 //
@@ -15,8 +14,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Compression;
-using System.IO.Hashing;
 using System.Linq;
 using LbIntegrations.Saves;
 
@@ -29,7 +26,7 @@ namespace LbIntegrations.Probe
         public static bool Run()
         {
             Console.WriteLine();
-            Console.WriteLine("-- save ids, fingerprints, restore targets  [WRITES, in the temp folder] " + new string('-', 4));
+            Console.WriteLine("-- save ids and restore targets  [WRITES, in the temp folder] " + new string('-', 16));
             _bad = 0;
             var root = Path.Combine(Path.GetTempPath(), "lbip-saves-" + Guid.NewGuid().ToString("N"));
             try
@@ -39,7 +36,6 @@ namespace LbIntegrations.Probe
                 RoundTrip();
                 Awkward();
                 Foreign();
-                Prints(root);
                 Targets(root);
             }
             catch (Exception ex) { Check("no exception", false, ex.ToString()); }
@@ -70,24 +66,6 @@ namespace LbIntegrations.Probe
             Pin("xemu state",
                 new SaveIdData { Emu = "xemu", Kind = "state", By = "title", Id = "4D530064", Slot = 1 },
                 "{\"emu\":\"xemu\",\"kind\":\"state\",\"by\":\"title\",\"id\":\"4D530064\",\"slot\":1}");
-            Pin("with origin, small rom",
-                new SaveIdData
-                {
-                    Emu = "ares", Kind = "save", Sys = "Super Famicom", By = "name", Id = "Zelda (France).ram",
-                    Game = "2cf24c23-0000-4000-8000-000000000001",
-                    Rom = new RomPrintData { Size = 1048576, Crc = "9A1C0F3E" },
-                },
-                "{\"emu\":\"ares\",\"kind\":\"save\",\"sys\":\"Super Famicom\",\"by\":\"name\",\"id\":\"Zelda (France).ram\","
-                + "\"game\":\"2cf24c23-0000-4000-8000-000000000001\",\"rom\":{\"size\":1048576,\"crc\":\"9A1C0F3E\"}}");
-            Pin("with origin, big rom, a version",
-                new SaveIdData
-                {
-                    Emu = "ppsspp", Kind = "save", By = "disc", Id = "ULUS10041",
-                    Game = "2cf24c23-0000-4000-8000-000000000002", Ver = "5a7e0000-5a7e-4000-8000-00000000c001",
-                    Rom = new RomPrintData { Size = 1503238553, Head = "01234567", Mid = "13579BDF", Tail = "89ABCDEF" },
-                },
-                "{\"emu\":\"ppsspp\",\"kind\":\"save\",\"by\":\"disc\",\"id\":\"ULUS10041\",\"game\":\"2cf24c23-0000-4000-8000-000000000002\","
-                + "\"ver\":\"5a7e0000-5a7e-4000-8000-00000000c001\",\"rom\":{\"size\":1503238553,\"head\":\"01234567\",\"mid\":\"13579BDF\",\"tail\":\"89ABCDEF\"}}");
             Pin("a translated LaunchBox id",
                 new SaveIdData { Emu = "lb.pcsx2", Kind = "save", Native = "pcsx2:SLUS-20062" },
                 "{\"emu\":\"lb.pcsx2\",\"kind\":\"save\",\"native\":\"pcsx2:SLUS-20062\"}");
@@ -117,11 +95,7 @@ namespace LbIntegrations.Probe
         {
             Console.WriteLine();
             Console.WriteLine("  round trip and stability");
-            var full = new SaveIdData
-            {
-                Emu = "cxbx", Kind = "save", Sys = "Xbox", By = "title", Id = "4D530064", Slot = 3,
-                Game = "g", Ver = "v", Rom = new RomPrintData { Size = 12, Crc = "AABBCCDD" }, Native = "n",
-            };
+            var full = new SaveIdData { Emu = "cxbx", Kind = "save", Sys = "Xbox", By = "title", Id = "4D530064", Slot = 3, Native = "n" };
             var s = SaveId.Write(full);
             Check("every field round-trips", SaveId.Canonical(s) == s, s + " -> " + SaveId.Canonical(s));
 
@@ -190,153 +164,43 @@ namespace LbIntegrations.Probe
                   o.Kind == kind && o.Name == name, "got " + o.Kind + " " + o.Name);
         }
 
-        // ── 5. the fingerprint ───────────────────────────────────────────────────────────────────
-        private static void Prints(string root)
-        {
-            Console.WriteLine();
-            Console.WriteLine("  fingerprints");
-            RomPrint.ClearCache();
-            var rnd = new Random(1234);
-
-            var small = Path.Combine(root, "small.sfc");
-            var smallBytes = new byte[3 * 1024 * 1024 + 17]; rnd.NextBytes(smallBytes); File.WriteAllBytes(small, smallBytes);
-            var p = RomPrint.Of(small);
-            Check("up to 10 MB: CRC32 of the whole file",
-                  p != null && p.Size == smallBytes.Length && p.Crc == Hex(Crc32.HashToUInt32(smallBytes)) && p.Head == null && p.Tail == null,
-                  Describe(p));
-
-            var limit = Path.Combine(root, "limit.bin");
-            var limitBytes = new byte[RomPrint.WholeLimit]; rnd.NextBytes(limitBytes); File.WriteAllBytes(limit, limitBytes);
-            Check("exactly 10 MB: still the whole file", RomPrint.Of(limit)?.Crc == Hex(Crc32.HashToUInt32(limitBytes)));
-
-            var big = Path.Combine(root, "big.iso");
-            var bigBytes = new byte[RomPrint.WholeLimit + 5 * 1024 * 1024 + 3]; rnd.NextBytes(bigBytes); File.WriteAllBytes(big, bigBytes);
-            var q = RomPrint.Of(big);
-            string head = Hex(Crc32.HashToUInt32(bigBytes.AsSpan(0, RomPrint.Chunk)));
-            string mid = Hex(Crc32.HashToUInt32(bigBytes.AsSpan((int)(bigBytes.Length / 2 - RomPrint.Chunk / 2), RomPrint.Chunk)));
-            string tail = Hex(Crc32.HashToUInt32(bigBytes.AsSpan(bigBytes.Length - RomPrint.Chunk)));
-            Check("above 10 MB: CRC32 of the first, the middle and the last MB",
-                  q != null && q.Size == bigBytes.Length && q.Crc == null && q.Head == head && q.Mid == mid && q.Tail == tail, Describe(q));
-
-            // The limit of a sample, stated rather than hidden: a variant patched between the samples prints the same.
-            var variant = Path.Combine(root, "big (patched).iso");
-            var variantBytes = (byte[])bigBytes.Clone(); variantBytes[2 * RomPrint.Chunk + 10] ^= 0xFF; File.WriteAllBytes(variant, variantBytes);
-            Check("a big variant patched between the samples prints the same (known limit)", RomPrint.Of(variant)!.SameAs(q));
-            var variantMid = Path.Combine(root, "big (patched mid).iso");
-            var midBytes = (byte[])bigBytes.Clone(); midBytes[bigBytes.Length / 2] ^= 0xFF; File.WriteAllBytes(variantMid, midBytes);
-            Check("a big variant patched in the middle MB prints differently", !RomPrint.Of(variantMid)!.SameAs(q));
-
-            var zip = Path.Combine(root, "game.zip");
-            using (var z = ZipFile.Open(zip, ZipArchiveMode.Create)) using (var w = z.CreateEntry("game.sfc").Open()) w.Write(smallBytes, 0, 4096);
-            Check("an archive is fingerprinted as the archive", RomPrint.Of(zip)?.Crc == Hex(Crc32.HashToUInt32(File.ReadAllBytes(zip))));
-
-            int reads = RomPrint.Reads;
-            RomPrint.Of(small); RomPrint.Of(big);
-            Check("an unchanged file is not read again", RomPrint.Reads == reads, "reads " + reads + " -> " + RomPrint.Reads);
-
-            smallBytes[100] ^= 0xFF; File.WriteAllBytes(small, smallBytes);
-            File.SetLastWriteTimeUtc(small, DateTime.UtcNow.AddMinutes(1));
-            var p2 = RomPrint.Of(small);
-            Check("a changed file is read again", RomPrint.Reads == reads + 1 && p2?.Crc == Hex(Crc32.HashToUInt32(smallBytes)) && !p2.SameAs(p));
-
-            Check("a missing file has no fingerprint", RomPrint.Of(Path.Combine(root, "nope.bin")) == null);
-
-            // Somebody is writing to it: no print rather than a print of a moving file.
-            var busy = Path.Combine(root, "busy.sfc"); File.WriteAllBytes(busy, smallBytes);
-            using (new FileStream(busy, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
-                Check("a file open for writing elsewhere has no fingerprint", RomPrint.Of(busy) == null);
-            Check("once closed, it is printed", RomPrint.Of(busy) != null);
-
-            // During the read: a writer is refused, and a change of the file's time drops the print.
-            var during = Path.Combine(root, "during.sfc"); File.WriteAllBytes(during, smallBytes);
-            bool refused = false;
-            RomPrint.DuringRead = f => { try { File.WriteAllBytes(f, new byte[] { 1 }); } catch (IOException) { refused = true; } };
-            var d1 = RomPrint.Of(during);
-            Check("a writer is locked out while the file is read", refused && d1 != null && d1.Crc == Hex(Crc32.HashToUInt32(smallBytes)));
-            var during2 = Path.Combine(root, "during2.iso"); File.WriteAllBytes(during2, bigBytes);
-            RomPrint.DuringRead = f => File.SetLastWriteTimeUtc(f, DateTime.UtcNow.AddHours(1));
-            Check("a file whose time changes during the read gets no print", RomPrint.Of(during2) == null);
-            RomPrint.DuringRead = null;
-        }
-
-        // ── 6. where a restore writes ────────────────────────────────────────────────────────────
+        // ── 5. where a restore writes ────────────────────────────────────────────────────────────
         private static void Targets(string root)
         {
             Console.WriteLine();
             Console.WriteLine("  restore targets");
             var a = Path.Combine(root, "Game (France).sfc"); File.WriteAllBytes(a, new byte[] { 1, 2, 3 });
             var b = Path.Combine(root, "Game (Alt).sfc"); File.WriteAllBytes(b, new byte[] { 4, 5, 6 });
+            var gone = Path.Combine(root, "Game (old name).sfc");
             string? Full(string? x) => x;
             const string V = "c001", V2 = "c002";
 
-            var madeOnA = new SaveIdData { Emu = "ares", Kind = "save", Game = "g", Rom = RomPrint.Of(a) };
-            var madeOnB = new SaveIdData { Emu = "ares", Kind = "save", Game = "g", Ver = V, Rom = RomPrint.Of(b) };
+            var t = SaveRows.ChooseTarget(null, a, new[] { (V, (string?)b) }, Full);
+            Check("a game save goes to the game", t.RomPath == a && t.VersionId == null && t.Warning == null);
 
-            var t = SaveRows.ChooseTarget(null, madeOnA, a, new[] { (V, (string?)b) }, Full);
-            Check("a game save goes to the game", t.RomPath == a && t.VersionId == null && t.Matches && !t.FoundByPrint);
+            t = SaveRows.ChooseTarget(V, a, new[] { (V, (string?)b) }, Full);
+            Check("a version save goes to its version", t.RomPath == b && t.VersionId == V && t.Warning == null);
 
-            t = SaveRows.ChooseTarget(null, madeOnB, a, new[] { (V, (string?)b) }, Full);
-            Check("a version save goes to its version (ver)", t.RomPath == b && t.VersionId == V && t.Matches);
+            // LiteBox's Make Default: the game now launches B, a new version V2 keeps A, and the game's old
+            // saves were moved onto V2 - the row says so, nothing else is needed.
+            t = SaveRows.ChooseTarget(V2, b, new[] { (V, (string?)b), (V2, (string?)a) }, Full);
+            Check("LiteBox's Make Default: the old save follows the old rom", t.RomPath == a && t.VersionId == V2 && t.Warning == null);
 
-            t = SaveRows.ChooseTarget(V, madeOnB.WithoutVer(), a, new[] { (V, (string?)b) }, Full);
-            Check("the row's version wins over the id", t.RomPath == b && t.VersionId == V);
+            t = SaveRows.ChooseTarget("c999", a, new[] { (V, (string?)b) }, Full);
+            Check("a version that no longer exists: the game, with a warning", t.RomPath == a && t.VersionId == null && t.Warning != null);
 
-            // LiteBox's Make Default: the game now launches B, and a new version V2 keeps A, with the game's
-            // old saves moved onto it. Their ids have no ver; the row says V2.
-            t = SaveRows.ChooseTarget(V2, madeOnA, b, new[] { (V, (string?)b), (V2, (string?)a) }, Full);
-            Check("LiteBox's Make Default: the old save follows the old rom", t.RomPath == a && t.VersionId == V2 && t.Matches);
+            t = SaveRows.ChooseTarget(null, gone, new[] { (V, (string?)b) }, Full);
+            Check("the game's file is missing: kept, with a warning", t.RomPath == gone && t.Warning != null);
+            t = SaveRows.ChooseTarget(V, a, new[] { (V, (string?)gone) }, Full);
+            Check("the version's file is missing: kept, with a warning", t.RomPath == gone && t.VersionId == V && t.Warning != null);
 
-            // The target exists but is not the file the save was made on: written there anyway, logged, never
-            // redirected (Mehdi, 08/10) - here the main ISO was patched and the original kept as a version.
-            var patched = Path.Combine(root, "Game (France) [T-En].sfc"); File.WriteAllBytes(patched, new byte[] { 1, 2, 9 });
-            t = SaveRows.ChooseTarget(null, madeOnA, patched, new[] { (V, (string?)a) }, Full);
-            Check("target present, other fingerprint: written there, not redirected",
-                  t.RomPath == patched && t.VersionId == null && !t.FoundByPrint && !t.Matches && t.Warning != null);
-
-            // The target is gone: the file the save was made on is looked for among the game's.
-            var gone = Path.Combine(root, "Game (France) old name.sfc");
-            t = SaveRows.ChooseTarget(null, madeOnA, gone, new[] { (V, (string?)a) }, Full);
-            Check("target gone, one file matches: found by fingerprint", t.RomPath == a && t.VersionId == V && t.FoundByPrint && t.Matches);
-
-            var a2 = Path.Combine(root, "Game (France) copy.sfc"); File.WriteAllBytes(a2, new byte[] { 1, 2, 3 });
-            t = SaveRows.ChooseTarget(null, madeOnA, gone, new[] { (V, (string?)a), (V2, (string?)a2) }, Full);
-            Check("target gone, two files match: the ids' target is kept, with a warning",
-                  t.RomPath == gone && !t.Matches && !t.FoundByPrint && t.Warning != null && t.Warning.Contains("several"));
-            t = SaveRows.ChooseTarget(null, madeOnA, gone, new[] { (V, (string?)a), (V2, (string?)a) }, Full);
-            Check("two versions on the same matching file count once", t.RomPath == a && t.FoundByPrint);
-            t = SaveRows.ChooseTarget(null, madeOnA, gone, new[] { (V, (string?)b) }, Full);
-            Check("target gone, nothing matches: kept, with a warning", t.RomPath == gone && !t.Matches && t.Warning != null);
-            t = SaveRows.ChooseTarget(null, madeOnA.WithoutRom(), gone, new[] { (V, (string?)a) }, Full);
-            Check("target gone and no fingerprint: kept, with a warning", t.RomPath == gone && !t.Matches && !t.FoundByPrint);
-            // LaunchBox's Make Default: the game and its version both launch B, A is referenced nowhere.
-            t = SaveRows.ChooseTarget(V, madeOnA, b, new[] { (V, (string?)b) }, Full);
-            Check("LaunchBox's Make Default: written to the game's file, with a warning", !t.Matches && t.Warning != null && t.RomPath == b && !t.FoundByPrint);
-
-            var o = SaveRows.Origin("g", a, V, a, Full);
-            Check("a version on its game's file is not tied", o.Ver == null && o.Game == "g" && o.Rom!.SameAs(RomPrint.Of(a)));
-            o = SaveRows.Origin("g", a, V, b, Full);
-            Check("a version on another file is tied, and printed on its own file", o.Ver == V && o.Rom!.SameAs(RomPrint.Of(b)));
-            o = SaveRows.Origin("g", a, null, null, Full, print: false);
-            Check("a plugin can leave the fingerprint out", o.Rom == null && o.Game == "g");
-            o = SaveRows.Origin("g", a, null, null, Full);
-            Check("a game save: no ver, the game's file", o.Ver == null && o.Rom!.SameAs(RomPrint.Of(a)));
+            Check("a version on its game's file is not tied", SaveRows.TieTo(V, a, a, Full) == null);
+            Check("a version on another file is tied", SaveRows.TieTo(V, a, b, Full) == V);
+            Check("a game save is not tied", SaveRows.TieTo(null, a, null, Full) == null);
 
             Check("IsSaveActive compares strings, exactly", SaveRows.SameId("{\"a\":1}", "{\"a\":1}") && !SaveRows.SameId("{\"a\":1}", "{\"A\":1}"));
         }
 
-        // The id of a version save as LiteBox's move would leave it: tied by the row, not by the id.
-        private static SaveIdData WithoutVer(this SaveIdData d) => new()
-        {
-            Emu = d.Emu, Kind = d.Kind, Sys = d.Sys, By = d.By, Id = d.Id, Slot = d.Slot, Game = d.Game, Rom = d.Rom, Native = d.Native,
-        };
-
-        private static SaveIdData WithoutRom(this SaveIdData d) => new()
-        {
-            Emu = d.Emu, Kind = d.Kind, Sys = d.Sys, By = d.By, Id = d.Id, Slot = d.Slot, Game = d.Game, Ver = d.Ver, Native = d.Native,
-        };
-
-        private static string Hex(uint crc) => crc.ToString("X8", System.Globalization.CultureInfo.InvariantCulture);
-        private static string Describe(RomPrintData? p) => p == null ? "null" : SaveId.Write(new SaveIdData { Rom = p });
         private static string Short(string s) => (s.Length > 60 ? s.Substring(0, 57) + "..." : s).Replace("\n", "\\n").Replace("\t", "\\t");
 
         private static void Check(string what, bool ok, string? error = null)

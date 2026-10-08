@@ -1,20 +1,27 @@
 // The SaveGroupId of every save row the pack writes: one JSON object, one serializer.
 //
 // WHY JSON. LaunchBox keeps a row's SaveGroupId for ever and compares it as a STRING (measured
-// 07/10, docs\saves-lb14-routing.md §1): it is the only place a save can carry where it came from.
-// A JSON object holds every field we need without inventing a grammar of ':' and '#'.
+// 07/10, docs\saves-lb14-routing.md §1). A JSON object holds every field we need without inventing a
+// grammar of ':' and '#'.
+//
+// AN IDENTITY AND NOTHING ELSE (Mehdi, 08/10). The id says WHICH save this is - its owner, its kind,
+// what names it - and every field of it is stable: the listing must give the very same string every
+// time, or LaunchBox takes it for another save. Where the save came from (its game, its version) is
+// NOT here: the row already carries it (GameId, AdditionalApplicationId), and LaunchBox and LiteBox
+// keep it up to date there (LiteBox's Make Default and combine re-point rows). A copy frozen in the id
+// would only drift from it - and change the id when it did. No fingerprint of the rom either: reading
+// roms at every listing cost gigabytes at each LaunchBox start, for two rare cases.
 //
 // WHY System.Text.Json AND NOTHING OF OURS (Mehdi, 08/10). Writing and reading JSON is the library's
 // job. What is ours is only WHICH fields exist and IN WHAT ORDER - [JsonPropertyOrder] below - and
-// the encoder's settings. Two identical states therefore always give the same string, which is what
-// matters: LaunchBox and LiteBox compare the string, never the JSON. The probe's --saves-selftest
-// pins exact strings, so a .NET update that changed one byte of the output would be seen there.
+// the encoder's settings. Two identical states therefore always give the same string. The probe's
+// --saves-selftest pins exact strings, so a .NET update that changed one byte would be seen there.
 //
 // THE ESCAPES. Every Unicode range is allowed through, so a name stays readable in the XML. '#' and
 // '|' are forbidden, so the library writes them # and |: LiteBox cuts an id at '#' (its
-// #cN / #web / #b:<name> decorations) and at '|'. Whatever the settings, .NET also escapes a few
-// characters on its own (the HTML-sensitive ones, characters outside the BMP such as emoji): stable,
-// only less readable, and pinned by the self-test like the rest.
+// #cN / #web / #b:<name> decorations) and at '|'. Whatever the settings, .NET also escapes the quote
+// and the HTML-sensitive characters, and writes characters outside the BMP (emoji) as a surrogate
+// pair: stable, only less readable, and pinned by the self-test like the rest.
 //
 // A '#' can therefore never occur inside our JSON, so anything from the first '#' on is a decoration
 // somebody else appended: TryRead reads what comes before it.
@@ -29,25 +36,6 @@ using System.Text.Unicode;
 
 namespace LbIntegrations.Saves
 {
-    /// <summary>The fingerprint of the file LaunchBox launches, frozen when the row is created (see RomPrint).
-    /// Up to 10 MB: <see cref="Crc"/> of the whole file, a proof. Above: <see cref="Head"/>, <see cref="Mid"/> and
-    /// <see cref="Tail"/>, the CRC32 of its first, middle and last MB - a sample. CRCs are 8 upper-case hex digits.</summary>
-    internal sealed class RomPrintData
-    {
-        [JsonPropertyOrder(0)] public long Size { get; init; }
-        [JsonPropertyOrder(1)] public string? Crc { get; init; }
-        [JsonPropertyOrder(2)] public string? Head { get; init; }
-        [JsonPropertyOrder(3)] public string? Mid { get; init; }
-        [JsonPropertyOrder(4)] public string? Tail { get; init; }
-
-        public bool SameAs(RomPrintData? other)
-            => other != null && Size == other.Size
-               && string.Equals(Crc, other.Crc, StringComparison.OrdinalIgnoreCase)
-               && string.Equals(Head, other.Head, StringComparison.OrdinalIgnoreCase)
-               && string.Equals(Mid, other.Mid, StringComparison.OrdinalIgnoreCase)
-               && string.Equals(Tail, other.Tail, StringComparison.OrdinalIgnoreCase);
-    }
-
     /// <summary>One save row's identity. A field that does not apply stays null and is left out.
     /// The order of the properties IS the order in the string - never reorder them.</summary>
     internal sealed class SaveIdData
@@ -64,13 +52,8 @@ namespace LbIntegrations.Saves
         [JsonPropertyOrder(4)] public string? Id { get; init; }
         /// <summary>The emulator's own slot number.</summary>
         [JsonPropertyOrder(5)] public int? Slot { get; init; }
-        /// <summary>The LaunchBox game's GUID, frozen at creation.</summary>
-        [JsonPropertyOrder(6)] public string? Game { get; init; }
-        /// <summary>The additional version's GUID when the save belongs to one on ANOTHER file.</summary>
-        [JsonPropertyOrder(7)] public string? Ver { get; init; }
-        [JsonPropertyOrder(8)] public RomPrintData? Rom { get; init; }
         /// <summary>A LaunchBox integration's own id, kept exactly so the way back is exact.</summary>
-        [JsonPropertyOrder(9)] public string? Native { get; init; }
+        [JsonPropertyOrder(6)] public string? Native { get; init; }
     }
 
     internal static class SaveId
