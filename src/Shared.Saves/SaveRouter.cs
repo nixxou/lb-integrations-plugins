@@ -28,6 +28,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using System.Threading;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 
@@ -50,7 +51,15 @@ namespace LbIntegrations.Saves
         /// <summary>Where the router writes what it did; set by the plugins (NixxSavePlugin).</summary>
         public static Action<string>? Log;
 
-        [ThreadStatic] private static int _inner;
+        // NOT NESTED, ACROSS THE PACK: every plugin carries its own copy of this class, so a [ThreadStatic] would only
+        // stop a plugin from nesting into itself - asked by SUPER ZSNES's desk, RASnes9x's desk listed the others again
+        // (ares's files came back labelled RASnes9x.exe, measured 08/10). A named thread slot is one per process.
+        private static readonly LocalDataStoreSlot Depth = Thread.GetNamedDataSlot("LbIntegrations.Saves.DeskDepth");
+        private static int Inner
+        {
+            get { try { return Thread.GetData(Depth) is int n ? n : 0; } catch { return 0; } }
+            set { try { Thread.SetData(Depth, value); } catch { } }
+        }
 
         /// <summary>True under LaunchBox; false under a host that asks every plugin itself (LiteBox).</summary>
         public static bool Active
@@ -173,7 +182,7 @@ namespace LbIntegrations.Saves
             {
                 foreach (var o in Everyone())
                 {
-                    try { if (o.Plugin.GetApplicableEmulators(new[] { emulator })?.Any() == true) return o; } catch { }
+                    try { if (o.Plugin.GetApplicableEmulators(new[] { emulator })?.Any(x => ReferenceEquals(x, emulator) || (x != null && string.Equals(Safe(() => x.Id), Safe(() => emulator.Id), StringComparison.OrdinalIgnoreCase))) == true) return o; } catch { }
                 }
                 return null;
             });
@@ -323,13 +332,13 @@ namespace LbIntegrations.Saves
         public static List<GameSaveBase> OthersFor(EmulatorPlugin self, GetSavesArgs args, IReadOnlyCollection<GameSaveBase> own)
         {
             var found = new List<GameSaveBase>();
-            if (!Active || _inner > 0 || args == null) { Once("others not asked: active=" + Active + " nested=" + (_inner > 0) + " args=" + (args != null)); return found; }
+            if (!Active || Inner > 0 || args == null) return found;
             var games = (args.Games ?? Array.Empty<IGame>()).Where(g => g != null).ToList();
             var apps = (args.AdditionalApplications ?? Array.Empty<IAdditionalApplication?>()).Where(a => a != null).Select(a => a!).ToList();
             Once("first listing: " + games.Count + " game(s), " + apps.Count + " version(s), " + Library().Count + " emulator(s) in the library");
             if (games.Count == 0 && apps.Count == 0) return found;
             var selfId = Safe(() => args.Emulator?.Id);
-            var mine = new HashSet<string>(own.Select(r => Safe(() => r.FileLocation) ?? "").Where(p => p.Length > 0), StringComparer.OrdinalIgnoreCase);
+            var mine = new HashSet<string>(own.Select(r => FullOf(Safe(() => r.FileLocation))).Where(p => p.Length > 0), StringComparer.OrdinalIgnoreCase);
             var gameOf = new Dictionary<string, IGame?>(StringComparer.OrdinalIgnoreCase);
             IGame? GameOf(string? id)
             {
@@ -338,7 +347,7 @@ namespace LbIntegrations.Saves
                 return g;
             }
 
-            _inner++;
+            Inner = Inner + 1;
             try
             {
                 foreach (var e in Library())
@@ -364,7 +373,7 @@ namespace LbIntegrations.Saves
                     foreach (var row in r.FoundSaves)
                     {
                         // One row per file: two emulators on one exe (RetroArch with two cores) list the same .srm.
-                        var at = Safe(() => row?.FileLocation) ?? "";
+                        var at = FullOf(Safe(() => row?.FileLocation));
                         if (row == null || (at.Length > 0 && !mine.Add(at))) continue;
                         var core = string.IsNullOrEmpty(row.EmulatorCore) ? CoreOf(e, Safe(() => GameOf(row.GameId)?.Platform)) : row.EmulatorCore;
                         found.Add(SaveRows.With(row, exe, core));
@@ -373,8 +382,20 @@ namespace LbIntegrations.Saves
                     if (n > 0) Say("listed " + n + " save(s) of " + d.Value.Emu + " (" + Safe(() => e.Title) + ") with ours");
                 }
             }
-            finally { _inner--; }
+            finally { Inner = Inner - 1; }
             return found;
+        }
+
+        /// <summary>A row's file as one string whatever its form (LaunchBox stores paths relative to its root).</summary>
+        private static string FullOf(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return "";
+            try
+            {
+                var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".."));
+                return Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(root, path)).TrimEnd(Path.DirectorySeparatorChar);
+            }
+            catch { return path!; }
         }
 
         private static void Say(string message) { try { Log?.Invoke("[saves] " + message); } catch { } }
