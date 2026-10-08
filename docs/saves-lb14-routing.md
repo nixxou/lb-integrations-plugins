@@ -128,6 +128,15 @@ exact emulator from `EmulatorCore` + platform.
 
 The stock integrations: RetroArch and Dolphin list Auto (-1) and 0-9 and honour the pick (`.state<n>` / `<disc>.s<NN>` - Dolphin's Auto would make `.s-01`, not measured); RetroArch's states have no id, Dolphin drops it on the returned row; PCSX2 lists no slot (so, per the above, its states cannot be restored).
 Our plugins before the fix: ares, SUPER ZSNES, RASnes9x, Flycast, melonDS write the backup's own name (the pick ignored) and return the PICKED slot with the backup's id - three slots disagreeing; PPSSPP takes the slot from the id; xemu honours the pick; xemu and bsnes list nothing.
+### Companions and the signature (measured 08/10, the save probe)
+
+- A backup carries the save's companions (`GetCompanionSaveFiles`): `SaveProbe Test-02.mainsave` and `-02.rtc` came together.
+- **Without a signature of the plugin's own (`TryComputeSaveSignature` false, as all our plugins), LaunchBox compares the
+  primary file only**: the companion alone changed, LaunchBox restarted, the tile still says backed up and Backup is
+  refused. A companion's change is never backed up. Our plugins with companions that are data: bsnes and RASnes9x (.rtc),
+  ares (64DD clock), Flycast (the rest of an arcade set). Hence a signature over the primary AND its companions.
+- The vault takes a numbered name when the name is taken, whichever tile the other copy belongs to (`-02.srm` for SUPER
+  ZSNES's Zelda .srm beside RetroArch's `.srm` and `-01.srm`).
 ### LaunchBox defects met
 
 - A save tied to an additional application (Atlantis, "Play (FR) (Disc 1)"): **Backup Save** fails with "Can't find the
