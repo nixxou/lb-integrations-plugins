@@ -228,6 +228,10 @@ namespace LbIntegrations.Probe
             var game = new GameSaveGame { GameId = "g1", FileLocation = @"C:\s\Zelda.srm", EmulatorFileName = "retroarch.exe", EmulatorCore = "snes9x_libretro" };
             Check("a row already right is handed as it is", ReferenceEquals(SaveRows.With(game, "retroarch.exe", "snes9x_libretro"), game));
             Check("a row's own core is kept when the desk has none", SaveRows.With(game, "retroarch.exe", null).EmulatorCore == "snes9x_libretro");
+            var tied = SaveRows.WithVersion(state, "v9");
+            Check("a state tied to a version keeps its slot and its fields",
+                  tied is GameSaveState t && t.Slot == 1 && t.AdditionalApplicationId == "v9" && t.SaveGroupId == "x" && t.EmulatorFileName == "old.exe" && t.FileLocation == state.FileLocation);
+            Check("a row already on that version is handed as it is", ReferenceEquals(SaveRows.WithVersion(state, "A1"), state));
 
             Check("RetroArch and Dolphin are restored by the desk, PCSX2 is not",
                   StockRestore.Handles("lb.retroarch") && StockRestore.Handles("lb.dolphin") && !StockRestore.Handles("lb.pcsx2") && !StockRestore.Handles("ares"));

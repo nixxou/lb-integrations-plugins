@@ -132,6 +132,28 @@ namespace LbIntegrations.Saves
             };
         }
 
+        /// <summary><paramref name="row"/> tied to the version <paramref name="versionId"/> (the front desk, SavePersist): the
+        /// row itself when it already is, else a copy - every field, Slot included.</summary>
+        public static GameSaveBase WithVersion(GameSaveBase row, string? versionId)
+        {
+            if (string.Equals(row.AdditionalApplicationId, versionId, StringComparison.OrdinalIgnoreCase)) return row;
+            if (row is GameSaveState s)
+                return new GameSaveState
+                {
+                    Slot = s.Slot, AdditionalApplicationId = versionId, SaveGroupId = row.SaveGroupId, MatchLineageId = row.MatchLineageId,
+                    MigrationFamilyId = row.MigrationFamilyId, EmulatorCore = row.EmulatorCore, EmulatorFileName = row.EmulatorFileName, FileLocation = row.FileLocation,
+                    GameId = row.GameId, Title = row.Title, SaveGroupName = row.SaveGroupName, DisplayChipText = row.DisplayChipText,
+                    OriginalFileName = row.OriginalFileName, ReportedFileSizeBytes = row.ReportedFileSizeBytes, IsDirectory = row.IsDirectory, ReportedLastModifiedUtc = row.ReportedLastModifiedUtc,
+                };
+            return new GameSaveGame
+            {
+                AdditionalApplicationId = versionId, SaveGroupId = row.SaveGroupId, MatchLineageId = row.MatchLineageId,
+                MigrationFamilyId = row.MigrationFamilyId, EmulatorCore = row.EmulatorCore, EmulatorFileName = row.EmulatorFileName, FileLocation = row.FileLocation,
+                GameId = row.GameId, Title = row.Title, SaveGroupName = row.SaveGroupName, DisplayChipText = row.DisplayChipText,
+                OriginalFileName = row.OriginalFileName, ReportedFileSizeBytes = row.ReportedFileSizeBytes, IsDirectory = row.IsDirectory, ReportedLastModifiedUtc = row.ReportedLastModifiedUtc,
+            };
+        }
+
         private static bool SamePath(string? a, string? b)
         {
             if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return false;

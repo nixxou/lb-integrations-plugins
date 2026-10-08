@@ -86,6 +86,15 @@ namespace LbIntegrations.Saves
                 var named = string.IsNullOrEmpty(exe) ? mine.ToList()
                             : mine.Select(r => r != null && string.IsNullOrEmpty(r.EmulatorFileName) ? SaveRows.With(r, exe, null) : r).ToList();
                 var others = SaveRouter.OthersFor(_plugin, args, named);
+                // Plan A (09/10): one game on screen - each row tied as LaunchBox ties its persisted row, and given a
+                // persisted row at its own path (SavePersist).
+                if ((args?.Games?.Count ?? 0) == 1)
+                {
+                    var gameId = args!.Games!.First().Id;
+                    named = SavePersist.TieLikeLaunchBox(gameId, named, Say).ToList();
+                    others = SavePersist.TieLikeLaunchBox(gameId, others, Say).ToList();
+                    SavePersist.Ensure(gameId, named.Concat(others), m => Say(m.Replace("[saves] ", "")));
+                }
                 // One game on screen (Game Saves): every row handed to LaunchBox, to tell a row it hid from one never sent.
                 if ((args?.Games?.Count ?? 0) <= 1)
                     foreach (var r in named.Concat(others))
@@ -133,6 +142,14 @@ namespace LbIntegrations.Saves
 
         public bool TryGetSaveGroupInfo(GameSaveBase save, string primaryFilePath, out string? saveGroupId, out string? saveGroupName)
         {
+            // A row that carries its group answers it (08/10): asked in the tile's constructor (SaveItem..ctor), and left
+            // unanswered LaunchBox picks a group itself - the card with a backup of the same file name: RASnes9x's Secret of
+            // Mana .srm was tied to SUPER ZSNES's card, its id replaced, then hidden.
+            if (!string.IsNullOrEmpty(save?.SaveGroupId))
+            {
+                saveGroupId = save!.SaveGroupId; saveGroupName = save.SaveGroupName;
+                return true;
+            }
             if (Route(save) is { } r)
             {
                 string? id = null, name = null;

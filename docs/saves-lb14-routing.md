@@ -72,6 +72,37 @@ copies). Measured with the probe on "SaveProbe Test" (XML before/after in
 `UseSaveGroupIdForPersistedMatch` was never called on the probe (07/10: only on RetroArch), so none of this depends on
 it. For us: a stable id keeps a save in its card when an emulator's folder moves; an id that changes only splits the
 history if the file moves at the same time. `MatchLineageId` was not needed and is not measured.
+
+### When a listed save takes another card (measured 08-09/10, Secret of Mana)
+
+RASnes9x's `Secret of Mana (USA).srm`, listed by SUPER ZSNES's front desk, was hidden: LaunchBox put it in SUPER
+ZSNES's card, under SUPER ZSNES's id. The rule, by calling `AddEditGameSavesPageViewModel.ApplyPersistedMetadata`
+(internal static, real body by reflection) on rows built by hand:
+
+- a listed row NOT found by its path among the persisted rows takes the `SaveGroupId` and lineage of a same-game backup
+  whose `OriginalFileName` (or, when empty, its file name) is the listed row's file name - whatever its exe, id, lineage
+  or own `OriginalFileName`. Another file name, or another game, does not match; `NormalizeSaveMetadata` takes nothing;
+- the listed row and its persisted row must be on the SAME game or version to be found by path. LaunchBox persists a
+  save of the game on the version that runs the game's own file ("Play Version..."), even when it was listed with no
+  version. Ours were listed untied (§ "A version on the same file", below), so they were never found: the persisted row
+  counted as a backup (ares 1 instead of 0) and the listed one was matched by name against the vault copies, which are
+  rows of the game (SUPER ZSNES 4 instead of 2, the RASnes9x file in its history). RetroArch's rows, listed tied, had
+  neither problem.
+
+What the front desk does (plan A, `SavePersist`, one game on screen only):
+
+1. a row of the game listed with no version is tied to the version on the game's own file, when there is one
+   (`TieLikeLaunchBox`): listed and persisted meet;
+2. a row with no persisted row at its path gets one (`Ensure`, in `Game.Saves` or the version's `Saves`,
+   `BlockingCollection<GameSave>`, by reflection) - from the first opening, before LaunchBox writes its own at close;
+3. a persisted row of OURS on another game or version than the listed row is moved to it (emptied and refilled: the
+   collection has no Remove). Rows that are not ours are never touched.
+
+Measured 09/10: four separate cards, RASnes9x 0, SUPER ZSNES 2, ares 0, RetroArch 0, at the first and the second
+opening, and after a LaunchBox restart; one persisted row per path.
+
+Also answered by the desk (`TryGetSaveGroupInfo`): a row that carries its `SaveGroupId` gives it back, else LaunchBox
+picks a group itself, from the tile's constructor (`SaveItem..ctor`).
 ### The integrations shipped with LaunchBox
 
 They are separate plugins in `System\Plugins\`, **not obfuscated** (real IL bodies: `RetroArchPlugin.GetSaves` 2 526
@@ -141,7 +172,9 @@ Our plugins before the fix: ares, SUPER ZSNES, RASnes9x, Flycast, melonDS write 
 
 - A save tied to an additional application (Atlantis, "Play (FR) (Disc 1)"): **Backup Save** fails with "Can't find the
   game for this save item!", and so does a Restore that needs the precautionary backup (measured 20/09 without any
-  plugin, met again 07/10). Automatic backup at close works.
+  plugin, met again 07/10). Automatic backup at close works. Met again 09/10 on Secret of Mana (a version on the game's
+  own file): Backup Save fails on RetroArch's stock card too, and on ours tied or untied - nothing a plugin can do. The
+  Restore of a SUPER ZSNES vault copy, tied, went through.
 - A restore of another emulator's save goes to the game's emulator (above).
 - **Make Default** (Edit Game > Additional Versions, measured 08/10 on "SaveProbe Test", XML before/after in
   `G:\LB1326\Backups\lbip-saveprobe-2026-10-07\promote-test-before\`): it does not swap, it OVERWRITES the game with
@@ -229,6 +262,9 @@ So the id is an identity and nothing else - every field stable, none read from t
 - **A version on the same file as its game**: the save is NOT tied to the version (`AdditionalApplicationId` left
   empty, in our `GetSaves`, and through Harmony for RetroArch). It is the same file, nothing is lost, and LaunchBox's
   "Can't find the game" defect is avoided (test 9b: untied, the Atlantis restore went through).
+  **Overruled for the listing on 09/10**: LaunchBox persists the row on that version anyway, so the front desk ties it
+  there before handing it over (§1, "When a listed save takes another card"), and the manual Backup Save fails tied or
+  not, RetroArch's stock card included. The restore target is unchanged: that version runs the game's own file.
 - **A version on ANOTHER file**: whether LaunchBox's defect hits it too was never measured. Set aside (Mehdi, 08/10).
 - **A renamed rom is not followed at launch**: no way, through the SDK, to read LaunchBox's save rows before a launch.
   The old save is not lost (its card keeps it) and a Restore puts it under the new name. LiteBox, which does the
