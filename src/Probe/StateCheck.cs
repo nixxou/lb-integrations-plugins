@@ -296,7 +296,7 @@ namespace LbIntegrations.Probe
                     {
                         FileLocation = anonymous,
                         Slot = 0,
-                        SaveGroupId = "ppsspp-state:ULUS10516:0",
+                        SaveGroupId = LbIntegrations.Saves.SaveId.Write(new LbIntegrations.Saves.SaveIdData { Emu = "ppsspp", Kind = "state", By = "disc", Id = "ULUS10516", Slot = 0 }),
                     },
                     ShouldOverwriteFunc = () => true,
                 });

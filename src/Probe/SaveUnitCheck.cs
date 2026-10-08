@@ -66,7 +66,7 @@ namespace LbIntegrations.Probe
             var save = new GameSaveGame
             {
                 FileLocation = live[0],
-                SaveGroupId = "ppsspp:" + discId,
+                SaveGroupId = LbIntegrations.Saves.SaveId.Write(new LbIntegrations.Saves.SaveIdData { Emu = "ppsspp", Kind = "save", By = "disc", Id = discId }),
                 OriginalFileName = Path.GetFileName(live[0]),
             };
 
@@ -165,7 +165,7 @@ namespace LbIntegrations.Probe
                 SaveToAdd = new GameSaveGame
                 {
                     FileLocation = extracted,
-                    SaveGroupId = "ppsspp:" + discId,
+                    SaveGroupId = LbIntegrations.Saves.SaveId.Write(new LbIntegrations.Saves.SaveIdData { Emu = "ppsspp", Kind = "save", By = "disc", Id = discId }),
                 },
                 ShouldOverwriteFunc = () => true,
             });
@@ -198,7 +198,7 @@ namespace LbIntegrations.Probe
                 var save = new GameSaveGame
                 {
                     FileLocation = response.SaveAdded?.FileLocation,
-                    SaveGroupId = "ppsspp:" + discId,
+                    SaveGroupId = LbIntegrations.Saves.SaveId.Write(new LbIntegrations.Saves.SaveIdData { Emu = "ppsspp", Kind = "save", By = "disc", Id = discId }),
                 };
                 if (!plugin.TryBackupSave(save, emuPath, temp2, out var error))
                 {

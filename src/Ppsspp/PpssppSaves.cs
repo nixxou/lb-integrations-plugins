@@ -45,6 +45,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using LbIntegrations.Lbip;
+using LbIntegrations.Saves;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 
@@ -52,14 +53,12 @@ namespace LbIntegrations.Ppsspp
 {
     public partial class PpssppPlugin
     {
-        private const string GroupPrefix = "ppsspp:";
+        /// <summary>This plugin's "emu" in the ids (Shared.Saves, docs\saves-lb14-routing.md §3):
+        /// {"emu":"ppsspp","kind":"save","by":"disc","id":"<disc id>"} for a SAVEDATA save (a folder, a container), and
+        /// {"kind":"state","by":"disc","id":"<disc id>","slot":n} for a state. The container predicates key on "kind"
+        /// AND on the SDK's own GameSaveState type, so a state always falls on the other side of them.</summary>
+        private const string Emu = "ppsspp";
         private const string ChipText = "Memory Stick";
-
-        /// <summary>Group id prefix for a state. Deliberately NOT built on GroupPrefix: every
-        /// container predicate keys on that prefix, and a state must fall on the other side of all
-        /// of them. The discriminator is the SDK's own GameSaveState type; the prefix only keeps our
-        /// rows apart from another plugin's.</summary>
-        private const string StatePrefix = "ppsspp-state:";
         private const string StateChipText = "Save State";
         private const string StateGroupName = "My Save State";
 
@@ -156,7 +155,7 @@ namespace LbIntegrations.Ppsspp
             if (discId == null) return 0;
 
             string gameId = Safe(() => game.Id) ?? "";
-            string appId = app != null ? Safe(() => app.Id) : null;
+            string appId = TiedVersion(game, app);   // a version on its game's own file is not tied (SaveRows.TieTo)
             string context = appId ?? gameId;
             int added = 0;
 
@@ -178,7 +177,7 @@ namespace LbIntegrations.Ppsspp
                     Slot = st.Slot,
                     // Disc id and slot only: a game patched from 1.00 to 1.01 keeps its history
                     // instead of orphaning it, the way Dolphin's "<game>-<disc>-State-<slot>" does.
-                    SaveGroupId = StatePrefix + st.DiscId + ":" + st.Slot,
+                    SaveGroupId = StateId(st.DiscId, st.Slot),
                     SaveGroupName = StateGroupName,
                     DisplayChipText = StateChipText,
                     ReportedFileSizeBytes = st.SizeBytes > 0 ? st.SizeBytes : (long?)null,
@@ -211,7 +210,7 @@ namespace LbIntegrations.Ppsspp
             if (unit == null) return null;
 
             string gameId = Safe(() => game.Id) ?? "";
-            string appId = app != null ? Safe(() => app.Id) : null;
+            string appId = TiedVersion(game, app);   // a version on its game's own file is not tied (SaveRows.TieTo)
             // One group per disc id per context: a game and one of its versions may legitimately
             // resolve to the same folders, and listing them twice would fight over one rommslot.
             if (!seen.Add(unit.DiscId + "|" + (appId ?? gameId))) return null;
@@ -230,7 +229,7 @@ namespace LbIntegrations.Ppsspp
                 // `save.IsDirectory || Directory.Exists(path)` and so covered for the missing flag.
                 IsDirectory = true,
                 OriginalFileName = Path.GetFileName(unit.PrimaryPath),
-                SaveGroupId = GroupPrefix + unit.DiscId,
+                SaveGroupId = SaveIdOf(unit.DiscId),
                 SaveGroupName = unit.Title,
                 DisplayChipText = ChipText,
                 ReportedFileSizeBytes = unit.SizeBytes > 0 ? unit.SizeBytes : (long?)null,
@@ -460,7 +459,7 @@ namespace LbIntegrations.Ppsspp
                     FileLocation = restored?.PrimaryPath ?? Path.Combine(saveDataDir, Path.GetFileName(incoming[0])),
                     IsDirectory = true,          // a PSP save is a folder - see the note above
                     OriginalFileName = Path.GetFileName(incoming[0]),
-                    SaveGroupId = GroupPrefix + discId,
+                    SaveGroupId = SaveIdOf(discId),
                     SaveGroupName = restored?.Title ?? save.SaveGroupName,
                     DisplayChipText = ChipText,
                 });
@@ -550,7 +549,7 @@ namespace LbIntegrations.Ppsspp
                 FileLocation = target,
                 OriginalFileName = Path.GetFileName(target),
                 Slot = slot,
-                SaveGroupId = StatePrefix + discId + ":" + slot.Value,
+                SaveGroupId = StateId(discId, slot.Value),
                 SaveGroupName = string.IsNullOrWhiteSpace(state.SaveGroupName) ? StateGroupName : state.SaveGroupName,
                 DisplayChipText = StateChipText,
                 Title = state.Title,
@@ -636,31 +635,29 @@ namespace LbIntegrations.Ppsspp
         }
 
         private static bool IsOurs(GameSaveBase save)
-            => save is not GameSaveState
-               && save?.SaveGroupId != null
-               && save.SaveGroupId.StartsWith(GroupPrefix, StringComparison.OrdinalIgnoreCase);
+            => save is not GameSaveState && KindOf(save) == "save";
 
         private static bool IsOurState(GameSaveBase save)
-            => save is GameSaveState
-               && save.SaveGroupId != null
-               && save.SaveGroupId.StartsWith(StatePrefix, StringComparison.OrdinalIgnoreCase);
+            => save is GameSaveState && KindOf(save) == "state";
 
-        /// <summary>Disc id and slot out of a state's group id, "ppsspp-state:&lt;disc&gt;:&lt;slot&gt;".
-        /// Falls back to the file name when the row carries no group id of ours.</summary>
+        /// <summary>The "kind" of one of our ids, or null for anybody else's.</summary>
+        private static string KindOf(GameSaveBase save)
+            => SaveRows.IsOurs(save?.SaveGroupId, Emu) && SaveId.TryRead(save.SaveGroupId, out var d) ? d.Kind : null;
+
+        private static string SaveIdOf(string discId) => SaveId.Write(new SaveIdData { Emu = Emu, Kind = "save", By = "disc", Id = discId });
+        private static string StateId(string discId, int slot) => SaveId.Write(new SaveIdData { Emu = Emu, Kind = "state", By = "disc", Id = discId, Slot = slot });
+
+        /// <summary>The version a row of this game's is tied to: none when the version launches the game's own file.</summary>
+        private static string TiedVersion(IGame game, IAdditionalApplication app)
+            => app == null ? null : SaveRows.TieTo(Safe(() => app.Id), Safe(() => game?.ApplicationPath), Safe(() => app.ApplicationPath),
+                                                   p => string.IsNullOrWhiteSpace(p) ? null : ResolveFullPath(p));
+
+        /// <summary>Disc id and slot out of a state's id. Falls back to the file name when the row carries no id of ours.</summary>
         private static (string DiscId, int? Slot) StateKeyOf(GameSaveState state)
         {
-            var id = state?.SaveGroupId;
-            if (id != null && id.StartsWith(StatePrefix, StringComparison.OrdinalIgnoreCase))
-            {
-                var rest = id.Substring(StatePrefix.Length);
-                int colon = rest.LastIndexOf(':');
-                if (colon > 0)
-                {
-                    var disc = rest.Substring(0, colon).Trim().ToUpperInvariant();
-                    if (int.TryParse(rest.Substring(colon + 1).Trim(), out var slot) && disc.Length > 0)
-                        return (disc, slot);
-                }
-            }
+            if (IsOurState(state) && SaveId.TryRead(state.SaveGroupId, out var ours)
+                && !string.IsNullOrWhiteSpace(ours.Id) && ours.Slot != null)
+                return (ours.Id.Trim().ToUpperInvariant(), ours.Slot);
 
             foreach (var name in new[] { Path.GetFileName(state?.FileLocation ?? ""), state?.OriginalFileName })
                 if (PpssppStates.TryParseName(name, out var d, out _, out var s)) return (d, s);
@@ -676,9 +673,8 @@ namespace LbIntegrations.Ppsspp
 
         private static string DiscIdOf(GameSaveBase save)
         {
-            var id = save?.SaveGroupId;
-            if (id == null || !id.StartsWith(GroupPrefix, StringComparison.OrdinalIgnoreCase)) return null;
-            var rest = id.Substring(GroupPrefix.Length).Trim();
+            if (!IsOurs(save) || !SaveId.TryRead(save.SaveGroupId, out var d) || d.Id == null) return null;
+            var rest = d.Id.Trim();
             return rest.Length >= PspSaveUnits.DiscIdLength
                 ? rest.Substring(0, PspSaveUnits.DiscIdLength).ToUpperInvariant()
                 : null;
