@@ -86,6 +86,11 @@ namespace LbIntegrations.Saves
                 var named = string.IsNullOrEmpty(exe) ? mine.ToList()
                             : mine.Select(r => r != null && string.IsNullOrEmpty(r.EmulatorFileName) ? SaveRows.With(r, exe, null) : r).ToList();
                 var others = SaveRouter.OthersFor(_plugin, args, named);
+                // One game on screen (Game Saves): every row handed to LaunchBox, to tell a row it hid from one never sent.
+                if ((args?.Games?.Count ?? 0) <= 1)
+                    foreach (var r in named.Concat(others))
+                        Say("row " + (r is GameSaveState s ? "state " + s.Slot : "save") + " " + r.FileLocation + " exe=" + r.EmulatorFileName
+                            + (string.IsNullOrEmpty(r.AdditionalApplicationId) ? "" : " app=" + r.AdditionalApplicationId) + " id=" + r.SaveGroupId);
                 if (others.Count == 0 && named.SequenceEqual(mine)) return own!;
                 return new GetSavesResponse(named.Concat(others).ToList());
             }

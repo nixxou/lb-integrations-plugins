@@ -26,6 +26,7 @@
 //                          picked slot's file, as RetroArch and Dolphin
 //   ReturnId=same          the restored row's id: same = the backup's, recompute = the written slot's, none = no id (Dolphin)
 //   ReturnSlot=written     the restored row's Slot: written = the file's slot, picked = the one LaunchBox passed
+//   Companions=            extensions of files beside a save that go with it (".rtc"), for GetCompanionSaveFiles
 //
 // Log: %LOCALAPPDATA%\lb-integrations-plugins\saveprobe.log, every role in one file, in order.
 
@@ -411,10 +412,16 @@ namespace LbIntegrations.SaveProbeSecondary
             return false;
         }
 
+        /// <summary>Companions=.rtc (';' between extensions): the files beside a SAVE that go with it, as bsnes's .rtc
+        /// (08/10: does LaunchBox's own signature see a companion change?). Empty: none.</summary>
         public override IReadOnlyList<string> GetCompanionSaveFiles(string primaryFilePath)
         {
-            Probe.Log("GetCompanionSaveFiles \"" + primaryFilePath + "\" -> none   by " + Probe.Caller());
-            return Array.Empty<string>();
+            var exts = Probe.Ini("Companions", "").Split(';').Select(x => x.Trim()).Where(x => x.Length > 0).ToList();
+            var found = new List<string>();
+            if (exts.Count > 0 && !string.IsNullOrWhiteSpace(primaryFilePath) && primaryFilePath.EndsWith(Probe.SaveExt, StringComparison.OrdinalIgnoreCase))
+                foreach (var e in exts) { var c = Path.ChangeExtension(primaryFilePath, e); if (File.Exists(c)) found.Add(c); }
+            Probe.Log("GetCompanionSaveFiles \"" + primaryFilePath + "\" -> " + (found.Count == 0 ? "none" : string.Join(", ", found)) + "   by " + Probe.Caller());
+            return found;
         }
 
         public override bool IsSaveActive(GameSaveBase save, string emulatorApplicationPath)
