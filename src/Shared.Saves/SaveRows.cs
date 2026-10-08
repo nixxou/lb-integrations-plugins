@@ -6,12 +6,16 @@
 //      Make Default moves a game's saves onto the version that keeps the old rom;
 //   2. else the id's "ver";
 //   3. else the game.
-// Its CURRENT ApplicationPath is taken, so a renamed rom is followed. When that file's fingerprint is
-// not the id's "rom", the game's file and every version's are fingerprinted, and ONE matching file
-// wins (a version and the game whose files were swapped). Several matching - two copies, or two
-// variants of a disc the sampled print of a big file cannot tell apart - or none: the ids' target is
-// kept, with a warning (Mehdi, 08/10: no dialog, the save stays in the vault). LaunchBox's own Make
-// Default, for one, drops the old file altogether (measured 08/10) and there is nothing to find.
+// Its CURRENT ApplicationPath is taken, so a renamed rom is followed.
+//
+// THE FINGERPRINT ONLY LOOKS WHEN THAT FILE IS GONE (Mehdi, 08/10). The file exists: the save is written
+// there, full stop - a different fingerprint is only logged ("this save comes from another file"), never
+// a redirection. Redirecting while the target is there guesses an intent and guesses wrong: patch the
+// main ISO, keep the original as a version, and the old saves would go to the original rather than to
+// the game being launched. The file is gone: the game's file and every version's are fingerprinted, and
+// ONE matching file is taken; none or several (two copies, or two variants of a disc the sampled print
+// of a big file cannot tell apart) keep the target above, with a warning - never a dialog, the save
+// stays in the vault. Only the game's own files are searched, never a folder.
 //
 // A VERSION ON ITS GAME'S FILE is not tied to the version: same file, nothing lost, and it avoids
 // LaunchBox's "Can't find the game for this save item" defect (test 9b, 07/10).
@@ -85,10 +89,20 @@ namespace LbIntegrations.Saves
             }
 
             var print = id?.Rom;
-            if (print == null) return new RestoreTarget { RomPath = full(path), VersionId = verId };
-            if (print.SameAs(RomPrint.Of(full(path)))) return new RestoreTarget { RomPath = full(path), VersionId = verId };
+            var target = full(path);
+            if (Exists(target))
+            {
+                if (print == null || print.SameAs(RomPrint.Of(target))) return new RestoreTarget { RomPath = target, VersionId = verId };
+                return new RestoreTarget
+                {
+                    RomPath = target, VersionId = verId, Matches = false,
+                    Warning = "This save comes from another file than the one the game launches now.",
+                };
+            }
 
-            // Not the file it was made on: look for that file among the game's, and act only on ONE match.
+            // The file is gone: look for the one the save was made on among the game's, and act only on ONE match.
+            if (print == null)
+                return new RestoreTarget { RomPath = target, VersionId = verId, Matches = false, Warning = "The file this save belongs to is missing." };
             var matches = new List<(string? Path, string? VersionId)>();
             if (print.SameAs(RomPrint.Of(full(gamePath)))) matches.Add((full(gamePath), null));
             foreach (var v in list)
@@ -102,13 +116,12 @@ namespace LbIntegrations.Saves
 
             return new RestoreTarget
             {
-                RomPath = full(path), VersionId = verId, Matches = false,
+                RomPath = target, VersionId = verId, Matches = false,
                 Warning = matches.Count == 0
-                    ? "This save comes from another file than the one the game launches now."
-                    : "This save comes from another file than the one the game launches now, and several files of this game match it.",
+                    ? "The file this save belongs to is missing, and no other file of this game matches it."
+                    : "The file this save belongs to is missing, and several files of this game match it.",
             };
         }
-
         /// <summary><see cref="ChooseTarget"/> for a real row: the game is looked up through the data manager.</summary>
         public static RestoreTarget TargetFor(GameSaveBase row, IDataManager dm, Func<string?, string?> full)
         {
@@ -131,6 +144,8 @@ namespace LbIntegrations.Saves
             try { return string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase); }
             catch { return false; }
         }
+
+        private static bool Exists(string? p) { try { return !string.IsNullOrEmpty(p) && File.Exists(p); } catch { return false; } }
 
         private static string? NullIfEmpty(string? s) => string.IsNullOrEmpty(s) ? null : s;
 

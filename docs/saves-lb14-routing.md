@@ -154,9 +154,8 @@ written once at creation:
   (3 MB read whatever the size) - a SAMPLE, not a proof: two variants of one disc of the same size patched outside the
   samples print the same (Codex review, 08/10). An archive is fingerprinted as the archive: nothing is opened or
   unpacked. No creation date (it changes with every copy). Kept in memory per session, keyed on path + size + last
-  write time: an unchanged file is never read twice; no file on disk. **No `rom` at all** for a disk image the
-  emulator writes to (`.vhdx`, `.vhd`, `.qcow2`, `.vmdk`, `.vdi`...), when the plugin asks for none, or when the file
-  cannot be read safely: it is opened with no other writer allowed, its size taken from that handle, a short read
+  write time: an unchanged file is never read twice; no file on disk. **No `rom` at all** when the plugin asks for none, or
+  when the file cannot be read safely (a disk image open in its emulator, a VHDX, falls here and needs nothing else): it is opened with no other writer allowed, its size taken from that handle, a short read
   refused, its write time compared before and after - any doubt, no print, since a wrong one would be frozen for ever.
 
 ```
@@ -165,10 +164,11 @@ written once at creation:
 
 What they are for:
 - **Restore**: `AddSaveFile` gets the row and its id. The plugin takes the CURRENT path of the version (`ver`) or the game
-  (`game`) and writes the save under the name the emulator expects today, even after a rename. When that file's
-  fingerprint is not `rom`, the game's and its versions' files are fingerprinted, and ONE matching file is taken (files
-  swapped between the game and a version); none or several matching keep the target above with a warning ("this save
-  comes from another file") - never a dialog, the save stays in the vault (Mehdi, 08/10). Only the game's own files are
+  (`game`) and writes the save under the name the emulator expects today, even after a rename. When that file
+  EXISTS, the save is written there whatever its fingerprint - a different one is only logged, never a
+  redirection (patch the main ISO and keep the original as a version: the save still goes to the game launched). When it
+  is GONE, the game's and its versions' files are fingerprinted, and ONE matching file is taken; none or several keep
+  the target above with a warning - never a dialog, the save stays in the vault (Mehdi, 08/10). Only the game's own files are
   searched, never a folder: a game whose path is broken in LaunchBox is LaunchBox's to fix.
   The target is taken in this order: the version the ROW is tied to today (`AdditionalApplicationId`, which LiteBox's
   Make Default updates), else `ver`, else `game`. Today our plugins resolve the target from the game's path and ignore

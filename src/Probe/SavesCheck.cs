@@ -241,9 +241,6 @@ namespace LbIntegrations.Probe
 
             Check("a missing file has no fingerprint", RomPrint.Of(Path.Combine(root, "nope.bin")) == null);
 
-            var vhdx = Path.Combine(root, "disk.vhdx"); File.WriteAllBytes(vhdx, new byte[4096]);
-            Check("a writable disk image has no fingerprint", RomPrint.Of(vhdx) == null && RomPrint.IsWritableImage("x.QCOW2"));
-
             // Somebody is writing to it: no print rather than a print of a moving file.
             var busy = Path.Combine(root, "busy.sfc"); File.WriteAllBytes(busy, smallBytes);
             using (new FileStream(busy, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
@@ -289,21 +286,31 @@ namespace LbIntegrations.Probe
             t = SaveRows.ChooseTarget(V2, madeOnA, b, new[] { (V, (string?)b), (V2, (string?)a) }, Full);
             Check("LiteBox's Make Default: the old save follows the old rom", t.RomPath == a && t.VersionId == V2 && t.Matches);
 
-            // Files swapped by hand: the id says the game, the game's file is now B, a version holds A.
-            t = SaveRows.ChooseTarget(null, madeOnA, b, new[] { (V, (string?)a) }, Full);
-            Check("swapped files: found by fingerprint", t.RomPath == a && t.VersionId == V && t.FoundByPrint && t.Matches);
+            // The target exists but is not the file the save was made on: written there anyway, logged, never
+            // redirected (Mehdi, 08/10) - here the main ISO was patched and the original kept as a version.
+            var patched = Path.Combine(root, "Game (France) [T-En].sfc"); File.WriteAllBytes(patched, new byte[] { 1, 2, 9 });
+            t = SaveRows.ChooseTarget(null, madeOnA, patched, new[] { (V, (string?)a) }, Full);
+            Check("target present, other fingerprint: written there, not redirected",
+                  t.RomPath == patched && t.VersionId == null && !t.FoundByPrint && !t.Matches && t.Warning != null);
 
-            // Two files of the game match: never chosen automatically.
+            // The target is gone: the file the save was made on is looked for among the game's.
+            var gone = Path.Combine(root, "Game (France) old name.sfc");
+            t = SaveRows.ChooseTarget(null, madeOnA, gone, new[] { (V, (string?)a) }, Full);
+            Check("target gone, one file matches: found by fingerprint", t.RomPath == a && t.VersionId == V && t.FoundByPrint && t.Matches);
+
             var a2 = Path.Combine(root, "Game (France) copy.sfc"); File.WriteAllBytes(a2, new byte[] { 1, 2, 3 });
-            t = SaveRows.ChooseTarget(null, madeOnA, b, new[] { (V, (string?)a), (V2, (string?)a2) }, Full);
-            Check("two matching files: the ids' target is kept, with a warning",
-                  t.RomPath == b && !t.Matches && !t.FoundByPrint && t.Warning != null && t.Warning.Contains("several"));
-            t = SaveRows.ChooseTarget(null, madeOnA, b, new[] { (V, (string?)a), (V2, (string?)a) }, Full);
+            t = SaveRows.ChooseTarget(null, madeOnA, gone, new[] { (V, (string?)a), (V2, (string?)a2) }, Full);
+            Check("target gone, two files match: the ids' target is kept, with a warning",
+                  t.RomPath == gone && !t.Matches && !t.FoundByPrint && t.Warning != null && t.Warning.Contains("several"));
+            t = SaveRows.ChooseTarget(null, madeOnA, gone, new[] { (V, (string?)a), (V2, (string?)a) }, Full);
             Check("two versions on the same matching file count once", t.RomPath == a && t.FoundByPrint);
-
+            t = SaveRows.ChooseTarget(null, madeOnA, gone, new[] { (V, (string?)b) }, Full);
+            Check("target gone, nothing matches: kept, with a warning", t.RomPath == gone && !t.Matches && t.Warning != null);
+            t = SaveRows.ChooseTarget(null, madeOnA.WithoutRom(), gone, new[] { (V, (string?)a) }, Full);
+            Check("target gone and no fingerprint: kept, with a warning", t.RomPath == gone && !t.Matches && !t.FoundByPrint);
             // LaunchBox's Make Default: the game and its version both launch B, A is referenced nowhere.
             t = SaveRows.ChooseTarget(V, madeOnA, b, new[] { (V, (string?)b) }, Full);
-            Check("LaunchBox's Make Default: nothing matches, it warns", !t.Matches && t.Warning != null && t.RomPath == b);
+            Check("LaunchBox's Make Default: written to the game's file, with a warning", !t.Matches && t.Warning != null && t.RomPath == b && !t.FoundByPrint);
 
             var o = SaveRows.Origin("g", a, V, a, Full);
             Check("a version on its game's file is not tied", o.Ver == null && o.Game == "g" && o.Rom!.SameAs(RomPrint.Of(a)));
@@ -321,6 +328,11 @@ namespace LbIntegrations.Probe
         private static SaveIdData WithoutVer(this SaveIdData d) => new()
         {
             Emu = d.Emu, Kind = d.Kind, Sys = d.Sys, By = d.By, Id = d.Id, Slot = d.Slot, Game = d.Game, Rom = d.Rom, Native = d.Native,
+        };
+
+        private static SaveIdData WithoutRom(this SaveIdData d) => new()
+        {
+            Emu = d.Emu, Kind = d.Kind, Sys = d.Sys, By = d.By, Id = d.Id, Slot = d.Slot, Game = d.Game, Ver = d.Ver, Native = d.Native,
         };
 
         private static string Hex(uint crc) => crc.ToString("X8", System.Globalization.CultureInfo.InvariantCulture);

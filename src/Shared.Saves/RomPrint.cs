@@ -14,7 +14,8 @@
 // ever, so a wrong one is worse than none. The file is opened with no other writer allowed, its size
 // taken from that handle, a short read refused, and its last write time compared before and after:
 // any doubt answers null and the id simply carries no "rom". A disk image the emulator writes to (a
-// VHDX, a qcow2...) changes by design and is never printed (see Writable).
+// VHDX, a qcow2...) needs nothing of its own: open in the emulator it gets no print, and a print that
+// stopped matching only logs a line, since a restore never redirects while its target exists (SaveRows).
 //
 // CACHED IN MEMORY, per session, on path + size + last write time: an unchanged file is read once.
 // The last write time and not the creation time, because a file patched in place keeps its creation
@@ -26,7 +27,6 @@
 
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.IO.Hashing;
@@ -40,13 +40,6 @@ namespace LbIntegrations.Saves
         public const long WholeLimit = 10L * 1024 * 1024;
         public const int Chunk = 1024 * 1024;
 
-        /// <summary>Disk images an emulator writes to while it runs: their content changes by design, so a
-        /// print taken once would never match again. A plugin can also refuse a print for its own reasons.</summary>
-        private static readonly HashSet<string> Writable = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ".vhdx", ".vhd", ".avhdx", ".qcow2", ".qcow", ".vmdk", ".vdi",
-        };
-
         private static readonly ConcurrentDictionary<string, (long Size, long WriteTicks, RomPrintData Print)> _cache
             = new(StringComparer.OrdinalIgnoreCase);
 
@@ -57,15 +50,11 @@ namespace LbIntegrations.Saves
         /// <summary>A hook for the self-test: runs between the two halves of a read, to change the file under it.</summary>
         internal static Action<string>? DuringRead;
 
-        /// <summary>True when <paramref name="path"/> is an image its emulator writes to - never printed.</summary>
-        public static bool IsWritableImage(string? path)
-            => !string.IsNullOrEmpty(path) && Writable.Contains(Path.GetExtension(path));
-
         /// <summary>The fingerprint of <paramref name="fullPath"/>, or null when it is missing, unreadable, being
-        /// written to, changed while read, or a writable image. Never throws.</summary>
+        /// written to, or changed while read. Never throws.</summary>
         public static RomPrintData? Of(string? fullPath)
         {
-            if (string.IsNullOrEmpty(fullPath) || IsWritableImage(fullPath)) return null;
+            if (string.IsNullOrEmpty(fullPath)) return null;
             try
             {
                 var info = new FileInfo(fullPath);
