@@ -55,6 +55,17 @@ namespace LbIntegrations.Xemu
             }
             LbipRowInjection.Install("com.nixxou.lbip.xemu", MetadataRows());
             // Opened on its own (LaunchBox's "Open emulator", the Nixx window's Open button): every game's options for that time (XemuConsoleBoot).
+            // Under a try, as the other plugins do: a host shipping a Catalog older than LbEmulatorOpened must cost this, never
+            // the plugin (LiteBox's copy of 24/09 failed this whole constructor until 08/10).
+            try { ListenForOpening(); }
+            catch (Exception ex) { Log.Info("an emulator opened without a game is not seen here (" + ex.GetType().Name + ": " + ex.Message + ")"); }
+        }
+
+        /// <summary>NOT INLINED, and called under a try: the Catalog the HOST loaded may lack this type - named in the
+        /// constructor, it would fail the constructor itself.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static void ListenForOpening()
+        {
             LbIntegrations.Catalog.LbEmulatorOpened.Register(new XemuEmulatorOpened());
             if (!LbIntegrations.Catalog.LbCatalog.HostWillAsk) LbipEmulatorOpened.Install("com.nixxou.lbip.xemu");
         }
