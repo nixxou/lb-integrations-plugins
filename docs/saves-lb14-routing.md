@@ -336,6 +336,20 @@ restore side (a backup made by another emulator is written by the game's emulato
 check the emulator actually used at close, route a restore by the row's `EmulatorFileName`, list every configured
 emulator's saves. The examples are deduced from the measures above, not replayed with the stock integrations.
 
+### Restoring a save state into another slot loses the state that was there (reproduced 08/10, stock RetroArch only)
+
+Game "Rolan's Curse" (Game Boy) on the stock RetroArch integration, Gambatte core; two states in RetroArch's states
+folder, slot 1 and slot 2, different content; only slot 2 backed up.
+1. Game Saves > slot 2's tile > its backup > Restore; "Promote this backup...?" Yes; "Pick a slot": 1; "Restored ... and
+   archived previous active save as ...".
+2. Slot 1's file now holds the backup - as asked. The precautionary copy LaunchBox made (`-01`) is of SLOT 2's live file,
+   which the restore did not touch. Slot 1's previous state is gone: not in the states folder, not in the vault, nowhere.
+3. Until Game Saves is reopened, everything shows on slot 2's tile; then slot 1 gets its own tile again.
+
+Expected: the precautionary copy is of the file the restore overwrites (the picked slot's). Also: the confirmation is
+asked BEFORE the slot is picked (the user cannot know what will be overwritten), and `ShouldOverwriteFunc`, which the
+integration calls when the picked slot is occupied, answers true without asking. Same with any integration that honours
+the pick (Dolphin; measured with a test plugin).
 ## 6. The sandbox left on G:\LB1326
 
 - Plugins `Local\Plugins\Nixx-SaveProbeMain`, `…Secondary`, `…CatchAll`; emulators `Emulators\Nixx-SaveProbe*`
