@@ -52,6 +52,9 @@ namespace LbIntegrations.Probe
             // difference and a zip, all on a tree this forges under the temp folder.
             if (Has(args, "--snapshot")) return SnapshotCheck.Run() ? 0 : 1;
 
+            // The save ids, fingerprints and restore targets of Shared.Saves: no plugin, no emulator.
+            if (Has(args, "--saves-selftest")) return SavesCheck.Run() ? 0 : 1;
+
             // Time the reference walk over a real tree: --walk <dir>. Writes the manifest to %TEMP%.
             if (Has(args, "--walk"))
             {

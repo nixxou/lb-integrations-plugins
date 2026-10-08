@@ -81,4 +81,11 @@
     <Compile Include="..\Shared.Snapshot\**\*.cs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- THE SAVE IDS (lot 1 of docs\saves-lb14-routing.md §4b), compiled in like they are in each plugin,
+         with the CRC32 package the plugins merge. Exercised by the saves-selftest arm. -->
+    <Compile Include="..\Shared.Saves\**\*.cs" />
+    <PackageReference Include="System.IO.Hashing" Version="10.0.11" />
+  </ItemGroup>
+
 </Project>
