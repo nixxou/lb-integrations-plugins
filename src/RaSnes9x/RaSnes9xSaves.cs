@@ -18,6 +18,11 @@
 //
 // NOT LISTED, on purpose: <name>.oops, the state Snes9x writes by itself before loading one ("undo"), replaced at
 // every load - as SUPER ZSNES's resume state is left out.
+//
+// THE IDS are the pack's JSON (Shared.Saves, docs\saves-lb14-routing.md §3): {"emu":"rasnes9x","kind":"save",
+// "by":"name","id":"<name>"} and, for a state, "kind":"state" with its "slot". A restore goes to the version the row is
+// tied to, else the game, and takes the name of THAT rom today: a rom renamed (and updated in LaunchBox) gets its save
+// back under the new name. A version on its game's own file is not tied to the version (SaveRows.TieTo).
 
 using System;
 using System.Collections.Generic;
@@ -26,6 +31,7 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using LbIntegrations.Lbip;
+using LbIntegrations.Saves;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 
@@ -33,8 +39,8 @@ namespace LbIntegrations.RaSnes9x
 {
     public partial class RaSnes9xPlugin
     {
-        private const string SavePrefix = "rasnes9x:save:";
-        private const string StatePrefix = "rasnes9x:state:";
+        /// <summary>This plugin's "emu" in the ids (Shared.Saves).</summary>
+        private const string Emu = "rasnes9x";
         private const string SaveGroupName = "Cartridge save";
         private const string SaveChipText = "SRM";
         private const string StateGroupName = "Save states";
@@ -88,7 +94,12 @@ namespace LbIntegrations.RaSnes9x
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 int states = 0;
                 foreach (var app in args.AdditionalApplications ?? (IReadOnlyCollection<IAdditionalApplication>)Array.Empty<IAdditionalApplication>())
-                    states += Collect(found, seen, exe, Safe(() => app.ApplicationPath), Safe(() => app.GameId), Safe(() => app.Id));
+                {
+                    var gameId = Safe(() => app.GameId);
+                    var gamePath = Safe(() => (args.Games?.FirstOrDefault(g => Safe(() => g.Id) == gameId) ?? PluginHelper.DataManager?.GetGameById(gameId))?.ApplicationPath);
+                    states += Collect(found, seen, exe, Safe(() => app.ApplicationPath), gameId,
+                                      SaveRows.TieTo(Safe(() => app.Id), gamePath, Safe(() => app.ApplicationPath), Full));
+                }
                 foreach (var game in args.Games ?? (IReadOnlyCollection<IGame>)Array.Empty<IGame>())
                     states += Collect(found, seen, exe, Safe(() => game.ApplicationPath), Safe(() => game.Id), null);
 
@@ -114,18 +125,21 @@ namespace LbIntegrations.RaSnes9x
 
             var srm = folders.SaveDir == null ? null : Path.Combine(folders.SaveDir, name + ".srm");
             if (srm != null && File.Exists(srm) && seen.Add("save|" + srm + "|" + context))
-                into.Add(SaveRow(srm, gameId, appId, SavePrefix + name));
+                into.Add(SaveRow(srm, gameId, appId, SaveIdOf(name)));
 
             int states = 0;
             foreach (var (path, slot) in StateFilesIn(folders.StateDir, name))
             {
                 if (!seen.Add("state|" + path + "|" + context)) continue;
                 RaSnes9xStateThumbs.Refresh(path);
-                into.Add(StateRow(path, gameId, appId, slot, StatePrefix + name + ":" + slot, StateGroupName));
+                into.Add(StateRow(path, gameId, appId, slot, StateIdOf(name, slot), StateGroupName));
                 states++;
             }
             return states;
         }
+
+        private static string SaveIdOf(string name) => SaveId.Write(new SaveIdData { Emu = Emu, Kind = "save", By = "name", Id = name });
+        private static string StateIdOf(string name, int slot) => SaveId.Write(new SaveIdData { Emu = Emu, Kind = "state", By = "name", Id = name, Slot = slot });
 
         /// <summary>A game's states in the folder Snes9x keeps them: &lt;name&gt;.000 and up - never its .oops, nor the
         /// thumbnail beside a state ("Zelda.000.png" is "Zelda.000" without its extension).</summary>
@@ -235,11 +249,16 @@ namespace LbIntegrations.RaSnes9x
                 var source = save.FileLocation;
                 if (string.IsNullOrWhiteSpace(source) || !File.Exists(source)) return new AddSaveResponse("This RASnes9x backup is not a file: " + source);
 
-                var name = new[] { save.OriginalFileName, Path.GetFileName(source) }.FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
                 var game = PluginHelper.DataManager?.GetGameById(save.GameId);
                 var exe = ExecutableOf(game);
-                var targetDir = exe == null ? null : TargetDirFor(save, exe, game);
+                var to = SaveRows.TargetFor(save, PluginHelper.DataManager, Full);
+                if (to.Warning != null) Log.Warn("restore of " + save.OriginalFileName + ": " + to.Warning);
+                var targetDir = exe == null ? null : TargetDirFor(save, exe, to.RomPath);
                 if (targetDir == null) return new AddSaveResponse("Could not work out where RASnes9x reads this save from.");
+                // The name of the rom it goes to TODAY, with the backup's own extension (.srm, .rtc, .003...).
+                var original = new[] { save.OriginalFileName, Path.GetFileName(source) }.FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
+                var romName = NameOf(to.RomPath);
+                var name = romName.Length > 0 ? romName + Path.GetExtension(original) : original;
                 if (RaSnes9xLaunch.Running(exe) && !(save is GameSaveState))
                     return new AddSaveResponse("RASnes9x is running: it would write the game's save over this one when it quits. Close it first.");
 
@@ -273,14 +292,17 @@ namespace LbIntegrations.RaSnes9x
             }
         }
 
-        /// <summary>The folder a save of this kind belongs in for this game, as Snes9x's settings have it.</summary>
-        private static string TargetDirFor(GameSaveBase save, string exe, IGame game = null)
+        /// <summary>The folder a save of this kind belongs in for this rom - the row's version's or its game's
+        /// (SaveRows.TargetFor) - as Snes9x's settings have it.</summary>
+        private static string TargetDirFor(GameSaveBase save, string exe, string rom = null)
         {
-            game = game ?? PluginHelper.DataManager?.GetGameById(save.GameId);
-            var rom = ResolveFullPath(Safe(() => game?.ApplicationPath));
+            rom ??= SaveRows.TargetFor(save, PluginHelper.DataManager, Full).RomPath;
             var folders = FoldersFor(exe, rom);
             return save is GameSaveState ? folders.StateDir : folders.SaveDir;
         }
+
+        /// <summary>A path as LaunchBox stores it, made full; null for nothing.</summary>
+        private static string Full(string path) => string.IsNullOrWhiteSpace(path) ? null : ResolveFullPath(path);
 
         /// <summary>The RASnes9x a game runs on: its own emulator when that is one, else the first in the library.</summary>
         private static string ExecutableOf(IGame game)
@@ -320,9 +342,7 @@ namespace LbIntegrations.RaSnes9x
             }
         }
 
-        private static bool IsOurs(GameSaveBase save)
-            => save?.SaveGroupId != null && (save.SaveGroupId.StartsWith(SavePrefix, StringComparison.OrdinalIgnoreCase)
-                                             || save.SaveGroupId.StartsWith(StatePrefix, StringComparison.OrdinalIgnoreCase));
+        private static bool IsOurs(GameSaveBase save) => SaveRows.IsOurs(save?.SaveGroupId, Emu);
 
         private static string Safe(Func<string> read)
         {

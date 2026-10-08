@@ -26,6 +26,12 @@
 //   ares's undo copies, are deleted by ares itself at unload and are not listed.
 // THE GAME'S NAME is the file ares was given: a zip's or a .7z's own name (the .7z is unpacked under it), a .m3u's first
 // disc.
+//
+// THE IDS are the pack's JSON (Shared.Saves, docs\saves-lb14-routing.md §3): {"emu":"ares","kind":"save","sys":"<node>",
+// "by":"name","id":"<name><ext>"}, "kind":"console" for the game's own copy of its console's memory, "kind":"state"
+// with "id":"<name>" and its "slot". A restore goes to the version the row is tied to, else the game (SaveRows.TargetFor),
+// under that rom's names today: a save already named after one of them keeps its name; a cartridge save, or a game's
+// console copy, named after an old rom takes the game's name now; a disc game's state keeps its disc's name.
 
 using System;
 using System.Collections.Generic;
@@ -33,6 +39,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using LbIntegrations.Lbip;
+using LbIntegrations.Saves;
 using System.Text.RegularExpressions;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
@@ -41,9 +48,8 @@ namespace LbIntegrations.Ares
 {
     public partial class AresPlugin
     {
-        private const string SavePrefix = "ares:save:";
-        private const string StatePrefix = "ares:state:";
-        private const string ConsolePrefix = "ares:console:";
+        /// <summary>This plugin's "emu" in the ids (Shared.Saves).</summary>
+        private const string Emu = "ares";
         private const string SaveGroupName = "Save";
         private const string StateGroupName = "Save states";
         private const string StateChipText = "STATE";
@@ -157,7 +163,9 @@ namespace LbIntegrations.Ares
                     var game = dm?.GetGameById(Safe(() => app.GameId));
                     var system = SystemOf(args.Emulator, Safe(() => app.GameId), Safe(() => game?.Platform), Safe(() => app.ApplicationPath));
                     int before = found.Count;
-                    Collect(found, seen, exe, system, Safe(() => app.ApplicationPath), Safe(() => app.GameId), Safe(() => app.Id));
+                    // A version on its game's own file is not tied to the version (SaveRows.TieTo).
+                    Collect(found, seen, exe, system, Safe(() => app.ApplicationPath), Safe(() => app.GameId),
+                            SaveRows.TieTo(Safe(() => app.Id), Safe(() => game?.ApplicationPath), Safe(() => app.ApplicationPath), Full));
                     Trace("app \"" + Safe(() => app.Name) + "\" of \"" + Safe(() => game?.Title) + "\"", Safe(() => game?.Platform), Safe(() => app.ApplicationPath), exe, system, found.Count - before);
                 }
                 foreach (var game in args.Games ?? (IReadOnlyCollection<IGame>)Array.Empty<IGame>())
@@ -211,7 +219,7 @@ namespace LbIntegrations.Ares
                         var path = Path.Combine(dir, name + ext);
                         if (string.Equals(path, rom, StringComparison.OrdinalIgnoreCase)) continue;   // a .wav tape is the game, not its recording
                         if (File.Exists(path) && seen.Add("save|" + path + "|" + context))
-                            into.Add(SaveRow(path, gameId, appId, SavePrefix + system.Node + ":" + name + ext, SaveGroupName + " (" + ext.TrimStart('.') + ")", ext.TrimStart('.').ToUpperInvariant()));
+                            into.Add(SaveRow(path, gameId, appId, IdOf("save", system, name + ext), SaveGroupName + " (" + ext.TrimStart('.') + ")", ext.TrimStart('.').ToUpperInvariant()));
                     }
             foreach (var name in names)
                 foreach (var dir in folders.StateDirs)
@@ -219,7 +227,7 @@ namespace LbIntegrations.Ares
                     {
                         var path = Path.Combine(dir, name + ".bs" + slot);
                         if (File.Exists(path) && seen.Add("state|" + path + "|" + context))
-                            into.Add(StateRow(path, gameId, appId, slot, StatePrefix + system.Node + ":" + name + ":" + slot));
+                            into.Add(StateRow(path, gameId, appId, slot, IdOf("state", system, name, slot)));
                     }
             // The game's own copy of its console's memory (AresConsoleSession) - the 64DD's clock travels with its .disk
             // instead (GetCompanionSaveFiles). The console's settings alone (PerGame false) are no game's save.
@@ -228,9 +236,12 @@ namespace LbIntegrations.Ares
                 {
                     var path = Path.Combine(dir, identity + cf.Ext);
                     if (File.Exists(path) && seen.Add("save|" + path + "|" + context))
-                        into.Add(SaveRow(path, gameId, appId, SavePrefix + system.Node + ":" + identity + cf.Ext, "Console memory (" + cf.Pak + " " + cf.File + ")", "BRAM"));
+                        into.Add(SaveRow(path, gameId, appId, IdOf("console", system, identity + cf.Ext), "Console memory (" + cf.Pak + " " + cf.File + ")", "BRAM"));
                 }
         }
+
+        private static string IdOf(string kind, AresSystem system, string id, int? slot = null)
+            => SaveId.Write(new SaveIdData { Emu = Emu, Kind = kind, Sys = system.Node, By = "name", Id = id, Slot = slot });
 
         private static GameSaveGame SaveRow(string path, string gameId, string appId, string groupId, string groupName, string chip)
         {
@@ -333,32 +344,25 @@ namespace LbIntegrations.Ares
                 var source = save.FileLocation;
                 if (string.IsNullOrWhiteSpace(source) || !File.Exists(source)) return new AddSaveResponse("This ares backup is not a file: " + source);
 
-                var name = new[] { save.OriginalFileName, Path.GetFileName(source) }.FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
+                var original = new[] { save.OriginalFileName, Path.GetFileName(source) }.FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
                 var dm = PluginHelper.DataManager;
                 var game = dm?.GetGameById(save.GameId);
                 var emu = EmulatorOf(game);
                 var exe = emu == null ? null : ResolveFullPath(Safe(() => emu.ApplicationPath));
                 if (exe == null) return new AddSaveResponse("Could not find the ares this game runs on.");
                 if (AresLaunch.Running(exe)) return new AddSaveResponse("ares is running: it would write the game's own over this one. Close it first.");
-                var system = SystemOf(emu, Safe(() => game?.Id), Safe(() => game?.Platform), Safe(() => game?.ApplicationPath));
-                var folders = FoldersFor(exe, ResolveFullPath(Safe(() => game?.ApplicationPath)), system);
+                var to = SaveRows.TargetFor(save, dm, Full);
+                if (to.Warning != null) Log.Warn("restore of " + original + ": " + to.Warning);
+                var rom = to.RomPath;
+                var system = SystemOf(emu, Safe(() => game?.Id), Safe(() => game?.Platform), rom);
+                var folders = FoldersFor(exe, rom, system);
                 var targetDir = save is GameSaveState ? folders.StateTarget : folders.SaveTarget;
-                string target = null;
                 // A session left unfinished is finished first: taking its memory back later would undo this restore.
                 AresConsoleSession.Recover();
-                // A copy of the shared console memory (a build of 06/10 listed it so): it becomes the game's own.
-                if (save.SaveGroupId != null && save.SaveGroupId.StartsWith(ConsolePrefix, StringComparison.OrdinalIgnoreCase))
-                {
-                    var parts = save.SaveGroupId.Substring(ConsolePrefix.Length).Split(new[] { ':' }, 2);
-                    var cf = parts.Length == 2 ? system?.ConsoleFiles.FirstOrDefault(c => c.Pak == parts[0] && c.File == parts[1]) : null;
-                    var rom = ResolveFullPath(Safe(() => game?.ApplicationPath));
-                    target = cf == null || !cf.PerGame ? null : AresConsoleSession.OwnCopy(exe, rom, system, cf);
-                    if (target == null) return new AddSaveResponse("This copy of the console's memory belongs to no game.");
-                    targetDir = Path.GetDirectoryName(target);
-                }
                 if (targetDir == null) return new AddSaveResponse("Could not work out where ares reads this save from.");
 
-                target = target ?? Path.Combine(targetDir, name);
+                var name = NameNow(original, save is GameSaveState, rom, exe, system);
+                var target = Path.Combine(targetDir, name);
                 if (File.Exists(target))
                 {
                     bool overwrite = true;
@@ -367,13 +371,13 @@ namespace LbIntegrations.Ares
                 }
                 Directory.CreateDirectory(targetDir);
                 File.Copy(source, target, overwrite: true);
-                Log.Info("restored " + name + " -> " + targetDir);
+                Log.Info("restored " + original + " -> " + target);
                 // Its companions, found beside the copy by its stem (the 64DD's clock with its disk).
                 foreach (var companion in GetCompanionSaveFiles(source))
                 {
-                    var to = LbipStateThumbs.IsThumb(companion) ? LbipStateThumbs.PathOf(target) : Path.Combine(targetDir, Path.GetFileNameWithoutExtension(target) + Path.GetExtension(companion));
-                    File.Copy(companion, to, overwrite: true);
-                    Log.Info("restored with it " + Path.GetFileName(to));
+                    var with = LbipStateThumbs.IsThumb(companion) ? LbipStateThumbs.PathOf(target) : Path.Combine(targetDir, Path.GetFileNameWithoutExtension(target) + Path.GetExtension(companion));
+                    File.Copy(companion, with, overwrite: true);
+                    Log.Info("restored with it " + Path.GetFileName(with));
                 }
                 // A state restored without its thumbnail: the old one would be a picture of another moment.
                 if (save is GameSaveState && !GetCompanionSaveFiles(source).Any(LbipStateThumbs.IsThumb)) LbipStateThumbs.Remove(target);
@@ -386,6 +390,26 @@ namespace LbIntegrations.Ares
                 return new AddSaveResponse("Could not restore this ares save: " + ex.Message);
             }
         }
+
+        /// <summary>The file name a restored save takes for this rom TODAY. Named after one of its names already (the
+        /// game's, a disc's): kept. Otherwise a save or a console copy takes the game's name with its own extension
+        /// (".srm", ".bram"...); a state of a disc game keeps its name - which disc it was is not known any more.</summary>
+        private static string NameNow(string original, bool state, string rom, string exe, AresSystem system)
+        {
+            if (string.IsNullOrWhiteSpace(rom) || system == null) return original;
+            var identity = AresConsoleSession.IdentityOf(rom, exe);
+            if (identity.Length == 0) return original;
+            var names = new[] { identity }.Concat(system.Disc ? AresConsoleSession.DiscNames(rom, system, exe) : new List<string>()).ToList();
+            var ext = Path.GetExtension(original);
+            var stem = original.Substring(0, original.Length - ext.Length);
+            // A save's extension may be compound (".d1a" is one, but a name like "x.sav" is plain): matched on the names.
+            if (names.Any(n => original.StartsWith(n + ".", StringComparison.OrdinalIgnoreCase) || string.Equals(stem, n, StringComparison.OrdinalIgnoreCase))) return original;
+            if (state && system.Disc) return original;
+            return identity + ext;
+        }
+
+        /// <summary>A path as LaunchBox stores it, made full; null for nothing.</summary>
+        private static string Full(string path) => string.IsNullOrWhiteSpace(path) ? null : ResolveFullPath(path);
 
         /// <summary>The ares a game runs on: its own emulator when that is one, else the first in the library.</summary>
         private static IEmulator EmulatorOf(IGame game)
@@ -422,10 +446,7 @@ namespace LbIntegrations.Ares
             }
         }
 
-        private static bool IsOurs(GameSaveBase save)
-            => save?.SaveGroupId != null && (save.SaveGroupId.StartsWith(SavePrefix, StringComparison.OrdinalIgnoreCase)
-                                             || save.SaveGroupId.StartsWith(StatePrefix, StringComparison.OrdinalIgnoreCase)
-                                             || save.SaveGroupId.StartsWith(ConsolePrefix, StringComparison.OrdinalIgnoreCase));
+        private static bool IsOurs(GameSaveBase save) => SaveRows.IsOurs(save?.SaveGroupId, Emu);
 
         private static string Safe(Func<string> read)
         {

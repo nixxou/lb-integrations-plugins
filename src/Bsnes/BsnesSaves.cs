@@ -20,6 +20,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using LbIntegrations.Lbip;
+using LbIntegrations.Saves;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 
@@ -27,8 +28,9 @@ namespace LbIntegrations.Bsnes
 {
     public partial class BsnesPlugin
     {
-        private const string SavePrefix = "bsnes:save:";
-        private const string StatePrefix = "bsnes:states:";
+        /// <summary>This plugin's "emu" in the ids (Shared.Saves): {"emu":"bsnes","kind":"save","by":"name","id":"<name>"},
+        /// and "kind":"state" for the .bsz - one file for every slot, so no "slot".</summary>
+        private const string Emu = "bsnes";
         private const string SaveGroupName = "Cartridge save";
         private const string SaveChipText = "SRM";
         private const string StateGroupName = "Save states (all slots, one file)";
@@ -71,7 +73,13 @@ namespace LbIntegrations.Bsnes
                 var found = new List<GameSaveBase>();
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var app in args.AdditionalApplications ?? (IReadOnlyCollection<IAdditionalApplication>)Array.Empty<IAdditionalApplication>())
-                    Collect(found, seen, exe, Safe(() => app.ApplicationPath), Safe(() => app.GameId), Safe(() => app.Id));
+                {
+                    // A version on its game's own file is not tied to the version (SaveRows.TieTo).
+                    var gameId = Safe(() => app.GameId);
+                    var gamePath = Safe(() => (args.Games?.FirstOrDefault(g => Safe(() => g.Id) == gameId) ?? PluginHelper.DataManager?.GetGameById(gameId))?.ApplicationPath);
+                    Collect(found, seen, exe, Safe(() => app.ApplicationPath), gameId,
+                            SaveRows.TieTo(Safe(() => app.Id), gamePath, Safe(() => app.ApplicationPath), Full));
+                }
                 foreach (var game in args.Games ?? (IReadOnlyCollection<IGame>)Array.Empty<IGame>())
                     Collect(found, seen, exe, Safe(() => game.ApplicationPath), Safe(() => game.Id), null);
 
@@ -96,15 +104,20 @@ namespace LbIntegrations.Bsnes
 
             var srm = folders.SaveDir == null ? null : Path.Combine(folders.SaveDir, name + ".srm");
             if (srm != null && File.Exists(srm) && seen.Add("save|" + srm + "|" + context))
-                into.Add(Row(srm, gameId, appId, SavePrefix + name, SaveGroupName, SaveChipText));
+                into.Add(Row(srm, gameId, appId, IdOf("save", name), SaveGroupName, SaveChipText));
 
             var bsz = folders.StateDir == null ? null : Path.Combine(folders.StateDir, name + ".bsz");
             if (bsz != null && File.Exists(bsz) && seen.Add("states|" + bsz + "|" + context))
             {
                 BsnesStateThumbs.Refresh(bsz);
-                into.Add(Row(bsz, gameId, appId, StatePrefix + name, StateGroupName, StateChipText));
+                into.Add(Row(bsz, gameId, appId, IdOf("state", name), StateGroupName, StateChipText));
             }
         }
+
+        private static string IdOf(string kind, string name) => SaveId.Write(new SaveIdData { Emu = Emu, Kind = kind, By = "name", Id = name });
+
+        /// <summary>The .bsz row: our id saying "state".</summary>
+        private static bool IsStates(GameSaveBase save) => SaveId.TryRead(save?.SaveGroupId, out var d) && d.Kind == "state";
 
         private static GameSaveGame Row(string path, string gameId, string appId, string groupId, string groupName, string chip)
         {
@@ -171,11 +184,16 @@ namespace LbIntegrations.Bsnes
                 var source = save.FileLocation;
                 if (string.IsNullOrWhiteSpace(source) || !File.Exists(source)) return new AddSaveResponse("This bsnes backup is not a file: " + source);
 
-                var name = new[] { save.OriginalFileName, Path.GetFileName(source) }.FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
                 var game = PluginHelper.DataManager?.GetGameById(save.GameId);
                 var exe = ExecutableOf(game);
-                var targetDir = exe == null ? null : TargetDirFor(save, exe, game);
+                var to = SaveRows.TargetFor(save, PluginHelper.DataManager, Full);
+                if (to.Warning != null) Log.Warn("restore of " + save.OriginalFileName + ": " + to.Warning);
+                var targetDir = exe == null ? null : TargetDirFor(save, exe, to.RomPath);
                 if (targetDir == null) return new AddSaveResponse("Could not work out where bsnes reads this save from.");
+                // The name of the rom it goes to TODAY, with the backup's own extension (.srm, .rtc, .psr, .bsz).
+                var original = new[] { save.OriginalFileName, Path.GetFileName(source) }.FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
+                var romName = NameOf(to.RomPath);
+                var name = romName.Length > 0 ? romName + Path.GetExtension(original) : original;
                 if (BsnesLaunch.Running(exe)) return new AddSaveResponse("bsnes is running: it would write the game's own over this one. Close it first.");
 
                 var target = Path.Combine(targetDir, name);
@@ -188,7 +206,7 @@ namespace LbIntegrations.Bsnes
                 Directory.CreateDirectory(targetDir);
                 File.Copy(source, target, overwrite: true);
                 Log.Info("restored " + name + " -> " + targetDir);
-                bool states = (save.SaveGroupId ?? "").StartsWith(StatePrefix, StringComparison.OrdinalIgnoreCase);
+                bool states = IsStates(save);
                 if (states)
                 {
                     // Its thumbnail with it; without one, the old would be a picture of another moment - made again from the .bsz.
@@ -206,13 +224,16 @@ namespace LbIntegrations.Bsnes
             }
         }
 
-        private static string TargetDirFor(GameSaveBase save, string exe, IGame game = null)
+        /// <summary>The folder for this rom - the row's version's or its game's (SaveRows.TargetFor).</summary>
+        private static string TargetDirFor(GameSaveBase save, string exe, string rom = null)
         {
-            game = game ?? PluginHelper.DataManager?.GetGameById(save.GameId);
-            var rom = ResolveFullPath(Safe(() => game?.ApplicationPath));
+            rom ??= SaveRows.TargetFor(save, PluginHelper.DataManager, Full).RomPath;
             var folders = FoldersFor(exe, rom);
-            return (save.SaveGroupId ?? "").StartsWith(StatePrefix, StringComparison.OrdinalIgnoreCase) ? folders.StateDir : folders.SaveDir;
+            return IsStates(save) ? folders.StateDir : folders.SaveDir;
         }
+
+        /// <summary>A path as LaunchBox stores it, made full; null for nothing.</summary>
+        private static string Full(string path) => string.IsNullOrWhiteSpace(path) ? null : ResolveFullPath(path);
 
         private static string ExecutableOf(IGame game)
         {
@@ -251,9 +272,7 @@ namespace LbIntegrations.Bsnes
             }
         }
 
-        private static bool IsOurs(GameSaveBase save)
-            => save?.SaveGroupId != null && (save.SaveGroupId.StartsWith(SavePrefix, StringComparison.OrdinalIgnoreCase)
-                                             || save.SaveGroupId.StartsWith(StatePrefix, StringComparison.OrdinalIgnoreCase));
+        private static bool IsOurs(GameSaveBase save) => SaveRows.IsOurs(save?.SaveGroupId, Emu);
 
         private static string Safe(Func<string> read)
         {

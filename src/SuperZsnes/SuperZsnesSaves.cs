@@ -24,6 +24,11 @@
 //
 // SLOTS are whatever number follows ".szst" - SaveState(slotPostfix) takes a string and the build names no limit;
 // slot 0 is the one F2 writes.
+//
+// THE IDS are the pack's JSON (Shared.Saves, docs\saves-lb14-routing.md §3): {"emu":"superzsnes","kind":"save",
+// "by":"name","id":"<name>"} and "kind":"state" with its "slot". A restore goes to the version the row is tied to, else
+// the game, under the name of THAT rom today - the states' <name>.data.szsnes folder too, no longer the name the id was
+// written with (an old backup used to go back into its old name's folder).
 
 using System;
 using System.Collections.Generic;
@@ -32,6 +37,7 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using LbIntegrations.Lbip;
+using LbIntegrations.Saves;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 
@@ -39,8 +45,8 @@ namespace LbIntegrations.SuperZsnes
 {
     public partial class SuperZsnesPlugin
     {
-        private const string SavePrefix = "superzsnes:save:";
-        private const string StatePrefix = "superzsnes:state:";
+        /// <summary>This plugin's "emu" in the ids (Shared.Saves).</summary>
+        private const string Emu = "superzsnes";
         private const string SaveGroupName = "Cartridge save";
         private const string SaveChipText = "SRM";
         private const string StateGroupName = "Save states";
@@ -110,7 +116,13 @@ namespace LbIntegrations.SuperZsnes
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 int states = 0;
                 foreach (var app in args.AdditionalApplications ?? (IReadOnlyCollection<IAdditionalApplication>)Array.Empty<IAdditionalApplication>())
-                    states += Collect(found, seen, exe, Safe(() => app.ApplicationPath), Safe(() => app.GameId), Safe(() => app.Id));
+                {
+                    // A version on its game's own file is not tied to the version (SaveRows.TieTo).
+                    var gameId = Safe(() => app.GameId);
+                    var gamePath = Safe(() => (args.Games?.FirstOrDefault(g => Safe(() => g.Id) == gameId) ?? PluginHelper.DataManager?.GetGameById(gameId))?.ApplicationPath);
+                    states += Collect(found, seen, exe, Safe(() => app.ApplicationPath), gameId,
+                                      SaveRows.TieTo(Safe(() => app.Id), gamePath, Safe(() => app.ApplicationPath), Full));
+                }
                 foreach (var game in args.Games ?? (IReadOnlyCollection<IGame>)Array.Empty<IGame>())
                     states += Collect(found, seen, exe, Safe(() => game.ApplicationPath), Safe(() => game.Id), null);
 
@@ -136,14 +148,14 @@ namespace LbIntegrations.SuperZsnes
 
             var srm = folders.SaveDir == null ? null : Path.Combine(folders.SaveDir, name + ".srm");
             if (srm != null && File.Exists(srm) && seen.Add("save|" + srm + "|" + context))
-                into.Add(SaveRow(srm, gameId, appId, SavePrefix + name));
+                into.Add(SaveRow(srm, gameId, appId, SaveId.Write(new SaveIdData { Emu = Emu, Kind = "save", By = "name", Id = name })));
 
             int states = 0;
             foreach (var (path, slot) in StateFilesIn(StatesOf(folders, name), name))
             {
                 if (!seen.Add("state|" + path + "|" + context)) continue;
                 SuperZsnesStateThumbs.Refresh(path);
-                into.Add(StateRow(path, gameId, appId, slot, StatePrefix + name + ":" + slot, StateGroupName));
+                into.Add(StateRow(path, gameId, appId, slot, SaveId.Write(new SaveIdData { Emu = Emu, Kind = "state", By = "name", Id = name, Slot = slot }), StateGroupName));
                 states++;
             }
             return states;
@@ -229,7 +241,7 @@ namespace LbIntegrations.SuperZsnes
                 if (!IsOurs(save) || string.IsNullOrWhiteSpace(save.FileLocation)) return true;
                 var exe = ResolveFullPath(emulatorApplicationPath);
                 if (!SuperZsnesPaths.IsSuperZsnesExecutable(exe) || !File.Exists(save.FileLocation)) return File.Exists(save.FileLocation);
-                var target = TargetDirFor(save, exe, NameOfSave(save));
+                var target = TargetDirFor(save, exe);
                 return target == null || string.Equals(Path.GetFullPath(Path.GetDirectoryName(save.FileLocation)).TrimEnd('\\'),
                                                        Path.GetFullPath(target).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
             }
@@ -248,11 +260,16 @@ namespace LbIntegrations.SuperZsnes
                 var source = save.FileLocation;
                 if (string.IsNullOrWhiteSpace(source) || !File.Exists(source)) return new AddSaveResponse("This SUPER ZSNES backup is not a file: " + source);
 
-                var name = new[] { save.OriginalFileName, Path.GetFileName(source) }.FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
                 var game = PluginHelper.DataManager?.GetGameById(save.GameId);
                 var exe = ExecutableOf(game);
-                var targetDir = exe == null ? null : TargetDirFor(save, exe, NameOfSave(save), game);
+                var to = SaveRows.TargetFor(save, PluginHelper.DataManager, Full);
+                if (to.Warning != null) Log.Warn("restore of " + save.OriginalFileName + ": " + to.Warning);
+                var targetDir = exe == null ? null : TargetDirFor(save, exe, to.RomPath);
                 if (targetDir == null) return new AddSaveResponse("Could not work out where SUPER ZSNES reads this save from.");
+                // The name of the rom it goes to TODAY, with the backup's own extension (.srm, .szst3...).
+                var original = new[] { save.OriginalFileName, Path.GetFileName(source) }.FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
+                var romName = NameOf(to.RomPath);
+                var name = romName.Length > 0 ? romName + Path.GetExtension(original) : original;
 
                 var target = Path.Combine(targetDir, name);
                 if (File.Exists(target))
@@ -284,25 +301,17 @@ namespace LbIntegrations.SuperZsnes
             }
         }
 
-        /// <summary>The folder a save of this kind belongs in for this game, as the emulator's settings have it.</summary>
-        private static string TargetDirFor(GameSaveBase save, string exe, string name, IGame game = null)
+        /// <summary>The folder a save of this kind belongs in for this rom - the row's version's or its game's
+        /// (SaveRows.TargetFor) - as the emulator's settings have it; a state's is that rom's .data.szsnes.</summary>
+        private static string TargetDirFor(GameSaveBase save, string exe, string rom = null)
         {
-            game = game ?? PluginHelper.DataManager?.GetGameById(save.GameId);
-            var rom = ResolveFullPath(Safe(() => game?.ApplicationPath));
+            rom ??= SaveRows.TargetFor(save, PluginHelper.DataManager, Full).RomPath;
             var folders = FoldersFor(exe, rom);
-            return save is GameSaveState ? StatesOf(folders, string.IsNullOrEmpty(name) ? NameOf(rom) : name) : folders.SaveDir;
+            return save is GameSaveState ? StatesOf(folders, NameOf(rom)) : folders.SaveDir;
         }
 
-        /// <summary>The ROM name a save's group id carries: "superzsnes:save:&lt;name&gt;", "superzsnes:state:&lt;name&gt;:&lt;slot&gt;".</summary>
-        private static string NameOfSave(GameSaveBase save)
-        {
-            var id = save?.SaveGroupId ?? "";
-            if (id.StartsWith(SavePrefix, StringComparison.OrdinalIgnoreCase)) return id.Substring(SavePrefix.Length);
-            if (!id.StartsWith(StatePrefix, StringComparison.OrdinalIgnoreCase)) return null;
-            var rest = id.Substring(StatePrefix.Length);
-            var colon = rest.LastIndexOf(':');
-            return colon > 0 ? rest.Substring(0, colon) : rest;
-        }
+        /// <summary>A path as LaunchBox stores it, made full; null for nothing.</summary>
+        private static string Full(string path) => string.IsNullOrWhiteSpace(path) ? null : ResolveFullPath(path);
 
         /// <summary>The SUPER ZSNES a game runs on: its own emulator when that is one, else the first in the library.</summary>
         private static string ExecutableOf(IGame game)
@@ -342,9 +351,7 @@ namespace LbIntegrations.SuperZsnes
             }
         }
 
-        private static bool IsOurs(GameSaveBase save)
-            => save?.SaveGroupId != null && (save.SaveGroupId.StartsWith(SavePrefix, StringComparison.OrdinalIgnoreCase)
-                                             || save.SaveGroupId.StartsWith(StatePrefix, StringComparison.OrdinalIgnoreCase));
+        private static bool IsOurs(GameSaveBase save) => SaveRows.IsOurs(save?.SaveGroupId, Emu);
 
         private static string Safe(Func<string> read)
         {
