@@ -20,6 +20,12 @@
 //   IdMode=classic         classic, json, big (json + IdPad awkward characters), raw (big with # and | unescaped)
 //   IdPad=1024
 //   Claim=FakeEmulateur.exe    (CatchAll only; ';' between names)
+//   Slots=1..3             GetPotentialSaveSlots: "a..b" or "a,b,c", "empty" for none; -1 is "auto" (08/10, the slot study)
+//   SlotLabel=Slot {n}     the label of key n: "{n}" the key, "{n+1}" one more, any text around it; -1 is always "Auto"
+//   RestoreSlot=keep       a state's restore: keep = the backup's own name (our plugins before the fix), honor = the
+//                          picked slot's file, as RetroArch and Dolphin
+//   ReturnId=same          the restored row's id: same = the backup's, recompute = the written slot's, none = no id (Dolphin)
+//   ReturnSlot=written     the restored row's Slot: written = the file's slot, picked = the one LaunchBox passed
 //
 // Log: %LOCALAPPDATA%\lb-integrations-plugins\saveprobe.log, every role in one file, in order.
 
@@ -367,9 +373,9 @@ namespace LbIntegrations.SaveProbeSecondary
             var stem = Path.GetFileNameWithoutExtension(rom);
             var save = Path.Combine(Probe.SavesDir, stem + Probe.SaveExt);
             if (File.Exists(save)) into.Add(Row(null, save, gameId, appId, Probe.GroupId("save", stem, null), "Probe " + Probe.Role + " save", Lineage("save", stem, null)));
-            for (int slot = 1; slot <= 3; slot++)
+            for (int slot = -1; slot <= 9; slot++)
             {
-                var state = Path.Combine(Probe.SavesDir, stem + Probe.StateExt + slot);
+                var state = Path.Combine(Probe.SavesDir, stem + Probe.StateExt + SlotSuffix(slot));
                 if (File.Exists(state)) into.Add(Row(slot, state, gameId, appId, Probe.GroupId("state", stem, slot), "Probe " + Probe.Role + " states", Lineage("state", stem, slot)));
             }
         }
@@ -474,10 +480,24 @@ namespace LbIntegrations.SaveProbeSecondary
             return ok;
         }
 
+        /// <summary>A state file's slot part: the number, "auto" for -1.</summary>
+        private static string SlotSuffix(int slot) => slot < 0 ? "auto" : slot.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
         public override IReadOnlyDictionary<int, string> GetPotentialSaveSlots()
         {
-            Probe.Log("GetPotentialSaveSlots -> 1..3");
-            return new Dictionary<int, string> { { 1, "Slot 1" }, { 2, "Slot 2" }, { 3, "Slot 3" } };
+            var spec = Probe.Ini("Slots", "1..3").Trim();
+            var label = Probe.Ini("SlotLabel", "Slot {n}");
+            var keys = new List<int>();
+            if (!string.Equals(spec, "empty", StringComparison.OrdinalIgnoreCase))
+            {
+                var range = spec.Split(new[] { ".." }, StringSplitOptions.None);
+                if (range.Length == 2 && int.TryParse(range[0], out var a) && int.TryParse(range[1], out var b)) { for (int i = a; i <= b; i++) keys.Add(i); }
+                else foreach (var k in spec.Split(',')) if (int.TryParse(k.Trim(), out var v)) keys.Add(v);
+            }
+            var d = new Dictionary<int, string>();
+            foreach (var k in keys) d[k] = k < 0 ? "Auto" : label.Replace("{n+1}", (k + 1).ToString()).Replace("{n}", k.ToString());
+            Probe.Log("GetPotentialSaveSlots (" + spec + ") -> " + (d.Count == 0 ? "empty" : string.Join(", ", d.Select(kv => kv.Key + "=\"" + kv.Value + "\""))) + "   by " + Probe.Caller());
+            return d;
         }
 
         public override AddSaveResponse AddSaveFile(AddSaveArgs args)
@@ -488,6 +508,18 @@ namespace LbIntegrations.SaveProbeSecondary
             {
                 if (save == null || !File.Exists(save.FileLocation)) return Fail("no file to add");
                 var name = !string.IsNullOrWhiteSpace(save.OriginalFileName) ? save.OriginalFileName : Path.GetFileName(save.FileLocation);
+                var restoreSlot = Probe.Ini("RestoreSlot", "keep").ToLowerInvariant();
+                var returnId = Probe.Ini("ReturnId", "same").ToLowerInvariant();
+                int? backupSlot = null;
+                if (save is GameSaveState bs)
+                {
+                    var at = name.IndexOf(Probe.StateExt, StringComparison.OrdinalIgnoreCase);
+                    var tail = at > 0 ? name.Substring(at + Probe.StateExt.Length) : null;
+                    backupSlot = tail == "auto" ? -1 : int.TryParse(tail, out var t) ? t : (int?)null;
+                    Probe.Log("   STATE: picked slot " + Probe.Safe(() => bs.Slot) + ", the backup's own slot " + backupSlot + ", RestoreSlot=" + restoreSlot + " ReturnId=" + returnId
+                              + " ReturnSlot=" + Probe.Ini("ReturnSlot", "written"));
+                    if (restoreSlot == "honor" && bs.Slot != null && at > 0) name = name.Substring(0, at) + Probe.StateExt + SlotSuffix(bs.Slot.Value);
+                }
                 var target = Path.Combine(Probe.SavesDir, name);
                 if (File.Exists(target))
                 {
@@ -502,9 +534,16 @@ namespace LbIntegrations.SaveProbeSecondary
                 // Did the id survive the trip (XML, vault, restart)? Compared with what the listing gives now, byte for byte.
                 var expected = save is GameSaveState es ? Probe.GroupId("state", stem, es.Slot) : Probe.GroupId("save", stem, null);
                 Probe.Log("   id from LaunchBox " + (string.Equals(save.SaveGroupId, expected, StringComparison.Ordinal) ? "IDENTICAL to the listing's" : "DIFFERS from the listing's " + Probe.IdSummary(expected)));
-                var row = save is GameSaveState st
-                    ? Row(st.Slot ?? 1, target, save.GameId, save.AdditionalApplicationId, save.SaveGroupId ?? Probe.GroupId("state", stem, st.Slot), "Probe " + Probe.Role + " states")
-                    : Row(null, target, save.GameId, save.AdditionalApplicationId, save.SaveGroupId ?? Probe.GroupId("save", stem, null), "Probe " + Probe.Role + " save");
+                GameSaveBase row;
+                if (save is GameSaveState st)
+                {
+                    // The slot the file now is: the picked one (honor) or the backup's own (keep).
+                    var written = restoreSlot == "honor" ? st.Slot : backupSlot ?? st.Slot;
+                    var id = returnId == "none" ? null : returnId == "recompute" ? Probe.GroupId("state", stem, written) : save.SaveGroupId ?? Probe.GroupId("state", stem, written);
+                    var rowSlot = string.Equals(Probe.Ini("ReturnSlot", "written"), "picked", StringComparison.OrdinalIgnoreCase) ? st.Slot : written;
+                    row = Row(rowSlot ?? 1, target, save.GameId, save.AdditionalApplicationId, id, "Probe " + Probe.Role + " states");
+                }
+                else row = Row(null, target, save.GameId, save.AdditionalApplicationId, save.SaveGroupId ?? Probe.GroupId("save", stem, null), "Probe " + Probe.Role + " save");
                 Probe.Log("   restored -> " + Probe.Save(row));
                 return new AddSaveResponse(row);
             }
