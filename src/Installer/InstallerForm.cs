@@ -556,7 +556,10 @@ internal sealed class InstallerForm : Form
 
         // THE RAM DISK FIRST (Mehdi, 04/10): Install stays off until a driver (the AIM Toolkit or ImDisk) and the helper with its
         // task are in place - the buttons that install them are orange, and a line says so. Uninstall is never held back.
-        _install.Enabled = l != null && r.Ready;
+        // Too old a LaunchBox (its SDK below the one the plugins are built against): no Install at all - Uninstall stays.
+        var tooOld = l == null ? null : InstallerCore.TooOld(l);
+        if (tooOld != null) Row(_lbRows, Mark.No, "LaunchBox too old", tooOld);
+        _install.Enabled = l != null && r.Ready && tooOld == null;
         if (l != null && !r.Ready)
             Row(_lbRows, Mark.Warn, "RAM disk first",
                 !r.Driver ? "Install a RAM disk driver below - the AIM Toolkit (recommended) or ImDisk: its orange button also sets up the helper. Then Install."

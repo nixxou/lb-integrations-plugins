@@ -90,7 +90,9 @@ internal static class Program
         {
             Console.WriteLine();
             Console.WriteLine("root      " + layout.Root);
-            Console.WriteLine("LaunchBox " + (layout.LbMajor > 0 ? layout.LbMajor.ToString() : "version unreadable"));
+            Console.WriteLine("LaunchBox " + (layout.LbMajor > 0 ? layout.LbMajor.ToString() : "version unreadable")
+                              + ", SDK " + (InstallerCore.SdkVersion(layout.Root)?.ToString() ?? "unreadable")
+                              + (InstallerCore.TooOld(layout) != null ? " - too old, the pack needs " + InstallerCore.MinLabel + " or later" : ""));
             Console.WriteLine("plugins   " + layout.PluginsRoot);
             Console.WriteLine("state     " + (InstallerCore.IsInstalled(layout) ? "installed" : "not installed"));
 

@@ -124,7 +124,9 @@ held for as long as it takes to copy 520 bytes out of it, then dropped.
 ```
 
 One file, two buttons, and you point it at your `LaunchBox.exe`. It is self-contained, so the
-machine needs nothing installed - not even .NET. It picks `Local\Plugins\` on LaunchBox 14 and
+machine needs nothing installed - not even .NET. It needs **LaunchBox 14.0.1 or later** (the plugins are
+built against its SDK, and an older one would take them but never load them): it refuses an older
+LaunchBox and writes nothing. It picks `Local\Plugins\` on LaunchBox 14 and
 `Plugins\` below that, removes the folders an earlier version of this pack left under its old
 names, carries a plugin's tick in `LiteBox.ini` over to its new folder name, and verifies every
 file it writes by hash rather than by "the copy did not throw".

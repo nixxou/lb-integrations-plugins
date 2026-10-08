@@ -89,6 +89,31 @@ internal static class InstallerCore
         return 0;
     }
 
+    /// <summary>The oldest LaunchBox the pack runs on: its plugins are built against LaunchBox 14.0.1's SDK (vendor\), and
+    /// a reference to a newer SDK does not bind to an older one - on a 13.x or a 14.0.0 they install but never load.</summary>
+    public static readonly Version MinSdk = new Version(14, 0, 1, 2);
+    public const string MinLabel = "14.0.1";
+
+    /// <summary>The assembly version of the SDK in Core (Unbroken.LaunchBox.Plugins.dll), or null when unreadable.</summary>
+    public static Version? SdkVersion(string root)
+    {
+        try
+        {
+            var p = Path.Combine(root, "Core", "Unbroken.LaunchBox.Plugins.dll");
+            return File.Exists(p) ? System.Reflection.AssemblyName.GetAssemblyName(p).Version : null;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>Why the pack cannot go into this LaunchBox, or null when it can (an unreadable SDK is not refused).</summary>
+    public static string? TooOld(Layout l)
+    {
+        var v = SdkVersion(l.Root);
+        if (v == null || v >= MinSdk) return null;
+        return "This is LaunchBox " + (v.Revision == 0 ? v.ToString(3) : v.ToString()) + ", and the pack needs LaunchBox "
+             + MinLabel + " or later: its plugins would install but never load. Update LaunchBox, then run this again.";
+    }
+
     public static Layout Resolve(string root)
     {
         var major = MajorVersion(root);
@@ -184,6 +209,10 @@ internal static class InstallerCore
 
     public static (bool ok, string message) Install(Layout l)
     {
+        // Before anything is written (the window's button is off too - this is for --install).
+        var tooOld = TooOld(l);
+        if (tooOld != null) return (false, tooOld + "\n\nNothing was installed.");
+
         var running = RunningHost();
         if (running != null)
             return (false, "Close " + running + " first, then try again.\n\n"
