@@ -357,7 +357,9 @@ namespace LbIntegrations.Saves
                     int n = 0;
                     foreach (var row in r.FoundSaves)
                     {
-                        if (row == null || mine.Contains(Safe(() => row.FileLocation) ?? "")) continue;
+                        // One row per file: two emulators on one exe (RetroArch with two cores) list the same .srm.
+                        var at = Safe(() => row?.FileLocation) ?? "";
+                        if (row == null || (at.Length > 0 && !mine.Add(at))) continue;
                         var core = string.IsNullOrEmpty(row.EmulatorCore) ? CoreOf(e, Safe(() => GameOf(row.GameId)?.Platform)) : row.EmulatorCore;
                         found.Add(SaveRows.With(row, exe, core));
                         n++;
