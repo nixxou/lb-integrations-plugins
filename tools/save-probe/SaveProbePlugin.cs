@@ -26,6 +26,8 @@
 //                          picked slot's file, as RetroArch and Dolphin
 //   ReturnId=same          the restored row's id: same = the backup's, recompute = the written slot's, none = no id (Dolphin)
 //   ReturnSlot=written     the restored row's Slot: written = the file's slot, picked = the one LaunchBox passed
+//   GroupName=Probe <Role> save   the save's SaveGroupName - two plugins with the same name on one game (08/10)
+//   OrigPrefix=            prefix written before OriginalFileName ("probemain:"), cut off at restore (09/10)
 //   Companions=            extensions of files beside a save that go with it (".rtc"), for GetCompanionSaveFiles
 //
 // Log: %LOCALAPPDATA%\lb-integrations-plugins\saveprobe.log, every role in one file, in order.
@@ -373,7 +375,31 @@ namespace LbIntegrations.SaveProbeSecondary
             if (gameId == null || rom == null) return;
             var stem = Path.GetFileNameWithoutExtension(rom);
             var save = Path.Combine(Probe.SavesDir, stem + Probe.SaveExt);
-            if (File.Exists(save)) into.Add(Row(null, save, gameId, appId, Probe.GroupId("save", stem, null), "Probe " + Probe.Role + " save", Lineage("save", stem, null)));
+            if (File.Exists(save)) into.Add(Row(null, save, gameId, appId, Probe.GroupId("save", stem, null), Probe.Ini("GroupName", "Probe " + Probe.Role + " save"), Lineage("save", stem, null)));
+            // Twin=<folder>: the same file name in another folder under another id - two emulators' "<rom>.srm" (08/10, the
+            // RASnes9x row LaunchBox re-tied to SUPER ZSNES's card). TwinOrig=same|none, TwinLineage=none|self.
+            var twinDir = Probe.Ini("Twin", "");
+            if (twinDir.Length > 0)
+            {
+                var twin = Path.Combine(Probe.EmuDir, twinDir, stem + Probe.SaveExt);
+                if (File.Exists(twin))
+                {
+                    // TwinEmu=<name>: the twin's id is the canonical JSON of the card's, its "emu" alone changed (08/10).
+                    var temu = Probe.Ini("TwinEmu", "");
+                    var tid = temu.Length > 0
+                        ? "{\"emu\":" + Probe.J(temu) + ",\"kind\":\"save\",\"by\":\"name\",\"id\":" + Probe.J(stem) + "}"
+                        : Probe.GroupId("save", stem, null) + ":twin:" + twinDir;
+                    var fi = new FileInfo(twin);
+                    into.Add(new GameSaveGame
+                    {
+                        GameId = gameId, AdditionalApplicationId = appId, FileLocation = twin, IsDirectory = false,
+                        OriginalFileName = string.Equals(Probe.Ini("TwinOrig", "same"), "none", StringComparison.OrdinalIgnoreCase) ? null : Path.GetFileName(twin),
+                        SaveGroupId = tid, SaveGroupName = Probe.Ini("TwinName", "Probe twin save"), DisplayChipText = Probe.Ini("TwinChip", "TWIN"), EmulatorFileName = Probe.Ini("TwinExe", "") is { Length: > 0 } x ? x : null,
+                        MatchLineageId = string.Equals(Probe.Ini("TwinLineage", "none"), "self", StringComparison.OrdinalIgnoreCase) ? tid : null,
+                        ReportedFileSizeBytes = fi.Length, ReportedLastModifiedUtc = fi.LastWriteTimeUtc,
+                    });
+                }
+            }
             for (int slot = -1; slot <= 9; slot++)
             {
                 var state = Path.Combine(Probe.SavesDir, stem + Probe.StateExt + SlotSuffix(slot));
@@ -392,13 +418,13 @@ namespace LbIntegrations.SaveProbeSecondary
             if (slot != null)
                 return new GameSaveState
                 {
-                    Slot = slot, GameId = gameId, AdditionalApplicationId = appId, FileLocation = path, OriginalFileName = Path.GetFileName(path), IsDirectory = false,
+                    Slot = slot, GameId = gameId, AdditionalApplicationId = appId, FileLocation = path, OriginalFileName = Probe.Ini("OrigPrefix", "") + Path.GetFileName(path), IsDirectory = false,
                     SaveGroupId = group, SaveGroupName = groupName, DisplayChipText = Probe.Role.ToUpperInvariant(), ReportedFileSizeBytes = i.Length, ReportedLastModifiedUtc = i.LastWriteTimeUtc,
                     MatchLineageId = lineage,
                 };
             return new GameSaveGame
             {
-                GameId = gameId, AdditionalApplicationId = appId, FileLocation = path, OriginalFileName = Path.GetFileName(path), IsDirectory = false,
+                GameId = gameId, AdditionalApplicationId = appId, FileLocation = path, OriginalFileName = Probe.Ini("OrigPrefix", "") + Path.GetFileName(path), IsDirectory = false,
                 SaveGroupId = group, SaveGroupName = groupName, DisplayChipText = Probe.Role.ToUpperInvariant(), ReportedFileSizeBytes = i.Length, ReportedLastModifiedUtc = i.LastWriteTimeUtc,
                 MatchLineageId = lineage,
             };
@@ -440,7 +466,9 @@ namespace LbIntegrations.SaveProbeSecondary
 
         public override bool UseSaveGroupIdForPersistedMatch(GameSaveBase save)
         {
-            var v = Ours(save) && Probe.IniBool("MatchById", true);
+            // TwinMatchById=true: the twin answers true too, as a Nixx plugin for its own JSON id (08/10).
+            var twin = (save?.FileLocation ?? "").IndexOf("\\twin", StringComparison.OrdinalIgnoreCase) >= 0;
+            var v = (Ours(save) || (twin && Probe.IniBool("TwinMatchById", false))) && Probe.IniBool("MatchById", true);
             Probe.Log("UseSaveGroupIdForPersistedMatch " + Probe.Save(save) + " -> " + v);
             return v;
         }
@@ -514,7 +542,11 @@ namespace LbIntegrations.SaveProbeSecondary
             try
             {
                 if (save == null || !File.Exists(save.FileLocation)) return Fail("no file to add");
-                var name = !string.IsNullOrWhiteSpace(save.OriginalFileName) ? save.OriginalFileName : Path.GetFileName(save.FileLocation);
+                // OrigPrefix (09/10): the original name may carry "<emu>:" - logged raw, then cut off, as our plugins would.
+                Probe.Log("   OriginalFileName received: \"" + save.OriginalFileName + "\"");
+                var rawOrig = save.OriginalFileName;
+                if (!string.IsNullOrEmpty(rawOrig) && rawOrig.IndexOf(':') > 0) rawOrig = rawOrig.Substring(rawOrig.LastIndexOf(':') + 1);
+                var name = !string.IsNullOrWhiteSpace(rawOrig) ? rawOrig : Path.GetFileName(save.FileLocation);
                 var restoreSlot = Probe.Ini("RestoreSlot", "keep").ToLowerInvariant();
                 var returnId = Probe.Ini("ReturnId", "same").ToLowerInvariant();
                 int? backupSlot = null;

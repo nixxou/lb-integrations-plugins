@@ -622,6 +622,14 @@ namespace LbIntegrations.Probe
                 return bad == 0 ? 0 : 1;
             }
 
+            // What the plugin answers LaunchBox's IsSaveActive for one file: --is-active --file <save> --emu <exe> --id <group id>
+            if (Has(args, "--is-active"))
+            {
+                var row = new GameSaveGame { FileLocation = Arg(args, "--file"), SaveGroupId = Arg(args, "--id"), OriginalFileName = Path.GetFileName(Arg(args, "--file")) };
+                Console.WriteLine("IsSaveActive(" + row.FileLocation + ", " + Arg(args, "--emu") + ") -> " + plugin.IsSaveActive(row, Arg(args, "--emu")));
+                return 0;
+            }
+
             if (Has(args, "--rows"))
             {
                 if (!RowInjectionCheck.Run(plugin)) return 1;
