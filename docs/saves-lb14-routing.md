@@ -56,6 +56,22 @@ A 1 938-character canonical JSON id - quotes, `<>&`, accents, CJK, emoji, tab, `
 a restart and a restore (`AddSaveFile`: "IDENTICAL to the listing's"). No size or character limit met on the LaunchBox
 side.
 
+### How a listed save finds its card (tests 10-12, 08/10)
+
+A card in Game Saves IS a `SaveGroupId`: every row of the game with that id sits under it (the live file and the vault
+copies). Measured with the probe on "SaveProbe Test" (XML before/after in
+`Backups\lbip-saveprobe-2026-10-07\promote-test-before\`, `before-testA.xml`, `before-testB.xml`, `after-testB.xml`):
+
+| The listing gives | Result |
+|---|---|
+| a new save, never seen (startup scan only) | listed, but NO row is created - rows only come from opening Game Saves or closing the game (as on 07/10) |
+| the same file under another id (`…:v2`) | found by its PATH: the existing row and its id are kept, nothing created |
+| the same id from another folder (`saves2\`) | a NEW row, with that id - so in the SAME card (its backup count grows by one); the old row stays |
+| another id AND another folder | a new card (two cards for one save) |
+
+`UseSaveGroupIdForPersistedMatch` was never called on the probe (07/10: only on RetroArch), so none of this depends on
+it. For us: a stable id keeps a save in its card when an emulator's folder moves; an id that changes only splits the
+history if the file moves at the same time. `MatchLineageId` was not needed and is not measured.
 ### The integrations shipped with LaunchBox
 
 They are separate plugins in `System\Plugins\`, **not obfuscated** (real IL bodies: `RetroArchPlugin.GetSaves` 2 526

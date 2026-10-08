@@ -93,7 +93,7 @@ namespace LbIntegrations.SaveProbeSecondary
         }
 
         public static string EmuDir => Path.Combine(LaunchBoxRoot(), "Emulators", Name);
-        public static string SavesDir => Path.Combine(EmuDir, "saves");
+        public static string SavesDir => Path.Combine(EmuDir, Ini("SavesDir", "saves"));   // SavesDir: the same saves elsewhere (test 12, 08/10)
 
         // ── probe.ini ────────────────────────────────────────────────────────
 
@@ -133,11 +133,12 @@ namespace LbIntegrations.SaveProbeSecondary
         // ── the group ids ────────────────────────────────────────────────────
 
         /// <summary>classic: probe&lt;role&gt;:save:&lt;stem&gt;. json: canonical {"emu","kind","by","id"[,"slot"]}, # and | escaped.
-        /// big: json + "pad" of IdPad awkward characters. raw: big with # and | left as they are.</summary>
-        public static string GroupId(string kind, string stem, int? slot)
+        /// big: json + "pad" of IdPad awkward characters. raw: big with # and | left as they are.
+        /// IdSuffix (classic only) is appended to every id - the same file listed under another id (test 10, 08/10).</summary>
+        public static string GroupId(string kind, string stem, int? slot, bool suffix = true)
         {
             var mode = Ini("IdMode", "classic").ToLowerInvariant();
-            if (mode == "classic") return Prefix + kind + ":" + stem + (slot == null ? "" : ":" + slot);
+            if (mode == "classic") return Prefix + kind + ":" + stem + (slot == null ? "" : ":" + slot) + (suffix ? Ini("IdSuffix", "") : "");
             bool raw = mode == "raw";
             var sb = new StringBuilder();
             sb.Append("{\"emu\":").Append(J("probe" + Role.ToLowerInvariant(), raw)).Append(",\"kind\":").Append(J(kind, raw)).Append(",\"by\":\"name\",\"id\":").Append(J(stem, raw));
@@ -365,16 +366,20 @@ namespace LbIntegrations.SaveProbeSecondary
             if (gameId == null || rom == null) return;
             var stem = Path.GetFileNameWithoutExtension(rom);
             var save = Path.Combine(Probe.SavesDir, stem + Probe.SaveExt);
-            if (File.Exists(save)) into.Add(Row(null, save, gameId, appId, Probe.GroupId("save", stem, null), "Probe " + Probe.Role + " save"));
+            if (File.Exists(save)) into.Add(Row(null, save, gameId, appId, Probe.GroupId("save", stem, null), "Probe " + Probe.Role + " save", Lineage("save", stem, null)));
             for (int slot = 1; slot <= 3; slot++)
             {
                 var state = Path.Combine(Probe.SavesDir, stem + Probe.StateExt + slot);
-                if (File.Exists(state)) into.Add(Row(slot, state, gameId, appId, Probe.GroupId("state", stem, slot), "Probe " + Probe.Role + " states"));
+                if (File.Exists(state)) into.Add(Row(slot, state, gameId, appId, Probe.GroupId("state", stem, slot), "Probe " + Probe.Role + " states", Lineage("state", stem, slot)));
             }
         }
 
         /// <summary>A row - the LB14 SDK's properties are init-only: built in one initializer, a state when slot is given.</summary>
-        private static GameSaveBase Row(int? slot, string path, string gameId, string appId, string group, string groupName)
+        /// <summary>Lineage=base: MatchLineageId is the id WITHOUT IdSuffix (test 11, 08/10); unset leaves it to LaunchBox.</summary>
+        private static string Lineage(string kind, string stem, int? slot)
+            => string.Equals(Probe.Ini("Lineage", ""), "base", StringComparison.OrdinalIgnoreCase) ? Probe.GroupId(kind, stem, slot, suffix: false) : null;
+
+        private static GameSaveBase Row(int? slot, string path, string gameId, string appId, string group, string groupName, string lineage = null)
         {
             var i = new FileInfo(path);
             if (slot != null)
@@ -382,11 +387,13 @@ namespace LbIntegrations.SaveProbeSecondary
                 {
                     Slot = slot, GameId = gameId, AdditionalApplicationId = appId, FileLocation = path, OriginalFileName = Path.GetFileName(path), IsDirectory = false,
                     SaveGroupId = group, SaveGroupName = groupName, DisplayChipText = Probe.Role.ToUpperInvariant(), ReportedFileSizeBytes = i.Length, ReportedLastModifiedUtc = i.LastWriteTimeUtc,
+                    MatchLineageId = lineage,
                 };
             return new GameSaveGame
             {
                 GameId = gameId, AdditionalApplicationId = appId, FileLocation = path, OriginalFileName = Path.GetFileName(path), IsDirectory = false,
                 SaveGroupId = group, SaveGroupName = groupName, DisplayChipText = Probe.Role.ToUpperInvariant(), ReportedFileSizeBytes = i.Length, ReportedLastModifiedUtc = i.LastWriteTimeUtc,
+                MatchLineageId = lineage,
             };
         }
 
@@ -420,7 +427,7 @@ namespace LbIntegrations.SaveProbeSecondary
 
         public override bool UseSaveGroupIdForPersistedMatch(GameSaveBase save)
         {
-            var v = Ours(save);
+            var v = Ours(save) && Probe.IniBool("MatchById", true);
             Probe.Log("UseSaveGroupIdForPersistedMatch " + Probe.Save(save) + " -> " + v);
             return v;
         }
