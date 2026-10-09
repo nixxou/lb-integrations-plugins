@@ -19,14 +19,20 @@ LaunchBox's debug log: `<install>\Logs\Debug <date>.log` (on in G:\LB1326 only).
 - **The answer (lot 3).** When the game's emulator is one of ours, its plugin is a **front desk**: it lists the saves
   of every save-capable plugin covering the platform (ours and LaunchBox's RetroArch / Dolphin / PCSX2) and hands
   every call on a row to the row's owner, read from the row's id.
-- **Status.**
-  - Listing, exe names, backup at close, restore by forwarding (ares) and by our own RetroArch restore: **measured OK**
-    (Zelda 08/10, Secret of Mana 09/10).
-  - Card hijack (a listed save taken into another card by its file name) and wrong backup counts: **fixed and
-    measured** (plan A, 1c8192c).
-  - **State slots: studied and measured, fixes decided, not coded** (§6).
-  - Companion-aware signature, Dolphin and PCSX2 restores through the desk, manual import, startup cost, orphan rows,
-    the Codex review and the sandbox cleanup: **open** (§11).
+- **Status: lot 3 CLOSED on 09/10** (branch `savegroupid`, not pushed). Everything below measured in LaunchBox
+  (G:\LB1326) unless said:
+  - listing, exe names, backup at close, restores by forwarding (ares, RASnes9x, SUPER ZSNES, xemu) and by our own
+    RetroArch restore (saves and states), on games with and without a version on their file;
+  - card hijack and wrong backup counts fixed (plan A, 1c8192c, twins removed 0f6808c);
+  - state slots: the pick applied, a slot the emulator lacks refused, the Yes/No warning, xemu "Its own slot", PPSSPP
+    keys 1-5, 0-9 on desks without slots (§6);
+  - RetroArch's states on a game of ours (`SaveGameView`), four emulators' states on one game (§6.6c);
+  - companions: in the signature, put back at a restore, all destinations tried before writing (§7);
+  - the Codex review's two findings, fixed and measured before/after (§9b); startup cost +0.35 s (§11);
+  - the sandboxes cleaned (§12).
+  - **Not measured, set aside:** Dolphin and PCSX2 through the desk (none of our plugins covers GameCube, Wii or PS2:
+    the desk never lists their saves today); Flycast arcade sets of several files (the cartridge games at hand write one
+    file); the startup cost on a big library (before lot 4).
 - **LaunchBox bugs met** (not ours, reports written): manual Backup Save on a game imported with versions; a state
   restored into another occupied slot is lost; Make Default (to replay with RetroArch first). §9.
 
@@ -688,21 +694,23 @@ Order proposed: 1, then 7-10 (the slot and signature code, same files), then 2-6
 | # | What | How |
 |---|---|---|
 | 1 | ~~Redeploy the clean build~~ **done 09/10**, Zelda checked (§3.2b) | |
-| 2 | Dolphin restore through the desk (`StockRestore`) | a GameCube/Wii game on one of our emulators with a Dolphin save; backup, alter, restore, hash in Dolphin's folder |
-| 3 | PCSX2 forward | a PS2 game on one of ours with a PCSX2 memory card |
+| 2 | Dolphin restore through the desk - **not reachable today**: none of our plugins covers GameCube or Wii, so no desk lists Dolphin's saves. To measure when one does | |
+| 3 | PCSX2 forward - **not reachable today** (no plugin of ours on PS2), same | |
 | 4 | ~~Manual import~~ **measured 09/10** (§8); the warning for a restore over another card's live file to code with 8 | |
 | 5 | ~~A save never seen, at a close~~ **measured 09/10, no hijack** (§3.2b) | |
 | 6 | ~~Desk start-up cost~~ **measured 09/10**: LaunchBox's full save scan ~3.2 s desk off (06-07/10) vs ~3.55 s desk on (08-09/10), +0.35 s on G:\LB1326 (23 emulators); in the background. To measure on a big library before lot 4 | |
-| 7 | Slots: A + B + per-plugin `SlotFile` (§6.6) | probe checks, then the real tests of §6.6 |
-| 8 | The Yes/No warning (C), LaunchBox-only, version-gated; BigBox behaviour checked | real test: occupied other slot, No then Yes |
-| 9 | xemu "its own slot", PPSSPP keys 1-5 (and the id check), the desk list (problem 4) decided | real restores on xemu and PPSSPP; a foreign state on a bsnes desk |
+| 7 | ~~Slots~~ **done and measured 09/10** (§6.6b, §6.6c) | |
+| 8 | ~~The Yes/No warning~~ **done and measured 09/10** (No and Yes); BigBox: refused with a message (probe only) | |
+| 9 | ~~xemu, PPSSPP, desks without slots~~ **done and measured 09/10**: xemu refused slot 5 then restored slot 3 through Cxbx's desk; PPSSPP's new row `Slot=1` (a row persisted before keeps its old key - test rows deleted) | |
 | 10 | ~~Content signature over primary + companions~~ **done and measured 09/10** (§7) | |
-| 11 | Orphan persisted rows: handle or leave to LaunchBox (decide) | delete a live file, reopen Game Saves |
-| 12 | Codex review of the lot | `/codex:adversarial-review` on `savegroupid` |
-| 13 | Lot 8 note: LiteBox's proper state restore (§6.7) | in routing §4b |
-| 14 | Sandbox cleanup (§12), English API request (§5.8) if wanted, post the two reports | |
+| 11 | ~~Orphan rows~~ **decided 09/10: left to LaunchBox** (shown "In Vault", their backups kept; a drive away is not a deleted save); a cleaning action with confirmation can come in LiteBox (lot 8) | |
+| 12 | ~~Codex review~~ **done 09/10** (§9b) | |
+| 13 | ~~Lot 8 note~~ **done**: routing §4b, lot 8 | |
+| 14 | ~~Sandbox cleanup~~ **done 09/10** (§12). Left to Mehdi: the English API request (§5.8) if wanted, posting the two bug reports (§9.1, §9.2) | |
 
 Open question: the "other error messages" Mehdi saw during the empty-list test (08/10) were never identified.
+
+Also found 09/10, not for this lot: a game on **Demul** (no save management) gets no desk - saves made on it with Launch With Flycast are never listed. LaunchBox's own limit, as for any emulator without a save plugin (lots 5-6).
 
 ---
 
