@@ -74,8 +74,9 @@ namespace LbIntegrations.Lbip
                     // Another process's newer lines, looked for at most once per RecheckMs (one stat of the file).
                     var now = Environment.TickCount64;
                     if (now - t.Checked >= RecheckMs) { Refresh(kind, t); t.Checked = now; }
-                    if (t.Entries.TryGetValue(full, out var e) && e.Size == size && e.Ticks == ticks) { value = e.Value; return true; }
-                    if (t.Pending.TryGetValue(full, out e) && e.Size == size && e.Ticks == ticks) { value = e.Value; return true; }
+                    // A pending value first: it is this process's latest, not written yet (it leaves Pending once written).
+                    if (t.Pending.TryGetValue(full, out var e) && e.Size == size && e.Ticks == ticks) { value = e.Value; return true; }
+                    if (t.Entries.TryGetValue(full, out e) && e.Size == size && e.Ticks == ticks) { value = e.Value; return true; }
                     // Not known here: another process may have learnt it since.
                     if (Refresh(kind, t) && t.Entries.TryGetValue(full, out e) && e.Size == size && e.Ticks == ticks) { value = e.Value; return true; }
                 }
@@ -161,7 +162,13 @@ namespace LbIntegrations.Lbip
         {
             var path = PathOf(kind);
             var fi = new FileInfo(path);
-            if (!fi.Exists) return false;
+            if (!fi.Exists)
+            {
+                // Gone (the cache emptied by hand): what was read from it is forgotten - the pending values stay, to be written.
+                if (t.FileLength < 0 && t.Entries.Count == 0) return false;
+                t.Entries.Clear(); t.Lines = 0; t.FileLength = -1; t.FileWritten = default;
+                return true;
+            }
             if (fi.Length == t.FileLength && fi.LastWriteTimeUtc == t.FileWritten) return false;
             string[] lines;
             try

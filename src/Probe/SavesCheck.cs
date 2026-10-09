@@ -371,6 +371,32 @@ namespace LbIntegrations.Probe
                 LbIntegrations.Lbip.GlobalCache.Set("busy", held, "later");
                 LbIntegrations.Lbip.GlobalCache.ForgetForTests();
                 Check("gcache: ...written by the next Set once the file is free", Get("busy", held, out var hv2) && hv2 == "later");
+                // A replacement whose write fails is answered ahead of the older value written before (Codex review 10/10).
+                var repl = Path.Combine(files, "repl.bin"); File.WriteAllText(repl, "r");
+                LbIntegrations.Lbip.GlobalCache.Set("repl", repl, "X");
+                var holder2 = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!, "--globalcache-hold repl 2500")
+                    { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true })!;
+                holder2.StandardOutput.ReadLine();
+                var wasT2 = LbIntegrations.Lbip.GlobalCache.LockTimeoutMs;
+                LbIntegrations.Lbip.GlobalCache.LockTimeoutMs = 200;
+                LbIntegrations.Lbip.GlobalCache.Set("repl", repl, "Y");
+                Check("gcache: X written, Y's write blocked - Y answered", Get("repl", repl, out var ry) && ry == "Y");
+                holder2.WaitForExit(60000);
+                LbIntegrations.Lbip.GlobalCache.LockTimeoutMs = wasT2;
+                LbIntegrations.Lbip.GlobalCache.Set("repl", repl, "Y");
+                LbIntegrations.Lbip.GlobalCache.ForgetForTests();
+                Check("gcache: ...and Y written at the next Set", Get("repl", repl, out var ry2) && ry2 == "Y");
+
+                // The cache file deleted by hand while this process holds its values: forgotten, and written again by Set.
+                var del = Path.Combine(files, "del.bin"); File.WriteAllText(del, "d");
+                LbIntegrations.Lbip.GlobalCache.Set("del", del, "V");
+                Check("gcache: before the deletion, a hit", Get("del", del, out _));
+                File.Delete(LbIntegrations.Lbip.GlobalCache.PathOf("del"));
+                System.Threading.Thread.Sleep(LbIntegrations.Lbip.GlobalCache.RecheckMs + 100);
+                Check("gcache: the cache file deleted - its values forgotten", !Get("del", del, out _));
+                LbIntegrations.Lbip.GlobalCache.Set("del", del, "V");
+                Check("gcache: ...and Set writes the file again", File.Exists(LbIntegrations.Lbip.GlobalCache.PathOf("del")) && File.ReadAllText(LbIntegrations.Lbip.GlobalCache.PathOf("del")).Contains("\tV\n"));
+
                 // Three processes at once, 200 values each.
                 for (int w = 0; w < 3; w++) for (int i = 0; i < 200; i++) File.WriteAllText(Path.Combine(files, "w" + w + "-" + i + ".bin"), "w");
                 var exe = Environment.ProcessPath!;
