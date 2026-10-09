@@ -128,6 +128,81 @@ Each text has four parts: **The problem**, **Example**, **What the patch does**,
 Not on the page (always on, they only refuse what would be wrong): a slot the emulator does not have, a restore whose
 install is ambiguous, a restore that cannot write all its files.
 
+## 3b. Changes to LaunchBox's data and behaviour (Mehdi, 09/10: "the database changes and the rest")
+
+Inventory of 09/10 (every plugin of `src\`): **no plugin writes LaunchBox.Metadata.db or `Data\*.xml` itself** - the
+metadata database is only read (`LbipMetadataDb`, `AresCompat`; writing it was rejected, Unbroken refreshes it daily,
+`FlycastAssociation.cs`); every library change goes through `IDataManager` and reaches the XML when LaunchBox saves.
+The page lists them too, in a fourth group, **Changes to your LaunchBox data**, and a fifth, **Hooks into LaunchBox**.
+Where a plugin already has its own switch, the page shows it and writes the same setting (one value, not two).
+
+### Changes to your LaunchBox data
+
+**The emulator entry an install creates** (always; part of installing)
+- *What.* `AddNewEmulator` + one platform row per system (ares: one per system with its `--system` line), default only
+  when no other emulator holds that platform; a reinstall updates the exe path only; Flycast reuses an existing entry and
+  adds only the platforms it lacks.
+- *Why.* LaunchBox's own integrations build their entry inside the core; the SDK way also works under LiteBox.
+- Shown for information, no switch (no install without it).
+
+**Fields filled on an emulator the plugin drives** (`emulatorFields`, on)
+- *What.* AutoHotkey exit and savestate scripts (only blank fields, or a script the pack wrote before - the old one sent
+  Alt+F4 to whatever window had the focus); ares's platform lines left empty get `--system "<x>"`; Cxbx's entry pointed at
+  `cxbxr-ldr.exe`; xemu's exe path followed after its rename (else LaunchBox's own xemu plugin takes the entry back); a
+  hand-made Flycast entry gets its missing platform rows.
+- *Example.* An emulator added by hand for ares, without a command line: each game would start on the wrong system.
+- *Without it.* Those fields stay as they are; the plugin works with what it finds (some games may not start right).
+
+**"Extract archives" forced** (`autoExtract`, on)
+- *What.* Off for Cxbx, Xenia, xemu (the plugin unpacks itself, to a RAM disk when it can - LaunchBox extracting first
+  would write the whole image to disk for nothing); on for no$gba (it cannot open an archive: "Cartridge not found").
+  Overrides the user's setting, on purpose.
+- *Without it.* The user's setting is kept, with the costs above.
+
+**Games and versions corrected after an import** (per plugin, already switches)
+- *What.* Flycast adds the arcade sets LaunchBox dropped as versions of the right game (vf4b, clubkprz...,
+  `RepairImport`); Xenia, Vita3K, Cxbx and PPSSPP set the title / region / version read from the game itself instead of
+  LaunchBox's guess (`import_title`, `import_region`, `ImportRegionVersion`...).
+- *Example.* A Vita game imported with "Version: (NoNpDrm) [v1.03]" taken from its file name.
+- *Without it.* LaunchBox's import as it is.
+
+**A game's command line moved to the plugin** (MelonDs, Vita3K options windows; on OK only)
+- *What.* The plugin's own flags, if still in the game's command line, are moved into the plugin's store.
+- Shown for information (only on the user's OK).
+
+### Hooks into LaunchBox
+
+**Pack emulators in the "Add emulator" list and the platforms grid** (`rowInjection`, on - today the marker file
+`%LOCALAPPDATA%\lb-integrations-plugins\no-metadata` turns it off; the page replaces it)
+- *What.* A Harmony hook on LaunchBox's SQLite reader adds the pack's emulator rows (and Flycast, standalone DS
+  emulators...) to what LaunchBox reads from LaunchBox.Metadata.db - in memory, the database is never written.
+- *Why.* Those emulators are not in LaunchBox's database: nothing to pick, no platforms to narrow.
+- *Without it.* The pack's emulators are missing from those lists (they still work once set up).
+- Checks: `Microsoft.Data.Sqlite.SqliteCommand.ExecuteDbDataReader` (and its async twin) found. Bug test: LaunchBox's
+  database still lacks "Flycast" (a read).
+
+**Knowing when an emulator is opened without a game** (`emulatorOpened`, on)
+- *What.* A Harmony hook on `Process.Start` (only for an exe started by LaunchBox's "Open emulator" menu): the plugins
+  learn it was opened and when it closes; Cxbx opens its GUI instead of the bare loader.
+- *Why.* The SDK has no such event (measured 29/09).
+- *Without it.* Opening Cxbx from LaunchBox starts the loader alone; the plugins do not know the emulator ran.
+- Checks: `Process.Start()` patchable, `OpenEmulatorMenuAction` on the stack.
+
+**The import wizard steered** (per plugin, mostly already switches)
+- *What.* WPF class handlers + reflection on the wizard's view models: Vita3K and Xenia swap the platform for a "Temp"
+  one during the scan and write the real one back (`BypassVitaImport`, ...); Vita3K, Xenia, Cxbx and PPSSPP remove
+  updates, DLC, firmware, save data and foreign files from the list; Flycast and Demul keep only their arcade sets and
+  tick "Force using MAME metadata" (`QuickCheck`, `SortImport`...). A watcher notices the files LaunchBox drops at the
+  end (read only).
+- *Example.* Choosing the Vita platform made the wizard list the games installed in Vita3K and ignore the files picked.
+- *Without it.* LaunchBox's wizard as it is.
+- Checks: each view model and property by name (`WizardViewModel`, `RomImportGameListViewModel`, ...) - the obfuscated
+  core renames nothing public today, but a version that does breaks the steering silently: the label says so.
+
+Not hooks, not on the page: the launch gate (a second launch refused while a game runs, SDK only); files the plugins
+write in the emulators' own folders (BIOS copies, state thumbnails) and in `Local\Plugins\.data`; the installer (a
+separate program, LaunchBox closed).
+
 ## 4. To build
 
 1. `Shared.Compat` (compiled into every plugin and the menu relay): the registry (id, kind, texts, default, needs,
@@ -135,7 +210,11 @@ install is ambiguous, a restore that cannot write all its files.
 2. Each patch behind its `Compat.Enabled` (the off branch = LaunchBox's behaviour, already the code's fallback).
 3. The page in `NixxSettingsForm` (beside "Your console" and "RAM disk"): groups, a row per patch (checkbox, title,
    status labels, unfolding text), Apply / Cancel, the restart banner, confirmations, dependencies.
-4. The checks and the three bug tests (merge by name, RetroArch's folder, the default fingerprint), run on opening.
+4. The checks and the bug tests (merge by name, RetroArch's folder, the default fingerprint, Flycast still missing from
+   the metadata database), run on opening; the hooks' checks (the SQLite reader, `Process.Start`, the wizard's view
+   models by name).
+4b. The plugin switches that already exist (import cleaning, titles, regions, Vita bypass, Flycast repair...) shown and
+   written from the page through the plugins' own settings; the `no-metadata` marker file replaced by `rowInjection`.
 5. Probe: the registry complete (every id has its texts and a default), the ini read/write, each check against the
    current LaunchBox (all OK), each bug test (all "still present" on 14.0.1.2).
 6. Real test: turn `planA` off, Apply, restart: Secret of Mana's RASnes9x save is taken again into SUPER ZSNES's card;
