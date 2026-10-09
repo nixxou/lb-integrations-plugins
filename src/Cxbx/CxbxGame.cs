@@ -199,8 +199,9 @@ namespace LbIntegrations.Cxbx
             {
                 try
                 {
-                    if (!File.Exists(CachePath)) return null;
-                    var all = File.ReadAllLines(CachePath).Select(l => l.Split('\t')).Where(c => c.Length >= 5).ToList();
+                    // A big listing reads it once (LbIntegrations.Saves.SaveScan), not once per game.
+                    if (!LbIntegrations.Saves.SaveScan.Exists(CachePath)) return null;
+                    var all = LbIntegrations.Saves.SaveScan.Lines(CachePath).Select(l => l.Split('\t')).Where(c => c.Length >= 5).ToList();
                     // Its own line, else the line of the same file in another folder - a game moved.
                     foreach (var c in all.Where(c => string.Equals(c[0], stamp, StringComparison.OrdinalIgnoreCase))
                                          .Concat(all.Where(c => CxbxRom.IsStampOf(c[0], rom))))
@@ -235,6 +236,7 @@ namespace LbIntegrations.Cxbx
                     lines.Add(string.Join("\t", stamp, d.Kind, d.Xbe.TitleId.ToString("x8"), (d.Xbe.TitleName ?? "").Replace('\t', ' '), d.Bytes.ToString(CultureInfo.InvariantCulture), d.Xbe.Version.ToString("x8")));
                     Directory.CreateDirectory(CxbxSettings.Dir);
                     File.WriteAllLines(CachePath, lines);
+                    LbIntegrations.Saves.SaveScan.Touched(CachePath);
                 }
                 catch (Exception ex) { Log.Warn("could not write " + CachePath, ex); }
             }
