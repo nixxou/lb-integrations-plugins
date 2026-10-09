@@ -757,6 +757,54 @@ scanned; if RetroArch's dll is not loaded yet, on its `AssemblyLoad`.
 - Same trap to keep in mind for any future once-per-process patch of the pack: a static of the shared code is one
   copy PER PLUGIN (see the memory "LB14 : greffon = EmulatorPlugin direct").
 
+### 11c. SaveScan: a big listing touches the disk once per folder (09/10)
+
+At start-up LaunchBox hands each plugin ALL its games in one GetSaves, and the desk hands them again to every other
+emulator of the platform. Audit (two agents, 13 plugins): each plugin asked the same questions per game - ares parsed
+settings.bml 3 times per game, Xenia walked its whole content tree per game, PPSSPP listed SAVEDATA per game, SUPER
+ZSNES decoded its NRBF settings per game, Cxbx worked out its data folder 5 times per game...
+
+**`Shared.Saves\SaveScan.cs`** - opened by `SaveDesk.GetSaves` for a listing of MORE THAN 50 games and versions (the
+scan), dropped when it returns (Mehdi: no memory kept outside the scan). Game Saves, a close, a restore: the real calls.
+- `Exists` / `DirExists` / `Files(dir, pattern)`: a folder listed once, answers from memory, with .NET's own rules
+  (`EnumerationOptions.Compatible`, hidden files included; `NormalizeInputs`: `*.*`/`.` = `*`, else
+  `TranslateWin32Expression` + `MatchesWin32Expression`); anything odd goes to the real call.
+- `Text` / `Lines` / `Bytes`: a file read once; `Memo(key, f)`: a value worked out once.
+- A write during the listing calls `Touched(path)` (thumbnails, ares/xemu/Cxbx settings, titles.tsv, Xenia's relaunch
+  map, Vita3K's marker). Captures (Xbox sync, DSi RefreshSave, Vita3K session) and "is the emulator running" are left
+  as real calls - they write; they belong to the second pass.
+- The desk: the emulators' platforms and the games by id kept for the listing.
+- The SAME ANSWERS, not a new algorithm: probe `SavesCheck.Scan` (64 questions on a tricky folder, identical) and
+  `--saves-ab <plugin.dll> --emu <exe> --roms <folder|list.txt> --platform <p> --count <n>` (the same games in one call
+  and in calls of 50, every field of every row compared):
+
+| Plugin | Games | Rows (identical) | Calls of 50 | One call |
+|---|---|---|---|---|
+| ares | 2000 | 364 | 1808 ms | 66 ms |
+| Xenia (fake content tree) | 2000 | 334 | 420 ms | 32 ms |
+| xemu | 300 | 200 | 1665 ms | 1404 ms (sync untouched) |
+| Cxbx | 300 | 200 | 871 ms | 641 ms (sync untouched) |
+| PPSSPP (fake install) | 2000 | 2000 | 635 ms | 213 ms |
+| bsnes (fake install) | 2000 | 726 | 328 ms | 84 ms |
+| RASnes9x | 2000 | 181 | 323 ms | 33 ms |
+| SUPER ZSNES | 2000 | 363 | 866 ms | 13 ms |
+| Flycast (fake Naomi sets) | 1000 | 54 | 358 ms | 39 ms |
+| melonDS | 600 | 450 | 261 ms | 64 ms |
+| no$gba | 600 | 150 | 135 ms | 73 ms |
+| Vita3K | 600 | 300 | 66 ms | 15 ms |
+
+**LaunchBox bench** (§11b, 2000 SNES games on SUPER ZSNES, desk on): 17.9 s → 4.71 s (RetroArch config cache) →
+**3.27 s** with SaveScan - below the desk-off scan of before (3.74 s). ares 1.5 s → 0.13 s.
+
+**Second pass (behaviour changes, not done):** xemu/Cxbx sync (two process snapshots per game, qcow2/zip/SHA-256 per
+played game - a stamp on console mtime and size), per-disc caches kept on disk (Flycast, Vita3K, Xenia title ids),
+melonDS/no$gba header cache, RetroArch's `GetFiles` per game (clean-room clone, other project).
+
+**Trap met while measuring:** a LaunchBox killed after its exit left `Data\InputBindings.xml` and
+`Data\GameControllers.xml` full of zeros ("InputBindings.xml is corrupt; LaunchBox cannot continue"); restored from
+`Backups\Automatic LaunchBox Startup Data Backup 2026-10-09 19-50-13.7z`, the corrupt copies kept in
+`Backups\lbip-2026-10-09-lot3-mesures\`. The bench now closes LaunchBox and waits; it never killed it again.
+
 ## 12. Sandbox left behind
 
 G:\LB1326:
