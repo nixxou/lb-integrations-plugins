@@ -83,9 +83,10 @@ namespace LbIntegrations.Ppsspp
         {
             var found = new List<PpssppState>();
             if (string.IsNullOrWhiteSpace(stateDir) || string.IsNullOrWhiteSpace(discId)
-                || !Directory.Exists(stateDir)) return found;
+                || !LbIntegrations.Saves.SaveScan.DirExists(stateDir)) return found;
 
-            foreach (var path in Directory.EnumerateFiles(stateDir, discId + "_*" + Extension))
+            // A big listing lists the folder once, not once per game (LbIntegrations.Saves.SaveScan).
+            foreach (var path in LbIntegrations.Saves.SaveScan.Files(stateDir, discId + "_*" + Extension))
             {
                 if (!TryParseName(Path.GetFileName(path), out var d, out var ver, out var slot)) continue;
                 if (!string.Equals(d, discId, StringComparison.OrdinalIgnoreCase)) continue;

@@ -201,7 +201,7 @@ namespace LbIntegrations.Ppsspp
                 if (st.ThumbnailPath == null || st.ThumbnailWriteUtc == default) return;
                 var thumb = LbipStateThumbs.PathOf(st.Path);
                 if (File.GetLastWriteTimeUtc(thumb) == st.ThumbnailWriteUtc) return;
-                if (LbipStateThumbs.FromImage(st.ThumbnailPath, st.Path)) File.SetLastWriteTimeUtc(thumb, st.ThumbnailWriteUtc);
+                if (LbipStateThumbs.FromImage(st.ThumbnailPath, st.Path)) { File.SetLastWriteTimeUtc(thumb, st.ThumbnailWriteUtc); LbIntegrations.Saves.SaveScan.Touched(thumb); }
             }
             catch (Exception ex) { Log.Info("state thumbnail of " + st.FileName + ": " + ex.Message); }
         }

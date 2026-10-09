@@ -71,14 +71,17 @@ namespace LbIntegrations.Ppsspp
         private static readonly string[] SaveDataMarkers = { "SAVEDATA_PARAMS", "SAVEDATA_FILE_LIST" };
 
         /// <summary>Every save unit under <paramref name="saveDataDir"/>, one per disc id.</summary>
-        public static List<PspSaveUnit> Enumerate(string saveDataDir)
+        public static List<PspSaveUnit> Enumerate(string saveDataDir) => LbIntegrations.Saves.SaveScan.Memo("psp.units|" + saveDataDir, () => EnumerateCore(saveDataDir));
+
+        /// <summary>Enumerate, worked out (a big listing: once, not once per game without a disc id - LbIntegrations.Saves.SaveScan).</summary>
+        private static List<PspSaveUnit> EnumerateCore(string saveDataDir)
         {
             var units = new List<PspSaveUnit>();
             if (string.IsNullOrWhiteSpace(saveDataDir) || !SafeDirExists(saveDataDir)) return units;
 
             var byDiscId = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             IEnumerable<string> dirs;
-            try { dirs = Directory.EnumerateDirectories(saveDataDir).ToList(); }
+            try { dirs = Folders(saveDataDir); }
             catch (Exception ex) { Log.Warn("could not list " + saveDataDir, ex); return units; }
 
             foreach (var dir in dirs)
@@ -86,7 +89,7 @@ namespace LbIntegrations.Ppsspp
                 string name;
                 try { name = Path.GetFileName(dir); } catch { continue; }
                 if (string.IsNullOrEmpty(name) || name.Length < DiscIdLength) continue;
-                if (IsGameDataInstall(dir)) { Log.Info("skipping installed game data: " + name); continue; }
+                if (IsGameData(dir)) { Log.Info("skipping installed game data: " + name); continue; }
 
                 string discId = name.Substring(0, DiscIdLength).ToUpperInvariant();
                 if (!byDiscId.TryGetValue(discId, out var list)) byDiscId[discId] = list = new List<string>();
@@ -114,17 +117,23 @@ namespace LbIntegrations.Ppsspp
             if (!SafeDirExists(saveDataDir)) return hits;
             try
             {
-                foreach (var dir in Directory.EnumerateDirectories(saveDataDir))
+                foreach (var dir in Folders(saveDataDir))
                 {
                     var name = Path.GetFileName(dir);
                     if (name == null || !name.StartsWith(discId, StringComparison.OrdinalIgnoreCase)) continue;
-                    if (IsGameDataInstall(dir)) continue;
+                    if (IsGameData(dir)) continue;
                     hits.Add(dir);
                 }
             }
             catch (Exception ex) { Log.Warn("could not list " + saveDataDir, ex); }
             return hits;
         }
+
+        /// <summary>SAVEDATA's folders - a big listing lists them once, not once per game (LbIntegrations.Saves.SaveScan).</summary>
+        private static List<string> Folders(string saveDataDir) => LbIntegrations.Saves.SaveScan.Memo("psp.dirs|" + saveDataDir, () => Directory.EnumerateDirectories(saveDataDir).ToList());
+
+        /// <summary>IsGameDataInstall - a big listing reads each folder's PARAM.SFO once.</summary>
+        private static bool IsGameData(string dir) => LbIntegrations.Saves.SaveScan.Memo("psp.gamedata|" + dir, () => IsGameDataInstall(dir));
 
         private static PspSaveUnit Build(string discId, List<string> folders)
         {
