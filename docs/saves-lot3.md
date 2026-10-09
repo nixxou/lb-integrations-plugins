@@ -549,6 +549,16 @@ replaced, back up the file actually overwritten. No restriction needed there.
   card showed "!", Backup made `-05.srm` + `-05.rtc` (LaunchBox's log: "content signature/timestamp changed"); then ONLY
   the `.rtc` changed - "!" again at the next opening of Game Saves, without a restart, Backup made `-06.srm` (same
   content) + `-06.rtc` (the new one). Before, neither change was ever backed up.
+- **At a restore, LaunchBox copies no companion back** (measured 09/10: Zelda's RASnes9x `-10.srm` restored, its live
+  `.rtc` stayed the one it replaced). ares put its own back; RASnes9x and bsnes did not. **Fixed** (7f7c5e6):
+  `SaveCompanions.CopyBack` puts the backup's companions beside the restored file under its stem; a backup without one
+  leaves the live one. After: `.srm` and `.rtc` both back to the backup's.
+- **Everything is tried before anything is written** (Mehdi, 09/10; 0425f9b): `SaveCompanions.WhyNotWritable` opens the
+  save and each companion's destination for writing (read-only, held by another program, a folder without write access -
+  a save beside the roms on a share) before the copy; else a clear refusal, nothing written. Before, a companion that
+  could not be written failed after the save had been replaced.
+- Flycast's arcade sets: their companions are found by the set's name in Flycast's own folders, not beside a vault copy;
+  whether a set of several files comes back whole at a restore is not measured - to check on a real multi-file set.
 
 ---
 
