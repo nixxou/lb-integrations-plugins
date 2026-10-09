@@ -156,9 +156,9 @@ namespace LbIntegrations.Xenia
             try
             {
                 var dir = Path.Combine(layout.ContentRoot, new string('0', 16), titleId, "000B0000");
-                if (!Directory.Exists(dir)) return "";
-                var first = Directory.GetFiles(dir).OrderBy(p => Path.GetFileName(p), StringComparer.OrdinalIgnoreCase).FirstOrDefault();
-                var info = first == null ? null : Stfs.Read(first);
+                if (!LbIntegrations.Saves.SaveScan.DirExists(dir)) return "";
+                var first = LbIntegrations.Saves.SaveScan.Files(dir, "*").OrderBy(p => Path.GetFileName(p), StringComparer.OrdinalIgnoreCase).FirstOrDefault();
+                var info = first == null ? null : LbIntegrations.Saves.SaveScan.Memo("xenia.stfs|" + first, () => Stfs.Read(first));
                 if (info == null) return "";
                 var name = info.DisplayName.Length > 0 ? info.DisplayName : "TU " + XeniaScan.VersionText(info.Version);
                 return " [" + name + "]";

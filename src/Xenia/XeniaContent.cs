@@ -108,7 +108,8 @@ namespace LbIntegrations.Xenia
         public static XeniaSaveUnit ForTitleId(string contentRoot, string titleId)
         {
             if (string.IsNullOrWhiteSpace(titleId)) return null;
-            return Enumerate(contentRoot)
+            // A big listing (the start-up scan): the tree walked once, not once per game (LbIntegrations.Saves.SaveScan; nothing kept after it).
+            return LbIntegrations.Saves.SaveScan.Memo("xenia.content|" + contentRoot, () => Enumerate(contentRoot))
                 .Where(u => string.Equals(u.TitleId, titleId, StringComparison.OrdinalIgnoreCase))
                 .OrderByDescending(u => u.LastWriteUtc)
                 .FirstOrDefault();

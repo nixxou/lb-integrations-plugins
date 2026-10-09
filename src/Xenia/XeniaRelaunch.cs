@@ -184,8 +184,8 @@ namespace LbIntegrations.Xenia
             var stamps = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             try
             {
-                if (File.Exists(MapPath))
-                    foreach (var line in File.ReadAllLines(MapPath, Encoding.UTF8))
+                if (LbIntegrations.Saves.SaveScan.Exists(MapPath))
+                    foreach (var line in LbIntegrations.Saves.SaveScan.Lines(MapPath, Encoding.UTF8))
                     {
                         var c = line.Split('\t');
                         if (c.Length < 2 || c[0].Length == 0) continue;
@@ -210,6 +210,7 @@ namespace LbIntegrations.Xenia
                 return stamps.TryGetValue(k, out var s) ? s.Replace('|', '\t') : "\t";
             }
             File.WriteAllLines(MapPath, map.OrderBy(kv => kv.Key).Select(kv => kv.Key + "\t" + kv.Value.Host + "\t" + (kv.Value.Module ?? "") + "\t" + StampOf(kv.Key)), new UTF8Encoding(false));
+            LbIntegrations.Saves.SaveScan.Touched(MapPath);
         }
     }
 }
