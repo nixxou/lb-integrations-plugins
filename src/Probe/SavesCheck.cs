@@ -292,6 +292,9 @@ namespace LbIntegrations.Probe
                 }
                 Check("scan: the listing over → nothing kept", !SaveScan.Active);
                 Check("scan: a small listing changes nothing", SaveScan.Begin(SaveScan.Threshold) is IDisposable d && !SaveScan.Active && Dispose(d));
+                LbIntegrations.Compat.Compat.UseForTests(new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase) { ["saveScan"] = false });
+                Check("scan: off from the Compatibility page → the real calls", SaveScan.Begin(SaveScan.Threshold + 1) is IDisposable off && !SaveScan.Active && Dispose(off));
+                LbIntegrations.Compat.Compat.UseForTests(new Dictionary<string, bool>());
 
                 var diff = before.Zip(after, (b, a) => (b, a)).Where(x => x.b != x.a).ToList();
                 foreach (var (b, a) in diff.Take(8)) Console.WriteLine("    real: " + b + "\n    scan: " + a);

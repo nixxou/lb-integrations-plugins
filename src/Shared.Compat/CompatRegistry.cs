@@ -65,6 +65,20 @@ namespace LbIntegrations.Compat
                 Without = "Those states cannot be restored from LaunchBox.",
             },
 
+            new CompatPatch
+            {
+                Id = "saveScan", Group = CompatGroup.Missing, Title = "Saves listed fast at LaunchBox's start",
+                Problem = "At its start LaunchBox asks each emulator for the saves of ALL its games at once, and the pack's "
+                        + "plugins looked at the disk game after game: the same folders and settings files read again for "
+                        + "every game.",
+                Example = "2,000 SNES games: the start-up save scan took 4.7 s; 3.3 s with this on.",
+                Does = "Only while LaunchBox lists more than 50 games in one go: each folder is looked at once and each "
+                     + "settings file read once, then forgotten when the listing ends. The answers are the same; nothing "
+                     + "is kept in memory afterwards.",
+                Without = "The same saves listed, more slowly on a big library. Game Saves, a backup or a restore are not "
+                        + "concerned (one game).",
+            },
+
             // ── LaunchBox bugs worked around ──
             new CompatPatch
             {

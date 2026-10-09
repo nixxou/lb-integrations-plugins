@@ -505,7 +505,7 @@ namespace LbIntegrations.Saves
 
         private static T? Safe<T>(Func<T> f) { try { return f(); } catch { return default; } }
 
-        /// <summary>The object itself, for a memo key (two emulators of one id, a copy: never mixed up).</summary>
+        /// <summary>The object's identity hash, for a memo key beside its id (two objects of one id, a copy: told apart unless their hashes collide).</summary>
         private static int RuntimeHelpersId(object o) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(o);
     }
 }

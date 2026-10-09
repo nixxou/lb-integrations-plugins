@@ -15,7 +15,11 @@
 // from them. The probe compares both ways on tricky folders (SavesCheck.Scan).
 //
 // WRITES. A listing may write (state thumbnails, a capture, a .cue): whoever writes during a listing calls
-// Touched(path) - the folder is listed again and the file read again the next time it is asked about.
+// Touched(path) - the folder is listed again and the file read again the next time it is asked about. Nothing checks
+// that a write was declared: code added to a listing that writes into a folder SaveScan answers for must call Touched,
+// or that folder reads stale until the listing ends (the captures stay on the real calls for that reason).
+//
+// A folder that cannot be listed (permissions) answers through the real calls: FolderOf returns null.
 //
 // Per thread and per plugin: every plugin has its own copy of this class, and a listing is one call on one thread; a
 // thread a plugin starts inside its listing simply makes the real calls.
@@ -67,7 +71,7 @@ namespace LbIntegrations.Saves
         /// A small one gets a scope that does nothing.</summary>
         public static IDisposable Begin(int items)
         {
-            if (items <= Threshold) return Nothing.Instance;
+            if (items <= Threshold || !LbIntegrations.Compat.Compat.On("saveScan")) return Nothing.Instance;   // off from the Compatibility page
             var s = new SaveScan(_current);
             _current = s;
             return s;
