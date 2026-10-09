@@ -77,6 +77,13 @@ namespace LbIntegrations.Saves
 
         public GetSavesResponse GetSaves(GetSavesArgs args)
         {
+            // A big listing (LaunchBox's start-up scan) asks the disk once per folder, not once per game (SaveScan).
+            using (SaveScan.Begin((args?.Games?.Count ?? 0) + (args?.AdditionalApplications?.Count ?? 0)))
+                return GetSavesCore(args);
+        }
+
+        private GetSavesResponse GetSavesCore(GetSavesArgs args)
+        {
             var own = _own.OwnGetSaves(args);
             try
             {

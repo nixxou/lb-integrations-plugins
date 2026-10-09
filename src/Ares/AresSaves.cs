@@ -74,8 +74,10 @@ namespace LbIntegrations.Ares
         internal sealed class Folders { public List<string> SaveDirs = new List<string>(), StateDirs = new List<string>(); public string SaveTarget, StateTarget; }
 
         /// <summary>The file ares is given for a game: a .m3u's first disc, a .7z's unpacked cartridge (or where it would
-        /// go), else the game's own file.</summary>
-        internal static string PlayedFile(string rom, string exe)
+        /// go), else the game's own file. A big listing works it out once per game, not 4 times (SaveScan).</summary>
+        internal static string PlayedFile(string rom, string exe) => LbIntegrations.Saves.SaveScan.Memo("ares.played|" + rom + "|" + exe, () => PlayedFileCore(rom, exe));
+
+        private static string PlayedFileCore(string rom, string exe)
         {
             var ext = Path.GetExtension(rom ?? "");
             if (string.Equals(ext, ".m3u", StringComparison.OrdinalIgnoreCase)) return AresLaunch.RomFor(rom, null, exe, out _) ?? rom;
@@ -93,7 +95,8 @@ namespace LbIntegrations.Ares
             string saves = null;
             try
             {
-                var v = AresBml.Load(AresLaunch.SettingsOf(exe)).Get("Paths/Saves");
+                // A big listing: settings.bml read once, not 3 times per game (LbIntegrations.Saves.SaveScan).
+                var v = LbIntegrations.Saves.SaveScan.Memo("ares.saves|" + exe, () => AresBml.Load(AresLaunch.SettingsOf(exe)).Get("Paths/Saves"));
                 if (!string.IsNullOrWhiteSpace(v)) saves = Path.GetFullPath(v.Replace('/', Path.DirectorySeparatorChar));
             }
             catch { }
@@ -140,7 +143,7 @@ namespace LbIntegrations.Ares
         internal static AresSystem SystemOf(IEmulator emu, string gameId, string platform, string rom)
         {
             string line = null;
-            try { line = emu?.GetAllEmulatorPlatforms()?.FirstOrDefault(r => string.Equals(r?.Platform, platform, StringComparison.OrdinalIgnoreCase))?.CommandLine; } catch { }
+            try { line = LbIntegrations.Saves.SaveScan.Memo("ares.line|" + emu?.Id + "|" + platform, () => emu?.GetAllEmulatorPlatforms()?.FirstOrDefault(r => string.Equals(r?.Platform, platform, StringComparison.OrdinalIgnoreCase))?.CommandLine); } catch { }
             return AresSystems.System(AresLaunch.SystemFor(gameId, platform, rom, line).System);
         }
 
@@ -195,6 +198,7 @@ namespace LbIntegrations.Ares
         /// were there - which game it asks, as what, where it was looked for).</summary>
         private static void Trace(string what, string platform, string rawPath, string exe, AresSystem system, int found)
         {
+            if (LbIntegrations.Saves.SaveScan.Active) return;   // a big listing (the start-up scan): its summary line only
             try
             {
                 var rom = string.IsNullOrWhiteSpace(rawPath) ? null : ResolveFullPath(rawPath);
@@ -222,7 +226,7 @@ namespace LbIntegrations.Ares
                     {
                         var path = Path.Combine(dir, name + ext);
                         if (string.Equals(path, rom, StringComparison.OrdinalIgnoreCase)) continue;   // a .wav tape is the game, not its recording
-                        if (File.Exists(path) && seen.Add("save|" + path + "|" + context))
+                        if (LbIntegrations.Saves.SaveScan.Exists(path) && seen.Add("save|" + path + "|" + context))
                             into.Add(SaveRow(path, gameId, appId, IdOf("save", system, name + ext), SaveGroupName + " (" + ext.TrimStart('.') + ")", ext.TrimStart('.').ToUpperInvariant()));
                     }
             foreach (var name in names)
@@ -230,7 +234,7 @@ namespace LbIntegrations.Ares
                     for (int slot = 1; slot <= 9; slot++)
                     {
                         var path = Path.Combine(dir, name + ".bs" + slot);
-                        if (File.Exists(path) && seen.Add("state|" + path + "|" + context))
+                        if (LbIntegrations.Saves.SaveScan.Exists(path) && seen.Add("state|" + path + "|" + context))
                             into.Add(StateRow(path, gameId, appId, slot, IdOf("state", system, name, slot)));
                     }
             // The game's own copy of its console's memory (AresConsoleSession) - the 64DD's clock travels with its .disk
@@ -239,7 +243,7 @@ namespace LbIntegrations.Ares
                 foreach (var dir in folders.SaveDirs)
                 {
                     var path = Path.Combine(dir, identity + cf.Ext);
-                    if (File.Exists(path) && seen.Add("save|" + path + "|" + context))
+                    if (LbIntegrations.Saves.SaveScan.Exists(path) && seen.Add("save|" + path + "|" + context))
                         into.Add(SaveRow(path, gameId, appId, IdOf("console", system, identity + cf.Ext), "Console memory (" + cf.Pak + " " + cf.File + ")", "BRAM"));
                 }
         }

@@ -438,6 +438,74 @@ namespace LbIntegrations.Probe
             }
 
             // The Flycast assertion. Builds its own forged install in the temp folder and cleans up.
+            // A big listing answers what small ones answer (SaveScan, 09/10): the same games listed in ONE call (above
+            // SaveScan.Threshold, so from memory) and in calls of Threshold games (the real disk calls), every field of
+            // every row compared, and both timed. --roms: a folder whose files are the games (repeated up to --count).
+            if (Has(args, "--saves-ab"))
+            {
+                var romDir = Arg(args, "--roms");
+                var platformName = Arg(args, "--platform") ?? "";
+                if (emuPath == null || romDir == null || !Directory.Exists(romDir))
+                {
+                    Console.Error.WriteLine("--saves-ab needs --emu <emulator.exe> --roms <folder> [--platform <name>] [--line <command line>] [--count <n>]");
+                    return 2;
+                }
+                int count = int.TryParse(Arg(args, "--count"), out var cn) ? cn : 0;
+                var emulator = new StubEmulator { Title = "emulator", ApplicationPath = emuPath };
+                if (platformName.Length > 0)
+                {
+                    var line = emulator.AddNewEmulatorPlatform();
+                    line.Platform = platformName; line.CommandLine = Arg(args, "--line") ?? ""; line.IsDefault = true;
+                }
+                var roms = Directory.GetFiles(romDir).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
+                if (roms.Count == 0) { Console.Error.WriteLine("no file in " + romDir); return 2; }
+                var games = new List<IGame>();
+                for (int i = 0; i < Math.Max(count, roms.Count); i++)
+                {
+                    var rom = roms[i % roms.Count];
+                    var g = StubGame.Create("ab-" + i.ToString("D5"), Path.GetFileNameWithoutExtension(rom), rom, emulator.Id);
+                    if (platformName.Length > 0) StubGame.With(g, "Platform", platformName);
+                    games.Add(g);
+                }
+                int chunk = LbIntegrations.Saves.SaveScan.Threshold;
+                Section("saves A/B  [" + games.Count + " game(s), " + Path.GetFileName(emuPath) + "]");
+
+                List<string> Rows(IReadOnlyCollection<GameSaveBase> found) => (found ?? Array.Empty<GameSaveBase>()).Select(one =>
+                    one.GetType().Name + " " + string.Join(" ", one.GetType().GetProperties().OrderBy(p => p.Name, StringComparer.Ordinal)
+                        .Select(p => { object v; try { v = p.GetValue(one); } catch (Exception ex) { v = "<" + ex.GetType().Name + ">"; } return p.Name + "=" + (v ?? "(null)"); }))).ToList();
+
+                // Small calls first: what a big one must equal (and the disk warmed for both).
+                var swSmall = System.Diagnostics.Stopwatch.StartNew();
+                var small = new List<string>();
+                for (int at = 0; at < games.Count; at += chunk)
+                {
+                    var part = games.Skip(at).Take(chunk).ToList();
+                    var r = plugin.GetSaves(new GetSavesArgs { Emulator = emulator, Games = part });
+                    if (r?.WasSuccess != true) { Console.WriteLine("  small call failed: " + r?.Message); return 1; }
+                    small.AddRange(Rows(r.FoundSaves));
+                }
+                swSmall.Stop();
+                var swBig = System.Diagnostics.Stopwatch.StartNew();
+                var bigR = plugin.GetSaves(new GetSavesArgs { Emulator = emulator, Games = games });
+                swBig.Stop();
+                if (bigR?.WasSuccess != true) { Console.WriteLine("  big call failed: " + bigR?.Message); return 1; }
+                var big = Rows(bigR.FoundSaves);
+
+                Console.WriteLine("  calls of " + chunk + ": " + small.Count + " row(s), " + swSmall.ElapsedMilliseconds + " ms");
+                Console.WriteLine("  one call    : " + big.Count + " row(s), " + swBig.ElapsedMilliseconds + " ms");
+                int shown = 0;
+                for (int i = 0; i < Math.Max(small.Count, big.Count) && shown < 6; i++)
+                {
+                    var a = i < small.Count ? small[i] : "(none)";
+                    var b = i < big.Count ? big[i] : "(none)";
+                    if (a == b) continue;
+                    Console.WriteLine("  row " + i + " differs:\n    small: " + a + "\n    big  : " + b);
+                    shown++;
+                }
+                bool same = small.SequenceEqual(big);
+                Console.WriteLine(same ? "  SAME ROWS" : "  FAIL - the big listing does not answer what the small ones answer");
+                return same ? 0 : 1;
+            }
             // What the plugin says the LIVE saves are, for one game on one emulator. The question
             // "the vault copy shows but the active save does not" has no other honest answer.
             if (Has(args, "--saves"))

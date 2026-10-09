@@ -241,8 +241,70 @@ namespace LbIntegrations.Probe
             Installs();
             Companions();
             CompatSwitches();
+            Scan();
         }
 
+        /// <summary>SaveScan answers what File.Exists, Directory.Exists and Directory.GetFiles answer (a big listing).</summary>
+        private static void Scan()
+        {
+            var dir = Path.Combine(Path.GetTempPath(), "lbip-scan-" + Guid.NewGuid().ToString("N"));
+            var cwd = Environment.CurrentDirectory;
+            try
+            {
+                Directory.CreateDirectory(Path.Combine(dir, "sub"));
+                foreach (var n in new[] { "Game (USA).srm", "Game (USA).srm1", "Game (USA).bs1", "Game (USA).bs10", "game (usa).state", "game (usa).state2",
+                                          "x.htm", "x.html", "noext", "a.b.c", "Zelda.SRM", "[brackets] (v1.1).srm", "émulé.srm" })
+                    File.WriteAllText(Path.Combine(dir, n), n);
+                var hidden = Path.Combine(dir, "hidden.srm"); File.WriteAllText(hidden, "h"); File.SetAttributes(hidden, FileAttributes.Hidden | FileAttributes.System);
+                var patterns = new[] { "*", "*.*", ".", "", "*.srm", "*.SRM", "Game (USA).*", "game (usa).state*", "*.htm", "Game (USA).bs?", "?ame*", "*.", "noext.*",
+                                       "*.bs1", "[brackets]*", "émulé*", "*c", "a.b.*", "nothing*" };
+                var paths = new[] { "Game (USA).srm", "GAME (USA).SRM", "game (usa).srm1", "sub", "missing.srm", "x.htm", "hidden.srm", "noext", "noext.", "sub\\none.srm",
+                                    "nodir\\x.srm", "..\\" + Path.GetFileName(dir) + "\\Zelda.srm", "émulé.srm" };
+                Environment.CurrentDirectory = dir;   // relative paths: the same base for both
+
+                string Real(Func<object> f) { try { var v = f(); return v is string[] a ? string.Join("|", a) : v?.ToString() ?? "null"; } catch (Exception ex) { return "!" + ex.GetType().Name; } }
+                var before = new List<string>();
+                foreach (var p in patterns) { before.Add("F " + p + "=" + Real(() => Directory.GetFiles(dir, p))); before.Add("Fm " + p + "=" + Real(() => Directory.GetFiles(Path.Combine(dir, "nodir"), p))); }
+                foreach (var p in paths) { before.Add("E " + p + "=" + Real(() => File.Exists(p))); before.Add("D " + p + "=" + Real(() => Directory.Exists(p))); }
+
+                var after = new List<string>();
+                using (SaveScan.Begin(SaveScan.Threshold + 1))
+                {
+                    Check("scan: a big listing is active", SaveScan.Active);
+                    foreach (var p in patterns) { after.Add("F " + p + "=" + Real(() => SaveScan.Files(dir, p))); after.Add("Fm " + p + "=" + Real(() => SaveScan.Files(Path.Combine(dir, "nodir"), p))); }
+                    foreach (var p in paths) { after.Add("E " + p + "=" + Real(() => SaveScan.Exists(p))); after.Add("D " + p + "=" + Real(() => SaveScan.DirExists(p))); }
+
+                    var late = Path.Combine(dir, "late.srm");
+                    File.WriteAllText(late, "l");
+                    Check("scan: a file written without Touched is not seen (the index is the listing's)", !SaveScan.Exists(late));
+                    SaveScan.Touched(late);
+                    Check("scan: Touched → seen", SaveScan.Exists(late) && SaveScan.Files(dir, "late*").Length == 1);
+
+                    var conf = Path.Combine(dir, "a.b.c");
+                    var t1 = SaveScan.Text(conf);
+                    File.WriteAllText(conf, "changed");
+                    Check("scan: a file is read once per listing", SaveScan.Text(conf) == t1);
+                    SaveScan.Touched(conf);
+                    Check("scan: Touched → read again", SaveScan.Text(conf) == "changed");
+                    int made = 0;
+                    SaveScan.Memo("k", () => ++made); SaveScan.Memo("k", () => ++made);
+                    Check("scan: a memo is worked out once", made == 1);
+                }
+                Check("scan: the listing over → nothing kept", !SaveScan.Active);
+                Check("scan: a small listing changes nothing", SaveScan.Begin(SaveScan.Threshold) is IDisposable d && !SaveScan.Active && Dispose(d));
+
+                var diff = before.Zip(after, (b, a) => (b, a)).Where(x => x.b != x.a).ToList();
+                foreach (var (b, a) in diff.Take(8)) Console.WriteLine("    real: " + b + "\n    scan: " + a);
+                Check("scan: the same answers as the real calls (" + before.Count + " questions)", before.Count == after.Count && diff.Count == 0);
+            }
+            finally
+            {
+                Environment.CurrentDirectory = cwd;
+                try { foreach (var x in Directory.GetFiles(dir)) File.SetAttributes(x, FileAttributes.Normal); Directory.Delete(dir, true); } catch { }
+            }
+        }
+
+        private static bool Dispose(IDisposable d) { d.Dispose(); return true; }
         /// <summary>Shared.Compat: the registry complete, the ini read and written, a patch off, a needed patch off.</summary>
         private static void CompatSwitches()
         {

@@ -313,8 +313,8 @@ namespace LbIntegrations.Ares
             var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             try
             {
-                if (!File.Exists(path)) return values;
-                foreach (var line in File.ReadAllLines(path))
+                if (!LbIntegrations.Saves.SaveScan.Exists(path)) return values;
+                foreach (var line in LbIntegrations.Saves.SaveScan.Lines(path))
                 {
                     var at = line.IndexOf('=');
                     if (at <= 0 || line.TrimStart().StartsWith("#")) continue;
@@ -334,6 +334,7 @@ namespace LbIntegrations.Ares
             if (value == null && lines.Count == 0 && !File.Exists(path)) return;
             Directory.CreateDirectory(Path.GetDirectoryName(path));
             File.WriteAllLines(path, lines);
+            LbIntegrations.Saves.SaveScan.Touched(path);
         }
     }
 }

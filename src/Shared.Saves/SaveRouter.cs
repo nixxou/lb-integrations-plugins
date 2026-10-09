@@ -228,6 +228,13 @@ namespace LbIntegrations.Saves
         private static bool Covers(IEmulator emulator, string? platform)
         {
             if (string.IsNullOrEmpty(platform)) return false;
+            // A big listing: the emulator's platforms once per listing, not once per game (SaveScan; nothing kept after it).
+            if (SaveScan.Active)
+                return SaveScan.Memo("covers|" + (Safe(() => emulator.Id) ?? "") + "|" + RuntimeHelpersId(emulator), () =>
+                {
+                    try { return new HashSet<string>(emulator.GetAllEmulatorPlatforms()?.Select(p => p?.Platform).Where(p => p != null).Select(p => p!) ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase); }
+                    catch { return new HashSet<string>(StringComparer.OrdinalIgnoreCase); }
+                }).Contains(platform!);
             try { return emulator.GetAllEmulatorPlatforms()?.Any(p => string.Equals(p?.Platform, platform, StringComparison.OrdinalIgnoreCase)) == true; }
             catch { return false; }
         }
@@ -392,7 +399,7 @@ namespace LbIntegrations.Saves
             {
                 var p = e.ApplicationPath;
                 if (string.IsNullOrWhiteSpace(p)) return null;
-                var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".."));
+                var root = SaveScan.Memo("root", () => Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..")));
                 return Path.GetDirectoryName(Path.GetFullPath(Path.IsPathRooted(p) ? p : Path.Combine(root, p)))?.TrimEnd(Path.DirectorySeparatorChar);
             }
             catch { return null; }
@@ -413,10 +420,17 @@ namespace LbIntegrations.Saves
             var selfId = Safe(() => args.Emulator?.Id);
             var mine = new HashSet<string>(own.Select(r => FullOf(Safe(() => r.FileLocation))).Where(p => p.Length > 0), StringComparer.OrdinalIgnoreCase);
             var gameOf = new Dictionary<string, IGame?>(StringComparer.OrdinalIgnoreCase);
+            // A big listing: the games by id once (the first of an id, as FirstOrDefault found it), not a walk per version.
+            Dictionary<string, IGame>? byId = null;
+            if (SaveScan.Active)
+            {
+                byId = new Dictionary<string, IGame>(StringComparer.Ordinal);
+                foreach (var g in games) { var gid = Safe(() => g.Id); if (gid != null && !byId.ContainsKey(gid)) byId[gid] = g; }
+            }
             IGame? GameOf(string? id)
             {
                 if (string.IsNullOrEmpty(id)) return null;
-                if (!gameOf.TryGetValue(id!, out var g)) { g = games.FirstOrDefault(x => Safe(() => x.Id) == id) ?? Safe(() => PluginHelper.DataManager?.GetGameById(id)); gameOf[id!] = g; }
+                if (!gameOf.TryGetValue(id!, out var g)) { g = (byId != null ? (byId.TryGetValue(id!, out var hit) ? hit : null) : games.FirstOrDefault(x => Safe(() => x.Id) == id)) ?? Safe(() => PluginHelper.DataManager?.GetGameById(id)); gameOf[id!] = g; }
                 return g;
             }
 
@@ -477,7 +491,7 @@ namespace LbIntegrations.Saves
             if (string.IsNullOrWhiteSpace(path)) return "";
             try
             {
-                var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".."));
+                var root = SaveScan.Memo("root", () => Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..")));
                 return Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(root, path)).TrimEnd(Path.DirectorySeparatorChar);
             }
             catch { return path!; }
@@ -490,5 +504,8 @@ namespace LbIntegrations.Saves
         private static void Once(string message) { if (_said.TryAdd(message.Split(':')[0], true)) Say(message); }
 
         private static T? Safe<T>(Func<T> f) { try { return f(); } catch { return default; } }
+
+        /// <summary>The object itself, for a memo key (two emulators of one id, a copy: never mixed up).</summary>
+        private static int RuntimeHelpersId(object o) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(o);
     }
 }
