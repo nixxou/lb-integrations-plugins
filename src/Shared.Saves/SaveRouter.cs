@@ -82,6 +82,8 @@ namespace LbIntegrations.Saves
         /// never the plugin.</summary>
         public static void Register(string emu, EmulatorPlugin plugin)
         {
+            // RetroArch's integration reads its retroarch.cfg again for every game: answered from a cache (RaConfigCache).
+            RaConfigCache.Install();
             try { RegisterCore(emu, plugin); }
             catch (Exception ex) { Say("save owners unavailable (an old LbIntegrations.Catalog): " + ex.Message); }
         }
@@ -128,6 +130,7 @@ namespace LbIntegrations.Saves
                         if (emu.Length > SaveOwner.LaunchBoxPrefix.Length && !found.Any(f => f.Item1 == emu)) found.Add((emu, p));
                     }
                 }
+                if (found.Count > 0) RaConfigCache.Install();
                 Say("LaunchBox's integrations seen: " + (found.Count == 0 ? "none" : string.Join(", ", found.Select(f => f.Item1))));
                 return _stock = found;
             }
@@ -480,7 +483,7 @@ namespace LbIntegrations.Saves
             catch { return path!; }
         }
 
-        private static void Say(string message) { try { Log?.Invoke("[saves] " + message); } catch { } }
+        internal static void Say(string message) { try { Log?.Invoke("[saves] " + message); } catch { } }
 
         private static readonly ConcurrentDictionary<string, bool> _said = new(StringComparer.Ordinal);
         /// <summary>A diagnostic said once per process (the listing runs over the whole library).</summary>

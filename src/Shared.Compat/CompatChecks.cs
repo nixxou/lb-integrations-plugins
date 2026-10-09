@@ -36,6 +36,14 @@ namespace LbIntegrations.Compat
                             ? (CompatCheckState.Ok, "IGame / IAdditionalApplication.GetEffectiveCommandLine()") : (CompatCheckState.Missing, "GetEffectiveCommandLine() is gone from the SDK");
                     case "ra.statics":
                         return Statics("RetroArch", "GetGameSaveDirectory", "GetSaveStateDirectory", "IsSaturnSaveContext", "CopySaturnCompanionFiles", "GetSaturnGroupId");
+                    case "ra.loadConfig":
+                    {
+                        var t = StaticsOwner("RetroArch", "LoadConfiguration");
+                        if (t == null) return (CompatCheckState.NotHere, "RetroArch's LaunchBox integration is not loaded");
+                        var m = t.GetMethod("LoadConfiguration", BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(string) }, null);
+                        return m != null && typeof(Dictionary<string, string>).IsAssignableFrom(m.ReturnType)
+                            ? (CompatCheckState.Ok, "RetroArch's integration: LoadConfiguration(string)") : (CompatCheckState.Missing, "LoadConfiguration(string) returning its settings");
+                    }
                     case "dolphin.statics":
                         return Statics("Dolphin", "GetPlatformType", "BuildUserRoots", "TryGetDiscId", "RestoreGameCubeSave", "RestoreWiiSave", "RestoreSaveState");
                     case "lb.saves":

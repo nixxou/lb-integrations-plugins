@@ -213,6 +213,18 @@ namespace LbIntegrations.Compat
             },
             new CompatPatch
             {
+                Id = "raConfigCache", Group = CompatGroup.Hook, Title = "RetroArch's settings read once, not once per game",
+                Problem = "LaunchBox's RetroArch integration reads and parses its whole retroarch.cfg again for every game it is asked "
+                        + "about (where are its saves, where are its states) - nothing in it depends on the game.",
+                Example = "2,000 games listed with the saves desk on: about 6 seconds per RetroArch install spent re-reading the same "
+                        + "3,400-line file.",
+                Does = "A hook (Harmony) on that integration's settings reader keeps the file once read, and reads it again only when it "
+                     + "changes (its date or size). Nothing is written.",
+                Without = "The same answers, slower: the file is read again for each game.",
+                Checks = new[] { "ra.loadConfig" },
+            },
+            new CompatPatch
+            {
                 Id = "importWizard", Group = CompatGroup.Hook, Switchable = false, Title = "LaunchBox's import wizard steered",
                 Problem = "LaunchBox's ROM import lists files it should not (updates, DLC, a whole MAME folder) and mishandles some "
                         + "platforms.",

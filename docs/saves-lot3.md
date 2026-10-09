@@ -701,7 +701,7 @@ Order proposed: 1, then 7-10 (the slot and signature code, same files), then 2-6
 | 3 | PCSX2 forward - **not reachable today** (no plugin of ours on PS2), same | |
 | 4 | ~~Manual import~~ **measured 09/10** (§8); the warning for a restore over another card's live file to code with 8 | |
 | 5 | ~~A save never seen, at a close~~ **measured 09/10, no hijack** (§3.2b) | |
-| 6 | ~~Desk start-up cost~~ **measured 09/10**: LaunchBox's full save scan ~3.2 s desk off (06-07/10) vs ~3.55 s desk on (08-09/10), +0.35 s on G:\LB1326 (23 emulators); in the background. To measure on a big library before lot 4 | |
+| 6 | ~~Desk start-up cost~~ **measured 09/10**: LaunchBox's full save scan ~3.2 s desk off (06-07/10) vs ~3.55 s desk on (08-09/10), +0.35 s on G:\LB1326 (23 emulators); in the background. **Big library, 09/10** (§11b): 17.9 s with the desk, 3.7 s without - fixed by the RetroArch config cache, 4.7 s | |
 | 7 | ~~Slots~~ **done and measured 09/10** (§6.6b, §6.6c) | |
 | 8 | ~~The Yes/No warning~~ **done and measured 09/10** (No and Yes); BigBox: refused with a message (probe only) | |
 | 9 | ~~xemu, PPSSPP, desks without slots~~ **done and measured 09/10**: xemu refused slot 5 then restored slot 3 through Cxbx's desk; PPSSPP's new row `Slot=1` (a row persisted before keeps its old key - test rows deleted) | |
@@ -716,6 +716,46 @@ Open question: the "other error messages" Mehdi saw during the empty-list test (
 Also found 09/10, not for this lot: a game on **Demul** (no save management) gets no desk - saves made on it with Launch With Flycast are never listed. LaunchBox's own limit, as for any emulator without a save plugin (lots 5-6).
 
 ---
+
+### 11b. Start-up cost on a big library, and the RetroArch config cache (09/10)
+
+Bench on G:\LB1326: 2,000 fake SNES games added on SUPER ZSNES (XML backed up as
+`Backups\lbip-2026-10-09-lot3-mesures\SNES-before-bench.xml`, restored after), the save probe plugins moved out. The
+number is LaunchBox's own log line "Game save scan full completed in X seconds".
+
+| Run | Setup | Scan |
+|---|---|---|
+| 1 | desk on | 17.90 s |
+| 2 | desk off (`desk=off`) | 3.74 s |
+| 3 | desk on, probe plugins out | 17.91 s |
+| 5 | desk on, RetroArch config cache on | **4.71 s** |
+| 6 | desk on, cache off (`raConfigCache=off`) | 17.94 s |
+
+Where the 14 s went (desk log, run 3): RetroArch 6.4 s, Retroarch2 (same exe, other core) 5.9 s, ares 1.4 s. With the
+cache: RetroArch 0.5 s, Retroarch2 + RASnes9x 0.7 s, ares 1.5 s.
+
+**Cause - LaunchBox's RetroArch integration, not LaunchBox's core.** `Unbroken.LaunchBox.Windows.RetroArch.dll`
+(System\Plugins\RetroArch LaunchBox Integration, decompiled): `GetGameSaveDirectory` and `GetSaveStateDirectory` both
+rebuild `<retroarch.exe folder>\retroarch.cfg` and call the private static `LoadConfiguration(string)` - a
+`File.ReadAllLines` split on `=`, no cache - for EVERY game. Nothing in it depends on the game (no per-game / per-core
+override is read); with `sort_savestates_enable` the core's `info\<core>.info` is read too. The sandbox's cfg is
+111 KB / 3,387 lines. Only the desk asks RetroArch about thousands of games at once (the scan hands our plugin all
+of its games); without the pack, whether LaunchBox's own scan pays the same per RetroArch game is NOT measured.
+
+**Fix - `Shared.Saves\RaConfigCache.cs`, compat switch `raConfigCache` (Hook group, check `ra.loadConfig`).** A Harmony
+prefix on `LoadConfiguration` answers from a cache keyed by full path, kept while the file's write time and length are
+unchanged (stamped BEFORE the read, so a file changed during a read is read again); each caller gets its own copy of
+the dictionary. Installed from `SaveRouter.Register` (every plugin's start) and when the stock integrations are
+scanned; if RetroArch's dll is not loaded yet, on its `AssemblyLoad`.
+- Measured first outside LaunchBox (scratchpad program on the real dll): 4,000 calls 3.9 s → 0.36 s, same folders
+  answered, the cache re-read after `savefile_directory` was edited in a copy of the cfg. The body is the real one
+  (not a decoy as in LaunchBox's obfuscated core) and the prefix ran on every call (not inlined).
+- **Trap met (run 4, 5.09 s):** every plugin merges its OWN copy of Harmony and of this class, so neither
+  `lock (typeof(Harmony))` nor `Harmony.GetPatchInfo(...).Owners` sees the others - twelve plugins stacked twelve
+  prefixes. The once-per-process mark is now `AppDomain.CurrentDomain.SetData`, under `lock (string.Intern(...))`
+  (both shared by every copy): run 5, one plugin patched (ares, the first), 4.71 s.
+- Same trap to keep in mind for any future once-per-process patch of the pack: a static of the shared code is one
+  copy PER PLUGIN (see the memory "LB14 : greffon = EmulatorPlugin direct").
 
 ## 12. Sandbox left behind
 

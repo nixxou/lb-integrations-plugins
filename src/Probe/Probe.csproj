@@ -29,6 +29,8 @@
          plugin it would be exactly wrong: the probe is the host, and the plugin must patch whatever
          copy its host already loaded. The version matches what LaunchBox 14 ships. -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
+    <!-- Shared.Saves\RaConfigCache patches RetroArch's integration; the same version as the plugins. -->
+    <PackageReference Include="Lib.Harmony" Version="2.4.2" />
   </ItemGroup>
 
   <ItemGroup>
