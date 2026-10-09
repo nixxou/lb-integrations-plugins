@@ -301,6 +301,27 @@ namespace LbIntegrations.Probe
                 Check("gcache: a cut line skipped, the next one and the earlier ones kept",
                       Get("ids", after, out var v6) && v6 == "after-crash" && Get("ids", other, out _) && Get("ids", odd, out _));
 
+                // A record that looks whole but whose VALUE was cut (Codex review 10/10): never a hit, gone at the next append.
+                var cutRom = Path.Combine(files, "cut.iso"); File.WriteAllText(cutRom, "c");
+                var fc = new FileInfo(cutRom);
+                File.AppendAllText(LbIntegrations.Lbip.GlobalCache.PathOf("ids"), fc.FullName + "\t" + fc.Length + "\t" + fc.LastWriteTimeUtc.Ticks + "\tCUT-VALUE-XYZ");
+                LbIntegrations.Lbip.GlobalCache.ForgetForTests();
+                Check("gcache: a record cut inside its value is not a hit", !Get("ids", cutRom, out _));
+                var next = Path.Combine(files, "next.bin"); File.WriteAllText(next, "n");
+                LbIntegrations.Lbip.GlobalCache.Set("ids", next, "next");
+                LbIntegrations.Lbip.GlobalCache.ForgetForTests();
+                Check("gcache: ...nor after the next append, and it is cut off the file",
+                      !Get("ids", cutRom, out _) && Get("ids", next, out var vn) && vn == "next" && !File.ReadAllText(LbIntegrations.Lbip.GlobalCache.PathOf("ids")).Contains("CUT-VALUE-XYZ"));
+
+                // The zeros a killed write leaves at the end: skipped, then cut off; the records before them kept.
+                using (var z = new FileStream(LbIntegrations.Lbip.GlobalCache.PathOf("ids"), FileMode.Append)) z.Write(new byte[4096], 0, 4096);
+                LbIntegrations.Lbip.GlobalCache.ForgetForTests();
+                Check("gcache: a tail of zeros is skipped", Get("ids", next, out _) && Get("ids", other, out _));
+                var afterZeros = Path.Combine(files, "after-zeros.bin"); File.WriteAllText(afterZeros, "z");
+                LbIntegrations.Lbip.GlobalCache.Set("ids", afterZeros, "fine");
+                LbIntegrations.Lbip.GlobalCache.ForgetForTests();
+                Check("gcache: ...and cut off at the next append",
+                      !File.ReadAllBytes(LbIntegrations.Lbip.GlobalCache.PathOf("ids")).Contains((byte)0) && Get("ids", afterZeros, out var vz) && vz == "fine" && Get("ids", next, out _));
                 // Compaction: many values for one file, a file gone, an entry on a drive that is not there.
                 var gone = Path.Combine(files, "gone.bin"); File.WriteAllText(gone, "g");
                 LbIntegrations.Lbip.GlobalCache.Set("compact", gone, "soon gone");

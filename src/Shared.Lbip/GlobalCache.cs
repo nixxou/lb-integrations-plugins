@@ -8,7 +8,8 @@
 // these files, and a ROM analysed by one is known to the others.
 //
 // SEVERAL PROCESSES. LaunchBox and BigBox, or two installs, may read and write at once. A value is APPENDED under a
-// named mutex (a line that a crash cut short is skipped when read, and the next append starts on a new line); a
+// named mutex; only records ended by a new line are read, and whatever follows the last one (a record a crash cut
+// short - even inside its value - or the zeros a killed write leaves) is cut off before the next append; a
 // process notices another's appends by the file's size and date and reads them in. When the file holds more than
 // twice its live entries it is written again whole - to a temporary file, then moved over (never written in place:
 // a LaunchBox killed mid-write left Data\InputBindings.xml full of zeros, 09/10). A file whose drive is there but which
@@ -90,8 +91,10 @@ namespace LbIntegrations.Lbip
                         var line = Escape(full) + "\t" + size + "\t" + ticks + "\t" + Escape(value) + "\n";
                         using (var fs = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read))
                         {
-                            // A line a crash cut short: the new one starts on its own line.
-                            if (fs.Length > 0) { fs.Seek(-1, SeekOrigin.End); if (fs.ReadByte() != '\n') line = "\n" + line; }
+                            // What follows the last new line is a record a crash cut short (or the zeros a killed write
+                            // leaves): it is cut off, never completed - completed, a truncated value would become a hit
+                            // (Codex review 10/10).
+                            CutIncompleteTail(fs);
                             fs.Seek(0, SeekOrigin.End);
                             var bytes = Encoding.UTF8.GetBytes(line);
                             fs.Write(bytes, 0, bytes.Length);
@@ -144,9 +147,10 @@ namespace LbIntegrations.Lbip
             catch { return false; }
             t.Entries.Clear();
             t.Lines = 0;
-            foreach (var raw in lines)
+            // Only records ended by a new line: the last piece (after the last '\n') is either empty or a record cut short.
+            for (int i = 0; i < lines.Length - 1; i++)
             {
-                var c = raw.TrimEnd('\r').Split('\t');
+                var c = lines[i].TrimEnd('\r').Split('\t');
                 if (c.Length != 4 || c[0].Length == 0 || !long.TryParse(c[1], out var size) || !long.TryParse(c[2], out var ticks)) continue;
                 t.Entries[Unescape(c[0])] = (size, ticks, Unescape(c[3]));   // the last line of a file wins
                 t.Lines++;
@@ -154,6 +158,32 @@ namespace LbIntegrations.Lbip
             t.FileLength = fi.Length;
             t.FileWritten = fi.LastWriteTimeUtc;
             return true;
+        }
+
+        /// <summary>The file cut back to just after its last new line (empty when it has none). Read backwards in blocks: a
+        /// long run of zeros left by a killed write is cut quickly.</summary>
+        private static void CutIncompleteTail(FileStream fs)
+        {
+            long end = fs.Length;
+            if (end == 0) return;
+            var buf = new byte[64 * 1024];
+            long pos = end;
+            while (pos > 0)
+            {
+                int n = (int)Math.Min(buf.Length, pos);
+                pos -= n;
+                fs.Seek(pos, SeekOrigin.Begin);
+                int read = 0;
+                while (read < n) { int r = fs.Read(buf, read, n - read); if (r <= 0) break; read += r; }
+                for (int i = read - 1; i >= 0; i--)
+                    if (buf[i] == (byte)'\n')
+                    {
+                        long keep = pos + i + 1;
+                        if (keep < end) fs.SetLength(keep);
+                        return;
+                    }
+            }
+            fs.SetLength(0);
         }
 
         private static void Note(Table t, string path)
