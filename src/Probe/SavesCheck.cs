@@ -337,6 +337,15 @@ namespace LbIntegrations.Probe
                 Check("gcache: an entry of a drive not plugged in is kept", lines.Any(l => l.StartsWith(free + @":\unplugged")));
                 Check("gcache: no temporary file left", Directory.GetFiles(Path.Combine(dir, "cache"), "*.tmp").Length == 0);
 
+                // A value replaced by ANOTHER process for an unchanged file ("unknown" made known): seen within RecheckMs.
+                var known = Path.Combine(files, "archive.zip"); File.WriteAllText(known, "zip");
+                LbIntegrations.Lbip.GlobalCache.Set("titles", known, "");
+                Check("gcache: warmed here with 'unknown'", Get("titles", known, out var w0) && w0 == "");
+                var setter = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!,
+                    "--globalcache-set \"" + Path.Combine(dir, "cache") + "\" titles \"" + known + "\" 4D5307E6") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true })!;
+                setter.WaitForExit(60000);
+                System.Threading.Thread.Sleep(LbIntegrations.Lbip.GlobalCache.RecheckMs + 100);
+                Check("gcache: another process's replacement is returned (within " + LbIntegrations.Lbip.GlobalCache.RecheckMs + " ms)", Get("titles", known, out var w1) && w1 == "4D5307E6");
                 // Three processes at once, 200 values each.
                 for (int w = 0; w < 3; w++) for (int i = 0; i < 200; i++) File.WriteAllText(Path.Combine(files, "w" + w + "-" + i + ".bin"), "w");
                 var exe = Environment.ProcessPath!;

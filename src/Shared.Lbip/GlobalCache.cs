@@ -36,6 +36,8 @@ namespace LbIntegrations.Lbip
             public long FileLength = -1;
             public DateTime FileWritten;
             public int Lines;
+            /// <summary>When the file was last looked at (Environment.TickCount64).</summary>
+            public long Checked;
         }
 
         private static readonly object Gate = new object();
@@ -48,6 +50,11 @@ namespace LbIntegrations.Lbip
 
         public static string PathOf(string kind) => Path.Combine(Dir, kind + ".tsv");
 
+        /// <summary>How often a hit looks at the file for another process's newer value (Codex review 10/10: a value replaced
+        /// elsewhere - "unknown" made known once an archive is unpacked - must not stay stale until a restart). A kind's
+        /// name carries its version ("disc-ids-v1"): a plugin that works a value out differently moves to the next one.</summary>
+        internal static int RecheckMs = 1000;
+
         /// <summary>The value kept for <paramref name="file"/> under <paramref name="kind"/>, when the file still has the size
         /// and date it had then. An empty value is a value ("read, nothing found"), for the caller to decide.</summary>
         public static bool TryGet(string kind, string? file, out string value)
@@ -59,6 +66,9 @@ namespace LbIntegrations.Lbip
                 lock (Gate)
                 {
                     var t = TableOf(kind);
+                    // Another process's newer lines, looked for at most once per RecheckMs (one stat of the file).
+                    var now = Environment.TickCount64;
+                    if (now - t.Checked >= RecheckMs) { Refresh(kind, t); t.Checked = now; }
                     if (t.Entries.TryGetValue(full, out var e) && e.Size == size && e.Ticks == ticks) { value = e.Value; return true; }
                     // Not known here: another process may have learnt it since.
                     if (Refresh(kind, t) && t.Entries.TryGetValue(full, out e) && e.Size == size && e.Ticks == ticks) { value = e.Value; return true; }
