@@ -36,7 +36,7 @@ namespace LbIntegrations.Saves
     internal static class SlotRestore
     {
         /// <summary>LaunchBox's first version whose precautionary copy is of the overwritten file; null = not fixed.</summary>
-        internal static readonly Version? FixedIn = null;
+        internal static Version? FixedIn => LbIntegrations.Compat.FixedIn.OverwriteBackup;
 
         /// <summary>For the probe: answers instead of a window (title, text → yes).</summary>
         internal static Func<string, string, bool>? Instead;
@@ -84,6 +84,7 @@ namespace LbIntegrations.Saves
             refused = null;
             try
             {
+                if (!LbIntegrations.Compat.Compat.On("overwriteWarning")) return true;
                 if (!otherCard || !File.Exists(target) || SameContent(target, source)) return true;
                 var host = Host();
                 if (host == "litebox") return true;                   // LiteBox backs up the destination itself

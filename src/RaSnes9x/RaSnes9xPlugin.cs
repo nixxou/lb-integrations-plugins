@@ -117,6 +117,7 @@ namespace LbIntegrations.RaSnes9x
         /// holding an earlier build's script, is filled: a script the user wrote is his answer to the same question.</summary>
         private static void EnsureHotkeyScripts(IEmulator emu)
         {
+            if (!LbIntegrations.Compat.Compat.On("emulatorFields")) return;   // the Compatibility page
             try
             {
                 var set = new List<string>();

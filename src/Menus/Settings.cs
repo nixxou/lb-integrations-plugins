@@ -134,6 +134,7 @@ namespace LbIntegrations.Menus
         private readonly Label _title;
         private RamDiskTab _ramDisk;
         private IdentityPanel _identity;
+        private CompatPanel _compat;
 
         private static int S(Control c, int px) => (int)Math.Round(px * (c.DeviceDpi / 96f));
 
@@ -153,6 +154,7 @@ namespace LbIntegrations.Menus
             Add("General", GeneralPage(providers), null);
             Add(IdentityPanel.Title, IdentityPage(), () => _identity?.Save());
             Add(RamDiskTab.Title, RamDiskPage(), () => _ramDisk?.Save());
+            Add(CompatPanel.Title, CompatPage(), () => _compat?.Save());
             Heading("EMULATORS");
             foreach (var provider in providers) PluginPage(provider);
 
@@ -300,6 +302,13 @@ namespace LbIntegrations.Menus
         {
             try { return _ramDisk = new RamDiskTab(); }
             catch (Exception ex) { RelayLog.Warn("the RAM disk page", ex); return Failed("The RAM disk settings could not be shown:\n\n" + ex.Message); }
+        }
+
+        /// <summary>The pack's patches to LaunchBox, each switchable - see CompatPanel.</summary>
+        private Control CompatPage()
+        {
+            try { return _compat = new CompatPanel(); }
+            catch (Exception ex) { RelayLog.Warn("the compatibility page", ex); return Failed("The compatibility page could not be shown:\n\n" + ex.Message); }
         }
 
         private void PluginPage(SettingsProvider provider)

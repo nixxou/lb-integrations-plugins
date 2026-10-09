@@ -125,6 +125,7 @@ namespace LbIntegrations.Flycast
                     if (id.Length > 0 && !Done.Add(id + "|" + string.Join(";", wanted))) return;
                 }
 
+                if (!LbIntegrations.Compat.Compat.On("emulatorFields")) return;   // the Compatibility page
                 IEmulatorPlatform[] existing = emu.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>();
 
                 // A row with no name yet means someone is typing in the grid. Adding anything beside
@@ -213,6 +214,7 @@ namespace LbIntegrations.Flycast
         /// and ours has no business replacing it.</summary>
         internal static void EnsureHotkeyScripts(IEmulator emu)
         {
+            if (!LbIntegrations.Compat.Compat.On("emulatorFields")) return;   // the Compatibility page
             try
             {
                 var path = Safe(() => emu.ApplicationPath);

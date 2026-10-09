@@ -33,6 +33,8 @@
   <ItemGroup>
     <!-- THE SHARED ROW INJECTION, compiled in rather than referenced - see src\Shared.Lbip. -->
     <Compile Include="..\Shared.Lbip\**\*.cs" />
+    <!-- The pack's switchable patches (the Compatibility page of the Nixx settings) - see src\Shared.Compat. -->
+    <Compile Include="..\Shared.Compat\**\*.cs" />
     <!-- And the menu helpers: the right-click entry's icon (LbipMenuIcon). -->
     <Compile Include="..\Shared.Menu\**\*.cs" />
     <!-- The look of the Nixx windows, LiteBox's: the theme and the shell of a game's window. -->

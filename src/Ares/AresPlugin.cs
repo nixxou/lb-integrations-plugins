@@ -105,6 +105,7 @@ namespace LbIntegrations.Ares
         /// <summary>A platform row of ours whose command line is empty gets its --system. A line the user wrote is kept.</summary>
         private static void FillPlatformLines(IEmulator emu)
         {
+            if (!LbIntegrations.Compat.Compat.On("emulatorFields")) return;   // the Compatibility page
             try
             {
                 var set = new List<string>();
@@ -121,6 +122,7 @@ namespace LbIntegrations.Ares
 
         private static void EnsureHotkeyScripts(IEmulator emu)
         {
+            if (!LbIntegrations.Compat.Compat.On("emulatorFields")) return;   // the Compatibility page
             try
             {
                 var set = new List<string>();

@@ -240,6 +240,41 @@ namespace LbIntegrations.Probe
             View();
             Installs();
             Companions();
+            CompatSwitches();
+        }
+
+        /// <summary>Shared.Compat: the registry complete, the ini read and written, a patch off, a needed patch off.</summary>
+        private static void CompatSwitches()
+        {
+            var all = LbIntegrations.Compat.CompatRegistry.All;
+            Check("compat: every patch has its id, title and four texts",
+                  all.All(p => p.Id.Length > 0 && p.Title.Length > 0 && p.Problem.Length > 0 && p.Example.Length > 0 && p.Does.Length > 0 && p.Without.Length > 0));
+            Check("compat: ids are unique", all.Select(p => p.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count() == all.Count);
+            Check("compat: every 'needs' names a patch", all.Where(p => p.Needs != null).All(p => LbIntegrations.Compat.CompatRegistry.Find(p.Needs!) != null));
+            var known = new HashSet<string> { "igame.cmdline", "ra.statics", "dolphin.statics", "lb.saves", "lb.applyPersisted", "sqlite.reader", "lb.openEmulator", "lb.wizard", "lb.version" };
+            Check("compat: every check is one CompatChecks knows", all.SelectMany(p => p.Checks).All(known.Contains));
+            Check("compat: the reflection check of the SDK passes here", LbIntegrations.Compat.CompatChecks.Check("igame.cmdline").State == LbIntegrations.Compat.CompatCheckState.Ok);
+
+            var dir = Path.Combine(Path.GetTempPath(), "lbip-compat-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var ini = Path.Combine(dir, "nixx-compat.ini");
+                Check("compat: no file → everything on", LbIntegrations.Compat.Compat.Load(ini).Count == 0);
+                LbIntegrations.Compat.Compat.Save(ini, new Dictionary<string, bool> { ["planA"] = false, ["desk"] = true });
+                var back = LbIntegrations.Compat.Compat.Load(ini);
+                Check("compat: written and read back (planA off, others on)",
+                      back.TryGetValue("planA", out var a) && !a && back.TryGetValue("desk", out var d) && d && back.TryGetValue("overwriteWarning", out var w) && w);
+                LbIntegrations.Compat.Compat.UseForTests(new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase) { ["desk"] = false });
+                Check("compat: a patch off is off", !LbIntegrations.Compat.Compat.On("desk"));
+                Check("compat: a patch whose needed patch is off is off", !LbIntegrations.Compat.Compat.On("retroarchView") && !LbIntegrations.Compat.Compat.On("stockRestore"));
+                Check("compat: the others stay on", LbIntegrations.Compat.Compat.On("planA") && LbIntegrations.Compat.Compat.On("overwriteWarning"));
+                Check("compat: the desk off → SaveRouter inactive", !SaveRouter.Active);
+            }
+            finally
+            {
+                LbIntegrations.Compat.Compat.UseForTests(new Dictionary<string, bool>());
+                try { Directory.Delete(dir, true); } catch { }
+            }
         }
 
         /// <summary>SaveCompanions.CopyBack: a vault set's companions beside the restored file, under its stem.</summary>

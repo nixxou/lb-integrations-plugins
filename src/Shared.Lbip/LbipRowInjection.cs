@@ -129,6 +129,8 @@ namespace LbIntegrations.Lbip
                     Publish(rows);
 
                     if (_installed) return;
+                    // Off from the Compatibility page of the Nixx settings (read at start-up).
+                    if (!LbIntegrations.Compat.Compat.On("rowInjection")) { _installed = true; LbipLog.Info("row injection off (Compatibility page)"); return; }
 
                     // A HOST THAT OFFERS A DOOR IS NOT PATCHED. Everything below exists because
                     // LaunchBox has no way to add an emulator to its catalogue and no intention of

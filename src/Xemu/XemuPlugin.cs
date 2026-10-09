@@ -105,7 +105,7 @@ namespace LbIntegrations.Xemu
                     var path = ResolveFullPath(Safe(() => emu.ApplicationPath));
                     // An install of ours from before x.emu.exe (XemuPaths): renamed, and the entry pointed at it - else
                     // Unbroken's plugin keeps claiming it.
-                    if (XemuPaths.MigrateOldName(path) is string moved)
+                    if (LbIntegrations.Compat.Compat.On("emulatorFields") && XemuPaths.MigrateOldName(path) is string moved)
                     {
                         try { emu.ApplicationPath = MakeRelativeToLaunchBox(moved); renamed = true; Log.Info("renamed " + path + " -> " + moved + ", entry \"" + Safe(() => emu.Title) + "\" updated"); }
                         catch (Exception ex) { Log.Warn("renamed " + path + " but the entry could not be updated", ex); }
@@ -137,7 +137,7 @@ namespace LbIntegrations.Xemu
                 try { path = emu.ApplicationPath; } catch { continue; }
                 if (!XemuPaths.IsOurs(ResolveFullPath(path))) continue;
                 claimed.Add(emu);
-                try { if (emu.AutoExtract) { emu.AutoExtract = false; Log.Info("AutoExtract turned off - this plugin prepares Xbox discs itself"); } } catch { }
+                try { if (emu.AutoExtract && LbIntegrations.Compat.Compat.On("autoExtract")) { emu.AutoExtract = false; Log.Info("AutoExtract turned off - this plugin prepares Xbox discs itself"); } } catch { }
                 EnsureHotkeyScripts(emu);
             }
             var signature = string.Join("|", claimed.Select(e => { try { return e.Title; } catch { return "?"; } }).OrderBy(t => t));
@@ -153,6 +153,7 @@ namespace LbIntegrations.Xemu
 
         private static void EnsureHotkeyScripts(IEmulator emu)
         {
+            if (!LbIntegrations.Compat.Compat.On("emulatorFields")) return;   // the Compatibility page
             try
             {
                 var set = new List<string>();

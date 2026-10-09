@@ -196,6 +196,7 @@ namespace LbIntegrations.SuperZsnes
         /// hands us the same emulator under a new object every time a window asks.</summary>
         private static void EnsureHotkeyScripts(IEmulator emu)
         {
+            if (!LbIntegrations.Compat.Compat.On("emulatorFields")) return;   // the Compatibility page
             try
             {
                 if (!IsBlank(() => emu.AutoHotkeyScript)

@@ -71,8 +71,11 @@ namespace LbIntegrations.Saves
             if (!Context(row, out var game, out var app, out var rom, out var why)) return new AddSaveResponse(why);
             // Their folder functions read the core off the GAME's command line - ours has none (SaveGameView).
             var platformName = Safe(() => game.Platform);
-            game = SaveGameView.As(game, route.Emulator!);
-            if (app != null) app = SaveGameView.As(app, route.Emulator!, platformName);
+            if (LbIntegrations.Compat.Compat.On("retroarchView"))
+            {
+                game = SaveGameView.As(game, route.Emulator!);
+                if (app != null) app = SaveGameView.As(app, route.Emulator!, platformName);
+            }
 
             var t = route.Plugin.GetType();
             var saveDir = Step(t, "GetGameSaveDirectory", typeof(IEmulator), typeof(IGame), typeof(IAdditionalApplication), typeof(bool));

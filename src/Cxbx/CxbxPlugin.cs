@@ -141,7 +141,7 @@ namespace LbIntegrations.Cxbx
                 EnsureAutoExtract(emu);
                 // Always the loader (Mehdi, 03/10): an entry pointed at cxbx.exe is brought back to cxbxr-ldr.exe. The window
                 // is opened from LaunchBox's "Open" menu instead (CxbxOpenRedirect).
-                EnsureLaunchMode(emu, path, gui: false);
+                if (LbIntegrations.Compat.Compat.On("emulatorFields")) EnsureLaunchMode(emu, path, gui: false);
                 EnsureHotkeyScripts(emu);
             }
             var signature = string.Join("|", claimed.Select(e => { try { return e.Title; } catch { return "?"; } }).OrderBy(t => t));
@@ -154,6 +154,7 @@ namespace LbIntegrations.Cxbx
         /// disk every time, then this plugin would unpack it a second time.</summary>
         private static void EnsureAutoExtract(IEmulator emu)
         {
+            if (!LbIntegrations.Compat.Compat.On("autoExtract")) return;   // the Compatibility page
             try
             {
                 if (!emu.AutoExtract) return;
@@ -331,6 +332,7 @@ namespace LbIntegrations.Cxbx
         /// window asks (the Flycast lesson).</summary>
         private static void EnsureHotkeyScripts(IEmulator emu)
         {
+            if (!LbIntegrations.Compat.Compat.On("emulatorFields")) return;   // the Compatibility page
             try
             {
                 var set = new List<string>();

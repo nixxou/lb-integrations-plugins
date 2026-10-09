@@ -23,7 +23,7 @@ namespace LbIntegrations.Saves
         public static List<string> CopyBack(string source, string target, IEnumerable<string>? companions, Action<string>? log)
         {
             var written = new List<string>();
-            if (companions == null) return written;
+            if (companions == null || !LbIntegrations.Compat.Compat.On("companionRestore")) return written;
             var sourceStem = Path.GetFileNameWithoutExtension(source);
             var targetStem = Path.Combine(Path.GetDirectoryName(target) ?? "", Path.GetFileNameWithoutExtension(target));
             foreach (var c in companions)

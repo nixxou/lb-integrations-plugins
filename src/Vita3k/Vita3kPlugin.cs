@@ -581,6 +581,7 @@ namespace LbIntegrations.Vita3k
         /// hands the same emulator under a new object every time a window asks (the Flycast lesson).</summary>
         private static void EnsureHotkeyScripts(IEmulator emu)
         {
+            if (!LbIntegrations.Compat.Compat.On("emulatorFields")) return;   // the Compatibility page
             try
             {
                 var set = new List<string>();

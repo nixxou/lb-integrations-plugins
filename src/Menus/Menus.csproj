@@ -25,6 +25,8 @@
     <Compile Include="..\Shared.Identity\**\*.cs" />
     <!-- The look of the Nixx windows, LiteBox's: the theme and the shell of a game's window. -->
     <Compile Include="..\Shared.Ui\**\*.cs" />
+    <!-- The pack's switchable patches (the Compatibility page of the Nixx settings) - see src\Shared.Compat. -->
+    <Compile Include="..\Shared.Compat\**\*.cs" />
     <!-- Short sentences, the whole on hover: the plugins' helper, the same file. -->
     <Compile Include="..\Shared.Lbip\LbipHint.cs" Link="Shared.Lbip\LbipHint.cs" />
     <!-- The words a new seed is drawn from (IdentityPanel). -->

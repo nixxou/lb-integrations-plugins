@@ -282,6 +282,7 @@ namespace LbIntegrations.Ppsspp
         /// later one empty, which is the shape that cost an evening on Flycast.</summary>
         private static void EnsureHotkeyScripts(IEmulator emu)
         {
+            if (!LbIntegrations.Compat.Compat.On("emulatorFields")) return;   // the Compatibility page
             try
             {
                 if (!IsBlank(() => emu.SaveStateAutoHotkeyScript)

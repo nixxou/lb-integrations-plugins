@@ -300,6 +300,7 @@ namespace LbIntegrations.NoGba
         /// leaving it off is what somebody wanted.</summary>
         private static void EnsureAutoExtract(IEmulator emu)
         {
+            if (!LbIntegrations.Compat.Compat.On("autoExtract")) return;   // the Compatibility page
             try
             {
                 if (emu.AutoExtract) return;
@@ -319,6 +320,7 @@ namespace LbIntegrations.NoGba
         /// emulator under a new object every time a window asks.</summary>
         private static void EnsureHotkeyScripts(IEmulator emu)
         {
+            if (!LbIntegrations.Compat.Compat.On("emulatorFields")) return;   // the Compatibility page
             try
             {
                 if (!IsBlank(() => emu.AutoHotkeyScript)

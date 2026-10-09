@@ -33,6 +33,8 @@ namespace LbIntegrations.Lbip
                 lock (Gate)
                 {
                     if (LbEmulatorOpened.Patched) return;
+                    // Off from the Compatibility page of the Nixx settings (read at start-up).
+                    if (!LbIntegrations.Compat.Compat.On("emulatorOpened")) return;
                     var start = typeof(Process).GetMethod("Start", Type.EmptyTypes);
                     var harmony = new Harmony(pluginId + ".emulator-opened");
                     harmony.Patch(start,

@@ -89,7 +89,7 @@ namespace LbIntegrations.Saves
                 var others = SaveRouter.OthersFor(_plugin, args, named);
                 // Plan A (09/10): one game on screen - each row tied as LaunchBox ties its persisted row, and given a
                 // persisted row at its own path (SavePersist).
-                if ((args?.Games?.Count ?? 0) == 1)
+                if ((args?.Games?.Count ?? 0) == 1 && LbIntegrations.Compat.Compat.On("planA"))
                 {
                     var gameId = args!.Games!.First().Id;
                     named = SavePersist.TieLikeLaunchBox(gameId, named, Say).ToList();
@@ -138,7 +138,7 @@ namespace LbIntegrations.Saves
         public static IReadOnlyDictionary<int, string> ForeignSlots()
         {
             var slots = new Dictionary<int, string>();
-            if (SaveRouter.Active)
+            if (SaveRouter.Active && LbIntegrations.Compat.Compat.On("foreignSlots"))
                 for (int i = 0; i <= 9; i++) slots[i] = i.ToString(System.Globalization.CultureInfo.InvariantCulture);
             return slots;
         }
@@ -154,6 +154,7 @@ namespace LbIntegrations.Saves
             try
             {
                 var primary = save?.FileLocation;
+                if (!LbIntegrations.Compat.Compat.On("companionSignature")) return false;
                 if (save is GameSaveState || string.IsNullOrWhiteSpace(primary) || !File.Exists(primary)) return false;
                 var companions = (_own.OwnGetCompanionSaveFiles(primary) ?? Array.Empty<string>())
                                  .Where(c => !string.IsNullOrWhiteSpace(c) && File.Exists(c) && !c.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
@@ -200,7 +201,7 @@ namespace LbIntegrations.Saves
             // A row that carries its group answers it (08/10): asked in the tile's constructor (SaveItem..ctor), and left
             // unanswered LaunchBox picks a group itself - the card with a backup of the same file name: RASnes9x's Secret of
             // Mana .srm was tied to SUPER ZSNES's card, its id replaced, then hidden.
-            if (!string.IsNullOrEmpty(save?.SaveGroupId))
+            if (!string.IsNullOrEmpty(save?.SaveGroupId) && LbIntegrations.Compat.Compat.On("planA"))
             {
                 saveGroupId = save!.SaveGroupId; saveGroupName = save.SaveGroupName;
                 return true;
@@ -226,7 +227,7 @@ namespace LbIntegrations.Saves
         public AddSaveResponse AddSaveFile(AddSaveArgs args)
         {
             if (Route(args?.SaveToAdd) is not { } r) return _own.OwnAddSaveFile(args!);
-            var desk = r.Stock && StockRestore.Handles(r.Emu);
+            var desk = r.Stock && StockRestore.Handles(r.Emu) && LbIntegrations.Compat.Compat.On("stockRestore");
             Say("restore of a " + r.Emu + " save handed to " + (desk ? "the desk's own " + r.Emu + " steps" : r.Emu));
             if (desk) return StockRestore.Add(r, args!, _log);
             return Ask(r, () => r.Plugin.AddSaveFile(args!), new AddSaveResponse("The " + r.Emu + " plugin could not restore this save."));

@@ -126,6 +126,7 @@ namespace LbIntegrations.Demul
         /// is never touched. On the object the host hands over each time, as AresPlugin does.</summary>
         private static void EnsureHotkeyScripts(IEmulator emu)
         {
+            if (!LbIntegrations.Compat.Compat.On("emulatorFields")) return;   // the Compatibility page
             try
             {
                 var set = new List<string>();

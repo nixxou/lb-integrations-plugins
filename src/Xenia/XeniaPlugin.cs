@@ -219,6 +219,7 @@ namespace LbIntegrations.Xenia
         /// cost an evening on Flycast.</summary>
         private static void EnsureHotkeyScripts(IEmulator emu)
         {
+            if (!LbIntegrations.Compat.Compat.On("emulatorFields")) return;   // the Compatibility page
             try
             {
                 // The running script also when it is still one this plugin wrote before (04/10: the old one sent
@@ -252,6 +253,7 @@ namespace LbIntegrations.Xenia
         /// it on the disk every time. Forced: an entry set to extract would do that work for nothing.</summary>
         private static void EnsureAutoExtract(IEmulator emu)
         {
+            if (!LbIntegrations.Compat.Compat.On("autoExtract")) return;   // the Compatibility page
             try
             {
                 if (!emu.AutoExtract) return;

@@ -313,6 +313,7 @@ namespace LbIntegrations.MelonDs
         /// cost an evening on Flycast.</summary>
         private static void EnsureHotkeyScripts(IEmulator emu)
         {
+            if (!LbIntegrations.Compat.Compat.On("emulatorFields")) return;   // the Compatibility page
             try
             {
                 // The running script also when it is still one this plugin wrote before (04/10: the old one held

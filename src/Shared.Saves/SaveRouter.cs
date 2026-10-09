@@ -61,11 +61,13 @@ namespace LbIntegrations.Saves
             set { try { Thread.SetData(Depth, value); } catch { } }
         }
 
-        /// <summary>True under LaunchBox; false under a host that asks every plugin itself (LiteBox).</summary>
+        /// <summary>True under LaunchBox with the "desk" patch on (Compatibility page); false under a host that asks every
+        /// plugin itself (LiteBox).</summary>
         public static bool Active
         {
             get
             {
+                if (!LbIntegrations.Compat.Compat.On("desk")) return false;
                 try { return !HostWillAsk(); }
                 catch { return true; }   // an old Catalog without the flag: LaunchBox's behaviour
             }
@@ -433,7 +435,7 @@ namespace LbIntegrations.Saves
 
                     // LaunchBox's integrations read some folders off the GAME's command line, which names ours: they are
                     // shown the game as if this emulator ran it (SaveGameView - RetroArch's states, 09/10).
-                    if (d.Value.Emu.StartsWith(SaveOwner.LaunchBoxPrefix, StringComparison.Ordinal))
+                    if (d.Value.Emu.StartsWith(SaveOwner.LaunchBoxPrefix, StringComparison.Ordinal) && LbIntegrations.Compat.Compat.On("retroarchView"))
                     {
                         theirGames = theirGames.Select(g => SaveGameView.As(g, e)).ToList();
                         theirApps = theirApps.Select(a => SaveGameView.As(a, e, Safe(() => GameOf(a.GameId)?.Platform))).ToList();
