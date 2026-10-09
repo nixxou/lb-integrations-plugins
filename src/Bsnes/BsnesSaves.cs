@@ -221,6 +221,9 @@ namespace LbIntegrations.Bsnes
                     if (thumb != null) File.Copy(thumb, LbipStateThumbs.PathOf(target), overwrite: true);
                     else { LbipStateThumbs.Remove(target); BsnesStateThumbs.Refresh(target); }
                 }
+                // The cartridge's clock (.rtc) and Satellaview data (.psr) with its save: LaunchBox copies nothing back
+                // (SaveCompanions).
+                else SaveCompanions.CopyBack(source, target, ((IOwnSaves)this).OwnGetCompanionSaveFiles(source), m => Log.Info(m));
                 return new AddSaveResponse(Row(target, save.GameId, save.AdditionalApplicationId, save.SaveGroupId,
                                                states ? StateGroupName : SaveGroupName, states ? StateChipText : SaveChipText));
             }

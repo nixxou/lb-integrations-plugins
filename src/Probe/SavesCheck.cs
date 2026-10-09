@@ -239,6 +239,27 @@ namespace LbIntegrations.Probe
             Slots();
             View();
             Installs();
+            Companions();
+        }
+
+        /// <summary>SaveCompanions.CopyBack: a vault set's companions beside the restored file, under its stem.</summary>
+        private static void Companions()
+        {
+            var dir = Path.Combine(Path.GetTempPath(), "lbip-companions-" + Guid.NewGuid().ToString("N"));
+            var vault = Path.Combine(dir, "vault"); var live = Path.Combine(dir, "live");
+            Directory.CreateDirectory(vault); Directory.CreateDirectory(live);
+            try
+            {
+                File.WriteAllText(Path.Combine(vault, "Zelda (F)-10.srm"), "save"); File.WriteAllText(Path.Combine(vault, "Zelda (F)-10.rtc"), "clock");
+                File.WriteAllText(Path.Combine(live, "Zelda (F).rtc"), "old clock");
+                var target = Path.Combine(live, "Zelda (F).srm");
+                var w = SaveCompanions.CopyBack(Path.Combine(vault, "Zelda (F)-10.srm"), target, new[] { Path.Combine(vault, "Zelda (F)-10.rtc") }, null);
+                Check("companions: the backup's .rtc replaces the live one, under the live stem",
+                      w.Count == 1 && File.ReadAllText(Path.Combine(live, "Zelda (F).rtc")) == "clock");
+                Check("companions: none in the backup → the live one is left", SaveCompanions.CopyBack(Path.Combine(vault, "Zelda (F)-10.srm"), target, Array.Empty<string>(), null).Count == 0);
+                Check("companions: a tail that is not the stem's → its extension", SaveCompanions.TailOf("Zelda (F)-10", @"C:\v\other.psr") == ".psr");
+            }
+            finally { try { Directory.Delete(dir, true); } catch { } }
         }
 
         /// <summary>SaveRouter.PickInstall: which of two installs a restore writes into.</summary>

@@ -301,6 +301,8 @@ namespace LbIntegrations.RaSnes9x
                     if (thumb != null) File.Copy(thumb, LbipStateThumbs.PathOf(target), overwrite: true);
                     else { LbipStateThumbs.Remove(target); RaSnes9xStateThumbs.Refresh(target); }
                 }
+                // The cartridge's clock (.rtc) with its save: LaunchBox copies nothing back (SaveCompanions).
+                else SaveCompanions.CopyBack(source, target, ((IOwnSaves)this).OwnGetCompanionSaveFiles(source), m => Log.Info(m));
                 if (save is GameSaveState state)
                     return new AddSaveResponse(StateRow(target, state.GameId, state.AdditionalApplicationId, slot, SlotRestore.WithSlot(state.SaveGroupId, slot),
                                                         string.IsNullOrWhiteSpace(state.SaveGroupName) ? StateGroupName : state.SaveGroupName));
