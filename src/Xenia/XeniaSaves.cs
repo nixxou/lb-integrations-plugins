@@ -429,8 +429,8 @@ namespace LbIntegrations.Xenia
             return XeniaContent.ForTitleId(contentRoot, titleId);
         }
 
-        /// <summary>The command line of the emulator entry that runs <paramref name="exe"/> - the save's game's own when it is that
-        /// exe, else the library's first on it - or null. GetSaves resolves the layout WITH it (--content_root / --storage_root
+        /// <summary>The command line of the emulator entry that runs <paramref name="exe"/> - the row's version's, else its game's,
+        /// when it is that exe, else the library's first on it - or null. GetSaves resolves the layout WITH it (--content_root / --storage_root
         /// move the content tree); asked without it, the questions about a row looked elsewhere and read every row inactive (09/10).</summary>
         private static string CommandLineOf(GameSaveBase save, string exe)
         {
@@ -440,7 +440,18 @@ namespace LbIntegrations.Xenia
                 if (dm == null || string.IsNullOrWhiteSpace(exe)) return null;
                 var full = ResolveFullPath(exe);
                 bool Same(IEmulator e) => string.Equals(ResolveFullPath(Safe(() => e?.ApplicationPath)), full, StringComparison.OrdinalIgnoreCase);
-                var emuId = Safe(() => dm.GetGameById(save?.GameId)?.EmulatorId);
+                // The row's version's emulator first (a version may run on another Xenia entry, its own --content_root -
+                // Codex review 09/10), then its game's, then the library's first on that exe.
+                var game = Safe(() => dm.GetGameById(save?.GameId));
+                var appId = save?.AdditionalApplicationId;
+                if (!string.IsNullOrEmpty(appId))
+                {
+                    var app = Safe(() => game?.GetAllAdditionalApplications()?.FirstOrDefault(a => a?.Id == appId));
+                    var appEmuId = Safe(() => app?.EmulatorId);
+                    var appEmu = string.IsNullOrEmpty(appEmuId) ? null : Safe(() => dm.GetEmulatorById(appEmuId));
+                    if (appEmu != null && Same(appEmu)) return Safe(() => appEmu.CommandLine);
+                }
+                var emuId = Safe(() => game?.EmulatorId);
                 var own = string.IsNullOrEmpty(emuId) ? null : Safe(() => dm.GetEmulatorById(emuId));
                 if (own != null && Same(own)) return Safe(() => own.CommandLine);
                 var any = Safe(() => dm.GetAllEmulators())?.FirstOrDefault(e => e != null && Same(e));
