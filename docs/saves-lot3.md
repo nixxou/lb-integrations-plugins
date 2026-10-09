@@ -501,6 +501,32 @@ re-persisting its own on the version at close). Not made again since (4 at 09:20
 cleaned: `Ensure` stopped as soon as the target had its row. Now a twin of OURS (same id, same path) on another owner is
 removed (`persist: removed a twin row`).
 
+### 6.6c Four emulators' states on one game (09/10, Zelda, SUPER ZSNES's desk)
+
+Set up: ares slots 1 and 2, SUPER ZSNES slot 1 (a copy of its real `.szst-last`), RASnes9x slots 1 and 3 (`.001`,
+`.003`), RetroArch slot 1 (`states\Snes9x\….state1`) - three "Slot 1" on one game.
+
+- **RetroArch's state was not listed at first.** Its integration finds its states folder (`GetSaveStateDirectory`)
+  from the core on the GAME's command line when `sort_savestates_enable` is on (`-L cores\x.dll`, then
+  `info\x.info`'s corename); the game's emulator being SUPER ZSNES, there is none: no folder, no state (its saves go
+  another way and were listed). Our restore of one (`StockRestore`, the same function) would have found no folder
+  either. **Fixed** (5700c29): `SaveGameView`, a `DispatchProxy` over `IGame` / `IAdditionalApplication` that answers
+  `GetEffectiveCommandLine` with the asked emulator's line for the game's platform and forwards the rest, handed to
+  LaunchBox's integrations (`lb.*`) in `OthersFor` and in `StockRestore`.
+- **Then**: seven tiles, one per emulator and slot, each with its exe; one persisted row per path; backups made under
+  distinct vault names - `….state` (RetroArch's, renamed by LaunchBox, `OriginalFileName` `.state1`), `….001`,
+  `….003`, `….szst1` with its thumbnail `….png` (the SUPER ZSNES vault row has no `OriginalFileName`; our restore falls
+  back on the vault file's name).
+- **Restores** (live files altered first, hashes checked after):
+
+  | Restore | Result |
+  |---|---|
+  | RetroArch slot 1 → free slot 2 | through the desk's own RetroArch steps: `.state2` = the backup, `.state1` untouched |
+  | RASnes9x slot 3 → occupied slot 1 | our warning, Yes: `.001` = the slot 3 backup, `.003` untouched; no copy of the old `.001` (it was in the vault) |
+  | SUPER ZSNES slot 1 → its own | restored with its thumbnail, no warning; LaunchBox's copy (`-01.szst1` + `-01.png`) of the right file |
+
+  The other emulators' states never moved.
+
 ### 6.7 LiteBox (lot 8)
 
 LiteBox runs the whole restore itself: pick the slot first, preselect the backup's slot, confirm saying what is
