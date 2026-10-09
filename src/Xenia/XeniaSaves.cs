@@ -416,6 +416,11 @@ namespace LbIntegrations.Xenia
             string titleId = TitleIdOf(save);
             if (titleId == null) return null;
 
+            // The row's own folder first, when it is still there and is that title's unit: the save the card shows. The
+            // configured tree is the fallback - a row whose folder is gone (a tree moved without its copy left behind).
+            var own = XeniaContent.UnitAt(ResolveFullPath(save?.FileLocation));
+            if (own != null && string.Equals(own.TitleId, titleId, StringComparison.OrdinalIgnoreCase)) return own;
+
             string contentRoot = !string.IsNullOrWhiteSpace(emulatorApplicationPath)
                 ? XeniaPaths.Resolve(emulatorApplicationPath, CommandLineOf(save, emulatorApplicationPath)).ContentRoot
                 : ContentRootFromUnitPath(save?.FileLocation);

@@ -115,6 +115,26 @@ namespace LbIntegrations.Xenia
                 .FirstOrDefault();
         }
 
+        /// <summary>The unit AT <paramref name="unitPath"/> (a ...\&lt;TITLEID&gt;\00000001 folder), built as Enumerate builds it,
+        /// or null when that folder is not a saved-game unit or is gone. A backup of a row copies the row's own folder: the
+        /// same title can live in two content trees (a moved --content_root with the old tree kept, a netplay tree).</summary>
+        public static XeniaSaveUnit UnitAt(string unitPath)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(unitPath)) return null;
+                var full = Path.GetFullPath(unitPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (!string.Equals(Path.GetFileName(full), SavedGameType, StringComparison.OrdinalIgnoreCase)) return null;
+                var titleDir = Path.GetDirectoryName(full);
+                if (titleDir == null) return null;
+                var xuid = Path.GetFileName(Path.GetDirectoryName(titleDir) ?? "");
+                var found = new List<XeniaSaveUnit>();
+                AddIfSavedGame(found, titleDir, IsHex(xuid, XuidLength) ? xuid.ToUpperInvariant() : null);
+                return found.FirstOrDefault();
+            }
+            catch { return null; }
+        }
+
         private static void AddIfSavedGame(List<XeniaSaveUnit> into, string titleDir, string xuid)
         {
             var titleId = Path.GetFileName(titleDir);
