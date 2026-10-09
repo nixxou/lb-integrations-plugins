@@ -209,6 +209,15 @@ Four emulators listed (RASnes9x, SUPER ZSNES, ares save + state, RetroArch) plus
 at the first and second opening and after a restart; one persisted row per path. Restore of SUPER ZSNES's `-01`:
 the live file took its content (51C6A54C); LaunchBox skipped its precautionary copy (live identical to a vault copy).
 
+### 3.2b Zelda again, clean build, 09/10
+
+- Plan A on a game WITHOUT a version on its file: four cards (ares save 2, SUPER ZSNES 1, RetroArch 2, ares state 3),
+  each with its exe - nothing broken.
+- A save never seen, at a close, without opening Game Saves (measure 5): a RASnes9x `.srm` for Zelda (same file name as
+  the SUPER ZSNES and RetroArch vault copies) - at the close LaunchBox created its row under `{"emu":"rasnes9x",…}` and
+  backed it up at once (`-04.srm`, same id). No hijack.
+- Manual import and its restore: §8.
+
 ### 3.3 Lot 2 on the way (08/10)
 
 JSON cards and backups for SUPER ZSNES, melonDS DSiWare, Flycast arcade, PPSSPP state, xemu save + states, Xenia;
@@ -504,10 +513,21 @@ into the vault under the GAME's name with the next free number (`…(France)-03.
 the game's emulator (`SUPERZSNES.exe`), `OriginalFileName` the source's name, no `Title`. That is LaunchBox's "Make New
 Save seeded from a file", and LiteBox copies it on purpose (`SaveManager.Import`, LbApiHost) - **not to change**.
 
-Left to measure: restoring that card. Through the desk the GUID resolves by the exe to SUPER ZSNES, which writes the
-game's live `.srm` - the live file of ANOTHER card ("Cartridge save"); LaunchBox's precautionary copy is of the restored
-card's own live file, which does not exist, so the current save would be overwritten with no copy (the same hole as
-§9.2). Probably the same with stock RetroArch.
+**Restoring that card, measured 09/10 (test A)**: the desk resolved the GUID by the exe to SUPER ZSNES, which wrote the
+game's live `.srm` (9F1DCBC35C35 → the import's 32E1CD8C021A). LaunchBox made **no precautionary copy** (its log goes
+straight from `RestoreSave: invoking plugin.AddSaveFile` to `completed successfully`): it copies the restored card's own
+live file, and an "In Vault" card has none. The overwritten content survived only because an identical copy from 07/10
+was in the vault (`-02.srm`). Then LaunchBox moved the live file's row to the restored card: "My Save File" (GUID)
+became Active on the `.srm`, "Cartridge save" (our JSON) dropped to In Vault. Same hole as §9.2, entered from a card
+without a live file. Probably the same with stock RetroArch (not measured).
+
+Usually harmless (the close backup has the content already), lost when the live save changed after its last backup
+unseen: played outside LaunchBox, a sync that wrote it, a companion-only change (§7).
+
+**Decided (Mehdi, 09/10): the same Yes/No warning as for slots** (§6.5 C, same gates), in the desk's `AddSaveFile`: the
+target live file exists, belongs to another card, and differs from what is restored. LiteBox already does it right
+(`SaveAction_SetActive`, LbApiHost `EditGameWindowSaves.cs`: the group holding the destination - same version, entry,
+slot or core - is backed up under its own id first, its row handed over after; `ShouldOverwriteFunc` really asks).
 
 **Later (Mehdi, 09/10), not for this lot**: ideally an imported file is offered to every plugin of the platform's
 emulators, each saying whether it can read it, and the user picks the emulator in a combobox. Not doable cleanly in
@@ -577,11 +597,11 @@ Order proposed: 1, then 7-10 (the slot and signature code, same files), then 2-6
 
 | # | What | How |
 |---|---|---|
-| 1 | Redeploy the clean build on G:\LB1326 (the installed DLLs still carry the 08-09/10 traces) | LaunchBox closed, `deploy-dev.ps1 -All`, hashes; Game Saves on Secret of Mana and on **Zelda** (never seen since plan A) |
+| 1 | ~~Redeploy the clean build~~ **done 09/10**, Zelda checked (§3.2b) | |
 | 2 | Dolphin restore through the desk (`StockRestore`) | a GameCube/Wii game on one of our emulators with a Dolphin save; backup, alter, restore, hash in Dolphin's folder |
 | 3 | PCSX2 forward | a PS2 game on one of ours with a PCSX2 memory card |
-| 4 | Manual import (§8) | Import Save Game File on a card of ours: which card, which id |
-| 5 | A game never opened in Game Saves | play with Launch With another emulator, close, read the XML: hijack or not |
+| 4 | ~~Manual import~~ **measured 09/10** (§8); the warning for a restore over another card's live file to code with 8 | |
+| 5 | ~~A save never seen, at a close~~ **measured 09/10, no hijack** (§3.2b) | |
 | 6 | Desk start-up cost | the `front desk on` lines and the first `GetSaves` times in the 13 logs, full scan duration in LaunchBox's log |
 | 7 | Slots: A + B + per-plugin `SlotFile` (§6.6) | probe checks, then the real tests of §6.6 |
 | 8 | The Yes/No warning (C), LaunchBox-only, version-gated; BigBox behaviour checked | real test: occupied other slot, No then Yes |
