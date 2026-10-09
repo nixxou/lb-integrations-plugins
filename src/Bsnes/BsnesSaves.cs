@@ -53,7 +53,8 @@ namespace LbIntegrations.Bsnes
         internal static Folders FoldersFor(string exePath, string romPath)
         {
             var romDir = string.IsNullOrWhiteSpace(romPath) ? null : Path.GetDirectoryName(Path.GetFullPath(romPath));
-            var bml = BsnesBml.Load(BsnesBml.Of(exePath));
+            // A big listing reads settings.bml once, not once per game (LbIntegrations.Saves.SaveScan).
+            var bml = LbIntegrations.Saves.SaveScan.Memo("bsnes.bml|" + exePath, () => BsnesBml.Load(BsnesBml.Of(exePath)));
             string Dir(string node)
             {
                 var v = bml.Get(node);
@@ -109,11 +110,11 @@ namespace LbIntegrations.Bsnes
             var context = appId ?? gameId;
 
             var srm = folders.SaveDir == null ? null : Path.Combine(folders.SaveDir, name + ".srm");
-            if (srm != null && File.Exists(srm) && seen.Add("save|" + srm + "|" + context))
+            if (srm != null && LbIntegrations.Saves.SaveScan.Exists(srm) && seen.Add("save|" + srm + "|" + context))
                 into.Add(Row(srm, gameId, appId, IdOf("save", name), SaveGroupName, SaveChipText));
 
             var bsz = folders.StateDir == null ? null : Path.Combine(folders.StateDir, name + ".bsz");
-            if (bsz != null && File.Exists(bsz) && seen.Add("states|" + bsz + "|" + context))
+            if (bsz != null && LbIntegrations.Saves.SaveScan.Exists(bsz) && seen.Add("states|" + bsz + "|" + context))
             {
                 BsnesStateThumbs.Refresh(bsz);
                 into.Add(Row(bsz, gameId, appId, IdOf("state", name), StateGroupName, StateChipText));
