@@ -320,8 +320,9 @@ namespace LbIntegrations.Vita3k
             try
             {
                 var path = MarkerPath(layout);
-                if (path == null || !File.Exists(path)) return null;
-                var parts = File.ReadAllText(path).Split('\t');
+                // A big listing reads it once (LbIntegrations.Saves.SaveScan), not once per game; every write below says so (Touched).
+                if (path == null || !LbIntegrations.Saves.SaveScan.Exists(path)) return null;
+                var parts = LbIntegrations.Saves.SaveScan.Text(path).Split('\t');
                 return parts.Length >= 5 ? parts : null;
             }
             catch { return null; }
@@ -360,13 +361,14 @@ namespace LbIntegrations.Vita3k
             {
                 File.WriteAllText(MarkerPath(layout), titleId + "\t" + Fingerprint(romPath) + "\t" + root + "\t" + (extrasKey ?? "")
                                                       + (vhdx != null ? "\t" + vhdx : ""));
+                LbIntegrations.Saves.SaveScan.Touched(MarkerPath(layout));
             }
             catch (Exception ex) { Log.Warn("could not write " + TitleMarker, ex); }
         }
 
         private static void Forget(Vita3kLayout layout)
         {
-            try { var p = MarkerPath(layout); if (p != null && File.Exists(p)) File.Delete(p); }
+            try { var p = MarkerPath(layout); if (p != null && File.Exists(p)) File.Delete(p); LbIntegrations.Saves.SaveScan.Touched(p); }
             catch (Exception ex) { Log.Warn("could not clear " + TitleMarker, ex); }
             try { var c = Under(layout, ContextName); if (c != null && File.Exists(c)) File.Delete(c); } catch { }
         }
@@ -853,6 +855,7 @@ namespace LbIntegrations.Vita3k
                 var parts = MarkerParts(layout);
                 parts[4] = Path.Combine(drive, Vita3kVhdx.FsName);
                 File.WriteAllText(MarkerPath(layout), string.Join("\t", parts));
+                LbIntegrations.Saves.SaveScan.Touched(MarkerPath(layout));
                 Log.Info("attached the session disk " + Path.GetFileName(session) + " again, read-only, at " + parts[4]);
                 return true;
             }
