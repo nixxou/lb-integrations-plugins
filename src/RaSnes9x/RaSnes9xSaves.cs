@@ -71,7 +71,7 @@ namespace LbIntegrations.RaSnes9x
             var exeDir = Path.GetDirectoryName(Path.GetFullPath(exePath));
             var romDir = string.IsNullOrWhiteSpace(romPath) ? null : Path.GetDirectoryName(Path.GetFullPath(romPath));
             // A big listing reads snes9x.conf once, not once per game (LbIntegrations.Saves.SaveScan).
-            var conf = LbIntegrations.Saves.SaveScan.Memo("rasnes9x.conf|" + exePath, () => RaSnes9xConf.Load(RaSnes9xConf.Of(exePath)));
+            var conf = LbIntegrations.Saves.SaveScan.Memo("rasnes9x.conf|" + exePath, () => LbIntegrations.Lbip.StampedCache.Get(RaSnes9xConf.Of(exePath), "rasnes9x.conf", () => RaSnes9xConf.Load(RaSnes9xConf.Of(exePath))));   // and Game Saves: while snes9x.conf is unchanged
             string Dir(string key)
             {
                 var v = conf.Get(Files, key);

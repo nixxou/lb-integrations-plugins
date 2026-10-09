@@ -81,12 +81,12 @@ namespace LbIntegrations.SuperZsnes
             var exeDir = Path.GetDirectoryName(Path.GetFullPath(exePath));
             var romDir = string.IsNullOrWhiteSpace(romPath) ? null : Path.GetDirectoryName(Path.GetFullPath(romPath));
             // A big listing decodes the settings file once, not once per game (LbIntegrations.Saves.SaveScan).
-            var raw = LbIntegrations.Saves.SaveScan.Memo("superzsnes.raw|" + exePath, () => SuperZsnesCurrent.Raw(exePath, "srmPath", "gameSavePath", "noDirectoryForSaves"));
+            var raw = LbIntegrations.Saves.SaveScan.Memo("superzsnes.raw|" + exePath, () => LbIntegrations.Lbip.StampedCache.Get(SuperZsnesPaths.SettingsFile(exePath), "superzsnes.raw|" + exePath, () => SuperZsnesCurrent.Raw(exePath, "srmPath", "gameSavePath", "noDirectoryForSaves")));   // and Game Saves: while the settings file is unchanged
             string Dir(string member)
             {
                 var v = raw.TryGetValue(member, out var o) ? o as string : null;
                 if (string.IsNullOrWhiteSpace(v)) return romDir;
-                var persist = LbIntegrations.Saves.SaveScan.Memo("superzsnes.persist|" + exePath, () => Path.GetDirectoryName(SuperZsnesPaths.SettingsFile(exePath))) ?? exeDir;
+                var persist = LbIntegrations.Saves.SaveScan.Memo("superzsnes.persist|" + exePath, () => Path.GetDirectoryName(SuperZsnesPaths.SettingsFile(exePath) ?? "")) ?? exeDir;
                 var expanded = v.Replace("{exec}", exeDir, StringComparison.OrdinalIgnoreCase)
                                 .Replace("{persist}", persist, StringComparison.OrdinalIgnoreCase)
                                 .Replace('/', Path.DirectorySeparatorChar);

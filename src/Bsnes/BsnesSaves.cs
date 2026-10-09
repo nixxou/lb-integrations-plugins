@@ -54,7 +54,7 @@ namespace LbIntegrations.Bsnes
         {
             var romDir = string.IsNullOrWhiteSpace(romPath) ? null : Path.GetDirectoryName(Path.GetFullPath(romPath));
             // A big listing reads settings.bml once, not once per game (LbIntegrations.Saves.SaveScan).
-            var bml = LbIntegrations.Saves.SaveScan.Memo("bsnes.bml|" + exePath, () => BsnesBml.Load(BsnesBml.Of(exePath)));
+            var bml = LbIntegrations.Saves.SaveScan.Memo("bsnes.bml|" + exePath, () => LbIntegrations.Lbip.StampedCache.Get(BsnesBml.Of(exePath), "bsnes.bml", () => BsnesBml.Load(BsnesBml.Of(exePath))));   // and Game Saves: while settings.bml is unchanged
             string Dir(string node)
             {
                 var v = bml.Get(node);

@@ -521,7 +521,7 @@ namespace LbIntegrations.Flycast
                 var loc = save.FileLocation;
                 if (string.IsNullOrWhiteSpace(loc)) return true;
 
-                var layout = FlycastPaths.Resolve(emulatorApplicationPath);
+                var layout = FlycastPaths.ResolveForSaves(emulatorApplicationPath);
                 var dirs = save is GameSaveState ? layout.StateDirs
                          : IsArcade(save) ? layout.ArcadeDirs
                          : layout.VmuDirs;

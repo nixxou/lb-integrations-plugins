@@ -94,7 +94,7 @@ namespace LbIntegrations.Cxbx
         }
 
         /// <summary>Its data folder - where EmuDisk is. Null when Cxbx-Reloaded has never been set up.</summary>
-        public static string DataDir(string exe) => LbIntegrations.Saves.SaveScan.Memo("cxbx.datadir|" + exe, () => DataDirCore(exe));
+        public static string DataDir(string exe) => LbIntegrations.Saves.SaveScan.Memo("cxbx.datadir|" + exe, () => LbIntegrations.Lbip.StampedCache.Get(SettingsOf(exe), "cxbx.datadir|" + exe, () => DataDirCore(exe)));   // and Game Saves: while its ini is unchanged
 
         /// <summary>DataDir, worked out (a big listing: once, not five times per game - LbIntegrations.Saves.SaveScan).</summary>
         private static string DataDirCore(string exe)

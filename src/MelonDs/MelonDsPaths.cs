@@ -145,6 +145,20 @@ namespace LbIntegrations.MelonDs
             return layout;
         }
 
+        /// <summary>Resolve, kept while melonDS.toml keeps its date and size and portable\ stays as it is: for the save calls LaunchBox
+        /// makes hundreds of times per Game Saves opening (10/10: the toml parsed on each). The layout is SHARED - read it only.</summary>
+        public static MelonDsLayout ResolveForSaves(string applicationPath)
+        {
+            string dir;
+            try { dir = Path.GetDirectoryName(Path.GetFullPath(applicationPath ?? "")) ?? ""; }
+            catch { return Resolve(applicationPath); }
+            if (dir.Length == 0) return Resolve(applicationPath);
+            var portable = Path.Combine(dir, "portable");
+            bool isPortable = SafeDirExists(portable);
+            var toml = Path.Combine(isPortable ? portable : dir, "melonDS.toml");
+            return LbIntegrations.Lbip.StampedCache.Get(toml, "melonds.layout|" + isPortable + "|" + applicationPath, () => Resolve(applicationPath));
+        }
+
         private static string Value(System.Collections.Generic.IDictionary<string, string> map, string key)
             => map != null && map.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v) ? v : null;
 

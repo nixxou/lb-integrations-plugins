@@ -355,7 +355,7 @@ namespace LbIntegrations.MelonDs
                 var loc = save.FileLocation;
                 if (string.IsNullOrWhiteSpace(loc)) return true;
 
-                var layout = MelonDsPaths.Resolve(ResolveFullPath(emulatorApplicationPath));
+                var layout = MelonDsPaths.ResolveForSaves(ResolveFullPath(emulatorApplicationPath));
 
                 // A DSiWare save is active when it sits beside the NAND it was pulled out of. The
                 // NAND is the truth; the extracted file is a view of it.

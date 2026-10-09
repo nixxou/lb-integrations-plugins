@@ -168,6 +168,16 @@ namespace LbIntegrations.Flycast
             return layout;
         }
 
+        /// <summary>Resolve, kept while emu.cfg keeps its date and size: for the save calls LaunchBox makes hundreds of times per
+        /// Game Saves opening (10/10: emu.cfg read on each). The layout is SHARED - read it, never change it.</summary>
+        public static FlycastLayout ResolveForSaves(string applicationPath)
+        {
+            string cfg;
+            try { cfg = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(applicationPath ?? "")) ?? "", ConfigFileName); }
+            catch { return Resolve(applicationPath); }
+            return LbIntegrations.Lbip.StampedCache.Get(cfg, "flycast.layout|" + applicationPath, () => Resolve(applicationPath));
+        }
+
         /// <summary>The folders for one setting: its configured value(s) first, then data\ — which is
         /// what Flycast falls back to. Duplicates and blanks are dropped, order preserved.</summary>
         private static List<string> Redirected(IDictionary<string, string> cfg, string key, string dataDir)
