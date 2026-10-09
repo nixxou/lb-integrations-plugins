@@ -20,6 +20,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
@@ -125,7 +126,61 @@ namespace LbIntegrations.Saves
                 signature = s;
                 return ok;
             }
-            return _own.OwnTryComputeSaveSignature(save, emulatorApplicationPath, out signature);
+            if (_own.OwnTryComputeSaveSignature(save, emulatorApplicationPath, out signature)) return true;
+            return WithCompanions(save, out signature);
+        }
+
+        /// <summary>The slot list of a plugin that has no numbered states of its own (bsnes, no$gba, Cxbx). LaunchBox asks
+        /// the GAME emulator's plugin for it (GetPotentialSaveSlots takes no argument) and refuses every state restore on
+        /// an empty one - so, with the desk on, another emulator's state listed on such a game could never be restored.
+        /// 0-9 then (Mehdi, 09/10, option a): the state's owner takes the pick or refuses it with its own numbers
+        /// (SlotRestore). Empty under LiteBox, which asks the owner itself.</summary>
+        public static IReadOnlyDictionary<int, string> ForeignSlots()
+        {
+            var slots = new Dictionary<int, string>();
+            if (SaveRouter.Active)
+                for (int i = 0; i <= 9; i++) slots[i] = i.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return slots;
+        }
+
+        /// <summary>A save with companions gets a signature over all of it (docs\saves-lot3.md §7, measured 08/10): LaunchBox's
+        /// own compares the primary file only, so a changed .rtc alone was never backed up. SHA-256 of the primary, then of
+        /// each companion in order of its tail - the content only, so a vault copy ("-01.srm" + "-01.rtc") and the live set
+        /// compare equal when they are. A state's companion is its thumbnail, made again at will: never counted, and a save
+        /// without companions keeps LaunchBox's own signature (false). Sets above 64 MB are left to LaunchBox.</summary>
+        private bool WithCompanions(GameSaveBase save, out string? signature)
+        {
+            signature = null;
+            try
+            {
+                var primary = save?.FileLocation;
+                if (save is GameSaveState || string.IsNullOrWhiteSpace(primary) || !File.Exists(primary)) return false;
+                var companions = (_own.OwnGetCompanionSaveFiles(primary) ?? Array.Empty<string>())
+                                 .Where(c => !string.IsNullOrWhiteSpace(c) && File.Exists(c) && !c.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+                                 .OrderBy(c => Tail(primary, c), StringComparer.OrdinalIgnoreCase).ToList();
+                if (companions.Count == 0) return false;
+                var files = new[] { primary }.Concat(companions).ToList();
+                if (files.Sum(f => new FileInfo(f).Length) > 64L * 1024 * 1024) return false;
+                using var all = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
+                foreach (var f in files)
+                {
+                    using var s = File.OpenRead(f);
+                    all.AppendData(System.Security.Cryptography.SHA256.HashData(s));
+                    all.AppendData(System.Text.Encoding.UTF8.GetBytes("|" + Tail(primary, f) + "|"));
+                }
+                signature = "set:" + Convert.ToHexString(all.GetHashAndReset());
+                return true;
+            }
+            catch (Exception ex) { Say("no signature over the companions of " + save?.FileLocation + ": " + ex.Message); signature = null; return false; }
+        }
+
+        /// <summary>What a companion adds to its primary's stem (".rtc", ".bkr"), whatever the stem - the live one or a
+        /// vault copy's "-01".</summary>
+        private static string Tail(string primary, string file)
+        {
+            var stem = Path.GetFileNameWithoutExtension(primary);
+            var name = Path.GetFileName(file);
+            return name.StartsWith(stem, StringComparison.OrdinalIgnoreCase) ? name.Substring(stem.Length) : Path.GetExtension(name);
         }
 
         public bool TryBackupSave(GameSaveBase save, string emulatorApplicationPath, string destinationFolder, out string? error)

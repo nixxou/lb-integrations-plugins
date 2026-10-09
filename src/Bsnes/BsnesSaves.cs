@@ -42,7 +42,9 @@ namespace LbIntegrations.Bsnes
 
         public override bool SupportsSaveManagement() => true;
 
-        public override IReadOnlyDictionary<int, string> GetPotentialSaveSlots() => new Dictionary<int, string>();
+        /// <summary>bsnes's own states are one .bsz, restored as a file: no slot of its own. The list is for the states of
+        /// the other emulators its desk lists (SaveDesk.ForeignSlots).</summary>
+        public override IReadOnlyDictionary<int, string> GetPotentialSaveSlots() => SaveDesk.ForeignSlots();
 
         // ── where bsnes keeps a game's ───────────────────────────────────────
 

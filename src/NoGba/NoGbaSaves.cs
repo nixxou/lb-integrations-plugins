@@ -60,9 +60,9 @@ namespace LbIntegrations.NoGba
 
         /// <summary>No numbered slots. no$gba's File menu offers one "Write snapshot" and one "Load
         /// snapshot", with no slot to choose - and nothing was ever observed on disk. An invented
-        /// set of slots would be a promise the emulator does not keep.</summary>
+        /// set of slots would be a promise the emulator does not keep. The list is for the states of the other emulators its desk lists (SaveDesk.ForeignSlots).</summary>
         public override IReadOnlyDictionary<int, string> GetPotentialSaveSlots()
-            => new Dictionary<int, string>();
+            => SaveDesk.ForeignSlots();
 
         GetSavesResponse IOwnSaves.OwnGetSaves(GetSavesArgs args)
         {

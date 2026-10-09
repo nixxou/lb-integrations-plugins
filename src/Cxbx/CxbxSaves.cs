@@ -206,6 +206,9 @@ namespace LbIntegrations.Cxbx
 
         public override bool SupportsSaveManagement() => true;
 
+        /// <summary>Cxbx has no states; the list is for xemu's, which its desk lists on the same games (SaveDesk.ForeignSlots).</summary>
+        public override IReadOnlyDictionary<int, string> GetPotentialSaveSlots() => SaveDesk.ForeignSlots();
+
         GetSavesResponse IOwnSaves.OwnGetSaves(GetSavesArgs args)
         {
             try
