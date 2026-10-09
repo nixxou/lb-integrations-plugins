@@ -626,6 +626,34 @@ RetroArch before reporting** (routing §1).
 
 ---
 
+## 9b. The Codex review of 09/10 (adversarial, branch against main)
+
+Two findings, both confirmed by a measure before the fix and gone after it (111d2b0):
+
+1. **A file's owner, outside its emulator's folder.** `GetCompanionSaveFiles` / `IsSecondarySaveFile` get a path only;
+   `OwnerOfPath` knew an owner only by its emulator's folder, else the desk answered for itself. Measured: RASnes9x's
+   battery saves pointed to `G:\LB\FakeCatalog\ras-saves` (`Dir:SRAM`), the Zelda `.srm` backed up through SUPER
+   ZSNES's desk WITHOUT its `.rtc` (`-07.srm` alone). Fix: the desk remembers, per full path, which plugin and which
+   emulator listed each other plugin's live file (`SaveRouter._listed`, filled in `OthersFor`), asked first. After:
+   `-10.srm` + `-10.rtc`.
+2. **Which install a restore writes into.** `EmulatorFor` kept the first of a tie: two installs of one exe name, core
+   and platform in different folders. Measured with a minimal second RetroArch (`Emulators\RetroArch-B\`: exe copy,
+   `retroarch.cfg`, `info\snes9x_libretro.info`, an emulator entry "RetroArch B" on SNES): restoring B's backup wrote
+   into the MAIN RetroArch's `.srm`. Fix: `SaveRouter.RestoreEmulator` (used by `StockRestore`): on a tie between
+   different folders, the card's live file (`SavePersist.LivePathsOf`, by reflection) says which - the emulator that
+   listed it this session, else the one whose folder holds it; still tied, the restore is refused with a message. One
+   folder for both (one exe, two cores: RetroArch + Retroarch2) is not ambiguous. After: written into RetroArch-B, the
+   main one untouched. Probe: 7 checks (`PickInstall`).
+
+Seen on the way: LaunchBox's exit deadlock (§9.5) twice in the day.
+
+### 9.5 LaunchBox stays alive after closing
+
+Its window closes, its log ends with "Calling Environment.Exit", the process stays (no window, CPU still, ~1 GB). A dump
+(`dotnet-dump collect --type Heap`, `clrstack -all`): the UI thread waits in `Environment._Exit`; the finalizer thread
+finalizes a `CoverFlow.FlowImage` whose `Dispose` does `Dispatcher.Invoke` to the UI thread - a deadlock; no plugin
+frame anywhere. Random (GC timing). The data is written before: killing it loses nothing.
+
 ## 10. Dead ends and rejected options (so they are not tried again)
 
 - An abstract base class for our plugins (no plugin constructed).
@@ -679,6 +707,12 @@ G:\LB1326:
 - SNES XML snapshots: `Super Nintendo Entertainment System.xml.before-tie`, `.before-putback`, `.before-tie2`, plus the
   older `.plante-par-nous`, `.avant-titre-vivant`, `.before-M4`, `.before-unknown-element`;
 - original data: `Backups\lbip-saveprobe-2026-10-07\` (Data, Saves), `Backups\lbip-lot2-2026-10-08\`.
+
+G:\LB1326, from the 09/10 tests (originals in `Backups\lbip-2026-10-09-lot3-mesures\`):
+- `Emulators\RetroArch-B\` and its emulator entry "RetroArch B" (`Emulators-before-test2.xml` is the file before);
+- RASnes9x's `Dir:SRAM` pointed to `G:\LB\FakeCatalog\ras-saves` (`snes9x.conf.before-ext`), and that folder;
+- the fake states on Zelda (SUPER ZSNES `.szst1`, RASnes9x `.001`/`.003`, RetroArch `.state1`/`.state2`), the RASnes9x
+  `.srm`/`.rtc` for Zelda, the import test file, Batman's slot 3 (restored), the vault copies they made.
 
 G:\LB:
 - `Plugins-off-2026-10-09-bugrepro\` (ExtendDB, Ppsspp Integration, Xenia Integration, ExtendDB.zip) to move back into
