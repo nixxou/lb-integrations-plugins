@@ -541,10 +541,14 @@ replaced, back up the file actually overwritten. No restriction needed there.
   restarted, the tile still "backed up", Backup refused. A changed `.rtc` alone is never backed up.
 - Concerned: bsnes and RASnes9x (`.rtc`, bsnes `.psr`, bsnes `.bsz.png`), ares (64DD clock), Flycast (the rest of an
   arcade set).
-- **To do**: `TryComputeSaveSignature` in the desk for our rows: a hash over the primary and its companions (sorted,
-  names + contents), only for rows with companions; `IsSaveActive` untouched (string comparison). It also makes a
-  change behind LaunchBox's back visible without a restart (§6.1). Cost to watch: called per row at each opening and
-  close - hash only small files, or size + date first.
+- **Done** (eed1654): `SaveDesk.WithCompanions`, used when the plugin's own `TryComputeSaveSignature` says nothing:
+  SHA-256 of the primary, then of each companion in the order of its tail (".rtc", ".psr"), content only, so a vault
+  set (`-05.srm` + `-05.rtc`) and the live one compare equal; thumbnails (`.png`) and states never counted; a save
+  without companions keeps LaunchBox's own signature; sets above 64 MB left to LaunchBox.
+- **Measured 09/10** (Zelda, RASnes9x `.srm` identical to its vault copy `-04.srm`): an `.rtc` added beside it - the
+  card showed "!", Backup made `-05.srm` + `-05.rtc` (LaunchBox's log: "content signature/timestamp changed"); then ONLY
+  the `.rtc` changed - "!" again at the next opening of Game Saves, without a restart, Backup made `-06.srm` (same
+  content) + `-06.rtc` (the new one). Before, neither change was ever backed up.
 
 ---
 
@@ -654,7 +658,7 @@ Order proposed: 1, then 7-10 (the slot and signature code, same files), then 2-6
 | 7 | Slots: A + B + per-plugin `SlotFile` (§6.6) | probe checks, then the real tests of §6.6 |
 | 8 | The Yes/No warning (C), LaunchBox-only, version-gated; BigBox behaviour checked | real test: occupied other slot, No then Yes |
 | 9 | xemu "its own slot", PPSSPP keys 1-5 (and the id check), the desk list (problem 4) decided | real restores on xemu and PPSSPP; a foreign state on a bsnes desk |
-| 10 | Content signature over primary + companions (§7) | alter only the `.rtc` of a RASnes9x save: Backup offered without a restart |
+| 10 | ~~Content signature over primary + companions~~ **done and measured 09/10** (§7) | |
 | 11 | Orphan persisted rows: handle or leave to LaunchBox (decide) | delete a live file, reopen Game Saves |
 | 12 | Codex review of the lot | `/codex:adversarial-review` on `savegroupid` |
 | 13 | Lot 8 note: LiteBox's proper state restore (§6.7) | in routing §4b |
