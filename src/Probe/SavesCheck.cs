@@ -243,6 +243,50 @@ namespace LbIntegrations.Probe
             CompatSwitches();
             Scan();
             GlobalCacheCheck();
+            StampedCacheCheck();
+        }
+
+        /// <summary>Shared.Lbip\StampedCache: kept while the file is unchanged, read again after a change, and a read made while
+        /// the file was locked returned but never kept (Codex review 10/10).</summary>
+        private static void StampedCacheCheck()
+        {
+            var dir = Path.Combine(Path.GetTempPath(), "lbip-stamped-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(dir);
+                var cfg = Path.Combine(dir, "emu.cfg");
+                File.WriteAllText(cfg, "A");
+                int reads = 0;
+                string Read() { reads++; try { return File.ReadAllText(cfg); } catch { return "FAILED"; } }
+                string Get() => LbIntegrations.Lbip.StampedCache.Get(cfg, "test|" + dir, Read);
+
+                Check("stamped: first read", Get() == "A" && reads == 1);
+                Check("stamped: kept while the file is unchanged", Get() == "A" && reads == 1);
+                File.WriteAllText(cfg, "BB");
+                Check("stamped: read again after a change", Get() == "BB" && reads == 2);
+
+                // Locked during the read, released without the file changing: the fallback must not stick.
+                var stamp = File.GetLastWriteTimeUtc(cfg);
+                string locked;
+                using (new FileStream(cfg, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                {
+                    File.SetLastWriteTimeUtc(cfg, stamp);
+                    // A new key, as a first read would be.
+                    locked = LbIntegrations.Lbip.StampedCache.Get(cfg, "locked|" + dir, Read);
+                }
+                Check("stamped: the file locked - its fallback returned", locked == "FAILED");
+                Check("stamped: ...and not kept - the file released, the real value read", LbIntegrations.Lbip.StampedCache.Get(cfg, "locked|" + dir, Read) == "BB");
+
+                var missing = Path.Combine(dir, "none.cfg");
+                int m = 0;
+                LbIntegrations.Lbip.StampedCache.Get(missing, "missing|" + dir, () => ++m);
+                LbIntegrations.Lbip.StampedCache.Get(missing, "missing|" + dir, () => ++m);
+                Check("stamped: a missing file is a state, kept until it appears", m == 1);
+                File.WriteAllText(missing, "now");
+                LbIntegrations.Lbip.StampedCache.Get(missing, "missing|" + dir, () => ++m);
+                Check("stamped: ...read again once it appears", m == 2);
+            }
+            finally { try { Directory.Delete(dir, true); } catch { } }
         }
 
         /// <summary>One of the writers GlobalCacheCheck starts: 200 files of its own, a value each, into the cache at <paramref name="dir"/>.</summary>

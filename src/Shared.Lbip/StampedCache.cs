@@ -33,10 +33,21 @@ namespace LbIntegrations.Lbip
             var k = key + "|" + file;
             if (Values.TryGetValue(k, out var c) && c.Length == length && c.Ticks == ticks && c.Value is T hit) return hit;
             if (Values.TryGetValue(k, out c) && c.Length == length && c.Ticks == ticks && c.Value == null && default(T) == null) return default!;
+            // The readers swallow their failures (a default, a null), so a value worked out while the file could not be opened -
+            // an emulator rewriting it at its exit - is no value to keep: it is returned, not kept, and the next call reads
+            // again (Codex review 10/10). Looked at before AND after: a lock taken during the read is caught too.
+            bool readable = length < 0 || CanRead(file);
             var v = make();
+            if (!readable || (length >= 0 && !CanRead(file))) return v;
             if (Values.Count > 256) Values.Clear();
             Values[k] = (length, ticks, v);
             return v;
+        }
+
+        private static bool CanRead(string file)
+        {
+            try { using (new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete)) return true; }
+            catch { return false; }
         }
     }
 }
