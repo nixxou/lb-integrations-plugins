@@ -235,6 +235,55 @@ namespace LbIntegrations.Probe
 
             Check("RetroArch and Dolphin are restored by the desk, PCSX2 is not",
                   StockRestore.Handles("lb.retroarch") && StockRestore.Handles("lb.dolphin") && !StockRestore.Handles("lb.pcsx2") && !StockRestore.Handles("ares"));
+
+            Slots();
+        }
+
+        /// <summary>SlotRestore: the slot a state goes to, its id, and the warning before an unbacked overwrite.</summary>
+        private static void Slots()
+        {
+            var ares = Enumerable.Range(1, 9).ToList();
+            Check("slot: the pick, when the emulator has it", SlotRestore.Choose(3, 1, ares, "ares") is (3, null));
+            Check("slot: no pick → the backup's own", SlotRestore.Choose(null, 2, ares, "ares") is (2, null));
+            Check("slot: Auto (-1) → the backup's own", SlotRestore.Choose(-1, 2, ares, "ares") is (2, null));
+            var zero = SlotRestore.Choose(0, 1, ares, "ares");
+            Check("slot: one it lacks is refused, saying its numbers", zero.Refused != null && zero.Refused.Contains("ares numbers its states 1 to 9"), zero.Refused);
+            Check("slot: no pick and no own → refused", SlotRestore.Choose(null, null, ares, "ares").Refused != null);
+            Check("slot: a set that is not a run is listed", SlotRestore.Choose(4, null, new[] { 1, 3 }, "x").Refused?.Contains("1, 3") == true);
+
+            var id = SaveId.Write(new SaveIdData { Emu = "ares", Kind = "state", Sys = "SuperFamicom", By = "name", Id = "Zelda", Slot = 1 });
+            Check("id: recomputed for the slot written",
+                  SlotRestore.WithSlot(id, 4) == "{\"emu\":\"ares\",\"kind\":\"state\",\"sys\":\"SuperFamicom\",\"by\":\"name\",\"id\":\"Zelda\",\"slot\":4}");
+            Check("id: not ours, left as it is", SlotRestore.WithSlot("a2289149085747d39372772546f2fe8c", 4) == "a2289149085747d39372772546f2fe8c");
+            Check("id: its slot read back", SlotRestore.SlotOf(id) == 1 && SlotRestore.SlotOf("guid") == null);
+
+            var dir = Path.Combine(Path.GetTempPath(), "lbip-slotrestore-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            var asked = 0; string? text = null;
+            try
+            {
+                string src = Path.Combine(dir, "backup.bs1"), same = Path.Combine(dir, "same.bs2"), other = Path.Combine(dir, "other.bs3"), none = Path.Combine(dir, "none.bs4");
+                File.WriteAllText(src, "the backup"); File.WriteAllText(same, "the backup"); File.WriteAllText(other, "another state");
+                SlotRestore.Instead = (t, x) => { asked++; text = x; return false; };
+                SlotRestore.HostOverride = "launchbox";
+                Check("warn: own card → never asked", SlotRestore.MayOverwrite(other, src, false, "Slot 3", null, out _) && asked == 0);
+                Check("warn: target empty → never asked", SlotRestore.MayOverwrite(none, src, true, "Slot 4", null, out _) && asked == 0);
+                Check("warn: same content → never asked", SlotRestore.MayOverwrite(same, src, true, "Slot 2", null, out _) && asked == 0);
+                bool go = SlotRestore.MayOverwrite(other, src, true, "Slot 3", null, out var no);
+                Check("warn: another card's, different → asked; No cancels", !go && asked == 1 && no != null && text != null && text.Contains("Slot 3") && text.Contains("LaunchBox bug"), text);
+                SlotRestore.Instead = (t, x) => { asked++; return true; };
+                Check("warn: Yes goes on", SlotRestore.MayOverwrite(other, src, true, "Slot 3", null, out _) && asked == 2);
+                SlotRestore.HostOverride = "litebox";
+                Check("warn: under LiteBox never asked (it backs up itself)", SlotRestore.MayOverwrite(other, src, true, "Slot 3", null, out _) && asked == 2);
+                SlotRestore.HostOverride = "bigbox";
+                bool big = SlotRestore.MayOverwrite(other, src, true, "Slot 3", null, out var bigNo);
+                Check("warn: in BigBox refused with a message, no dialog", !big && bigNo != null && asked == 2, bigNo);
+            }
+            finally
+            {
+                SlotRestore.Instead = null; SlotRestore.HostOverride = null;
+                try { Directory.Delete(dir, true); } catch { }
+            }
         }
 
         private static string Short(string s) => (s.Length > 60 ? s.Substring(0, 57) + "..." : s).Replace("\n", "\\n").Replace("\t", "\\t");

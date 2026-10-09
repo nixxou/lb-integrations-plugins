@@ -314,6 +314,16 @@ namespace LbIntegrations.Xemu
 
         public override bool SupportsSaveManagement() => true;
 
+        /// <summary>One entry, "Its own slot" (Mehdi, 08/10). A savestate is a NAMED snapshot inside the console's disk;
+        /// the slots are this plugin's numbers for those names, per game and unbounded, and a restored file replaces the
+        /// snapshot whose name it carries, whatever slot it is put at. So a state only ever goes back to its own slot.
+        /// An empty list made LaunchBox refuse every state restore (measured 08/10).</summary>
+        public override IReadOnlyDictionary<int, string> GetPotentialSaveSlots()
+            => new Dictionary<int, string> { [OwnSlot] = "Its own slot" };
+
+        /// <summary>The key of "Its own slot".</summary>
+        private const int OwnSlot = 0;
+
         GetSavesResponse IOwnSaves.OwnGetSaves(GetSavesArgs args)
         {
             try
@@ -548,8 +558,18 @@ namespace LbIntegrations.Xemu
             var exe = EmulatorFor(save);
             if (exe == null) return new AddSaveResponse("Could not locate the xemu installation.");
             if (XemuPaths.Running(exe)) return new AddSaveResponse("xemu is running - close it first, then restore the savestate.");
-            int slot = (save as GameSaveState)?.Slot ?? StateOf(save)?.Slot ?? meta.Slot;
-            if (slot <= 0) slot = meta.Slot > 0 ? meta.Slot : 1;
+            // Its own slot only (GetPotentialSaveSlots): "Its own slot", no pick, or that very slot. Another one - from
+            // another emulator's list, when xemu's state is restored through a front desk - is refused: the snapshot
+            // would keep its name and land in its own slot anyway, under a file of another number.
+            int own = StateOf(save)?.Slot ?? meta.Slot;
+            if (own <= 0) own = meta.Slot > 0 ? meta.Slot : 1;
+            int? picked = (save as GameSaveState)?.Slot;
+            if (picked is int p && p > 0 && p != own)
+            {
+                Log.Info("restore of " + Path.GetFileName(source) + " to slot " + p + " refused: its own is " + own);
+                return new AddSaveResponse("xemu keeps each savestate in its own slot (a named snapshot of the console): this one can only go back to slot " + own + ".");
+            }
+            int slot = own;
             var target = XemuStates.SlotPath(exe, titleId, slot);
             Directory.CreateDirectory(Path.GetDirectoryName(target));
             if (!string.Equals(Path.GetFullPath(source), Path.GetFullPath(target), StringComparison.OrdinalIgnoreCase))

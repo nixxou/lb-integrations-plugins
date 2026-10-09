@@ -275,8 +275,24 @@ namespace LbIntegrations.SuperZsnes
                 var original = new[] { save.OriginalFileName, Path.GetFileName(source) }.FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
                 var romName = NameOf(to.RomPath);
                 var name = romName.Length > 0 ? romName + Path.GetExtension(original) : original;
+                // A state goes to the slot picked, when SUPER ZSNES has it (SlotRestore); the backup's own when none was.
+                int slot = 0, own = -1;
+                if (save is GameSaveState picked)
+                {
+                    var m = StateFile.Match(name);
+                    own = SlotRestore.SlotOf(save.SaveGroupId) ?? (m.Success && int.TryParse(m.Groups["slot"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var f) ? f : -1);
+                    var (s, refused) = SlotRestore.Choose(picked.Slot, own < 0 ? (int?)null : own, Enumerable.Range(0, 10).ToList(), "SUPER ZSNES");
+                    if (refused != null) { Log.Info("restore of " + original + " refused: " + refused); return new AddSaveResponse(refused); }
+                    slot = s;
+                    name = Path.GetFileNameWithoutExtension(name) + ".szst" + slot.ToString(CultureInfo.InvariantCulture);
+                }
 
                 var target = Path.Combine(targetDir, name);
+                // Over another card's save (another slot, or a card of LaunchBox's own - a manual import): LaunchBox
+                // keeps no copy of it - asked first (SlotRestore).
+                bool otherCard = !IsOurs(save) || (save is GameSaveState && slot != own);
+                if (!SlotRestore.MayOverwrite(target, source, otherCard, save is GameSaveState ? "Slot " + slot : "The current save", Log.Info, out var no))
+                    return new AddSaveResponse(no);
                 if (File.Exists(target))
                 {
                     bool overwrite = true;
@@ -295,7 +311,7 @@ namespace LbIntegrations.SuperZsnes
                     else { LbipStateThumbs.Remove(target); SuperZsnesStateThumbs.Refresh(target); }
                 }
                 if (save is GameSaveState state)
-                    return new AddSaveResponse(StateRow(target, state.GameId, state.AdditionalApplicationId, state.Slot ?? 0, state.SaveGroupId,
+                    return new AddSaveResponse(StateRow(target, state.GameId, state.AdditionalApplicationId, slot, SlotRestore.WithSlot(state.SaveGroupId, slot),
                                                         string.IsNullOrWhiteSpace(state.SaveGroupName) ? StateGroupName : state.SaveGroupName));
                 return new AddSaveResponse(SaveRow(target, save.GameId, save.AdditionalApplicationId, save.SaveGroupId, save.SaveGroupName, save.DisplayChipText));
             }

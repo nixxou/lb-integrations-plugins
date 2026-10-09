@@ -429,11 +429,29 @@ namespace LbIntegrations.MelonDs
                 string original = FirstNonBlank(save.OriginalFileName, Path.GetFileName(source));
                 var asset = string.IsNullOrWhiteSpace(to.RomPath) ? null : NdsHeader.Describe(to.RomPath).AssetName;
                 string name = string.IsNullOrWhiteSpace(asset) ? original : asset + Path.GetExtension(original);
+                // A state goes to the slot picked, when melonDS has it (SlotRestore); the backup's own when none was.
+                int slot = 0, own = -1;
+                if (save is GameSaveState picked)
+                {
+                    var ext = Path.GetExtension(name);
+                    own = SlotRestore.SlotOf(save.SaveGroupId)
+                          ?? (ext.Length == 4 && ext.StartsWith(".ml", StringComparison.OrdinalIgnoreCase) && char.IsDigit(ext[3]) ? ext[3] - '0' : -1);
+                    var (s, refused) = SlotRestore.Choose(picked.Slot, own < 0 ? (int?)null : own,
+                                                          Enumerable.Range(FirstSlot, LastSlot - FirstSlot + 1).ToList(), "melonDS");
+                    if (refused != null) { Log.Info("restore of " + original + " refused: " + refused); return new AddSaveResponse(refused); }
+                    slot = s;
+                    name = Path.GetFileNameWithoutExtension(name) + StateExtension(slot);
+                }
                 var targetDir = RestoreDirFor(save, name, to.RomPath);
                 if (targetDir == null)
                     return new AddSaveResponse("Could not work out where melonDS reads this save from.");
 
                 string target = Path.Combine(targetDir, name);
+                // Over another card's save (another slot, or a card of LaunchBox's own - a manual import): LaunchBox
+                // keeps no copy of it - asked first (SlotRestore).
+                bool otherCard = !IsOurs(save) || (save is GameSaveState && slot != own);
+                if (!SlotRestore.MayOverwrite(target, source, otherCard, save is GameSaveState ? "Slot " + slot : "The current save", m => Log.Info(m), out var no))
+                    return new AddSaveResponse(no);
                 if (File.Exists(target))
                 {
                     bool overwrite = true;
@@ -467,8 +485,8 @@ namespace LbIntegrations.MelonDs
                         FileLocation = target,
                         IsDirectory = false,
                         OriginalFileName = name,
-                        Slot = state.Slot,
-                        SaveGroupId = state.SaveGroupId,
+                        Slot = slot,
+                        SaveGroupId = SlotRestore.WithSlot(state.SaveGroupId, slot),
                         SaveGroupName = string.IsNullOrWhiteSpace(state.SaveGroupName)
                             ? StateGroupName : state.SaveGroupName,
                         DisplayChipText = StateChipText,

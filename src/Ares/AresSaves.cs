@@ -415,7 +415,23 @@ namespace LbIntegrations.Ares
                 if (targetDir == null) return new AddSaveResponse("Could not work out where ares reads this save from.");
 
                 var name = NameNow(original, save is GameSaveState, rom, exe, system);
+                // A state goes to the slot picked, when ares has it (SlotRestore); the backup's own when none was.
+                int slot = 0, own = 0;
+                if (save is GameSaveState picked)
+                {
+                    var m = StateFile.Match(name);
+                    own = SlotRestore.SlotOf(save.SaveGroupId) ?? (m.Success ? int.Parse(m.Groups["slot"].Value, CultureInfo.InvariantCulture) : 0);
+                    var (s, refused) = SlotRestore.Choose(picked.Slot, own == 0 ? (int?)null : own, Enumerable.Range(1, 9).ToList(), "ares");
+                    if (refused != null) { Log.Info("restore of " + original + " refused: " + refused); return new AddSaveResponse(refused); }
+                    slot = s;
+                    name = (m.Success ? name.Substring(0, m.Index) : Path.GetFileNameWithoutExtension(name)) + ".bs" + slot.ToString(CultureInfo.InvariantCulture);
+                }
                 var target = Path.Combine(targetDir, name);
+                // Over another card's save (another slot, or a card of LaunchBox's own - a manual import): LaunchBox
+                // keeps no copy of it - asked first (SlotRestore).
+                bool otherCard = !SaveRows.IsOurs(save.SaveGroupId, Emu) || (save is GameSaveState && slot != own);
+                if (!SlotRestore.MayOverwrite(target, source, otherCard, save is GameSaveState ? "Slot " + slot : "The current save", Log.Info, out var no))
+                    return new AddSaveResponse(no);
                 if (File.Exists(target))
                 {
                     bool overwrite = true;
@@ -434,7 +450,8 @@ namespace LbIntegrations.Ares
                 }
                 // A state restored without its thumbnail: the old one would be a picture of another moment.
                 if (save is GameSaveState && !GetCompanionSaveFiles(source).Any(LbipStateThumbs.IsThumb)) LbipStateThumbs.Remove(target);
-                if (save is GameSaveState state) return new AddSaveResponse(StateRow(target, state.GameId, state.AdditionalApplicationId, state.Slot ?? 1, state.SaveGroupId));
+                // The slot written, and the id that goes with it: file, tile and id agree.
+                if (save is GameSaveState state) return new AddSaveResponse(StateRow(target, state.GameId, state.AdditionalApplicationId, slot, SlotRestore.WithSlot(state.SaveGroupId, slot)));
                 return new AddSaveResponse(SaveRow(target, save.GameId, save.AdditionalApplicationId, save.SaveGroupId, save.SaveGroupName, save.DisplayChipText));
             }
             catch (Exception ex)

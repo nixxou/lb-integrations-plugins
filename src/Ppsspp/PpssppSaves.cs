@@ -68,14 +68,15 @@ namespace LbIntegrations.Ppsspp
 
         public override bool SupportsSaveManagement() => true;
 
-        /// <summary>The slots a state can live in. PPSSPP's `SaveStateSlotCount` defaults to 5 and the
-        /// file name carries the slot 0-based, while PPSSPP's own UI labels them from 1 - hence the
-        /// key/label split rather than two conflicting numbers.</summary>
+        /// <summary>The slots a state can live in. PPSSPP's `SaveStateSlotCount` defaults to 5; its own UI numbers them
+        /// from 1, its file names from 0 ("_0.ppst" is slot 1). The KEY is PPSSPP's own number, 1 to 5 (Mehdi, 08/10):
+        /// LaunchBox shows the key on the tile, never the label - with keys 0-4 the tile said "Slot 0" for PPSSPP's
+        /// slot 1. The id keeps the FILE index, as before, so a card keeps its history.</summary>
         public override IReadOnlyDictionary<int, string> GetPotentialSaveSlots()
         {
             var slots = new Dictionary<int, string>();
-            for (int i = 0; i < PpssppStates.DefaultSlotCount; i++)
-                slots[i] = (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            for (int i = 1; i <= PpssppStates.DefaultSlotCount; i++)
+                slots[i] = i.ToString(System.Globalization.CultureInfo.InvariantCulture);
             return slots;
         }
 
@@ -178,7 +179,7 @@ namespace LbIntegrations.Ppsspp
                     // Carries the disc VERSION, which the group id deliberately does not. A restore
                     // reads it back from here; see AddSaveFile.
                     OriginalFileName = st.FileName,
-                    Slot = st.Slot,
+                    Slot = st.Slot + 1,   // PPSSPP's own number; the file and the id keep the index (GetPotentialSaveSlots)
                     // Disc id and slot only: a game patched from 1.00 to 1.01 keeps its history
                     // instead of orphaning it, the way Dolphin's "<game>-<disc>-State-<slot>" does.
                     SaveGroupId = StateId(st.DiscId, st.Slot),
@@ -490,12 +491,15 @@ namespace LbIntegrations.Ppsspp
             if (string.IsNullOrWhiteSpace(source) || !File.Exists(source))
                 return new AddSaveResponse("This PPSSPP save state is not a file: " + (source ?? "(none)"));
 
-            var (discId, slot) = StateKeyOf(state);
+            var (discId, index) = StateKeyOf(state);
             if (discId == null)
                 return new AddSaveResponse("Could not work out which game this save state belongs to.");
-            if (slot == null) slot = state.Slot;
-            if (slot == null)
-                return new AddSaveResponse("A PPSSPP save state needs a slot.");
+            // The slot picked, in PPSSPP's own numbers (1-5), when it has it; the backup's own when none was
+            // (SlotRestore). The file and the id take the index, one less.
+            var (key, refused) = SlotRestore.Choose(state.Slot, index + 1,
+                                                    Enumerable.Range(1, PpssppStates.DefaultSlotCount).ToList(), "PPSSPP");
+            if (refused != null) { Log.Info("restore of " + Path.GetFileName(source) + " refused: " + refused); return new AddSaveResponse(refused); }
+            int? slot = key - 1;
 
             string stateDir = SaveStateDirFor(state);
             if (stateDir == null)
@@ -511,6 +515,10 @@ namespace LbIntegrations.Ppsspp
                     + "restore again.");
 
             string target = Path.Combine(stateDir, PpssppStates.NameFor(discId, version, slot.Value));
+            // Over another slot's state (or a card of LaunchBox's own): LaunchBox keeps no copy of it - asked first.
+            bool otherCard = !IsOurs(state) || index == null || slot.Value != index.Value;
+            if (!SlotRestore.MayOverwrite(target, source, otherCard, "Slot " + key, m => Log.Info(m), out var no))
+                return new AddSaveResponse(no);
             if (File.Exists(target))
             {
                 bool overwrite = true;
@@ -552,7 +560,7 @@ namespace LbIntegrations.Ppsspp
                 AdditionalApplicationId = state.AdditionalApplicationId,
                 FileLocation = target,
                 OriginalFileName = Path.GetFileName(target),
-                Slot = slot,
+                Slot = key,
                 SaveGroupId = StateId(discId, slot.Value),
                 SaveGroupName = string.IsNullOrWhiteSpace(state.SaveGroupName) ? StateGroupName : state.SaveGroupName,
                 DisplayChipText = StateChipText,

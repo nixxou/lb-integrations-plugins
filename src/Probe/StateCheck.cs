@@ -174,8 +174,9 @@ namespace LbIntegrations.Probe
             if (slots == null || slots.Count == 0) { Console.WriteLine("  FAIL - no slots declared"); return false; }
             Console.WriteLine("  slots     : " + string.Join(", ", slots.OrderBy(k => k.Key)
                                 .Select(k => k.Key + "=\"" + k.Value + "\"")));
-            bool ok = slots.ContainsKey(0) && slots.Count == 5;
-            Console.WriteLine("  five slots, numbered from 0 in the file name   " + (ok ? "OK" : "FAIL"));
+            // PPSSPP's own numbers, 1-5: the tile shows the key (the file names keep 0-4).
+            bool ok = slots.ContainsKey(1) && slots.ContainsKey(5) && !slots.ContainsKey(0) && slots.Count == 5;
+            Console.WriteLine("  five slots, keyed 1-5 as PPSSPP numbers them   " + (ok ? "OK" : "FAIL"));
             return ok;
         }
 

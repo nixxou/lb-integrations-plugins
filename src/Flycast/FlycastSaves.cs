@@ -577,7 +577,27 @@ namespace LbIntegrations.Flycast
                          : IsArcade(save) ? layout.ArcadeDirs
                          : layout.VmuDirs;
                 string targetDir = dirs.FirstOrDefault() ?? layout.DataDir;
+                // A state goes to the slot picked, when Flycast has it (SlotRestore); the backup's own when none was.
+                // The stem is the id's (a game named "Foo_2" would fool the file name); slot 0 has no suffix.
+                int slot = 0, own = -1;
+                if (save is GameSaveState picked)
+                {
+                    var m = System.Text.RegularExpressions.Regex.Match(name, @"^(?<stem>.*?)(?:_(?<slot>\d))?" + System.Text.RegularExpressions.Regex.Escape(StateExtension) + "$",
+                                                                      System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    string stem = SaveId.TryRead(save.SaveGroupId, out var d) && d?.Id != null && IsOurs(save) ? d.Id
+                                : m.Success ? m.Groups["stem"].Value : Path.GetFileNameWithoutExtension(name);
+                    own = SlotRestore.SlotOf(save.SaveGroupId) ?? (m.Success ? (m.Groups["slot"].Success ? int.Parse(m.Groups["slot"].Value) : 0) : -1);
+                    var (s, refused) = SlotRestore.Choose(picked.Slot, own < 0 ? (int?)null : own, Enumerable.Range(0, 10).ToList(), "Flycast");
+                    if (refused != null) { Log.Info("restore of " + name + " refused: " + refused); return new AddSaveResponse(refused); }
+                    slot = s;
+                    name = stem + (slot == 0 ? "" : "_" + slot) + StateExtension;
+                }
                 string target = Path.Combine(targetDir, name);
+                // Over another card's save (another slot, or a card of LaunchBox's own - a manual import): LaunchBox
+                // keeps no copy of it - asked first (SlotRestore).
+                bool otherCard = !IsOurs(save) || (save is GameSaveState && slot != own);
+                if (!SlotRestore.MayOverwrite(target, source, otherCard, save is GameSaveState ? "Slot " + slot : "The current save", m2 => Log.Info(m2), out var no))
+                    return new AddSaveResponse(no);
 
                 if (File.Exists(target))
                 {
@@ -608,8 +628,8 @@ namespace LbIntegrations.Flycast
                         AdditionalApplicationId = state.AdditionalApplicationId,
                         FileLocation = target,
                         OriginalFileName = name,
-                        Slot = state.Slot,
-                        SaveGroupId = state.SaveGroupId,
+                        Slot = slot,
+                        SaveGroupId = SlotRestore.WithSlot(state.SaveGroupId, slot),
                         SaveGroupName = string.IsNullOrWhiteSpace(state.SaveGroupName) ? StateGroupName : state.SaveGroupName,
                         DisplayChipText = StateChipText,
                     });
