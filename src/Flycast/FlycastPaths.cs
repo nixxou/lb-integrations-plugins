@@ -239,7 +239,7 @@ namespace LbIntegrations.Flycast
                 try
                 {
                     var candidate = Path.Combine(dir, fileName);
-                    if (File.Exists(candidate)) return candidate;
+                    if (LbIntegrations.Saves.SaveScan.Exists(candidate)) return candidate;   // a big listing: each folder listed once
                 }
                 catch { }
             }

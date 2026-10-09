@@ -336,12 +336,13 @@ namespace LbIntegrations.Flycast
                 var thumb = LbipStateThumbs.PathOf(statePath);
                 if (stateUtc == default || File.GetLastWriteTimeUtc(thumb) == stateUtc) return;
                 var png = EmbeddedPng(statePath);
-                if (png == null) { LbipStateThumbs.Remove(statePath); return; }
+                if (png == null) { LbipStateThumbs.Remove(statePath); LbIntegrations.Saves.SaveScan.Touched(thumb); return; }
                 var tmp = Path.Combine(Path.GetTempPath(), "lbip-flycast-" + Guid.NewGuid().ToString("N") + ".png");
                 try
                 {
                     File.WriteAllBytes(tmp, png);
                     if (LbipStateThumbs.FromImage(tmp, statePath)) File.SetLastWriteTimeUtc(thumb, stateUtc);
+                    LbIntegrations.Saves.SaveScan.Touched(thumb);
                 }
                 finally { try { File.Delete(tmp); } catch { } }
             }
