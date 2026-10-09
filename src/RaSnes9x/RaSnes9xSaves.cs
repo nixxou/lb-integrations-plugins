@@ -70,7 +70,8 @@ namespace LbIntegrations.RaSnes9x
         {
             var exeDir = Path.GetDirectoryName(Path.GetFullPath(exePath));
             var romDir = string.IsNullOrWhiteSpace(romPath) ? null : Path.GetDirectoryName(Path.GetFullPath(romPath));
-            var conf = RaSnes9xConf.Load(RaSnes9xConf.Of(exePath));
+            // A big listing reads snes9x.conf once, not once per game (LbIntegrations.Saves.SaveScan).
+            var conf = LbIntegrations.Saves.SaveScan.Memo("rasnes9x.conf|" + exePath, () => RaSnes9xConf.Load(RaSnes9xConf.Of(exePath)));
             string Dir(string key)
             {
                 var v = conf.Get(Files, key);
@@ -128,7 +129,7 @@ namespace LbIntegrations.RaSnes9x
             var context = appId ?? gameId;
 
             var srm = folders.SaveDir == null ? null : Path.Combine(folders.SaveDir, name + ".srm");
-            if (srm != null && File.Exists(srm) && seen.Add("save|" + srm + "|" + context))
+            if (srm != null && LbIntegrations.Saves.SaveScan.Exists(srm) && seen.Add("save|" + srm + "|" + context))
                 into.Add(SaveRow(srm, gameId, appId, SaveIdOf(name)));
 
             int states = 0;
@@ -149,8 +150,8 @@ namespace LbIntegrations.RaSnes9x
         /// thumbnail beside a state ("Zelda.000.png" is "Zelda.000" without its extension).</summary>
         private static IEnumerable<(string Path, int Slot)> StateFilesIn(string dir, string name)
         {
-            if (dir == null || string.IsNullOrEmpty(name) || !Directory.Exists(dir)) yield break;
-            foreach (var path in Directory.GetFiles(dir, name + ".*"))
+            if (dir == null || string.IsNullOrEmpty(name) || !LbIntegrations.Saves.SaveScan.DirExists(dir)) yield break;
+            foreach (var path in LbIntegrations.Saves.SaveScan.Files(dir, name + ".*"))
             {
                 if (!string.Equals(Path.GetFileNameWithoutExtension(path), name, StringComparison.OrdinalIgnoreCase)) continue;   // "Zelda 2.000" is not Zelda's
                 var m = StateFile.Match(path);

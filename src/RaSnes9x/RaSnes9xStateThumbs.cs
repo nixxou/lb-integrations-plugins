@@ -43,6 +43,7 @@ namespace LbIntegrations.RaSnes9x
                     var tmp = png + ".part";
                     bmp.Save(tmp, ImageFormat.Png);
                     File.Move(tmp, png, overwrite: true);
+                    LbIntegrations.Saves.SaveScan.Touched(png);   // a big listing sees it
                 }
                 Log.Info("thumbnail: " + Path.GetFileName(png));
             }
