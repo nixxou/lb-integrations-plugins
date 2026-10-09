@@ -33,6 +33,8 @@ namespace LbIntegrations.Lbip
         private sealed class Table
         {
             public readonly Dictionary<string, (long Size, long Ticks, string Value)> Entries = new Dictionary<string, (long, long, string)>(StringComparer.OrdinalIgnoreCase);
+            /// <summary>Values this process could not write (the file busy, an error): answered, never taken for written.</summary>
+            public readonly Dictionary<string, (long Size, long Ticks, string Value)> Pending = new Dictionary<string, (long, long, string)>(StringComparer.OrdinalIgnoreCase);
             public long FileLength = -1;
             public DateTime FileWritten;
             public int Lines;
@@ -55,6 +57,9 @@ namespace LbIntegrations.Lbip
         /// name carries its version ("disc-ids-v1"): a plugin that works a value out differently moves to the next one.</summary>
         internal static int RecheckMs = 1000;
 
+        /// <summary>How long a write waits for another process holding the file (then kept as pending, written by a later Set).</summary>
+        internal static int LockTimeoutMs = 5000;
+
         /// <summary>The value kept for <paramref name="file"/> under <paramref name="kind"/>, when the file still has the size
         /// and date it had then. An empty value is a value ("read, nothing found"), for the caller to decide.</summary>
         public static bool TryGet(string kind, string? file, out string value)
@@ -70,6 +75,7 @@ namespace LbIntegrations.Lbip
                     var now = Environment.TickCount64;
                     if (now - t.Checked >= RecheckMs) { Refresh(kind, t); t.Checked = now; }
                     if (t.Entries.TryGetValue(full, out var e) && e.Size == size && e.Ticks == ticks) { value = e.Value; return true; }
+                    if (t.Pending.TryGetValue(full, out e) && e.Size == size && e.Ticks == ticks) { value = e.Value; return true; }
                     // Not known here: another process may have learnt it since.
                     if (Refresh(kind, t) && t.Entries.TryGetValue(full, out e) && e.Size == size && e.Ticks == ticks) { value = e.Value; return true; }
                 }
@@ -88,15 +94,17 @@ namespace LbIntegrations.Lbip
                 lock (Gate)
                 {
                     var t = TableOf(kind);
-                    if (t.Entries.TryGetValue(full, out var e) && e.Size == size && e.Ticks == ticks && e.Value == value) return;
-                    bool written = false;
-                    Locked(kind, () =>
+                    bool persisted = false;
+                    try
                     {
-                        // What the others appended is read in first: the stamp noted below must not skip their lines.
-                        Refresh(kind, t);
-                        t.Entries[full] = (size, ticks, value);
-                        written = true;
-                        var path = PathOf(kind);
+                        Locked(kind, () =>
+                        {
+                            // What the others appended is read in first (the stamp noted below must not skip their lines), and
+                            // "already there" is asked of THAT - not of this process's memory: another process may have put
+                            // another value since (Codex review 10/10).
+                            Refresh(kind, t);
+                            if (t.Entries.TryGetValue(full, out var e) && e.Size == size && e.Ticks == ticks && e.Value == value) { persisted = true; return; }
+                            var path = PathOf(kind);
                         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                         var line = Escape(full) + "\t" + size + "\t" + ticks + "\t" + Escape(value) + "\n";
                         using (var fs = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read))
@@ -109,11 +117,19 @@ namespace LbIntegrations.Lbip
                             var bytes = Encoding.UTF8.GetBytes(line);
                             fs.Write(bytes, 0, bytes.Length);
                         }
-                        t.Lines++;
-                        Note(t, path);
-                        if (t.Lines > 64 && t.Lines > 2 * t.Entries.Count) Compact(kind, t);
-                    });
-                    if (!written) t.Entries[full] = (size, ticks, value);   // the file busy: known to this process at least
+                            // In memory once it is on disk - a failed write is tried again by the next Set.
+                            t.Entries[full] = (size, ticks, value);
+                            t.Lines++;
+                            persisted = true;
+                            Note(t, path);
+                            if (t.Lines > 64 && t.Lines > 2 * t.Entries.Count) Compact(kind, t);
+                        });
+                    }
+                    finally
+                    {
+                        // Not written (the file busy, an error): known to this process meanwhile, never taken for "already there".
+                        if (persisted) t.Pending.Remove(full); else t.Pending[full] = (size, ticks, value);
+                    }
                 }
             }
             catch { }
@@ -234,7 +250,7 @@ namespace LbIntegrations.Lbip
             bool held = false;
             try
             {
-                try { held = m.WaitOne(TimeSpan.FromSeconds(5)); } catch (AbandonedMutexException) { held = true; }
+                try { held = m.WaitOne(LockTimeoutMs); } catch (AbandonedMutexException) { held = true; }
                 if (!held) return;   // another process is stuck in there: this value is simply not kept
                 work();
             }

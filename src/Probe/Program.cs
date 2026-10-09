@@ -56,6 +56,7 @@ namespace LbIntegrations.Probe
             if (Has(args, "--saves-selftest")) return SavesCheck.Run() ? 0 : 1;
             // GlobalCache from several processes at once (SavesCheck.GlobalCacheCheck starts three of these).
             if (Has(args, "--globalcache-set")) { int at = Array.IndexOf(args, "--globalcache-set"); LbIntegrations.Lbip.GlobalCache.DirForTests = args[at + 1]; LbIntegrations.Lbip.GlobalCache.Set(args[at + 2], args[at + 3], args[at + 4]); return 0; }
+            if (Has(args, "--globalcache-hold")) { int at = Array.IndexOf(args, "--globalcache-hold"); using var m = new System.Threading.Mutex(false, @"Local\LbIntegrations.GlobalCache." + args[at + 1]); m.WaitOne(); Console.WriteLine("held"); System.Threading.Thread.Sleep(int.Parse(args[at + 2])); m.ReleaseMutex(); return 0; }
             if (Has(args, "--globalcache-writer")) return SavesCheck.GlobalCacheWriter(args[Array.IndexOf(args, "--globalcache-writer") + 1], args[Array.IndexOf(args, "--globalcache-writer") + 2]);
 
             // Time the reference walk over a real tree: --walk <dir>. Writes the manifest to %TEMP%.

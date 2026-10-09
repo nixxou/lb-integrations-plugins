@@ -346,6 +346,31 @@ namespace LbIntegrations.Probe
                 setter.WaitForExit(60000);
                 System.Threading.Thread.Sleep(LbIntegrations.Lbip.GlobalCache.RecheckMs + 100);
                 Check("gcache: another process's replacement is returned (within " + LbIntegrations.Lbip.GlobalCache.RecheckMs + " ms)", Get("titles", known, out var w1) && w1 == "4D5307E6");
+                // A:X, then B:Y, then A:X again - A's write is not skipped on its memory's say-so (Codex review 10/10).
+                var flip = Path.Combine(files, "flip.bin"); File.WriteAllText(flip, "f");
+                LbIntegrations.Lbip.GlobalCache.Set("flip", flip, "X");
+                var b = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!,
+                    "--globalcache-set \"" + Path.Combine(dir, "cache") + "\" flip \"" + flip + "\" Y") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true })!;
+                b.WaitForExit(60000);
+                LbIntegrations.Lbip.GlobalCache.Set("flip", flip, "X");
+                LbIntegrations.Lbip.GlobalCache.ForgetForTests();
+                Check("gcache: A:X, B:Y, A:X - X written again", Get("flip", flip, out var fx) && fx == "X");
+
+                // The file held by another process: the value is kept as pending (answered here), then written by a later Set.
+                var held = Path.Combine(files, "held.bin"); File.WriteAllText(held, "h");
+                var holder = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!, "--globalcache-hold busy 2500")
+                    { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true })!;
+                holder.StandardOutput.ReadLine();   // "held"
+                var wasTimeout = LbIntegrations.Lbip.GlobalCache.LockTimeoutMs;
+                LbIntegrations.Lbip.GlobalCache.LockTimeoutMs = 200;
+                LbIntegrations.Lbip.GlobalCache.Set("busy", held, "later");
+                Check("gcache: the file busy - answered from this process meanwhile", Get("busy", held, out var hv) && hv == "later");
+                Check("gcache: ...and not on disk yet", !File.Exists(LbIntegrations.Lbip.GlobalCache.PathOf("busy")) || !File.ReadAllText(LbIntegrations.Lbip.GlobalCache.PathOf("busy")).Contains("later"));
+                holder.WaitForExit(60000);
+                LbIntegrations.Lbip.GlobalCache.LockTimeoutMs = wasTimeout;
+                LbIntegrations.Lbip.GlobalCache.Set("busy", held, "later");
+                LbIntegrations.Lbip.GlobalCache.ForgetForTests();
+                Check("gcache: ...written by the next Set once the file is free", Get("busy", held, out var hv2) && hv2 == "later");
                 // Three processes at once, 200 values each.
                 for (int w = 0; w < 3; w++) for (int i = 0; i < 200; i++) File.WriteAllText(Path.Combine(files, "w" + w + "-" + i + ".bin"), "w");
                 var exe = Environment.ProcessPath!;
