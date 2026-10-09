@@ -363,6 +363,13 @@ namespace LbIntegrations.Saves
                     var theirApps = apps.Where(a => Covers(e, Safe(() => GameOf(a.GameId)?.Platform))).ToList();
                     if (theirGames.Count == 0 && theirApps.Count == 0) continue;
 
+                    // LaunchBox's integrations read some folders off the GAME's command line, which names ours: they are
+                    // shown the game as if this emulator ran it (SaveGameView - RetroArch's states, 09/10).
+                    if (d.Value.Emu.StartsWith(SaveOwner.LaunchBoxPrefix, StringComparison.Ordinal))
+                    {
+                        theirGames = theirGames.Select(g => SaveGameView.As(g, e)).ToList();
+                        theirApps = theirApps.Select(a => SaveGameView.As(a, e, Safe(() => GameOf(a.GameId)?.Platform))).ToList();
+                    }
                     GetSavesResponse? r = null;
                     try { r = d.Value.Plugin.GetSaves(new GetSavesArgs { Emulator = e, Games = theirGames, AdditionalApplications = theirApps }); }
                     catch (Exception ex) { Say(d.Value.Emu + " could not list for " + Safe(() => e.Title) + ": " + ex.Message); }

@@ -237,6 +237,23 @@ namespace LbIntegrations.Probe
                   StockRestore.Handles("lb.retroarch") && StockRestore.Handles("lb.dolphin") && !StockRestore.Handles("lb.pcsx2") && !StockRestore.Handles("ares"));
 
             Slots();
+            View();
+        }
+
+        /// <summary>SaveGameView: the game as RetroArch would run it, everything else the real game's.</summary>
+        private static void View()
+        {
+            var game = LbIntegrations.Probe.StubGame.With(LbIntegrations.Probe.StubGame.Create("g9", "Zelda", @"C:\r\Zelda.sfc"), "Platform", "Super Nintendo Entertainment System");
+            var ra = new LbIntegrations.Probe.StubEmulator { Title = "RetroArch", ApplicationPath = @"C:\RA\retroarch.exe" };
+            var p = ra.AddNewEmulatorPlatform(); p.Platform = "Super Nintendo Entertainment System"; p.CommandLine = "-L \"cores\\snes9x_libretro.dll\" -f";
+            var seen = SaveGameView.As(game, ra);
+            Check("view: the command line is the emulator's for the platform", seen.GetEffectiveCommandLine() == "-L \"cores\\snes9x_libretro.dll\" -f");
+            Check("view: everything else is the real game's", seen.Id == "g9" && seen.Title == "Zelda" && seen.ApplicationPath == @"C:\r\Zelda.sfc" && seen.Platform == "Super Nintendo Entertainment System");
+            var none = new LbIntegrations.Probe.StubEmulator { Title = "Bare", ApplicationPath = @"C:\x\x.exe" };
+            Check("view: an emulator without a line leaves the game as it is", ReferenceEquals(SaveGameView.As(game, none), game));
+            Check("RetroArch slot from a name: .state1 1, .state 0, .state.auto -1, other null",
+                  StockRestore.SlotOfName(@"C:\s\Zelda.state1") == 1 && StockRestore.SlotOfName("Zelda.state") == 0
+                  && StockRestore.SlotOfName("Zelda.state.auto") == -1 && StockRestore.SlotOfName("Zelda.srm") == null && StockRestore.SlotOfName("Zelda.state12") == 12);
         }
 
         /// <summary>SlotRestore: the slot a state goes to, its id, and the warning before an unbacked overwrite.</summary>

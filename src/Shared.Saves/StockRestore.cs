@@ -57,6 +57,10 @@ namespace LbIntegrations.Saves
             if (row == null || string.IsNullOrWhiteSpace(row.FileLocation) || !File.Exists(row.FileLocation))
                 return new AddSaveResponse("The save file doesn't exist!");
             if (!Context(row, out var game, out var app, out var rom, out var why)) return new AddSaveResponse(why);
+            // Their folder functions read the core off the GAME's command line - ours has none (SaveGameView).
+            var platformName = Safe(() => game.Platform);
+            game = SaveGameView.As(game, route.Emulator!);
+            if (app != null) app = SaveGameView.As(app, route.Emulator!, platformName);
 
             var t = route.Plugin.GetType();
             var saveDir = Step(t, "GetGameSaveDirectory", typeof(IEmulator), typeof(IGame), typeof(IAdditionalApplication), typeof(bool));
@@ -76,6 +80,10 @@ namespace LbIntegrations.Saves
                 var dir = (string?)stateDir!.Invoke(null, new object?[] { route.Emulator, game, app, true });
                 if (string.IsNullOrWhiteSpace(dir)) return new AddSaveResponse("Couldn't determine where to place this save!");
                 target = Path.Combine(dir, Path.GetFileNameWithoutExtension(rom) + ext);
+                // Into another slot than the backup's, over another state: LaunchBox keeps no copy of it (SlotRestore).
+                int? own = SlotOfName(row.OriginalFileName) ?? SlotOfName(row.FileLocation);
+                if (!SlotRestore.MayOverwrite(target, row.FileLocation!, own != state.Slot, state.Slot < 0 ? "The Auto slot" : "Slot " + (state.Slot ?? 0), log, out var no))
+                    return new AddSaveResponse(no);
             }
             else
             {
@@ -204,5 +212,17 @@ namespace LbIntegrations.Saves
         }
 
         private static T? Safe<T>(Func<T> f) { try { return f(); } catch { return default; } }
+
+        /// <summary>A RetroArch state's slot from its name: ".state" 0, ".state3" 3, ".state.auto" -1; null when it is not
+        /// one (a vault copy LaunchBox renamed "&lt;game&gt;.state" reads 0 - its row's own name says better).</summary>
+        internal static int? SlotOfName(string? name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return null;
+            var file = Path.GetFileName(name);
+            if (file.EndsWith(".state.auto", StringComparison.OrdinalIgnoreCase)) return -1;
+            var m = System.Text.RegularExpressions.Regex.Match(file, @"\.state(?<n>\d*)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (!m.Success) return null;
+            return m.Groups["n"].Value.Length == 0 ? 0 : int.Parse(m.Groups["n"].Value, System.Globalization.CultureInfo.InvariantCulture);
+        }
     }
 }
