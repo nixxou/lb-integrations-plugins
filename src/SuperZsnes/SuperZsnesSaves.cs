@@ -80,12 +80,13 @@ namespace LbIntegrations.SuperZsnes
         {
             var exeDir = Path.GetDirectoryName(Path.GetFullPath(exePath));
             var romDir = string.IsNullOrWhiteSpace(romPath) ? null : Path.GetDirectoryName(Path.GetFullPath(romPath));
-            var raw = SuperZsnesCurrent.Raw(exePath, "srmPath", "gameSavePath", "noDirectoryForSaves");
+            // A big listing decodes the settings file once, not once per game (LbIntegrations.Saves.SaveScan).
+            var raw = LbIntegrations.Saves.SaveScan.Memo("superzsnes.raw|" + exePath, () => SuperZsnesCurrent.Raw(exePath, "srmPath", "gameSavePath", "noDirectoryForSaves"));
             string Dir(string member)
             {
                 var v = raw.TryGetValue(member, out var o) ? o as string : null;
                 if (string.IsNullOrWhiteSpace(v)) return romDir;
-                var persist = Path.GetDirectoryName(SuperZsnesPaths.SettingsFile(exePath)) ?? exeDir;
+                var persist = LbIntegrations.Saves.SaveScan.Memo("superzsnes.persist|" + exePath, () => Path.GetDirectoryName(SuperZsnesPaths.SettingsFile(exePath))) ?? exeDir;
                 var expanded = v.Replace("{exec}", exeDir, StringComparison.OrdinalIgnoreCase)
                                 .Replace("{persist}", persist, StringComparison.OrdinalIgnoreCase)
                                 .Replace('/', Path.DirectorySeparatorChar);
@@ -151,7 +152,7 @@ namespace LbIntegrations.SuperZsnes
             var context = appId ?? gameId;
 
             var srm = folders.SaveDir == null ? null : Path.Combine(folders.SaveDir, name + ".srm");
-            if (srm != null && File.Exists(srm) && seen.Add("save|" + srm + "|" + context))
+            if (srm != null && LbIntegrations.Saves.SaveScan.Exists(srm) && seen.Add("save|" + srm + "|" + context))
                 into.Add(SaveRow(srm, gameId, appId, SaveId.Write(new SaveIdData { Emu = Emu, Kind = "save", By = "name", Id = name })));
 
             int states = 0;
@@ -169,8 +170,8 @@ namespace LbIntegrations.SuperZsnes
         /// state ("Zelda.szst0.png" is matched by the glob, not by StateFile).</summary>
         private static IEnumerable<(string Path, int Slot)> StateFilesIn(string dir, string name)
         {
-            if (dir == null || string.IsNullOrEmpty(name) || !Directory.Exists(dir)) yield break;
-            foreach (var path in Directory.GetFiles(dir, name + ".szst*"))
+            if (dir == null || string.IsNullOrEmpty(name) || !LbIntegrations.Saves.SaveScan.DirExists(dir)) yield break;
+            foreach (var path in LbIntegrations.Saves.SaveScan.Files(dir, name + ".szst*"))
             {
                 var m = StateFile.Match(path);
                 if (!m.Success || !Path.GetFileName(path).StartsWith(name + ".szst", StringComparison.OrdinalIgnoreCase)) continue;   // -last, and anything else

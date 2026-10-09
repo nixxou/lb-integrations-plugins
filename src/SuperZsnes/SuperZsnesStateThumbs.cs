@@ -35,6 +35,7 @@ namespace LbIntegrations.SuperZsnes
                 var tmp = png + ".part";
                 File.WriteAllBytes(tmp, picture);
                 File.Move(tmp, png, overwrite: true);
+                LbIntegrations.Saves.SaveScan.Touched(png);   // a big listing sees it
                 Log.Info("thumbnail: " + Path.GetFileName(png));
             }
             catch (Exception ex) { Log.Warn("thumbnail of " + Path.GetFileName(state) + " not made", ex); }
