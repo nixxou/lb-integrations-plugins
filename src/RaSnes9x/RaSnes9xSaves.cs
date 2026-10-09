@@ -290,6 +290,10 @@ namespace LbIntegrations.RaSnes9x
                     try { overwrite = args.ShouldOverwriteFunc?.Invoke() ?? true; } catch { }
                     if (!overwrite) return new AddSaveResponse("Restore cancelled.");
                 }
+                // Everything it will write must be writable first - the clock beside the save too (SaveCompanions).
+                var companions = save is GameSaveState ? null : ((IOwnSaves)this).OwnGetCompanionSaveFiles(source);
+                var cannot = SaveCompanions.WhyNotWritable(source, target, companions);
+                if (cannot != null) { Log.Info("restore of " + name + " refused: " + cannot); return new AddSaveResponse(cannot); }
                 Directory.CreateDirectory(targetDir);
                 File.Copy(source, target, overwrite: true);
                 Log.Info("restored " + name + " -> " + targetDir);
@@ -302,7 +306,7 @@ namespace LbIntegrations.RaSnes9x
                     else { LbipStateThumbs.Remove(target); RaSnes9xStateThumbs.Refresh(target); }
                 }
                 // The cartridge's clock (.rtc) with its save: LaunchBox copies nothing back (SaveCompanions).
-                else SaveCompanions.CopyBack(source, target, ((IOwnSaves)this).OwnGetCompanionSaveFiles(source), m => Log.Info(m));
+                else SaveCompanions.CopyBack(source, target, companions, m => Log.Info(m));
                 if (save is GameSaveState state)
                     return new AddSaveResponse(StateRow(target, state.GameId, state.AdditionalApplicationId, slot, SlotRestore.WithSlot(state.SaveGroupId, slot),
                                                         string.IsNullOrWhiteSpace(state.SaveGroupName) ? StateGroupName : state.SaveGroupName));

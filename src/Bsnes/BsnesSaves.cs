@@ -210,10 +210,14 @@ namespace LbIntegrations.Bsnes
                     try { overwrite = args.ShouldOverwriteFunc?.Invoke() ?? true; } catch { }
                     if (!overwrite) return new AddSaveResponse("Restore cancelled.");
                 }
+                // Everything it will write must be writable first - the clock beside the save too (SaveCompanions).
+                bool states = IsStates(save);
+                var companions = states ? null : ((IOwnSaves)this).OwnGetCompanionSaveFiles(source);
+                var cannot = SaveCompanions.WhyNotWritable(source, target, companions);
+                if (cannot != null) { Log.Info("restore of " + name + " refused: " + cannot); return new AddSaveResponse(cannot); }
                 Directory.CreateDirectory(targetDir);
                 File.Copy(source, target, overwrite: true);
                 Log.Info("restored " + name + " -> " + targetDir);
-                bool states = IsStates(save);
                 if (states)
                 {
                     // Its thumbnail with it; without one, the old would be a picture of another moment - made again from the .bsz.
@@ -223,7 +227,7 @@ namespace LbIntegrations.Bsnes
                 }
                 // The cartridge's clock (.rtc) and Satellaview data (.psr) with its save: LaunchBox copies nothing back
                 // (SaveCompanions).
-                else SaveCompanions.CopyBack(source, target, ((IOwnSaves)this).OwnGetCompanionSaveFiles(source), m => Log.Info(m));
+                else SaveCompanions.CopyBack(source, target, companions, m => Log.Info(m));
                 return new AddSaveResponse(Row(target, save.GameId, save.AdditionalApplicationId, save.SaveGroupId,
                                                states ? StateGroupName : SaveGroupName, states ? StateChipText : SaveChipText));
             }

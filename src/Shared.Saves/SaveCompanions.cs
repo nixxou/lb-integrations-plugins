@@ -38,6 +38,49 @@ namespace LbIntegrations.Saves
             return written;
         }
 
+        /// <summary>Null when <paramref name="target"/> and every companion's destination can be written, else why not -
+        /// asked BEFORE the primary is copied (Mehdi, 09/10): a companion that cannot be written (read-only, in use, a
+        /// folder without write access - a save beside the roms on a share) failed after the primary was replaced, a
+        /// restore half done and reported as failed. Opening a file for writing changes nothing; a folder is tried with
+        /// a file created and deleted at once.</summary>
+        public static string? WhyNotWritable(string source, string target, IEnumerable<string>? companions)
+        {
+            var sourceStem = Path.GetFileNameWithoutExtension(source);
+            var targetStem = Path.Combine(Path.GetDirectoryName(target) ?? "", Path.GetFileNameWithoutExtension(target));
+            var dests = new List<string> { target };
+            if (companions != null)
+                foreach (var c in companions)
+                    if (!string.IsNullOrWhiteSpace(c) && File.Exists(c)) dests.Add(targetStem + TailOf(sourceStem, c));
+            foreach (var d in dests)
+            {
+                var why = WhyNot(d);
+                if (why != null) return Path.GetFileName(d) + " " + why + ": nothing was restored.";
+            }
+            return null;
+        }
+
+        private static string? WhyNot(string path)
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    if ((File.GetAttributes(path) & FileAttributes.ReadOnly) != 0) return "is read-only";
+                    using (new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.ReadWrite)) { }
+                    return null;
+                }
+                var dir = Path.GetDirectoryName(path);
+                if (string.IsNullOrEmpty(dir)) return null;
+                if (!Directory.Exists(dir)) return null;   // created by the copy, as before
+                var probe = Path.Combine(dir, ".lbip-write-" + Guid.NewGuid().ToString("N"));
+                using (new FileStream(probe, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose)) { }
+                return null;
+            }
+            catch (UnauthorizedAccessException) { return "cannot be written (no write access)"; }
+            catch (IOException ex) { return "cannot be written (" + ex.Message.Trim() + ")"; }
+            catch (Exception ex) { return "cannot be written (" + ex.GetType().Name + ")"; }
+        }
+
         /// <summary>What a companion adds to its primary's stem (".rtc"), else its own extension.</summary>
         internal static string TailOf(string primaryStem, string companion)
         {

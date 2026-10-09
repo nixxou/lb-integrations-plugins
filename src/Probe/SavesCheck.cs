@@ -258,6 +258,13 @@ namespace LbIntegrations.Probe
                       w.Count == 1 && File.ReadAllText(Path.Combine(live, "Zelda (F).rtc")) == "clock");
                 Check("companions: none in the backup → the live one is left", SaveCompanions.CopyBack(Path.Combine(vault, "Zelda (F)-10.srm"), target, Array.Empty<string>(), null).Count == 0);
                 Check("companions: a tail that is not the stem's → its extension", SaveCompanions.TailOf("Zelda (F)-10", @"C:\v\other.psr") == ".psr");
+                Check("writable: all free → nothing to say", SaveCompanions.WhyNotWritable(Path.Combine(vault, "Zelda (F)-10.srm"), target, new[] { Path.Combine(vault, "Zelda (F)-10.rtc") }) == null);
+                var rtc = Path.Combine(live, "Zelda (F).rtc"); File.SetAttributes(rtc, FileAttributes.ReadOnly);
+                var why = SaveCompanions.WhyNotWritable(Path.Combine(vault, "Zelda (F)-10.srm"), target, new[] { Path.Combine(vault, "Zelda (F)-10.rtc") });
+                File.SetAttributes(rtc, FileAttributes.Normal);
+                Check("writable: a read-only companion → refused before anything is written", why != null && why.Contains("Zelda (F).rtc") && why.Contains("read-only"), why);
+                using (new FileStream(rtc, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                    Check("writable: a companion held by another program → refused", SaveCompanions.WhyNotWritable(Path.Combine(vault, "Zelda (F)-10.srm"), target, new[] { Path.Combine(vault, "Zelda (F)-10.rtc") }) != null);
             }
             finally { try { Directory.Delete(dir, true); } catch { } }
         }
