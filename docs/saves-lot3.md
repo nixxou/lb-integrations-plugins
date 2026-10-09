@@ -692,7 +692,7 @@ Order proposed: 1, then 7-10 (the slot and signature code, same files), then 2-6
 | 3 | PCSX2 forward | a PS2 game on one of ours with a PCSX2 memory card |
 | 4 | ~~Manual import~~ **measured 09/10** (§8); the warning for a restore over another card's live file to code with 8 | |
 | 5 | ~~A save never seen, at a close~~ **measured 09/10, no hijack** (§3.2b) | |
-| 6 | Desk start-up cost | the `front desk on` lines and the first `GetSaves` times in the 13 logs, full scan duration in LaunchBox's log |
+| 6 | ~~Desk start-up cost~~ **measured 09/10**: LaunchBox's full save scan ~3.2 s desk off (06-07/10) vs ~3.55 s desk on (08-09/10), +0.35 s on G:\LB1326 (23 emulators); in the background. To measure on a big library before lot 4 | |
 | 7 | Slots: A + B + per-plugin `SlotFile` (§6.6) | probe checks, then the real tests of §6.6 |
 | 8 | The Yes/No warning (C), LaunchBox-only, version-gated; BigBox behaviour checked | real test: occupied other slot, No then Yes |
 | 9 | xemu "its own slot", PPSSPP keys 1-5 (and the id check), the desk list (problem 4) decided | real restores on xemu and PPSSPP; a foreign state on a bsnes desk |
@@ -717,6 +717,8 @@ G:\LB1326:
 - SNES XML snapshots: `Super Nintendo Entertainment System.xml.before-tie`, `.before-putback`, `.before-tie2`, plus the
   older `.plante-par-nous`, `.avant-titre-vivant`, `.before-M4`, `.before-unknown-element`;
 - original data: `Backups\lbip-saveprobe-2026-10-07\` (Data, Saves), `Backups\lbip-lot2-2026-10-08\`.
+
+**Cleaned 09/10** (everything archived first: `G:\LB1326\Backups\lbip-cleanup-2026-10-09.zip`, `G:\LB\Backups\lbip-cleanup-2026-10-09.zip`, each with a `MAP.txt` of where each file was): the 33 test files and 26 Zelda rows below, RetroArch-B and its entry, `ras-saves`, the import file, ares `.bs1` and RASnes9x's `Dir:SRAM` put back; on G:\LB the two test games, their saves and 24 media, the SNES XML back to before the import. Left: the save probe (needed for the next lots), the older test rows of 07-08/10 (routing §6).
 
 G:\LB1326, from the 09/10 tests (originals in `Backups\lbip-2026-10-09-lot3-mesures\`):
 - `Emulators\RetroArch-B\` and its emulator entry "RetroArch B" (`Emulators-before-test2.xml` is the file before);
