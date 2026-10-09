@@ -70,6 +70,40 @@ namespace LbIntegrations.Saves
             catch (Exception ex) { say("tie failed, rows left as listed: " + ex.Message); return rows; }
         }
 
+        /// <summary>The live files of the card <paramref name="saveGroupId"/> of the game: the full paths of its persisted rows
+        /// that are not in LaunchBox's vault (&lt;root&gt;\Saves). Read-only, by reflection; nothing when it cannot be read.
+        /// A restore asks it which install a backup came from (SaveRouter.RestoreEmulator).</summary>
+        public static IReadOnlyList<string> LivePathsOf(string? gameId, string? saveGroupId)
+        {
+            var found = new List<string>();
+            try
+            {
+                if (string.IsNullOrEmpty(gameId) || string.IsNullOrEmpty(saveGroupId)) return found;
+                var game = PluginHelper.DataManager?.GetGameById(gameId);
+                if (game == null) return found;
+                var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".."));
+                var vault = Path.Combine(root, "Saves") + Path.DirectorySeparatorChar;
+                var holders = new List<object> { game };
+                holders.AddRange((game.GetAllAdditionalApplications() ?? Array.Empty<IAdditionalApplication>()).Where(a => a != null)!);
+                foreach (var h in holders)
+                {
+                    if (h.GetType().GetProperty("Saves", Inst)?.GetValue(h) is not IEnumerable rows) continue;
+                    foreach (var s in rows.Cast<object>().ToList())
+                    {
+                        var t = s.GetType();
+                        if (!string.Equals(t.GetProperty("SaveGroupId")?.GetValue(s) as string, saveGroupId, StringComparison.Ordinal)) continue;
+                        var p = t.GetProperty("FilePath")?.GetValue(s) as string;
+                        if (string.IsNullOrWhiteSpace(p)) continue;
+                        string full;
+                        try { full = Path.GetFullPath(Path.IsPathRooted(p) ? p : Path.Combine(root, p)); } catch { continue; }
+                        if (!full.StartsWith(vault, StringComparison.OrdinalIgnoreCase)) found.Add(full);
+                    }
+                }
+            }
+            catch { }
+            return found;
+        }
+
         /// <summary>Gives each of <paramref name="rows"/> (with an id) a persisted row at its path, on the game or version
         /// the row is listed on; moves there the persisted row of one of our saves found on another.</summary>
         public static void Ensure(string gameId, IEnumerable<GameSaveBase> rows, Action<string> say)

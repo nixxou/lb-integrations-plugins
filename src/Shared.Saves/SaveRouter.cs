@@ -247,6 +247,60 @@ namespace LbIntegrations.Saves
             return best;
         }
 
+        /// <summary>The install a restore of <paramref name="row"/> writes into, for a LaunchBox integration that writes where
+        /// its emulator says (StockRestore). EmulatorFor keeps the first of a tie; two installs of the same exe name, core
+        /// and platform in DIFFERENT folders tie (Codex review, 09/10), so then the backup's card says which: its live
+        /// file, as this desk listed it (ListedFrom) or the folder it is in. Still tied: <paramref name="refused"/> - never
+        /// written to a guessed install.</summary>
+        internal static IEmulator? RestoreEmulator(EmulatorPlugin plugin, GameSaveBase row, IEmulator? best, out string? refused)
+        {
+            refused = null;
+            string? platform = null;
+            try { platform = PluginHelper.DataManager?.GetGameById(row.GameId)?.Platform; } catch { }
+            var cands = new List<(IEmulator E, string Dir, int Score)>();
+            foreach (var e in Library())
+            {
+                if (!ReferenceEquals(DriverOf(e)?.Plugin, plugin)) continue;
+                int score = 0;
+                if (!string.IsNullOrEmpty(row.EmulatorFileName)
+                    && string.Equals(Path.GetFileName(Safe(() => e.ApplicationPath) ?? ""), row.EmulatorFileName, StringComparison.OrdinalIgnoreCase)) score += 4;
+                if (!string.IsNullOrEmpty(row.EmulatorCore) && string.Equals(CoreOf(e, platform), row.EmulatorCore, StringComparison.OrdinalIgnoreCase)) score += 2;
+                if (Covers(e, platform)) score += 1;
+                cands.Add((e, EmulatorDir(e) ?? "", score));
+            }
+            var lives = SavePersist.LivePathsOf(row.GameId, row.SaveGroupId);
+            int pick = PickInstall(cands.Select(c => (c.Dir, c.Score)).ToList(), lives,
+                                   p => { var from = ListedFrom(p); return from == null ? -1 : cands.FindIndex(c => ReferenceEquals(c.E, from)); },
+                                   out var why);
+            if (pick >= 0) return cands[pick].E;
+            if (why == null) return best;
+            refused = why + ": " + string.Join(", ", cands.Where(c => c.Score == cands.Max(x => x.Score)).Select(c => (Safe(() => c.E.Title) ?? "?") + " (" + c.Dir + ")"))
+                      + ". Restore it with the game set to the right one.";
+            return null;
+        }
+
+        /// <summary>The rule of <see cref="RestoreEmulator"/>, apart for the probe. The best score's installs; one folder among
+        /// them → the first; else the one that listed a live file of the card (<paramref name="listedIndex"/>, -1 when
+        /// none), else the one whose folder holds one; else -1 with <paramref name="why"/>. -1 and no reason: no candidate.</summary>
+        internal static int PickInstall(IReadOnlyList<(string Dir, int Score)> c, IReadOnlyList<string> lives, Func<string, int> listedIndex, out string? why)
+        {
+            why = null;
+            if (c.Count == 0) return -1;
+            int top = c.Max(x => x.Score);
+            var tied = Enumerable.Range(0, c.Count).Where(i => c[i].Score == top).ToList();
+            if (tied.Select(i => c[i].Dir).Distinct(StringComparer.OrdinalIgnoreCase).Count() <= 1) return tied[0];
+            foreach (var p in lives)
+            {
+                int i = listedIndex(p);
+                if (i >= 0 && tied.Contains(i)) return i;
+            }
+            foreach (var p in lives)
+                foreach (var i in tied)
+                    if (c[i].Dir.Length > 0 && p.StartsWith(c[i].Dir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) return i;
+            why = "This save could belong to " + tied.Count + " installs of the same emulator, and nothing says which";
+            return -1;
+        }
+
         // ── a row's owner ────────────────────────────────────────────────────
 
         /// <summary>Where <paramref name="row"/> must go, or null when it is <paramref name="self"/>'s own (or the desk is off).</summary>
@@ -266,6 +320,14 @@ namespace LbIntegrations.Saves
         }
 
         private sealed class RouteBox { public RouteBox(SaveOwnerRoute? r) { Route = r; } public SaveOwnerRoute? Route { get; } }
+
+        /// <summary>Every live file the desk listed for another plugin, by full path: who listed it and from which
+        /// emulator of the library (OthersFor). Read by OwnerOfPath and by a restore that must find its install.</summary>
+        private static readonly ConcurrentDictionary<string, (string Emu, EmulatorPlugin Plugin, IEmulator Emulator)> _listed = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The emulator that listed the live file at <paramref name="path"/> this session, if any.</summary>
+        internal static IEmulator? ListedFrom(string? path)
+            => !string.IsNullOrWhiteSpace(path) && _listed.TryGetValue(FullOf(path), out var w) ? w.Emulator : null;
         private static readonly ConcurrentDictionary<string, RouteBox> _routes = new(StringComparer.Ordinal);
 
         private static SaveOwnerRoute? OwnerOfCore(GameSaveBase row, EmulatorPlugin self, string selfEmu, out bool cacheable)
@@ -302,6 +364,12 @@ namespace LbIntegrations.Saves
             if (string.IsNullOrWhiteSpace(path) || !Active) return null;
             string full;
             try { full = Path.GetFullPath(path); } catch { return null; }
+            // A file another plugin listed through this desk: that plugin, whatever folder it is in (Codex review, 09/10:
+            // a save beside the rom or in a save folder set elsewhere had its companions answered by the desk's own
+            // plugin - measured, a RASnes9x .srm backed up without its .rtc).
+            var listed = FullOf(full);
+            if (_listed.TryGetValue(listed, out var who))
+                return ReferenceEquals(who.Plugin, self) ? null : new SaveOwnerRoute(who.Plugin, who.Emu, who.Emulator);
             foreach (var e in Library())
             {
                 var dir = EmulatorDir(e);
@@ -384,6 +452,11 @@ namespace LbIntegrations.Saves
                         if (row == null || (at.Length > 0 && !mine.Add(at))) continue;
                         var core = string.IsNullOrEmpty(row.EmulatorCore) ? CoreOf(e, Safe(() => GameOf(row.GameId)?.Platform)) : row.EmulatorCore;
                         found.Add(SaveRows.With(row, exe, core));
+                        if (at.Length > 0)
+                        {
+                            if (_listed.Count > 20000) _listed.Clear();
+                            _listed[at] = (d.Value.Emu, d.Value.Plugin, e);
+                        }
                         n++;
                     }
                     if (n > 0) Say("listed " + n + " save(s) of " + d.Value.Emu + " (" + Safe(() => e.Title) + ") with ours");

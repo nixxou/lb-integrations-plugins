@@ -43,6 +43,18 @@ namespace LbIntegrations.Saves
                 return Refuse(log, "no " + route.Emu.Substring(SaveOwner.LaunchBoxPrefix.Length) + " emulator in LaunchBox for this save");
             try
             {
+                // Which install: two of the same exe, core and platform in different folders are told apart by the
+                // card's live file, or the restore is refused (SaveRouter.RestoreEmulator).
+                if (args?.SaveToAdd != null)
+                {
+                    var install = SaveRouter.RestoreEmulator(route.Plugin, args.SaveToAdd, route.Emulator, out var ambiguous);
+                    if (ambiguous != null) { log("[saves] restore refused: " + ambiguous); return new AddSaveResponse(ambiguous); }
+                    if (install != null && !ReferenceEquals(install, route.Emulator))
+                    {
+                        log("[saves] restore goes to " + Safe(() => install.Title) + " (" + Safe(() => install.ApplicationPath) + "), the install its card's live file is in");
+                        route = new SaveOwnerRoute(route.Plugin, route.Emu, install);
+                    }
+                }
                 return route.Emu == RetroArch ? AddRetroArch(route, args, log) : AddDolphin(route, args, log);
             }
             catch (TargetInvocationException ex) { return Refuse(log, route.Emu + " failed: " + (ex.InnerException?.Message ?? ex.Message)); }

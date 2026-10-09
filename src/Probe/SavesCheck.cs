@@ -238,6 +238,28 @@ namespace LbIntegrations.Probe
 
             Slots();
             View();
+            Installs();
+        }
+
+        /// <summary>SaveRouter.PickInstall: which of two installs a restore writes into.</summary>
+        private static void Installs()
+        {
+            string? why;
+            var one = new List<(string, int)> { (@"C:\RA", 7) };
+            Check("install: one candidate → it", SaveRouter.PickInstall(one, Array.Empty<string>(), _ => -1, out why) == 0 && why == null);
+            var shared = new List<(string, int)> { (@"C:\RA", 7), (@"C:\RA", 7) };
+            Check("install: two entries on one folder (one exe, two cores) → not ambiguous", SaveRouter.PickInstall(shared, Array.Empty<string>(), _ => -1, out why) == 0 && why == null);
+            var scored = new List<(string, int)> { (@"C:\RA", 5), (@"D:\RA2", 7) };
+            Check("install: the better score wins", SaveRouter.PickInstall(scored, Array.Empty<string>(), _ => -1, out why) == 1);
+            var two = new List<(string, int)> { (@"C:\RA", 7), (@"D:\RA2", 7) };
+            Check("install: a tie, the card's live file listed from the second → the second",
+                  SaveRouter.PickInstall(two, new[] { @"D:\RA2\saves\Snes9x\Zelda.srm" }, p => p.StartsWith(@"D:\RA2") ? 1 : -1, out why) == 1);
+            Check("install: a tie, not listed, its folder holds the live file → that one",
+                  SaveRouter.PickInstall(two, new[] { @"D:\RA2\saves\Snes9x\Zelda.srm" }, _ => -1, out why) == 1);
+            Check("install: a tie, no live file → refused, with a reason",
+                  SaveRouter.PickInstall(two, Array.Empty<string>(), _ => -1, out why) == -1 && why != null, why);
+            Check("install: a folder prefix is not its sibling (C:\\RA vs C:\\RA2)",
+                  SaveRouter.PickInstall(new List<(string, int)> { (@"C:\RA", 7), (@"C:\RA2", 7) }, new[] { @"C:\RA2\saves\x.srm" }, _ => -1, out why) == 1);
         }
 
         /// <summary>SaveGameView: the game as RetroArch would run it, everything else the real game's.</summary>
