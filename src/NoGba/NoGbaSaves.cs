@@ -150,7 +150,7 @@ namespace LbIntegrations.NoGba
             if (string.IsNullOrWhiteSpace(asset)) return;
 
             var path = Path.Combine(layout.BatteryDir, asset + NoGbaPaths.SaveExtension);
-            if (!File.Exists(path)) return;
+            if (!LbIntegrations.Saves.SaveScan.Exists(path)) return;   // a big listing: BATTERY\ listed once
 
             string gameId = gameIdEarly;
             string appId = appIdEarly;
@@ -175,7 +175,9 @@ namespace LbIntegrations.NoGba
         }
 
         /// <summary>The DSi ARM7 BIOS, needed by every call into the NAND library.</summary>
-        private static string DsiBios7(NoGbaLayout layout)
+        private static string DsiBios7(NoGbaLayout layout) => LbIntegrations.Saves.SaveScan.Memo("nogba.bios7|" + layout?.BatteryDir, () => DsiBios7Core(layout));
+
+        private static string DsiBios7Core(NoGbaLayout layout)
         {
             foreach (var file in NoGbaBios.Files)
                 if (string.Equals(file.OurName, "biosdsi7.bin", StringComparison.OrdinalIgnoreCase))
