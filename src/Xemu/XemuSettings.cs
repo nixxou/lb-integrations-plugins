@@ -41,8 +41,9 @@ namespace LbIntegrations.Xemu
             var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             try
             {
-                if (!File.Exists(SettingsPath)) return values;
-                foreach (var line in File.ReadAllLines(SettingsPath))
+                // A big listing reads it once (LbIntegrations.Saves.SaveScan), not three times per game.
+                if (!LbIntegrations.Saves.SaveScan.Exists(SettingsPath)) return values;
+                foreach (var line in LbIntegrations.Saves.SaveScan.Lines(SettingsPath))
                 {
                     var t = line.Trim();
                     if (t.Length == 0 || t[0] == '#') continue;
@@ -62,6 +63,7 @@ namespace LbIntegrations.Xemu
             var tmp = SettingsPath + ".tmp";
             File.WriteAllLines(tmp, lines);
             File.Move(tmp, SettingsPath, overwrite: true);
+            LbIntegrations.Saves.SaveScan.Touched(SettingsPath);
         }
 
         /// <summary>Is the media patch made for every game (XboxMediaPatch, the option disc.media_patch)? On unless set off.</summary>
@@ -82,10 +84,10 @@ namespace LbIntegrations.Xemu
         {
             var p = GamePath(gameId);
             var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            if (p == null || !File.Exists(p)) return values;
+            if (p == null || !LbIntegrations.Saves.SaveScan.Exists(p)) return values;
             try
             {
-                foreach (var line in File.ReadAllLines(p))
+                foreach (var line in LbIntegrations.Saves.SaveScan.Lines(p))
                 {
                     var t = line.Trim();
                     int eq = t.IndexOf('=');
@@ -100,13 +102,14 @@ namespace LbIntegrations.Xemu
         {
             var p = GamePath(gameId);
             if (p == null) return;
-            if (values == null || values.All(kv => string.IsNullOrEmpty(kv.Value))) { try { if (File.Exists(p)) File.Delete(p); } catch { } return; }
+            if (values == null || values.All(kv => string.IsNullOrEmpty(kv.Value))) { try { if (File.Exists(p)) File.Delete(p); } catch { } LbIntegrations.Saves.SaveScan.Touched(p); return; }
             Directory.CreateDirectory(Path.GetDirectoryName(p));
             var lines = new List<string> { "# Nixx-Xemu: this game. Edited by its options window." };
             lines.AddRange(values.Where(kv => !string.IsNullOrEmpty(kv.Value)).OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => kv.Key + "=" + kv.Value));
             var tmp = p + ".tmp";
             File.WriteAllLines(tmp, lines);
             File.Move(tmp, p, overwrite: true);
+            LbIntegrations.Saves.SaveScan.Touched(p);
         }
 
         public static long CacheBytes()

@@ -445,7 +445,8 @@ namespace LbIntegrations.Probe
             {
                 var romDir = Arg(args, "--roms");
                 var platformName = Arg(args, "--platform") ?? "";
-                if (emuPath == null || romDir == null || !Directory.Exists(romDir))
+                bool listFile = romDir != null && File.Exists(romDir);   // a .txt: one rom path per line
+                if (emuPath == null || romDir == null || !(Directory.Exists(romDir) || listFile))
                 {
                     Console.Error.WriteLine("--saves-ab needs --emu <emulator.exe> --roms <folder> [--platform <name>] [--line <command line>] [--count <n>]");
                     return 2;
@@ -457,7 +458,8 @@ namespace LbIntegrations.Probe
                     var line = emulator.AddNewEmulatorPlatform();
                     line.Platform = platformName; line.CommandLine = Arg(args, "--line") ?? ""; line.IsDefault = true;
                 }
-                var roms = Directory.GetFiles(romDir).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
+                var roms = (listFile ? File.ReadAllLines(romDir).Where(l => l.Trim().Length > 0).Select(l => l.Trim()).ToArray() : Directory.GetFiles(romDir))
+                           .OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
                 if (roms.Count == 0) { Console.Error.WriteLine("no file in " + romDir); return 2; }
                 var games = new List<IGame>();
                 for (int i = 0; i < Math.Max(count, roms.Count); i++)
