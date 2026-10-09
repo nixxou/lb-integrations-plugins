@@ -205,7 +205,7 @@ namespace LbIntegrations.Xenia
             try
             {
                 if (!IsOurs(save) || string.IsNullOrWhiteSpace(emulatorApplicationPath)) return true;
-                var layout = XeniaPaths.Resolve(emulatorApplicationPath);
+                var layout = XeniaPaths.Resolve(emulatorApplicationPath, CommandLineOf(save, emulatorApplicationPath));
                 var loc = save.FileLocation;
                 if (string.IsNullOrWhiteSpace(loc) || string.IsNullOrWhiteSpace(layout.ContentRoot)) return true;
                 if (!Path.GetFullPath(loc).StartsWith(Path.GetFullPath(layout.ContentRoot),
@@ -417,11 +417,31 @@ namespace LbIntegrations.Xenia
             if (titleId == null) return null;
 
             string contentRoot = !string.IsNullOrWhiteSpace(emulatorApplicationPath)
-                ? XeniaPaths.Resolve(emulatorApplicationPath).ContentRoot
+                ? XeniaPaths.Resolve(emulatorApplicationPath, CommandLineOf(save, emulatorApplicationPath)).ContentRoot
                 : ContentRootFromUnitPath(save?.FileLocation);
             if (contentRoot == null) return null;
 
             return XeniaContent.ForTitleId(contentRoot, titleId);
+        }
+
+        /// <summary>The command line of the emulator entry that runs <paramref name="exe"/> - the save's game's own when it is that
+        /// exe, else the library's first on it - or null. GetSaves resolves the layout WITH it (--content_root / --storage_root
+        /// move the content tree); asked without it, the questions about a row looked elsewhere and read every row inactive (09/10).</summary>
+        private static string CommandLineOf(GameSaveBase save, string exe)
+        {
+            try
+            {
+                var dm = PluginHelper.DataManager;
+                if (dm == null || string.IsNullOrWhiteSpace(exe)) return null;
+                var full = ResolveFullPath(exe);
+                bool Same(IEmulator e) => string.Equals(ResolveFullPath(Safe(() => e?.ApplicationPath)), full, StringComparison.OrdinalIgnoreCase);
+                var emuId = Safe(() => dm.GetGameById(save?.GameId)?.EmulatorId);
+                var own = string.IsNullOrEmpty(emuId) ? null : Safe(() => dm.GetEmulatorById(emuId));
+                if (own != null && Same(own)) return Safe(() => own.CommandLine);
+                var any = Safe(() => dm.GetAllEmulators())?.FirstOrDefault(e => e != null && Same(e));
+                return Safe(() => any?.CommandLine);
+            }
+            catch { return null; }
         }
 
         /// <summary>...\content\&lt;XUID&gt;\&lt;TITLEID&gt;\00000001 -> ...\content. Used when no emulator
