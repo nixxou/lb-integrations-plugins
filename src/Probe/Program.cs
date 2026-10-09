@@ -512,6 +512,43 @@ namespace LbIntegrations.Probe
                 Console.WriteLine(same ? "  SAME ROWS" : "  FAIL - the big listing does not answer what the small ones answer");
                 return same ? 0 : 1;
             }
+            // What one opening of Game Saves costs a plugin (10/10): the rows of a listing, then N calls of each per-row
+            // method LaunchBox makes (IsSaveActive is asked hundreds of times per opening - 82, 342, 176 measured), round robin
+            // over the rows. No DataManager here: the game lookups of a real library are left out (they are in memory).
+            if (Has(args, "--isactive-bench"))
+            {
+                var romList = Arg(args, "--roms");
+                var platformName = Arg(args, "--platform") ?? "";
+                int calls = int.TryParse(Arg(args, "--calls"), out var cc) ? cc : 300;
+                if (emuPath == null || romList == null) { Console.Error.WriteLine("--isactive-bench needs --emu <exe> --roms <folder|list.txt> [--platform p] [--calls n]"); return 2; }
+                var emulator = new StubEmulator { Title = "emulator", ApplicationPath = emuPath };
+                if (platformName.Length > 0) { var line = emulator.AddNewEmulatorPlatform(); line.Platform = platformName; line.IsDefault = true; }
+                var roms = (File.Exists(romList) ? File.ReadAllLines(romList).Where(l => l.Trim().Length > 0).Select(l => l.Trim()).ToArray() : Directory.GetFiles(romList)).ToList();
+                var games = roms.Select((rom, i) => { var g = StubGame.Create("bench-" + i, Path.GetFileNameWithoutExtension(rom), rom, emulator.Id); if (platformName.Length > 0) StubGame.With(g, "Platform", platformName); return g; }).ToList();
+                var listed = plugin.GetSaves(new GetSavesArgs { Emulator = emulator, Games = games });
+                var rows = (listed?.FoundSaves ?? Array.Empty<GameSaveBase>()).ToList();
+                Section("Game Saves bench  [" + Path.GetFileName(emuPath) + ", " + rows.Count + " row(s), " + calls + " call(s) each]");
+                if (rows.Count == 0) { Console.WriteLine("  no row to ask about"); return 1; }
+                double Time(string what, Action<GameSaveBase> call)
+                {
+                    for (int i = 0; i < Math.Min(rows.Count, 5); i++) call(rows[i]);   // warm-up
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    for (int i = 0; i < calls; i++) call(rows[i % rows.Count]);
+                    sw.Stop();
+                    var us = sw.Elapsed.TotalMilliseconds * 1000 / calls;
+                    Console.WriteLine("  " + what.PadRight(26) + sw.Elapsed.TotalMilliseconds.ToString("F1").PadLeft(9) + " ms   " + us.ToString("F0").PadLeft(7) + " us/call");
+                    return sw.Elapsed.TotalMilliseconds;
+                }
+                double total = 0;
+                total += Time("IsSaveActive", r => plugin.IsSaveActive(r, emuPath));
+                total += Time("GetCompanionSaveFiles", r => plugin.GetCompanionSaveFiles(r.FileLocation));
+                total += Time("IsSecondarySaveFile", r => plugin.IsSecondarySaveFile(r.FileLocation));
+                total += Time("TryComputeSaveSignature", r => plugin.TryComputeSaveSignature(r, emuPath, out _));
+                total += Time("TryGetSaveGroupInfo", r => plugin.TryGetSaveGroupInfo(r, r.FileLocation, out _, out _));
+                Console.WriteLine("  total".PadRight(28) + total.ToString("F1").PadLeft(9) + " ms");
+                return 0;
+            }
+
             // What the plugin says the LIVE saves are, for one game on one emulator. The question
             // "the vault copy shows but the active save does not" has no other honest answer.
             if (Has(args, "--saves"))

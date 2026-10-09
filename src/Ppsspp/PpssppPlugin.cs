@@ -804,7 +804,13 @@ namespace LbIntegrations.Ppsspp
         /// from the core; with the public SDK only, we walk up from this assembly — a plugin lives at
         /// &lt;LB&gt;\Plugins\&lt;Name&gt;\ or &lt;LB&gt;\System\Plugins\&lt;Name&gt;\ — until we find a
         /// folder that looks like a LaunchBox root.</summary>
-        private static string LaunchBoxRoot()
+        /// <summary>Worked out once: it follows from this dll's folder, which does not move (10/10: walked up with Directory.Exists on
+        /// every relative path, hundreds of times per Game Saves opening).</summary>
+        private static string LaunchBoxRoot() => _launchBoxRoot ??= LaunchBoxRootCore();
+
+        private static string _launchBoxRoot;
+
+        private static string LaunchBoxRootCore()
         {
             try
             {

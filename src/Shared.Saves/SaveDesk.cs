@@ -155,6 +155,8 @@ namespace LbIntegrations.Saves
         /// each companion in order of its tail - the content only, so a vault copy ("-01.srm" + "-01.rtc") and the live set
         /// compare equal when they are. A state's companion is its thumbnail, made again at will: never counted, and a save
         /// without companions keeps LaunchBox's own signature (false). Sets above 64 MB are left to LaunchBox.</summary>
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _signatures = new(StringComparer.OrdinalIgnoreCase);
+
         private bool WithCompanions(GameSaveBase save, out string? signature)
         {
             signature = null;
@@ -168,7 +170,12 @@ namespace LbIntegrations.Saves
                                  .OrderBy(c => Tail(primary, c), StringComparer.OrdinalIgnoreCase).ToList();
                 if (companions.Count == 0) return false;
                 var files = new[] { primary }.Concat(companions).ToList();
-                if (files.Sum(f => new FileInfo(f).Length) > 64L * 1024 * 1024) return false;
+                var infos = files.Select(f => new FileInfo(f)).ToList();
+                if (infos.Sum(i => i.Length) > 64L * 1024 * 1024) return false;
+                // Kept while every file of the set keeps its size and date (10/10: hashed again on each of the hundreds of calls a
+                // Game Saves opening makes - 40 to 124 us a call).
+                var key = string.Join("|", infos.Select(i => i.FullName + "*" + i.Length + "*" + i.LastWriteTimeUtc.Ticks + "*" + Tail(primary, i.FullName)));
+                if (_signatures.TryGetValue(key, out var known)) { signature = known; return true; }
                 using var all = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
                 foreach (var f in files)
                 {
@@ -177,6 +184,8 @@ namespace LbIntegrations.Saves
                     all.AppendData(System.Text.Encoding.UTF8.GetBytes("|" + Tail(primary, f) + "|"));
                 }
                 signature = "set:" + Convert.ToHexString(all.GetHashAndReset());
+                if (_signatures.Count > 512) _signatures.Clear();
+                _signatures[key] = signature;
                 return true;
             }
             catch (Exception ex) { Say("no signature over the companions of " + save?.FileLocation + ": " + ex.Message); signature = null; return false; }
