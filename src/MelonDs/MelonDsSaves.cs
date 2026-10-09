@@ -168,7 +168,7 @@ namespace LbIntegrations.MelonDs
             var stateDir = layout.HasRedirectedStates ? layout.StateDir : rom.RomDir;
 
             var savePath = Combine(saveDir, rom.AssetName + SaveExtension);
-            if (savePath != null && File.Exists(savePath) && seen.Add("save|" + savePath + "|" + context))
+            if (savePath != null && LbIntegrations.Saves.SaveScan.Exists(savePath) && seen.Add("save|" + savePath + "|" + context))
                 into.Add(Row(savePath, gameId, appId, SaveId.Write(new SaveIdData { Emu = Emu, Kind = "save", By = "name", Id = rom.AssetName }),
                              SaveGroupName, SaveChipText));
 
@@ -176,7 +176,7 @@ namespace LbIntegrations.MelonDs
             for (int slot = FirstSlot; slot <= LastSlot; slot++)
             {
                 var statePath = Combine(stateDir, rom.AssetName + StateExtension(slot));
-                if (statePath == null || !File.Exists(statePath)) continue;
+                if (statePath == null || !LbIntegrations.Saves.SaveScan.Exists(statePath)) continue;   // a big listing: each folder listed once
                 if (!seen.Add("state|" + statePath + "|" + context)) continue;
 
                 long size = 0; DateTime when = default;
@@ -638,7 +638,10 @@ namespace LbIntegrations.MelonDs
         private static string Full(string path) => string.IsNullOrWhiteSpace(path) ? null : ResolveFullPath(path);
 
         /// <summary>DSi.BIOS7Path, resolved, or null. Without it a NAND cannot be opened at all.</summary>
-        internal static string Bios7Of(MelonDsLayout layout)
+        internal static string Bios7Of(MelonDsLayout layout) => LbIntegrations.Saves.SaveScan.Memo("melonds.bios7|" + layout?.ConfigFile, () => Bios7OfCore(layout));
+
+        /// <summary>Bios7Of, worked out (a big listing: melonDS.toml read once, not once per DSiWare game - LbIntegrations.Saves.SaveScan).</summary>
+        private static string Bios7OfCore(MelonDsLayout layout)
         {
             try
             {
