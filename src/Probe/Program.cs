@@ -54,6 +54,8 @@ namespace LbIntegrations.Probe
 
             // The save ids, fingerprints and restore targets of Shared.Saves: no plugin, no emulator.
             if (Has(args, "--saves-selftest")) return SavesCheck.Run() ? 0 : 1;
+            // GlobalCache from several processes at once (SavesCheck.GlobalCacheCheck starts three of these).
+            if (Has(args, "--globalcache-writer")) return SavesCheck.GlobalCacheWriter(args[Array.IndexOf(args, "--globalcache-writer") + 1], args[Array.IndexOf(args, "--globalcache-writer") + 2]);
 
             // Time the reference walk over a real tree: --walk <dir>. Writes the manifest to %TEMP%.
             if (Has(args, "--walk"))

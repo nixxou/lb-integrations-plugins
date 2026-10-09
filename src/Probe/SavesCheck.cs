@@ -242,8 +242,98 @@ namespace LbIntegrations.Probe
             Companions();
             CompatSwitches();
             Scan();
+            GlobalCacheCheck();
         }
 
+        /// <summary>One of the writers GlobalCacheCheck starts: 200 files of its own, a value each, into the cache at <paramref name="dir"/>.</summary>
+        internal static int GlobalCacheWriter(string dir, string who)
+        {
+            LbIntegrations.Lbip.GlobalCache.DirForTests = Path.Combine(dir, "cache");
+            for (int i = 0; i < 200; i++)
+            {
+                var f = Path.Combine(dir, "files", who + "-" + i + ".bin");
+                LbIntegrations.Lbip.GlobalCache.Set("race", f, who + ":" + i);
+            }
+            return 0;
+        }
+
+        /// <summary>Shared.Lbip\GlobalCache: a value kept while its file is unchanged, others' lines read in, a cut line
+        /// skipped, escaping, compaction, a drive not plugged in kept - and three processes writing at once.</summary>
+        private static void GlobalCacheCheck()
+        {
+            var dir = Path.Combine(Path.GetTempPath(), "lbip-gcache-" + Guid.NewGuid().ToString("N"));
+            var was = LbIntegrations.Lbip.GlobalCache.DirForTests;
+            try
+            {
+                var gc = typeof(LbIntegrations.Lbip.GlobalCache);
+                LbIntegrations.Lbip.GlobalCache.DirForTests = Path.Combine(dir, "cache");
+                LbIntegrations.Lbip.GlobalCache.ForgetForTests();
+                var files = Path.Combine(dir, "files"); Directory.CreateDirectory(files);
+                var rom = Path.Combine(files, "game.iso"); File.WriteAllText(rom, "disc");
+                bool Get(string kind, string f, out string v) => LbIntegrations.Lbip.GlobalCache.TryGet(kind, f, out v);
+
+                Check("gcache: nothing kept → a miss", !Get("ids", rom, out _));
+                LbIntegrations.Lbip.GlobalCache.Set("ids", rom, "ULUS10080");
+                Check("gcache: kept → a hit", Get("ids", rom, out var v1) && v1 == "ULUS10080");
+                LbIntegrations.Lbip.GlobalCache.ForgetForTests();
+                Check("gcache: read back from the file (another session)", Get("ids", rom, out var v2) && v2 == "ULUS10080");
+                File.WriteAllText(rom, "another disc");
+                Check("gcache: the file changed → a miss", !Get("ids", rom, out _));
+                LbIntegrations.Lbip.GlobalCache.Set("ids", rom, "");
+                Check("gcache: an empty value is a value (read, nothing found)", Get("ids", rom, out var v3) && v3 == "");
+
+                var odd = Path.Combine(files, "odd.bin"); File.WriteAllText(odd, "x");
+                LbIntegrations.Lbip.GlobalCache.Set("ids", odd, "a\tb\nc\\d%09 100%");
+                LbIntegrations.Lbip.GlobalCache.ForgetForTests();
+                Check("gcache: tabs, new lines, backslashes and % come back", Get("ids", odd, out var v4) && v4 == "a\tb\nc\\d%09 100%");
+
+                // Another process's line, appended while this one has the table in memory.
+                var other = Path.Combine(files, "other.bin"); File.WriteAllText(other, "o");
+                var fo = new FileInfo(other);
+                File.AppendAllText(LbIntegrations.Lbip.GlobalCache.PathOf("ids"), fo.FullName + "\t" + fo.Length + "\t" + fo.LastWriteTimeUtc.Ticks + "\tfrom-elsewhere\n");
+                Check("gcache: another process's line is read in", Get("ids", other, out var v5) && v5 == "from-elsewhere");
+
+                // A line a crash cut short, then a value set: the cut one is skipped, nothing else lost.
+                File.AppendAllText(LbIntegrations.Lbip.GlobalCache.PathOf("ids"), @"C:\half\written.iso" + "\t12");
+                var after = Path.Combine(files, "after.bin"); File.WriteAllText(after, "a");
+                LbIntegrations.Lbip.GlobalCache.Set("ids", after, "after-crash");
+                LbIntegrations.Lbip.GlobalCache.ForgetForTests();
+                Check("gcache: a cut line skipped, the next one and the earlier ones kept",
+                      Get("ids", after, out var v6) && v6 == "after-crash" && Get("ids", other, out _) && Get("ids", odd, out _));
+
+                // Compaction: many values for one file, a file gone, an entry on a drive that is not there.
+                var gone = Path.Combine(files, "gone.bin"); File.WriteAllText(gone, "g");
+                LbIntegrations.Lbip.GlobalCache.Set("compact", gone, "soon gone");
+                char free = "QRSTUVWXYZ".First(ch => !Directory.Exists(ch + @":\"));
+                File.AppendAllText(LbIntegrations.Lbip.GlobalCache.PathOf("compact"), free + @":\unplugged\game.iso" + "\t5\t42\tkept\n");
+                File.Delete(gone);
+                var busy = Path.Combine(files, "busy.bin"); File.WriteAllText(busy, "b");
+                for (int i = 0; i < 150; i++) LbIntegrations.Lbip.GlobalCache.Set("compact", busy, "v" + i);
+                var lines = File.ReadAllLines(LbIntegrations.Lbip.GlobalCache.PathOf("compact"));
+                Check("gcache: compacted (" + lines.Length + " lines for 150 writes)", lines.Length < 80);
+                Check("gcache: compaction keeps the last value", lines.Count(l => l.Contains("busy.bin")) <= 70 && Get("compact", busy, out var v7) && v7 == "v149");
+                Check("gcache: a file gone from a drive that is there is dropped", !lines.Any(l => l.Contains("gone.bin")));
+                Check("gcache: an entry of a drive not plugged in is kept", lines.Any(l => l.StartsWith(free + @":\unplugged")));
+                Check("gcache: no temporary file left", Directory.GetFiles(Path.Combine(dir, "cache"), "*.tmp").Length == 0);
+
+                // Three processes at once, 200 values each.
+                for (int w = 0; w < 3; w++) for (int i = 0; i < 200; i++) File.WriteAllText(Path.Combine(files, "w" + w + "-" + i + ".bin"), "w");
+                var exe = Environment.ProcessPath!;
+                var procs = Enumerable.Range(0, 3).Select(w => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe, "--globalcache-writer \"" + dir + "\" w" + w) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true })!).ToList();
+                foreach (var p in procs) p.WaitForExit(60000);
+                LbIntegrations.Lbip.GlobalCache.ForgetForTests();
+                int found = 0;
+                for (int w = 0; w < 3; w++) for (int i = 0; i < 200; i++) if (Get("race", Path.Combine(files, "w" + w + "-" + i + ".bin"), out var rv) && rv == "w" + w + ":" + i) found++;
+                var bad = File.ReadAllLines(LbIntegrations.Lbip.GlobalCache.PathOf("race")).Count(l => l.Length > 0 && l.Split('\t').Length != 4);
+                Check("gcache: three processes at once - all 600 values kept, no broken line (" + found + ", " + bad + " broken)", found == 600 && bad == 0);
+            }
+            finally
+            {
+                LbIntegrations.Lbip.GlobalCache.DirForTests = was;
+                LbIntegrations.Lbip.GlobalCache.ForgetForTests();
+                try { Directory.Delete(dir, true); } catch { }
+            }
+        }
         /// <summary>SaveScan answers what File.Exists, Directory.Exists and Directory.GetFiles answer (a big listing).</summary>
         private static void Scan()
         {
