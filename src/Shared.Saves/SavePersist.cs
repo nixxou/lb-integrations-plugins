@@ -134,14 +134,25 @@ namespace LbIntegrations.Saves
                     if (target == null) continue;   // a version no longer there: nothing written
 
                     bool At(object s) => string.Equals(Full(P(s, "FilePath")), full, StringComparison.OrdinalIgnoreCase);
-                    if (target.Items.Any(At)) continue;
+                    bool Mine(object s) => At(s) && string.Equals(P(s, "SaveGroupId"), r.SaveGroupId, StringComparison.Ordinal);
+                    bool ours = SaveOwner.Of(r.SaveGroupId).Kind == SaveOwnerKind.Nixx;
+                    if (target.Items.Any(At))
+                    {
+                        // Already there - and a twin of ours on another owner (left by LaunchBox re-persisting a row we
+                        // had moved, measured 09/10: four on Secret of Mana) is taken away: one row per path.
+                        if (ours)
+                            foreach (var o in owners.Where(o => o != target).ToList())
+                                foreach (var twin in o.Items.Where(Mine).ToList())
+                                    say(TakeOut(o, twin) ? "persist: removed a twin row of " + full + " on " + Where(o)
+                                                         : "persist: could not remove a twin row of " + full + " on " + Where(o));
+                        continue;
+                    }
 
                     // Ours, persisted on another game or version than the listed row: moved to the listed one.
-                    var from = SaveOwner.Of(r.SaveGroupId).Kind != SaveOwnerKind.Nixx ? null
-                               : owners.FirstOrDefault(o => o != target && o.Items.Any(s => At(s) && string.Equals(P(s, "SaveGroupId"), r.SaveGroupId, StringComparison.Ordinal)));
+                    var from = !ours ? null : owners.FirstOrDefault(o => o != target && o.Items.Any(Mine));
                     if (from != null)
                     {
-                        var moved = from.Items.First(s => At(s) && string.Equals(P(s, "SaveGroupId"), r.SaveGroupId, StringComparison.Ordinal));
+                        var moved = from.Items.First(Mine);
                         if (TakeOut(from, moved))
                         {
                             Set(moved, "AdditionalApplicationId", target.AppId);

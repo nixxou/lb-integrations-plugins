@@ -479,6 +479,28 @@ Tests (probe first, then real):
   warning), into another occupied slot (warning; No → nothing written; Yes → overwritten), a 0 from SUPER ZSNES's
   list (refused); PPSSPP tile reads "Slot 1" for slot 1; xemu state restored; a foreign state on a bsnes desk.
 
+### 6.6b Measured after the fix (09/10, Zelda, ares state, SUPER ZSNES's list 0-9; 81fdba3/70be6b0 + eed1654)
+
+| Step | Pick | Result |
+|---|---|---|
+| backup `-02` (8DB9) into free slot 2 | 2 | `.bs2` created = 8DB9, slot 1 untouched, row `Slot=2` and `"slot":2`, a "Slot 2" tile - coherent |
+| backup `-01` into slot 0 | 0 | refused: "ares has no slot 0: ares numbers its states 1 to 9. Pick one of those." - nothing written |
+| backup into occupied slot 2 (other content) | 2, **No** | our warning, then nothing written (both slots unchanged) |
+| same | 2, **Yes** | slot 2 replaced (B8BF); no precautionary copy of its old content, as expected (it was still in the vault as `-02`) |
+| backup `-01` into its own slot 1 | 1 | no warning; LaunchBox skipped its copy (the old content was already the vault's `.bs1`) |
+
+**A refusal or a No shows LaunchBox's own error after ours.** `AddSaveResponse` has no "cancelled" apart from a
+failure: LaunchBox shows our message, then logs `RestoreSave: plugin.AddSaveFile failed` and pops up "LaunchBox
+encountered an error while attempting to restore the save file. This typically occurs when the file is marked
+read-only or is in use..." - misleading, harmless (nothing written). The natives answer a No to `ShouldOverwriteFunc` the
+same way. Cosmetic, LaunchBox's.
+
+**Twin rows on Secret of Mana** (found in the XML after these tests): four paths with two rows each, one on the game,
+one on "Play Version..." - left by the put-back trial of 09/10 01:37 (our rows moved onto the game, LaunchBox
+re-persisting its own on the version at close). Not made again since (4 at 09:20, 4 before the slot tests), but never
+cleaned: `Ensure` stopped as soon as the target had its row. Now a twin of OURS (same id, same path) on another owner is
+removed (`persist: removed a twin row`).
+
 ### 6.7 LiteBox (lot 8)
 
 LiteBox runs the whole restore itself: pick the slot first, preselect the backup's slot, confirm saying what is
