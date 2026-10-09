@@ -360,18 +360,27 @@ namespace LbIntegrations.Ares
             catch { return true; }
         }
 
-        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _savesRoot = new(StringComparer.OrdinalIgnoreCase);
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime Written, long Length, string Root)> _savesRoot = new(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>ares's Paths/Saves for <paramref name="exe"/>, full; null when it is not set (saves beside the rom).</summary>
-        private static string SavesRootOf(string exe) => _savesRoot.GetOrAdd(exe, e =>
+        /// <summary>ares's Paths/Saves for <paramref name="exe"/>, full; null when it is not set (saves beside the rom). Kept while
+        /// settings.bml keeps its date and size (09/10: kept for the whole session before, a Game Saves opened before the first
+        /// launch wrote Paths/Saves read "not set" until LaunchBox restarted - every save in Saves\ shown inactive).</summary>
+        private static string SavesRootOf(string exe)
         {
+            var settings = AresLaunch.SettingsOf(exe);
+            DateTime written = default; long length = -1;
+            try { var fi = new FileInfo(settings); if (fi.Exists) { written = fi.LastWriteTimeUtc; length = fi.Length; } } catch { }
+            if (_savesRoot.TryGetValue(exe, out var c) && c.Written == written && c.Length == length) return c.Root;
+            string root = null;
             try
             {
-                var v = AresBml.Load(AresLaunch.SettingsOf(e)).Get("Paths/Saves");
-                return string.IsNullOrWhiteSpace(v) ? null : Path.GetFullPath(v.Replace('/', Path.DirectorySeparatorChar)).TrimEnd(Path.DirectorySeparatorChar);
+                var v = AresBml.Load(settings).Get("Paths/Saves");
+                root = string.IsNullOrWhiteSpace(v) ? null : Path.GetFullPath(v.Replace('/', Path.DirectorySeparatorChar)).TrimEnd(Path.DirectorySeparatorChar);
             }
-            catch { return null; }
-        });
+            catch { }
+            _savesRoot[exe] = (written, length, root);
+            return root;
+        }
 
         /// <summary>The roms a row can belong to: its version's when it names one, and its game's.</summary>
         private static IEnumerable<string> RomsOf(GameSaveBase save)
