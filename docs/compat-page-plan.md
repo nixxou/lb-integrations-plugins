@@ -1,6 +1,10 @@
 # Nixx settings: a "Compatibility" page (plan, 09/10)
 
-Asked by Mehdi on 09/10, after lot 3. Not started. This file is the plan and the texts the page will show.
+Asked by Mehdi on 09/10, part of lot 3. **Built 09/10** (5f215e2): `src\Shared.Compat` (registry, `Compat.On`, checks) and
+`src\Menus\CompatPanel.cs`. Differences from this plan: the page uses the window's own Apply / OK (no button of its own),
+then a banner asks for a restart; the plugins' own import switches are shown and named, not written from the page;
+the default-fingerprint and metadata-database bug tests are not done (labelled "not testable here"). Not tried in
+LaunchBox yet (taken as good, Mehdi 09/10).
 
 ## 1. What the page is for
 

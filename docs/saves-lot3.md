@@ -30,6 +30,9 @@ LaunchBox's debug log: `<install>\Logs\Debug <date>.log` (on in G:\LB1326 only).
   - companions: in the signature, put back at a restore, all destinations tried before writing (§7);
   - the Codex review's two findings, fixed and measured before/after (§9b); startup cost +0.35 s (§11);
   - the sandboxes cleaned (§12).
+  - every patch switchable from the **Compatibility** page of the Nixx settings (5f215e2, `docs\compat-page-plan.md`):
+    `Shared.Compat` registry and texts, choices read at start-up from `Local\Plugins\.data\nixx-compat.ini`, reflection
+    checks and two bug tests; probe 11 checks. Not tried in LaunchBox (Mehdi, 09/10: taken as good).
   - **Not measured, set aside:** Dolphin and PCSX2 through the desk (none of our plugins covers GameCube, Wii or PS2:
     the desk never lists their saves today); Flycast arcade sets of several files (the cartridge games at hand write one
     file); the startup cost on a big library (before lot 4).
