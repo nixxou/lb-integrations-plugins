@@ -498,6 +498,22 @@ File…). The desk answers with the row's id when the row carries one (1c8192c) 
 file there is no row yet: **not measured** which card it lands on and with which id (probably a new card with a
 LaunchBox GUID, so a duplicate card).
 
+**Measured 09/10 on Zelda** (Import Save Game File, `Zelda import test.srm`, random 8 KB): LaunchBox copies the file
+into the vault under the GAME's name with the next free number (`…(France)-03.srm`), touches no live file, and makes a
+**new card** "My Save File", "In Vault", 0 backups: `SaveGroupId` a fresh LaunchBox GUID (`a2289149…`), `EmulatorFileName`
+the game's emulator (`SUPERZSNES.exe`), `OriginalFileName` the source's name, no `Title`. That is LaunchBox's "Make New
+Save seeded from a file", and LiteBox copies it on purpose (`SaveManager.Import`, LbApiHost) - **not to change**.
+
+Left to measure: restoring that card. Through the desk the GUID resolves by the exe to SUPER ZSNES, which writes the
+game's live `.srm` - the live file of ANOTHER card ("Cartridge save"); LaunchBox's precautionary copy is of the restored
+card's own live file, which does not exist, so the current save would be overwritten with no copy (the same hole as
+§9.2). Probably the same with stock RetroArch.
+
+**Later (Mehdi, 09/10), not for this lot**: ideally an imported file is offered to every plugin of the platform's
+emulators, each saying whether it can read it, and the user picks the emulator in a combobox. Not doable cleanly in
+LaunchBox (the import dialog is LaunchBox's; we only see `TryGetSaveGroupInfo` and the restore afterwards). Easy in
+LiteBox, whose import is its own (lot 8).
+
 ---
 
 ## 9. LaunchBox bugs met (nothing a plugin can fix)
