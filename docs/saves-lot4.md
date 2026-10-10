@@ -137,3 +137,14 @@ integration must come through our hook, else the log says `HOOKS LOST`.
   SUPER ZSNES's desk in our form (backups `-01` = the live file, Active; `.srm` of 04/10). The `.srm` restored: "restore
   of a lb.retroarch save handed to the desk's own lb.retroarch steps" (StockRestore, our id decoded), RetroArch's live
   `.srm` = 7D00A454 (the backup), SUPER ZSNES's untouched (E40D8C35). Live files before: `Zelda-*-before-T5`.
+
+## 4. Codex review of lot 4 (10/10)
+
+One finding, fixed (a5f789b): a row method that failed to hook (a LaunchBox update, a patch refused) was logged and
+ignored, `Verify` tests one method only, so the migration gave the cards our ids anyway - the unhooked method then saw
+our JSON undecoded (PCSX2 decides by its `pcsx2:` prefix). Now each integration keeps the list of its row methods not
+hooked (a missing method, a refused patch, a SDK body that failed for another, hooks lost to another Harmony):
+**incomplete** = its desk off and its cards keep or get back their own ids for the session (`StockIdMigration` takes a
+filter per integration), the others go on; logged `NOT every row method hooked (�)`. No retry within a session (the
+next start tries again). Probe: a failure injected on PCSX2's `IsSaveActive` ? PCSX2 incomplete, RetroArch complete; the
+plan with one integration left out and back for that one only. In LaunchBox: all three complete, as before.
