@@ -148,3 +148,15 @@ hooked (a missing method, a refused patch, a SDK body that failed for another, h
 filter per integration), the others go on; logged `NOT every row method hooked (�)`. No retry within a session (the
 next start tries again). Probe: a failure injected on PCSX2's `IsSaveActive` ? PCSX2 incomplete, RetroArch complete; the
 plan with one integration left out and back for that one only. In LaunchBox: all three complete, as before.
+
+Second review, two findings, fixed (79ac7eb):
+- **A persisted card taken across games**: the listing's lookup was keyed by path and version only - in the start-up scan
+  (hundreds of games at once) games sharing one file (a PCSX2 memory card: one `pcsx2:<serial>` card per game on one
+  `.ps2`) overwrote each other, and a row with its own id was given another game's. Now keyed by game too, and a persisted
+  card is taken ONLY by a row listed with no id (`StockDesk.PickCard`; two candidates: none).
+- **The self-check tested one method**: another Harmony replacing only `IsSaveActive` would have passed. The sentinel now
+  goes through all 8 methods whose hook decodes an id (AddSaveFile, RemoveSave, IsSaveActive, IsSaveContainer,
+  TryBackupSave, UseSaveGroupIdForPersistedMatch, TryComputeSaveSignature, TryGetSaveGroupInfo); each hook notes it and
+  returns at once (the integration's code never runs on it; its file does not exist). At the first listing and again
+  before each one-game listing (Game Saves), so a later patch is caught before that game's cards are used. Probe: one hook
+  made "lost" on RetroArch's IsSaveActive ? incomplete, its desk off. In LaunchBox: all three "hooks in", scan 1.52 s.
