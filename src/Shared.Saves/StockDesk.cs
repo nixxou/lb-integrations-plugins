@@ -179,8 +179,12 @@ namespace LbIntegrations.Saves
                     AppDomain.CurrentDomain.SetData(Marker + "|seen", null);
                     try { plugin.UseSaveGroupIdForPersistedMatch(new GameSaveGame { SaveGroupId = Sentinel, FileLocation = Sentinel }); } catch { }
                     if (AppDomain.CurrentDomain.GetData(Marker + "|seen") as string == emu) SaveRouter.Say("[stock] " + emu + ": hooks in");
-                    else SaveRouter.Say("[stock] " + emu + ": HOOKS LOST - another plugin patched LaunchBox's " + emu + " with its own Harmony "
-                                        + "after the pack: its desk and its ids are off for this session");
+                    else
+                    {
+                        AppDomain.CurrentDomain.SetData(Marker + "|lost", emu);
+                        SaveRouter.Say("[stock] " + emu + ": HOOKS LOST - another plugin patched LaunchBox's " + emu + " with its own Harmony "
+                                       + "after the pack: its desk is off, the cards get their own ids back");
+                    }
                 }
             }
             catch (Exception ex) { SaveRouter.Say("[stock] self-check failed: " + ex.Message); }
@@ -225,7 +229,7 @@ namespace LbIntegrations.Saves
 
         /// <summary>Our ids given out: the `stockIds` switch, and only to LaunchBox (LiteBox reads their own until lot 8).
         /// Decoding never stops: a card already in our form must keep working whatever is switched.</summary>
-        private static bool Encoding => LbIntegrations.Compat.Compat.On("stockIds") && SaveRouter.LaunchBoxHost;
+        private static bool Encoding => LbIntegrations.Compat.Compat.On("stockIds") && SaveRouter.LaunchBoxHost && AppDomain.CurrentDomain.GetData(Marker + "|lost") == null;
 
         /// <summary>What a decoded row came in as, for the way out.</summary>
         private struct Inbound
@@ -400,7 +404,35 @@ namespace LbIntegrations.Saves
             catch (Exception ex) { SaveRouter.Say("[stock] restore's row left as it came: " + ex.Message); }
         }
 
-        private static void GetSavesIn(object __instance, out long __state) => __state = EmuOf(__instance) == null ? 0 : Stopwatch.GetTimestamp();
+        private static void GetSavesIn(object __instance, GetSavesArgs __0, out long __state)
+        {
+            __state = EmuOf(__instance) == null ? 0 : Stopwatch.GetTimestamp();
+            if (__state != 0) EnsureIds(__0);
+        }
+
+        /// <summary>The persisted cards of LaunchBox's integrations in the form `stockIds` says (step 8, StockIdMigration),
+        /// BEFORE a listing is matched against them: the whole library once per process, at the first listing of a desk or
+        /// of an integration (LaunchBox's start-up scan), then the games of each one-game listing (Game Saves) - games added
+        /// since. Back to their own ids when the switch is off. Not under LiteBox (lot 8).</summary>
+        public static void EnsureIds(GetSavesArgs? args)
+        {
+            try
+            {
+                if (!SaveRouter.LaunchBoxHost) return;
+                Verify();
+                // Our ids only while the hooks decode them: hooks lost (another Harmony), the cards get their own back.
+                bool forward = LbIntegrations.Compat.Compat.On("stockIds") && AppDomain.CurrentDomain.GetData(Marker + "|lost") == null;
+                bool first;
+                lock (string.Intern(Marker + "|ids"))
+                {
+                    first = AppDomain.CurrentDomain.GetData(Marker + "|ids") == null;
+                    if (first) AppDomain.CurrentDomain.SetData(Marker + "|ids", forward ? "forward" : "back");
+                }
+                if (first) { StockIdMigration.Run(null, forward, m => SaveRouter.Say("[stock] " + m)); return; }
+                if (args?.Games?.Count == 1) StockIdMigration.Run(args.Games, forward, m => SaveRouter.Say("[stock] " + m));
+            }
+            catch (Exception ex) { SaveRouter.Say("[stock] ids not put in step: " + ex.Message); }
+        }
 
         /// <summary>The rows listed, in our form - each given the id of the card already persisted at its path when there is
         /// one (listed = persisted: a migrated GUID card is never split in two), else its own in our form.</summary>

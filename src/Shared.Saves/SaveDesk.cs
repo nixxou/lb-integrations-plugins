@@ -81,6 +81,8 @@ namespace LbIntegrations.Saves
         public GetSavesResponse GetSaves(GetSavesArgs args)
         {
             StockDesk.Verify();
+            // The cards of LaunchBox's integrations in step with our ids before this listing is matched (lot 4).
+            StockDesk.EnsureIds(args);
             // A big listing (LaunchBox's start-up scan) asks the disk once per folder, not once per game (SaveScan).
             using (SaveScan.Begin((args?.Games?.Count ?? 0) + (args?.AdditionalApplications?.Count ?? 0)))
                 return GetSavesCore(args);
