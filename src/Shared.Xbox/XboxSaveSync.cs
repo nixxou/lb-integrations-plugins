@@ -58,6 +58,7 @@ namespace LbIntegrations.Xbox
         public Action LayIn;                                      // the active save into the console, its folder replaced
         public Func<bool> RemoveFromConsole;
         public Func<SaveKeys> NaturalKeys;                        // the keys a launch would use now, when none are known
+        public Func<string> Witness;                              // the console's files' sizes and dates, cheap - null: no shortcut
         public Action<string> Log;
     }
 
@@ -130,6 +131,7 @@ namespace LbIntegrations.Xbox
             public string Content;       // null: no agreement known
             public SaveKeys Keys;        // null: not known
             public bool Restore;         // LaunchBox restored the save: the next launch lays it in, whatever the stamp says
+            public string Seen;          // the pack's and the console's sizes and dates when they last agreed (SeenNow)
         }
 
         /// <summary>The stamp - null when there is none. A stamp of the first days, one hash alone, has no keys.</summary>
@@ -144,6 +146,7 @@ namespace LbIntegrations.Xbox
                     var line = raw.Trim();
                     if (line.StartsWith("content=", StringComparison.Ordinal)) st.Content = line.Length > 8 ? line.Substring(8) : null;
                     else if (line == "restore=1") st.Restore = true;
+                    else if (line.StartsWith("seen=", StringComparison.Ordinal)) st.Seen = line.Length > 5 ? line.Substring(5) : null;
                     else if (line.StartsWith("keys=", StringComparison.Ordinal)) st.Keys = XboxSaveKeys.Parse(line.Substring(5));
                     else if (line.Length == 64 && st.Content == null) st.Content = line;
                 }
@@ -152,11 +155,12 @@ namespace LbIntegrations.Xbox
             catch { return null; }
         }
 
-        private static void WriteStamp(string path, string content, SaveKeys keys, bool restore = false)
+        private static void WriteStamp(string path, string content, SaveKeys keys, bool restore = false, string seen = null)
         {
             var text = (content != null ? "content=" + content + "\r\n" : "")
                      + (keys?.Hdd != null && keys.Cert != null ? "keys=" + XboxSaveKeys.Format(keys.Hdd, keys.Cert) + "\r\n" : "")
-                     + (restore ? "restore=1\r\n" : "");
+                     + (restore ? "restore=1\r\n" : "")
+                     + (seen != null ? "seen=" + seen + "\r\n" : "");
             try { if (File.Exists(path) && File.ReadAllText(path) == text) return; } catch { }
             Directory.CreateDirectory(Path.GetDirectoryName(path));
             var part = path + ".part";
@@ -165,6 +169,56 @@ namespace LbIntegrations.Xbox
         }
 
         private static void DeleteStamp(string path) { try { if (File.Exists(path)) File.Delete(path); } catch { } }
+
+        // ── the shortcut (10/10) ─────────────────────────────────────────────
+        //
+        // Every listing read the whole console (xemu: the qcow2 and its FATX; Cxbx-Reloaded: the save's folder), unzipped the
+        // pack and hashed both - for every played game, at every LaunchBox start - to find, nearly always, that nothing moved.
+        // When a sync ends with the two in step, the stamp notes what they looked like: the pack's size and date, and the
+        // console's (Witness). A LISTING then answers "in step" at once while both look the same and no restore is pending;
+        // anything else - a launch, a session's end, a restore, a size or a date that moved - goes through the whole rule.
+        // A file put back with its old size AND date would be missed until the next launch, which reads everything.
+
+        /// <summary>The pack's and the console's sizes and dates now - null when the console gives no witness.</summary>
+        private static string SeenNow(XboxSaveSide s)
+        {
+            try
+            {
+                if (s.Witness == null) return null;
+                var console = s.Witness();
+                if (console == null) return null;
+                var fi = new FileInfo(s.Pack ?? "");
+                return (fi.Exists ? fi.Length + "|" + fi.LastWriteTimeUtc.Ticks : "none") + "#" + console;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>A witness of files: each one's size and date ("none" for a missing one).</summary>
+        public static string FilesWitness(params string[] files)
+            => string.Join("|", files.Select(f => { try { var fi = new FileInfo(f ?? ""); return fi.Exists ? fi.Length + ":" + fi.LastWriteTimeUtc.Ticks : "none"; } catch { return "?"; } }));
+
+        /// <summary>A witness of a save's folder: every file's path, size and date, summed up (SHA-1) - "none" when it is not there.</summary>
+        public static string FolderWitness(string dir)
+        {
+            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return "none";
+            var lines = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
+                .Select(p => { var fi = new FileInfo(p); return Path.GetRelativePath(dir, p).Replace('\\', '/') + "|" + fi.Length + "|" + fi.LastWriteTimeUtc.Ticks; })
+                .OrderBy(l => l, StringComparer.Ordinal);
+            using var sha = SHA1.Create();
+            return Convert.ToHexString(sha.ComputeHash(Encoding.UTF8.GetBytes(string.Join("\n", lines))));
+        }
+        /// <summary>True when the save and the console were last left in step and both still look the same (nothing read but
+        /// the stamp and a few dates) - a listing has nothing to do. Never true with a restore pending.</summary>
+        public static bool UnchangedSinceInStep(XboxSaveSide s)
+        {
+            if (s == null) return false;
+            lock (Gate)
+            {
+                var st = ReadStamp(s.StampPath);
+                if (st?.Seen == null || st.Restore || st.Content == null) return false;
+                return st.Seen == SeenNow(s);
+            }
+        }
 
         /// <summary>AT A LAUNCH, before the game runs: the keys this session writes the console with, into its stamp.</summary>
         public static void NoteSessionKeys(XboxSaveSide s, byte[] hdd, byte[] cert)
@@ -227,6 +281,8 @@ namespace LbIntegrations.Xbox
         {
             lock (Gate)
             {
+                // A listing, nothing moved since the two last agreed: nothing to read (the shortcut above).
+                if (mode == XboxSyncMode.Listing && UnchangedSinceInStep(s)) return null;
                 var consoleFiles = s.ReadConsole() ?? new List<(string, byte[])>();
                 var saveFiles = FilesOf(s.Pack);
                 string c = ContentHash(consoleFiles), p = saveFiles == null ? null : ContentHash(saveFiles), empty = ContentHash(new List<(string, byte[])>());
@@ -237,7 +293,7 @@ namespace LbIntegrations.Xbox
 
                 // In step.
                 if (p == null && !consoleHas) { DeleteStamp(s.StampPath); return null; }
-                if (p != null && c == p) { WriteStamp(s.StampPath, p, st?.Keys ?? XboxSaveKeys.Read(s.Pack)); return null; }
+                if (p != null && c == p) { WriteStamp(s.StampPath, p, st?.Keys ?? XboxSaveKeys.Read(s.Pack), seen: SeenNow(s)); return null; }
 
                 // A restore noted (MarkRestored): applied by the next launch only, left alone by listings and sessions' ends.
                 bool pending = st?.Restore == true;
@@ -339,7 +395,7 @@ namespace LbIntegrations.Xbox
             }
             var keys = KeysOfConsole(s, stamped);
             WriteZip(files, s.Pack, keys);
-            WriteStamp(s.StampPath, hash, keys);
+            WriteStamp(s.StampPath, hash, keys, seen: SeenNow(s));   // in step: the console made the save
             return what + " -> " + s.Pack;
         }
 
@@ -347,7 +403,7 @@ namespace LbIntegrations.Xbox
         {
             s.LayIn();
             // The console now holds the save, made with its keys; the launch notes the session's after (NoteSessionKeys).
-            WriteStamp(s.StampPath, hash, XboxSaveKeys.Read(s.Pack));
+            WriteStamp(s.StampPath, hash, XboxSaveKeys.Read(s.Pack), seen: SeenNow(s));
             return what;
         }
 
