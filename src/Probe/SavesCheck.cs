@@ -584,10 +584,30 @@ namespace LbIntegrations.Probe
                 File.WriteAllText(Path.Combine(vault, "Zelda (F)-10.srm"), "save"); File.WriteAllText(Path.Combine(vault, "Zelda (F)-10.rtc"), "clock");
                 File.WriteAllText(Path.Combine(live, "Zelda (F).rtc"), "old clock");
                 var target = Path.Combine(live, "Zelda (F).srm");
-                var w = SaveCompanions.CopyBack(Path.Combine(vault, "Zelda (F)-10.srm"), target, new[] { Path.Combine(vault, "Zelda (F)-10.rtc") }, null);
-                Check("companions: the backup's .rtc replaces the live one, under the live stem",
-                      w.Count == 1 && File.ReadAllText(Path.Combine(live, "Zelda (F).rtc")) == "clock");
-                Check("companions: none in the backup → the live one is left", SaveCompanions.CopyBack(Path.Combine(vault, "Zelda (F)-10.srm"), target, Array.Empty<string>(), null).Count == 0);
+                var srcSrm = Path.Combine(vault, "Zelda (F)-10.srm"); var srcRtc = Path.Combine(vault, "Zelda (F)-10.rtc");
+                var liveRtc = Path.Combine(live, "Zelda (F).rtc");
+                File.WriteAllText(target, "old save");
+                string State() => File.ReadAllText(target) + "|" + File.ReadAllText(liveRtc) + "|" + Directory.GetFiles(live).Length;
+                // Codex review 10/10: all or nothing - a source that cannot be read, a destination that cannot be swapped.
+                bool threw = false;
+                using (new FileStream(srcRtc, FileMode.Open, FileAccess.Read, FileShare.None))
+                    try { SaveCompanions.RestoreSet(srcSrm, target, new[] { srcRtc }, null); } catch (IOException) { threw = true; }
+                Check("restore set: the backup's .rtc unreadable → refused, the live .srm and .rtc as they were, nothing left behind",
+                      threw && State() == "old save|old clock|2", State());
+                threw = false;
+                using (new FileStream(liveRtc, FileMode.Open, FileAccess.Read, FileShare.None))
+                    try { SaveCompanions.RestoreSet(srcSrm, target, new[] { srcRtc }, null); } catch (IOException) { threw = true; }
+                Check("restore set: the live .rtc held (its swap fails after the .srm's) → the .srm put back, nothing left behind",
+                      threw && State() == "old save|old clock|2", State());
+                var w = SaveCompanions.RestoreSet(srcSrm, target, new[] { srcRtc }, null);
+                Check("restore set: the save and the backup's .rtc replace the live ones, under the live stem",
+                      w.Count == 2 && State() == "save|clock|2", State());
+                File.WriteAllText(liveRtc, "old clock");
+                Check("restore set: none in the backup → the live one is left",
+                      SaveCompanions.RestoreSet(srcSrm, target, Array.Empty<string>(), null).Count == 1 && State() == "save|old clock|2", State());
+                var fresh = Path.Combine(dir, "new", "Zelda (F).srm");
+                SaveCompanions.RestoreSet(srcSrm, fresh, new[] { srcRtc }, null);
+                Check("restore set: into a folder not there yet → made, both in", File.ReadAllText(fresh) == "save" && File.ReadAllText(Path.ChangeExtension(fresh, ".rtc")) == "clock");
                 Check("companions: a tail that is not the stem's → its extension", SaveCompanions.TailOf("Zelda (F)-10", @"C:\v\other.psr") == ".psr");
                 Check("writable: all free → nothing to say", SaveCompanions.WhyNotWritable(Path.Combine(vault, "Zelda (F)-10.srm"), target, new[] { Path.Combine(vault, "Zelda (F)-10.rtc") }) == null);
                 var rtc = Path.Combine(live, "Zelda (F).rtc"); File.SetAttributes(rtc, FileAttributes.ReadOnly);

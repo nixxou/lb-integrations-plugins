@@ -296,7 +296,9 @@ namespace LbIntegrations.RaSnes9x
                 var cannot = SaveCompanions.WhyNotWritable(source, target, companions);
                 if (cannot != null) { Log.Info("restore of " + name + " refused: " + cannot); return new AddSaveResponse(cannot); }
                 Directory.CreateDirectory(targetDir);
-                File.Copy(source, target, overwrite: true);
+                if (save is GameSaveState) File.Copy(source, target, overwrite: true);
+                // The cartridge's clock (.rtc) with its save, all or nothing: LaunchBox copies nothing back (SaveCompanions).
+                else SaveCompanions.RestoreSet(source, target, companions, m => Log.Info(m));
                 Log.Info("restored " + name + " -> " + targetDir);
 
                 if (save is GameSaveState)
@@ -306,8 +308,6 @@ namespace LbIntegrations.RaSnes9x
                     if (thumb != null) File.Copy(thumb, LbipStateThumbs.PathOf(target), overwrite: true);
                     else { LbipStateThumbs.Remove(target); RaSnes9xStateThumbs.Refresh(target); }
                 }
-                // The cartridge's clock (.rtc) with its save: LaunchBox copies nothing back (SaveCompanions).
-                else SaveCompanions.CopyBack(source, target, companions, m => Log.Info(m));
                 if (save is GameSaveState state)
                     return new AddSaveResponse(StateRow(target, state.GameId, state.AdditionalApplicationId, slot, SlotRestore.WithSlot(state.SaveGroupId, slot),
                                                         string.IsNullOrWhiteSpace(state.SaveGroupName) ? StateGroupName : state.SaveGroupName));

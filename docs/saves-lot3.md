@@ -566,6 +566,13 @@ replaced, back up the file actually overwritten. No restriction needed there.
   save and each companion's destination for writing (read-only, held by another program, a folder without write access -
   a save beside the roms on a share) before the copy; else a clear refusal, nothing written. Before, a companion that
   could not be written failed after the save had been replaced.
+- **All or nothing** (Codex review, 10/10): the check above looked at the destinations only, and ahead of time - a backup's
+  `.rtc` that could not be READ (held by another program, an antivirus) failed after the live `.srm` was replaced, the
+  restored save left with the old clock. `SaveCompanions.RestoreSet` (was `CopyBack`, now with the save itself) copies
+  every source next to its destination first (a read that fails touches nothing live), then swaps each destination for
+  its copy by renames, the replaced file set aside until all are in; a swap that fails puts back every one already made.
+  `WhyNotWritable` stays, for its clear refusal. Probe: an unreadable backup `.rtc`, a live `.rtc` held during the swap
+  (the `.srm` already swapped) - both leave the live `.srm` and `.rtc` as they were and nothing behind.
 - Flycast's arcade sets: their companions are found by the set's name in Flycast's own folders, not beside a vault copy;
   whether a set of several files comes back whole at a restore is not measured - to check on a real multi-file set.
 
