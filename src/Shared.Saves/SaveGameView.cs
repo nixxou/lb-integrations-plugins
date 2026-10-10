@@ -56,6 +56,10 @@ namespace LbIntegrations.Saves
             return proxy;
         }
 
+        /// <summary>The real object behind a view, else <paramref name="o"/> itself. A view has the SDK's members only - not
+        /// LaunchBox's own (Saves, review 10/10: the persisted cards of a game seen through a view read as none).</summary>
+        internal static T Real<T>(T o) where T : class => o is Forward f && f.Real is T r ? r : o;
+
         private static T? Safe<T>(Func<T> f) { try { return f(); } catch { return default; } }
 
         /// <summary>Forwards every call to the real object, except GetEffectiveCommandLine.</summary>

@@ -583,6 +583,10 @@ namespace LbIntegrations.Saves
                     List<GameSaveBase> others;
                     using (SaveScan.Begin((__0.Games?.Count ?? 0) + (__0.AdditionalApplications?.Count ?? 0)))
                         others = SaveRouter.OthersFor((EmulatorPlugin)__instance, __0, rows);
+                    // Only what this desk can hand to its owner: a row it could not route would reach this integration's
+                    // own code at a restore, a removal, a backup (review 10/10).
+                    int unrouted = others.RemoveAll(o => SaveRouter.OwnerForStock(o, emu) == null);
+                    if (unrouted > 0) Once(emu, "GetSaves: " + unrouted + " other row(s) left out - no owner found for them");
                     if (others.Count > 0)
                     {
                         if (games == 1 && LbIntegrations.Compat.Compat.On("planA"))

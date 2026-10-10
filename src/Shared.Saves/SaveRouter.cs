@@ -346,6 +346,19 @@ namespace LbIntegrations.Saves
         /// emulator of the library (OthersFor). Read by OwnerOfPath and by a restore that must find its install.</summary>
         private static readonly ConcurrentDictionary<string, (string Emu, EmulatorPlugin Plugin, IEmulator Emulator)> _listed = new(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>The plugin that listed the live file at <paramref name="path"/> through a desk this session, when it is
+        /// not <paramref name="selfEmu"/>.</summary>
+        internal static SaveOwnerRoute? ListedOwner(string? path, string selfEmu)
+            => !string.IsNullOrWhiteSpace(path) && _listed.TryGetValue(FullOf(path), out var w) && w.Emu != selfEmu
+                ? new SaveOwnerRoute(w.Plugin, w.Emu, w.Emulator) : null;
+
+        /// <summary>A live file listed for <paramref name="emu"/> through a desk (OthersFor; the probe).</summary>
+        internal static void NoteListed(string path, string emu, EmulatorPlugin plugin, IEmulator emulator)
+        {
+            if (_listed.Count > 20000) _listed.Clear();
+            _listed[FullOf(path)] = (emu, plugin, emulator);
+        }
+
         /// <summary>The emulator that listed the live file at <paramref name="path"/> this session, if any.</summary>
         internal static IEmulator? ListedFrom(string? path)
             => !string.IsNullOrWhiteSpace(path) && _listed.TryGetValue(FullOf(path), out var w) ? w.Emulator : null;
@@ -383,12 +396,16 @@ namespace LbIntegrations.Saves
 
         /// <summary>Where a row a LaunchBox integration's desk is asked about must go (lot 4, StockDesk), or null when it is
         /// that integration's own: its emu in our JSON, or any id that is not ours (empty, native, a GUID - LaunchBox's own
-        /// cards). No last resort by exe name, no instance compared: the instance LaunchBox holds is never the router's.</summary>
+        /// cards) on a file no other plugin listed through a desk. No last resort by exe name, no instance compared: the
+        /// instance LaunchBox holds is never the router's.</summary>
         public static SaveOwnerRoute? OwnerForStock(GameSaveBase? row, string selfEmu)
         {
             if (row == null || !Active) return null;
             var owner = SaveOwner.Of(row.SaveGroupId);
-            if (owner.Kind != SaveOwnerKind.Nixx && owner.Kind != SaveOwnerKind.LaunchBox) return null;
+            // No owner in the id (empty, a GUID): the plugin that LISTED this file through a desk this session (review
+            // 10/10: RetroArch's rows on a Dolphin game, listed with their own ids when RetroArch is not in our form or
+            // `stockIds` is off, were restored, removed and backed up by Dolphin's code).
+            if (owner.Kind != SaveOwnerKind.Nixx && owner.Kind != SaveOwnerKind.LaunchBox) return ListedOwner(row.FileLocation, selfEmu);
             if (owner.Name == selfEmu) return null;
             var key = "stock\u0001" + selfEmu + "\u0001" + row.SaveGroupId + "\u0001" + row.EmulatorFileName + "\u0001" + row.EmulatorCore + "\u0001" + row.GameId;
             if (_routes.TryGetValue(key, out var known)) return known.Route;
@@ -509,11 +526,7 @@ namespace LbIntegrations.Saves
                         if (row == null || (at.Length > 0 && !mine.Add(at))) continue;
                         var core = string.IsNullOrEmpty(row.EmulatorCore) ? CoreOf(e, Safe(() => GameOf(row.GameId)?.Platform)) : row.EmulatorCore;
                         found.Add(SaveRows.With(row, exe, core));
-                        if (at.Length > 0)
-                        {
-                            if (_listed.Count > 20000) _listed.Clear();
-                            _listed[at] = (d.Value.Emu, d.Value.Plugin, e);
-                        }
+                        if (at.Length > 0) NoteListed(at, d.Value.Emu, d.Value.Plugin, e);
                         n++;
                     }
                     if (n > 0) Say("listed " + n + " save(s) of " + d.Value.Emu + " (" + Safe(() => e.Title) + ") with ours");

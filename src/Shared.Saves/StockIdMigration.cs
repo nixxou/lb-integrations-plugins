@@ -234,6 +234,8 @@ namespace LbIntegrations.Saves
     {
         public static IEnumerable<(object Holder, string? AppId)> Holders(IGame game)
         {
+            // LaunchBox's own objects: a game handed through a view (SaveGameView) has no Saves of its own.
+            game = SaveGameView.Real(game);
             yield return (game, null);
             foreach (var a in game.GetAllAdditionalApplications() ?? Array.Empty<IAdditionalApplication>())
                 if (a != null) yield return (a, a.Id);

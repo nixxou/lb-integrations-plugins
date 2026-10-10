@@ -256,6 +256,25 @@ namespace LbIntegrations.Probe
             var ps2Native = WithId(sat, "pcsx2:SLUS-20062");
             Expect("a native pcsx2: row on RetroArch: its group is its own id, not wrapped as RetroArch's",
                    ra.TryGetSaveGroupInfo(ps2Native, ps2Native.FileLocation, out var pg, out _) && pg == "pcsx2:SLUS-20062", pg);
+            // A row with no owner in its id (empty, a GUID) that another plugin listed through a desk: to that plugin (review
+            // 10/10: RetroArch's rows on a Dolphin game, ids left native, went to Dolphin's own code).
+            var listedFile = Path.Combine(scratch, "listed-by-ares.ram");
+            LbIntegrations.Saves.SaveRouter.NoteListed(listedFile, "ares", fake, raEmu);
+            fake.Calls.Clear();
+            var unowned = new GameSaveGame { GameId = zelda.Id, FileLocation = listedFile, SaveGroupId = "", EmulatorFileName = "ares.exe" };
+            Expect("an empty id on a file ares listed: answered by ares", !ra.IsSaveActive(unowned, raEmu.ApplicationPath) && fake.Calls.Contains("IsSaveActive"), string.Join(",", fake.Calls));
+            fake.Calls.Clear();
+            var guidRow = new GameSaveGame { GameId = zelda.Id, FileLocation = listedFile, SaveGroupId = "c380b29f2702480a982dda74c642a367" };
+            Expect("... a GUID on it: ares too", ra.UseSaveGroupIdForPersistedMatch(guidRow) && fake.Calls.Contains("UseSaveGroupIdForPersistedMatch"), string.Join(",", fake.Calls));
+            fake.Calls.Clear();
+            Expect("... a GUID on a file nobody listed: RetroArch's own code", ra.IsSaveActive(WithId(sat, "c380b29f2702480a982dda74c642a367"), raEmu.ApplicationPath) == ra.IsSaveActive(sat, raEmu.ApplicationPath) && fake.Calls.Count == 0, string.Join(",", fake.Calls));
+            Expect("... the router: ares's file is ares's own to ares, another's to RetroArch", LbIntegrations.Saves.SaveRouter.ListedOwner(listedFile, "ares") == null && LbIntegrations.Saves.SaveRouter.ListedOwner(listedFile, "lb.retroarch")?.Emu == "ares", "");
+            // A game handed through a view (SaveGameView): the persisted cards are read off the real game (review 10/10).
+            var coreEmu = new StubEmulator { Title = "RetroArch (bsnes)", ApplicationPath = raEmu.ApplicationPath, CommandLine = "-L cores\\bsnes_libretro.dll" };
+            var view = LbIntegrations.Saves.SaveGameView.As(zelda, coreEmu);
+            Expect("a game seen through a view: a view (the test means something)", !ReferenceEquals(view, zelda), "the game itself");
+            Expect("... its persisted rows read off the real game", ReferenceEquals(LbIntegrations.Saves.PersistedRows.Holders(view).First().Holder, zelda), "the view");
+
             // Another Harmony over ONE of RetroArch's hooks later on (Codex review 10/10): the self-check of every decoding
             // method catches it, RetroArch is left in its own form.
             LbIntegrations.Saves.StockDesk.LostForTests = (emu, m) => emu == "lb.retroarch" && m == "IsSaveActive";
