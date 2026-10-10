@@ -54,6 +54,8 @@ namespace LbIntegrations.Xemu
                 LayIn = () => XemuSaveStore.Insert(console, XemuPaths.BaseHdd(exe), titleId, pack),
                 RemoveFromConsole = () => File.Exists(console) && XemuSaveStore.Remove(console, titleId),
                 NaturalKeys = () => NaturalKeys(exe),
+                // The game's disk and the base it is made from: what the console's save is read out of (XboxSaveSync's shortcut).
+                Witness = () => XboxSaveSync.FilesWitness(console, XemuPaths.BaseHdd(exe)),
                 Log = m => Log.Info("saves: " + titleId + " - " + m),
             };
         }
@@ -61,6 +63,9 @@ namespace LbIntegrations.Xemu
         /// <summary>The save and the console in step (XboxSaveSync) - never while xemu runs. What it did, or null.</summary>
         public static string Sync(string exe, string titleId, XboxSyncMode mode)
         {
+            // A listing with nothing moved since the save and the console last agreed: nothing read, nothing written - not even
+            // the process list (XboxSaveSync's shortcut, 10/10).
+            if (mode == XboxSyncMode.Listing && XboxSaveSync.UnchangedSinceInStep(Side(exe, titleId))) return null;
             if (XemuPaths.Running(exe)) return null;
             Saves.XemuStates.ForgetWithoutConsole(exe, titleId);
             // THE STAMP BELONGS TO THE CONSOLE too: a console deleted by hand is not a console the game emptied - read so, its save
@@ -104,6 +109,16 @@ namespace LbIntegrations.Xemu
         /// <summary>The game's savestates and their files in step (Saves\XemuStates) - never while xemu runs.</summary>
         public static void States(string exe, string titleId, bool rewrite)
         {
+            // A listing whose last pass of the mirror had nothing to do, nothing moved since (the game's disk, its state files,
+            // the index, the slots, the stamp): this one would have nothing to do either - skipped, the console not opened, the
+            // process list not taken (10/10). A launch (rewrite) always goes through.
+            var seenPath = MirrorSeenPath(exe, titleId);
+            if (!rewrite && seenPath != null && XemuSettings.Savestates())
+            {
+                try { if (File.Exists(seenPath) && File.ReadAllText(seenPath) == MirrorSeen(exe, titleId)) return; } catch { }
+            }
+            // Savestates off and no index to forget: nothing to do, nothing to write - not even the process list (10/10).
+            if (!XemuSettings.Savestates() && (XemuStates.IndexPath(exe, titleId) is not string idx || !File.Exists(idx))) return;
             if (XemuPaths.Running(exe)) return;
             try
             {
@@ -116,9 +131,35 @@ namespace LbIntegrations.Xemu
                     if (index != null && File.Exists(index)) { File.Delete(index); Log.Info("savestates: " + titleId + " - off: its index forgotten, its files and snapshots kept"); }
                     return;
                 }
-                foreach (var line in XemuStates.Mirror(exe, titleId, rewrite, () => StampKeys(exe, titleId))) Log.Info("savestates: " + titleId + " - " + line);
+                var said = XemuStates.Mirror(exe, titleId, rewrite, () => StampKeys(exe, titleId));
+                foreach (var line in said) Log.Info("savestates: " + titleId + " - " + line);
+                // Noted only after a listing's pass that did nothing: the same inputs, the same nothing.
+                if (seenPath != null)
+                {
+                    if (!rewrite && said.Count == 0) { var w = MirrorSeen(exe, titleId); if (w != null) File.WriteAllText(seenPath, w); }
+                    else if (File.Exists(seenPath)) File.Delete(seenPath);
+                }
             }
-            catch (Exception ex) { Log.Warn("savestates: " + titleId + " could not be put in step", ex); }
+            catch (Exception ex) { Log.Warn("savestates: " + titleId + " could not be put in step", ex); try { if (seenPath != null && File.Exists(seenPath)) File.Delete(seenPath); } catch { } }
+        }
+
+        /// <summary>Beside the game's console: what the mirror's inputs looked like after a pass that had nothing to do.</summary>
+        private static string MirrorSeenPath(string exe, string titleId)
+            => XemuPaths.GameHdd(exe, titleId) is string console ? Path.ChangeExtension(console, ".mirror") : null;
+
+        /// <summary>The mirror's inputs' sizes and dates: the game's disk and its base, the index, the slots, the stamp, and every
+        /// file of its states' folder (the thumbnails with them).</summary>
+        private static string MirrorSeen(string exe, string titleId)
+        {
+            try
+            {
+                var console = XemuPaths.GameHdd(exe, titleId);
+                if (console == null) return null;
+                return XboxSaveSync.FilesWitness(console, XemuPaths.BaseHdd(exe), XemuStates.IndexPath(exe, titleId), XemuStates.SlotsPath(exe, titleId),
+                                                 Path.ChangeExtension(console, ".stamp"))
+                       + "#" + XboxSaveSync.FolderWitness(XemuStates.Dir(exe, titleId));
+            }
+            catch { return null; }
         }
 
         /// <summary>The game's console deleted, to be made again at its next launch (Mehdi, 05/10) - nothing lost: its snapshots
@@ -289,7 +330,8 @@ namespace LbIntegrations.Xemu
         {
             var dir = XemuStates.Dir(exe, titleId);
             if (dir == null || !Directory.Exists(dir)) return new List<XemuStateFile>();
-            return Directory.GetFiles(dir, "*" + XemuStates.Extension).Select(XemuStates.Read).Where(f => f != null).OrderBy(f => f.Slot).ToList();
+            // Each state file read while it keeps its size and date (10/10: every zip opened again for every row of every listing).
+            return Directory.GetFiles(dir, "*" + XemuStates.Extension).Select(p => LbIntegrations.Lbip.StampedCache.Get(p, "xemu.state", () => XemuStates.Read(p))).Where(f => f != null).OrderBy(f => f.Slot).ToList();
         }
 
         /// <summary>The keys the console is written with - its stamp's keys= line (XboxSaveSync).</summary>
