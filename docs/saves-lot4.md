@@ -160,3 +160,20 @@ Second review, two findings, fixed (79ac7eb):
   returns at once (the integration's code never runs on it; its file does not exist). At the first listing and again
   before each one-game listing (Game Saves), so a later patch is caught before that game's cards are used. Probe: one hook
   made "lost" on RetroArch's IsSaveActive ? incomplete, its desk off. In LaunchBox: all three "hooks in", scan 1.52 s.
+
+Third review, two findings, fixed:
+- **Complete without proof**: an integration counted as complete when nothing had FAILED - one never hooked (its type
+  renamed by a LaunchBox update, its dll not loaded yet, loaded after the first listing) was "complete", and the migration,
+  which names `pcsx2:`/`saturn-` owners without any hook, gave its cards our ids. Now complete = hooked by this format of
+  the pack AND the self-check passed (an `ok` mark per integration, set by `Verify`, cleared when hooks are lost). `Verify`
+  checks an integration not yet checked at every listing (one loaded late is caught at the next one), and `EnsureIds`
+  runs a whole-library pass again whenever the set of integrations in our form changes (one checked late, one lost, the
+  switch turned), logged `ids: whole library, our form for: ...`.
+- **A forwarded answer re-encoded**: Harmony runs the postfixes after a prefix that skipped the original, so a restore
+  forwarded to another emulator (or the group id of another emulator's row, Plan A's echo) went through the receiving
+  integration's encoding - a native `pcsx2:` row given back by an incomplete PCSX2 came out as `lb.retroarch`'s. The
+  prefixes of `AddSaveFile` and `TryGetSaveGroupInfo` now mark a forwarded call (and the self-check) and their postfixes
+  leave the answer as given.
+- Probe: RetroArch hooked but not yet checked ? not complete; an emu never hooked ? not complete; the migration with the
+  live filter leaves the incomplete PCSX2's `pcsx2:` card native and puts RetroArch's Saturn card in our form; a restore by
+  the stand-in owner giving back a native `pcsx2:` row and a native `pcsx2:` row's group on RetroArch both stay `pcsx2:`.

@@ -188,6 +188,8 @@ namespace LbIntegrations.Probe
             LbIntegrations.Saves.StockDesk.Install();
             LbIntegrations.Saves.StockDesk.FailForTests = null;
             LbIntegrations.Saves.StockDesk.Install();   // twice: hooked once
+            // Hooked but not checked yet: not complete - only a self-check that passed makes it so (Codex review 10/10).
+            bool hookedNotChecked = !LbIntegrations.Saves.StockDesk.Complete("lb.retroarch");
             LbIntegrations.Saves.StockDesk.Verify();    // the self-check: each integration says its hooks are in
             var after = raRows.Concat(pcsx2Rows).Select(r => Answers(r.EmulatorFileName == "pcsx2-qt.exe" ? pcsx2 : ra, r, r.EmulatorFileName == "pcsx2-qt.exe" ? pcsx2Emu.ApplicationPath : raEmu.ApplicationPath)).ToList();
             var all = Harmony.GetAllPatchedMethods().Where(m => Harmony.GetPatchInfo(m)?.Owners.Contains(LbIntegrations.Saves.StockDesk.HarmonyId) == true).ToList();
@@ -217,6 +219,17 @@ namespace LbIntegrations.Probe
             var why = LbIntegrations.Saves.StockDesk.IncompleteWhy("lb.pcsx2") ?? "";
             Expect("PCSX2 with a row method not hooked (failure injected on IsSaveActive): incomplete", why.Contains("IsSaveActive: failure injected"), why);
             Expect("... RetroArch goes on, fully hooked", LbIntegrations.Saves.StockDesk.Complete("lb.retroarch"), LbIntegrations.Saves.StockDesk.IncompleteWhy("lb.retroarch") ?? "");
+            Expect("RetroArch hooked but not yet self-checked: not complete", hookedNotChecked, "complete");
+            Expect("an integration never hooked (not loaded, not found): not complete", !LbIntegrations.Saves.StockDesk.Complete("lb.never-loaded"), "complete");
+            // The migration with the live filter: only a checked integration's cards change (pcsx2: names its owner without any hook).
+            var cards = new List<LbIntegrations.Saves.PersistedRow>
+            {
+                new LbIntegrations.Saves.PersistedRow { GameId = "g", SaveGroupId = "pcsx2:SLUS-20062", EmulatorFileName = "pcsx2-qt.exe" },
+                new LbIntegrations.Saves.PersistedRow { GameId = "g", SaveGroupId = Native, EmulatorFileName = "retroarch.exe" },
+            };
+            var plan = LbIntegrations.Saves.StockIdMigration.Plan(cards, _ => null, true, () => "fresh", null, e => LbIntegrations.Saves.StockDesk.Complete(e));
+            Expect("migration: the incomplete PCSX2's card left native", plan.All(c => c.Row.SaveGroupId != "pcsx2:SLUS-20062"), string.Join(",", plan.Select(c => c.GroupId)));
+            Expect("... the checked RetroArch's card in our form", plan.Any(c => c.Row.SaveGroupId == Native && c.GroupId == ours), string.Join(",", plan.Select(c => c.GroupId)));
             Console.WriteLine("  (outside LaunchBox Dolphin is incomplete too - its module initializer: " + (LbIntegrations.Saves.StockDesk.IncompleteWhy("lb.dolphin") ?? "complete") + ")");
 
             // Step 7: another emulator's row on RetroArch goes to its owner - a pack plugin (a stand-in registered as "ares"),
@@ -235,6 +248,14 @@ namespace LbIntegrations.Probe
             Expect("RetroArch's own row: its own code, ares never asked", ra.IsSaveActive(sat, raEmu.ApplicationPath) && fake.Calls.Count == 0, string.Join(",", fake.Calls));
             var ps2OnRa = WithId(sat, LbIntegrations.Saves.StockIds.Encode("lb.pcsx2", "pcsx2:SLUS-20062", false, "x", null)!);
             Expect("a PCSX2 row on RetroArch: matched as PCSX2 says (its twin, decoded there)", ra.UseSaveGroupIdForPersistedMatch(ps2OnRa), "false");
+            // A forwarded answer stays as its owner gave it (Codex review 10/10: Harmony runs the postfix after a skip).
+            var nativeBack = new GameSaveGame { GameId = aresRow.GameId, FileLocation = aresRow.FileLocation, EmulatorFileName = aresRow.EmulatorFileName,
+                                                SaveGroupId = aresRow.SaveGroupId, SaveGroupName = "native result" };
+            var back = ra.AddSaveFile(new AddSaveArgs { SaveToAdd = nativeBack });
+            Expect("a restore by ares giving a native pcsx2: row: not re-encoded as RetroArch's", back?.SaveAdded?.SaveGroupId == "pcsx2:SLUS-20062", back?.SaveAdded?.SaveGroupId ?? back?.Message ?? "null");
+            var ps2Native = WithId(sat, "pcsx2:SLUS-20062");
+            Expect("a native pcsx2: row on RetroArch: its group is its own id, not wrapped as RetroArch's",
+                   ra.TryGetSaveGroupInfo(ps2Native, ps2Native.FileLocation, out var pg, out _) && pg == "pcsx2:SLUS-20062", pg);
             // Another Harmony over ONE of RetroArch's hooks later on (Codex review 10/10): the self-check of every decoding
             // method catches it, RetroArch is left in its own form.
             LbIntegrations.Saves.StockDesk.LostForTests = (emu, m) => emu == "lb.retroarch" && m == "IsSaveActive";
@@ -263,7 +284,14 @@ namespace LbIntegrations.Probe
             public override bool IsSaveActive(GameSaveBase save, string emulatorApplicationPath) { Calls.Add("IsSaveActive"); return false; }
             public override bool UseSaveGroupIdForPersistedMatch(GameSaveBase save) { Calls.Add("UseSaveGroupIdForPersistedMatch"); return true; }
             public override bool TryComputeSaveSignature(GameSaveBase save, string emulatorApplicationPath, out string signature) { Calls.Add("TryComputeSaveSignature"); signature = "ares-signature"; return true; }
-            public override AddSaveResponse AddSaveFile(AddSaveArgs args) { Calls.Add("AddSaveFile"); return new AddSaveResponse("restored by ares"); }
+            public override AddSaveResponse AddSaveFile(AddSaveArgs args)
+            {
+                Calls.Add("AddSaveFile");
+                // Asked to: a restored row in another integration's NATIVE form, as an incomplete PCSX2 gives one back.
+                if (args?.SaveToAdd?.SaveGroupName == "native result")
+                    return new AddSaveResponse(new GameSaveGame { GameId = args.SaveToAdd.GameId, FileLocation = args.SaveToAdd.FileLocation, SaveGroupId = "pcsx2:SLUS-20062" });
+                return new AddSaveResponse("restored by ares");
+            }
         }
 
         private static List<GameSaveBase> Rows(EmulatorPlugin plugin, IEmulator emu, params IGame[] games)

@@ -184,22 +184,22 @@ namespace LbIntegrations.Saves
         /// is handed to every row method that decodes an id (Codex review 10/10: one method only proved nothing about the
         /// others); each hook notes it and returns at once - the integration's own code never runs on it (its file does not
         /// exist either, should a hook be gone). At the first listing, then before each one-game listing (Game Saves): a
-        /// plugin patching later is caught before that game's cards are used, and they get their own ids back.</summary>
+        /// plugin patching later is caught before that game's cards are used, and they get their own ids back.
+        /// An integration hooked but not yet checked (loaded after the first listing) is checked at the next listing of any
+        /// kind: until then it is not Complete - only a check that passed makes it so (Codex review 10/10).</summary>
         public static void Verify(bool again = false)
         {
             lock (string.Intern(Marker + "|verify"))
-            {
-                bool done = AppDomain.CurrentDomain.GetData(Marker + "|verified") != null;
-                if (done && !again) return;
-                AppDomain.CurrentDomain.SetData(Marker + "|verified", true);
-                again = done;
-            }
             try
             {
                 var file = Path.Combine(Path.GetTempPath(), "lbip-stock-desk-sentinel-never-there", "sentinel.sav");
                 foreach (var (emu, plugin) in SaveRouter.Stock())
                 {
-                    if (!Integrations.Any(i => i.Emu == emu) || AppDomain.CurrentDomain.GetData(Marker + "|" + emu) == null || !Complete(emu)) continue;
+                    // Hooked by this format of the pack, nothing failed: checked once, then again before each Game Saves.
+                    if (!Integrations.Any(i => i.Emu == emu) || AppDomain.CurrentDomain.GetData(Marker + "|" + emu) as string != Format
+                        || IncompleteWhy(emu) != null) continue;
+                    bool was = Verified(emu);
+                    if (was && !again) continue;
                     var row = new GameSaveGame { SaveGroupId = Sentinel, FileLocation = file };
                     var calls = new (string Method, Action Call)[]
                     {
@@ -219,8 +219,13 @@ namespace LbIntegrations.Saves
                         try { call(); } catch { }
                         if (AppDomain.CurrentDomain.GetData(Marker + "|seen") as string != emu + "|" + method) lost.Add(method);
                     }
-                    if (lost.Count == 0) { if (!again) SaveRouter.Say("[stock] " + emu + ": hooks in"); continue; }
-                    Incomplete(emu, "hooks lost on " + string.Join(", ", lost) + " - another Harmony patched it after the pack");
+                    if (lost.Count == 0)
+                    {
+                        if (!was) { AppDomain.CurrentDomain.SetData(Marker + "|ok|" + emu, Format); SaveRouter.Say("[stock] " + emu + ": hooks in"); }
+                        continue;
+                    }
+                    AppDomain.CurrentDomain.SetData(Marker + "|ok|" + emu, null);
+                    Incomplete(emu,"hooks lost on " + string.Join(", ", lost) + " - another Harmony patched it after the pack");
                     SaveRouter.Say("[stock] " + emu + ": HOOKS LOST on " + string.Join(", ", lost) + " - another plugin patched LaunchBox's "
                                    + emu + " with its own Harmony after the pack: its desk is off, the cards get their own ids back");
                 }
@@ -255,8 +260,13 @@ namespace LbIntegrations.Saves
 
         internal static string? IncompleteWhy(string? emu) => emu == null ? null : AppDomain.CurrentDomain.GetData(Marker + "|off|" + emu) as string;
 
-        /// <summary>This integration's rows in our form (and its desk on): every row method hooked.</summary>
-        internal static bool Complete(string? emu) => emu != null && IncompleteWhy(emu) == null;
+        /// <summary>This integration's rows in our form (and its desk on): hooked by this pack, every row method, and the
+        /// self-check passed. Anything short of that proof - not found, not loaded yet, not checked yet, hooked by another
+        /// format of the pack - is NOT complete: its cards keep, or get back, their own ids (Codex review 10/10: the
+        /// migration names pcsx2:/saturn- owners without any hook, an integration never hooked must not get our ids).</summary>
+        internal static bool Complete(string? emu) => emu != null && IncompleteWhy(emu) == null && Verified(emu);
+
+        private static bool Verified(string emu) => AppDomain.CurrentDomain.GetData(Marker + "|ok|" + emu) as string == Format;
 
         /// <summary>True the first time a SDK body is asked for, in the whole process.</summary>
         private static bool SdkOnce(string key)
@@ -296,6 +306,9 @@ namespace LbIntegrations.Saves
         {
             public string? Json;      // our id it carried, null when it came in native
             public string? Native;    // what the integration was handed
+            // Answered by the prefix (another emulator's row, the self-check): the integration never ran, its postfix must
+            // leave the answer as its owner gave it (Harmony runs postfixes after a skipped original - Codex review 10/10).
+            public bool Forwarded;
         }
 
         /// <summary>A row of this integration in our form swapped for a copy in its own (the integrations decide on their own
@@ -402,11 +415,12 @@ namespace LbIntegrations.Saves
         private static bool TryGetSaveGroupInfoIn(object __instance, ref GameSaveBase __0, string __1, ref string __2, ref string __3, ref bool __result, out Inbound __state)
         {
             __state = default;
-            if (IsSentinel(__instance, __0)) return false;
+            if (IsSentinel(__instance, __0)) { __state.Forwarded = true; return false; }
             try
             {
                 if (Foreign(__instance, __0, out var emu) is { } r)
                 {
+                    __state.Forwarded = true;
                     if (!string.IsNullOrEmpty(__0.SaveGroupId) && LbIntegrations.Compat.Compat.On("planA")) { __2 = __0.SaveGroupId; __3 = __0.SaveGroupName; __result = true; return false; }
                     __result = SaveForward.TryGetSaveGroupInfo(r, __0, __1, out var id, out var name);
                     __2 = id!; __3 = name!;
@@ -447,6 +461,7 @@ namespace LbIntegrations.Saves
         {
             try
             {
+                if (__state.Forwarded) return;   // its owner's answer (or the row's own id, Plan A), as given
                 var given = __2;
                 if (!__result || string.IsNullOrEmpty(__2) || EmuOf(__instance) is not { } emu || !Encoding(emu)) { Answered(__instance, "TryGetSaveGroupInfo", __0, __result, "id=\"" + given + "\""); return; }
                 __2 = __state.Json != null && __2 == __state.Native ? __state.Json
@@ -469,12 +484,13 @@ namespace LbIntegrations.Saves
         private static bool AddSaveFileIn(object __instance, ref AddSaveArgs __0, ref AddSaveResponse __result, out Inbound __state)
         {
             __state = default;
-            if (IsSentinel(__instance, __0?.SaveToAdd)) { __result = new AddSaveResponse("self-check"); return false; }
+            if (IsSentinel(__instance, __0?.SaveToAdd)) { __result = new AddSaveResponse("self-check"); __state.Forwarded = true; return false; }
             try
             {
                 // Another emulator's save restored from this game's card: by its owner, into its owner's folders.
                 if (Foreign(__instance, __0?.SaveToAdd, out _) is { } r)
                 {
+                    __state.Forwarded = true;
                     __result = SaveForward.AddSaveFile(r, __0!, m => SaveRouter.Log?.Invoke(m));
                     return false;
                 }
@@ -492,6 +508,9 @@ namespace LbIntegrations.Saves
         {
             try
             {
+                // A restore its owner made: the row stays in the owner's form (a native pcsx2: from an incomplete PCSX2
+                // must not come back as lb.retroarch's).
+                if (__state.Forwarded) return;
                 if (EmuOf(__instance) is not { } emu || !Encoding(emu) || __result?.WasSuccess != true || __result.SaveAdded is not { } added) return;
                 var id = StockIds.Result(emu, __state.Native, __state.Json, added.SaveGroupId, added is GameSaveState,
                                          Path.GetFileName(added.FileLocation ?? ""), (added as GameSaveState)?.Slot);
@@ -523,14 +542,18 @@ namespace LbIntegrations.Saves
                 // hooked - a method gone, a patch refused, another Harmony over ours - gets its cards' own ids back.
                 bool on = LbIntegrations.Compat.Compat.On("stockIds");
                 bool Ours(string? emu) => on && Complete(emu);
-                bool first;
+                // The whole library again whenever the integrations in our form change: one hooked and checked after the
+                // first pass (its assembly loaded late), one whose hooks were lost, the switch turned.
+                var ready = string.Join(",", Integrations.Select(i => i.Emu).Where(e => Ours(e)));
+                bool whole;
                 lock (string.Intern(Marker + "|ids"))
                 {
-                    first = AppDomain.CurrentDomain.GetData(Marker + "|ids") == null;
-                    if (first) AppDomain.CurrentDomain.SetData(Marker + "|ids", "done");
+                    whole = AppDomain.CurrentDomain.GetData(Marker + "|ids") as string != ready;
+                    if (whole) AppDomain.CurrentDomain.SetData(Marker + "|ids", ready);
                 }
-                IEnumerable<IGame>? games = first ? null : args?.Games?.Count == 1 ? args.Games : null;
-                if (!first && games == null) return;
+                IEnumerable<IGame>? games = whole ? null : args?.Games?.Count == 1 ? args.Games : null;
+                if (!whole && games == null) return;
+                if (whole) SaveRouter.Say("[stock] ids: whole library, our form for: " + (ready.Length == 0 ? "none" : ready));
                 StockIdMigration.Run(games, true, m => SaveRouter.Say("[stock] " + m), e => Ours(e));
                 StockIdMigration.Run(games, false, m => SaveRouter.Say("[stock] " + m), e => !Ours(e));
             }
