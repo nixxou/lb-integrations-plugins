@@ -55,7 +55,22 @@ namespace LbIntegrations.Saves
                         route = new SaveOwnerRoute(route.Plugin, route.Emu, install);
                     }
                 }
-                return route.Emu == RetroArch ? AddRetroArch(route, args, log) : AddDolphin(route, args, log);
+                // Lot 4: a row in our form handed on in the integration's own (its steps read it as theirs), and the row it
+                // gives back in ours - the card it came from kept (StockIds.Result).
+                string? inbound = null, sent = args?.SaveToAdd?.SaveGroupId;
+                if (args?.SaveToAdd != null && StockIds.TryDecode(args.SaveToAdd.SaveGroupId, route.Emu, out var native))
+                {
+                    inbound = args.SaveToAdd.SaveGroupId; sent = native;
+                    var row = args.SaveToAdd;
+                    args = new AddSaveArgs { SaveToAdd = SaveRows.WithIds(row, native, StockIds.TryDecode(row.MatchLineageId, route.Emu, out var l) ? l : row.MatchLineageId), ShouldOverwriteFunc = args.ShouldOverwriteFunc };
+                }
+                var done = route.Emu == RetroArch ? AddRetroArch(route, args!, log) : AddDolphin(route, args!, log);
+                if (done?.WasSuccess == true && done.SaveAdded is { } added && LbIntegrations.Compat.Compat.On("stockIds") && SaveRouter.LaunchBoxHost)
+                {
+                    var id = StockIds.Result(route.Emu, sent, inbound, added.SaveGroupId, added is GameSaveState, Path.GetFileName(added.FileLocation ?? ""), (added as GameSaveState)?.Slot);
+                    if (id != null && id != added.SaveGroupId) done = new AddSaveResponse(SaveRows.WithIds(added, id, StockIds.Lineage(added.MatchLineageId, added.SaveGroupId, id)));
+                }
+                return done!;
             }
             catch (TargetInvocationException ex) { return Refuse(log, route.Emu + " failed: " + (ex.InnerException?.Message ?? ex.Message)); }
             catch (Exception ex) { return Refuse(log, route.Emu + " failed: " + ex.Message); }

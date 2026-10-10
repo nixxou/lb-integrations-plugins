@@ -255,29 +255,100 @@ namespace LbIntegrations.Saves
             return SaveRows.WithIds(row, id, StockIds.Lineage(row.MatchLineageId, row.SaveGroupId, id));
         }
 
-        // The row methods: decoded on the way in.
-        private static bool RowIn(object instance, ref GameSaveBase row)
+        // ── the row methods: another emulator's row to its owner (step 7), the integration's own decoded ──
+
+        /// <summary>The owner of a row that is NOT this integration's (a pack plugin's, another integration's) - LaunchBox asks
+        /// the game's emulator about every persisted row of the game (measured 10/10: RetroArch about Zelda's ares and SUPER
+        /// ZSNES rows). Null for its own rows, for any other plugin (the SDK's bodies), and with the desk off.</summary>
+        private static SaveOwnerRoute? Foreign(object instance, GameSaveBase? row, out string? emu)
         {
-            try { if (EmuOf(instance) is { } emu) Decode(emu, ref row); } catch { }
+            emu = EmuOf(instance);
+            if (emu == null || row == null || !LbIntegrations.Compat.Compat.On("stockDesk")) return null;
+            try { return SaveRouter.OwnerForStock(row, emu); } catch { return null; }
+        }
+
+        /// <summary>The prefix of a row method: true (the original runs, on the row in its own form) or false with
+        /// <paramref name="result"/> answered by the row's owner.</summary>
+        private static bool RowIn<T>(object instance, ref GameSaveBase row, ref T result, Func<SaveOwnerRoute, GameSaveBase, T> forward)
+        {
+            try
+            {
+                if (Foreign(instance, row, out var emu) is { } r) { result = forward(r, row); return false; }
+                if (emu != null) Decode(emu, ref row);
+            }
+            catch (Exception ex) { SaveRouter.Say("[stock] left to the integration: " + ex.Message); }
             return true;
         }
 
-        private static bool RemoveSaveIn(object __instance, ref GameSaveBase __0) => RowIn(__instance, ref __0);
-        private static bool IsSaveActiveIn(object __instance, ref GameSaveBase __0) => RowIn(__instance, ref __0);
-        private static bool IsSaveContainerIn(object __instance, ref GameSaveBase __0) => RowIn(__instance, ref __0);
-        private static bool TryBackupSaveIn(object __instance, ref GameSaveBase __0) => RowIn(__instance, ref __0);
-        private static bool TryComputeSaveSignatureIn(object __instance, ref GameSaveBase __0) => RowIn(__instance, ref __0);
+        private static bool RemoveSaveIn(object __instance, ref GameSaveBase __0, ref PluginResponse __result)
+            => RowIn(__instance, ref __0, ref __result, SaveForward.RemoveSave);
+        private static bool IsSaveActiveIn(object __instance, ref GameSaveBase __0, string __1, ref bool __result)
+            => RowIn(__instance, ref __0, ref __result, (r, s) => SaveForward.IsSaveActive(r, s, __1));
+        private static bool IsSaveContainerIn(object __instance, ref GameSaveBase __0, ref bool __result)
+            => RowIn(__instance, ref __0, ref __result, SaveForward.IsSaveContainer);
 
-        private static bool UseSaveGroupIdForPersistedMatchIn(object __instance, ref GameSaveBase __0)
+        private static bool TryBackupSaveIn(object __instance, ref GameSaveBase __0, string __1, string __2, ref string __3, ref bool __result)
         {
-            if (IsSentinel(__instance, __0)) return true;
-            return RowIn(__instance, ref __0);
+            string? error = null;
+            var run = RowIn(__instance, ref __0, ref __result, (r, s) => SaveForward.TryBackupSave(r, s, __1, __2, out error));
+            if (!run) __3 = error!;
+            return run;
         }
 
-        private static bool TryGetSaveGroupInfoIn(object __instance, ref GameSaveBase __0, out Inbound __state)
+        private static bool TryComputeSaveSignatureIn(object __instance, ref GameSaveBase __0, string __1, ref string __2, ref bool __result)
+        {
+            string? signature = null;
+            var run = RowIn(__instance, ref __0, ref __result, (r, s) => SaveForward.TryComputeSaveSignature(r, s, __1, out signature));
+            if (!run) __2 = signature!;
+            return run;
+        }
+
+        private static bool UseSaveGroupIdForPersistedMatchIn(object __instance, ref GameSaveBase __0, ref bool __result)
+        {
+            if (IsSentinel(__instance, __0)) return true;
+            return RowIn(__instance, ref __0, ref __result, SaveForward.UseSaveGroupIdForPersistedMatch);
+        }
+
+        /// <summary>Another emulator's row: it names its own group (Plan A - asked in the tile's constructor, left unanswered
+        /// LaunchBox ties the row to the card of a backup with the same file name, measured 08/10), else its owner answers.</summary>
+        private static bool TryGetSaveGroupInfoIn(object __instance, ref GameSaveBase __0, string __1, ref string __2, ref string __3, ref bool __result, out Inbound __state)
         {
             __state = default;
-            try { if (EmuOf(__instance) is { } emu) __state = Decode(emu, ref __0); } catch { }
+            try
+            {
+                if (Foreign(__instance, __0, out var emu) is { } r)
+                {
+                    if (!string.IsNullOrEmpty(__0.SaveGroupId) && LbIntegrations.Compat.Compat.On("planA")) { __2 = __0.SaveGroupId; __3 = __0.SaveGroupName; __result = true; return false; }
+                    __result = SaveForward.TryGetSaveGroupInfo(r, __0, __1, out var id, out var name);
+                    __2 = id!; __3 = name!;
+                    return false;
+                }
+                if (emu != null) __state = Decode(emu, ref __0);
+            }
+            catch { }
+            return true;
+        }
+
+        // A file (companions, secondary files): the plugin whose folder holds it, or that listed it here.
+        private static bool IsSecondarySaveFileIn(object __instance, string __0, ref bool __result)
+        {
+            try
+            {
+                if (EmuOf(__instance) is { } emu && LbIntegrations.Compat.Compat.On("stockDesk") && SaveRouter.OwnerOfPath(__0, (EmulatorPlugin)__instance, emu) is { } r)
+                { __result = SaveForward.IsSecondarySaveFile(r, __0); return false; }
+            }
+            catch { }
+            return true;
+        }
+
+        private static bool GetCompanionSaveFilesIn(object __instance, string __0, ref IReadOnlyList<string> __result)
+        {
+            try
+            {
+                if (EmuOf(__instance) is { } emu && LbIntegrations.Compat.Compat.On("stockDesk") && SaveRouter.OwnerOfPath(__0, (EmulatorPlugin)__instance, emu) is { } r)
+                { __result = SaveForward.GetCompanionSaveFiles(r, __0); return false; }
+            }
+            catch { }
             return true;
         }
 
@@ -294,11 +365,17 @@ namespace LbIntegrations.Saves
             catch { }
         }
 
-        private static bool AddSaveFileIn(object __instance, ref AddSaveArgs __0, out Inbound __state)
+        private static bool AddSaveFileIn(object __instance, ref AddSaveArgs __0, ref AddSaveResponse __result, out Inbound __state)
         {
             __state = default;
             try
             {
+                // Another emulator's save restored from this game's card: by its owner, into its owner's folders.
+                if (Foreign(__instance, __0?.SaveToAdd, out _) is { } r)
+                {
+                    __result = SaveForward.AddSaveFile(r, __0!, m => SaveRouter.Log?.Invoke(m));
+                    return false;
+                }
                 if (EmuOf(__instance) is not { } emu || __0?.SaveToAdd == null) return true;
                 var row = __0.SaveToAdd;
                 __state = Decode(emu, ref row);
@@ -340,6 +417,25 @@ namespace LbIntegrations.Saves
                     var ours = rows.Select(r => r == null ? r! : Encode(emu, r, cards.TryGetValue(CardKey(r.FileLocation, r.AdditionalApplicationId), out var c) ? c : null)).ToList();
                     if (!ours.SequenceEqual(rows)) __result = new GetSavesResponse(ours);
                     rows = ours;
+                }
+                // The other emulators' saves of these games (step 7), as the pack's desks list them. Nothing under LiteBox
+                // (SaveRouter.Active), nothing when a desk asks this integration (the nesting guard of OthersFor).
+                if (LbIntegrations.Compat.Compat.On("stockDesk") && __result?.WasSuccess != false && __0 != null)
+                {
+                    List<GameSaveBase> others;
+                    using (SaveScan.Begin((__0.Games?.Count ?? 0) + (__0.AdditionalApplications?.Count ?? 0)))
+                        others = SaveRouter.OthersFor((EmulatorPlugin)__instance, __0, rows);
+                    if (others.Count > 0)
+                    {
+                        if (games == 1 && LbIntegrations.Compat.Compat.On("planA"))
+                        {
+                            var gameId = __0.Games!.First().Id;
+                            others = SavePersist.TieLikeLaunchBox(gameId, others, m => SaveRouter.Say("[stock] " + m)).ToList();
+                            SavePersist.Ensure(gameId, others, m => SaveRouter.Say("[stock] " + m.Replace("[saves] ", "")));
+                        }
+                        rows = rows.Concat(others).ToList();
+                        __result = new GetSavesResponse(rows);
+                    }
                 }
                 var ms = __state == 0 ? 0 : (Stopwatch.GetTimestamp() - __state) * 1000.0 / Stopwatch.Frequency;
                 SaveRouter.Say("[stock] " + emu + " GetSaves: " + games + " game(s), " + rows.Count + " row(s), " + ms.ToString("0") + " ms");

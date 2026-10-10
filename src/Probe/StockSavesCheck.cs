@@ -211,10 +211,44 @@ namespace LbIntegrations.Probe
             Expect("PCSX2: ... a container, as its own", pcsx2.IsSaveContainer(ps2), "false");
             var otherEmu = WithId(sat, LbIntegrations.Saves.StockIds.Encode("lb.pcsx2", Native, false, "x", null)!);
             Expect("another integration's id is not decoded (RetroArch: no match)", !ra.UseSaveGroupIdForPersistedMatch(otherEmu), "true");
+
+            // Step 7: another emulator's row on RetroArch goes to its owner - a pack plugin (a stand-in registered as "ares"),
+            // another LaunchBox integration (PCSX2's twin) - and its own still reach its own code.
+            Section("8. Other emulators' rows routed (step 7)");
+            var fake = new FakeOwner();
+            LbIntegrations.Catalog.LbSaveOwners.Register("ares", fake);
+            var aresRow = new GameSaveGame { GameId = zelda.Id, FileLocation = @"C:\x\Zelda.ram", EmulatorFileName = "ares.exe",
+                                             SaveGroupId = "{\"emu\":\"ares\",\"kind\":\"save\",\"by\":\"name\",\"id\":\"Zelda.ram\"}", SaveGroupName = "ares card" };
+            Expect("an ares row: IsSaveActive answered by ares", !ra.IsSaveActive(aresRow, raEmu.ApplicationPath) && fake.Calls.Contains("IsSaveActive"), string.Join(",", fake.Calls));
+            Expect("... its signature by ares", ra.TryComputeSaveSignature(aresRow, raEmu.ApplicationPath, out var fs) && fs == "ares-signature", fs);
+            Expect("... its group: its own id (Plan A)", ra.TryGetSaveGroupInfo(aresRow, aresRow.FileLocation, out var fg, out var fn) && fg == aresRow.SaveGroupId && fn == "ares card", fg);
+            Expect("... its restore by ares", ra.AddSaveFile(new AddSaveArgs { SaveToAdd = aresRow })?.Message == "restored by ares", "");
+            Expect("... matched as ares says", ra.UseSaveGroupIdForPersistedMatch(aresRow) == true && fake.Calls.Contains("UseSaveGroupIdForPersistedMatch"), "");
+            fake.Calls.Clear();
+            Expect("RetroArch's own row: its own code, ares never asked", ra.IsSaveActive(sat, raEmu.ApplicationPath) && fake.Calls.Count == 0, string.Join(",", fake.Calls));
+            var ps2OnRa = WithId(sat, LbIntegrations.Saves.StockIds.Encode("lb.pcsx2", "pcsx2:SLUS-20062", false, "x", null)!);
+            Expect("a PCSX2 row on RetroArch: matched as PCSX2 says (its twin, decoded there)", ra.UseSaveGroupIdForPersistedMatch(ps2OnRa), "false");
             Console.WriteLine("  " + (bad == 0 ? "all good" : bad + " FAILURE(S)"));
             Console.WriteLine();
             Console.WriteLine("  scratch left in " + scratch);
             return true;
+        }
+
+        /// <summary>A pack plugin's stand-in: answers the save calls with its own markers and notes each one.</summary>
+        private sealed class FakeOwner : EmulatorPlugin
+        {
+            public readonly List<string> Calls = new List<string>();
+            public override string EmulatorName => "Fake ares";
+            public override IEnumerable<IEmulator> GetApplicableEmulators(IEnumerable<IEmulator> emulators) => Array.Empty<IEmulator>();
+            public override string GetCurrentVersion(string applicationPath) => "";
+            public override IEnumerable<EmulatorControllerVersion> GetInstallableVersions() => Array.Empty<EmulatorControllerVersion>();
+            public override EmulatorInstallResponse InstallEmulator(InstallEmulatorArgs args) => null;
+            public override EmulatorSupportResponse IsPlatformSupported(string platform) => null;
+            public override bool SupportsSaveManagement() => true;
+            public override bool IsSaveActive(GameSaveBase save, string emulatorApplicationPath) { Calls.Add("IsSaveActive"); return false; }
+            public override bool UseSaveGroupIdForPersistedMatch(GameSaveBase save) { Calls.Add("UseSaveGroupIdForPersistedMatch"); return true; }
+            public override bool TryComputeSaveSignature(GameSaveBase save, string emulatorApplicationPath, out string signature) { Calls.Add("TryComputeSaveSignature"); signature = "ares-signature"; return true; }
+            public override AddSaveResponse AddSaveFile(AddSaveArgs args) { Calls.Add("AddSaveFile"); return new AddSaveResponse("restored by ares"); }
         }
 
         private static List<GameSaveBase> Rows(EmulatorPlugin plugin, IEmulator emu, params IGame[] games)
