@@ -5,7 +5,9 @@
 // Translated, every row says who owns it, the way our plugins' rows do:
 //
 //   a non-empty native id  → {"emu":"lb.<x>","kind":"save"|"state","native":"<the id, exactly>"}
-//   no id                  → {"emu":"lb.<x>","kind":...,"by":"name","id":"<file name>"[,"slot":n]}
+//   no id                  → {"emu":"lb.<x>","kind":...,"by":"name","id":"<file name>"[,"slot":n],"dir":"<its folder>"}
+//                            (the folder relative to LaunchBox's root, lower case: one name in two cores' folders is two
+//                            saves; a card persisted before "dir" keeps its id - a listed row takes its persisted card)
 //
 // The way back is exact: `native` holds the whole original string (System.Text.Json reads it back as written), a
 // by-name id goes back to no id - what the integration gave. Their own code always sees their own form: measured 10/10,
@@ -24,7 +26,7 @@ namespace LbIntegrations.Saves
         /// <summary>Our id for a row an integration (<paramref name="selfEmu"/>, "lb.retroarch"...) gave with
         /// <paramref name="native"/>. Left as it is: an id that is already ours (any JSON) or LiteBox's (entry:/unit:),
         /// and a row with neither an id nor a file name.</summary>
-        public static string? Encode(string selfEmu, string? native, bool state, string? fileName, int? slot)
+        public static string? Encode(string selfEmu, string? native, bool state, string? fileName, int? slot, string? dir = null)
         {
             if (!string.IsNullOrEmpty(native))
             {
@@ -33,7 +35,25 @@ namespace LbIntegrations.Saves
                 return SaveId.Write(new SaveIdData { Emu = selfEmu, Kind = state ? "state" : "save", Native = native });
             }
             if (string.IsNullOrEmpty(fileName)) return native;
-            return SaveId.Write(new SaveIdData { Emu = selfEmu, Kind = state ? "state" : "save", By = "name", Id = fileName, Slot = state ? slot : null });
+            return SaveId.Write(new SaveIdData { Emu = selfEmu, Kind = state ? "state" : "save", By = "name", Id = fileName, Slot = state ? slot : null,
+                                                 Dir = string.IsNullOrEmpty(dir) ? null : dir });
+        }
+
+        /// <summary>The folder of <paramref name="fileLocation"/> as a by-name id holds it: relative to <paramref name="root"/>
+        /// (LaunchBox's), else whole; lower case, so a path written in another case is the same card. Null for none.</summary>
+        public static string? DirOf(string? fileLocation, string root)
+        {
+            if (string.IsNullOrWhiteSpace(fileLocation)) return null;
+            try
+            {
+                var full = System.IO.Path.GetFullPath(System.IO.Path.IsPathRooted(fileLocation) ? fileLocation : System.IO.Path.Combine(root, fileLocation));
+                var folder = System.IO.Path.GetDirectoryName(full);
+                if (string.IsNullOrEmpty(folder)) return null;
+                var rel = System.IO.Path.GetRelativePath(root, folder);
+                if (rel.StartsWith("..", StringComparison.Ordinal) || System.IO.Path.IsPathRooted(rel)) rel = folder;
+                return rel.TrimEnd('\\', '/').ToLowerInvariant();
+            }
+            catch { return null; }
         }
 
         /// <summary>True when <paramref name="id"/> is our id of <paramref name="selfEmu"/>: <paramref name="native"/> is
@@ -52,14 +72,14 @@ namespace LbIntegrations.Saves
         /// <paramref name="inboundJson"/> (ours, null when it came in native) decoded to <paramref name="sentNative"/>.
         /// 1. it gave back what it was sent: the very id that came in; 2. another id of its own: that one, ours;
         /// 3. none: the id that came in when it named the save (a native one), else by name from the restored file.</summary>
-        public static string? Result(string selfEmu, string? sentNative, string? inboundJson, string? resultId, bool state, string? fileName, int? slot)
+        public static string? Result(string selfEmu, string? sentNative, string? inboundJson, string? resultId, bool state, string? fileName, int? slot, string? dir = null)
         {
             if (inboundJson != null && string.Equals(resultId ?? "", sentNative ?? "", StringComparison.Ordinal)
                 && !(string.IsNullOrEmpty(resultId) && IsByName(inboundJson)))
                 return inboundJson;
-            if (!string.IsNullOrEmpty(resultId)) return Encode(selfEmu, resultId, state, fileName, slot);
+            if (!string.IsNullOrEmpty(resultId)) return Encode(selfEmu, resultId, state, fileName, slot, dir);
             if (inboundJson != null && SaveId.TryRead(inboundJson, out var d) && d!.Native != null) return inboundJson;
-            return Encode(selfEmu, "", state, fileName, slot);
+            return Encode(selfEmu, "", state, fileName, slot, dir);
         }
 
         /// <summary>A by-name id: the row came with no id of its own.</summary>

@@ -54,6 +54,10 @@ namespace LbIntegrations.Saves
         [JsonPropertyOrder(5)] public int? Slot { get; init; }
         /// <summary>A LaunchBox integration's own id, kept exactly so the way back is exact.</summary>
         [JsonPropertyOrder(6)] public string? Native { get; init; }
+        /// <summary>The folder of a LaunchBox integration's file named by its name alone (by "name", no native id): relative
+        /// to LaunchBox's root, lower case. Two of RetroArch's cores keep a state of one name in two folders
+        /// (sort_savestates_enable): by name only, they were one card (review 10/10).</summary>
+        [JsonPropertyOrder(7)] public string? Dir { get; init; }
     }
 
     internal static class SaveId

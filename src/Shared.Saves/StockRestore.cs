@@ -67,7 +67,7 @@ namespace LbIntegrations.Saves
                 var done = route.Emu == RetroArch ? AddRetroArch(route, args!, log) : AddDolphin(route, args!, log);
                 if (done?.WasSuccess == true && done.SaveAdded is { } added && LbIntegrations.Compat.Compat.On("stockIds") && SaveRouter.LaunchBoxHost && StockDesk.Complete(route.Emu))
                 {
-                    var id = StockIds.Result(route.Emu, sent, inbound, added.SaveGroupId, added is GameSaveState, Path.GetFileName(added.FileLocation ?? ""), (added as GameSaveState)?.Slot);
+                    var id = StockIds.Result(route.Emu, sent, inbound, added.SaveGroupId, added is GameSaveState, Path.GetFileName(added.FileLocation ?? ""), (added as GameSaveState)?.Slot, StockDesk.DirOf(added.FileLocation));
                     if (id != null && id != added.SaveGroupId) done = new AddSaveResponse(SaveRows.WithIds(added, id, StockIds.Lineage(added.MatchLineageId, added.SaveGroupId, id)));
                 }
                 return done!;

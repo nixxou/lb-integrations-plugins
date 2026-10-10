@@ -743,6 +743,19 @@ namespace LbIntegrations.Probe
             Pin("no id, a save: by name", StockIds.Encode(RA, "", false, "Legend of Zelda, The - A Link to the Past (France).srm", null),
                 "{\"emu\":\"lb.retroarch\",\"kind\":\"save\",\"by\":\"name\",\"id\":\"Legend of Zelda, The - A Link to the Past (France).srm\"}");
             Pin("no id, a state: by name and slot", StockIds.Encode(RA, null, true, "Zelda.state2", 2), "{\"emu\":\"lb.retroarch\",\"kind\":\"state\",\"by\":\"name\",\"id\":\"Zelda.state2\",\"slot\":2}");
+            // Review 10/10: one name in two cores' folders is two saves - the folder in the id.
+            var inSnes9x = StockIds.Encode(RA, "", true, "Zelda.state", 0, @"emulators\retroarch\states\snes9x");
+            Pin("no id, a state: by name, slot and folder", inSnes9x,
+                "{\"emu\":\"lb.retroarch\",\"kind\":\"state\",\"by\":\"name\",\"id\":\"Zelda.state\",\"slot\":0,\"dir\":\"emulators\\\\retroarch\\\\states\\\\snes9x\"}");
+            Check("by name: the same file name in another core's folder is another id", inSnes9x != StockIds.Encode(RA, "", true, "Zelda.state", 0, @"emulators\retroarch\states\bsnes"));
+            Check("by name: the folder changes nothing for a native id", StockIds.Encode(RA, "saturn-x", false, "x.bcr", null, "d") == StockIds.Encode(RA, "saturn-x", false, "x.bcr", null));
+            Check("by name: decoded, still no id", StockIds.TryDecode(inSnes9x, RA, out var noneDir) && noneDir == "");
+            Check("dir: under the root → relative, lower case", StockIds.DirOf(@"G:\LB\Emulators\RetroArch\states\Snes9x\Zelda.state", @"G:\LB") == @"emulators\retroarch\states\snes9x");
+            Check("dir: a path LaunchBox keeps relative → the same", StockIds.DirOf(@"Emulators\RetroArch\states\Snes9x\Zelda.state", @"G:\LB") == @"emulators\retroarch\states\snes9x");
+            Check("dir: outside the root → whole, lower case", StockIds.DirOf(@"H:\Saves\Zelda.srm", @"G:\LB") == @"h:\saves");
+            Pin("result: by name, restored into slot 3 of that folder - its card",
+                StockIds.Result(RA, "", inSnes9x, "", true, "Zelda.state3", 3, @"emulators\retroarch\states\snes9x"),
+                StockIds.Encode(RA, "", true, "Zelda.state3", 3, @"emulators\retroarch\states\snes9x"));
             Pin("already ours: left alone", StockIds.Encode(RA, "{\"emu\":\"ares\",\"kind\":\"save\"}", false, "x", null), "{\"emu\":\"ares\",\"kind\":\"save\"}");
             Pin("LiteBox's: left alone", StockIds.Encode(RA, "entry:42", false, "x", null), "entry:42");
             Pin("no id, no file: left alone", StockIds.Encode(RA, "", false, "", null), "");

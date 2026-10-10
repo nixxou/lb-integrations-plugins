@@ -327,10 +327,14 @@ namespace LbIntegrations.Saves
         /// <summary>A row the integration gave out, in our form.</summary>
         private static GameSaveBase Encode(string emu, GameSaveBase row, string? id)
         {
-            id ??= StockIds.Encode(emu, row.SaveGroupId, row is GameSaveState, Path.GetFileName(row.FileLocation ?? ""), (row as GameSaveState)?.Slot);
+            id ??= StockIds.Encode(emu, row.SaveGroupId, row is GameSaveState, Path.GetFileName(row.FileLocation ?? ""), (row as GameSaveState)?.Slot, DirOf(row.FileLocation));
             if (id == null) return row;
             return SaveRows.WithIds(row, id, StockIds.Lineage(row.MatchLineageId, row.SaveGroupId, id));
         }
+
+        /// <summary>The folder a by-name id holds (StockIds.DirOf), against LaunchBox's root.</summary>
+        internal static string? DirOf(string? fileLocation)
+            => StockIds.DirOf(fileLocation, Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..")));
 
         // ── the row methods: another emulator's row to its owner (step 7), the integration's own decoded ──
 
@@ -465,7 +469,7 @@ namespace LbIntegrations.Saves
                 var given = __2;
                 if (!__result || string.IsNullOrEmpty(__2) || EmuOf(__instance) is not { } emu || !Encoding(emu)) { Answered(__instance, "TryGetSaveGroupInfo", __0, __result, "id=\"" + given + "\""); return; }
                 __2 = __state.Json != null && __2 == __state.Native ? __state.Json
-                    : StockIds.Encode(emu, __2, __0 is GameSaveState, Path.GetFileName(__0?.FileLocation ?? ""), (__0 as GameSaveState)?.Slot) ?? __2;
+                    : StockIds.Encode(emu, __2, __0 is GameSaveState, Path.GetFileName(__0?.FileLocation ?? ""), (__0 as GameSaveState)?.Slot, DirOf(__0?.FileLocation)) ?? __2;
                 Answered(__instance, "TryGetSaveGroupInfo", __0, __result, "id=\"" + given + "\" given as \"" + __2 + "\"");
             }
             catch { }
@@ -513,7 +517,7 @@ namespace LbIntegrations.Saves
                 if (__state.Forwarded) return;
                 if (EmuOf(__instance) is not { } emu || !Encoding(emu) || __result?.WasSuccess != true || __result.SaveAdded is not { } added) return;
                 var id = StockIds.Result(emu, __state.Native, __state.Json, added.SaveGroupId, added is GameSaveState,
-                                         Path.GetFileName(added.FileLocation ?? ""), (added as GameSaveState)?.Slot);
+                                         Path.GetFileName(added.FileLocation ?? ""), (added as GameSaveState)?.Slot, DirOf(added.FileLocation));
                 var ours = Encode(emu, added, id);
                 if (!ReferenceEquals(ours, added)) __result = new AddSaveResponse(ours);
                 Once(emu, "restore -> " + Path.GetFileName(added.FileLocation ?? "") + " " + ours.SaveGroupId);
