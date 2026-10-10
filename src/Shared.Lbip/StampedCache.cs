@@ -24,7 +24,10 @@ namespace LbIntegrations.Lbip
 
         /// <summary>The value <paramref name="make"/> works out from <paramref name="file"/>, kept while the file keeps its date and
         /// length (a missing file is a state too: kept until it appears). <paramref name="key"/> tells apart two values of one file.</summary>
-        public static T Get<T>(string? file, string key, Func<T> make)
+        public static T Get<T>(string? file, string key, Func<T> make) => Get(file, key, make, keepNull: true);
+
+        /// <summary>The same; <paramref name="keepNull"/> false: a null (a reader's "could not read") is never kept.</summary>
+        public static T Get<T>(string? file, string key, Func<T> make, bool keepNull)
         {
             if (string.IsNullOrWhiteSpace(file)) return make();
             long length = -1, ticks = 0;
@@ -39,14 +42,19 @@ namespace LbIntegrations.Lbip
             bool readable = length < 0 || CanRead(file);
             var v = make();
             if (!readable || (length >= 0 && !CanRead(file))) return v;
+            if (v == null && !keepNull) return v;
             if (Values.Count > 256) Values.Clear();
             Values[k] = (length, ticks, v);
             return v;
         }
 
+        /// <summary>Opened as the readers open it - File.ReadAllText, ZipFile.OpenRead: sharing READ only. A file another program
+        /// holds open for writing (an emulator rewriting its settings, sharing them for reading) fails here as it fails them;
+        /// sharing ReadWrite would have passed while they failed (Codex review 10/10). A more lenient reader loses nothing: its
+        /// value is just not kept this time.</summary>
         private static bool CanRead(string file)
         {
-            try { using (new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete)) return true; }
+            try { using (new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read)) return true; }
             catch { return false; }
         }
     }

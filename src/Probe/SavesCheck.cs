@@ -277,6 +277,21 @@ namespace LbIntegrations.Probe
                 Check("stamped: the file locked - its fallback returned", locked == "FAILED");
                 Check("stamped: ...and not kept - the file released, the real value read", LbIntegrations.Lbip.StampedCache.Get(cfg, "locked|" + dir, Read) == "BB");
 
+                // Held open for WRITING with read sharing - an emulator rewriting its settings: the readers (sharing Read only)
+                // fail, so must the check, and the fallback must not stick (Codex review 10/10).
+                string heldValue;
+                using (new FileStream(cfg, FileMode.Open, FileAccess.ReadWrite, FileShare.Read))
+                    heldValue = LbIntegrations.Lbip.StampedCache.Get(cfg, "held|" + dir, Read);
+                Check("stamped: held open for writing (read shared) - its fallback returned", heldValue == "FAILED");
+                Check("stamped: ...and not kept - released unchanged, the real value read", LbIntegrations.Lbip.StampedCache.Get(cfg, "held|" + dir, Read) == "BB");
+
+                // keepNull false: a reader's null ("could not read") is never kept.
+                int nulls = 0;
+                string NullOnce() => nulls++ == 0 ? null : "read";
+                var n1 = LbIntegrations.Lbip.StampedCache.Get(cfg, "nonull|" + dir, NullOnce, keepNull: false);
+                var n2 = LbIntegrations.Lbip.StampedCache.Get(cfg, "nonull|" + dir, NullOnce, keepNull: false);
+                Check("stamped: keepNull false - a null not kept, read again next time", n1 == null && n2 == "read");
+
                 var missing = Path.Combine(dir, "none.cfg");
                 int m = 0;
                 LbIntegrations.Lbip.StampedCache.Get(missing, "missing|" + dir, () => ++m);

@@ -333,8 +333,9 @@ namespace LbIntegrations.Xemu
         {
             var dir = XemuStates.Dir(exe, titleId);
             if (dir == null || !Directory.Exists(dir)) return new List<XemuStateFile>();
-            // Each state file read while it keeps its size and date (10/10: every zip opened again for every row of every listing).
-            return Directory.GetFiles(dir, "*" + XemuStates.Extension).Select(p => LbIntegrations.Lbip.StampedCache.Get(p, "xemu.state", () => XemuStates.Read(p))).Where(f => f != null).OrderBy(f => f.Slot).ToList();
+            // Each state file read while it keeps its size and date (10/10: every zip opened again for every row of every listing);
+            // a read that failed (null - the file held by a writer) is never kept, it is read again next time (Codex review 10/10).
+            return Directory.GetFiles(dir, "*" + XemuStates.Extension).Select(p => LbIntegrations.Lbip.StampedCache.Get(p, "xemu.state", () => XemuStates.Read(p), keepNull: false)).Where(f => f != null).OrderBy(f => f.Slot).ToList();
         }
 
         /// <summary>The keys the console is written with - its stamp's keys= line (XboxSaveSync).</summary>
