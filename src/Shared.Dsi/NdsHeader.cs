@@ -94,10 +94,20 @@ namespace LbIntegrations.Dsi
                 byte[] head = null;
                 if (IsArchive(romPath))
                 {
+                    // An archive's header, across sessions and installs (GlobalCache, 10/10): every listing opened it (a solid
+                    // 7z decompressed). A loose ROM's 1 KiB costs no more to read than to look up.
+                    if (FromCache(romPath, rom)) return rom;
+                    bool readable = File.Exists(romPath) && CanOpen(romPath);
                     // The archive's own name is NOT the save's name; the entry's is.
                     if (File.Exists(romPath)
                         && Archives.TryReadFirstEntry(romPath, RomExtensions, HeadBytes, out var entry, out head))
                         rom.AssetName = StripLastExtension(entry);
+                    if (head != null && head.Length >= DSiTitleIdOffset + 8)
+                    {
+                        Fill(rom, head);
+                        if (readable && CanOpen(romPath)) ToCache(romPath, rom);   // read whole: never a failure kept
+                    }
+                    return rom;
                 }
                 else if (File.Exists(romPath))
                 {
@@ -105,17 +115,50 @@ namespace LbIntegrations.Dsi
                 }
 
                 if (head == null || head.Length < DSiTitleIdOffset + 8) return rom;
-
-                rom.Known = true;
-                rom.IsDSi = (head[UnitCodeOffset] & 0x02) != 0;
-                rom.DSiTitleIdLow = ReadU32(head, DSiTitleIdOffset);
-                rom.DSiTitleIdHigh = ReadU32(head, DSiTitleIdOffset + 4);
-                if (head.Length >= DsiRegions.MaskOffset + 4)
-                    rom.DSiRegionMask = ReadU32(head, DsiRegions.MaskOffset);
-                rom.IsDSiWare = rom.IsDSi && rom.DSiTitleIdHigh == DSiWareTitleIdHigh;
+                Fill(rom, head);
             }
             catch (Exception ex) { DsiLog.Verbose("could not read the header of " + romPath + " - " + ex.Message); }
             return rom;
+        }
+
+        private static void Fill(NdsRom rom, byte[] head)
+        {
+            rom.Known = true;
+            rom.IsDSi = (head[UnitCodeOffset] & 0x02) != 0;
+            rom.DSiTitleIdLow = ReadU32(head, DSiTitleIdOffset);
+            rom.DSiTitleIdHigh = ReadU32(head, DSiTitleIdOffset + 4);
+            if (head.Length >= DsiRegions.MaskOffset + 4)
+                rom.DSiRegionMask = ReadU32(head, DsiRegions.MaskOffset);
+            rom.IsDSiWare = rom.IsDSi && rom.DSiTitleIdHigh == DSiWareTitleIdHigh;
+        }
+
+        /// <summary>The GlobalCache file of archived ROMs' headers (its version moves when what is kept changes).</summary>
+        private const string HeadersKind = "nds-archive-headers-v1";
+
+        /// <summary>A kept header: "isDSi|low|high|region|entry name" (a file name holds no '|'); RomDir follows from the path.</summary>
+        private static bool FromCache(string romPath, NdsRom rom)
+        {
+            if (!LbIntegrations.Lbip.GlobalCache.TryGet(HeadersKind, romPath, out var v)) return false;
+            var c = v.Split(new[] { '|' }, 5);
+            if (c.Length != 5 || !uint.TryParse(c[1], out var low) || !uint.TryParse(c[2], out var high) || !uint.TryParse(c[3], out var region)) return false;
+            rom.AssetName = c[4];
+            rom.Known = true;
+            rom.IsDSi = c[0] == "1";
+            rom.DSiTitleIdLow = low;
+            rom.DSiTitleIdHigh = high;
+            rom.DSiRegionMask = region;
+            rom.IsDSiWare = rom.IsDSi && rom.DSiTitleIdHigh == DSiWareTitleIdHigh;
+            return true;
+        }
+
+        private static void ToCache(string romPath, NdsRom rom)
+            => LbIntegrations.Lbip.GlobalCache.Set(HeadersKind, romPath,
+                   (rom.IsDSi ? "1" : "0") + "|" + rom.DSiTitleIdLow + "|" + rom.DSiTitleIdHigh + "|" + rom.DSiRegionMask + "|" + rom.AssetName);
+
+        private static bool CanOpen(string path)
+        {
+            try { using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete)) return true; }
+            catch { return false; }
         }
 
         public static bool IsArchive(string path)
