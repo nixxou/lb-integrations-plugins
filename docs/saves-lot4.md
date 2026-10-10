@@ -110,3 +110,19 @@ integration must come through our hook, else the log says `HOOKS LOST`.
   Atlantis 4/1 = 4/1 - nothing doubled, nothing split. Atlantis's restore not tried yet.
 - Left: T2's restore, T3 (Rolan's Curse, Pokemon's two cards), T4 (`stockIds` off then on), T5 (Zelda back on SUPER
   ZSNES), T6 (Dolphin: needs a disc LaunchBox can read), T7 (PCSX2: none installed), the save probe put back.
+
+### 3.1 T2 and T3 (10/10, evening)
+
+- **T2's restore, first try: "LaunchBox failed to back up the save item!"** - LaunchBox's own pre-backup, after its
+  `[SaveBackup] Creating new backup` line and before any call of ours (every call before it got RetroArch's own id and
+  answered as usual). The LaunchBox 14 defect measured on 20/09 on this very game with no plugin of ours loaded: a save
+  persisted on a VERSION running the game's own file (`Play (FR) (Disc 1)`, `e8cbe532`). That version and its save row
+  removed from `Sega Saturn.xml` (copy: `Backups\lbip-lot4-2026-10-10\Sega Saturn.xml.before-version-removal`).
+- **T2 passed** then: the restore of the vault's `.bcr` (A1C32B71...) - LaunchBox's pre-backup made `-02` (the old live
+  set, with `.bkr`/`.smpc`), RetroArch's own AddSaveFile handed `saturn-atlantis�`, the row it gave back given our id
+  (`restore -> � {"emu":"lb.retroarch",�,"native":"saturn-�"}`), live `.bcr` = A1C32B71, companions unchanged. The XML:
+  4 rows, ONE card, in our form. Live set before: `Backups\lbip-lot4-2026-10-10\Atlantis-live-before-T2\`.
+- RetroArch names each vault copy's group after its file (`saturn-�-01`, `-02`): given our form as is - LaunchBox
+  groups them as it did before.
+- **T3**: Rolan's Curse 2 cards, Pokemon 1 card, as before; their XML still holds the GUIDs - LaunchBox wrote nothing for
+  them (the migration lives in memory until LaunchBox saves the game).

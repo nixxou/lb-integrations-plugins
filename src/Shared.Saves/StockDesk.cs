@@ -273,16 +273,40 @@ namespace LbIntegrations.Saves
 
         /// <summary>The prefix of a row method: true (the original runs, on the row in its own form) or false with
         /// <paramref name="result"/> answered by the row's owner.</summary>
-        private static bool RowIn<T>(object instance, ref GameSaveBase row, ref T result, Func<SaveOwnerRoute, GameSaveBase, T> forward)
+        private static bool RowIn<T>(object instance, ref GameSaveBase row, ref T result, Func<SaveOwnerRoute, GameSaveBase, T> forward,
+                                     [System.Runtime.CompilerServices.CallerMemberName] string method = "")
         {
             try
             {
-                if (Foreign(instance, row, out var emu) is { } r) { result = forward(r, row); return false; }
-                if (emu != null) Decode(emu, ref row);
+                if (Foreign(instance, row, out var emu) is { } r)
+                {
+                    result = forward(r, row);
+                    Once(emu!, method + " " + Show(row) + " -> " + r.Emu + " answered " + result);
+                    return false;
+                }
+                if (emu != null)
+                {
+                    var came = row?.SaveGroupId;
+                    Decode(emu, ref row);
+                    Once(emu, method + " own, id \"" + came + "\" handed as \"" + row?.SaveGroupId + "\" " + Path.GetFileName(row?.FileLocation ?? ""));
+                }
             }
             catch (Exception ex) { SaveRouter.Say("[stock] left to the integration: " + ex.Message); }
             return true;
         }
+
+        // What the integration answered for its own rows (once per method, id and answer) - the backups' trail.
+        private static void Answered(object instance, string method, GameSaveBase? row, object? result, string? extra = null)
+        {
+            try { if (EmuOf(instance) is { } emu) Once(emu, method + " -> " + result + (extra == null ? "" : " " + extra) + " for " + Show(row)); } catch { }
+        }
+
+        private static void TryBackupSaveOut(object __instance, GameSaveBase __0, bool __result, ref string __3) => Answered(__instance, "TryBackupSave", __0, __result, "error=\"" + __3 + "\"");
+        private static void TryComputeSaveSignatureOut(object __instance, GameSaveBase __0, bool __result, ref string __2) => Answered(__instance, "TryComputeSaveSignature", __0, __result, "signature=" + __2);
+        private static void IsSaveContainerOut(object __instance, GameSaveBase __0, bool __result) => Answered(__instance, "IsSaveContainer", __0, __result);
+        private static void IsSaveActiveOut(object __instance, GameSaveBase __0, bool __result) => Answered(__instance, "IsSaveActive", __0, __result);
+        private static void UseSaveGroupIdForPersistedMatchOut(object __instance, GameSaveBase __0, bool __result) => Answered(__instance, "UseSaveGroupIdForPersistedMatch", __0, __result);
+        private static void RemoveSaveOut(object __instance, GameSaveBase __0, PluginResponse __result) => Answered(__instance, "RemoveSave", __0, __result?.WasSuccess + " " + __result?.Message);
 
         private static bool RemoveSaveIn(object __instance, ref GameSaveBase __0, ref PluginResponse __result)
             => RowIn(__instance, ref __0, ref __result, SaveForward.RemoveSave);
@@ -362,11 +386,23 @@ namespace LbIntegrations.Saves
         {
             try
             {
-                if (!__result || string.IsNullOrEmpty(__2) || !Encoding || EmuOf(__instance) is not { } emu) return;
+                var given = __2;
+                if (!__result || string.IsNullOrEmpty(__2) || !Encoding || EmuOf(__instance) is not { } emu) { Answered(__instance, "TryGetSaveGroupInfo", __0, __result, "id=\"" + given + "\""); return; }
                 __2 = __state.Json != null && __2 == __state.Native ? __state.Json
                     : StockIds.Encode(emu, __2, __0 is GameSaveState, Path.GetFileName(__0?.FileLocation ?? ""), (__0 as GameSaveState)?.Slot) ?? __2;
+                Answered(__instance, "TryGetSaveGroupInfo", __0, __result, "id=\"" + given + "\" given as \"" + __2 + "\"");
             }
             catch { }
+        }
+
+        private static void GetCompanionSaveFilesOut(object __instance, string __0, IReadOnlyList<string> __result)
+        {
+            try { if (EmuOf(__instance) is { } emu) Once(emu, "GetCompanionSaveFiles " + Path.GetFileName(__0 ?? "") + " -> " + string.Join(", ", (__result ?? Array.Empty<string>()).Select(Path.GetFileName))); } catch { }
+        }
+
+        private static void IsSecondarySaveFileOut(object __instance, string __0, bool __result)
+        {
+            try { if (EmuOf(__instance) is { } emu) Once(emu, "IsSecondarySaveFile " + Path.GetFileName(__0 ?? "") + " -> " + __result); } catch { }
         }
 
         private static bool AddSaveFileIn(object __instance, ref AddSaveArgs __0, ref AddSaveResponse __result, out Inbound __state)
