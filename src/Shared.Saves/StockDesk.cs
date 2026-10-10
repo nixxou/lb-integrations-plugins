@@ -3,9 +3,9 @@
 // LaunchBox asks only the plugin of a game's emulator about its saves; our plugins hold a desk (SaveDesk) that also lists
 // and routes the other emulators' saves. A game set to one of LaunchBox's integrations had none. This puts one there.
 //
-// STEP 5 OF THE PLAN: the hooks are in and only WATCH - every call reaches the original unchanged, what it was handed and
-// what it gave back is logged once per kind (the listed rows, Dolphin's ids, which row LaunchBox hands the per-row
-// methods). Translation and routing come in the next steps.
+// THEIR IDS IN OUR FORM (lot 4, step 6; StockIds): every row the integration lists, restores or names a group for leaves it
+// in our form; every row it is handed in our form reaches its own code in its own form - a copy, LaunchBox's row is never
+// touched. The routing of other emulators' rows comes next (step 7).
 //
 // Patched ONCE per process (every plugin of the pack carries this class and its own Harmony: a mark in the AppDomain's data
 // says it is in), when the integrations are loaded - now, or when they load later. Each of the SDK's save methods is found
@@ -33,7 +33,7 @@ namespace LbIntegrations.Saves
         public const string HarmonyId = "com.nixxou.lbip.stock-desk";
         /// <summary>The once-per-process mark; its value says which format of the hooks is in.</summary>
         private const string Marker = "LbIntegrations.StockDesk.Patched";
-        private const string Format = "watch/1";
+        private const string Format = "ids/1";
         private static readonly object Gate = new object();
         private static bool _watching;
 
@@ -130,6 +130,7 @@ namespace LbIntegrations.Saves
                         // (measured 10/10: RetroArch's TryGetSaveGroupInfo then gave back an empty id).
                         var pre = AccessTools.Method(typeof(StockDesk), m + "In");
                         var post = AccessTools.Method(typeof(StockDesk), m + "Out");
+                        if (pre == null && post == null) { said.Add(m + " (nothing to do yet)"); continue; }
                         h.Patch(target,
                             prefix: pre == null ? null : new HarmonyMethod(pre) { priority = Priority.First },
                             postfix: post == null ? null : new HarmonyMethod(post) { priority = Priority.Last });
@@ -137,7 +138,7 @@ namespace LbIntegrations.Saves
                     }
                     catch (Exception ex) { said.Add(m + " NOT hooked (" + ex.Message + ")"); }
                 }
-                SaveRouter.Say("[stock] " + entry.Emu + " watched (" + Format + "): " + string.Join(", ", said));
+                SaveRouter.Say("[stock] " + entry.Emu + " hooked (" + Format + "): " + string.Join(", ", said));
                 SaveRouter.Say("[stock]    " + Where(a) + ", " + Copies(name) + " loaded");
             }
         }
@@ -212,74 +213,168 @@ namespace LbIntegrations.Saves
         /// <summary>The emu of the integration <paramref name="instance"/> is, or null for any other plugin (the SDK's bodies).</summary>
         private static string? EmuOf(object? instance) => instance != null && Emus.TryGetValue(instance.GetType(), out var e) ? e : null;
 
-        // ── step 5: watch only ──────────────────────────────────────────────
+        // ── the ids: theirs on the way in, ours on the way out ───────────────
 
         private static readonly ConcurrentDictionary<string, byte> Seen = new(StringComparer.Ordinal);
 
-        /// <summary>Said once per integration, method and row (IsSaveActive is asked hundreds of times per opening).</summary>
-        private static void Once(string emu, string method, string what)
+        /// <summary>Said once per integration and line (IsSaveActive is asked hundreds of times per opening).</summary>
+        private static void Once(string emu, string what)
         {
-            if (Seen.Count < 4000 && Seen.TryAdd(emu + "|" + method + "|" + what, 0)) SaveRouter.Say("[stock] " + emu + " " + method + " " + what);
+            if (Seen.Count < 4000 && Seen.TryAdd(emu + "|" + what, 0)) SaveRouter.Say("[stock] " + emu + " " + what);
         }
 
-        private static void Watch(object instance, string method, GameSaveBase? row)
+        /// <summary>Our ids given out: the `stockIds` switch, and only to LaunchBox (LiteBox reads their own until lot 8).
+        /// Decoding never stops: a card already in our form must keep working whatever is switched.</summary>
+        private static bool Encoding => LbIntegrations.Compat.Compat.On("stockIds") && SaveRouter.LaunchBoxHost;
+
+        /// <summary>What a decoded row came in as, for the way out.</summary>
+        private struct Inbound
         {
-            try { if (EmuOf(instance) is { } emu) Once(emu, method, "<- " + (row == null ? "null" : Row(row))); } catch { }
+            public string? Json;      // our id it carried, null when it came in native
+            public string? Native;    // what the integration was handed
         }
 
-        private static void WatchFile(object instance, string method, string? file)
+        /// <summary>A row of this integration in our form swapped for a copy in its own (the integrations decide on their own
+        /// forms: RetroArch's Saturn match, PCSX2's pcsx2: prefix, measured 10/10). Anything else is left as it came.</summary>
+        private static Inbound Decode(string emu, ref GameSaveBase row)
         {
-            try { if (EmuOf(instance) is { } emu) Once(emu, method, "<- file " + file); } catch { }
+            var seen = new Inbound { Native = row?.SaveGroupId };
+            if (row == null || !StockIds.TryDecode(row.SaveGroupId, emu, out var native)) return seen;
+            var lineage = StockIds.TryDecode(row.MatchLineageId, emu, out var l) ? l : row.MatchLineageId;
+            seen.Json = row.SaveGroupId;
+            seen.Native = native;
+            row = SaveRows.WithIds(row, native, lineage);
+            return seen;
         }
 
-        private static void WatchBool(object instance, string method, GameSaveBase? row, bool result)
+        /// <summary>A row the integration gave out, in our form.</summary>
+        private static GameSaveBase Encode(string emu, GameSaveBase row, string? id)
         {
-            try { if (EmuOf(instance) is { } emu) Once(emu, method, "-> " + result + " for " + Show(row)); } catch { }
+            id ??= StockIds.Encode(emu, row.SaveGroupId, row is GameSaveState, Path.GetFileName(row.FileLocation ?? ""), (row as GameSaveState)?.Slot);
+            if (id == null) return row;
+            return SaveRows.WithIds(row, id, StockIds.Lineage(row.MatchLineageId, row.SaveGroupId, id));
         }
 
-        private static void GetSavesIn(object __instance, out long __state)
+        // The row methods: decoded on the way in.
+        private static bool RowIn(object instance, ref GameSaveBase row)
         {
-            __state = EmuOf(__instance) == null ? 0 : Stopwatch.GetTimestamp();
+            try { if (EmuOf(instance) is { } emu) Decode(emu, ref row); } catch { }
+            return true;
         }
 
-        private static void GetSavesOut(object __instance, GetSavesArgs __0, GetSavesResponse __result, long __state)
+        private static bool RemoveSaveIn(object __instance, ref GameSaveBase __0) => RowIn(__instance, ref __0);
+        private static bool IsSaveActiveIn(object __instance, ref GameSaveBase __0) => RowIn(__instance, ref __0);
+        private static bool IsSaveContainerIn(object __instance, ref GameSaveBase __0) => RowIn(__instance, ref __0);
+        private static bool TryBackupSaveIn(object __instance, ref GameSaveBase __0) => RowIn(__instance, ref __0);
+        private static bool TryComputeSaveSignatureIn(object __instance, ref GameSaveBase __0) => RowIn(__instance, ref __0);
+
+        private static bool UseSaveGroupIdForPersistedMatchIn(object __instance, ref GameSaveBase __0)
+        {
+            if (IsSentinel(__instance, __0)) return true;
+            return RowIn(__instance, ref __0);
+        }
+
+        private static bool TryGetSaveGroupInfoIn(object __instance, ref GameSaveBase __0, out Inbound __state)
+        {
+            __state = default;
+            try { if (EmuOf(__instance) is { } emu) __state = Decode(emu, ref __0); } catch { }
+            return true;
+        }
+
+        /// <summary>The group it names, in our form: the very id that came in when it named that one (RetroArch names a vault
+        /// copy's group after its file - "saturn-…-01", measured 10/10 - which stays a group of its own, as today).</summary>
+        private static void TryGetSaveGroupInfoOut(object __instance, GameSaveBase __0, bool __result, ref string __2, Inbound __state)
         {
             try
             {
-                if (EmuOf(__instance) is not { } emu) return;
-                var ms = __state == 0 ? 0 : (Stopwatch.GetTimestamp() - __state) * 1000.0 / Stopwatch.Frequency;
-                var rows = __result?.FoundSaves ?? Array.Empty<GameSaveBase>();
-                int games = __0?.Games?.Count ?? 0;
-                SaveRouter.Say("[stock] " + emu + " GetSaves: " + games + " game(s), " + rows.Count + " row(s), " + ms.ToString("0") + " ms");
-                if (games <= 1) foreach (var r in rows) SaveRouter.Say("[stock]    listed " + Row(r));
+                if (!__result || string.IsNullOrEmpty(__2) || !Encoding || EmuOf(__instance) is not { } emu) return;
+                __2 = __state.Json != null && __2 == __state.Native ? __state.Json
+                    : StockIds.Encode(emu, __2, __0 is GameSaveState, Path.GetFileName(__0?.FileLocation ?? ""), (__0 as GameSaveState)?.Slot) ?? __2;
             }
             catch { }
         }
 
-        private static void AddSaveFileIn(object __instance, AddSaveArgs __0) => Watch(__instance, "AddSaveFile", __0?.SaveToAdd);
-
-        private static void AddSaveFileOut(object __instance, AddSaveResponse __result)
+        private static bool AddSaveFileIn(object __instance, ref AddSaveArgs __0, out Inbound __state)
         {
-            try { if (EmuOf(__instance) is { } emu) SaveRouter.Say("[stock] " + emu + " AddSaveFile -> " + Show(__result?.SaveAdded) + " success=" + __result?.WasSuccess + " " + __result?.Message); } catch { }
+            __state = default;
+            try
+            {
+                if (EmuOf(__instance) is not { } emu || __0?.SaveToAdd == null) return true;
+                var row = __0.SaveToAdd;
+                __state = Decode(emu, ref row);
+                if (!ReferenceEquals(row, __0.SaveToAdd)) __0 = new AddSaveArgs { SaveToAdd = row, ShouldOverwriteFunc = __0.ShouldOverwriteFunc };
+            }
+            catch { }
+            return true;
         }
 
-        private static void RemoveSaveIn(object __instance, GameSaveBase __0) => Watch(__instance, "RemoveSave", __0);
-        private static void IsSaveActiveIn(object __instance, GameSaveBase __0) => Watch(__instance, "IsSaveActive", __0);
-        private static void IsSaveActiveOut(object __instance, GameSaveBase __0, bool __result) => WatchBool(__instance, "IsSaveActive", __0, __result);
-        private static void IsSaveContainerIn(object __instance, GameSaveBase __0) => Watch(__instance, "IsSaveContainer", __0);
-        private static void TryBackupSaveIn(object __instance, GameSaveBase __0) => Watch(__instance, "TryBackupSave", __0);
-        private static void UseSaveGroupIdForPersistedMatchIn(object __instance, GameSaveBase __0) { if (!IsSentinel(__instance, __0)) Watch(__instance, "UseSaveGroupIdForPersistedMatch", __0); }
-        private static void UseSaveGroupIdForPersistedMatchOut(object __instance, GameSaveBase __0, bool __result) => WatchBool(__instance, "UseSaveGroupIdForPersistedMatch", __0, __result);
-        private static void TryComputeSaveSignatureIn(object __instance, GameSaveBase __0) => Watch(__instance, "TryComputeSaveSignature", __0);
-        private static void TryGetSaveGroupInfoIn(object __instance, GameSaveBase __0) => Watch(__instance, "TryGetSaveGroupInfo", __0);
-
-        private static void TryGetSaveGroupInfoOut(object __instance, GameSaveBase __0, bool __result, ref string __2, ref string __3)
+        /// <summary>The row a restore gave back, in our form (StockIds.Result: its card kept, or the slot it was put in).</summary>
+        private static void AddSaveFileOut(object __instance, ref AddSaveResponse __result, Inbound __state)
         {
-            try { if (EmuOf(__instance) is { } emu) Once(emu, "TryGetSaveGroupInfo", "-> " + __result + " id=\"" + __2 + "\" name=\"" + __3 + "\" for " + Show(__0)); } catch { }
+            try
+            {
+                if (!Encoding || EmuOf(__instance) is not { } emu || __result?.WasSuccess != true || __result.SaveAdded is not { } added) return;
+                var id = StockIds.Result(emu, __state.Native, __state.Json, added.SaveGroupId, added is GameSaveState,
+                                         Path.GetFileName(added.FileLocation ?? ""), (added as GameSaveState)?.Slot);
+                var ours = Encode(emu, added, id);
+                if (!ReferenceEquals(ours, added)) __result = new AddSaveResponse(ours);
+                Once(emu, "restore -> " + Path.GetFileName(added.FileLocation ?? "") + " " + ours.SaveGroupId);
+            }
+            catch (Exception ex) { SaveRouter.Say("[stock] restore's row left as it came: " + ex.Message); }
         }
 
-        private static void IsSecondarySaveFileIn(object __instance, string __0) => WatchFile(__instance, "IsSecondarySaveFile", __0);
-        private static void GetCompanionSaveFilesIn(object __instance, string __0) => WatchFile(__instance, "GetCompanionSaveFiles", __0);
+        private static void GetSavesIn(object __instance, out long __state) => __state = EmuOf(__instance) == null ? 0 : Stopwatch.GetTimestamp();
+
+        /// <summary>The rows listed, in our form - each given the id of the card already persisted at its path when there is
+        /// one (listed = persisted: a migrated GUID card is never split in two), else its own in our form.</summary>
+        private static void GetSavesOut(object __instance, GetSavesArgs __0, ref GetSavesResponse __result, long __state)
+        {
+            try
+            {
+                if (EmuOf(__instance) is not { } emu) return;
+                var rows = __result?.FoundSaves ?? (IReadOnlyCollection<GameSaveBase>)Array.Empty<GameSaveBase>();
+                int games = __0?.Games?.Count ?? 0;
+                if (Encoding && __result?.WasSuccess == true && rows.Count > 0)
+                {
+                    var cards = PersistedCards(__0, emu);
+                    var ours = rows.Select(r => r == null ? r! : Encode(emu, r, cards.TryGetValue(CardKey(r.FileLocation, r.AdditionalApplicationId), out var c) ? c : null)).ToList();
+                    if (!ours.SequenceEqual(rows)) __result = new GetSavesResponse(ours);
+                    rows = ours;
+                }
+                var ms = __state == 0 ? 0 : (Stopwatch.GetTimestamp() - __state) * 1000.0 / Stopwatch.Frequency;
+                SaveRouter.Say("[stock] " + emu + " GetSaves: " + games + " game(s), " + rows.Count + " row(s), " + ms.ToString("0") + " ms");
+                if (games <= 1) foreach (var r in rows) SaveRouter.Say("[stock]    listed " + Row(r));
+            }
+            catch (Exception ex) { SaveRouter.Say("[stock] rows left as listed: " + ex.Message); }
+        }
+
+        /// <summary>The cards of this integration already in our form, persisted on the listed games (and their versions):
+        /// path and version → id.</summary>
+        private static Dictionary<string, string> PersistedCards(GetSavesArgs? args, string emu)
+        {
+            var cards = new Dictionary<string, string>(StringComparer.Ordinal);
+            var games = new List<IGame>();
+            if (args?.Games != null) games.AddRange(args.Games.Where(g => g != null));
+            foreach (var a in args?.AdditionalApplications ?? (IReadOnlyCollection<IAdditionalApplication>)Array.Empty<IAdditionalApplication>())
+                if (a != null && games.All(g => g.Id != a.GameId) && PluginHelper.DataManager?.GetGameById(a.GameId) is { } g) games.Add(g);
+            foreach (var g in games)
+                foreach (var p in StockIdMigration.Read(g))
+                    if (p.SaveGroupId != null && StockIds.TryDecode(p.SaveGroupId, emu, out _))
+                        cards[CardKey(p.FilePath, p.AppId)] = p.SaveGroupId;
+            return cards;
+        }
+
+        private static string CardKey(string? path, string? appId)
+        {
+            string full;
+            try
+            {
+                var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".."));
+                full = string.IsNullOrWhiteSpace(path) ? "" : Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(root, path));
+            }
+            catch { full = path ?? ""; }
+            return full.ToLowerInvariant() + "|" + (appId ?? "").ToLowerInvariant();
+        }
 
         private static string Row(GameSaveBase r)
             => r.GetType().Name + (r is GameSaveState s ? " slot " + s.Slot : "") + " id=\"" + r.SaveGroupId + "\" lineage=\"" + r.MatchLineageId

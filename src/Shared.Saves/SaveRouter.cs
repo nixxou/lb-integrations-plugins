@@ -73,6 +73,12 @@ namespace LbIntegrations.Saves
             }
         }
 
+        /// <summary>True under LaunchBox (whatever the patches), false under LiteBox.</summary>
+        public static bool LaunchBoxHost
+        {
+            get { try { return !HostWillAsk(); } catch { return true; } }
+        }
+
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         private static bool HostWillAsk() => LbIntegrations.Catalog.LbCatalog.HostWillAsk;
 

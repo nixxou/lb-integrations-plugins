@@ -132,6 +132,29 @@ namespace LbIntegrations.Saves
             };
         }
 
+        /// <summary><paramref name="row"/> with other ids (lot 4, StockDesk: a LaunchBox integration's ids in our form and back):
+        /// the row itself when they are already those, else a copy - every field, Slot included. LaunchBox's own row is never
+        /// changed.</summary>
+        public static GameSaveBase WithIds(GameSaveBase row, string? groupId, string? lineage)
+        {
+            if (string.Equals(row.SaveGroupId, groupId, StringComparison.Ordinal) && string.Equals(row.MatchLineageId, lineage, StringComparison.Ordinal)) return row;
+            if (row is GameSaveState s)
+                return new GameSaveState
+                {
+                    Slot = s.Slot, AdditionalApplicationId = row.AdditionalApplicationId, SaveGroupId = groupId, MatchLineageId = lineage,
+                    MigrationFamilyId = row.MigrationFamilyId, EmulatorCore = row.EmulatorCore, EmulatorFileName = row.EmulatorFileName, FileLocation = row.FileLocation,
+                    GameId = row.GameId, Title = row.Title, SaveGroupName = row.SaveGroupName, DisplayChipText = row.DisplayChipText,
+                    OriginalFileName = row.OriginalFileName, ReportedFileSizeBytes = row.ReportedFileSizeBytes, IsDirectory = row.IsDirectory, ReportedLastModifiedUtc = row.ReportedLastModifiedUtc,
+                };
+            return new GameSaveGame
+            {
+                AdditionalApplicationId = row.AdditionalApplicationId, SaveGroupId = groupId, MatchLineageId = lineage,
+                MigrationFamilyId = row.MigrationFamilyId, EmulatorCore = row.EmulatorCore, EmulatorFileName = row.EmulatorFileName, FileLocation = row.FileLocation,
+                GameId = row.GameId, Title = row.Title, SaveGroupName = row.SaveGroupName, DisplayChipText = row.DisplayChipText,
+                OriginalFileName = row.OriginalFileName, ReportedFileSizeBytes = row.ReportedFileSizeBytes, IsDirectory = row.IsDirectory, ReportedLastModifiedUtc = row.ReportedLastModifiedUtc,
+            };
+        }
+
         /// <summary><paramref name="row"/> tied to the version <paramref name="versionId"/> (the front desk, SavePersist): the
         /// row itself when it already is, else a copy - every field, Slot included.</summary>
         public static GameSaveBase WithVersion(GameSaveBase row, string? versionId)

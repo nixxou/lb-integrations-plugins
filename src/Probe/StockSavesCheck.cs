@@ -191,6 +191,27 @@ namespace LbIntegrations.Probe
             Console.WriteLine("  hooked: " + all.Count + " method(s), each " + string.Join(",", all.Select(m => Harmony.GetPatchInfo(m).Prefixes.Count(p => p.owner == LbIntegrations.Saves.StockDesk.HarmonyId)).Distinct()) + " prefix");
             for (int i = 0; i < before.Count; i++)
                 Console.WriteLine("  " + (before[i] == after[i] ? "same   " : "CHANGED") + " " + after[i] + (before[i] == after[i] ? "" : "   (was " + before[i] + ")"));
+
+            // Step 6: a row in OUR form gets the answers its native form gets; the group it names comes back in our form.
+            Section("7. Their ids in our form (step 6)");
+            int bad = 0;
+            void Expect(string what, bool ok, string got) { Console.WriteLine("  " + (ok ? "OK    " : "FAIL  ") + what + (ok ? "" : "   got " + got)); if (!ok) bad++; }
+            var sat = raRows[0];
+            const string Native = "saturn-atlantis - the lost tales (fr) (disc 1)";
+            var ours = LbIntegrations.Saves.StockIds.Encode("lb.retroarch", Native, false, "x", null)!;
+            var asOurs = WithId(sat, ours);
+            Expect("RetroArch: our Saturn id matched as its own", ra.UseSaveGroupIdForPersistedMatch(asOurs), "false");
+            Expect("... the caller's row untouched", asOurs.SaveGroupId == ours, asOurs.SaveGroupId);
+            var okInfo = ra.TryGetSaveGroupInfo(asOurs, asOurs.FileLocation, out var gid, out _);
+            Expect("... the group it names: the very id that came in", okInfo && gid == ours, gid);
+            var fresh = ra.TryGetSaveGroupInfo(WithId(sat, ""), sat.FileLocation, out var gid2, out _);
+            Expect("... named from a row with no id: ours", fresh && gid2 == ours, gid2);
+            var ps2 = WithId(pcsx2Rows[0], LbIntegrations.Saves.StockIds.Encode("lb.pcsx2", "pcsx2:SLUS-20062", false, "x", null)!);
+            Expect("PCSX2: our id matched as its own", pcsx2.UseSaveGroupIdForPersistedMatch(ps2), "false");
+            Expect("PCSX2: ... a container, as its own", pcsx2.IsSaveContainer(ps2), "false");
+            var otherEmu = WithId(sat, LbIntegrations.Saves.StockIds.Encode("lb.pcsx2", Native, false, "x", null)!);
+            Expect("another integration's id is not decoded (RetroArch: no match)", !ra.UseSaveGroupIdForPersistedMatch(otherEmu), "true");
+            Console.WriteLine("  " + (bad == 0 ? "all good" : bad + " FAILURE(S)"));
             Console.WriteLine();
             Console.WriteLine("  scratch left in " + scratch);
             return true;

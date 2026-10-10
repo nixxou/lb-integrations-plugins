@@ -34,6 +34,8 @@ namespace LbIntegrations.Saves
         public string? MatchLineageId;
         public string? EmulatorFileName;
         public string? FilePath;
+        /// <summary>The version it is persisted on (null: the game).</summary>
+        public string? AppId;
         public bool IsState;
         /// <summary>The LaunchBox object, for the adapter; the plan never reads it.</summary>
         public object? Source;
@@ -151,7 +153,7 @@ namespace LbIntegrations.Saves
         /// <summary>The persisted rows of a game: Game.Saves and each version's Saves.</summary>
         internal static IEnumerable<PersistedRow> Read(IGame game)
         {
-            foreach (var (holder, _) in PersistedRows.Holders(game))
+            foreach (var (holder, appId) in PersistedRows.Holders(game))
             {
                 if (holder.GetType().GetProperty("Saves", Inst)?.GetValue(holder) is not IEnumerable saves) continue;
                 foreach (var s in saves.Cast<object>().ToList())
@@ -163,7 +165,7 @@ namespace LbIntegrations.Saves
                     yield return new PersistedRow
                     {
                         GameId = P("GameId") ?? game.Id ?? "", SaveGroupId = P("SaveGroupId"), MatchLineageId = P("MatchLineageId"),
-                        EmulatorFileName = P("EmulatorFileName"), FilePath = P("FilePath"), IsState = slot != null, Source = s,
+                        EmulatorFileName = P("EmulatorFileName"), FilePath = P("FilePath"), AppId = appId, IsState = slot != null, Source = s,
                     };
                 }
             }
