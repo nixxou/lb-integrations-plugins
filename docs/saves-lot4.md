@@ -126,3 +126,10 @@ integration must come through our hook, else the log says `HOOKS LOST`.
   groups them as it did before.
 - **T3**: Rolan's Curse 2 cards, Pokemon 1 card, as before; their XML still holds the GUIDs - LaunchBox wrote nothing for
   them (the migration lives in memory until LaunchBox saves the game).
+- **T4 passed** - the switch from the Compatibility page (its first use in LaunchBox; the confirmation box opened behind
+  the window, found by Mehdi): `stockIds=off` written to `nixx-compat.ini`. Next start: "12 persisted row(s) given
+  their own ids back (3 game(s))", Atlantis listed and named as `saturn-atlantis�`, its XML back to that id on all 4 rows
+  (one card) - the way back exact. Switched on again: "10 persisted row(s) given our ids (4 game(s))" - the rows whose XML
+  held native ids then (Game Boy 6, Saturn 4; Zelda's 8 kept our form in the XML all along, LaunchBox wrote nothing for
+  it while off - read back into their own form in memory, as designed).
+- Seen: the Compatibility page's confirmation box can open behind LaunchBox's window (to look at in Menus).
