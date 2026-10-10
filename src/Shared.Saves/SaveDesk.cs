@@ -58,6 +58,9 @@ namespace LbIntegrations.Saves
             SaveRouter.Log ??= log;
             if (SaveRouter.Active) SaveRouter.Register(emu, plugin);
             Say("front desk " + (SaveRouter.Active ? "on" : "off (the host asks every plugin)") + " for " + emu);
+            // LaunchBox's RetroArch, Dolphin and PCSX2 get a desk too (lot 4) - whatever the host: their ids are decoded under
+            // LiteBox as well, which calls them directly.
+            StockDesk.Install();
         }
 
         /// <summary>How every id of <paramref name="emu"/> starts: SaveId writes "emu" first (pinned by the probe).</summary>

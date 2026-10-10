@@ -172,6 +172,24 @@ namespace LbIntegrations.Probe
 
             Section("5. Harmony: a row argument replaced for the original (ref __0)");
             HarmonyReplace(ra, raRows.FirstOrDefault(), raEmu.ApplicationPath);
+
+            // Lot 4's hooks (StockDesk) on the same dlls: what they log, and that every answer is the original's.
+            Section("6. StockDesk's hooks on these dlls");
+            LbIntegrations.Saves.SaveRouter.Log = Console.WriteLine;
+            string Answers(EmulatorPlugin p, GameSaveBase r, string exe)
+            {
+                string Try(Func<object> f) { try { return Show(f()); } catch (Exception ex) { return "throws " + (ex.InnerException ?? ex).GetType().Name; } }
+                return Try(() => p.IsSaveActive(r, exe)) + "/" + Try(() => p.UseSaveGroupIdForPersistedMatch(r)) + "/" + Try(() => p.IsSaveContainer(r))
+                       + "/" + Try(() => p.TryGetSaveGroupInfo(r, r.FileLocation, out var g, out _) + " " + g) + "/" + Try(() => string.Join(",", p.GetCompanionSaveFiles(r.FileLocation).Select(Path.GetFileName)));
+            }
+            var before = raRows.Concat(pcsx2Rows).Select(r => Answers(r.EmulatorFileName == "pcsx2-qt.exe" ? pcsx2 : ra, r, r.EmulatorFileName == "pcsx2-qt.exe" ? pcsx2Emu.ApplicationPath : raEmu.ApplicationPath)).ToList();
+            LbIntegrations.Saves.StockDesk.Install();
+            LbIntegrations.Saves.StockDesk.Install();   // twice: hooked once
+            var after = raRows.Concat(pcsx2Rows).Select(r => Answers(r.EmulatorFileName == "pcsx2-qt.exe" ? pcsx2 : ra, r, r.EmulatorFileName == "pcsx2-qt.exe" ? pcsx2Emu.ApplicationPath : raEmu.ApplicationPath)).ToList();
+            var all = Harmony.GetAllPatchedMethods().Where(m => Harmony.GetPatchInfo(m)?.Owners.Contains(LbIntegrations.Saves.StockDesk.HarmonyId) == true).ToList();
+            Console.WriteLine("  hooked: " + all.Count + " method(s), each " + string.Join(",", all.Select(m => Harmony.GetPatchInfo(m).Prefixes.Count(p => p.owner == LbIntegrations.Saves.StockDesk.HarmonyId)).Distinct()) + " prefix");
+            for (int i = 0; i < before.Count; i++)
+                Console.WriteLine("  " + (before[i] == after[i] ? "same   " : "CHANGED") + " " + after[i] + (before[i] == after[i] ? "" : "   (was " + before[i] + ")"));
             Console.WriteLine();
             Console.WriteLine("  scratch left in " + scratch);
             return true;

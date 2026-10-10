@@ -53,3 +53,14 @@ LaunchBox with the logging-only build (step 5 of the plan).
 
 Harness notes: `IGame.GetEffectiveCommandLine()` is a method, the probe's `StubGame` now answers a method given as
 `"Name()"`; RetroArch reads its `-L "cores\<core>.dll"` from it.
+
+### 1.5 The hooks in the probe (StockDesk, watch only)
+
+- Typed hooks, one pair per method: a hook taking `object[] __args` LOSES the out values (measured: RetroArch's
+  `TryGetSaveGroupInfo` then gave back an empty id). With typed hooks every answer is the original's (RetroArch, PCSX2).
+- An SDK body is patched where it is declared (`EmulatorPlugin`), once for the three; Harmony refuses it seen from the
+  derived type. Each integration is marked hooked BEFORE its methods are patched: a failure never leads to a second
+  prefix (measured once: two prefixes on `GetSaves` after a failure). 21 methods, 1 prefix each, `Install` twice.
+- In the probe, Harmony cannot hook Dolphin's GetSaves/AddSaveFile/RemoveSave and PCSX2's AddSaveFile/RemoveSave/
+  TryComputeSaveSignature: `The type initializer for '<Module>' threw` - their module initializer needs LaunchBox, as
+  their GetSaves do. To be seen in LaunchBox.
