@@ -454,7 +454,8 @@ namespace LbIntegrations.Xenia
                 var emuId = Safe(() => game?.EmulatorId);
                 var own = string.IsNullOrEmpty(emuId) ? null : Safe(() => dm.GetEmulatorById(emuId));
                 if (own != null && Same(own)) return Safe(() => own.CommandLine);
-                var any = Safe(() => dm.GetAllEmulators())?.FirstOrDefault(e => e != null && Same(e));
+                var any = LbIntegrations.Saves.SaveForward.ViaEmulator(_ => true) is { } via && Same(via) ? via   // through a desk: the save's install
+                          : Safe(() => dm.GetAllEmulators())?.FirstOrDefault(e => e != null && Same(e));
                 return Safe(() => any?.CommandLine);
             }
             catch { return null; }

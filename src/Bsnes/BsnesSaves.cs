@@ -259,7 +259,8 @@ namespace LbIntegrations.Bsnes
                 var own = string.IsNullOrEmpty(id) ? null : dm?.GetEmulatorById(id);
                 var path = Safe(() => own?.ApplicationPath);
                 if (!BsnesLaunch.IsBsnesExe(path))
-                    path = Safe(() => dm?.GetAllEmulators()?.FirstOrDefault(e => BsnesLaunch.IsBsnesExe(Safe(() => e.ApplicationPath)))?.ApplicationPath);
+                    path = Safe(() => (LbIntegrations.Saves.SaveForward.ViaEmulator(BsnesLaunch.IsBsnesExe)   // through a desk: the save's install
+                                       ?? dm?.GetAllEmulators()?.FirstOrDefault(e => BsnesLaunch.IsBsnesExe(Safe(() => e.ApplicationPath))))?.ApplicationPath);
                 return string.IsNullOrEmpty(path) ? null : ResolveFullPath(path);
             }
             catch { return null; }

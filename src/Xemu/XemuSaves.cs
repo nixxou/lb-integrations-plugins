@@ -672,6 +672,9 @@ namespace LbIntegrations.Xemu
                 var emu = string.IsNullOrEmpty(emuId) ? null : dm.GetEmulatorById(emuId);
                 var path = ResolveFullPath(Safe(() => emu?.ApplicationPath));
                 if (XemuPaths.IsOurs(path)) return path;
+                // Restored through another plugin's desk: the install the save came from (SaveForward).
+                var via = LbIntegrations.Saves.SaveForward.ViaEmulator(p => XemuPaths.IsOurs(ResolveFullPath(p)));
+                if (via != null) return ResolveFullPath(Safe(() => via.ApplicationPath));
                 foreach (var e in dm?.GetAllEmulators() ?? new IEmulator[0])
                 {
                     var p = ResolveFullPath(Safe(() => e.ApplicationPath));

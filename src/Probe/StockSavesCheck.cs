@@ -269,6 +269,12 @@ namespace LbIntegrations.Probe
             fake.Calls.Clear();
             Expect("... a GUID on a file nobody listed: RetroArch's own code", ra.IsSaveActive(WithId(sat, "c380b29f2702480a982dda74c642a367"), raEmu.ApplicationPath) == ra.IsSaveActive(sat, raEmu.ApplicationPath) && fake.Calls.Count == 0, string.Join(",", fake.Calls));
             Expect("... the router: ares's file is ares's own to ares, another's to RetroArch", LbIntegrations.Saves.SaveRouter.ListedOwner(listedFile, "ares") == null && LbIntegrations.Saves.SaveRouter.ListedOwner(listedFile, "lb.retroarch")?.Emu == "ares", "");
+            // A restore forwarded by a desk tells the owner which install the row came from (review 10/10: two installs, the
+            // first one's save overwritten).
+            fake.Via = null;
+            LbIntegrations.Saves.SaveForward.AddSaveFile(new LbIntegrations.Saves.SaveOwnerRoute(fake, "ares", dolphinEmu), new AddSaveArgs { SaveToAdd = aresRow }, _ => { });
+            Expect("a forwarded restore: the owner sees the install the row came from", fake.Via == dolphinEmu.Id && !string.IsNullOrEmpty(fake.Via), fake.Via ?? "null");
+            Expect("... and nothing once it is over", LbIntegrations.Saves.SaveForward.ViaEmulator(_ => true) == null, "still set");
             // A game handed through a view (SaveGameView): the persisted cards are read off the real game (review 10/10).
             var coreEmu = new StubEmulator { Title = "RetroArch (bsnes)", ApplicationPath = raEmu.ApplicationPath, CommandLine = "-L cores\\bsnes_libretro.dll" };
             var view = LbIntegrations.Saves.SaveGameView.As(zelda, coreEmu);
@@ -293,6 +299,8 @@ namespace LbIntegrations.Probe
         private sealed class FakeOwner : EmulatorPlugin
         {
             public readonly List<string> Calls = new List<string>();
+            /// <summary>The emulator a desk said the row came from, seen inside AddSaveFile.</summary>
+            public string Via;
             public override string EmulatorName => "Fake ares";
             public override IEnumerable<IEmulator> GetApplicableEmulators(IEnumerable<IEmulator> emulators) => Array.Empty<IEmulator>();
             public override string GetCurrentVersion(string applicationPath) => "";
@@ -306,6 +314,7 @@ namespace LbIntegrations.Probe
             public override AddSaveResponse AddSaveFile(AddSaveArgs args)
             {
                 Calls.Add("AddSaveFile");
+                Via = LbIntegrations.Saves.SaveForward.ViaEmulator(_ => true)?.Id;
                 // Asked to: a restored row in another integration's NATIVE form, as an incomplete PCSX2 gives one back.
                 if (args?.SaveToAdd?.SaveGroupName == "native result")
                     return new AddSaveResponse(new GameSaveGame { GameId = args.SaveToAdd.GameId, FileLocation = args.SaveToAdd.FileLocation, SaveGroupId = "pcsx2:SLUS-20062" });

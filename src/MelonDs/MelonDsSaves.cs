@@ -679,7 +679,8 @@ namespace LbIntegrations.MelonDs
                 if (MelonDsPaths.IsMelonDsExecutable(appPath))
                     return MelonDsPaths.Resolve(ResolveFullPath(appPath));
 
-                var any = dm?.GetAllEmulators()?
+                var any = LbIntegrations.Saves.SaveForward.ViaEmulator(MelonDsPaths.IsMelonDsExecutable)   // through a desk: the save's install
+                          ?? dm?.GetAllEmulators()?
                     .FirstOrDefault(e => MelonDsPaths.IsMelonDsExecutable(Safe(() => e.ApplicationPath)));
                 var anyPath = Safe(() => any?.ApplicationPath);
                 return anyPath == null ? null : MelonDsPaths.Resolve(ResolveFullPath(anyPath));

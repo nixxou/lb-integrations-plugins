@@ -342,7 +342,8 @@ namespace LbIntegrations.RaSnes9x
                 var own = string.IsNullOrEmpty(id) ? null : dm?.GetEmulatorById(id);
                 var path = Safe(() => own?.ApplicationPath);
                 if (!RaSnes9xLaunch.IsRaSnes9xExe(path))
-                    path = Safe(() => dm?.GetAllEmulators()?.FirstOrDefault(e => RaSnes9xLaunch.IsRaSnes9xExe(Safe(() => e.ApplicationPath)))?.ApplicationPath);
+                    path = Safe(() => (LbIntegrations.Saves.SaveForward.ViaEmulator(RaSnes9xLaunch.IsRaSnes9xExe)   // through a desk: the save's install
+                                       ?? dm?.GetAllEmulators()?.FirstOrDefault(e => RaSnes9xLaunch.IsRaSnes9xExe(Safe(() => e.ApplicationPath))))?.ApplicationPath);
                 return string.IsNullOrEmpty(path) ? null : ResolveFullPath(path);
             }
             catch { return null; }

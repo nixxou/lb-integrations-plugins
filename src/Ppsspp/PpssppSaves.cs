@@ -742,7 +742,8 @@ namespace LbIntegrations.Ppsspp
                     return pick(PpssppPaths.Resolve(appPath));
 
                 // No usable emulator: fall back to any PPSSPP the library knows.
-                var any = dm?.GetAllEmulators()?
+                var any = LbIntegrations.Saves.SaveForward.ViaEmulator(PpssppPaths.IsPpssppExecutable)   // through a desk: the save's install
+                          ?? dm?.GetAllEmulators()?
                     .FirstOrDefault(e => PpssppPaths.IsPpssppExecutable(Safe(() => e.ApplicationPath)));
                 var anyPath = Safe(() => any?.ApplicationPath);
                 return anyPath == null ? null : pick(PpssppPaths.Resolve(anyPath));

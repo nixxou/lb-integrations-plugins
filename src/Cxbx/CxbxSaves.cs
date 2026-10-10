@@ -397,7 +397,8 @@ namespace LbIntegrations.Cxbx
                 var emu = string.IsNullOrEmpty(emuId) ? null : dm.GetEmulatorById(emuId);
                 var path = ResolveFullPath(Safe(() => emu?.ApplicationPath));
                 if (CxbxPaths.IsCxbx(path)) return path;
-                var any = dm?.GetAllEmulators()?.FirstOrDefault(e => CxbxPaths.IsCxbx(Safe(() => e.ApplicationPath)));
+                var any = LbIntegrations.Saves.SaveForward.ViaEmulator(p => CxbxPaths.IsCxbx(ResolveFullPath(p)))   // through a desk: the save's install
+                          ?? dm?.GetAllEmulators()?.FirstOrDefault(e => CxbxPaths.IsCxbx(Safe(() => e.ApplicationPath)));
                 var anyPath = ResolveFullPath(Safe(() => any?.ApplicationPath));
                 return CxbxPaths.IsCxbx(anyPath) ? anyPath : null;
             }

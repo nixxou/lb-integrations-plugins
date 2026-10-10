@@ -345,7 +345,8 @@ namespace LbIntegrations.SuperZsnes
                 var own = string.IsNullOrEmpty(id) ? null : dm?.GetEmulatorById(id);
                 var path = Safe(() => own?.ApplicationPath);
                 if (!SuperZsnesPaths.IsSuperZsnesExecutable(path))
-                    path = Safe(() => dm?.GetAllEmulators()?.FirstOrDefault(e => SuperZsnesPaths.IsSuperZsnesExecutable(Safe(() => e.ApplicationPath)))?.ApplicationPath);
+                    path = Safe(() => (LbIntegrations.Saves.SaveForward.ViaEmulator(SuperZsnesPaths.IsSuperZsnesExecutable)   // through a desk: the save's install
+                                       ?? dm?.GetAllEmulators()?.FirstOrDefault(e => SuperZsnesPaths.IsSuperZsnesExecutable(Safe(() => e.ApplicationPath))))?.ApplicationPath);
                 return string.IsNullOrEmpty(path) ? null : ResolveFullPath(path);
             }
             catch { return null; }

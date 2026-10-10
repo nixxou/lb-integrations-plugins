@@ -782,7 +782,8 @@ namespace LbIntegrations.Vita3k
                 if (Vita3kPaths.IsVita3kExecutable(appPath))
                     return Vita3kPaths.Resolve(ResolveFullPath(appPath));
 
-                var any = dm?.GetAllEmulators()?
+                var any = LbIntegrations.Saves.SaveForward.ViaEmulator(Vita3kPaths.IsVita3kExecutable)   // through a desk: the save's install
+                          ?? dm?.GetAllEmulators()?
                     .FirstOrDefault(e => Vita3kPaths.IsVita3kExecutable(Safe(() => e.ApplicationPath)));
                 var anyPath = Safe(() => any?.ApplicationPath);
                 return anyPath == null ? null : Vita3kPaths.Resolve(ResolveFullPath(anyPath));

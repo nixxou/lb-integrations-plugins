@@ -726,7 +726,8 @@ namespace LbIntegrations.Flycast
                 var appPath = Safe(() => emu?.ApplicationPath);
                 if (FlycastPaths.IsFlycastExecutable(appPath)) return FlycastPaths.Resolve(appPath);
 
-                var any = dm?.GetAllEmulators()?
+                var any = LbIntegrations.Saves.SaveForward.ViaEmulator(FlycastPaths.IsFlycastExecutable)   // through a desk: the save's install
+                          ?? dm?.GetAllEmulators()?
                     .FirstOrDefault(e => FlycastPaths.IsFlycastExecutable(Safe(() => e.ApplicationPath)));
                 var anyPath = Safe(() => any?.ApplicationPath);
                 return anyPath == null ? null : FlycastPaths.Resolve(anyPath);

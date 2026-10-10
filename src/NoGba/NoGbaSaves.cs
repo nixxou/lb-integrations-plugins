@@ -449,6 +449,9 @@ namespace LbIntegrations.NoGba
                 if (NoGbaPaths.IsNoGbaExecutable(appPath))
                     return NoGbaPaths.Resolve(ResolveFullPath(appPath));
 
+                // Restored through another plugin's desk: the install the save came from (SaveForward).
+                var via = LbIntegrations.Saves.SaveForward.ViaEmulator(NoGbaPaths.IsNoGbaExecutable);
+                if (via != null) return NoGbaPaths.Resolve(ResolveFullPath(Safe(() => via.ApplicationPath)));
                 foreach (var candidate in dm?.GetAllEmulators() ?? Array.Empty<IEmulator>())
                 {
                     var path = Safe(() => candidate.ApplicationPath);

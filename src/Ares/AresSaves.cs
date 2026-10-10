@@ -516,7 +516,9 @@ namespace LbIntegrations.Ares
                 var id = Safe(() => game?.EmulatorId);
                 var own = string.IsNullOrEmpty(id) ? null : dm?.GetEmulatorById(id);
                 if (own != null && AresLaunch.IsAresExe(Safe(() => own.ApplicationPath))) return own;
-                return dm?.GetAllEmulators()?.FirstOrDefault(e => AresLaunch.IsAresExe(Safe(() => e.ApplicationPath)));
+                // Restored through another plugin's desk: the install the save came from (SaveForward).
+                return LbIntegrations.Saves.SaveForward.ViaEmulator(AresLaunch.IsAresExe)
+                       ?? dm?.GetAllEmulators()?.FirstOrDefault(e => AresLaunch.IsAresExe(Safe(() => e.ApplicationPath)));
             }
             catch { return null; }
         }
