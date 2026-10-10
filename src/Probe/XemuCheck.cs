@@ -333,16 +333,19 @@ namespace LbIntegrations.Probe
             Check("... each carrying its picture, a PNG", pngs.Any(p => p != null) && pngs.Where(p => p != null).All(p => p.Length > 8 && p[0] == 0x89 && p[1] == (byte)'P' && p[2] == (byte)'N' && p[3] == (byte)'G'));
             Check("... again: nothing to do", Mirror(false).Count == 0);
             if (files.Count < 2) return _bad == 0;
+            // The snapshot of the file removed: its own name (the files' slots need not follow the console's order).
+            var meta = M("Read", files[1]);
+            var removed = (string)(meta.GetType().GetField("Name")?.GetValue(meta) ?? meta.GetType().GetProperty("Name")?.GetValue(meta));
             var keep = Path.Combine(emuDir, "kept-" + Path.GetFileName(files[1]));
             File.Copy(files[1], keep, overwrite: true);
             File.Delete(files[1]);                                       // LaunchBox's Remove
             Check("a file removed, a listing: the console untouched", Mirror(false).Any(s => s.Contains("wait")) && Snaps().Count == first.Count);
             Mirror(true);
-            Check("... at a launch: its snapshot taken out", Snaps().Count == first.Count - 1 && !Snaps().Contains(first[1]), string.Join(", ", Snaps()));
+            Check("... at a launch: its snapshot taken out", Snaps().Count == first.Count - 1 && !Snaps().Contains(removed), string.Join(", ", Snaps()));
             File.Copy(keep, files[1], overwrite: true);                  // LaunchBox's Restore
             Mirror(true);
             var after = Snaps();
-            Check("the file restored: its snapshot back in the console", after.Count == first.Count && after.Contains(first[1]), string.Join(", ", after));
+            Check("the file restored: its snapshot back in the console", after.Count == first.Count && after.Contains(removed), string.Join(", ", after));
             Check("... and nothing more to do", Mirror(false).Count == 0 && Directory.GetFiles(dir, "*.xemustate").Length == first.Count);
             // A snapshot deleted in xemu while its file is locked (Codex review 10/10): the pass does not see the file, so it must
             // not call itself complete - else the listing's marker would keep the ghost file once unlocked.
@@ -385,7 +388,7 @@ namespace LbIntegrations.Probe
             File.Delete(console);
             M("ForgetWithoutConsole", exe, titleId);
             var baseDisk = Path.Combine(emuDir, "hdd", "base.qcow2");
-            _asm.GetType("LbIntegrations.Xemu.Qcow2Overlay", true).GetMethod("Create", Any).Invoke(null, new object[] { baseDisk, console });
+            _asm.GetType("LbIntegrations.Xemu.Qcow2Overlay", true).GetMethod("Create", Any).Invoke(null, new object[] { baseDisk, console, false });
             Mirror(true);
             var reborn = Snaps();
             Check("the console deleted: a new one gets every state file back, none removed", reborn.Count == first.Count && Directory.GetFiles(dir, "*.xemustate").Length == first.Count, string.Join(", ", reborn));
@@ -1504,7 +1507,7 @@ namespace LbIntegrations.Probe
             var dir = (string)Call("Saves.XemuStates", "Dir", exe, titleId);
             Check("deleted: the console, its stamp and its index gone", (bool)a[2] && !File.Exists(console) && !File.Exists(Path.ChangeExtension(console, ".stamp")) && !File.Exists(Path.ChangeExtension(console, ".states")));
             Check("... every snapshot a state file first (" + Directory.GetFiles(dir, "*.xemustate").Length + ")", Directory.GetFiles(dir, "*.xemustate").Length == before);
-            _asm.GetType("LbIntegrations.Xemu.Qcow2Overlay", true).GetMethod("Create", Any).Invoke(null, new object[] { Path.Combine(emuDir, "hdd", "base.qcow2"), console });
+            _asm.GetType("LbIntegrations.Xemu.Qcow2Overlay", true).GetMethod("Create", Any).Invoke(null, new object[] { Path.Combine(emuDir, "hdd", "base.qcow2"), console, false });
             foreach (var l in (IEnumerable<string>)Call("Saves.XemuStates", "Mirror", exe, titleId, true, (Func<string>)(() => "test-keys"))) Console.WriteLine("    > " + l);
             Check("made again at a launch: every snapshot back in it", Count() == before, Count() + " vs " + before);
             return _bad == 0;
