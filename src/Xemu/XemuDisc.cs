@@ -307,6 +307,15 @@ namespace LbIntegrations.Xemu
 
         private static readonly Dictionary<string, string> _ids = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>The GlobalCache file of the title ids (its version moves when the way an id is read changes).</summary>
+        private const string TitleIdsKind = "xemu-title-ids-v1";
+
+        private static bool CanOpen(string path)
+        {
+            try { using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete)) return true; }
+            catch { return false; }
+        }
+
         /// <summary>The game's title id (8 hex digits), or null. Remembered per file and size and date; an archive answers from
         /// the copy it was unpacked to, once it has been launched.</summary>
         public static string TitleIdOf(string rom, string exe = null)
@@ -317,6 +326,15 @@ namespace LbIntegrations.Xemu
                 var fi = new FileInfo(rom);
                 var key = fi.FullName + "|" + fi.Length + "|" + fi.LastWriteTimeUtc.Ticks;
                 lock (_ids) if (_ids.TryGetValue(key, out var known)) return known;
+                // Across sessions and installs (GlobalCache, 10/10): a cold start opened every disc, and an archive not yet
+                // unpacked was opened again at every listing. "" = known to have no id, for good.
+                if (LbIntegrations.Lbip.GlobalCache.TryGet(TitleIdsKind, rom, out var kept))
+                {
+                    if (kept.Length == 0) return null;
+                    lock (_ids) _ids[key] = kept;
+                    return kept;
+                }
+                bool readable = CanOpen(rom);
                 var d = Describe(rom);
                 string id = d.Xbe?.TitleId > 0 ? d.Xbe.TitleIdText : null;
                 if (id == null && d.Kind == XemuDiscKind.ImageInArchive && exe != null)
@@ -325,6 +343,11 @@ namespace LbIntegrations.Xemu
                     if (File.Exists(copy)) { var c = Describe(copy); id = c.Xbe?.TitleId > 0 ? c.Xbe.TitleIdText : null; }
                 }
                 if (id != null) lock (_ids) _ids[key] = id;
+                // Kept: an id (the disc's, or the unpacked copy's - the same game); "none" only when it is for good - never for a
+                // file that could not be read (Unknown, a lock) nor for an image in an archive not unpacked yet (known at its
+                // first launch).
+                bool final = id != null || (d.Kind != XemuDiscKind.Unknown && d.Kind != XemuDiscKind.ImageInArchive);
+                if (final && readable && CanOpen(rom)) LbIntegrations.Lbip.GlobalCache.Set(TitleIdsKind, rom, id ?? "");
                 return id;
             }
             catch { return null; }
