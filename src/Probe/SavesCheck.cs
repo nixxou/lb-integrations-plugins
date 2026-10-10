@@ -705,6 +705,55 @@ namespace LbIntegrations.Probe
             // integration (null here - nothing is registered in the probe), never taken for the integration's own by emu.
             Check("a pack row is never taken for lb.retroarch's own (no plugin registered: null, not a twin)",
                   LbIntegrations.Saves.SaveRouter.OwnerForStock(Row("{\"emu\":\"ares\",\"kind\":\"save\",\"by\":\"name\",\"id\":\"zelda\"}"), "lb.retroarch") == null);
+            StockIdsCheck();
+        }
+
+        /// <summary>Lot 4: LaunchBox's integrations' ids in our form and back (StockIds) - pinned strings, exact round trips.</summary>
+        private static void StockIdsCheck()
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- LaunchBox's integrations' ids in our form (lot 4, StockIds)");
+            const string RA = "lb.retroarch", PS2 = "lb.pcsx2";
+            void Pin(string what, string? got, string? want) => Check(what + ": " + Short(want ?? "null"), got == want, "got " + (got ?? "null"));
+            Pin("PCSX2's own", StockIds.Encode(PS2, "pcsx2:SLUS-20062", false, "Mcd001.ps2", null), "{\"emu\":\"lb.pcsx2\",\"kind\":\"save\",\"native\":\"pcsx2:SLUS-20062\"}");
+            Pin("a Saturn set", StockIds.Encode(RA, "saturn-atlantis - the lost tales (fr) (disc 1)", false, "x.bcr", null),
+                "{\"emu\":\"lb.retroarch\",\"kind\":\"save\",\"native\":\"saturn-atlantis - the lost tales (fr) (disc 1)\"}");
+            Pin("a GUID card, a state", StockIds.Encode(RA, "c380b29f2702480a982dda74c642a367", true, "x.state1", 1),
+                "{\"emu\":\"lb.retroarch\",\"kind\":\"state\",\"native\":\"c380b29f2702480a982dda74c642a367\"}");
+            Pin("no id, a save: by name", StockIds.Encode(RA, "", false, "Legend of Zelda, The - A Link to the Past (France).srm", null),
+                "{\"emu\":\"lb.retroarch\",\"kind\":\"save\",\"by\":\"name\",\"id\":\"Legend of Zelda, The - A Link to the Past (France).srm\"}");
+            Pin("no id, a state: by name and slot", StockIds.Encode(RA, null, true, "Zelda.state2", 2), "{\"emu\":\"lb.retroarch\",\"kind\":\"state\",\"by\":\"name\",\"id\":\"Zelda.state2\",\"slot\":2}");
+            Pin("already ours: left alone", StockIds.Encode(RA, "{\"emu\":\"ares\",\"kind\":\"save\"}", false, "x", null), "{\"emu\":\"ares\",\"kind\":\"save\"}");
+            Pin("LiteBox's: left alone", StockIds.Encode(RA, "entry:42", false, "x", null), "entry:42");
+            Pin("no id, no file: left alone", StockIds.Encode(RA, "", false, "", null), "");
+
+            // Exact round trips, awkward characters in the native id.
+            foreach (var native in new[] { "pcsx2:SLUS-20062", "saturn-a#b|c \"d\" é 🎮", "c380b29f2702480a982dda74c642a367", "x\\y/z" })
+            {
+                var ours = StockIds.Encode(PS2, native, false, "f", null)!;
+                Check("round trip: " + Short(native), StockIds.TryDecode(ours, PS2, out var back) && back == native && !ours.Contains('#') && !ours.Contains('|'), ours + " -> " + back);
+                Check("... and back for lot 7: " + Short(native), StockIds.Reverse(ours, () => "NEW") == native);
+            }
+            Check("decode: a by-name id gives no id (what the integration listed)", StockIds.TryDecode(StockIds.Encode(RA, "", false, "z.srm", null), RA, out var none) && none == "");
+            Check("decode: another integration's id is not this one's", !StockIds.TryDecode(StockIds.Encode(PS2, "pcsx2:X", false, "f", null), RA, out _));
+            Check("decode: a pack plugin's id is not this one's", !StockIds.TryDecode("{\"emu\":\"ares\",\"kind\":\"save\"}", RA, out _));
+            Check("decode: a native id is not ours", !StockIds.TryDecode("saturn-x", RA, out _) && !StockIds.TryDecode("", RA, out _) && !StockIds.TryDecode(null, RA, out _));
+            Check("decode: a decoration after the JSON stays on the native id", StockIds.TryDecode(StockIds.Encode(RA, "saturn-x", false, "f", null) + "#c2", RA, out var dec) && dec == "saturn-x#c2", dec);
+            Check("reverse: a by-name id gets a fresh GUID", StockIds.Reverse(StockIds.Encode(RA, "", false, "z.srm", null), () => "NEW") == "NEW");
+            Check("reverse: a pack plugin's id is left alone", StockIds.Reverse("{\"emu\":\"ares\",\"kind\":\"save\"}", () => "NEW") == "{\"emu\":\"ares\",\"kind\":\"save\"}");
+
+            // A restore's result.
+            var saturn = StockIds.Encode(RA, "saturn-x", false, "x.bcr", null);
+            Pin("result: the id sent given back - the one that came in", StockIds.Result(RA, "saturn-x", saturn, "saturn-x", false, "x.bcr", null), saturn);
+            Pin("result: came in native - ours", StockIds.Result(RA, "saturn-x", null, "saturn-x", false, "x.bcr", null), saturn);
+            Pin("result: another id of its own - ours", StockIds.Result(RA, "saturn-x", saturn, "saturn-y", false, "y.bcr", null), StockIds.Encode(RA, "saturn-y", false, "y.bcr", null));
+            var guid = StockIds.Encode(RA, "c380b29f2702480a982dda74c642a367", true, "z.state1", 1);
+            Pin("result: no id for a GUID card - its card kept", StockIds.Result(RA, "c380b29f2702480a982dda74c642a367", guid, "", true, "z.state3", 3), guid);
+            Pin("result: by name, restored into slot 3 - slot 3's card", StockIds.Result(RA, "", StockIds.Encode(RA, "", true, "z.state1", 1), "", true, "z.state3", 3), StockIds.Encode(RA, "", true, "z.state3", 3));
+
+            Pin("lineage: equal to the old id - follows", StockIds.Lineage("saturn-x", "saturn-x", saturn), saturn);
+            Pin("lineage: empty - follows", StockIds.Lineage("", "saturn-x", saturn), saturn);
+            Pin("lineage: its own - kept", StockIds.Lineage("other", "saturn-x", saturn), "other");
         }
 
         private static string Short(string s) => (s.Length > 60 ? s.Substring(0, 57) + "..." : s).Replace("\n", "\\n").Replace("\t", "\\t");
