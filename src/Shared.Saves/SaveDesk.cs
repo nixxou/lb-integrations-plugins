@@ -115,24 +115,18 @@ namespace LbIntegrations.Saves
         }
 
         public bool IsSaveActive(GameSaveBase save, string emulatorApplicationPath)
-            => Route(save) is { } r ? Ask(r, () => r.Plugin.IsSaveActive(save, r.EmulatorPath ?? emulatorApplicationPath), false)
+            => Route(save) is { } r ? SaveForward.IsSaveActive(r, save, emulatorApplicationPath)
                                     : _own.OwnIsSaveActive(save, emulatorApplicationPath);
 
         public bool IsSaveContainer(GameSaveBase save)
-            => Route(save) is { } r ? Ask(r, () => r.Plugin.IsSaveContainer(save), false) : _own.OwnIsSaveContainer(save);
+            => Route(save) is { } r ? SaveForward.IsSaveContainer(r, save) : _own.OwnIsSaveContainer(save);
 
         public bool UseSaveGroupIdForPersistedMatch(GameSaveBase save)
-            => Route(save) is { } r ? Ask(r, () => r.Plugin.UseSaveGroupIdForPersistedMatch(save), false) : _own.OwnUseSaveGroupIdForPersistedMatch(save);
+            => Route(save) is { } r ? SaveForward.UseSaveGroupIdForPersistedMatch(r, save) : _own.OwnUseSaveGroupIdForPersistedMatch(save);
 
         public bool TryComputeSaveSignature(GameSaveBase save, string emulatorApplicationPath, out string? signature)
         {
-            if (Route(save) is { } r)
-            {
-                string? s = null;
-                var ok = Ask(r, () => r.Plugin.TryComputeSaveSignature(save, r.EmulatorPath ?? emulatorApplicationPath, out s), false);
-                signature = s;
-                return ok;
-            }
+            if (Route(save) is { } r) return SaveForward.TryComputeSaveSignature(r, save, emulatorApplicationPath, out signature);
             if (_own.OwnTryComputeSaveSignature(save, emulatorApplicationPath, out signature)) return true;
             return WithCompanions(save, out signature);
         }
@@ -202,13 +196,7 @@ namespace LbIntegrations.Saves
 
         public bool TryBackupSave(GameSaveBase save, string emulatorApplicationPath, string destinationFolder, out string? error)
         {
-            if (Route(save) is { } r)
-            {
-                string? e = null;
-                var ok = Ask(r, () => r.Plugin.TryBackupSave(save, r.EmulatorPath ?? emulatorApplicationPath, destinationFolder, out e), false);
-                error = e;
-                return ok;
-            }
+            if (Route(save) is { } r) return SaveForward.TryBackupSave(r, save, emulatorApplicationPath, destinationFolder, out error);
             return _own.OwnTryBackupSave(save, emulatorApplicationPath, destinationFolder, out error);
         }
 
@@ -222,41 +210,22 @@ namespace LbIntegrations.Saves
                 saveGroupId = save!.SaveGroupId; saveGroupName = save.SaveGroupName;
                 return true;
             }
-            if (Route(save) is { } r)
-            {
-                string? id = null, name = null;
-                var ok = Ask(r, () => r.Plugin.TryGetSaveGroupInfo(save, primaryFilePath, out id, out name), false);
-                saveGroupId = id; saveGroupName = name;
-                return ok;
-            }
+            if (Route(save) is { } r) return SaveForward.TryGetSaveGroupInfo(r, save, primaryFilePath, out saveGroupId, out saveGroupName);
             return _own.OwnTryGetSaveGroupInfo(save, primaryFilePath, out saveGroupId, out saveGroupName);
         }
 
         public bool IsSecondarySaveFile(string filePath)
-            => SaveRouter.OwnerOfPath(filePath, _plugin) is { } r ? Ask(r, () => r.Plugin.IsSecondarySaveFile(filePath), false) : _own.OwnIsSecondarySaveFile(filePath);
+            => SaveRouter.OwnerOfPath(filePath, _plugin, _emu) is { } r ? SaveForward.IsSecondarySaveFile(r, filePath) : _own.OwnIsSecondarySaveFile(filePath);
 
         public IReadOnlyList<string> GetCompanionSaveFiles(string primaryFilePath)
-            => SaveRouter.OwnerOfPath(primaryFilePath, _plugin) is { } r
-                ? Ask(r, () => r.Plugin.GetCompanionSaveFiles(primaryFilePath), (IReadOnlyList<string>)Array.Empty<string>()) ?? Array.Empty<string>()
+            => SaveRouter.OwnerOfPath(primaryFilePath, _plugin, _emu) is { } r
+                ? SaveForward.GetCompanionSaveFiles(r, primaryFilePath)
                 : _own.OwnGetCompanionSaveFiles(primaryFilePath);
 
         public AddSaveResponse AddSaveFile(AddSaveArgs args)
-        {
-            if (Route(args?.SaveToAdd) is not { } r) return _own.OwnAddSaveFile(args!);
-            var desk = r.Stock && StockRestore.Handles(r.Emu) && LbIntegrations.Compat.Compat.On("stockRestore");
-            Say("restore of a " + r.Emu + " save handed to " + (desk ? "the desk's own " + r.Emu + " steps" : r.Emu));
-            if (desk) return StockRestore.Add(r, args!, _log);
-            return Ask(r, () => r.Plugin.AddSaveFile(args!), new AddSaveResponse("The " + r.Emu + " plugin could not restore this save."));
-        }
+            => Route(args?.SaveToAdd) is { } r ? SaveForward.AddSaveFile(r, args!, _log) : _own.OwnAddSaveFile(args!);
 
         public PluginResponse RemoveSave(GameSaveBase? save)
-            => Route(save) is { } r ? Ask(r, () => r.Plugin.RemoveSave(save), new PluginResponse(false, "The " + r.Emu + " plugin could not remove this save."))
-                                    : _own.OwnRemoveSave(save);
-
-        private T Ask<T>(SaveOwnerRoute r, Func<T> call, T fallback)
-        {
-            try { return call(); }
-            catch (Exception ex) { Say(r.Emu + " failed: " + ex.Message); return fallback; }
-        }
+            => Route(save) is { } r ? SaveForward.RemoveSave(r, save) : _own.OwnRemoveSave(save);
     }
 }

@@ -355,6 +355,9 @@ namespace LbIntegrations.Saves
                     if (who == null) cacheable = false;   // not registered yet (or not installed): ask again later
                     break;
                 case SaveOwnerKind.LaunchBox:
+                    // The desk of a LaunchBox integration (lot 4, StockDesk) asking about its own rows: they are its own,
+                    // never its twin's (Stock() makes instances of its own, never the one LaunchBox holds).
+                    if (owner.Name == selfEmu) return null;
                     foreach (var o in Stock()) if (o.Emu == owner.Name) { who = o; break; }
                     break;
                 default:
@@ -369,9 +372,35 @@ namespace LbIntegrations.Saves
             return new SaveOwnerRoute(who.Value.Plugin, who.Value.Emu, EmulatorFor(who.Value.Plugin, row));
         }
 
+        /// <summary>Where a row a LaunchBox integration's desk is asked about must go (lot 4, StockDesk), or null when it is
+        /// that integration's own: its emu in our JSON, or any id that is not ours (empty, native, a GUID - LaunchBox's own
+        /// cards). No last resort by exe name, no instance compared: the instance LaunchBox holds is never the router's.</summary>
+        public static SaveOwnerRoute? OwnerForStock(GameSaveBase? row, string selfEmu)
+        {
+            if (row == null || !Active) return null;
+            var owner = SaveOwner.Of(row.SaveGroupId);
+            if (owner.Kind != SaveOwnerKind.Nixx && owner.Kind != SaveOwnerKind.LaunchBox) return null;
+            if (owner.Name == selfEmu) return null;
+            var key = "stock\u0001" + selfEmu + "\u0001" + row.SaveGroupId + "\u0001" + row.EmulatorFileName + "\u0001" + row.EmulatorCore + "\u0001" + row.GameId;
+            if (_routes.TryGetValue(key, out var known)) return known.Route;
+            (string Emu, EmulatorPlugin Plugin)? who = null;
+            foreach (var o in owner.Kind == SaveOwnerKind.Nixx ? Ours() : Stock()) if (o.Emu == owner.Name) { who = o; break; }
+            if (who == null)
+            {
+                // Not registered yet (or not installed): the integration's own code answers, as LaunchBox would; asked again later.
+                if (owner.Kind == SaveOwnerKind.LaunchBox) { if (_routes.Count > 20000) _routes.Clear(); _routes[key] = new RouteBox(null); }
+                return null;
+            }
+            var found = new SaveOwnerRoute(who.Value.Plugin, who.Value.Emu, EmulatorFor(who.Value.Plugin, row));
+            if (_routes.Count > 20000) _routes.Clear();
+            _routes[key] = new RouteBox(found);
+            return found;
+        }
+
         /// <summary>The owner of a FILE (companions, secondary files: no row) - the plugin whose emulator's folder holds
-        /// it; null when none other than <paramref name="self"/> does.</summary>
-        public static SaveOwnerRoute? OwnerOfPath(string? path, EmulatorPlugin self)
+        /// it; null when none other than <paramref name="self"/> (of <paramref name="selfEmu"/>, for a LaunchBox
+        /// integration's desk whose instance is not the router's) does.</summary>
+        public static SaveOwnerRoute? OwnerOfPath(string? path, EmulatorPlugin self, string? selfEmu = null)
         {
             if (string.IsNullOrWhiteSpace(path) || !Active) return null;
             string full;
@@ -381,13 +410,13 @@ namespace LbIntegrations.Saves
             // plugin - measured, a RASnes9x .srm backed up without its .rtc).
             var listed = FullOf(full);
             if (_listed.TryGetValue(listed, out var who))
-                return ReferenceEquals(who.Plugin, self) ? null : new SaveOwnerRoute(who.Plugin, who.Emu, who.Emulator);
+                return ReferenceEquals(who.Plugin, self) || who.Emu == selfEmu ? null : new SaveOwnerRoute(who.Plugin, who.Emu, who.Emulator);
             foreach (var e in Library())
             {
                 var dir = EmulatorDir(e);
                 if (dir == null || !full.StartsWith(dir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) continue;
                 var d = DriverOf(e);
-                if (d == null || ReferenceEquals(d.Value.Plugin, self)) return null;
+                if (d == null || ReferenceEquals(d.Value.Plugin, self) || d.Value.Emu == selfEmu) return null;
                 return new SaveOwnerRoute(d.Value.Plugin, d.Value.Emu, e);
             }
             return null;

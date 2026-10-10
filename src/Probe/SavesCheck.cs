@@ -39,6 +39,7 @@ namespace LbIntegrations.Probe
                 Foreign();
                 Targets(root);
                 Desk();
+                StockOwners();
             }
             catch (Exception ex) { Check("no exception", false, ex.ToString()); }
             finally { try { Directory.Delete(root, true); } catch { } }
@@ -681,6 +682,29 @@ namespace LbIntegrations.Probe
                 SlotRestore.Instead = null; SlotRestore.HostOverride = null;
                 try { Directory.Delete(dir, true); } catch { }
             }
+        }
+
+        /// <summary>Lot 4: the desk of a LaunchBox integration never routes its own rows - its emu in our JSON, an empty id,
+        /// its native forms, a GUID (LaunchBox's cards) - whatever instance asks (StockDesk's is never the router's).</summary>
+        private static void StockOwners()
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- a LaunchBox integration's own rows (lot 4)");
+            GameSaveBase Row(string id) => new GameSaveGame { GameId = "g1", FileLocation = @"C:\s\x.srm", EmulatorFileName = "retroarch.exe", SaveGroupId = id };
+            foreach (var (id, emu) in new[]
+            {
+                ("{\"emu\":\"lb.retroarch\",\"kind\":\"save\",\"native\":\"saturn-x\"}", "lb.retroarch"),
+                ("", "lb.retroarch"),
+                ("saturn-atlantis", "lb.retroarch"),
+                ("pcsx2:SLUS-20062", "lb.pcsx2"),
+                ("c380b29f2702480a982dda74c642a367", "lb.retroarch"),
+                ("{\"emu\":\"lb.dolphin\",\"kind\":\"state\",\"native\":\"x\"}", "lb.dolphin"),
+            })
+                Check("own to " + emu + ": " + Short(id.Length == 0 ? "(empty)" : id), LbIntegrations.Saves.SaveRouter.OwnerForStock(Row(id), emu) == null);
+            // A pack plugin's row on a stock desk is not its own: routed when that plugin is registered, else left to the
+            // integration (null here - nothing is registered in the probe), never taken for the integration's own by emu.
+            Check("a pack row is never taken for lb.retroarch's own (no plugin registered: null, not a twin)",
+                  LbIntegrations.Saves.SaveRouter.OwnerForStock(Row("{\"emu\":\"ares\",\"kind\":\"save\",\"by\":\"name\",\"id\":\"zelda\"}"), "lb.retroarch") == null);
         }
 
         private static string Short(string s) => (s.Length > 60 ? s.Substring(0, 57) + "..." : s).Replace("\n", "\\n").Replace("\t", "\\t");
