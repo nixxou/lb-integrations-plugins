@@ -754,6 +754,64 @@ namespace LbIntegrations.Probe
             Pin("lineage: equal to the old id - follows", StockIds.Lineage("saturn-x", "saturn-x", saturn), saturn);
             Pin("lineage: empty - follows", StockIds.Lineage("", "saturn-x", saturn), saturn);
             Pin("lineage: its own - kept", StockIds.Lineage("other", "saturn-x", saturn), "other");
+            MigrationCheck();
+        }
+
+        /// <summary>Lot 4: the persisted cards of LaunchBox's integrations given our ids and back (StockIdMigration.Plan) - on rows
+        /// shaped like G:\LB1326's (Atlantis's Saturn set, Pokemon Cristal's two GUID cards on one file).</summary>
+        private static void MigrationCheck()
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- the persisted cards given our ids (lot 4, StockIdMigration)");
+            PersistedRow R(string game, string? id, string? lineage, string exe, string file, bool state = false)
+                => new PersistedRow { GameId = game, SaveGroupId = id, MatchLineageId = lineage, EmulatorFileName = exe, FilePath = file, IsState = state };
+            const string Sat = "saturn-atlantis - the lost tales (fr) (disc 1)";
+            const string G1 = "e47db733aaaaaaaaaaaaaaaaaaaaaaaa", G2 = "5eeffc4ebbbbbbbbbbbbbbbbbbbbbbbb", G3 = "c380b29fcccccccccccccccccccccccc";
+            var ares = "{\"emu\":\"ares\",\"kind\":\"save\",\"by\":\"name\",\"id\":\"zelda\"}";
+            var rows = new List<PersistedRow>
+            {
+                R("atlantis", Sat, Sat, "retroarch.exe", @"Emulators\RetroArch\saves\Beetle Saturn\Atlantis.bcr"),
+                R("atlantis", Sat, Sat, "retroarch.exe", @"Saves\Sega Saturn\Atlantis.bcr"),
+                R("atlantis", Sat, "", "retroarch.exe", @"Saves\Sega Saturn\Atlantis-01.bcr"),
+                R("pokemon", G1, G1, "retroarch.exe", @"Emulators\RetroArch\saves\Gambatte\Pokemon.srm"),
+                R("pokemon", G2, G2, "retroarch.exe", @"Emulators\RetroArch\saves\Gambatte\Pokemon.srm"),
+                R("pokemon", G2, G1, "retroarch.exe", @"Saves\Nintendo Game Boy\Pokemon-01.srm"),   // a backup whose lineage names the other card
+                R("rolan", G3, G3, "retroarch.exe", @"Emulators\RetroArch\states\Gambatte\Rolan.state1", state: true),
+                R("doubt", "d0d0d0d0dddddddddddddddddddddddd", "", "shared.exe", @"x\doubt.sav"),
+                R("zelda", ares, ares, "ares.exe", @"Emulators\ares\Saves\zelda.srm"),
+                R("ps2", "pcsx2:SLUS-20062", "pcsx2:SLUS-20062", "pcsx2-qt.exe", @"memcards\Mcd001.ps2"),
+            };
+            string? StockOf(string? exe) => exe switch { "retroarch.exe" => "lb.retroarch", "pcsx2-qt.exe" => "lb.pcsx2", _ => null };   // shared.exe: a pack plugin drives it too
+            var said = new List<string>();
+            var forward = StockIdMigration.Plan(rows, StockOf, true, () => "NEW", said.Add);
+            string? After(int i) { var c = forward.FirstOrDefault(x => ReferenceEquals(x.Row, rows[i])); return c == null ? rows[i].SaveGroupId : c.GroupId; }
+            string? LineageAfter(int i) { var c = forward.FirstOrDefault(x => ReferenceEquals(x.Row, rows[i])); return c == null ? rows[i].MatchLineageId : c.Lineage; }
+            var satJson = StockIds.Encode("lb.retroarch", Sat, false, null, null);
+            Check("Atlantis: its three rows one card, ours", After(0) == satJson && After(1) == satJson && After(2) == satJson, After(0));
+            Check("... its lineage follows; an empty one stays empty", LineageAfter(0) == satJson && LineageAfter(2) == "");
+            var p1 = StockIds.Encode("lb.retroarch", G1, false, null, null); var p2 = StockIds.Encode("lb.retroarch", G2, false, null, null);
+            Check("Pokemon: two GUID cards on one file stay two", After(3) == p1 && After(4) == p2 && p1 != p2);
+            Check("... a backup naming the other card in its lineage follows that card", After(5) == p2 && LineageAfter(5) == p1, LineageAfter(5));
+            Check("Rolan's Curse: a state card - kind state", After(6) == StockIds.Encode("lb.retroarch", G3, true, null, null));
+            Check("an exe a pack plugin drives too: left as it is, and said", After(7) == "d0d0d0d0dddddddddddddddddddddddd" && said.Any(s => s.Contains("not certain")));
+            Check("a pack plugin's card: never touched", After(8) == ares && LineageAfter(8) == ares);
+            Check("PCSX2's own: ours", After(9) == StockIds.Encode("lb.pcsx2", "pcsx2:SLUS-20062", false, null, null));
+
+            // Applied, then planned again: nothing (idempotent); and back: every id as it was, byte for byte.
+            var applied = rows.Select((r, i) => R(r.GameId, After(i), LineageAfter(i), r.EmulatorFileName!, r.FilePath!, r.IsState)).ToList();
+            Check("planned again: nothing to change", StockIdMigration.Plan(applied, StockOf, true, () => "NEW").Count == 0);
+            var back = StockIdMigration.Plan(applied, StockOf, false, () => "NEW");
+            bool Same(int i)
+            {
+                var c = back.FirstOrDefault(x => ReferenceEquals(x.Row, applied[i]));
+                var id = c == null ? applied[i].SaveGroupId : c.GroupId;
+                var lin = c == null ? applied[i].MatchLineageId : c.Lineage;
+                return id == rows[i].SaveGroupId && lin == rows[i].MatchLineageId;
+            }
+            Check("back: every id and lineage as it was, exactly", Enumerable.Range(0, rows.Count).All(Same),
+                  string.Join(" | ", Enumerable.Range(0, rows.Count).Where(i => !Same(i)).Select(i => rows[i].GameId)));
+            var byName = new List<PersistedRow> { R("z", StockIds.Encode("lb.retroarch", "", false, "z.srm", null), null, "retroarch.exe", "z.srm") };
+            Check("back: a by-name card gets a fresh id", StockIdMigration.Plan(byName, StockOf, false, () => "NEW").Single().GroupId == "NEW");
         }
 
         private static string Short(string s) => (s.Length > 60 ? s.Substring(0, 57) + "..." : s).Replace("\n", "\\n").Replace("\t", "\\t");

@@ -83,9 +83,7 @@ namespace LbIntegrations.Saves
                 if (game == null) return found;
                 var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".."));
                 var vault = Path.Combine(root, "Saves") + Path.DirectorySeparatorChar;
-                var holders = new List<object> { game };
-                holders.AddRange((game.GetAllAdditionalApplications() ?? Array.Empty<IAdditionalApplication>()).Where(a => a != null)!);
-                foreach (var h in holders)
+                foreach (var (h, _) in PersistedRows.Holders(game))
                 {
                     if (h.GetType().GetProperty("Saves", Inst)?.GetValue(h) is not IEnumerable rows) continue;
                     foreach (var s in rows.Cast<object>().ToList())

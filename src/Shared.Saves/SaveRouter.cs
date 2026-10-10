@@ -193,6 +193,9 @@ namespace LbIntegrations.Saves
             });
         }
 
+        /// <summary>The library's emulators (lot 4: who drives an exe, for the migration of the persisted cards).</summary>
+        internal static IReadOnlyCollection<IEmulator> LibraryEmulators() => Library();
+
         private static IReadOnlyCollection<IEmulator> Library()
         {
             try
