@@ -142,6 +142,15 @@ namespace LbIntegrations.Saves
             }
         }
 
+        /// <summary>LaunchBox's integrations listed again at the next call (one loaded since), with who drives which emulator
+        /// and the routes found.</summary>
+        internal static void ForgetStock()
+        {
+            lock (StockGate) _stock = null;
+            _driver.Clear();
+            _routes.Clear();
+        }
+
         /// <summary>A parameterless constructor, else LaunchBox 14's one taking IPluginPaths (RetroArch's).</summary>
         private static EmulatorPlugin? Create(Type t, string dllPath)
         {

@@ -89,7 +89,16 @@ namespace LbIntegrations.Saves
 
         private static void OnLoad(object? sender, AssemblyLoadEventArgs e)
         {
-            try { lock (Gate) TryPatch(e.LoadedAssembly); } catch { }
+            try
+            {
+                lock (Gate) TryPatch(e.LoadedAssembly);
+                // A LaunchBox integration loaded after the router listed them: listed again, so it is checked and routed
+                // (review 10/10: the list was made once, a late one never verified).
+                string? at = null;
+                try { at = e.LoadedAssembly.IsDynamic ? null : e.LoadedAssembly.Location; } catch { }
+                if (at != null && at.IndexOf(@"\System\Plugins\", StringComparison.OrdinalIgnoreCase) >= 0) SaveRouter.ForgetStock();
+            }
+            catch { }
         }
 
         private static void TryPatch(Assembly a)
@@ -108,6 +117,13 @@ namespace LbIntegrations.Saves
                 if (AppDomain.CurrentDomain.GetData(Marker + "|" + entry.Emu) is string other)
                 {
                     if (other != Format) SaveRouter.Say("[stock] " + entry.Emu + " already hooked by another copy of the pack (" + other + ")");
+                    // A SECOND copy of the integration's dll: its type is not hooked, and LaunchBox may hold that one -
+                    // it would see our ids undecoded (review 10/10). Its own ids for the session.
+                    else if (!Emus.ContainsKey(type))
+                    {
+                        Incomplete(entry.Emu, "a second copy of " + name + " loaded (" + Where(a) + ") - only the first is hooked");
+                        SaveRouter.Say("[stock] " + entry.Emu + ": a second copy of its dll loaded - its desk is off, its cards get their own ids back");
+                    }
                     return;
                 }
                 // Marked first: whatever happens below, this integration is never hooked twice.

@@ -147,12 +147,19 @@ namespace LbIntegrations.Saves
                     var kept = new List<object>();
                     var found = false;
                     var args = new object?[1];
-                    while ((bool)o.Take.Invoke(o.Collection, args)!)
+                    try
                     {
-                        if (!found && ReferenceEquals(args[0], s)) found = true; else kept.Add(args[0]!);
-                        args[0] = null;
+                        while ((bool)o.Take.Invoke(o.Collection, args)!)
+                        {
+                            if (!found && ReferenceEquals(args[0], s)) found = true; else kept.Add(args[0]!);
+                            args[0] = null;
+                        }
                     }
-                    foreach (var k in kept) o.Add.Invoke(o.Collection, new[] { k });
+                    finally
+                    {
+                        // Every row taken out goes back, whatever failed (review 10/10: a failure in between lost them).
+                        foreach (var k in kept) try { o.Add.Invoke(o.Collection, new[] { k }); } catch (Exception ex) { say("persist: a row could not be put back: " + ex.Message); }
+                    }
                     return found;
                 }
 

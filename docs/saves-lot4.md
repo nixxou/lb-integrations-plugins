@@ -177,3 +177,27 @@ Third review, two findings, fixed:
 - Probe: RetroArch hooked but not yet checked ? not complete; an emu never hooked ? not complete; the migration with the
   live filter leaves the incomplete PCSX2's `pcsx2:` card native and puts RetroArch's Saturn card in our form; a restore by
   the stand-in owner giving back a native `pcsx2:` row and a native `pcsx2:` row's group on RetroArch both stay `pcsx2:`.
+
+Independent review (10/10, an agent of ours - Codex out of credits), whole branch; each claim checked in the code:
+- **Rows with no owner in their id handled by the wrong integration** (c966526): a stock desk lists other integrations'
+  rows through their twin, which gives them our ids only when complete AND `stockIds` on - otherwise an empty id or a
+  GUID, and `OwnerForStock` had no answer for those: Dolphin's own code restored, removed and backed up RetroArch's rows
+  on a GameCube game. Now such a row goes to the plugin that LISTED its file through a desk (`SaveRouter.ListedOwner`,
+  the same table as companions), and another emulator's row no owner claims is not offered.
+- **The cards of a game seen through a view read as none** (c966526): `SaveGameView` hands LaunchBox's integrations a
+  DispatchProxy with the SDK's members only - no `Saves` (checked in the SDK dll) - so `PersistedCards` and the per-game
+  pass found no card of the game itself. `PersistedRows.Holders` reads the real object.
+- **Two saves of one name in two folders, one card** (9b32c34): RetroArch's cores keep their states in folders of their
+  own (sort_savestates_enable), and a by-name id was the file name and slot only. It now holds `dir`, the folder
+  relative to LaunchBox's root, lower case; a card persisted before keeps its id (a listed row takes its card).
+- **A restore through a desk into the wrong install** (24ee183, lot 3): the owners took the game's emulator - not
+  theirs then - else the library's first. The desk now picks the install (`RestoreEmulator`, refused when two and
+  nothing says which) and tells the owner while its AddSaveFile runs (AppDomain data per thread; `ViaEmulator` in the
+  11 plugins with a desk).
+- Small: a RetroArch/Dolphin restore through a desk with `stockRestore` off is refused (their own AddSaveFile writes
+  elsewhere and answers success); LaunchBox's integrations listed again when one of `System\Plugins` loads (it would
+  never have been checked); a second copy of an integration's dll makes it incomplete; the migration's lock is the
+  process's; `SavePersist.TakeOut` puts back every row it took out whatever fails; the first copy of the platform XML
+  (`nixx-saves-backup\first`) is kept for good - the pass runs again at each start while LaunchBox has not written it.
+- Checked and dropped by the review: row copies (every settable field), `#` in ids, RestoreSet's rollback, LiteBox
+  reading our JSON (it falls back on the path).

@@ -59,6 +59,11 @@ namespace LbIntegrations.Saves
             var desk = r.Stock && StockRestore.Handles(r.Emu) && LbIntegrations.Compat.Compat.On("stockRestore");
             SaveRouter.Say("restore of a " + r.Emu + " save handed to " + (desk ? "the desk's own " + r.Emu + " steps" : r.Emu));
             if (desk) return StockRestore.Add(r, args, log);
+            // Their own AddSaveFile takes the GAME's emulator - ours here: it would write elsewhere and answer success
+            // (StockRestore's header). With its fix turned off, refused (review 10/10).
+            if (r.Stock && StockRestore.Handles(r.Emu))
+                return new AddSaveResponse("This " + r.Emu + " save can only be restored here with \"RetroArch and Dolphin restores on a game "
+                                           + "of the pack\" on (Nixx menu, Compatibility) - or with the game set to that emulator.");
             // The install the row came from, for an owner that would otherwise take the game's emulator - not its own here -
             // or the library's first (review 10/10: with two ares installs, B's save was restored over A's). Two installs
             // and nothing says which: refused, as StockRestore does.

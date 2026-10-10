@@ -275,6 +275,13 @@ namespace LbIntegrations.Probe
             LbIntegrations.Saves.SaveForward.AddSaveFile(new LbIntegrations.Saves.SaveOwnerRoute(fake, "ares", dolphinEmu), new AddSaveArgs { SaveToAdd = aresRow }, _ => { });
             Expect("a forwarded restore: the owner sees the install the row came from", fake.Via == dolphinEmu.Id && !string.IsNullOrEmpty(fake.Via), fake.Via ?? "null");
             Expect("... and nothing once it is over", LbIntegrations.Saves.SaveForward.ViaEmulator(_ => true) == null, "still set");
+            // A RetroArch row restored through a desk with `stockRestore` off: refused, never handed to their own AddSaveFile
+            // (it takes the game's emulator and answers success - review 10/10).
+            LbIntegrations.Compat.Compat.UseForTests(new Dictionary<string, bool> { ["stockRestore"] = false });
+            AddSaveResponse offAnswer;
+            try { offAnswer = LbIntegrations.Saves.SaveForward.AddSaveFile(new LbIntegrations.Saves.SaveOwnerRoute(ra, "lb.retroarch", raEmu), new AddSaveArgs { SaveToAdd = sat }, _ => { }); }
+            finally { LbIntegrations.Compat.Compat.UseForTests(null); }
+            Expect("stockRestore off: a RetroArch row's restore through a desk refused", offAnswer?.WasSuccess == false && (offAnswer.Message ?? "").Contains("Compatibility"), offAnswer?.Message ?? "null");
             // A game handed through a view (SaveGameView): the persisted cards are read off the real game (review 10/10).
             var coreEmu = new StubEmulator { Title = "RetroArch (bsnes)", ApplicationPath = raEmu.ApplicationPath, CommandLine = "-L cores\\bsnes_libretro.dll" };
             var view = LbIntegrations.Saves.SaveGameView.As(zelda, coreEmu);

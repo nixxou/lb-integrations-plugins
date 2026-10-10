@@ -121,7 +121,9 @@ namespace LbIntegrations.Saves
         // ── the adapter: LaunchBox's objects, by reflection ──────────────────
 
         private const BindingFlags Inst = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
-        private static readonly object Gate = new object();
+        /// <summary>One lock for the whole process: every plugin of the pack carries this class and changes the same objects of
+        /// LaunchBox (review 10/10: two passes back at once could give one card two GUIDs).</summary>
+        private static readonly object Gate = string.Intern("LbIntegrations.StockIdMigration.Gate");
 
         /// <summary>One pass over <paramref name="games"/> (every game of the library when null): the changes made, or -1 when
         /// nothing could be read. Nothing written on the disk but the copies of the platform XML, made before the first change
@@ -218,10 +220,15 @@ namespace LbIntegrations.Saves
                 var source = Path.Combine(root, "Data", "Platforms");
                 if (!Directory.Exists(source)) return;
                 var store = Path.Combine(root, "Local", "Plugins", ".data", "nixx-saves-backup");
-                var target = Path.Combine(store, DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss"));
+                // The very first copy - the XML as it was before any pass of ours - is kept for good (review 10/10: the
+                // migration runs again at each start while LaunchBox has not written it back, three copies went in three
+                // starts); then the three newest.
+                var first = Path.Combine(store, "first");
+                var target = Directory.Exists(first) ? Path.Combine(store, DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss")) : first;
                 Directory.CreateDirectory(target);
                 foreach (var f in Directory.GetFiles(source, "*.xml")) File.Copy(f, Path.Combine(target, Path.GetFileName(f)), true);
-                foreach (var old in Directory.GetDirectories(store).OrderByDescending(d => d, StringComparer.Ordinal).Skip(3))
+                foreach (var old in Directory.GetDirectories(store).Where(d => !string.Equals(Path.GetFileName(d), "first", StringComparison.OrdinalIgnoreCase))
+                                             .OrderByDescending(d => d, StringComparer.Ordinal).Skip(3))
                     try { Directory.Delete(old, true); } catch { }
                 say("ids: the platform XML files copied to " + target + " before the first change");
             }
