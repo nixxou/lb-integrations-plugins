@@ -344,6 +344,28 @@ namespace LbIntegrations.Probe
             var after = Snaps();
             Check("the file restored: its snapshot back in the console", after.Count == first.Count && after.Contains(first[1]), string.Join(", ", after));
             Check("... and nothing more to do", Mirror(false).Count == 0 && Directory.GetFiles(dir, "*.xemustate").Length == first.Count);
+            // A snapshot deleted in xemu while its file is locked (Codex review 10/10): the pass does not see the file, so it must
+            // not call itself complete - else the listing's marker would keep the ghost file once unlocked.
+            {
+                var indexPath = (string)M("IndexPath", exe, titleId);
+                var keptIndex = indexPath + ".kept";
+                File.Copy(indexPath, keptIndex, overwrite: true);
+                File.Delete(files[1]);
+                Mirror(true);                                            // its snapshot out of the console
+                File.Copy(keptIndex, indexPath, overwrite: true); File.Delete(keptIndex);
+                File.Copy(keep, files[1], overwrite: true);              // now: indexed, its snapshot gone = deleted in xemu
+                var args = new object[] { exe, titleId, false, (Func<string>)(() => "test-keys"), null };
+                using (new FileStream(files[1], FileMode.Open, FileAccess.ReadWrite, FileShare.Read))
+                {
+                    var locked = (List<string>)states.GetMethod("MirrorChecked", Any).Invoke(null, args);
+                    Check("deleted in xemu, its file locked: the pass says it is not complete", (bool)args[4] == false && File.Exists(files[1]), string.Join("; ", locked));
+                }
+                var unlocked = (List<string>)states.GetMethod("MirrorChecked", Any).Invoke(null, args);
+                Check("... unlocked: the next pass removes the file, and is complete", (bool)args[4] && unlocked.Any(s => s.Contains("deleted in xemu")) && !File.Exists(files[1]), string.Join("; ", unlocked));
+                File.Copy(keep, files[1], overwrite: true);              // LaunchBox's Restore, as above
+                Mirror(true);
+                Check("... restored: its snapshot back, nothing more to do", Snaps().Count == first.Count && Mirror(false).Count == 0, string.Join(", ", Snaps()));
+            }
             // Savestates turned off, then on (XemuSaveFiles.States forgets the index): a file deleted meanwhile is exported again,
             // nothing is taken out of the console, nothing exported twice.
             {

@@ -126,6 +126,13 @@ namespace LbIntegrations.Xemu.Saves
 
         // ── a file ───────────────────────────────────────────────────────────
 
+        /// <summary>Opened as ZipFile.OpenRead opens it - sharing READ only (a file held open for writing fails here as it fails Read).</summary>
+        private static bool CanOpen(string path)
+        {
+            try { using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read)) return true; }
+            catch { return !File.Exists(path); }   // gone meanwhile: the folder's witness has moved anyway
+        }
+
         public static XemuStateFile Read(string path)
         {
             try
@@ -340,8 +347,14 @@ namespace LbIntegrations.Xemu.Saves
 
         /// <summary>The game's snapshots and state files put in step. <paramref name="rewrite"/>: the console may be rewritten
         /// (a launch - xemu not running). What it did.</summary>
-        public static List<string> Mirror(string exe, string titleId, bool rewrite, Func<string> keys)
+        public static List<string> Mirror(string exe, string titleId, bool rewrite, Func<string> keys) => MirrorChecked(exe, titleId, rewrite, keys, out _);
+
+        /// <summary>The same; <paramref name="complete"/> false when a state file could not be opened (locked, being copied): this
+        /// pass did not see it, so "nothing to do" proves nothing - its listing must not be noted as in step (Codex review 10/10).
+        /// A file that opens but is not one of ours stays out, as ever, without spoiling the pass.</summary>
+        public static List<string> MirrorChecked(string exe, string titleId, bool rewrite, Func<string> keys, out bool complete)
         {
+            complete = true;
             lock (Gate)
             {
                 var said = new List<string>();
@@ -351,7 +364,16 @@ namespace LbIntegrations.Xemu.Saves
                 ForgetWithoutConsole(exe, titleId);
                 var indexPath = IndexPath(exe, titleId);
                 var index = ReadIndex(indexPath);
-                var files = Directory.Exists(dir) ? Directory.GetFiles(dir, "*" + Extension).Select(Read).Where(f => f != null).ToList() : new List<XemuStateFile>();
+                var files = new List<XemuStateFile>();
+                if (Directory.Exists(dir))
+                    foreach (var p in Directory.GetFiles(dir, "*" + Extension))
+                    {
+                        // Looked at before AND after the read: a lock taken or released during it is caught too.
+                        bool opened = CanOpen(p);
+                        var f = Read(p);
+                        if (f != null) files.Add(f);
+                        else if (!opened || !CanOpen(p)) complete = false;
+                    }
                 if (!File.Exists(consolePath))
                 {
                     if (files.Count > 0) said.Add(files.Count + " state file(s) wait for the game's console - made at its first launch");

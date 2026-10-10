@@ -135,11 +135,12 @@ namespace LbIntegrations.Xemu
                 // was before it ran - the value noted is the one taken BEFORE, so a write at any moment after (xemu started, even
                 // between two reads here) leaves the next listing a mismatch and the mirror runs again (Codex review 10/10).
                 var before = MirrorSeen(exe, titleId);
-                var said = XemuStates.Mirror(exe, titleId, rewrite, () => StampKeys(exe, titleId));
+                // A pass that could not open one of the state files did not see it: never noted (Codex review 10/10).
+                var said = XemuStates.MirrorChecked(exe, titleId, rewrite, () => StampKeys(exe, titleId), out var complete);
                 foreach (var line in said) Log.Info("savestates: " + titleId + " - " + line);
                 if (seenPath != null)
                 {
-                    if (!rewrite && said.Count == 0 && before != null && before == MirrorSeen(exe, titleId)) File.WriteAllText(seenPath, before);
+                    if (!rewrite && complete && said.Count == 0 && before != null && before == MirrorSeen(exe, titleId)) File.WriteAllText(seenPath, before);
                     else if (File.Exists(seenPath)) File.Delete(seenPath);
                 }
             }
