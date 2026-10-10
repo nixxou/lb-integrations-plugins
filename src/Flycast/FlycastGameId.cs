@@ -64,15 +64,40 @@ namespace LbIntegrations.Flycast
             lock (CacheGate)
                 if (Cache.TryGetValue(key, out var cached)) return cached;
 
+            // Across sessions and installs (GlobalCache, 10/10): the first listing after a start read IP.BIN out of every disc
+            // (a CHD decompressed each time). One file only - a .gdi's or a .cue's id comes from its tracks, which its own date
+            // does not vouch for.
+            bool oneFile = !string.Equals(Path.GetExtension(romPath), ".gdi", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(Path.GetExtension(romPath), ".cue", StringComparison.OrdinalIgnoreCase);
+            if (oneFile && LbIntegrations.Lbip.GlobalCache.TryGet(GlobalKind, romPath, out var known))
+            {
+                var p = known.Length == 0 ? null : known;
+                lock (CacheGate) Cache[key] = p;
+                return p;
+            }
+
             string product = null;
+            bool read = oneFile && CanOpen(romPath);
             try { product = Read(romPath); }
-            catch (Exception ex) { Log.Warn("could not read the disc id of " + Path.GetFileName(romPath), ex); }
+            catch (Exception ex) { Log.Warn("could not read the disc id of " + Path.GetFileName(romPath), ex); read = false; }
 
             if (product != null)
                 Log.Info("disc id " + product + " <- " + Path.GetFileName(romPath));
 
             lock (CacheGate) Cache[key] = product;
+            // "Read, no id" is kept ("" in the file); a read the file could not take (locked, an error) is not - the readers
+            // below swallow their failures as null, so the file is opened before and after to tell them apart.
+            if (read && CanOpen(romPath)) LbIntegrations.Lbip.GlobalCache.Set(GlobalKind, romPath, product ?? "");
             return product;
+        }
+
+        /// <summary>The GlobalCache file of the disc ids (its version moves when the way an id is read changes).</summary>
+        private const string GlobalKind = "flycast-disc-ids-v1";
+
+        private static bool CanOpen(string path)
+        {
+            try { using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete)) return true; }
+            catch { return false; }
         }
 
         private static string Read(string romPath)
