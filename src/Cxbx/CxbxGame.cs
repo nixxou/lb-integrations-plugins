@@ -175,11 +175,33 @@ namespace LbIntegrations.Cxbx
         {
             var stamp = CxbxRom.StampOf(rom);
             lock (_ids) if (_ids.TryGetValue(stamp, out var known)) return known;
+            // Across sessions and installs (GlobalCache, 10/10) - a file only: a game folder's stamp is not its content's.
+            bool file = File.Exists(rom);
+            if (file && LbIntegrations.Lbip.GlobalCache.TryGet(TitleIdsKind, rom, out var kept))
+            {
+                var k = kept.Length == 0 ? null : kept;
+                lock (_ids) _ids[stamp] = k;
+                return k;
+            }
+            bool readable = file && CanOpen(rom);
             var d = Describe(rom, openArchives: false);
             var id = d.Xbe?.TitleId > 0 ? d.Xbe.TitleIdText : null;
             // "Not unpacked yet" is not remembered: it changes at the game's first launch.
-            if (id != null || d.Kind != CxbxRomKind.Unknown) lock (_ids) _ids[stamp] = id;
+            if (id != null || d.Kind != CxbxRomKind.Unknown)
+            {
+                lock (_ids) _ids[stamp] = id;
+                if (readable && CanOpen(rom)) LbIntegrations.Lbip.GlobalCache.Set(TitleIdsKind, rom, id ?? "");
+            }
             return id;
+        }
+
+        /// <summary>The GlobalCache file of the title ids (its version moves when the way an id is read changes).</summary>
+        private const string TitleIdsKind = "cxbx-title-ids-v1";
+
+        private static bool CanOpen(string path)
+        {
+            try { using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete)) return true; }
+            catch { return false; }
         }
 
         private static readonly Dictionary<string, string> _ids = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
