@@ -71,15 +71,34 @@ namespace LbIntegrations.Xenia
                 if (found != null) Log.Info("title id " + found + " <- " + Path.GetFileName(path) + " (the game in it)");
                 return found;
             }
+            // A disc or an xex, across sessions and installs (GlobalCache, 10/10): a cold start read every disc's header and listed
+            // its files (XeniaLauncherDisc). Archives keep the scan's own cache, above.
+            if (LbIntegrations.Lbip.GlobalCache.TryGet(GlobalKind, path, out var known))
+            {
+                Cache[key] = known;
+                return known.Length == 0 ? null : known;
+            }
+            bool read = CanOpen(path);
             try { found = Extract(path); }
-            catch (Exception ex) { Log.Warn("could not read a title id from " + path, ex); }
+            catch (Exception ex) { Log.Warn("could not read a title id from " + path, ex); read = false; }
             // A disc that only launches the game it carries (Minecraft's): that game's id - XeniaLauncherDisc. A note of a real
             // launch (XeniaRelaunch, above) has already won when there is one.
             if (found != null) { var game = XeniaLauncherDisc.GameOf(path, found); if (game != null) found = game; }
 
             Cache[key] = found ?? "";
             if (found != null) Log.Info("title id " + found + " <- " + Path.GetFileName(path));
+            // "Read, no id" kept as ""; a read the file could not take (locked, an error) is not.
+            if (read && CanOpen(path)) LbIntegrations.Lbip.GlobalCache.Set(GlobalKind, path, found ?? "");
             return found;
+        }
+
+        /// <summary>The GlobalCache file of the discs' title ids (its version moves when the way an id is read changes).</summary>
+        private const string GlobalKind = "xenia-title-ids-v1";
+
+        private static bool CanOpen(string path)
+        {
+            try { using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete)) return true; }
+            catch { return false; }
         }
 
         private static string Extract(string path)
