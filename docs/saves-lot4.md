@@ -64,3 +64,30 @@ Harness notes: `IGame.GetEffectiveCommandLine()` is a method, the probe's `StubG
 - In the probe, Harmony cannot hook Dolphin's GetSaves/AddSaveFile/RemoveSave and PCSX2's AddSaveFile/RemoveSave/
   TryComputeSaveSignature: `The type initializer for '<Module>' threw` - their module initializer needs LaunchBox, as
   their GetSaves do. To be seen in LaunchBox.
+
+## 2. Lot 4.0: measured in LaunchBox (G:\LB1326, 10/10, the watch-only build)
+
+### 2.1 Another Harmony on the same methods drops ours
+
+First sessions: hooked (all 21 methods, Dolphin's and PCSX2's too - their module initializer runs in LaunchBox), never
+called. The sandbox's save probe (`Local\Plugins\Nixx-SaveProbe*`) patches the same save methods with its OWN copy of
+Harmony, 0.5 s after ours: its replacement (`GetSaves_Patch2` in a stack) holds its hooks only. Two copies of Harmony do
+not share their patches (each plugin of the pack sees 0 prefixes where the copy that hooked sees 1). The save probe is set
+aside for lot 4 (`Backups\lbip-lot4-saveprobe-off\`, to put back after) - its observer logs what StockDesk logs now.
+A self-check stays (`StockDesk.Verify`, once per process at the first listing): a sentinel row handed to each
+integration must come through our hook, else the log says `HOOKS LOST`.
+
+### 2.2 What LaunchBox hands them (save probe off)
+
+- Start-up scan: RetroArch's `GetSaves` on 604 games, 11 rows, 157 ms; Dolphin 1 game, 0 rows (LaunchBox itself
+  cannot read the disc id of the `.rvz`). Scan 1.78 s.
+- Atlantis: RetroArch lists `saturn-atlantis - the lost tales (fr) (disc 1)`, lineage empty, twice (on the game and on
+  its version `e8cbe532`). Zelda: RetroArch lists its `.srm` and two states (slots 0 and 5) with an EMPTY id.
+- **The per-row methods get the PERSISTED rows** (their XML ids): Zelda's cards are LaunchBox's GUIDs (`710dbdc7` the
+  `.srm`, `dcb7e565` state 0, `504c41ff` state 5) - matched by path (RetroArch's persisted match is off but for
+  Saturn), the GUID kept. Atlantis's cards still carry the 07/10 probe format.
+- **RetroArch is asked about every persisted row of its game, other emulators' included**: Zelda's ares `.ram` and
+  `.bs1`, SUPER ZSNES's `.srm` - it answers `IsSaveActive` true for them. The routing of lot 4 is exactly that.
+- RetroArch's `TryGetSaveGroupInfo` on a vault copy derives another id from the file name (`saturn-�-01`).
+- So the plan's rule holds: once migrated, a card holds `{�,"native":"<GUID>"}` and the listing gives that id back
+  (listed = persisted), never a by-name id that would stand beside it.

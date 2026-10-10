@@ -138,7 +138,59 @@ namespace LbIntegrations.Saves
                     catch (Exception ex) { said.Add(m + " NOT hooked (" + ex.Message + ")"); }
                 }
                 SaveRouter.Say("[stock] " + entry.Emu + " watched (" + Format + "): " + string.Join(", ", said));
+                SaveRouter.Say("[stock]    " + Where(a) + ", " + Copies(name) + " loaded");
             }
+        }
+
+        // ── where the hooks are, and are they still in ───────────────────────────
+
+        private static string Where(Assembly a)
+        {
+            string ctx;
+            try { ctx = System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(a)?.Name ?? "?"; } catch { ctx = "?"; }
+            string loc;
+            try { loc = a.Location; } catch { loc = "?"; }
+            return a.GetName().Name + " [context " + ctx + "] " + loc;
+        }
+
+        private static int Copies(string name)
+            => AppDomain.CurrentDomain.GetAssemblies().Count(x => !x.IsDynamic && string.Equals(x.GetName().Name, name, StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>The id of the self-check's row - never a real save.</summary>
+        private const string Sentinel = "lbip-stock-desk-sentinel";
+
+        /// <summary>Once per process, from the first listing of a desk: are the hooks still in? MEASURED 10/10: another plugin
+        /// patching the same methods with its OWN copy of Harmony (the save probe of the sandbox) built its replacement with
+        /// its hooks only - ours were gone, silently. A row with the sentinel id handed to RetroArch's (and Dolphin's, PCSX2's)
+        /// UseSaveGroupIdForPersistedMatch must come through our hook; said out loud when it does not.</summary>
+        public static void Verify()
+        {
+            lock (string.Intern(Marker + "|verify"))
+            {
+                if (AppDomain.CurrentDomain.GetData(Marker + "|verified") != null) return;
+                AppDomain.CurrentDomain.SetData(Marker + "|verified", true);
+            }
+            try
+            {
+                foreach (var (emu, plugin) in SaveRouter.Stock())
+                {
+                    if (!Integrations.Any(i => i.Emu == emu) || AppDomain.CurrentDomain.GetData(Marker + "|" + emu) == null) continue;
+                    AppDomain.CurrentDomain.SetData(Marker + "|seen", null);
+                    try { plugin.UseSaveGroupIdForPersistedMatch(new GameSaveGame { SaveGroupId = Sentinel, FileLocation = Sentinel }); } catch { }
+                    if (AppDomain.CurrentDomain.GetData(Marker + "|seen") as string == emu) SaveRouter.Say("[stock] " + emu + ": hooks in");
+                    else SaveRouter.Say("[stock] " + emu + ": HOOKS LOST - another plugin patched LaunchBox's " + emu + " with its own Harmony "
+                                        + "after the pack: its desk and its ids are off for this session");
+                }
+            }
+            catch (Exception ex) { SaveRouter.Say("[stock] self-check failed: " + ex.Message); }
+        }
+
+        /// <summary>True (and noted for Verify) when <paramref name="row"/> is the self-check's.</summary>
+        private static bool IsSentinel(object instance, GameSaveBase? row)
+        {
+            if (row?.SaveGroupId != Sentinel) return false;
+            AppDomain.CurrentDomain.SetData(Marker + "|seen", EmuOf(instance));
+            return true;
         }
 
         /// <summary>True the first time a SDK body is asked for, in the whole process.</summary>
@@ -185,7 +237,10 @@ namespace LbIntegrations.Saves
             try { if (EmuOf(instance) is { } emu) Once(emu, method, "-> " + result + " for " + Show(row)); } catch { }
         }
 
-        private static void GetSavesIn(object __instance, out long __state) => __state = EmuOf(__instance) == null ? 0 : Stopwatch.GetTimestamp();
+        private static void GetSavesIn(object __instance, out long __state)
+        {
+            __state = EmuOf(__instance) == null ? 0 : Stopwatch.GetTimestamp();
+        }
 
         private static void GetSavesOut(object __instance, GetSavesArgs __0, GetSavesResponse __result, long __state)
         {
@@ -213,7 +268,7 @@ namespace LbIntegrations.Saves
         private static void IsSaveActiveOut(object __instance, GameSaveBase __0, bool __result) => WatchBool(__instance, "IsSaveActive", __0, __result);
         private static void IsSaveContainerIn(object __instance, GameSaveBase __0) => Watch(__instance, "IsSaveContainer", __0);
         private static void TryBackupSaveIn(object __instance, GameSaveBase __0) => Watch(__instance, "TryBackupSave", __0);
-        private static void UseSaveGroupIdForPersistedMatchIn(object __instance, GameSaveBase __0) => Watch(__instance, "UseSaveGroupIdForPersistedMatch", __0);
+        private static void UseSaveGroupIdForPersistedMatchIn(object __instance, GameSaveBase __0) { if (!IsSentinel(__instance, __0)) Watch(__instance, "UseSaveGroupIdForPersistedMatch", __0); }
         private static void UseSaveGroupIdForPersistedMatchOut(object __instance, GameSaveBase __0, bool __result) => WatchBool(__instance, "UseSaveGroupIdForPersistedMatch", __0, __result);
         private static void TryComputeSaveSignatureIn(object __instance, GameSaveBase __0) => Watch(__instance, "TryComputeSaveSignature", __0);
         private static void TryGetSaveGroupInfoIn(object __instance, GameSaveBase __0) => Watch(__instance, "TryGetSaveGroupInfo", __0);

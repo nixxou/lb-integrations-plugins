@@ -185,6 +185,7 @@ namespace LbIntegrations.Probe
             var before = raRows.Concat(pcsx2Rows).Select(r => Answers(r.EmulatorFileName == "pcsx2-qt.exe" ? pcsx2 : ra, r, r.EmulatorFileName == "pcsx2-qt.exe" ? pcsx2Emu.ApplicationPath : raEmu.ApplicationPath)).ToList();
             LbIntegrations.Saves.StockDesk.Install();
             LbIntegrations.Saves.StockDesk.Install();   // twice: hooked once
+            LbIntegrations.Saves.StockDesk.Verify();    // the self-check: each integration says its hooks are in
             var after = raRows.Concat(pcsx2Rows).Select(r => Answers(r.EmulatorFileName == "pcsx2-qt.exe" ? pcsx2 : ra, r, r.EmulatorFileName == "pcsx2-qt.exe" ? pcsx2Emu.ApplicationPath : raEmu.ApplicationPath)).ToList();
             var all = Harmony.GetAllPatchedMethods().Where(m => Harmony.GetPatchInfo(m)?.Owners.Contains(LbIntegrations.Saves.StockDesk.HarmonyId) == true).ToList();
             Console.WriteLine("  hooked: " + all.Count + " method(s), each " + string.Join(",", all.Select(m => Harmony.GetPatchInfo(m).Prefixes.Count(p => p.owner == LbIntegrations.Saves.StockDesk.HarmonyId)).Distinct()) + " prefix");
