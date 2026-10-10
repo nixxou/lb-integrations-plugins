@@ -74,6 +74,9 @@ namespace LbIntegrations.NoGba
         ///
         /// Reading an archive costs an open, so this is called only where the answer is needed - once
         /// per game in a save listing, never on the launch path.</summary>
+        /// <summary>The GlobalCache file of archives' entry names (its version moves when the way a name is read changes).</summary>
+        private const string EntryNamesKind = "nogba-archive-entries-v1";
+
         public static string AssetName(string romPath)
         {
             try
@@ -81,9 +84,16 @@ namespace LbIntegrations.NoGba
                 if (string.IsNullOrWhiteSpace(romPath)) return null;
                 if (!IsArchive(romPath)) return NoGbaPaths.SaveBaseName(romPath);
 
+                // The entry's name across sessions and installs (GlobalCache, 10/10): every listing opened the archive again
+                // (a solid 7z decompressed). Only a name read out of it is kept - the fallback below never is.
+                if (LbIntegrations.Lbip.GlobalCache.TryGet(EntryNamesKind, romPath, out var keptEntry) && keptEntry.Length > 0)
+                    return NoGbaPaths.SaveBaseName(keptEntry);
                 if (Archives.TryReadFirstEntry(romPath, RomExtensions, 1, out var entry, out _)
                     && !string.IsNullOrEmpty(entry))
+                {
+                    LbIntegrations.Lbip.GlobalCache.Set(EntryNamesKind, romPath, entry);
                     return NoGbaPaths.SaveBaseName(entry);
+                }
 
                 // An archive we could not look into. Its own name is the best guess left, and it is
                 // said out loud, because a save filed under it would be filed under the wrong name.
