@@ -866,7 +866,14 @@ the race), `--xemu-states-cycle` (the locked file; run on a fresh copy of `G:\LB
 copy with 2 savestates the cycle is written for - its snapshots carry no picture, so "each carrying its picture" fails
 there, before and after).
 
-**Left:** the real test in LaunchBox (Batman on xemu and Cxbx: save in game, close, the capture, then a fast listing);
+**Real test, partial (10/10, G:\LB1326, Batman on xemu):** a session that left the save as it was - the session's end
+found console = pack, wrote `seen` with the new console (the qcow2 had grown 128 KB), and the three listings after it
+took the shortcut (stamp, pack, `.mirror` untouched). The save erased in the game did not reach the disk (the console
+read afterwards still held `AE6D2B80A230/BROST.sav`, the pack's files). Stamps and packs before the test:
+`G:\LB1326\Backups\lbip-2026-10-10-xbox-shortcut-test\`.
+
+**Left:** the rest of the real test (a save that really changes: the capture at the session's end, then a fast listing;
+the same on Cxbx), set aside by Mehdi on 10/10;
 small Game Saves leftovers (PPSSPP, Xenia, Flycast arcade, `SaveId`/`Compat.On` memo, `OwnerOfPath`).
 
 ## 12. Sandbox left behind
