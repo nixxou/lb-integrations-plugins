@@ -796,14 +796,78 @@ scan), dropped when it returns (Mehdi: no memory kept outside the scan). Game Sa
 **LaunchBox bench** (§11b, 2000 SNES games on SUPER ZSNES, desk on): 17.9 s → 4.71 s (RetroArch config cache) →
 **3.27 s** with SaveScan - below the desk-off scan of before (3.74 s). ares 1.5 s → 0.13 s.
 
-**Second pass (behaviour changes, not done):** xemu/Cxbx sync (two process snapshots per game, qcow2/zip/SHA-256 per
-played game - a stamp on console mtime and size), per-disc caches kept on disk (Flycast, Vita3K, Xenia title ids),
-melonDS/no$gba header cache, RetroArch's `GetFiles` per game (clean-room clone, other project).
+**Second pass:** done on 10/10 (§11d) except RetroArch's `GetFiles` per game (clean-room clone, other project).
 
 **Trap met while measuring:** a LaunchBox killed after its exit left `Data\InputBindings.xml` and
 `Data\GameControllers.xml` full of zeros ("InputBindings.xml is corrupt; LaunchBox cannot continue"); restored from
 `Backups\Automatic LaunchBox Startup Data Backup 2026-10-09 19-50-13.7z`, the corrupt copies kept in
 `Backups\lbip-2026-10-09-lot3-mesures\`. The bench now closes LaunchBox and waits; it never killed it again.
+
+### 11d. Caches beyond the scan: Game Saves, cold start, the Xbox sync (10/10)
+
+SaveScan lives only during a big listing. Three caches go further, each keyed on what it was worked out from, so a
+changed file is always read again.
+
+**`Shared.Lbip\StampedCache.cs` - a settings file's parsed value, in memory.** Game Saves calls `IsSaveActive` and
+friends hundreds of times per opening, and several plugins re-read and re-parsed their emulator's settings on every
+call. Kept while the file's length and write time are unchanged (a missing file is a state too). Never kept when the
+file cannot be opened as the readers open it (`FileShare.Read`) before OR after the read: the readers swallow their
+errors, and their fallback must not stick. `keepNull: false` for a reader whose null means "could not read" (xemu's
+state files). READERS ONLY: a caller that edits a settings object loads its own. Used by SUPER ZSNES, RASnes9x, bsnes,
+Flycast (emu.cfg), melonDS, Cxbx, ares, xemu (settings, state files). One Game Saves opening, 300 calls of each method:
+
+| Plugin | Before | After |
+|---|---|---|
+| SUPER ZSNES | 123 ms | 10 ms |
+| RASnes9x | 50 ms | 21 ms |
+| melonDS | 30 ms | 11 ms |
+| Cxbx | 18 ms | 9 ms |
+| Flycast | 80 ms | 68 ms |
+
+**`Shared.Lbip\GlobalCache.cs` - what a disc or an archive says, on disk, across sessions and installs.** In
+`%LOCALAPPDATA%\lb-integrations-plugins\cache\<kind>.tsv`, one line a file: full path, size, write ticks, value
+(%-escaped: `%25 %09 %0D %0A`). The kinds carry a version that moves when the way a value is read changes:
+`flycast-disc-ids-v1`, `xemu-title-ids-v1`, `xenia-title-ids-v1`, `cxbx-title-ids-v1`, `vita3k-title-ids-v1`,
+`nds-archive-headers-v1`, `nogba-archive-entries-v1`.
+- Written by appending, under the named mutex `Local\LbIntegrations.GlobalCache.<kind>` (5 s at most); an incomplete
+  last line (a writer killed) is cut before the next append, and only newline-terminated lines are read.
+- Another process's lines are seen within a second (recheck every 1 s); a deleted file empties the memory; duplicates
+  removed under the mutex. A write that failed is kept in memory and answered first.
+- Compaction through a temporary file: the lines of files gone from a drive that is present are dropped, those of an
+  unplugged drive kept.
+- Only a value READ out of the file is kept, never a fallback. Flycast keeps nothing for `.gdi`/`.cue` (the disc is
+  other files); a file that cannot be opened before or after the read is not kept.
+- Cold start, one Game Saves opening: Flycast CHD 71 → 10 ms, Vita3K 42 → 14 ms, Xenia 86 → 27 ms, melonDS 7z
+  67 → 17 ms, no$gba 43 → 17 ms.
+- Probe: `SavesCheck.GlobalCacheCheck` (28 checks, with `--globalcache-writer/-set/-hold` for the other processes) and
+  `StampedCacheCheck` (10).
+
+**The Xbox sync shortcut (`Shared.Xbox\XboxSaveSync.cs`, xemu, Cxbx).** Each listing read the game's console
+(qcow2/FATX or Cxbx's folder) and the pack, and hashed both - 2.2 s for 300 xemu games.
+- The stamp gets `seen=<pack length|ticks>#<console witness>` when the two agree. The witness is the console's files'
+  sizes and dates: xemu = its qcow2 and the base (`FilesWitness`), Cxbx = the game's save folder (`FolderWitness`).
+- A LISTING whose stamp has `seen` equal to now returns at once (`UnchangedSinceInStep`). Never with a restore pending
+  (`MarkRestored` writes no `seen`), never at a launch, a session's end or a restore: those always read everything.
+- The witness is taken BEFORE the console is read and checked again after; `seen` is written only if it did not move
+  (a game writing during the read is not noted as in step - Codex review).
+- Not guarded: the pack deleted or replaced between its read and the stamp (Codex review 10/10, left on purpose). The
+  rule's outcome for a listing is the same with or without `seen`: pack gone and console = stamp is "the save removed",
+  a new pack is "the save changed", both wait for the launch, which never takes the shortcut.
+- Limit: a file put back with its old size AND date is missed until the next launch.
+
+**xemu's savestate mirror.** Beside the game's console, `<tid>.mirror` holds the mirror's inputs (console, base,
+index, slots, stamp, every file of its states' folder) as they were BEFORE a listing's pass that had nothing to do;
+written only if they were the same after, and only if the pass could open every state file (`MirrorChecked`: a locked
+file was not seen, so "nothing to do" proved nothing - Codex review). A launch always runs the mirror. Savestates off
+and no index: nothing at all, not even the process list.
+
+Xbox listing, 300 games: xemu 2195 → 38 ms (savestates on), Cxbx 641 → 25 ms. Probe: `CxbxCheck` §8b (the shortcut,
+the race), `--xemu-states-cycle` (the locked file; run on a fresh copy of `G:\LB1326\lbip-xemu-lab\states-emu4`, the
+copy with 2 savestates the cycle is written for - its snapshots carry no picture, so "each carrying its picture" fails
+there, before and after).
+
+**Left:** the real test in LaunchBox (Batman on xemu and Cxbx: save in game, close, the capture, then a fast listing);
+small Game Saves leftovers (PPSSPP, Xenia, Flycast arcade, `SaveId`/`Compat.On` memo, `OwnerOfPath`).
 
 ## 12. Sandbox left behind
 
