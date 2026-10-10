@@ -1,0 +1,246 @@
+// --stock-saves <LaunchBox root> --scratch <empty folder>: lot 4.0, the measures taken on LaunchBox's OWN integrations
+// (RetroArch, Dolphin, PCSX2) before any of lot 4's code is written. Their real dlls are loaded from <root>\System\Plugins,
+// LaunchBox's Core resolved for them; RetroArch is called on a COPY of its folder (its settings, saves and states, no cores),
+// Dolphin on its real folder for reading only. Nothing of LaunchBox's library is touched: the games and emulators are stubs.
+//
+// What it answers (docs\saves-lot4.md): which of the 13 save methods each one overrides; its EmulatorName; the rows and ids
+// its GetSaves gives (Atlantis's Saturn set, Zelda's .srm, a Wii game on Dolphin); how its per-row methods answer for an
+// empty id, a GUID, a native id and our JSON; whether Harmony replaces a row argument (ref __0) for the original.
+
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Runtime.Loader;
+using HarmonyLib;
+using Unbroken.LaunchBox.Plugins;
+using Unbroken.LaunchBox.Plugins.Data;
+
+namespace LbIntegrations.Probe
+{
+    internal static class StockSavesCheck
+    {
+        private static readonly string[] SaveMethods =
+        {
+            "SupportsSaveManagement", "GetSaves", "AddSaveFile", "RemoveSave", "IsSaveActive", "IsSaveContainer",
+            "TryBackupSave", "UseSaveGroupIdForPersistedMatch", "TryComputeSaveSignature", "TryGetSaveGroupInfo",
+            "IsSecondarySaveFile", "GetCompanionSaveFiles", "GetPotentialSaveSlots",
+        };
+
+        public static bool Run(string root, string scratch)
+        {
+            if (root == null || scratch == null) { Console.Error.WriteLine("--stock-saves <LaunchBox root> --scratch <empty folder>"); return false; }
+            root = Path.GetFullPath(root);
+            scratch = Path.GetFullPath(scratch);
+            Directory.CreateDirectory(scratch);
+            if (Directory.EnumerateFileSystemEntries(scratch).Any()) { Console.Error.WriteLine("the scratch folder must be empty: " + scratch); return false; }
+
+            // LaunchBox's Core and each integration's own folder, as LaunchBox resolves them.
+            var dirs = new List<string> { Path.Combine(root, "Core") };
+            dirs.AddRange(Directory.GetDirectories(Path.Combine(root, "System", "Plugins")));
+            AssemblyLoadContext.Default.Resolving += (ctx, name) =>
+            {
+                foreach (var d in dirs)
+                {
+                    var p = Path.Combine(d, name.Name + ".dll");
+                    if (File.Exists(p)) return ctx.LoadFromAssemblyPath(p);
+                }
+                return null;
+            };
+            var families = new[] { ("RetroArch", "RetroArchPlugin"), ("Dolphin", "DolphinPlugin"), ("Pcsx2", "Pcsx2Plugin") };
+            var types = new Dictionary<string, Type>();
+            foreach (var (family, typeName) in families)
+            {
+                var dll = Directory.GetFiles(Path.Combine(root, "System", "Plugins"), "Unbroken.LaunchBox.Windows." + family + ".dll", SearchOption.AllDirectories).FirstOrDefault();
+                if (dll == null) { Console.WriteLine("  " + family + ": no dll"); continue; }
+                var asm = AssemblyLoadContext.Default.LoadFromAssemblyPath(dll);
+                var t = asm.GetTypes().FirstOrDefault(x => x.Name == typeName && typeof(EmulatorPlugin).IsAssignableFrom(x));
+                Console.WriteLine("  " + family + ": " + (t?.FullName ?? "no " + typeName) + "  [" + Path.GetFileName(Path.GetDirectoryName(dll)) + "]");
+                if (t != null) types[family] = t;
+            }
+
+            Section("1. The save methods: overridden, or the SDK's body");
+            var sdk = typeof(EmulatorPlugin);
+            foreach (var name in SaveMethods)
+            {
+                var baseM = sdk.GetMethods(BindingFlags.Public | BindingFlags.Instance).Where(m => m.Name == name && m.IsVirtual).ToList();
+                if (baseM.Count != 1) { Console.WriteLine("  " + name.PadRight(32) + " SDK: " + baseM.Count + " virtual(s)"); continue; }
+                var ps = baseM[0].GetParameters().Select(p => p.ParameterType).ToArray();
+                var line = "  " + name.PadRight(32);
+                foreach (var (family, t) in types)
+                {
+                    var m = t.GetMethod(name, BindingFlags.Public | BindingFlags.Instance, null, ps, null);
+                    line += (family + "=" + (m == null ? "MISSING" : m.DeclaringType == sdk ? "sdk" : "own")).PadRight(18);
+                }
+                Console.WriteLine(line + "  (" + string.Join(", ", ps.Select(p => p.Name)) + ")");
+            }
+
+            // The instances, as the router makes them (IPluginPaths for RetroArch).
+            var stock = LbIntegrations.Saves.SaveRouter.Stock();
+            Section("2. EmulatorName and the emu the router gives");
+            foreach (var (emu, plugin) in stock)
+                Console.WriteLine("  " + plugin.GetType().Name.PadRight(18) + " EmulatorName=\"" + plugin.EmulatorName + "\"  emu=" + emu);
+            EmulatorPlugin Of(string typeName) => stock.Select(s => s.Plugin).FirstOrDefault(p => p.GetType().Name == typeName);
+            var ra = Of("RetroArchPlugin");
+            var dolphin = Of("DolphinPlugin");
+            var pcsx2 = Of("Pcsx2Plugin");
+
+            // RetroArch's folder copied without its cores and system files: its settings, saves, states, info.
+            var raSource = Path.Combine(root, "Emulators", "RetroArch");
+            var raCopy = Path.Combine(scratch, "RetroArch");
+            Directory.CreateDirectory(raCopy);
+            foreach (var f in Directory.GetFiles(raSource)) File.Copy(f, Path.Combine(raCopy, Path.GetFileName(f)));
+            foreach (var sub in new[] { "saves", "states", "info", "config" })
+                if (Directory.Exists(Path.Combine(raSource, sub))) CopyTree(Path.Combine(raSource, sub), Path.Combine(raCopy, sub));
+            Directory.CreateDirectory(Path.Combine(raCopy, "cores"));
+            Console.WriteLine("  RetroArch copied to " + raCopy);
+
+            var raEmu = new StubEmulator { Title = "RetroArch", ApplicationPath = Path.Combine(raCopy, "retroarch.exe") };
+            void Line(StubEmulator e, string platform, string cmd) { var l = e.AddNewEmulatorPlatform(); l.Platform = platform; l.CommandLine = cmd; l.IsDefault = true; }
+            Line(raEmu, "Sega Saturn", "-L \"cores\\mednafen_saturn_libretro.dll\" -f");
+            Line(raEmu, "Super Nintendo Entertainment System", "-L \"cores\\snes9x_libretro.dll\" -f");
+            var dolphinEmu = new StubEmulator { Title = "Dolphin", ApplicationPath = Path.Combine(root, "Emulators", "Dolphin", "Dolphin.exe") };
+            Line(dolphinEmu, "Nintendo Wii", "");
+            Line(dolphinEmu, "Nintendo GameCube", "");
+            foreach (var e in new[] { raEmu, dolphinEmu }) { Blank(e); foreach (var l in e.GetAllEmulatorPlatforms()) Blank(l); }
+            PluginHelper.DataManager = new StubDataManager(raEmu, dolphinEmu);
+
+            IGame Game(string id, string title, string path, string platform, StubEmulator e)
+            {
+                var g = StubGame.With(StubGame.Create(id, title, path, e.Id), "Platform", platform);
+                // Every text the stub leaves null made empty: the integrations run regexes on them, as on a real game's.
+                foreach (var p in typeof(IGame).GetProperties().Where(p => p.PropertyType == typeof(string) && p.CanRead))
+                    if (p.GetValue(g) == null) g = StubGame.With(g, p.Name, "");
+                // What LaunchBox answers: the emulator's line for the game's platform (RetroArch reads its -L core from it).
+                var line = e.GetAllEmulatorPlatforms().FirstOrDefault(l => l.Platform == platform);
+                return StubGame.With(g, "GetEffectiveCommandLine()", (e.CommandLine + " " + line?.CommandLine).Trim());
+            }
+            var atlantis = Game("7d337113-7b35-4db5-ae36-e72d37c08c4d", "Atlantis: The Lost Tales", @"G:\saturn\Atlantis - The Lost Tales (FR) (Disc 1).chd", "Sega Saturn", raEmu);
+            var zelda = Game("2cf24c23-76ee-4892-acd7-eb2c1e964d5f", "The Legend of Zelda: A Link to the Past", @"G:\LB\FakeCatalog\Legend of Zelda, The - A Link to the Past (France).sfc", "Super Nintendo Entertainment System", raEmu);
+            var animal = Game("920e499a-a943-4c73-890e-a4357514fa47", "Animal Crossing: City Folk", @"C:\Users\mehdi\Downloads\Animal-Crossing-Lets-Go-to-the-City-Europe-En-Fr-De-Es-It.rvz", "Nintendo Wii", dolphinEmu);
+
+            // A null handed to a regex inside an integration: its pattern says which text it wanted (no source read).
+            var spy = new Harmony("lbip.probe.regex-spy");
+            spy.Patch(typeof(System.Text.RegularExpressions.Regex).GetMethod("Match", new[] { typeof(string) }), prefix: new HarmonyMethod(typeof(StockSavesCheck).GetMethod(nameof(NullMatch), BindingFlags.NonPublic | BindingFlags.Static)));
+            Section("3. The rows GetSaves gives");
+            var raRows = Rows(ra, raEmu, atlantis, zelda);
+            var dolphinRows = Rows(dolphin, dolphinEmu, animal);
+            // Outside LaunchBox their GetSaves reach LaunchBox's core (Tokens, a resolver), which only LaunchBox sets up: the
+            // listings are measured in LaunchBox. The per-row methods are asked about rows made here, as LaunchBox persists them.
+            if (raRows.Count == 0)
+            {
+                var saves = Path.Combine(raCopy, "saves");
+                raRows.Add(new GameSaveGame { GameId = atlantis.Id, FileLocation = Path.Combine(saves, "Beetle Saturn", "Atlantis - The Lost Tales (FR) (Disc 1).bcr"), EmulatorFileName = "retroarch.exe", EmulatorCore = "mednafen_saturn_libretro", SaveGroupId = "", SaveGroupName = "My Save File" });
+                raRows.Add(new GameSaveGame { GameId = zelda.Id, FileLocation = Path.Combine(saves, "Snes9x", "Legend of Zelda, The - A Link to the Past (France).srm"), EmulatorFileName = "retroarch.exe", EmulatorCore = "snes9x_libretro", SaveGroupId = "" });
+                raRows.Add(new GameSaveState { GameId = zelda.Id, FileLocation = Path.Combine(raCopy, "states", "Snes9x", "Legend of Zelda, The - A Link to the Past (France).state"), EmulatorFileName = "retroarch.exe", EmulatorCore = "snes9x_libretro", SaveGroupId = "", Slot = 0 });
+                Console.WriteLine("  rows made by hand: " + string.Join(", ", raRows.Select(r => Path.GetFileName(r.FileLocation))));
+            }
+            Console.WriteLine("  GetSavesArgs: " + string.Join(", ", typeof(GetSavesArgs).GetProperties().Select(p => p.PropertyType.Name + " " + p.Name)));
+            Console.WriteLine("  AddSaveArgs: " + string.Join(", ", typeof(AddSaveArgs).GetProperties().Select(p => p.PropertyType.Name + " " + p.Name)));
+
+            Section("4. The per-row methods, for each form of id");
+            // PCSX2: no install in the sandbox - a row as its ids look (pcsx2:<serial>), a card file that does not exist.
+            var pcsx2Emu = new StubEmulator { Title = "PCSX2", ApplicationPath = Path.Combine(scratch, "PCSX2", "pcsx2-qt.exe") }; Blank(pcsx2Emu);
+            var pcsx2Rows = new List<GameSaveBase> { new GameSaveGame { GameId = "g-ps2", FileLocation = Path.Combine(scratch, "PCSX2", "memcards", "Mcd001.ps2"), EmulatorFileName = "pcsx2-qt.exe", SaveGroupId = "pcsx2:SLUS-20062" } };
+            foreach (var (plugin, emu, rows) in new[] { (ra, raEmu, raRows), (dolphin, dolphinEmu, dolphinRows), (pcsx2, pcsx2Emu, pcsx2Rows) })
+            {
+                if (plugin == null) continue;
+                foreach (var row in rows.Take(3))
+                {
+                    Console.WriteLine("  " + plugin.GetType().Name + " / " + Path.GetFileName(row.FileLocation) + " (" + row.GetType().Name + ", listed id \"" + row.SaveGroupId + "\")");
+                    foreach (var id in new[] { row.SaveGroupId, "", "c380b29f2702480a982dda74c642a367", "saturn-atlantis - the lost tales (fr) (disc 1)", "pcsx2:SLUS-20062", "{\"emu\":\"lb.retroarch\",\"kind\":\"save\",\"native\":\"x\"}" }.Distinct())
+                    {
+                        var r = WithId(row, id);
+                        string Try(Func<object> f) { try { return Show(f()); } catch (Exception ex) { return "throws " + (ex.InnerException ?? ex).GetType().Name; } }
+                        var active = Try(() => plugin.IsSaveActive(r, emu.ApplicationPath));
+                        var match = Try(() => plugin.UseSaveGroupIdForPersistedMatch(r));
+                        var sig = Try(() => plugin.TryComputeSaveSignature(r, emu.ApplicationPath, out var s) ? "true " + Cut(s) : "false");
+                        var info = Try(() => plugin.TryGetSaveGroupInfo(r, r.FileLocation, out var g, out var n) ? "true id=\"" + g + "\" name=\"" + n + "\"" : "false");
+                        var container = Try(() => plugin.IsSaveContainer(r));
+                        Console.WriteLine("     id \"" + Cut(id) + "\": active=" + active + "  match=" + match + "  container=" + container + "  sig=" + sig + "  info=" + info);
+                    }
+                }
+            }
+
+            Section("5. Harmony: a row argument replaced for the original (ref __0)");
+            HarmonyReplace(ra, raRows.FirstOrDefault(), raEmu.ApplicationPath);
+            Console.WriteLine();
+            Console.WriteLine("  scratch left in " + scratch);
+            return true;
+        }
+
+        private static List<GameSaveBase> Rows(EmulatorPlugin plugin, IEmulator emu, params IGame[] games)
+        {
+            var all = new List<GameSaveBase>();
+            if (plugin == null) return all;
+            foreach (var g in games)
+            {
+                try
+                {
+                    var rows = plugin.GetSaves(new GetSavesArgs { Emulator = emu, Games = new[] { g }, AdditionalApplications = Array.Empty<IAdditionalApplication>() })?.FoundSaves ?? Array.Empty<GameSaveBase>();
+                    Console.WriteLine("  " + plugin.GetType().Name + " / " + g.Title + ": " + rows.Count() + " row(s)");
+                    foreach (var r in rows)
+                    {
+                        Console.WriteLine("     " + r.GetType().Name.PadRight(13) + " id=\"" + r.SaveGroupId + "\" lineage=\"" + r.MatchLineageId + "\" slot=" + Slot(r) + " core=" + r.EmulatorCore + " exe=" + r.EmulatorFileName + " group=\"" + r.SaveGroupName + "\"");
+                        Console.WriteLine("       " + r.FileLocation);
+                    }
+                    all.AddRange(rows);
+                }
+                catch (Exception ex) { Console.WriteLine("  " + plugin.GetType().Name + " / " + g.Title + ": throws " + (ex.InnerException ?? ex)); }
+            }
+            return all;
+        }
+
+        /// <summary>Every writable text left null made empty, as LaunchBox's own objects carry them.</summary>
+        private static void Blank(object o)
+        {
+            foreach (var p in o.GetType().GetProperties().Where(p => p.PropertyType == typeof(string) && p.CanRead && p.CanWrite))
+                if (p.GetValue(o) == null) p.SetValue(o, "");
+        }
+
+        private static void NullMatch(System.Text.RegularExpressions.Regex __instance, string input) { if (input == null) Console.WriteLine("     (a regex got null: /" + __instance + "/)"); }
+
+        private static string Slot(GameSaveBase r) => r is GameSaveState s ? s.Slot.ToString() : "-";
+
+        private static GameSaveBase WithId(GameSaveBase row, string id)
+        {
+            var copy = (GameSaveBase)typeof(object).GetMethod("MemberwiseClone", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(row, null);
+            typeof(GameSaveBase).GetProperty(nameof(GameSaveBase.SaveGroupId)).SetValue(copy, id);
+            return copy;
+        }
+
+        // ── Harmony: does a prefix that swaps __0 for a copy reach the original? ──
+        private static string _seen;
+        private static bool Swap(ref GameSaveBase __0) { __0 = WithId(__0, "REPLACED"); return true; }
+        private static void Spy(GameSaveBase __0) => _seen = __0?.SaveGroupId;
+
+        private static void HarmonyReplace(EmulatorPlugin plugin, GameSaveBase row, string exe)
+        {
+            if (plugin == null || row == null) { Console.WriteLine("  nothing to try it on"); return; }
+            var m = plugin.GetType().GetMethod("TryGetSaveGroupInfo", BindingFlags.Public | BindingFlags.Instance);
+            var h = new Harmony("lbip.probe.stock-saves");
+            try
+            {
+                h.Patch(m, prefix: new HarmonyMethod(typeof(StockSavesCheck).GetMethod(nameof(Swap), BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First });
+                h.Patch(m, prefix: new HarmonyMethod(typeof(StockSavesCheck).GetMethod(nameof(Spy), BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.Last });
+                var before = row.SaveGroupId;
+                var ok = plugin.TryGetSaveGroupInfo(row, row.FileLocation, out var g, out var n);
+                Console.WriteLine("  " + m.DeclaringType.Name + "." + m.Name + ": the later prefix saw \"" + _seen + "\"; the original answered " + ok + " id=\"" + g + "\"; the caller's row still \"" + row.SaveGroupId + "\" (was \"" + before + "\")");
+            }
+            catch (Exception ex) { Console.WriteLine("  throws " + ex.Message); }
+            finally { h.UnpatchAll("lbip.probe.stock-saves"); }
+        }
+
+        private static void CopyTree(string from, string to)
+        {
+            Directory.CreateDirectory(to);
+            foreach (var f in Directory.GetFiles(from)) File.Copy(f, Path.Combine(to, Path.GetFileName(f)));
+            foreach (var d in Directory.GetDirectories(from)) CopyTree(d, Path.Combine(to, Path.GetFileName(d)));
+        }
+
+        private static string Show(object o) => o switch { null => "null", bool b => b ? "true" : "false", _ => o.ToString() };
+        private static string Cut(string s) => s == null ? "null" : s.Length > 48 ? s.Substring(0, 45) + "..." : s;
+        private static void Section(string title) { Console.WriteLine(); Console.WriteLine("== " + title); }
+    }
+}

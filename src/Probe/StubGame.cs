@@ -48,6 +48,8 @@ namespace LbIntegrations.Probe
                 var name = targetMethod.Name.Substring(4);
                 if (_values != null && _values.TryGetValue(name, out var value)) return value;
             }
+            // A method without arguments given its answer as "Name()" - GetEffectiveCommandLine, say.
+            if ((args == null || args.Length == 0) && _values != null && _values.TryGetValue(targetMethod.Name + "()", out var answer)) return answer;
             return DefaultOf(targetMethod.ReturnType);
         }
 
