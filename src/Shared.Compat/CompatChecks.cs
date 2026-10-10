@@ -44,6 +44,23 @@ namespace LbIntegrations.Compat
                         return m != null && typeof(Dictionary<string, string>).IsAssignableFrom(m.ReturnType)
                             ? (CompatCheckState.Ok, "RetroArch's integration: LoadConfiguration(string)") : (CompatCheckState.Missing, "LoadConfiguration(string) returning its settings");
                     }
+                    case "ra.saves": return StockSaves("RetroArch", "RetroArchPlugin");
+                    case "dolphin.saves": return StockSaves("Dolphin", "DolphinPlugin");
+                    case "pcsx2.saves": return StockSaves("Pcsx2", "Pcsx2Plugin");
+                    case "sdk.saves":
+                    {
+                        var missing = SaveMethods.Where(n => typeof(EmulatorPlugin).GetMethods(BindingFlags.Public | BindingFlags.Instance).Count(m => m.Name == n && m.IsVirtual) != 1).ToList();
+                        return missing.Count == 0 ? (CompatCheckState.Ok, "EmulatorPlugin: the " + SaveMethods.Length + " save methods")
+                                                  : (CompatCheckState.Missing, "EmulatorPlugin: " + string.Join(", ", missing));
+                    }
+                    case "lb.saveIds":
+                    {
+                        var save = Types().FirstOrDefault(t => t.FullName == "Unbroken.LaunchBox.Data.GameSave");
+                        if (save == null) return (CompatCheckState.NotHere, "Unbroken.LaunchBox.Data.GameSave not loaded");
+                        var missing = new[] { "SaveGroupId", "MatchLineageId" }.Where(n => save.GetProperty(n)?.CanWrite != true).ToList();
+                        return missing.Count == 0 ? (CompatCheckState.Ok, "GameSave.SaveGroupId / MatchLineageId can be set")
+                                                  : (CompatCheckState.Missing, "GameSave: " + string.Join(", ", missing) + " cannot be set");
+                    }
                     case "dolphin.statics":
                         return Statics("Dolphin", "GetPlatformType", "BuildUserRoots", "TryGetDiscId", "RestoreGameCubeSave", "RestoreWiiSave", "RestoreSaveState");
                     case "lb.saves":
@@ -188,6 +205,40 @@ namespace LbIntegrations.Compat
                 if (t != null) return t;
             }
             return null;
+        }
+
+        /// <summary>The save methods of the SDK, as lot 4's hooks find them (StockDesk).</summary>
+        internal static readonly string[] SaveMethods =
+        {
+            "SupportsSaveManagement", "GetSaves", "AddSaveFile", "RemoveSave", "IsSaveActive", "IsSaveContainer", "TryBackupSave",
+            "UseSaveGroupIdForPersistedMatch", "TryComputeSaveSignature", "TryGetSaveGroupInfo", "IsSecondarySaveFile",
+            "GetCompanionSaveFiles", "GetPotentialSaveSlots",
+        };
+
+        /// <summary>A LaunchBox integration's save methods, each by the SDK's exact signature: which it overrides, which run the
+        /// SDK's body. Missing when the type is gone or does not override GetSaves and AddSaveFile (lot 4 measured all three do).</summary>
+        private static (CompatCheckState, string) StockSaves(string family, string typeName)
+        {
+            Type? t = null;
+            foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                if (a.IsDynamic || !(a.GetName().Name ?? "").StartsWith("Unbroken.LaunchBox.Windows." + family, StringComparison.OrdinalIgnoreCase)) continue;
+                Type?[] ts;
+                try { ts = a.GetTypes(); } catch (ReflectionTypeLoadException e) { ts = e.Types; } catch { continue; }
+                t = ts.FirstOrDefault(x => x != null && x.Name == typeName && typeof(EmulatorPlugin).IsAssignableFrom(x));
+                if (t != null) break;
+            }
+            if (t == null) return (CompatCheckState.NotHere, family + "'s LaunchBox integration is not loaded");
+            var own = new List<string>(); var sdk = new List<string>(); var gone = new List<string>();
+            foreach (var n in SaveMethods)
+            {
+                var b = typeof(EmulatorPlugin).GetMethods(BindingFlags.Public | BindingFlags.Instance).FirstOrDefault(m => m.Name == n && m.IsVirtual);
+                var m = b == null ? null : t.GetMethod(n, BindingFlags.Public | BindingFlags.Instance, null, b.GetParameters().Select(p => p.ParameterType).ToArray(), null);
+                if (m == null) gone.Add(n); else if (m.DeclaringType == typeof(EmulatorPlugin)) sdk.Add(n); else own.Add(n);
+            }
+            if (gone.Count > 0 || !own.Contains("GetSaves") || !own.Contains("AddSaveFile"))
+                return (CompatCheckState.Missing, typeName + ": " + (gone.Count > 0 ? string.Join(", ", gone) + " not found" : "GetSaves / AddSaveFile not its own"));
+            return (CompatCheckState.Ok, typeName + ": its own " + string.Join(", ", own) + (sdk.Count > 0 ? "; the SDK's " + string.Join(", ", sdk) : ""));
         }
 
         private static (CompatCheckState, string) Statics(string family, params string[] names)

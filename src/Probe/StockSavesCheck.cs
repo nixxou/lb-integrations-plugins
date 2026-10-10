@@ -77,6 +77,13 @@ namespace LbIntegrations.Probe
             }
 
             // The instances, as the router makes them (IPluginPaths for RetroArch).
+            // The Compatibility page's checks of lot 4, on the real dlls.
+            foreach (var id in new[] { "ra.saves", "dolphin.saves", "pcsx2.saves", "sdk.saves" })
+            {
+                var (state, detail) = LbIntegrations.Compat.CompatChecks.Check(id);
+                Console.WriteLine("  check " + id.PadRight(14) + state + "  " + detail);
+            }
+
             var stock = LbIntegrations.Saves.SaveRouter.Stock();
             Section("2. EmulatorName and the emu the router gives");
             foreach (var (emu, plugin) in stock)

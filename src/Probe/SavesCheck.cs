@@ -547,7 +547,7 @@ namespace LbIntegrations.Probe
                   all.All(p => p.Id.Length > 0 && p.Title.Length > 0 && p.Problem.Length > 0 && p.Example.Length > 0 && p.Does.Length > 0 && p.Without.Length > 0));
             Check("compat: ids are unique", all.Select(p => p.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count() == all.Count);
             Check("compat: every 'needs' names a patch", all.Where(p => p.Needs != null).All(p => LbIntegrations.Compat.CompatRegistry.Find(p.Needs!) != null));
-            var known = new HashSet<string> { "igame.cmdline", "ra.statics", "ra.loadConfig", "dolphin.statics", "lb.saves", "lb.applyPersisted", "sqlite.reader", "lb.openEmulator", "lb.wizard", "lb.version" };
+            var known = new HashSet<string> { "igame.cmdline", "ra.statics", "ra.loadConfig", "dolphin.statics", "lb.saves", "lb.applyPersisted", "sqlite.reader", "lb.openEmulator", "lb.wizard", "lb.version", "ra.saves", "dolphin.saves", "pcsx2.saves", "sdk.saves", "lb.saveIds" };
             Check("compat: every check is one CompatChecks knows", all.SelectMany(p => p.Checks).All(known.Contains));
             Check("compat: the reflection check of the SDK passes here", LbIntegrations.Compat.CompatChecks.Check("igame.cmdline").State == LbIntegrations.Compat.CompatCheckState.Ok);
 

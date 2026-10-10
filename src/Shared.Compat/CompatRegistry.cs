@@ -112,6 +112,31 @@ namespace LbIntegrations.Compat
             },
             new CompatPatch
             {
+                Id = "stockDesk", Group = CompatGroup.Missing, Needs = "desk", Title = "Every emulator's saves on games set to RetroArch, Dolphin or PCSX2",
+                Problem = "LaunchBox asks only the plugin of the game's emulator about saves. On a game set to LaunchBox's RetroArch, "
+                        + "Dolphin or PCSX2, a save made by another emulator (Launch With, a version) is never listed nor backed up.",
+                Example = "Zelda set to RetroArch, played once with ares: the ares save was in no card.",
+                Does = "A hook (Harmony) on those three integrations lists the other emulators' saves beside theirs and hands every call "
+                     + "on such a save to the plugin that made it - as the pack's own emulators do.",
+                Without = "Those games show their emulator's saves only, as LaunchBox does.",
+                OffWarning = "Without it, saves of other emulators on those games are no longer backed up.",
+                Checks = new[] { "ra.saves", "dolphin.saves", "pcsx2.saves", "sdk.saves" },
+            },
+            new CompatPatch
+            {
+                Id = "stockIds", Group = CompatGroup.Data, Title = "RetroArch, Dolphin and PCSX2 save ids in the pack's form",
+                Problem = "Those integrations give their saves ids of their own, or none: whose save a card is cannot always be told "
+                        + "(a RetroArch card is only a number).",
+                Example = "A RetroArch card's id was a GUID LaunchBox made; Atlantis's Saturn set was saturn-atlantis...",
+                Does = "Their ids are given the pack's form, with the original kept inside it; the integrations always see their own. "
+                     + "The cards already saved are given it too (the platform files are copied aside first).",
+                Without = "Their ids as they write them.",
+                OffWarning = "Turned off, the cards go back to LaunchBox's own ids at the next start. Uninstall the pack only through its "
+                           + "setup, which gives them back too.",
+                Checks = new[] { "ra.saves", "dolphin.saves", "pcsx2.saves", "lb.saveIds" },
+            },
+            new CompatPatch
+            {
                 Id = "companionSignature", Group = CompatGroup.Bug, Title = "A change in a save's companion file not seen",
                 Problem = "To decide whether a save changed - and must be backed up - LaunchBox only compares its main file, not the "
                         + "files that go with it: a cartridge's clock (.rtc), Satellaview data (.psr), the 64DD's clock...",
