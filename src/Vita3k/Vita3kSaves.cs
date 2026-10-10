@@ -612,6 +612,9 @@ namespace LbIntegrations.Vita3k
         private static readonly Dictionary<string, string> _titleIds =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>The GlobalCache file of the title ids (its version moves when the way an id is read changes).</summary>
+        private const string TitleIdsKind = "vita3k-title-ids-v1";
+
         private static string TitleIdOf(string romPath)
         {
             try
@@ -624,9 +627,18 @@ namespace LbIntegrations.Vita3k
                 lock (_titleIds)
                 {
                     if (_titleIds.TryGetValue(key, out var cached)) return cached;
+                    // Across sessions and installs (GlobalCache, 10/10): a cold start opened every archive (param.sfo unpacked,
+                    // a solid 7z decompressed). "" = described, not a game; a file that could not be described is not kept.
+                    if (LbIntegrations.Lbip.GlobalCache.TryGet(TitleIdsKind, full, out var known))
+                    {
+                        var k = known.Length == 0 ? null : known;
+                        _titleIds[key] = k;
+                        return k;
+                    }
                     var content = Vita3kContent.Describe(full, out _);
                     var titleId = content?.IsGame == true ? content.TitleId : null;
                     _titleIds[key] = titleId;
+                    if (content != null) LbIntegrations.Lbip.GlobalCache.Set(TitleIdsKind, full, titleId ?? "");
                     return titleId;
                 }
             }
