@@ -131,12 +131,15 @@ namespace LbIntegrations.Xemu
                     if (index != null && File.Exists(index)) { File.Delete(index); Log.Info("savestates: " + titleId + " - off: its index forgotten, its files and snapshots kept"); }
                     return;
                 }
+                // The game's disk as it was when the mirror read it: written meanwhile (xemu started), the pass is not noted.
+                var diskBefore = XboxSaveSync.FilesWitness(XemuPaths.GameHdd(exe, titleId), XemuPaths.BaseHdd(exe));
                 var said = XemuStates.Mirror(exe, titleId, rewrite, () => StampKeys(exe, titleId));
                 foreach (var line in said) Log.Info("savestates: " + titleId + " - " + line);
-                // Noted only after a listing's pass that did nothing: the same inputs, the same nothing.
+                // Noted only after a listing's pass that did nothing, the disk unmoved while it ran: the same inputs, the same nothing.
                 if (seenPath != null)
                 {
-                    if (!rewrite && said.Count == 0) { var w = MirrorSeen(exe, titleId); if (w != null) File.WriteAllText(seenPath, w); }
+                    bool unmoved = diskBefore == XboxSaveSync.FilesWitness(XemuPaths.GameHdd(exe, titleId), XemuPaths.BaseHdd(exe));
+                    if (!rewrite && said.Count == 0 && unmoved) { var w = MirrorSeen(exe, titleId); if (w != null) File.WriteAllText(seenPath, w); }
                     else if (File.Exists(seenPath)) File.Delete(seenPath);
                 }
             }

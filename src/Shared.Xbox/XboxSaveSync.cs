@@ -179,14 +179,20 @@ namespace LbIntegrations.Xbox
         // anything else - a launch, a session's end, a restore, a size or a date that moved - goes through the whole rule.
         // A file put back with its old size AND date would be missed until the next launch, which reads everything.
 
-        /// <summary>The pack's and the console's sizes and dates now - null when the console gives no witness.</summary>
-        private static string SeenNow(XboxSaveSide s)
+        /// <summary>The console's witness now, or null.</summary>
+        private static string ConsoleWitness(XboxSaveSide s) { try { return s.Witness?.Invoke(); } catch { return null; } }
+
+        /// <summary>The pack's and the console's sizes and dates now - null when the console gives no witness, or when it no longer
+        /// looks as it did before it was read (<paramref name="consoleBefore"/>): a console written while it was read must not be
+        /// noted as agreeing with a pack made from the earlier read (Codex review 10/10).</summary>
+        private static string SeenNow(XboxSaveSide s, string consoleBefore = null, bool checkBefore = false)
         {
             try
             {
                 if (s.Witness == null) return null;
                 var console = s.Witness();
                 if (console == null) return null;
+                if (checkBefore && console != consoleBefore) return null;
                 var fi = new FileInfo(s.Pack ?? "");
                 return (fi.Exists ? fi.Length + "|" + fi.LastWriteTimeUtc.Ticks : "none") + "#" + console;
             }
@@ -283,6 +289,7 @@ namespace LbIntegrations.Xbox
             {
                 // A listing, nothing moved since the two last agreed: nothing to read (the shortcut above).
                 if (mode == XboxSyncMode.Listing && UnchangedSinceInStep(s)) return null;
+                var before = ConsoleWitness(s);   // what the console looked like as it was read
                 var consoleFiles = s.ReadConsole() ?? new List<(string, byte[])>();
                 var saveFiles = FilesOf(s.Pack);
                 string c = ContentHash(consoleFiles), p = saveFiles == null ? null : ContentHash(saveFiles), empty = ContentHash(new List<(string, byte[])>());
@@ -293,7 +300,7 @@ namespace LbIntegrations.Xbox
 
                 // In step.
                 if (p == null && !consoleHas) { DeleteStamp(s.StampPath); return null; }
-                if (p != null && c == p) { WriteStamp(s.StampPath, p, st?.Keys ?? XboxSaveKeys.Read(s.Pack), seen: SeenNow(s)); return null; }
+                if (p != null && c == p) { WriteStamp(s.StampPath, p, st?.Keys ?? XboxSaveKeys.Read(s.Pack), seen: SeenNow(s, before, checkBefore: true)); return null; }
 
                 // A restore noted (MarkRestored): applied by the next launch only, left alone by listings and sessions' ends.
                 bool pending = st?.Restore == true;
@@ -307,12 +314,12 @@ namespace LbIntegrations.Xbox
                 bool launch = mode == XboxSyncMode.Launch || mode == XboxSyncMode.Restore;
                 if (stamp == null)
                 {
-                    if (p == null) return Capture(s, consoleFiles, c, st?.Keys, "no save yet: the console's captured");
+                    if (p == null) return Capture(s, consoleFiles, c, st?.Keys, "no save yet: the console's captured", before);
                     if (!consoleHas) return launch ? Lay(s, p, "the save laid into the console") : null;
                     return launch ? Conflict(s, consoleFiles, st?.Keys, p, "the save and the console differ, never agreed") : null;
                 }
                 if (p == stamp || (p == null && stamp == empty))
-                    return Capture(s, consoleFiles, c, st.Keys, "the console changed since the last agreement: captured");
+                    return Capture(s, consoleFiles, c, st.Keys, "the console changed since the last agreement: captured", before);
                 if (c == stamp)
                 {
                     if (!launch) return null;
@@ -375,8 +382,9 @@ namespace LbIntegrations.Xbox
         {
             lock (Gate)
             {
+                var before = ConsoleWitness(s);
                 var files = s.ReadConsole() ?? new List<(string, byte[])>();
-                return Capture(s, files, ContentHash(files), ReadStamp(s.StampPath)?.Keys, "captured");
+                return Capture(s, files, ContentHash(files), ReadStamp(s.StampPath)?.Keys, "captured", before);
             }
         }
 
@@ -384,7 +392,7 @@ namespace LbIntegrations.Xbox
         private static SaveKeys KeysOfConsole(XboxSaveSide s, SaveKeys stamped)
             => stamped ?? XboxSaveKeys.Read(s.Pack) ?? s.NaturalKeys?.Invoke();
 
-        private static string Capture(XboxSaveSide s, List<(string Name, byte[] Data)> files, string hash, SaveKeys stamped, string what)
+        private static string Capture(XboxSaveSide s, List<(string Name, byte[] Data)> files, string hash, SaveKeys stamped, string what, string consoleBefore)
         {
             if (files.Count == 0)
             {
@@ -395,7 +403,7 @@ namespace LbIntegrations.Xbox
             }
             var keys = KeysOfConsole(s, stamped);
             WriteZip(files, s.Pack, keys);
-            WriteStamp(s.StampPath, hash, keys, seen: SeenNow(s));   // in step: the console made the save
+            WriteStamp(s.StampPath, hash, keys, seen: SeenNow(s, consoleBefore, checkBefore: true));   // in step - if the console did not move while read
             return what + " -> " + s.Pack;
         }
 

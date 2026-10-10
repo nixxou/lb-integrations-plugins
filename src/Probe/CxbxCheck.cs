@@ -396,6 +396,57 @@ namespace LbIntegrations.Probe
                           && Directory.GetFiles(conflicts).Length == n + 1);
                     Check("... the old notes gone", !File.Exists(Path.ChangeExtension(activePack, ".synced")) && !File.Exists(Path.ChangeExtension(activePack, ".stamp")) && File.Exists(stampFile));
 
+                    // A console written WHILE it is read (Codex review 10/10): the pack made from that read must not be noted as
+                    // agreeing with what the console became - else every later listing would skip the newer save.
+                    {
+                        var raceDir = Path.Combine(Path.GetTempPath(), "lbip-race-" + Guid.NewGuid().ToString("N"));
+                        try
+                        {
+                            var consoleDir = Path.Combine(raceDir, "console"); Directory.CreateDirectory(consoleDir);
+                            var consoleFile = Path.Combine(consoleDir, "save.dat");
+                            File.WriteAllBytes(consoleFile, Noise(5000, 21));
+                            bool racing = true;
+                            var sideType = _asm.GetType("LbIntegrations.Xbox.XboxSaveSide", true);
+                            var syncType = _asm.GetType("LbIntegrations.Xbox.XboxSaveSync", true);
+                            var side = Activator.CreateInstance(sideType);
+                            void Set(string name, object value) => sideType.GetField(name).SetValue(side, value);
+                            var racePack = Path.Combine(raceDir, "saves", "4d530099.cxbxsave");
+                            var raceStamp = Path.Combine(raceDir, "stamps", "4d530099.stamp");
+                            Set("TitleId", "4d530099");
+                            Set("Pack", racePack);
+                            Set("StampPath", raceStamp);
+                            Set("ConflictDir", Path.Combine(raceDir, "conflicts"));
+                            Set("ReadConsole", (Func<List<(string, byte[])>>)(() =>
+                            {
+                                var read = Directory.GetFiles(consoleDir).Select(p => (Path.GetFileName(p), File.ReadAllBytes(p))).ToList();
+                                if (racing) File.WriteAllBytes(consoleFile, Noise(5100, 22));   // the game writing as it is read
+                                return read;
+                            }));
+                            Set("LayIn", (Action)(() => { }));
+                            Set("RemoveFromConsole", (Func<bool>)(() => false));
+                            var folderWitness = syncType.GetMethod("FolderWitness");
+                            Set("Witness", (Func<string>)(() => (string)folderWitness.Invoke(null, new object[] { consoleDir })));
+                            Set("Log", (Action<string>)(_ => { }));
+                            var listing = Enum.Parse(_asm.GetType("LbIntegrations.Xbox.XboxSyncMode", true), "Listing");
+                            string Run() => (string)syncType.GetMethod("Sync").Invoke(null, new[] { side, listing });
+                            long PackSaveLen()
+                            {
+                                using var z = System.IO.Compression.ZipFile.OpenRead(racePack);
+                                return z.Entries.FirstOrDefault(e => e.Name == "save.dat")?.Length ?? -1;
+                            }
+
+                            var r1 = Run();
+                            Check("a console written while read: captured from that read", r1 != null && r1.Contains("captured") && PackSaveLen() == 5000, r1);
+                            Check("... and NOT noted as agreeing with what it became (no seen=)", File.Exists(raceStamp) && !File.ReadAllText(raceStamp).Contains("seen="));
+                            racing = false;
+                            var r2 = Run();
+                            Check("the next listing reads it again and captures the newer save", r2 != null && r2.Contains("captured") && PackSaveLen() == 5100, r2);
+                            Check("... now noted in step", File.ReadAllText(raceStamp).Contains("seen="));
+                            Check("... and the listing after that has nothing to do", Run() == null);
+                        }
+                        finally { try { Directory.Delete(raceDir, true); } catch { } }
+                    }
+
                     var listed = (string)Call("CxbxSaves", "Capture", exe, tid);
                     Check("a listing hands the active save", listed == activePack);
                 }
