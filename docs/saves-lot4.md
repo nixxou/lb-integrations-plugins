@@ -91,3 +91,22 @@ integration must come through our hook, else the log says `HOOKS LOST`.
 - RetroArch's `TryGetSaveGroupInfo` on a vault copy derives another id from the file name (`saturn-�-01`).
 - So the plan's rule holds: once migrated, a card holds `{�,"native":"<GUID>"}` and the listing gives that id back
   (listed = persisted), never a by-name id that would stand beside it.
+
+## 3. Real tests (G:\LB1326, 10/10, steps 6-8 deployed, save probe set aside)
+
+- **Migration at start-up**: 18 persisted rows of 6 games given our ids at the first listing; the platform XML copied to
+  `Local\Plugins\.data\nixx-saves-backup\2026-10-10_14-37-51` first; the save probe's cards left as they are (their
+  owner is not certain with the probe set aside). Start-up scan 1.37 s (1.78 s watch-only).
+- **A change made by reflection does NOT reach the XML at a normal close** (measured: no platform file changed after a
+  start and a close). LaunchBox writes a game when it changes it itself: the migration lives in memory, redone (idempotent)
+  at each start, and a game's cards reach the XML in our form when LaunchBox saves that game (below).
+- **T1 passed (done-when)**: Zelda set to RetroArch. Game Saves listed, through RetroArch's desk, SUPER ZSNES's save and
+  ares's saves beside RetroArch's. The ares card's backup `-01.ram` restored: "restore of a ares save handed to ares",
+  ares's own restore wrote `Emulators\Nixx-ares\Saves\Super Famicom\...ram` (A964A373..., the backup's content);
+  RetroArch's `.srm` untouched (E40D8C35...). Live files before the test: `Backups\lbip-lot4-2026-10-10\Zelda-*-before-T1`.
+- **T2 (listing)**: Atlantis listed once per holder as `{"emu":"lb.retroarch","kind":"save","native":"saturn-atlantis
+  - the lost tales (fr) (disc 1)"}`. After the session the XML of Zelda and Atlantis holds our ids (Zelda's GUID cards
+  `{..."native":"710dbdc7..."}`, states `"kind":"state"`); rows and cards counted before/after: Zelda 18/6 = 18/6,
+  Atlantis 4/1 = 4/1 - nothing doubled, nothing split. Atlantis's restore not tried yet.
+- Left: T2's restore, T3 (Rolan's Curse, Pokemon's two cards), T4 (`stockIds` off then on), T5 (Zelda back on SUPER
+  ZSNES), T6 (Dolphin: needs a disc LaunchBox can read), T7 (PCSX2: none installed), the save probe put back.
