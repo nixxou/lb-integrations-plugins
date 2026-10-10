@@ -816,7 +816,10 @@ namespace LbIntegrations.Probe
             Check("... the others' cards still ours", notPs2.Any(c => ReferenceEquals(c.Row, rows[0])) && notPs2.Any(c => ReferenceEquals(c.Row, rows[3])));
             var onlyPs2Back = StockIdMigration.Plan(applied, StockOf, false, () => "NEW", null, e => e == "lb.pcsx2");
             Check("... and back for that one only", onlyPs2Back.Count == 1 && onlyPs2Back[0].GroupId == "pcsx2:SLUS-20062" && ReferenceEquals(onlyPs2Back[0].Row, applied[9]));
-            var byName = new List<PersistedRow> { R("z", StockIds.Encode("lb.retroarch", "", false, "z.srm", null), null, "retroarch.exe", "z.srm") };
+            // The card a listed row takes (StockDesk.PickCard, Codex review 10/10): one file can hold several games' saves.
+            Check("a listed row with its own id keeps it (a PCSX2 card per game on one .ps2)", StockDesk.PickCard("pcsx2:SLES-1", new[] { "{\"emu\":\"lb.pcsx2\",\"kind\":\"save\",\"native\":\"pcsx2:SLUS-2\"}" }) == null);
+            Check("a row listed with no id takes the one card at its place", StockDesk.PickCard("", new[] { "A", "A" }) == "A");
+            Check("... none when two cards are there", StockDesk.PickCard("", new[] { "A", "B" }) == null && StockDesk.PickCard(null, null) == null);            var byName = new List<PersistedRow> { R("z", StockIds.Encode("lb.retroarch", "", false, "z.srm", null), null, "retroarch.exe", "z.srm") };
             Check("back: a by-name card gets a fresh id", StockIdMigration.Plan(byName, StockOf, false, () => "NEW").Single().GroupId == "NEW");
         }
 

@@ -235,6 +235,14 @@ namespace LbIntegrations.Probe
             Expect("RetroArch's own row: its own code, ares never asked", ra.IsSaveActive(sat, raEmu.ApplicationPath) && fake.Calls.Count == 0, string.Join(",", fake.Calls));
             var ps2OnRa = WithId(sat, LbIntegrations.Saves.StockIds.Encode("lb.pcsx2", "pcsx2:SLUS-20062", false, "x", null)!);
             Expect("a PCSX2 row on RetroArch: matched as PCSX2 says (its twin, decoded there)", ra.UseSaveGroupIdForPersistedMatch(ps2OnRa), "false");
+            // Another Harmony over ONE of RetroArch's hooks later on (Codex review 10/10): the self-check of every decoding
+            // method catches it, RetroArch is left in its own form.
+            LbIntegrations.Saves.StockDesk.LostForTests = (emu, m) => emu == "lb.retroarch" && m == "IsSaveActive";
+            LbIntegrations.Saves.StockDesk.Verify(again: true);
+            LbIntegrations.Saves.StockDesk.LostForTests = null;
+            var lostWhy = LbIntegrations.Saves.StockDesk.IncompleteWhy("lb.retroarch") ?? "";
+            Expect("RetroArch's IsSaveActive hook gone, the others in: incomplete", lostWhy.Contains("hooks lost on IsSaveActive"), lostWhy);
+            Expect("... its rows no longer routed (desk off): an ares row is RetroArch's own code's", ra.IsSaveActive(aresRow, raEmu.ApplicationPath), "false");
             Console.WriteLine("  " + (bad == 0 ? "all good" : bad + " FAILURE(S)"));
             Console.WriteLine();
             Console.WriteLine("  scratch left in " + scratch);

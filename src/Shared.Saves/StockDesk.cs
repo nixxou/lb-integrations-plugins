@@ -178,43 +178,68 @@ namespace LbIntegrations.Saves
         /// <summary>The id of the self-check's row - never a real save.</summary>
         private const string Sentinel = "lbip-stock-desk-sentinel";
 
-        /// <summary>Once per process, from the first listing of a desk: are the hooks still in? MEASURED 10/10: another plugin
-        /// patching the same methods with its OWN copy of Harmony (the save probe of the sandbox) built its replacement with
-        /// its hooks only - ours were gone, silently. A row with the sentinel id handed to RetroArch's (and Dolphin's, PCSX2's)
-        /// UseSaveGroupIdForPersistedMatch must come through our hook; said out loud when it does not.</summary>
-        public static void Verify()
+
+        /// <summary>Are the hooks still in? MEASURED 10/10: another plugin patching the same methods with its OWN copy of Harmony
+        /// (the save probe of the sandbox) built its replacement with its hooks only - ours were gone, silently. A sentinel row
+        /// is handed to every row method that decodes an id (Codex review 10/10: one method only proved nothing about the
+        /// others); each hook notes it and returns at once - the integration's own code never runs on it (its file does not
+        /// exist either, should a hook be gone). At the first listing, then before each one-game listing (Game Saves): a
+        /// plugin patching later is caught before that game's cards are used, and they get their own ids back.</summary>
+        public static void Verify(bool again = false)
         {
             lock (string.Intern(Marker + "|verify"))
             {
-                if (AppDomain.CurrentDomain.GetData(Marker + "|verified") != null) return;
+                bool done = AppDomain.CurrentDomain.GetData(Marker + "|verified") != null;
+                if (done && !again) return;
                 AppDomain.CurrentDomain.SetData(Marker + "|verified", true);
+                again = done;
             }
             try
             {
+                var file = Path.Combine(Path.GetTempPath(), "lbip-stock-desk-sentinel-never-there", "sentinel.sav");
                 foreach (var (emu, plugin) in SaveRouter.Stock())
                 {
-                    if (!Integrations.Any(i => i.Emu == emu) || AppDomain.CurrentDomain.GetData(Marker + "|" + emu) == null) continue;
-                    AppDomain.CurrentDomain.SetData(Marker + "|seen", null);
-                    try { plugin.UseSaveGroupIdForPersistedMatch(new GameSaveGame { SaveGroupId = Sentinel, FileLocation = Sentinel }); } catch { }
-                    if (AppDomain.CurrentDomain.GetData(Marker + "|seen") as string == emu) SaveRouter.Say("[stock] " + emu + ": hooks in");
-                    else
+                    if (!Integrations.Any(i => i.Emu == emu) || AppDomain.CurrentDomain.GetData(Marker + "|" + emu) == null || !Complete(emu)) continue;
+                    var row = new GameSaveGame { SaveGroupId = Sentinel, FileLocation = file };
+                    var calls = new (string Method, Action Call)[]
                     {
-                        Incomplete(emu, "hooks lost - another Harmony patched it after the pack");
-                        SaveRouter.Say("[stock] " + emu + ": HOOKS LOST - another plugin patched LaunchBox's " + emu + " with its own Harmony "
-                                       + "after the pack: its desk is off, the cards get their own ids back");
+                        ("AddSaveFile", () => plugin.AddSaveFile(new AddSaveArgs { SaveToAdd = row })),
+                        ("RemoveSave", () => plugin.RemoveSave(row)),
+                        ("IsSaveActive", () => plugin.IsSaveActive(row, "")),
+                        ("IsSaveContainer", () => plugin.IsSaveContainer(row)),
+                        ("TryBackupSave", () => plugin.TryBackupSave(row, "", "", out _)),
+                        ("UseSaveGroupIdForPersistedMatch", () => plugin.UseSaveGroupIdForPersistedMatch(row)),
+                        ("TryComputeSaveSignature", () => plugin.TryComputeSaveSignature(row, "", out _)),
+                        ("TryGetSaveGroupInfo", () => plugin.TryGetSaveGroupInfo(row, file, out _, out _)),
+                    };
+                    var lost = new List<string>();
+                    foreach (var (method, call) in calls)
+                    {
+                        AppDomain.CurrentDomain.SetData(Marker + "|seen", null);
+                        try { call(); } catch { }
+                        if (AppDomain.CurrentDomain.GetData(Marker + "|seen") as string != emu + "|" + method) lost.Add(method);
                     }
+                    if (lost.Count == 0) { if (!again) SaveRouter.Say("[stock] " + emu + ": hooks in"); continue; }
+                    Incomplete(emu, "hooks lost on " + string.Join(", ", lost) + " - another Harmony patched it after the pack");
+                    SaveRouter.Say("[stock] " + emu + ": HOOKS LOST on " + string.Join(", ", lost) + " - another plugin patched LaunchBox's "
+                                   + emu + " with its own Harmony after the pack: its desk is off, the cards get their own ids back");
                 }
             }
             catch (Exception ex) { SaveRouter.Say("[stock] self-check failed: " + ex.Message); }
         }
 
-        /// <summary>True (and noted for Verify) when <paramref name="row"/> is the self-check's.</summary>
-        private static bool IsSentinel(object instance, GameSaveBase? row)
+        /// <summary>True (and noted for Verify) when <paramref name="row"/> is the self-check's: the hook returns at once.</summary>
+        private static bool IsSentinel(object instance, GameSaveBase? row, [System.Runtime.CompilerServices.CallerMemberName] string hook = "")
         {
             if (row?.SaveGroupId != Sentinel) return false;
-            AppDomain.CurrentDomain.SetData(Marker + "|seen", EmuOf(instance));
+            var name = hook.EndsWith("In", StringComparison.Ordinal) ? hook.Substring(0, hook.Length - 2) : hook;
+            if (LostForTests?.Invoke(EmuOf(instance) ?? "", name) == true) return false;   // as if this hook were gone
+            AppDomain.CurrentDomain.SetData(Marker + "|seen", EmuOf(instance) + "|" + (hook.EndsWith("In", StringComparison.Ordinal) ? hook.Substring(0, hook.Length - 2) : hook));
             return true;
         }
+
+        /// <summary>The probe's stand-in for another Harmony: the hooks of these (emu, method) behave as if they were gone.</summary>
+        internal static Func<string, string, bool>? LostForTests;
 
         /// <summary>The probe's failure injection: true for an (emu, method) whose patch must fail.</summary>
         internal static Func<string, string, bool>? FailForTests;
@@ -311,6 +336,7 @@ namespace LbIntegrations.Saves
         private static bool RowIn<T>(object instance, ref GameSaveBase row, ref T result, Func<SaveOwnerRoute, GameSaveBase, T> forward,
                                      [System.Runtime.CompilerServices.CallerMemberName] string method = "")
         {
+            if (IsSentinel(instance, row, method)) return false;
             try
             {
                 if (Foreign(instance, row, out var emu) is { } r)
@@ -368,7 +394,6 @@ namespace LbIntegrations.Saves
 
         private static bool UseSaveGroupIdForPersistedMatchIn(object __instance, ref GameSaveBase __0, ref bool __result)
         {
-            if (IsSentinel(__instance, __0)) return true;
             return RowIn(__instance, ref __0, ref __result, SaveForward.UseSaveGroupIdForPersistedMatch);
         }
 
@@ -377,6 +402,7 @@ namespace LbIntegrations.Saves
         private static bool TryGetSaveGroupInfoIn(object __instance, ref GameSaveBase __0, string __1, ref string __2, ref string __3, ref bool __result, out Inbound __state)
         {
             __state = default;
+            if (IsSentinel(__instance, __0)) return false;
             try
             {
                 if (Foreign(__instance, __0, out var emu) is { } r)
@@ -443,6 +469,7 @@ namespace LbIntegrations.Saves
         private static bool AddSaveFileIn(object __instance, ref AddSaveArgs __0, ref AddSaveResponse __result, out Inbound __state)
         {
             __state = default;
+            if (IsSentinel(__instance, __0?.SaveToAdd)) { __result = new AddSaveResponse("self-check"); return false; }
             try
             {
                 // Another emulator's save restored from this game's card: by its owner, into its owner's folders.
@@ -490,7 +517,8 @@ namespace LbIntegrations.Saves
             try
             {
                 if (!SaveRouter.LaunchBoxHost) return;
-                Verify();
+                // Every decoding hook still in, at the first listing and before each one-game listing (Game Saves).
+                Verify(again: args?.Games?.Count == 1);
                 // Our ids only for an integration whose every row method decodes them (Codex review 10/10): one not fully
                 // hooked - a method gone, a patch refused, another Harmony over ours - gets its cards' own ids back.
                 bool on = LbIntegrations.Compat.Compat.On("stockIds");
@@ -521,7 +549,7 @@ namespace LbIntegrations.Saves
                 if (Encoding(emu) && __result?.WasSuccess == true && rows.Count > 0)
                 {
                     var cards = PersistedCards(__0, emu);
-                    var ours = rows.Select(r => r == null ? r! : Encode(emu, r, cards.TryGetValue(CardKey(r.FileLocation, r.AdditionalApplicationId), out var c) ? c : null)).ToList();
+                    var ours = rows.Select(r => r == null ? r! : Encode(emu, r, PickCard(r.SaveGroupId, cards.TryGetValue(CardKey(r.GameId, r.FileLocation, r.AdditionalApplicationId), out var c) ? c : null))).ToList();
                     if (!ours.SequenceEqual(rows)) __result = new GetSavesResponse(ours);
                     rows = ours;
                 }
@@ -551,11 +579,22 @@ namespace LbIntegrations.Saves
             catch (Exception ex) { SaveRouter.Say("[stock] rows left as listed: " + ex.Message); }
         }
 
-        /// <summary>The cards of this integration already in our form, persisted on the listed games (and their versions):
-        /// path and version → id.</summary>
-        private static Dictionary<string, string> PersistedCards(GetSavesArgs? args, string emu)
+        /// <summary>The persisted card a listed row takes: ONLY for a row the integration listed with no id of its own (RetroArch's
+        /// saves and states - LaunchBox gave the card its GUID), and only when one card of this game, file and version holds
+        /// it. A row with its own id keeps it - one file can hold several games' saves (a PCSX2 memory card: a pcsx2:<serial>
+        /// card per game, Codex review 10/10). Two candidates: none taken, the row gets its own by-name id.</summary>
+        internal static string? PickCard(string? listedId, IReadOnlyCollection<string>? candidates)
         {
-            var cards = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (!string.IsNullOrEmpty(listedId) || candidates == null) return null;
+            var distinct = candidates.Distinct(StringComparer.Ordinal).ToList();
+            return distinct.Count == 1 ? distinct[0] : null;
+        }
+
+        /// <summary>The cards of this integration already in our form, persisted on the listed games (and their versions):
+        /// game, path and version → their ids.</summary>
+        private static Dictionary<string, List<string>> PersistedCards(GetSavesArgs? args, string emu)
+        {
+            var cards = new Dictionary<string, List<string>>(StringComparer.Ordinal);
             var games = new List<IGame>();
             if (args?.Games != null) games.AddRange(args.Games.Where(g => g != null));
             foreach (var a in args?.AdditionalApplications ?? (IReadOnlyCollection<IAdditionalApplication>)Array.Empty<IAdditionalApplication>())
@@ -563,11 +602,15 @@ namespace LbIntegrations.Saves
             foreach (var g in games)
                 foreach (var p in StockIdMigration.Read(g))
                     if (p.SaveGroupId != null && StockIds.TryDecode(p.SaveGroupId, emu, out _))
-                        cards[CardKey(p.FilePath, p.AppId)] = p.SaveGroupId;
+                    {
+                        var key = CardKey(p.GameId, p.FilePath, p.AppId);
+                        if (!cards.TryGetValue(key, out var list)) cards[key] = list = new List<string>();
+                        list.Add(p.SaveGroupId);
+                    }
             return cards;
         }
 
-        private static string CardKey(string? path, string? appId)
+        private static string CardKey(string? gameId, string? path, string? appId)
         {
             string full;
             try
@@ -576,7 +619,7 @@ namespace LbIntegrations.Saves
                 full = string.IsNullOrWhiteSpace(path) ? "" : Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(root, path));
             }
             catch { full = path ?? ""; }
-            return full.ToLowerInvariant() + "|" + (appId ?? "").ToLowerInvariant();
+            return (gameId ?? "").ToLowerInvariant() + "|" + full.ToLowerInvariant() + "|" + (appId ?? "").ToLowerInvariant();
         }
 
         private static string Row(GameSaveBase r)
