@@ -133,3 +133,7 @@ integration must come through our hook, else the log says `HOOKS LOST`.
   held native ids then (Game Boy 6, Saturn 4; Zelda's 8 kept our form in the XML all along, LaunchBox wrote nothing for
   it while off - read back into their own form in memory, as designed).
 - Seen: the Compatibility page's confirmation box can open behind LaunchBox's window (to look at in Menus).
+- **T5 passed** (lot 3 not broken): Zelda set back to SUPER ZSNES (XML copy `�before-T5`). RetroArch's card listed by
+  SUPER ZSNES's desk in our form (backups `-01` = the live file, Active; `.srm` of 04/10). The `.srm` restored: "restore
+  of a lb.retroarch save handed to the desk's own lb.retroarch steps" (StockRestore, our id decoded), RetroArch's live
+  `.srm` = 7D00A454 (the backup), SUPER ZSNES's untouched (E40D8C35). Live files before: `Zelda-*-before-T5`.
