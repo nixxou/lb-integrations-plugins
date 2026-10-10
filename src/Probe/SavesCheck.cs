@@ -810,6 +810,12 @@ namespace LbIntegrations.Probe
             }
             Check("back: every id and lineage as it was, exactly", Enumerable.Range(0, rows.Count).All(Same),
                   string.Join(" | ", Enumerable.Range(0, rows.Count).Where(i => !Same(i)).Select(i => rows[i].GameId)));
+            // An integration not fully hooked (Codex review 10/10): its cards stay - or go back - in its own form, the others not.
+            var notPs2 = StockIdMigration.Plan(rows, StockOf, true, () => "NEW", null, e => e != "lb.pcsx2");
+            Check("one integration left out: its card stays native", !notPs2.Any(c => ReferenceEquals(c.Row, rows[9])));
+            Check("... the others' cards still ours", notPs2.Any(c => ReferenceEquals(c.Row, rows[0])) && notPs2.Any(c => ReferenceEquals(c.Row, rows[3])));
+            var onlyPs2Back = StockIdMigration.Plan(applied, StockOf, false, () => "NEW", null, e => e == "lb.pcsx2");
+            Check("... and back for that one only", onlyPs2Back.Count == 1 && onlyPs2Back[0].GroupId == "pcsx2:SLUS-20062" && ReferenceEquals(onlyPs2Back[0].Row, applied[9]));
             var byName = new List<PersistedRow> { R("z", StockIds.Encode("lb.retroarch", "", false, "z.srm", null), null, "retroarch.exe", "z.srm") };
             Check("back: a by-name card gets a fresh id", StockIdMigration.Plan(byName, StockOf, false, () => "NEW").Single().GroupId == "NEW");
         }

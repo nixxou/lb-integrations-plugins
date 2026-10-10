@@ -55,7 +55,7 @@ namespace LbIntegrations.Saves
         /// integration ("lb.retroarch") that drives every emulator of the library with that exe name, when no pack plugin
         /// does; null otherwise. <paramref name="freshGuid"/>: a new id for a card that had none (back only).</summary>
         public static IReadOnlyList<Change> Plan(IReadOnlyList<PersistedRow> rows, Func<string?, string?> stockOfExe, bool forward,
-                                                 Func<string> freshGuid, Action<string>? say = null)
+                                                 Func<string> freshGuid, Action<string>? say = null, Func<string?, bool>? only = null)
         {
             var changes = new List<Change>();
             foreach (var game in rows.GroupBy(r => r.GameId, StringComparer.OrdinalIgnoreCase))
@@ -66,7 +66,7 @@ namespace LbIntegrations.Saves
                 {
                     var id = card.Key;
                     if (id.Length == 0) continue;
-                    var next = forward ? Forward(id, card.ToList(), stockOfExe, say) : Back(id, freshGuid);
+                    var next = forward ? Forward(id, card.ToList(), stockOfExe, say, only) : Back(id, freshGuid, only);
                     if (next != null && next != id) map[id] = next;
                 }
                 if (map.Count == 0) continue;
@@ -83,7 +83,7 @@ namespace LbIntegrations.Saves
             return changes;
         }
 
-        private static string? Forward(string id, List<PersistedRow> card, Func<string?, string?> stockOfExe, Action<string>? say)
+        private static string? Forward(string id, List<PersistedRow> card, Func<string?, string?> stockOfExe, Action<string>? say, Func<string?, bool>? only)
         {
             var owner = SaveOwner.Of(id);
             string? emu;
@@ -106,13 +106,15 @@ namespace LbIntegrations.Saves
                 default:
                     return null;                             // a pack plugin's, LiteBox's
             }
+            if (only != null && !only(emu)) return null;   // an integration left in its own form
             return StockIds.Encode(emu!, id, card.All(r => r.IsState), null, null);
         }
 
-        private static string? Back(string id, Func<string> freshGuid)
+        private static string? Back(string id, Func<string> freshGuid, Func<string?, bool>? only)
         {
             var owner = SaveOwner.Of(id);
             if (owner.Kind != SaveOwnerKind.LaunchBox || id[0] != '{') return null;
+            if (only != null && !only(owner.Name)) return null;
             return StockIds.Reverse(id, freshGuid);
         }
 
@@ -124,7 +126,7 @@ namespace LbIntegrations.Saves
         /// <summary>One pass over <paramref name="games"/> (every game of the library when null): the changes made, or -1 when
         /// nothing could be read. Nothing written on the disk but the copies of the platform XML, made before the first change
         /// of the process.</summary>
-        public static int Run(IEnumerable<IGame>? games, bool forward, Action<string> say)
+        public static int Run(IEnumerable<IGame>? games, bool forward, Action<string> say, Func<string?, bool>? only = null)
         {
             lock (Gate)
             {
@@ -133,7 +135,7 @@ namespace LbIntegrations.Saves
                     var all = (games ?? PluginHelper.DataManager?.GetAllGames() ?? Array.Empty<IGame>()).Where(g => g != null).ToList();
                     var rows = new List<PersistedRow>();
                     foreach (var g in all) rows.AddRange(Read(g));
-                    var changes = Plan(rows, StockOfExe, forward, () => Guid.NewGuid().ToString("N"), say);
+                    var changes = Plan(rows, StockOfExe, forward, () => Guid.NewGuid().ToString("N"), say, only);
                     if (changes.Count == 0) return 0;
                     BackUpXml(say);
                     int done = 0;

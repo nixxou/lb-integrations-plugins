@@ -121,24 +121,42 @@ namespace LbIntegrations.Saves
                     {
                         var sdk = typeof(EmulatorPlugin).GetMethods(BindingFlags.Public | BindingFlags.Instance).FirstOrDefault(x => x.Name == m && x.IsVirtual);
                         var found = sdk == null ? null : type.GetMethod(m, BindingFlags.Public | BindingFlags.Instance, null, sdk.GetParameters().Select(p => p.ParameterType).ToArray(), null);
-                        if (found == null) { said.Add(m + " missing"); continue; }
+                        if (found == null) { said.Add(m + " missing"); Incomplete(entry.Emu, m + " missing"); continue; }
                         bool own = found.DeclaringType != typeof(EmulatorPlugin);
                         // The SDK's body is patched where it is declared, once for all three; the hooks filter on the instance.
                         var target = own ? found : sdk!;
-                        if (!own && !SdkOnce("sdk." + m)) { said.Add(m + " (sdk)"); continue; }
+                        if (!own && !SdkOnce("sdk." + m))
+                        {
+                            // Patched (or failed) for another integration: a failure there is this one's too.
+                            if (AppDomain.CurrentDomain.GetData(Marker + "|sdkfail|" + m) is string why) { said.Add(m + " (sdk) NOT hooked"); Incomplete(entry.Emu, m + ": " + why); }
+                            else said.Add(m + " (sdk)");
+                            continue;
+                        }
                         // Typed hooks, one pair per method (<m>In, <m>Out): a hook taking object[] __args loses the out values
                         // (measured 10/10: RetroArch's TryGetSaveGroupInfo then gave back an empty id).
                         var pre = AccessTools.Method(typeof(StockDesk), m + "In");
                         var post = AccessTools.Method(typeof(StockDesk), m + "Out");
                         if (pre == null && post == null) { said.Add(m + " (nothing to do yet)"); continue; }
-                        h.Patch(target,
-                            prefix: pre == null ? null : new HarmonyMethod(pre) { priority = Priority.First },
-                            postfix: post == null ? null : new HarmonyMethod(post) { priority = Priority.Last });
+                        try
+                        {
+                            if (FailForTests?.Invoke(entry.Emu, m) == true) throw new InvalidOperationException("failure injected by the probe");
+                            h.Patch(target,
+                                prefix: pre == null ? null : new HarmonyMethod(pre) { priority = Priority.First },
+                                postfix: post == null ? null : new HarmonyMethod(post) { priority = Priority.Last });
+                        }
+                        catch (Exception ex)
+                        {
+                            if (!own) AppDomain.CurrentDomain.SetData(Marker + "|sdkfail|" + m, ex.Message);
+                            throw;
+                        }
                         said.Add(m + (own ? "" : " (sdk)"));
                     }
-                    catch (Exception ex) { said.Add(m + " NOT hooked (" + ex.Message + ")"); }
+                    catch (Exception ex) { said.Add(m + " NOT hooked (" + ex.Message + ")"); Incomplete(entry.Emu, m + ": " + ex.Message); }
                 }
                 SaveRouter.Say("[stock] " + entry.Emu + " hooked (" + Format + "): " + string.Join(", ", said));
+                if (IncompleteWhy(entry.Emu) is string off)
+                    SaveRouter.Say("[stock] " + entry.Emu + ": NOT every row method hooked (" + off + ") - its desk is off and its cards keep "
+                                   + "or get back their own ids this session");
                 SaveRouter.Say("[stock]    " + Where(a) + ", " + Copies(name) + " loaded");
             }
         }
@@ -181,7 +199,7 @@ namespace LbIntegrations.Saves
                     if (AppDomain.CurrentDomain.GetData(Marker + "|seen") as string == emu) SaveRouter.Say("[stock] " + emu + ": hooks in");
                     else
                     {
-                        AppDomain.CurrentDomain.SetData(Marker + "|lost", emu);
+                        Incomplete(emu, "hooks lost - another Harmony patched it after the pack");
                         SaveRouter.Say("[stock] " + emu + ": HOOKS LOST - another plugin patched LaunchBox's " + emu + " with its own Harmony "
                                        + "after the pack: its desk is off, the cards get their own ids back");
                     }
@@ -197,6 +215,23 @@ namespace LbIntegrations.Saves
             AppDomain.CurrentDomain.SetData(Marker + "|seen", EmuOf(instance));
             return true;
         }
+
+        /// <summary>The probe's failure injection: true for an (emu, method) whose patch must fail.</summary>
+        internal static Func<string, string, bool>? FailForTests;
+
+        /// <summary>An integration whose row methods are not all hooked (a method gone, a patch refused, another Harmony over
+        /// ours): its own code would see our ids undecoded (Codex review 10/10: PCSX2 decides by its pcsx2: prefix). Its desk
+        /// is off and its cards keep - or get back - their own ids, for the session; the others go on. Process-wide.</summary>
+        internal static void Incomplete(string emu, string why)
+        {
+            lock (string.Intern(Marker + "|off"))
+                AppDomain.CurrentDomain.SetData(Marker + "|off|" + emu, AppDomain.CurrentDomain.GetData(Marker + "|off|" + emu) is string was ? was + "; " + why : why);
+        }
+
+        internal static string? IncompleteWhy(string? emu) => emu == null ? null : AppDomain.CurrentDomain.GetData(Marker + "|off|" + emu) as string;
+
+        /// <summary>This integration's rows in our form (and its desk on): every row method hooked.</summary>
+        internal static bool Complete(string? emu) => emu != null && IncompleteWhy(emu) == null;
 
         /// <summary>True the first time a SDK body is asked for, in the whole process.</summary>
         private static bool SdkOnce(string key)
@@ -229,7 +264,7 @@ namespace LbIntegrations.Saves
 
         /// <summary>Our ids given out: the `stockIds` switch, and only to LaunchBox (LiteBox reads their own until lot 8).
         /// Decoding never stops: a card already in our form must keep working whatever is switched.</summary>
-        private static bool Encoding => LbIntegrations.Compat.Compat.On("stockIds") && SaveRouter.LaunchBoxHost && AppDomain.CurrentDomain.GetData(Marker + "|lost") == null;
+        private static bool Encoding(string? emu) => LbIntegrations.Compat.Compat.On("stockIds") && SaveRouter.LaunchBoxHost && Complete(emu);
 
         /// <summary>What a decoded row came in as, for the way out.</summary>
         private struct Inbound
@@ -267,7 +302,7 @@ namespace LbIntegrations.Saves
         private static SaveOwnerRoute? Foreign(object instance, GameSaveBase? row, out string? emu)
         {
             emu = EmuOf(instance);
-            if (emu == null || row == null || !LbIntegrations.Compat.Compat.On("stockDesk")) return null;
+            if (emu == null || row == null || !LbIntegrations.Compat.Compat.On("stockDesk") || !Complete(emu)) return null;
             try { return SaveRouter.OwnerForStock(row, emu); } catch { return null; }
         }
 
@@ -362,7 +397,7 @@ namespace LbIntegrations.Saves
         {
             try
             {
-                if (EmuOf(__instance) is { } emu && LbIntegrations.Compat.Compat.On("stockDesk") && SaveRouter.OwnerOfPath(__0, (EmulatorPlugin)__instance, emu) is { } r)
+                if (EmuOf(__instance) is { } emu && LbIntegrations.Compat.Compat.On("stockDesk") && Complete(emu) && SaveRouter.OwnerOfPath(__0, (EmulatorPlugin)__instance, emu) is { } r)
                 { __result = SaveForward.IsSecondarySaveFile(r, __0); return false; }
             }
             catch { }
@@ -373,7 +408,7 @@ namespace LbIntegrations.Saves
         {
             try
             {
-                if (EmuOf(__instance) is { } emu && LbIntegrations.Compat.Compat.On("stockDesk") && SaveRouter.OwnerOfPath(__0, (EmulatorPlugin)__instance, emu) is { } r)
+                if (EmuOf(__instance) is { } emu && LbIntegrations.Compat.Compat.On("stockDesk") && Complete(emu) && SaveRouter.OwnerOfPath(__0, (EmulatorPlugin)__instance, emu) is { } r)
                 { __result = SaveForward.GetCompanionSaveFiles(r, __0); return false; }
             }
             catch { }
@@ -387,7 +422,7 @@ namespace LbIntegrations.Saves
             try
             {
                 var given = __2;
-                if (!__result || string.IsNullOrEmpty(__2) || !Encoding || EmuOf(__instance) is not { } emu) { Answered(__instance, "TryGetSaveGroupInfo", __0, __result, "id=\"" + given + "\""); return; }
+                if (!__result || string.IsNullOrEmpty(__2) || EmuOf(__instance) is not { } emu || !Encoding(emu)) { Answered(__instance, "TryGetSaveGroupInfo", __0, __result, "id=\"" + given + "\""); return; }
                 __2 = __state.Json != null && __2 == __state.Native ? __state.Json
                     : StockIds.Encode(emu, __2, __0 is GameSaveState, Path.GetFileName(__0?.FileLocation ?? ""), (__0 as GameSaveState)?.Slot) ?? __2;
                 Answered(__instance, "TryGetSaveGroupInfo", __0, __result, "id=\"" + given + "\" given as \"" + __2 + "\"");
@@ -430,7 +465,7 @@ namespace LbIntegrations.Saves
         {
             try
             {
-                if (!Encoding || EmuOf(__instance) is not { } emu || __result?.WasSuccess != true || __result.SaveAdded is not { } added) return;
+                if (EmuOf(__instance) is not { } emu || !Encoding(emu) || __result?.WasSuccess != true || __result.SaveAdded is not { } added) return;
                 var id = StockIds.Result(emu, __state.Native, __state.Json, added.SaveGroupId, added is GameSaveState,
                                          Path.GetFileName(added.FileLocation ?? ""), (added as GameSaveState)?.Slot);
                 var ours = Encode(emu, added, id);
@@ -456,16 +491,20 @@ namespace LbIntegrations.Saves
             {
                 if (!SaveRouter.LaunchBoxHost) return;
                 Verify();
-                // Our ids only while the hooks decode them: hooks lost (another Harmony), the cards get their own back.
-                bool forward = LbIntegrations.Compat.Compat.On("stockIds") && AppDomain.CurrentDomain.GetData(Marker + "|lost") == null;
+                // Our ids only for an integration whose every row method decodes them (Codex review 10/10): one not fully
+                // hooked - a method gone, a patch refused, another Harmony over ours - gets its cards' own ids back.
+                bool on = LbIntegrations.Compat.Compat.On("stockIds");
+                bool Ours(string? emu) => on && Complete(emu);
                 bool first;
                 lock (string.Intern(Marker + "|ids"))
                 {
                     first = AppDomain.CurrentDomain.GetData(Marker + "|ids") == null;
-                    if (first) AppDomain.CurrentDomain.SetData(Marker + "|ids", forward ? "forward" : "back");
+                    if (first) AppDomain.CurrentDomain.SetData(Marker + "|ids", "done");
                 }
-                if (first) { StockIdMigration.Run(null, forward, m => SaveRouter.Say("[stock] " + m)); return; }
-                if (args?.Games?.Count == 1) StockIdMigration.Run(args.Games, forward, m => SaveRouter.Say("[stock] " + m));
+                IEnumerable<IGame>? games = first ? null : args?.Games?.Count == 1 ? args.Games : null;
+                if (!first && games == null) return;
+                StockIdMigration.Run(games, true, m => SaveRouter.Say("[stock] " + m), e => Ours(e));
+                StockIdMigration.Run(games, false, m => SaveRouter.Say("[stock] " + m), e => !Ours(e));
             }
             catch (Exception ex) { SaveRouter.Say("[stock] ids not put in step: " + ex.Message); }
         }
@@ -479,7 +518,7 @@ namespace LbIntegrations.Saves
                 if (EmuOf(__instance) is not { } emu) return;
                 var rows = __result?.FoundSaves ?? (IReadOnlyCollection<GameSaveBase>)Array.Empty<GameSaveBase>();
                 int games = __0?.Games?.Count ?? 0;
-                if (Encoding && __result?.WasSuccess == true && rows.Count > 0)
+                if (Encoding(emu) && __result?.WasSuccess == true && rows.Count > 0)
                 {
                     var cards = PersistedCards(__0, emu);
                     var ours = rows.Select(r => r == null ? r! : Encode(emu, r, cards.TryGetValue(CardKey(r.FileLocation, r.AdditionalApplicationId), out var c) ? c : null)).ToList();
@@ -488,7 +527,7 @@ namespace LbIntegrations.Saves
                 }
                 // The other emulators' saves of these games (step 7), as the pack's desks list them. Nothing under LiteBox
                 // (SaveRouter.Active), nothing when a desk asks this integration (the nesting guard of OthersFor).
-                if (LbIntegrations.Compat.Compat.On("stockDesk") && __result?.WasSuccess != false && __0 != null)
+                if (LbIntegrations.Compat.Compat.On("stockDesk") && Complete(emu) && __result?.WasSuccess != false && __0 != null)
                 {
                     List<GameSaveBase> others;
                     using (SaveScan.Begin((__0.Games?.Count ?? 0) + (__0.AdditionalApplications?.Count ?? 0)))

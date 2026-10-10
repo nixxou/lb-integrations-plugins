@@ -183,7 +183,10 @@ namespace LbIntegrations.Probe
                        + "/" + Try(() => p.TryGetSaveGroupInfo(r, r.FileLocation, out var g, out _) + " " + g) + "/" + Try(() => string.Join(",", p.GetCompanionSaveFiles(r.FileLocation).Select(Path.GetFileName)));
             }
             var before = raRows.Concat(pcsx2Rows).Select(r => Answers(r.EmulatorFileName == "pcsx2-qt.exe" ? pcsx2 : ra, r, r.EmulatorFileName == "pcsx2-qt.exe" ? pcsx2Emu.ApplicationPath : raEmu.ApplicationPath)).ToList();
+            // One of PCSX2's row methods made to fail its patch (Codex review 10/10): PCSX2 alone is left in its own form.
+            LbIntegrations.Saves.StockDesk.FailForTests = (emu, m) => emu == "lb.pcsx2" && m == "IsSaveActive";
             LbIntegrations.Saves.StockDesk.Install();
+            LbIntegrations.Saves.StockDesk.FailForTests = null;
             LbIntegrations.Saves.StockDesk.Install();   // twice: hooked once
             LbIntegrations.Saves.StockDesk.Verify();    // the self-check: each integration says its hooks are in
             var after = raRows.Concat(pcsx2Rows).Select(r => Answers(r.EmulatorFileName == "pcsx2-qt.exe" ? pcsx2 : ra, r, r.EmulatorFileName == "pcsx2-qt.exe" ? pcsx2Emu.ApplicationPath : raEmu.ApplicationPath)).ToList();
@@ -211,6 +214,10 @@ namespace LbIntegrations.Probe
             Expect("PCSX2: ... a container, as its own", pcsx2.IsSaveContainer(ps2), "false");
             var otherEmu = WithId(sat, LbIntegrations.Saves.StockIds.Encode("lb.pcsx2", Native, false, "x", null)!);
             Expect("another integration's id is not decoded (RetroArch: no match)", !ra.UseSaveGroupIdForPersistedMatch(otherEmu), "true");
+            var why = LbIntegrations.Saves.StockDesk.IncompleteWhy("lb.pcsx2") ?? "";
+            Expect("PCSX2 with a row method not hooked (failure injected on IsSaveActive): incomplete", why.Contains("IsSaveActive: failure injected"), why);
+            Expect("... RetroArch goes on, fully hooked", LbIntegrations.Saves.StockDesk.Complete("lb.retroarch"), LbIntegrations.Saves.StockDesk.IncompleteWhy("lb.retroarch") ?? "");
+            Console.WriteLine("  (outside LaunchBox Dolphin is incomplete too - its module initializer: " + (LbIntegrations.Saves.StockDesk.IncompleteWhy("lb.dolphin") ?? "complete") + ")");
 
             // Step 7: another emulator's row on RetroArch goes to its owner - a pack plugin (a stand-in registered as "ares"),
             // another LaunchBox integration (PCSX2's twin) - and its own still reach its own code.

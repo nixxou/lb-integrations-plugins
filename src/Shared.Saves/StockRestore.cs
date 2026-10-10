@@ -65,7 +65,7 @@ namespace LbIntegrations.Saves
                     args = new AddSaveArgs { SaveToAdd = SaveRows.WithIds(row, native, StockIds.TryDecode(row.MatchLineageId, route.Emu, out var l) ? l : row.MatchLineageId), ShouldOverwriteFunc = args.ShouldOverwriteFunc };
                 }
                 var done = route.Emu == RetroArch ? AddRetroArch(route, args!, log) : AddDolphin(route, args!, log);
-                if (done?.WasSuccess == true && done.SaveAdded is { } added && LbIntegrations.Compat.Compat.On("stockIds") && SaveRouter.LaunchBoxHost)
+                if (done?.WasSuccess == true && done.SaveAdded is { } added && LbIntegrations.Compat.Compat.On("stockIds") && SaveRouter.LaunchBoxHost && StockDesk.Complete(route.Emu))
                 {
                     var id = StockIds.Result(route.Emu, sent, inbound, added.SaveGroupId, added is GameSaveState, Path.GetFileName(added.FileLocation ?? ""), (added as GameSaveState)?.Slot);
                     if (id != null && id != added.SaveGroupId) done = new AddSaveResponse(SaveRows.WithIds(added, id, StockIds.Lineage(added.MatchLineageId, added.SaveGroupId, id)));
