@@ -340,6 +340,16 @@ namespace LbIntegrations.Probe
                     Check("... its stamp with the console, nothing beside the save", File.Exists(stampFile)
                           && !Directory.GetFiles(Path.GetDirectoryName(activePack)).Any(f => f.EndsWith(".stamp") || f.EndsWith(".synced")));
                     Check("... the next launch: nothing to do", S("Launch") == null);
+                    // The shortcut (XboxSaveSync, 10/10): in step, the stamp notes what both looked like, and a listing then reads
+                    // nothing - until a size or a date moves (the cases below). A file put back with its old size AND date is missed
+                    // by a listing; the next launch, which reads everything, finds it.
+                    Check("in step: the stamp notes what the save and the console looked like", File.ReadAllText(stampFile).Contains("seen="));
+                    var stampBefore = File.ReadAllText(stampFile);
+                    Check("... a listing then has nothing to do, the stamp as it was", S("Listing") == null && File.ReadAllText(stampFile) == stampBefore);
+                    var when = File.GetLastWriteTimeUtc(saveDat);
+                    var same = File.ReadAllBytes(saveDat); same[0] ^= 0xFF; File.WriteAllBytes(saveDat, same); File.SetLastWriteTimeUtc(saveDat, when);
+                    Check("a change with the same size and date: a listing misses it (the shortcut's blind spot)", S("Listing") == null);
+                    Check("... the next launch reads everything and captures it", S("Launch") is string sc && sc.Contains("captured") && File.ReadAllText(stampFile).Contains("seen="));
 
                     File.WriteAllBytes(saveDat, Noise(9100, 6));                                  // the game saving
                     var before = File.ReadAllBytes(activePack);

@@ -83,6 +83,8 @@ namespace LbIntegrations.Cxbx
                 LayIn = () => { var folder = FindLive(exe, titleId) ?? live; if (!Unpack(pack, folder, out var error)) throw new IOException("the save file could not be laid out: " + error); },
                 RemoveFromConsole = () => { var folder = FindLive(exe, titleId); if (folder == null || !Directory.Exists(folder)) return false; Directory.Delete(folder, recursive: true); return true; },
                 NaturalKeys = () => NaturalKeys(exe),
+                // The save's folder on the console: its files' sizes and dates (XboxSaveSync's shortcut).
+                Witness = () => LbIntegrations.Xbox.XboxSaveSync.FolderWitness(FindLive(exe, titleId)),
                 Log = m => Log.Info("saves: " + titleId + " - " + m),
             };
         }
@@ -101,6 +103,9 @@ namespace LbIntegrations.Cxbx
         /// <summary>The save and the console in step (XboxSaveSync) - never while a loader runs. What it did, or null.</summary>
         public static string Sync(string exe, string titleId, LbIntegrations.Xbox.XboxSyncMode mode)
         {
+            // A listing with nothing moved since the save and the console last agreed: nothing read, nothing written - not even
+            // the process list (XboxSaveSync's shortcut, 10/10).
+            if (mode == LbIntegrations.Xbox.XboxSyncMode.Listing && LbIntegrations.Xbox.XboxSaveSync.UnchangedSinceInStep(Side(exe, titleId))) return null;
             if (CxbxPaths.LoaderRunning()) return null;
             var side = Side(exe, titleId);
             if (side == null) return null;
