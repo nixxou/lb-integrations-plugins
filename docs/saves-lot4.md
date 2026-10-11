@@ -146,14 +146,15 @@ integration must come through our hook, else the log says `HOOKS LOST`.
   of the game is made by SUPER ZSNES's copy of the shared code and read by ares's (the copy holding the hooks): `is
   Forward` never recognised it. `SaveGameView.Real` now knows a view by its type's name; the probe has the ares dll make
   one and reads it (it failed without the fix).
-- **Measured, LaunchBox's**: opening Game Saves, LaunchBox lists the game twice, 2-3 s apart. The first time its saved
-  rows are in `Game.Saves` (18 for Zelda, the cards found); the second time it has taken them ALL out (0) - it rebuilds
-  its list from that listing. So in that second listing no card can be looked up: RetroArch's rows get by-name ids, which
-  does no harm today (LaunchBox matches its ordinary saves by path - the XML stayed the same). What could have: Plan A
-  adding a row into that empty list. `SavePersist.Ensure` now writes nothing when the game had rows less than 30 s ago and
-  has none now (a game with no row at all is not held back); it changes no id, holds back a write only. No cache of the
-  cards for the listing (decided 11/10: a deleted card's id could come back, for no visible gain).
-- A diagnostic line on one-game listings: `cards: game ... read as ..., N persisted row(s), N path(s) ...; per row: ...`.
+- **Measured, LaunchBox's**: opening Game Saves, LaunchBox lists the game several times; one of them hands NOT the game
+  its data holds but a working copy of it whose `Saves` is empty (Zelda: "handed 0 persisted row(s), the data's 18
+  (another object)"). The cards were looked up on the object handed: none found, RetroArch's rows got by-name ids (no
+  harm seen - LaunchBox matches its ordinary saves by path, the XML stayed the same). Now the lookup reads the game of
+  LaunchBox's data (`GetGameById`): the 4 listings of Zelda gave each row its GUID card. Plan A was never at risk: it
+  already writes on the data's game (`SavePersist.Ensure`, GetGameById). A guard on Plan A, made first on the wrong
+  reading ("LaunchBox empties Game.Saves"), was taken out; no cache (decided 11/10).
+- A diagnostic line on one-game listings: `cards: game handed N persisted row(s), the data's N (the same object |
+  another object); N path(s) ...; per row: ...`.
 
 ## 4. Codex review of lot 4 (10/10)
 

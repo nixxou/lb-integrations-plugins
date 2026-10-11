@@ -593,20 +593,17 @@ namespace LbIntegrations.Saves
                 {
                     var cards = PersistedCards(__0, emu);
                     var ours = rows.Select(r => r == null ? r! : Encode(emu, r, PickCard(r.SaveGroupId, cards.TryGetValue(CardKey(r.GameId, r.FileLocation, r.AdditionalApplicationId), out var c) ? c : null))).ToList();
-                    // What the lookup found, for a one-game listing (Game Saves; measured 11/10: one listing found Zelda's
-                    // cards, the next one 3 s later did not).
+                    // What the lookup found, for a one-game listing (Game Saves; measured 11/10: the second listing hands a
+                    // working copy of the game, its Saves empty - the cards are read on the DataManager's).
                     if (games == 1)
                     {
                         var g0 = __0!.Games!.First();
-                        string? holderType = null; int persisted = -1;
-                        try
-                        {
-                            var h = PersistedRows.Holders(g0).First().Holder;
-                            holderType = h.GetType().Name;
-                            persisted = (h.GetType().GetProperty("Saves", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(h) as System.Collections.IEnumerable)?.Cast<object>().Count() ?? -1;
-                        }
-                        catch { }
-                        SaveRouter.Say("[stock]    cards: game " + g0.GetType().Name + " read as " + holderType + ", " + persisted + " persisted row(s), "
+                        int Count(object? o) { try { return (o?.GetType().GetProperty("Saves", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(o) as System.Collections.IEnumerable)?.Cast<object>().Count() ?? -1; } catch { return -1; } }
+                        var handed = SaveGameView.Real(g0);
+                        object? held = null;
+                        try { held = PluginHelper.DataManager?.GetGameById(handed.Id); } catch { }
+                        SaveRouter.Say("[stock]    cards: game handed " + Count(handed) + " persisted row(s), the data's " + Count(held)
+                                       + (ReferenceEquals(handed, held) ? " (the same object)" : " (another object)") + "; "
                                        + cards.Count + " path(s) in " + emu + "'s form; per row: "
                                        + string.Join(", ", rows.Select(r => Path.GetFileName(r?.FileLocation ?? "") + "=" + (cards.TryGetValue(CardKey(r?.GameId, r?.FileLocation, r?.AdditionalApplicationId), out var cc) ? cc.Count : 0))));
                     }
@@ -660,7 +657,16 @@ namespace LbIntegrations.Saves
         {
             var cards = new Dictionary<string, List<string>>(StringComparer.Ordinal);
             var games = new List<IGame>();
-            if (args?.Games != null) games.AddRange(args.Games.Where(g => g != null));
+            // The game LaunchBox's data holds, not the object handed in: opening Game Saves, LaunchBox lists a second time with a
+            // working copy of the game whose Saves is empty (measured 11/10, Zelda: 18 rows, then 0 - the DataManager's game
+            // kept its 18). The view of a desk (SaveGameView) is unwrapped by Holders, a copy is not: by id.
+            if (args?.Games != null)
+                foreach (var g in args.Games.Where(g => g != null))
+                {
+                    IGame? held = null;
+                    try { held = PluginHelper.DataManager?.GetGameById(SaveGameView.Real(g).Id); } catch { }
+                    games.Add(held ?? g);
+                }
             foreach (var a in args?.AdditionalApplications ?? (IReadOnlyCollection<IAdditionalApplication>)Array.Empty<IAdditionalApplication>())
                 if (a != null && games.All(g => g.Id != a.GameId) && PluginHelper.DataManager?.GetGameById(a.GameId) is { } g) games.Add(g);
             foreach (var g in games)
