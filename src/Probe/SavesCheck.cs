@@ -726,6 +726,93 @@ namespace LbIntegrations.Probe
             Check("a pack row is never taken for lb.retroarch's own (no plugin registered: null, not a twin)",
                   LbIntegrations.Saves.SaveRouter.OwnerForStock(Row("{\"emu\":\"ares\",\"kind\":\"save\",\"by\":\"name\",\"id\":\"zelda\"}"), "lb.retroarch") == null);
             StockIdsCheck();
+            IdsBackCheck();
+        }
+
+        /// <summary>Lot 7: the setup gives LaunchBox's integrations their own ids back in the platform XML (StockIdsXml,
+        /// SaveIdsBack) - every case of id, the rest of the file untouched, all or nothing on a failure.</summary>
+        private static void IdsBackCheck()
+        {
+            Console.WriteLine();
+            Console.WriteLine("  -- the ids given back at uninstall (lot 7, StockIdsXml + the setup's SaveIdsBack)");
+            const string RA = "lb.retroarch", PS2 = "lb.pcsx2", G1 = "11111111-1111-1111-1111-111111111111", G2 = "22222222-2222-2222-2222-222222222222";
+            string X(string s) => s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
+            string Row(string game, string? id, string? lineage, string file, int? slot = null)
+                => "  <GameSave>\r\n    <GameId>" + game + "</GameId>\r\n"
+                   + (id == null ? "    <SaveGroupId />\r\n" : "    <SaveGroupId>" + X(id) + "</SaveGroupId>\r\n")
+                   + (lineage == null ? "    <MatchLineageId />\r\n" : "    <MatchLineageId>" + X(lineage) + "</MatchLineageId>\r\n")
+                   + "    <FilePath>" + X(file) + "</FilePath>\r\n" + (slot == null ? "" : "    <Slot>" + slot + "</Slot>\r\n") + "  </GameSave>\r\n";
+            var saturn = StockIds.Encode(RA, "saturn-atlantis - the lost tales (fr) (disc 1)", false, "a.bcr", null)!;
+            var byName = StockIds.Encode(RA, "", false, "Zelda.srm", null, @"emulators\retroarch\saves\snes9x")!;
+            var ps2 = StockIds.Encode(PS2, "pcsx2:SLUS-20062", false, "Mcd001.ps2", null)! + "#c2";
+            var amp = StockIds.Encode(RA, "a&b <c>", false, "x", null)!;
+            var ares = "{\"emu\":\"ares\",\"kind\":\"save\",\"by\":\"name\",\"id\":\"Zelda.ram\"}";
+            var guid = "c380b29f2702480a982dda74c642a367";
+            var xml = "<?xml version=\"1.0\" standalone=\"yes\"?>\r\n<LaunchBox>\r\n  <Game>\r\n    <ID>" + G1 + "</ID>\r\n    <Title>Ratchet &amp; Clank</Title>\r\n  </Game>\r\n"
+                      + Row(G1, saturn, saturn, @"Emulators\RetroArch\saves\a.bcr")
+                      + Row(G1, byName, byName, @"Emulators\RetroArch\saves\Snes9x\Zelda.srm")
+                      + Row(G1, byName, byName, @"Saves\Super Nintendo\Zelda-01.srm")
+                      + Row(G2, byName, byName, @"Emulators\RetroArch\saves\Snes9x\Zelda.srm")
+                      + Row(G1, ares, ares, @"Emulators\Nixx-ares\Saves\Zelda.ram")
+                      + Row(G1, ps2, ps2, @"Emulators\PCSX2\memcards\Mcd001.ps2")
+                      + Row(G1, guid, guid, @"x.state", 1)
+                      + Row(G1, amp, null, @"y.srm")
+                      + Row(G1, StockIds.Encode(RA, "", false, "Other.srm", null)!, saturn, @"Other.srm")
+                      + "</LaunchBox>\r\n";
+            int n = 0;
+            var back = StockIdsXml.Reverse(xml, () => "fresh" + (++n), out var rows);
+            // Per row (an empty <MatchLineageId /> has no value): null for a field written empty.
+            string?[] Ids(string text, string field) => System.Text.RegularExpressions.Regex.Matches(text, "(?s)<GameSave>(.*?)</GameSave>")
+                .Select(r => System.Text.RegularExpressions.Regex.Match(r.Groups[1].Value, "<" + field + ">([^<]*)</" + field + ">"))
+                .Select(m => m.Success ? System.Net.WebUtility.HtmlDecode(m.Groups[1].Value) : null).ToArray();
+            var ids = Ids(back, "SaveGroupId"); var lin = Ids(back, "MatchLineageId");
+            Check("back: 7 rows changed, none of ours left", rows == 7 && StockIdsXml.Remaining(back) == 0, "rows " + rows + ", left " + StockIdsXml.Remaining(back));
+            Check("back: a native id as it was (Saturn), its lineage too", ids[0] == "saturn-atlantis - the lost tales (fr) (disc 1)" && lin[0] == ids[0], ids[0]);
+            Check("back: a by-name card - one new GUID for its rows of one game, its lineage the same", ids[1]!.StartsWith("fresh") && ids[2] == ids[1] && lin[1] == ids[1] && lin[2] == ids[1], ids[1] + " " + ids[2]);
+            Check("back: ... the same id on another game - another GUID", ids[3]!.StartsWith("fresh") && ids[3] != ids[1], ids[3]);
+            Check("back: the pack's own row (ares) left exactly", ids[4] == ares && lin[4] == ares);
+            Check("back: a decoration after the JSON kept (pcsx2:...#c2)", ids[5] == "pcsx2:SLUS-20062#c2" && lin[5] == ids[5], ids[5]);
+            Check("back: a GUID left as it is", ids[6] == guid);
+            Check("back: & < > in an id escaped as LaunchBox writes them", ids[7] == "a&b <c>" && lin[7] == null && back.Contains("<SaveGroupId>a&amp;b &lt;c&gt;</SaveGroupId>"), ids[7]);
+            Check("back: a lineage naming another card follows that card", ids[8]!.StartsWith("fresh") && lin[8] == "saturn-atlantis - the lost tales (fr) (disc 1)", lin[8]);
+            Check("back: every other byte of the file where it was (the game, its title, the paths, the slot)",
+                  System.Text.RegularExpressions.Regex.Replace(back, "<(SaveGroupId|MatchLineageId)>[^<]*</", "<$1></")
+                  == System.Text.RegularExpressions.Regex.Replace(xml, "<(SaveGroupId|MatchLineageId)>[^<]*</", "<$1></"));
+            Check("back: twice = once (nothing of ours left the second time)", StockIdsXml.Reverse(back, () => "again", out var again) == back && again == 0);
+
+            // The setup's run on a made-up LaunchBox: the files, the copy, a failure halfway, an unreadable file.
+            var root = Path.Combine(Path.GetTempPath(), "lbip-idsback-" + Guid.NewGuid().ToString("N"));
+            var platforms = Path.Combine(root, "Data", "Platforms");
+            Directory.CreateDirectory(platforms);
+            var plain = "<?xml version=\"1.0\" standalone=\"yes\"?>\r\n<LaunchBox>\r\n" + Row(G1, ares, ares, "z.ram") + "</LaunchBox>\r\n";
+            var a = Path.Combine(platforms, "A.xml"); var b = Path.Combine(platforms, "B.xml"); var c = Path.Combine(platforms, "C.xml");
+            void Reset() { File.WriteAllText(a, xml, new System.Text.UTF8Encoding(false)); File.WriteAllText(b, xml, new System.Text.UTF8Encoding(true)); File.WriteAllText(c, plain, new System.Text.UTF8Encoding(false)); }
+            string H(string p) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(p)));
+            try
+            {
+                Reset();
+                var before = new[] { H(a), H(b), H(c) };
+                NixxIntegrations.SaveIdsBack.FailWriteForTests = name => name == "B.xml";
+                var failed = NixxIntegrations.SaveIdsBack.Run(root);
+                NixxIntegrations.SaveIdsBack.FailWriteForTests = null;
+                Check("setup: B's write fails after A's - refused, A put back, every file as it was, nothing left beside them",
+                      !failed.ok && H(a) == before[0] && H(b) == before[1] && H(c) == before[2] && Directory.GetFiles(platforms).Length == 3, failed.message);
+                File.WriteAllBytes(c, new byte[] { 0x3C, 0xC3, 0x28, 0x3E });   // not UTF-8
+                var unreadable = NixxIntegrations.SaveIdsBack.Run(root);
+                Check("setup: a file that cannot be read - refused, nothing written", !unreadable.ok && H(a) == before[0] && H(b) == before[1] && unreadable.message.Contains("C.xml"), unreadable.message);
+                Reset();
+                var done = NixxIntegrations.SaveIdsBack.Run(root);
+                var store = Path.Combine(root, "Local", "Plugins", ".data", "nixx-saves-backup");
+                var copies = Directory.Exists(store) ? Directory.GetDirectories(store, "uninstall-*") : Array.Empty<string>();
+                var latest = copies.OrderBy(d => d, StringComparer.Ordinal).LastOrDefault();
+                Check("setup: given back - A and B with none of ours left, C (nothing of ours) untouched",
+                      done.ok && StockIdsXml.Remaining(File.ReadAllText(a)) == 0 && StockIdsXml.Remaining(File.ReadAllText(b)) == 0 && H(c) == before[2], done.message);
+                Check("setup: ... the files as they were copied aside first", latest != null && H(Path.Combine(latest, "A.xml")) == before[0] && H(Path.Combine(latest, "B.xml")) == before[1], latest ?? "no copy");
+                var bytes = File.ReadAllBytes(b);
+                Check("setup: ... each file's own encoding kept (B with its BOM, A without)", bytes.Length > 3 && bytes[0] == 0xEF && File.ReadAllBytes(a)[0] == (byte)'<');
+                Check("setup: ... and a second run finds nothing to do", NixxIntegrations.SaveIdsBack.Run(root) is { ok: true } again2 && again2.message.Length == 0);
+            }
+            finally { NixxIntegrations.SaveIdsBack.FailWriteForTests = null; try { Directory.Delete(root, true); } catch { } }
         }
 
         /// <summary>Lot 4: LaunchBox's integrations' ids in our form and back (StockIds) - pinned strings, exact round trips.</summary>

@@ -45,6 +45,11 @@
     <Compile Include="..\Shared.RamDisk\**\*.cs" />
     <!-- "Your console": the pack's one identity and the panel that edits it - the Nixx window's tab, the same file. -->
     <Compile Include="..\Shared.Identity\**\*.cs" />
+    <!-- Lot 7: the save ids of LaunchBox's integrations given back at uninstall - the pure id code only, no LaunchBox. -->
+    <Compile Include="..\Shared.Saves\SaveId.cs" Link="Saves\SaveId.cs" />
+    <Compile Include="..\Shared.Saves\SaveOwner.cs" Link="Saves\SaveOwner.cs" />
+    <Compile Include="..\Shared.Saves\StockIds.cs" Link="Saves\StockIds.cs" />
+    <Compile Include="..\Shared.Saves\StockIdsXml.cs" Link="Saves\StockIdsXml.cs" />
     <Compile Include="..\Menus\IdentityPanel.cs" Link="Identity\IdentityPanel.cs" />
     <!-- Its short notes with the full text on hover (06/10: IdentityPanel uses LbipHint since 6482f22). -->
     <Compile Include="..\Shared.Lbip\LbipHint.cs" Link="Identity\LbipHint.cs" />

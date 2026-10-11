@@ -404,6 +404,11 @@ internal static class InstallerCore
         var running = RunningHost();
         if (running != null) return (false, "Close " + running + " first, then try again.");
 
+        // Lot 7: the saves of LaunchBox's own integrations get their own ids back BEFORE anything goes - without the pack
+        // nothing decodes ours. Failed: nothing uninstalled (Mehdi, 11/10).
+        var ids = SaveIdsBack.Run(l.Root);
+        if (!ids.ok) return (false, ids.message + "\n\nNothing was uninstalled.");
+
         var problems = new List<string>();
         var gone = 0;
 
@@ -427,6 +432,7 @@ internal static class InstallerCore
 
         return (true, (gone == 0 ? "Nothing of this pack was installed here." : gone + " plugin folder(s) removed.")
                     + ramdisk
+                    + ids.message
                     + "\n\nLeft alone on purpose: your emulator entries in Data\\Emulators.xml, the "
                     + "plugins' settings under Local\\Plugins\\.data\\, your NAND dumps and every "
                     + "save. An emulator you set up keeps launching - these plugins recognise one by "

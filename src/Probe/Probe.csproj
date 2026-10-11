@@ -89,6 +89,8 @@
     <!-- THE SAVE IDS (lot 1 of docs\saves-lb14-routing.md §4b), compiled in like they are in each plugin.
          Exercised by the saves-selftest arm. -->
     <Compile Include="..\Shared.Saves\**\*.cs" />
+    <!-- Lot 7: the setup's way back of the save ids, run by the probe on copies (the saves self-test). -->
+    <Compile Include="..\Installer\SaveIdsBack.cs" Link="Installer\SaveIdsBack.cs" />
     <!-- The pack's switchable patches (the Compatibility page of the Nixx settings) - see src\Shared.Compat. -->
     <Compile Include="..\Shared.Compat\**\*.cs" />
   </ItemGroup>

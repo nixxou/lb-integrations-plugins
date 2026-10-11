@@ -97,7 +97,10 @@ namespace LbIntegrations.Saves
         public static string? Reverse(string? id, Func<string> freshGuid)
         {
             if (!SaveId.TryRead(id, out var d) || d!.Emu == null || !d.Emu.StartsWith(SaveOwner.LaunchBoxPrefix, StringComparison.Ordinal)) return id;
-            return d.Native ?? freshGuid();
+            // A decoration another program put after our JSON ("#c2", LiteBox's) goes back with the native id, as decoding
+            // hands it (TryDecode) - '#' never occurs inside our JSON (SaveId).
+            int cut = id!.IndexOf('#');
+            return (d.Native ?? freshGuid()) + (cut >= 0 ? id.Substring(cut) : "");
         }
 
         /// <summary>A row's MatchLineageId once its SaveGroupId goes from <paramref name="oldId"/> to <paramref name="newId"/>:
