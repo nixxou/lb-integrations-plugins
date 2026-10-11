@@ -48,3 +48,16 @@ Probe: `--stock-saves <root> --scratch <dir>`, section 9.
 - Probe `--stock-saves` section 9: the seven hooked as without saves, DuckStation's self-check; D6 on the real
   DuckStation (a stand-in DuckStation emulator on PS1): no plugin with saves on PS1 - false; RetroArch on PS1 - true; the
   switch off - false.
+
+## 3. Lot 5.0 in LaunchBox (12/10, G:\LB1326, step 1 deployed)
+
+DuckStation installed from LaunchBox's list (`Emulators\DuckStation\duckstation-qt-x64-ReleaseLTCG.exe`, Sony Playstation),
+Final Fantasy VII set to it (its saves: RetroArch's Beetle PSX HW `.srm` and `.1.mcr`, persisted when it was on RetroArch).
+
+- **LaunchBox asks `SupportsSaveManagement` at its start** (01:13:38, during the start-up scan) - D6 answered true (PS1
+  covered by Nixx-ares). Then it lists DuckStation in the scan, and asks its `GetSaves` for the ONE game when FF7's Game Saves
+  opens. In the first session (DuckStation added in it) nothing was asked: the answer is taken once, at the start - an
+  emulator added since gets its saves at the next start.
+- `GetSaves` still the SDK's failure at this step: LaunchBox shows the game's PERSISTED rows anyway (both RetroArch rows,
+  0 backups, the yellow mark: "no backup"). Nothing against the design: step 2 answers that listing with the other
+  emulators' saves.

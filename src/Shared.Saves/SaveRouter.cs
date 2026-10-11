@@ -163,10 +163,11 @@ namespace LbIntegrations.Saves
             var now = System.Diagnostics.Stopwatch.GetTimestamp();
             if (_covered.TryGetValue(emu, out var known) && now - known.At < System.Diagnostics.Stopwatch.Frequency * 60) return known.Yes;
             bool yes = false;
+            string? by = null;
+            var mine = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             try
             {
                 var lib = Library();
-                var mine = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var e in lib)
                     if (DriverOf(e)?.Emu == emu)
                         foreach (var p in Safe(() => e.GetAllEmulatorPlatforms()) ?? Array.Empty<IEmulatorPlatform>())
@@ -179,10 +180,12 @@ namespace LbIntegrations.Saves
                         bool manages;
                         try { manages = d.Value.Plugin.SupportsSaveManagement(); } catch { manages = false; }
                         if (!manages) continue;
-                        if ((Safe(() => e.GetAllEmulatorPlatforms()) ?? Array.Empty<IEmulatorPlatform>()).Any(p => mine.Contains(Safe(() => p?.Platform) ?? ""))) { yes = true; break; }
+                        if ((Safe(() => e.GetAllEmulatorPlatforms()) ?? Array.Empty<IEmulatorPlatform>()).Any(p => mine.Contains(Safe(() => p?.Platform) ?? ""))) { yes = true; by = d.Value.Emu + " (" + Safe(() => e.Title) + ")"; break; }
                     }
             }
             catch { yes = false; }
+            if (!_covered.TryGetValue(emu, out var was) || was.Yes != yes)
+                Say(emu + ": its emulators' platforms [" + string.Join(", ", mine) + "] " + (yes ? "covered by " + by : "covered by no plugin with saves"));
             _covered[emu] = (now, yes);
             return yes;
         }

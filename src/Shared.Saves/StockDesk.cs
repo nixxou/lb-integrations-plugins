@@ -581,10 +581,13 @@ namespace LbIntegrations.Saves
             try
             {
                 if (EmuOf(__instance) is not { } emu || !NoSave(emu)) return true;
-                if (!LbIntegrations.Compat.Compat.On("stockDesk") || !LbIntegrations.Compat.Compat.On("stockNoSaves") || !Complete(emu) || !SaveRouter.Active) return true;
-                if (!SaveRouter.OthersCoverPlatformsOf(emu, NoSave)) return true;
+                // Every answer said once (asked often): when LaunchBox asks, and why the answer is no (measured in LaunchBox).
+                string? no = !LbIntegrations.Compat.Compat.On("stockDesk") || !LbIntegrations.Compat.Compat.On("stockNoSaves") ? "a switch is off"
+                           : !Complete(emu) ? "its hooks are not proven" : !SaveRouter.Active ? "not under LaunchBox's desk"
+                           : !SaveRouter.OthersCoverPlatformsOf(emu, NoSave) ? "no plugin with saves covers its platforms" : null;
+                Once(emu, "SupportsSaveManagement asked: " + (no == null ? "true - another plugin with saves covers one of its platforms (lot 5)" : "false - " + no));
+                if (no != null) return true;
                 __result = true;
-                Once(emu, "says it supports saves: another plugin with saves covers one of its platforms (lot 5)");
                 return false;
             }
             catch { return true; }
