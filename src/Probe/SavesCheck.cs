@@ -696,6 +696,13 @@ namespace LbIntegrations.Probe
                 SlotRestore.HostOverride = "bigbox";
                 bool big = SlotRestore.MayOverwrite(other, src, true, "Slot 3", null, out var bigNo);
                 Check("warn: in BigBox refused with a message, no dialog", !big && bigNo != null && asked == 2, bigNo);
+                // RetroArch's ordinary saves through a desk (StockRestore, Codex review 11/10): whose file the target is.
+                var liveOfCard = Path.Combine(dir, "Zelda.srm");
+                File.WriteAllText(liveOfCard, "card B's 20 hours");
+                Check("retroarch save: the target is this card's live file → its own (no warning)", !StockRestore.OtherCard(liveOfCard, new[] { liveOfCard.ToUpperInvariant() }));
+                Check("retroarch save: an \"In Vault\" card (no live file) onto an existing file → another card's", StockRestore.OtherCard(liveOfCard, Array.Empty<string>()));
+                Check("retroarch save: the card lives elsewhere → the target is another card's", StockRestore.OtherCard(liveOfCard, new[] { Path.Combine(dir, "Zelda (Rev 1).srm") }));
+                Check("retroarch save: nothing at the target → nothing to lose", !StockRestore.OtherCard(Path.Combine(dir, "nothing.srm"), Array.Empty<string>()));
             }
             finally
             {

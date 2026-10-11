@@ -21,6 +21,7 @@
 #nullable enable
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -64,7 +65,9 @@ namespace LbIntegrations.Saves
                     var row = args.SaveToAdd;
                     args = new AddSaveArgs { SaveToAdd = SaveRows.WithIds(row, native, StockIds.TryDecode(row.MatchLineageId, route.Emu, out var l) ? l : row.MatchLineageId), ShouldOverwriteFunc = args.ShouldOverwriteFunc };
                 }
-                var done = route.Emu == RetroArch ? AddRetroArch(route, args!, log) : AddDolphin(route, args!, log);
+                // The card's ids in both forms: its persisted rows carry ours or the native one (stockIds), never both.
+                var card = new[] { inbound, sent }.Where(i => !string.IsNullOrEmpty(i)).Select(i => i!).Distinct(StringComparer.Ordinal).ToList();
+                var done = route.Emu == RetroArch ? AddRetroArch(route, args!, log, card) : AddDolphin(route, args!, log);
                 if (done?.WasSuccess == true && done.SaveAdded is { } added && LbIntegrations.Compat.Compat.On("stockIds") && SaveRouter.LaunchBoxHost && StockDesk.Complete(route.Emu))
                 {
                     var id = StockIds.Result(route.Emu, sent, inbound, added.SaveGroupId, added is GameSaveState, Path.GetFileName(added.FileLocation ?? ""), (added as GameSaveState)?.Slot, StockDesk.DirOf(added.FileLocation));
@@ -78,7 +81,17 @@ namespace LbIntegrations.Saves
 
         // ── RetroArch ────────────────────────────────────────────────────────
 
-        private static AddSaveResponse AddRetroArch(SaveOwnerRoute route, AddSaveArgs args, Action<string> log)
+        /// <summary>True when <paramref name="target"/> holds another card's save: it exists and is none of the restored
+        /// card's live files (<paramref name="cardLives"/>) - an "In Vault" card has none, so any file there is another's.</summary>
+        internal static bool OtherCard(string target, IEnumerable<string> cardLives)
+        {
+            if (!File.Exists(target)) return false;
+            string Full(string p) { try { return Path.GetFullPath(p); } catch { return p; } }
+            var t = Full(target);
+            return !cardLives.Any(p => string.Equals(Full(p), t, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static AddSaveResponse AddRetroArch(SaveOwnerRoute route, AddSaveArgs args, Action<string> log, IReadOnlyList<string> card)
         {
             var row = args?.SaveToAdd;
             if (row == null || string.IsNullOrWhiteSpace(row.FileLocation) || !File.Exists(row.FileLocation))
@@ -120,6 +133,11 @@ namespace LbIntegrations.Saves
                 var dir = (string?)saveDir!.Invoke(null, new object?[] { route.Emulator, game, app, true });
                 if (string.IsNullOrWhiteSpace(dir)) return new AddSaveResponse("Couldn't determine where to place this save!");
                 target = Path.Combine(dir, Path.GetFileNameWithoutExtension(rom) + Path.GetExtension(row.FileLocation));
+                // Over another card's save (lot 3's warning, for ordinary saves too - Codex review 11/10): an "In Vault"
+                // card restored onto the file another card lives on - LaunchBox says yes and copies nothing of it.
+                var lives = card.SelectMany(id => SaveRouter.CardLivePaths(row.GameId, id)).ToList();
+                if (!SlotRestore.MayOverwrite(target, row.FileLocation!, OtherCard(target, lives), "The current save", log, out var no))
+                    return new AddSaveResponse(no);
             }
             if (File.Exists(target) && (args!.ShouldOverwriteFunc == null || !args.ShouldOverwriteFunc()))
                 return new AddSaveResponse("Operation cancelled by user!");

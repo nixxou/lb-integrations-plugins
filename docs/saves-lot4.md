@@ -242,3 +242,12 @@ Codex review, 11/10, two findings, left as they are (Mehdi):
 - **A RetroArch Saturn restore is not all or nothing** (`StockRestore` copies the `.bcr`, then RetroArch's own
   `CopySaturnCompanionFiles`: a companion that fails leaves the `.bcr` replaced) - those are LaunchBox's own steps and
   its own behaviour; Dolphin's likewise.
+
+Codex review, 11/10 evening: the Saturn finding again (left, as above), and one fixed:
+- **A RetroArch save restored through a desk onto ANOTHER card's file, without a word**: `StockRestore` asked
+  `SlotRestore.MayOverwrite` for states only. An "In Vault" card (its live file deleted, the rom renamed) restored onto
+  the `.srm` a newer card lives on: LaunchBox answers "overwrite" and copies nothing of that file (lot 3's bug) - the
+  newer card's save gone. Now the saves branch asks too, when the target exists and is none of the restored card's live
+  files (`StockRestore.OtherCard`, the card's ids in both forms): the usual "Replace it anyway?" in LaunchBox, a refusal
+  in BigBox, nothing under LiteBox; never for the card's own file nor for the same content. Natively (a game set to
+  RetroArch) LaunchBox has the same hole - this covers the desk's restores only. Probe: 4 checks.
