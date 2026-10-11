@@ -303,6 +303,26 @@ namespace LbIntegrations.Probe
             var view = LbIntegrations.Saves.SaveGameView.As(zelda, coreEmu);
             Expect("a game seen through a view: a view (the test means something)", !ReferenceEquals(view, zelda), "the game itself");
             Expect("... its persisted rows read off the real game", ReferenceEquals(LbIntegrations.Saves.PersistedRows.Holders(view).First().Holder, zelda), "the view");
+            // A view made by ANOTHER copy of the shared code (measured 11/10 in LaunchBox: SUPER ZSNES's desk made it, ares's
+            // hooks read it): the ares plugin's own SaveGameView makes one, ours reads it.
+            var aresDll = Path.Combine(root, "Local", "Plugins", "Nixx-ares", "Ares.dll");
+            if (File.Exists(aresDll))
+            {
+                object otherView = null;
+                try
+                {
+                    var other = Assembly.LoadFile(aresDll).GetType("LbIntegrations.Saves.SaveGameView", true);
+                    otherView = other.GetMethod("As", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic, null, new[] { typeof(IGame), typeof(IEmulator) }, null)
+                                     .Invoke(null, new object[] { zelda, coreEmu });
+                }
+                catch (Exception ex) { Console.WriteLine("  (another copy's view not made: " + (ex.InnerException ?? ex).Message + ")"); }
+                if (otherView != null)
+                {
+                    Expect("a view made by another plugin's copy: not one of ours (the test means something)", !(otherView is LbIntegrations.Saves.SaveGameView.Forward) && !ReferenceEquals(otherView, zelda), otherView.GetType().FullName);
+                    Expect("... its persisted rows read off the real game all the same", ReferenceEquals(LbIntegrations.Saves.PersistedRows.Holders((IGame)otherView).First().Holder, zelda), "the view");
+                }
+            }
+            else Console.WriteLine("  (no " + aresDll + ": the view of another copy not tried)");
 
             // Another Harmony over ONE of RetroArch's hooks later on (Codex review 10/10): the self-check of every decoding
             // method catches it, RetroArch is left in its own form.

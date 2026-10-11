@@ -58,7 +58,21 @@ namespace LbIntegrations.Saves
 
         /// <summary>The real object behind a view, else <paramref name="o"/> itself. A view has the SDK's members only - not
         /// LaunchBox's own (Saves, review 10/10: the persisted cards of a game seen through a view read as none).</summary>
-        internal static T Real<T>(T o) where T : class => o is Forward f && f.Real is T r ? r : o;
+        /// Whichever plugin of the pack made the view: each carries its own copy of this class, so a view made by one desk
+        /// (SUPER ZSNES's, measured 11/10) is not a Forward of the copy whose hooks read it (ares's) - known by its type's
+        /// name, read by reflection.
+        internal static T Real<T>(T o) where T : class
+        {
+            if (o is Forward f) return f.Real is T r ? r : o;
+            try
+            {
+                for (var t = o?.GetType().BaseType; t != null && t != typeof(object); t = t.BaseType)
+                    if (t.FullName == typeof(Forward).FullName)
+                        return t.GetField(nameof(Forward.Real), BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(o) is T real ? real : o;
+            }
+            catch { }
+            return o;
+        }
 
         private static T? Safe<T>(Func<T> f) { try { return f(); } catch { return default; } }
 
