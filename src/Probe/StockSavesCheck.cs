@@ -60,6 +60,21 @@ namespace LbIntegrations.Probe
                 if (t != null) types[family] = t;
             }
 
+            // Lot 5: LaunchBox's integrations without save support, loaded too (the router lists what is loaded).
+            var noSave = new Dictionary<string, Type>();
+            foreach (var (family, typeName) in new[] { ("BigPEmu", "BigPEmuPlugin"), ("Cemu", "CemuPlugin"), ("DuckStation", "DuckStationPlugin"), ("Mame", "MamePlugin"),
+                                                      ("Rpcs3", "Rpcs3Plugin"), ("ScummVm", "ScummVmPlugin"), ("Xemu", "XemuPlugin") })
+            {
+                var dll = Directory.GetFiles(Path.Combine(root, "System", "Plugins"), "Unbroken.LaunchBox.Windows." + family + ".dll", SearchOption.AllDirectories).FirstOrDefault();
+                if (dll == null) { Console.WriteLine("  " + family + ": no dll"); continue; }
+                try
+                {
+                    var t = AssemblyLoadContext.Default.LoadFromAssemblyPath(dll).GetTypes().FirstOrDefault(x => x.Name == typeName && typeof(EmulatorPlugin).IsAssignableFrom(x));
+                    if (t != null) noSave[family] = t; else Console.WriteLine("  " + family + ": no " + typeName);
+                }
+                catch (Exception ex) { Console.WriteLine("  " + family + ": " + (ex.InnerException ?? ex).Message); }
+            }
+
             Section("1. The save methods: overridden, or the SDK's body");
             var sdk = typeof(EmulatorPlugin);
             foreach (var name in SaveMethods)
@@ -332,6 +347,25 @@ namespace LbIntegrations.Probe
             var lostWhy = LbIntegrations.Saves.StockDesk.IncompleteWhy("lb.retroarch") ?? "";
             Expect("RetroArch's IsSaveActive hook gone, the others in: incomplete", lostWhy.Contains("hooks lost on IsSaveActive"), lostWhy);
             Expect("... its rows no longer routed (desk off): an ares row is RetroArch's own code's", ra.IsSaveActive(aresRow, raEmu.ApplicationPath), "false");
+            // Lot 5.0: LaunchBox's integrations without save support - what they are and what the SDK answers for them.
+            Section("9. Integrations without save support (lot 5.0)");
+            foreach (var (family, t) in noSave)
+            {
+                var own = SaveMethods.Where(name =>
+                {
+                    var baseM = typeof(EmulatorPlugin).GetMethods(BindingFlags.Public | BindingFlags.Instance).FirstOrDefault(m => m.Name == name && m.IsVirtual);
+                    var m = baseM == null ? null : t.GetMethod(name, BindingFlags.Public | BindingFlags.Instance, null, baseM.GetParameters().Select(p => p.ParameterType).ToArray(), null);
+                    return m != null && m.DeclaringType != typeof(EmulatorPlugin);
+                }).ToList();
+                Expect(family + ": no save method of its own", own.Count == 0, string.Join(", ", own));
+                var inst = stock.FirstOrDefault(s => s.Plugin.GetType() == t);
+                if (inst.Plugin == null) { Console.WriteLine("     not instantiated by the router"); continue; }
+                string Try(Func<object> f) { try { return Show(f()); } catch (Exception ex) { return "throws " + (ex.InnerException ?? ex).GetType().Name; } }
+                var gs = Try(() => { var r = inst.Plugin.GetSaves(new GetSavesArgs { Games = Array.Empty<IGame>(), AdditionalApplications = Array.Empty<IAdditionalApplication>() }); return (r?.WasSuccess == true ? "success" : "FAILURE") + " \"" + r?.Message + "\""; });
+                Console.WriteLine("     emu=" + inst.Emu + "  SupportsSaveManagement=" + Try(() => inst.Plugin.SupportsSaveManagement()) + "  GetSaves=" + gs
+                                  + "  IsSaveActive=" + Try(() => inst.Plugin.IsSaveActive(new GameSaveGame(), "")) + "  AddSaveFile=" + Try(() => inst.Plugin.AddSaveFile(new AddSaveArgs { SaveToAdd = new GameSaveGame() })?.Message ?? "null"));
+            }
+
             Console.WriteLine("  " + (bad == 0 ? "all good" : bad + " FAILURE(S)"));
             Console.WriteLine();
             Console.WriteLine("  scratch left in " + scratch);
