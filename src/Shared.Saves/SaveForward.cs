@@ -76,9 +76,10 @@ namespace LbIntegrations.Saves
             var key = ViaKey + Environment.CurrentManagedThreadId;
             string? id = null;
             try { id = via?.Id; } catch { }
+            var before = AppDomain.CurrentDomain.GetData(key);   // put back after: a restore within a restore keeps the outer one's
             AppDomain.CurrentDomain.SetData(key, id);
             try { return Ask(r, () => r.Plugin.AddSaveFile(args!), new AddSaveResponse("The " + r.Emu + " plugin could not restore this save.")); }
-            finally { AppDomain.CurrentDomain.SetData(key, null); }
+            finally { AppDomain.CurrentDomain.SetData(key, before); }
         }
 
         /// <summary>Process-wide (every plugin carries its own copy of this class), per thread: the emulator of the library a

@@ -206,14 +206,14 @@ namespace LbIntegrations.Saves
             return found;
         }
 
-        private static bool _backedUp;
-
         /// <summary>The platform XML files copied to Local\Plugins\.data\nixx-saves-backup\&lt;time&gt;\ once per process, before
-        /// the first change; the three newest copies kept.</summary>
+        /// the first change; the three newest copies kept. Once for the PROCESS (every plugin carries this class; called
+        /// under Gate, the process's lock).</summary>
         private static void BackUpXml(Action<string> say)
         {
-            if (_backedUp) return;
-            _backedUp = true;
+            const string Mark = "LbIntegrations.StockIdMigration.BackedUp";
+            if (AppDomain.CurrentDomain.GetData(Mark) != null) return;
+            AppDomain.CurrentDomain.SetData(Mark, true);
             try
             {
                 var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".."));
@@ -224,11 +224,27 @@ namespace LbIntegrations.Saves
                 // migration runs again at each start while LaunchBox has not written it back, three copies went in three
                 // starts); then the three newest.
                 var first = Path.Combine(store, "first");
+                bool Dated(string d) => System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(d), @"^\d{4}-\d\d-\d\d_\d\d-\d\d-\d\d$");
+                Directory.CreateDirectory(store);
+                // An install that ran an earlier build has dated copies only: the oldest is the closest to the original
+                // (second review 10/10) - it becomes `first`, never one made from today's XML.
+                if (!Directory.Exists(first) && Directory.GetDirectories(store).Where(Dated).OrderBy(d => d, StringComparer.Ordinal).FirstOrDefault() is { } oldest)
+                {
+                    Directory.Move(oldest, first);
+                    say("ids: the oldest copy of the platform XML (" + Path.GetFileName(oldest) + ") kept for good as " + first);
+                }
                 var target = Directory.Exists(first) ? Path.Combine(store, DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss")) : first;
-                Directory.CreateDirectory(target);
-                foreach (var f in Directory.GetFiles(source, "*.xml")) File.Copy(f, Path.Combine(target, Path.GetFileName(f)), true);
-                foreach (var old in Directory.GetDirectories(store).Where(d => !string.Equals(Path.GetFileName(d), "first", StringComparison.OrdinalIgnoreCase))
-                                             .OrderByDescending(d => d, StringComparer.Ordinal).Skip(3))
+                // Copied aside, then renamed: a copy that fails half way is never kept as a whole one.
+                var tmp = Path.Combine(store, ".tmp-" + Guid.NewGuid().ToString("N"));
+                try
+                {
+                    Directory.CreateDirectory(tmp);
+                    foreach (var f in Directory.GetFiles(source, "*.xml")) File.Copy(f, Path.Combine(tmp, Path.GetFileName(f)), true);
+                    if (Directory.Exists(target)) Directory.Delete(target, true);   // a second within the same second
+                    Directory.Move(tmp, target);
+                }
+                finally { try { if (Directory.Exists(tmp)) Directory.Delete(tmp, true); } catch { } }
+                foreach (var old in Directory.GetDirectories(store).Where(Dated).OrderByDescending(d => d, StringComparer.Ordinal).Skip(3))
                     try { Directory.Delete(old, true); } catch { }
                 say("ids: the platform XML files copied to " + target + " before the first change");
             }

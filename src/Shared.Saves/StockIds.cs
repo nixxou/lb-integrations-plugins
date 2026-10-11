@@ -77,6 +77,12 @@ namespace LbIntegrations.Saves
             if (inboundJson != null && string.Equals(resultId ?? "", sentNative ?? "", StringComparison.Ordinal)
                 && !(string.IsNullOrEmpty(resultId) && IsByName(inboundJson)))
                 return inboundJson;
+            // A by-name id that names the very file restored (its name, its slot, its folder when it holds one): the card it
+            // came from - a card made before "dir" keeps its id (second review 10/10: it was split at its first restore).
+            if (inboundJson != null && string.IsNullOrEmpty(resultId) && SaveId.TryRead(inboundJson, out var b) && b!.Native == null && b.By == "name"
+                && string.Equals(b.Id, fileName, StringComparison.Ordinal) && b.Slot == (state ? slot : null)
+                && (b.Dir == null || string.Equals(b.Dir, dir, StringComparison.Ordinal)))
+                return inboundJson;
             if (!string.IsNullOrEmpty(resultId)) return Encode(selfEmu, resultId, state, fileName, slot, dir);
             if (inboundJson != null && SaveId.TryRead(inboundJson, out var d) && d!.Native != null) return inboundJson;
             return Encode(selfEmu, "", state, fileName, slot, dir);

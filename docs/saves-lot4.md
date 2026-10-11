@@ -201,3 +201,18 @@ Independent review (10/10, an agent of ours - Codex out of credits), whole branc
   (`nixx-saves-backup\first`) is kept for good - the pass runs again at each start while LaunchBox has not written it.
 - Checked and dropped by the review: row copies (every settable field), `#` in ids, RestoreSet's rollback, LiteBox
   reading our JSON (it falls back on the path).
+
+Second independent review (10/10), on those fixes above all; each claim checked in the code:
+- **A restore did not follow the "listed by" routing**: a restore's row is the BACKUP, in LaunchBox's vault (`Saves\`),
+  whose path was never listed - Dolphin's code still restored RetroArch's backups. A vault row with no owner in its id now
+  goes to whoever listed one of its card's live files (`SavePersist.LivePathsOf`; vault rows only, the live ones are asked
+  about hundreds of times).
+- **`dir` split a card made before it** at its first restore: `StockIds.Result` re-encoded a by-name id with the folder.
+  A by-name id naming the very file restored (name, slot, folder when it holds one) now comes back as it came.
+- **`first` was made from today's XML** on an install that had run the branch: the oldest dated copy becomes `first`;
+  every copy is made in a temporary folder and renamed (never half kept); once per PROCESS (it was once per plugin copy).
+- Small: the "listed by" table emptied past 200000 entries only, and said; `TakeOut` puts back the row being moved too
+  when it fails; the restore's install hint is put back as it was, not cleared.
+- Left as it is: a file two emulators both list (a `.srm` beside the rom) can send an integration's own row with no id
+  to the other one - telling them apart needs a table of what each integration listed itself; rare with nothing kept
+  beside the games.

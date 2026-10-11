@@ -756,6 +756,16 @@ namespace LbIntegrations.Probe
             Pin("result: by name, restored into slot 3 of that folder - its card",
                 StockIds.Result(RA, "", inSnes9x, "", true, "Zelda.state3", 3, @"emulators\retroarch\states\snes9x"),
                 StockIds.Encode(RA, "", true, "Zelda.state3", 3, @"emulators\retroarch\states\snes9x"));
+            // Second review 10/10: a card made before "dir", restored into its own file, keeps its id.
+            var oldByName = "{\"emu\":\"lb.retroarch\",\"kind\":\"state\",\"by\":\"name\",\"id\":\"Zelda.state1\",\"slot\":1}";
+            Pin("result: a by-name card made before dir, back into its own file - its id kept",
+                StockIds.Result(RA, "", oldByName, "", true, "Zelda.state1", 1, @"emulators\retroarch\states\snes9x"), oldByName);
+            Pin("result: ... into another slot - that slot's card, with its folder",
+                StockIds.Result(RA, "", oldByName, "", true, "Zelda.state2", 2, @"emulators\retroarch\states\snes9x"),
+                StockIds.Encode(RA, "", true, "Zelda.state2", 2, @"emulators\retroarch\states\snes9x"));
+            Pin("result: a by-name card of one folder restored into another's file of that name - the other folder's",
+                StockIds.Result(RA, "", inSnes9x, "", true, "Zelda.state", 0, @"emulators\retroarch\states\bsnes"),
+                StockIds.Encode(RA, "", true, "Zelda.state", 0, @"emulators\retroarch\states\bsnes"));
             Pin("already ours: left alone", StockIds.Encode(RA, "{\"emu\":\"ares\",\"kind\":\"save\"}", false, "x", null), "{\"emu\":\"ares\",\"kind\":\"save\"}");
             Pin("LiteBox's: left alone", StockIds.Encode(RA, "entry:42", false, "x", null), "entry:42");
             Pin("no id, no file: left alone", StockIds.Encode(RA, "", false, "", null), "");

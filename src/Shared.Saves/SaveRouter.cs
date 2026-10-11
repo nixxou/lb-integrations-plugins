@@ -364,8 +364,21 @@ namespace LbIntegrations.Saves
         /// <summary>A live file listed for <paramref name="emu"/> through a desk (OthersFor; the probe).</summary>
         internal static void NoteListed(string path, string emu, EmulatorPlugin plugin, IEmulator emulator)
         {
-            if (_listed.Count > 20000) _listed.Clear();
+            // It decides routing (OwnerForStock, OwnerOfPath): emptied only past a size no library reaches, and said.
+            if (_listed.Count > 200000) { _listed.Clear(); Say("the table of listed files was full (200000) and was emptied - rows of other emulators route by their ids until listed again"); }
             _listed[FullOf(path)] = (emu, plugin, emulator);
+        }
+
+        /// <summary>The live files of a game's card (SavePersist.LivePathsOf); the probe puts its own.</summary>
+        internal static Func<string?, string?, IReadOnlyList<string>> CardLivePaths = SavePersist.LivePathsOf;
+
+        /// <summary>True for a file in LaunchBox's vault of backups (&lt;root&gt;\Saves\).</summary>
+        internal static bool IsVault(string? path)
+        {
+            var full = FullOf(path);
+            if (full.Length == 0) return false;
+            var root = SaveScan.Memo("root", () => Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..")));
+            return full.StartsWith(Path.Combine(root, "Saves") + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>The emulator that listed the live file at <paramref name="path"/> this session, if any.</summary>
@@ -414,7 +427,16 @@ namespace LbIntegrations.Saves
             // No owner in the id (empty, a GUID): the plugin that LISTED this file through a desk this session (review
             // 10/10: RetroArch's rows on a Dolphin game, listed with their own ids when RetroArch is not in our form or
             // `stockIds` is off, were restored, removed and backed up by Dolphin's code).
-            if (owner.Kind != SaveOwnerKind.Nixx && owner.Kind != SaveOwnerKind.LaunchBox) return ListedOwner(row.FileLocation, selfEmu);
+            if (owner.Kind != SaveOwnerKind.Nixx && owner.Kind != SaveOwnerKind.LaunchBox)
+            {
+                if (ListedOwner(row.FileLocation, selfEmu) is { } listed) return listed;
+                // A backup (LaunchBox's vault, Saves\ - a restore): its path was never listed; its card's live files were
+                // (second review 10/10). Only for the vault: the row methods ask about live rows hundreds of times.
+                if (!IsVault(row.FileLocation) || string.IsNullOrEmpty(row.SaveGroupId)) return null;
+                foreach (var live in CardLivePaths(row.GameId, row.SaveGroupId))
+                    if (ListedOwner(live, selfEmu) is { } byCard) return byCard;
+                return null;
+            }
             if (owner.Name == selfEmu) return null;
             var key = "stock\u0001" + selfEmu + "\u0001" + row.SaveGroupId + "\u0001" + row.EmulatorFileName + "\u0001" + row.EmulatorCore + "\u0001" + row.GameId;
             if (_routes.TryGetValue(key, out var known)) return known.Route;

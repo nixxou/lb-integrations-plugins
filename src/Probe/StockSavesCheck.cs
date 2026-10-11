@@ -269,6 +269,22 @@ namespace LbIntegrations.Probe
             fake.Calls.Clear();
             Expect("... a GUID on a file nobody listed: RetroArch's own code", ra.IsSaveActive(WithId(sat, "c380b29f2702480a982dda74c642a367"), raEmu.ApplicationPath) == ra.IsSaveActive(sat, raEmu.ApplicationPath) && fake.Calls.Count == 0, string.Join(",", fake.Calls));
             Expect("... the router: ares's file is ares's own to ares, another's to RetroArch", LbIntegrations.Saves.SaveRouter.ListedOwner(listedFile, "ares") == null && LbIntegrations.Saves.SaveRouter.ListedOwner(listedFile, "lb.retroarch")?.Emu == "ares", "");
+            // A restore of that card: the row is a BACKUP in LaunchBox's vault, never listed - its card's live file was (second
+            // review 10/10: Dolphin's own AddSaveFile restored RetroArch's backups).
+            var vaultRow = new GameSaveGame { GameId = zelda.Id, SaveGroupId = "c380b29f2702480a982dda74c642a368",
+                                              FileLocation = Path.Combine(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..")), "Saves", "Super Nintendo", "Zelda", "listed-by-ares-01.ram") };
+            var wasLive = LbIntegrations.Saves.SaveRouter.CardLivePaths;
+            LbIntegrations.Saves.SaveRouter.CardLivePaths = (g, id) => id == vaultRow.SaveGroupId ? new[] { listedFile } : Array.Empty<string>();
+            try
+            {
+                fake.Calls.Clear();
+                ra.AddSaveFile(new AddSaveArgs { SaveToAdd = vaultRow });
+                Expect("a backup of a card whose live file ares listed: restored by ares", fake.Calls.Contains("AddSaveFile"), string.Join(",", fake.Calls));
+                fake.Calls.Clear();
+                var vaultOther = new GameSaveGame { GameId = zelda.Id, SaveGroupId = "c380b29f2702480a982dda74c642a369", FileLocation = vaultRow.FileLocation };
+                Expect("... a backup of a card nobody listed: not ares's", LbIntegrations.Saves.SaveRouter.OwnerForStock(vaultOther, "lb.retroarch") == null, "ares");
+            }
+            finally { LbIntegrations.Saves.SaveRouter.CardLivePaths = wasLive; }
             // A restore forwarded by a desk tells the owner which install the row came from (review 10/10: two installs, the
             // first one's save overwritten).
             fake.Via = null;

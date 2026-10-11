@@ -147,6 +147,7 @@ namespace LbIntegrations.Saves
                     var kept = new List<object>();
                     var found = false;
                     var args = new object?[1];
+                    bool done = false;
                     try
                     {
                         while ((bool)o.Take.Invoke(o.Collection, args)!)
@@ -154,10 +155,13 @@ namespace LbIntegrations.Saves
                             if (!found && ReferenceEquals(args[0], s)) found = true; else kept.Add(args[0]!);
                             args[0] = null;
                         }
+                        done = true;
                     }
                     finally
                     {
-                        // Every row taken out goes back, whatever failed (review 10/10: a failure in between lost them).
+                        // Every row taken out goes back, whatever failed (review 10/10: a failure in between lost them) - the
+                        // one being moved too when it failed (second review: it was lost, never added to its new owner).
+                        if (!done && found) kept.Add(s);
                         foreach (var k in kept) try { o.Add.Invoke(o.Collection, new[] { k }); } catch (Exception ex) { say("persist: a row could not be put back: " + ex.Message); }
                     }
                     return found;
