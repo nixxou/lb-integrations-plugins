@@ -74,6 +74,11 @@ namespace LbIntegrations.Saves
         /// this process: it lists, backs up and restores only the other emulators' saves of its games (lot 5).</summary>
         internal static bool NoSave(string? emu) => emu != null && AppDomain.CurrentDomain.GetData(Marker + "|nosave|" + emu) is true;
 
+        /// <summary>A no-save integration standing as a desk (lot 5): the switches on, its hooks proven, under LaunchBox's desk.
+        /// Its rows are all other emulators'; one nobody claims is never handed to an SDK body that acts on files.</summary>
+        internal static bool Desk(string? emu) => NoSave(emu) && LbIntegrations.Compat.Compat.On("stockDesk")
+                                                  && LbIntegrations.Compat.Compat.On("stockNoSaves") && Complete(emu!) && SaveRouter.Active;
+
         /// <summary>The hooked integrations' types → their emu, ONE dictionary for the whole process (in the AppDomain's data):
         /// the SDK's bodies are patched by whichever copy of the pack comes first, and must know the types another copy hooked.</summary>
         private static ConcurrentDictionary<Type, string> Emus
@@ -434,7 +439,21 @@ namespace LbIntegrations.Saves
         private static void RemoveSaveOut(object __instance, GameSaveBase __0, PluginResponse __result) => Answered(__instance, "RemoveSave", __0, __result?.WasSuccess + " " + __result?.Message);
 
         private static bool RemoveSaveIn(object __instance, ref GameSaveBase __0, ref PluginResponse __result)
-            => RowIn(__instance, ref __0, ref __result, SaveForward.RemoveSave);
+        {
+            if (!RowIn(__instance, ref __0, ref __result, SaveForward.RemoveSave)) return false;
+            // A no-save integration's row nobody claims: the SDK's body deletes its file - refused (lot 5).
+            try
+            {
+                if (EmuOf(__instance) is { } emu && Desk(emu))
+                {
+                    __result = new PluginResponse(false, "This save belongs to another emulator, which could not be found - nothing was deleted.");
+                    Once(emu, "RemoveSave " + Show(__0) + " refused - no owner found, the file is left");
+                    return false;
+                }
+            }
+            catch { }
+            return true;
+        }
         private static bool IsSaveActiveIn(object __instance, ref GameSaveBase __0, string __1, ref bool __result)
             => RowIn(__instance, ref __0, ref __result, (r, s) => SaveForward.IsSaveActive(r, s, __1));
         private static bool IsSaveContainerIn(object __instance, ref GameSaveBase __0, ref bool __result)
@@ -663,6 +682,9 @@ namespace LbIntegrations.Saves
                     if (!ours.SequenceEqual(rows)) __result = new GetSavesResponse(ours);
                     rows = ours;
                 }
+                // Lot 5: an integration without saves of its own answers the SDK's failure ("not supported") - when it says it
+                // supports saves (SupportsSaveManagementIn), its listing is the other emulators' saves, a success even empty.
+                if (Desk(emu) && __result?.WasSuccess != true) { rows = Array.Empty<GameSaveBase>(); __result = new GetSavesResponse(new List<GameSaveBase>()); }
                 // The other emulators' saves of these games (step 7), as the pack's desks list them. Nothing under LiteBox
                 // (SaveRouter.Active), nothing when a desk asks this integration (the nesting guard of OthersFor).
                 if (LbIntegrations.Compat.Compat.On("stockDesk") && Complete(emu) && __result?.WasSuccess != false && __0 != null)

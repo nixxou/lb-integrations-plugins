@@ -395,6 +395,27 @@ namespace LbIntegrations.Probe
                     finally { LbIntegrations.Compat.Compat.UseForTests(null); }
                 }
                 else Console.WriteLine("     (the stand-in is not DuckStation's: D6 not tried here - to see in LaunchBox)");
+
+                // Lot 5, step 2: its listing is the other emulators' saves (a success even empty), their rows go to their owners,
+                // and a row nobody claims is never deleted by the SDK's body.
+                var none = new GetSavesArgs { Games = Array.Empty<IGame>(), AdditionalApplications = Array.Empty<IAdditionalApplication>() };
+                var listed = duck.GetSaves(none);
+                Expect("DuckStation's GetSaves: a success (the SDK's \"not supported\" replaced)", listed?.WasSuccess == true, listed?.Message ?? "null");
+                LbIntegrations.Compat.Compat.UseForTests(new Dictionary<string, bool> { ["stockNoSaves"] = false });
+                try { Expect("... the switch off: the SDK's failure again", duck.GetSaves(none)?.WasSuccess == false, "success"); }
+                finally { LbIntegrations.Compat.Compat.UseForTests(null); }
+                fake.Calls.Clear();
+                Expect("an ares row on DuckStation: answered by ares", !duck.IsSaveActive(aresRow, duckEmu.ApplicationPath) && fake.Calls.Contains("IsSaveActive"), string.Join(",", fake.Calls));
+                var orphan = Path.Combine(scratch, "nobody.srm");
+                File.WriteAllText(orphan, "x");
+                var orphanRow = new GameSaveGame { GameId = zelda.Id, FileLocation = orphan, SaveGroupId = "" };
+                var removed = duck.RemoveSave(orphanRow);
+                Expect("a row nobody claims, removed on DuckStation: refused", removed?.WasSuccess == false, removed?.Message ?? "null");
+                Expect("... its file left", File.Exists(orphan), "deleted");
+                LbIntegrations.Compat.Compat.UseForTests(new Dictionary<string, bool> { ["stockNoSaves"] = false });
+                try { duck.RemoveSave(orphanRow); }
+                finally { LbIntegrations.Compat.Compat.UseForTests(null); }
+                Expect("... the switch off: the SDK's body deletes it (the test means something)", !File.Exists(orphan), "still there");
             }
 
             Console.WriteLine("  " + (bad == 0 ? "all good" : bad + " FAILURE(S)"));
