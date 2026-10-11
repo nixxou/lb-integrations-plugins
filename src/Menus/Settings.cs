@@ -470,7 +470,10 @@ namespace LbIntegrations.Menus
         }
     }
 
-    /// <summary>The host's active window, so a dialog is modal to it and comes up in front.</summary>
+    /// <summary>The host's window, so a dialog is modal to it and comes up in front: the foreground one when it is the
+    /// host's, else the host's main window. Seen 10/10, not reproduced since: a warning of the Compatibility page hidden behind
+    /// LaunchBox, modal - everything blocked. A window owned by LaunchBox's stays above it, so its owner was most likely
+    /// another program's window (the foreground at the click; LaunchBox had just been started from a terminal).</summary>
     internal sealed class Owner : IWin32Window
     {
         private Owner(IntPtr handle) { Handle = handle; }
@@ -479,10 +482,17 @@ namespace LbIntegrations.Menus
         public static IWin32Window Foreground()
         {
             var handle = GetForegroundWindow();
-            return handle == IntPtr.Zero ? null : new Owner(handle);
+            if (handle != IntPtr.Zero && GetWindowThreadProcessId(handle, out var pid) != 0 && pid == (uint)Environment.ProcessId)
+                return new Owner(handle);
+            IntPtr main = IntPtr.Zero;
+            try { main = System.Diagnostics.Process.GetCurrentProcess().MainWindowHandle; } catch { }
+            return main == IntPtr.Zero ? null : new Owner(main);
         }
 
         [System.Runtime.InteropServices.DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
     }
 }
