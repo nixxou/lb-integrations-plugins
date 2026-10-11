@@ -24,8 +24,17 @@ internal static class SaveIdsBack
     /// <summary>The probe's failure: true for a platform file whose write must fail (after another was written).</summary>
     internal static Func<string, bool>? FailWriteForTests;
 
-    /// <summary>(true, what was done) - or (false, why), the XML files then exactly as they were.</summary>
-    public static (bool ok, string message) Run(string root)
+    /// <summary>What a run did: ok and what to say - or not ok and why, the XML files then as they were; the copy and the
+    /// files written, for <see cref="Undo"/>.</summary>
+    internal sealed record Outcome(bool ok, string message, string? Copy, IReadOnlyList<string> Written)
+    {
+        public static implicit operator Outcome((bool ok, string message) r) => new Outcome(r.ok, r.message, null, Array.Empty<string>());
+    }
+
+    /// <summary>(true, what was done) - or (false, why), the XML files then exactly as they were. <paramref name="running"/>:
+    /// a LaunchBox, BigBox or LiteBox up (null when none), asked again just before the first write - one started since the
+    /// setup's check would load the XML with our ids and write them back at its close, the pack gone.</summary>
+    public static Outcome Run(string root, Func<string?>? running = null)
     {
         var platforms = Path.Combine(root, "Data", "Platforms");
         if (!Directory.Exists(platforms)) return (true, "");
@@ -49,7 +58,11 @@ internal static class SaveIdsBack
         try { copy = BackUp(root, platforms); }
         catch (Exception ex) { return (false, "The save ids could not be given back: the platform XML files could not be copied aside (" + ex.Message + ")."); }
 
-        // 3. Written one by one, each checked before it takes the place of the old one; a failure puts back the others.
+        // 3. Nothing written while a host is up (started since the setup's own check).
+        if (running?.Invoke() is string host)
+            return (false, "Close " + host + " first, then try again: it was started during the uninstall. Nothing was written.");
+
+        // Written one by one, each checked before it takes the place of the old one; a failure puts back the others.
         var written = new List<string>();
         foreach (var c in changes)
         {
@@ -89,9 +102,12 @@ internal static class SaveIdsBack
         }
 
         int rowsBack = changes.Sum(c => c.Rows);
-        return (true, "\n\nThe saves of LaunchBox's RetroArch, Dolphin and PCSX2 got their own ids back: " + rowsBack + " row(s) in "
-                      + changes.Count + " platform file(s). The files as they were: " + copy);
+        return new Outcome(true, "\n\nThe saves of LaunchBox's RetroArch, Dolphin and PCSX2 got their own ids back: " + rowsBack + " row(s) in "
+                                 + changes.Count + " platform file(s). The files as they were: " + copy, copy, written);
     }
+
+    /// <summary>The files a run wrote put back from its copy (a host started before the folders went): true when all were.</summary>
+    public static bool Undo(Outcome done) => done.Copy == null || done.Written.Count == 0 || PutBack(done.Written, done.Copy);
 
     private static (string Text, bool Bom) Read(string path)
     {

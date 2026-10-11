@@ -406,8 +406,14 @@ internal static class InstallerCore
 
         // Lot 7: the saves of LaunchBox's own integrations get their own ids back BEFORE anything goes - without the pack
         // nothing decodes ours. Failed: nothing uninstalled (Mehdi, 11/10).
-        var ids = SaveIdsBack.Run(l.Root);
+        var ids = SaveIdsBack.Run(l.Root, RunningHost);
         if (!ids.ok) return (false, ids.message + "\n\nNothing was uninstalled.");
+        // Asked once more before anything goes: a host started meanwhile has the XML with LaunchBox's ids now, but the pack
+        // still there - the ids put back as they were and nothing removed, rather than a half state.
+        if (RunningHost() is string late)
+            return (false, "Close " + late + " first, then try again: it was started during the uninstall. "
+                         + (SaveIdsBack.Undo(ids) ? "The save ids were put back as they were; nothing was uninstalled."
+                                                  : "Nothing was uninstalled, but some save ids could not be put back - copy the files from " + ids.Copy + "."));
 
         var problems = new List<string>();
         var gone = 0;

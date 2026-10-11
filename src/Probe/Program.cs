@@ -59,9 +59,9 @@ namespace LbIntegrations.Probe
             // Lot 7: the setup's way back of the save ids on a LaunchBox root - a COPY (it writes there): --saves-back <root>.
             if (Has(args, "--saves-back"))
             {
-                var (ok, message) = NixxIntegrations.SaveIdsBack.Run(Arg(args, "--saves-back"));
-                Console.WriteLine((ok ? "OK" : "REFUSED") + (message.Length == 0 ? " - nothing to give back" : message));
-                return ok ? 0 : 1;
+                var done = NixxIntegrations.SaveIdsBack.Run(Arg(args, "--saves-back"));
+                Console.WriteLine((done.ok ? "OK" : "REFUSED") + (done.message.Length == 0 ? " - nothing to give back" : done.message));
+                return done.ok ? 0 : 1;
             }
             // GlobalCache from several processes at once (SavesCheck.GlobalCacheCheck starts three of these).
             if (Has(args, "--globalcache-set")) { int at = Array.IndexOf(args, "--globalcache-set"); LbIntegrations.Lbip.GlobalCache.DirForTests = args[at + 1]; LbIntegrations.Lbip.GlobalCache.Set(args[at + 2], args[at + 3], args[at + 4]); return 0; }

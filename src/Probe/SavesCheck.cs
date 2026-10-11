@@ -818,6 +818,14 @@ namespace LbIntegrations.Probe
                 var bytes = File.ReadAllBytes(b);
                 Check("setup: ... each file's own encoding kept (B with its BOM, A without)", bytes.Length > 3 && bytes[0] == 0xEF && File.ReadAllBytes(a)[0] == (byte)'<');
                 Check("setup: ... and a second run finds nothing to do", NixxIntegrations.SaveIdsBack.Run(root) is { ok: true } again2 && again2.message.Length == 0);
+                // A host started during the uninstall: before the first write, nothing written; after it, put back.
+                Reset();
+                var hostUp = NixxIntegrations.SaveIdsBack.Run(root, () => "LaunchBox");
+                Check("setup: LaunchBox started before the first write - refused, nothing written",
+                      !hostUp.ok && hostUp.message.Contains("LaunchBox") && H(a) == before[0] && H(b) == before[1], hostUp.message);
+                var ran = NixxIntegrations.SaveIdsBack.Run(root);
+                Check("setup: LaunchBox started after the write, before the folders - the files put back as they were",
+                      ran.ok && ran.Written.Count == 2 && NixxIntegrations.SaveIdsBack.Undo(ran) && H(a) == before[0] && H(b) == before[1] && H(c) == before[2]);
             }
             finally { NixxIntegrations.SaveIdsBack.FailWriteForTests = null; try { Directory.Delete(root, true); } catch { } }
         }
