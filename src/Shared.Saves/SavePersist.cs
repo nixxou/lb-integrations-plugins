@@ -137,6 +137,20 @@ namespace LbIntegrations.Saves
                 }
                 string Where(Owner o) => o.AppId == null ? "the game" : "version " + o.AppId;
 
+                // MEASURED 11/10 (Zelda, Game Saves): opening the window, LaunchBox lists once with the game's saved rows in
+                // place, then takes them all out of Game.Saves and lists again - rebuilding its list from that listing. A row
+                // added then goes into a list about to be replaced. So: rows seen for this game less than 30 s ago and none
+                // now = LaunchBox rebuilding, nothing written this pass. A game with no saved row at all (none seen lately) is
+                // not this: its first rows are written as before. Process-wide (every desk of the pack writes here); this
+                // only ever holds a write back, it changes no id.
+                var seenKey = "LbIntegrations.SavePersist.RowsSeen|" + gameId;
+                if (owners.Any(o => o.Items.Any())) AppDomain.CurrentDomain.SetData(seenKey, DateTime.UtcNow.Ticks);
+                else if (AppDomain.CurrentDomain.GetData(seenKey) is long seen && DateTime.UtcNow.Ticks - seen < TimeSpan.FromSeconds(30).Ticks)
+                {
+                    say("persist: the game's saved rows are out of its list (LaunchBox rebuilding it) - nothing written this pass");
+                    return;
+                }
+
                 string? P(object o, string n) { try { return saveType!.GetProperty(n)?.GetValue(o) as string; } catch { return null; } }
                 void Set(object s, string n, object? v) { var pi = saveType!.GetProperty(n); if (pi != null && pi.CanWrite) try { pi.SetValue(s, v); } catch { } }
 

@@ -593,6 +593,23 @@ namespace LbIntegrations.Saves
                 {
                     var cards = PersistedCards(__0, emu);
                     var ours = rows.Select(r => r == null ? r! : Encode(emu, r, PickCard(r.SaveGroupId, cards.TryGetValue(CardKey(r.GameId, r.FileLocation, r.AdditionalApplicationId), out var c) ? c : null))).ToList();
+                    // What the lookup found, for a one-game listing (Game Saves; measured 11/10: one listing found Zelda's
+                    // cards, the next one 3 s later did not).
+                    if (games == 1)
+                    {
+                        var g0 = __0!.Games!.First();
+                        string? holderType = null; int persisted = -1;
+                        try
+                        {
+                            var h = PersistedRows.Holders(g0).First().Holder;
+                            holderType = h.GetType().Name;
+                            persisted = (h.GetType().GetProperty("Saves", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(h) as System.Collections.IEnumerable)?.Cast<object>().Count() ?? -1;
+                        }
+                        catch { }
+                        SaveRouter.Say("[stock]    cards: game " + g0.GetType().Name + " read as " + holderType + ", " + persisted + " persisted row(s), "
+                                       + cards.Count + " path(s) in " + emu + "'s form; per row: "
+                                       + string.Join(", ", rows.Select(r => Path.GetFileName(r?.FileLocation ?? "") + "=" + (cards.TryGetValue(CardKey(r?.GameId, r?.FileLocation, r?.AdditionalApplicationId), out var cc) ? cc.Count : 0))));
+                    }
                     if (!ours.SequenceEqual(rows)) __result = new GetSavesResponse(ours);
                     rows = ours;
                 }

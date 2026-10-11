@@ -138,6 +138,23 @@ integration must come through our hook, else the log says `HOOKS LOST`.
   of a lb.retroarch save handed to the desk's own lb.retroarch steps" (StockRestore, our id decoded), RetroArch's live
   `.srm` = 7D00A454 (the backup), SUPER ZSNES's untouched (E40D8C35). Live files before: `Zelda-*-before-T5`.
 
+### 3.2 T8 (11/10): Zelda on SUPER ZSNES, a RetroArch backup restored through the desk
+
+- The 08/10 backup (`-01.srm`) went back into `Emulators\RetroArch\saves\Snes9x\` by the desk's own RetroArch steps
+  (hash checked); SUPER ZSNES's `.srm` untouched; the SNES XML's 18 rows of Zelda unchanged (no card added, no id changed).
+- **Found and fixed (59c3a6e)**: the RetroArch rows came out of the desk with by-name ids, not their GUID cards. The view
+  of the game is made by SUPER ZSNES's copy of the shared code and read by ares's (the copy holding the hooks): `is
+  Forward` never recognised it. `SaveGameView.Real` now knows a view by its type's name; the probe has the ares dll make
+  one and reads it (it failed without the fix).
+- **Measured, LaunchBox's**: opening Game Saves, LaunchBox lists the game twice, 2-3 s apart. The first time its saved
+  rows are in `Game.Saves` (18 for Zelda, the cards found); the second time it has taken them ALL out (0) - it rebuilds
+  its list from that listing. So in that second listing no card can be looked up: RetroArch's rows get by-name ids, which
+  does no harm today (LaunchBox matches its ordinary saves by path - the XML stayed the same). What could have: Plan A
+  adding a row into that empty list. `SavePersist.Ensure` now writes nothing when the game had rows less than 30 s ago and
+  has none now (a game with no row at all is not held back); it changes no id, holds back a write only. No cache of the
+  cards for the listing (decided 11/10: a deleted card's id could come back, for no visible gain).
+- A diagnostic line on one-game listings: `cards: game ... read as ..., N persisted row(s), N path(s) ...; per row: ...`.
+
 ## 4. Codex review of lot 4 (10/10)
 
 One finding, fixed (a5f789b): a row method that failed to hook (a LaunchBox update, a patch refused) was logged and
