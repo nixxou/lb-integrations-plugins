@@ -43,15 +43,36 @@ namespace LbIntegrations.Saves
             ("Unbroken.LaunchBox.Windows.RetroArch", "RetroArchPlugin", "lb.retroarch"),
             ("Unbroken.LaunchBox.Windows.Dolphin", "DolphinPlugin", "lb.dolphin"),
             ("Unbroken.LaunchBox.Windows.Pcsx2", "Pcsx2Plugin", "lb.pcsx2"),
+            // Lot 5 (docs\saves-lot5.md): the ones without save support, measured 12/10 - none overrides a save method.
+            ("Unbroken.LaunchBox.Windows.BigPEmu", "BigPEmuPlugin", "lb.bigpemu"),
+            ("Unbroken.LaunchBox.Windows.Cemu", "CemuPlugin", "lb.cemu"),
+            ("Unbroken.LaunchBox.Windows.DuckStation", "DuckStationPlugin", "lb.duckstation"),
+            ("Unbroken.LaunchBox.Windows.Mame", "MamePlugin", "lb.mame"),
+            ("Unbroken.LaunchBox.Windows.Rpcs3", "Rpcs3Plugin", "lb.rpcs3"),
+            ("Unbroken.LaunchBox.Windows.ScummVm", "ScummVmPlugin", "lb.scummvm"),
+            ("Unbroken.LaunchBox.Windows.Xemu", "XemuPlugin", "lb.xemu"),
         };
 
-        /// <summary>The save methods hooked: every one of the SDK's but the two that take nothing naming a row.</summary>
+        /// <summary>The save methods hooked: every one of the SDK's but GetPotentialSaveSlots. SupportsSaveManagement only on
+        /// an integration without save support (lot 5) - lot 4's three keep their own answer, untouched.</summary>
         private static readonly string[] Hooked =
         {
             "GetSaves", "AddSaveFile", "RemoveSave", "IsSaveActive", "IsSaveContainer", "TryBackupSave",
             "UseSaveGroupIdForPersistedMatch", "TryComputeSaveSignature", "TryGetSaveGroupInfo", "IsSecondarySaveFile",
-            "GetCompanionSaveFiles",
+            "GetCompanionSaveFiles", "SupportsSaveManagement",
         };
+
+        /// <summary>The SDK's 13 save methods: an integration overriding none has no save support (lot 5).</summary>
+        private static readonly string[] SaveApi =
+        {
+            "SupportsSaveManagement", "GetSaves", "AddSaveFile", "RemoveSave", "IsSaveActive", "IsSaveContainer", "TryBackupSave",
+            "UseSaveGroupIdForPersistedMatch", "TryComputeSaveSignature", "TryGetSaveGroupInfo", "IsSecondarySaveFile",
+            "GetCompanionSaveFiles", "GetPotentialSaveSlots",
+        };
+
+        /// <summary>An integration of LaunchBox without save support (none of the SDK's save methods its own), as hooked in
+        /// this process: it lists, backs up and restores only the other emulators' saves of its games (lot 5).</summary>
+        internal static bool NoSave(string? emu) => emu != null && AppDomain.CurrentDomain.GetData(Marker + "|nosave|" + emu) is true;
 
         /// <summary>The hooked integrations' types → their emu, ONE dictionary for the whole process (in the AppDomain's data):
         /// the SDK's bodies are patched by whichever copy of the pack comes first, and must know the types another copy hooked.</summary>
@@ -129,10 +150,20 @@ namespace LbIntegrations.Saves
                 // Marked first: whatever happens below, this integration is never hooked twice.
                 AppDomain.CurrentDomain.SetData(Marker + "|" + entry.Emu, Format);
                 Emus[type] = entry.Emu;
+                // Without save support when it overrides none of the SDK's save methods (lot 5, the seven measured 12/10).
+                bool noSave = SaveApi.All(m =>
+                {
+                    var b = typeof(EmulatorPlugin).GetMethods(BindingFlags.Public | BindingFlags.Instance).FirstOrDefault(x => x.Name == m && x.IsVirtual);
+                    var own = b == null ? null : type.GetMethod(m, BindingFlags.Public | BindingFlags.Instance, null, b.GetParameters().Select(p => p.ParameterType).ToArray(), null);
+                    return own == null || own.DeclaringType == typeof(EmulatorPlugin);
+                });
+                if (noSave) AppDomain.CurrentDomain.SetData(Marker + "|nosave|" + entry.Emu, true);
                 var h = new Harmony(HarmonyId);
-                var said = new List<string>();
+                var said = new List<string> { noSave ? "no save support of its own" : "saves of its own" };
                 foreach (var m in Hooked)
                 {
+                    // Lot 4's three keep their own SupportsSaveManagement - only the ones without saves have theirs answered.
+                    if (m == "SupportsSaveManagement" && !noSave) continue;
                     try
                     {
                         var sdk = typeof(EmulatorPlugin).GetMethods(BindingFlags.Public | BindingFlags.Instance).FirstOrDefault(x => x.Name == m && x.IsVirtual);
@@ -392,7 +423,7 @@ namespace LbIntegrations.Saves
         // What the integration answered for its own rows (once per method, id and answer) - the backups' trail.
         private static void Answered(object instance, string method, GameSaveBase? row, object? result, string? extra = null)
         {
-            try { if (EmuOf(instance) is { } emu) Once(emu, method + " -> " + result + (extra == null ? "" : " " + extra) + " for " + Show(row)); } catch { }
+            try { if (row?.SaveGroupId != Sentinel && EmuOf(instance) is { } emu) Once(emu, method + " -> " + result + (extra == null ? "" : " " + extra) + " for " + Show(row)); } catch { }
         }
 
         private static void TryBackupSaveOut(object __instance, GameSaveBase __0, bool __result, ref string __3) => Answered(__instance, "TryBackupSave", __0, __result, "error=\"" + __3 + "\"");
@@ -541,6 +572,24 @@ namespace LbIntegrations.Saves
             catch (Exception ex) { SaveRouter.Say("[stock] restore's row left as it came: " + ex.Message); }
         }
 
+        /// <summary>Lot 5, decision D6: an integration without save support says it has some as soon as another plugin with
+        /// saves - one of ours or LaunchBox's - covers a platform its emulators cover (its own answer takes no platform: over
+        /// all of them). Then LaunchBox shows Game Saves on its games and asks it about saves; the desk answers with the other
+        /// emulators' (GetSaves). Otherwise, or a switch off, or its hooks not proven: the SDK's false.</summary>
+        private static bool SupportsSaveManagementIn(object __instance, ref bool __result)
+        {
+            try
+            {
+                if (EmuOf(__instance) is not { } emu || !NoSave(emu)) return true;
+                if (!LbIntegrations.Compat.Compat.On("stockDesk") || !LbIntegrations.Compat.Compat.On("stockNoSaves") || !Complete(emu) || !SaveRouter.Active) return true;
+                if (!SaveRouter.OthersCoverPlatformsOf(emu, NoSave)) return true;
+                __result = true;
+                Once(emu, "says it supports saves: another plugin with saves covers one of its platforms (lot 5)");
+                return false;
+            }
+            catch { return true; }
+        }
+
         private static void GetSavesIn(object __instance, GetSavesArgs __0, out long __state)
         {
             __state = EmuOf(__instance) == null ? 0 : Stopwatch.GetTimestamp();
@@ -561,7 +610,8 @@ namespace LbIntegrations.Saves
                 // Our ids only for an integration whose every row method decodes them (Codex review 10/10): one not fully
                 // hooked - a method gone, a patch refused, another Harmony over ours - gets its cards' own ids back.
                 bool on = LbIntegrations.Compat.Compat.On("stockIds");
-                bool Ours(string? emu) => on && Complete(emu);
+                // The ones without saves have no cards of their own: never migrated (lot 5).
+                bool Ours(string? emu) => on && Complete(emu) && !NoSave(emu);
                 // The whole library again whenever the integrations in our form change: one hooked and checked after the
                 // first pass (its assembly loaded late), one whose hooks were lost, the switch turned.
                 var ready = string.Join(",", Integrations.Select(i => i.Emu).Where(e => Ours(e)));

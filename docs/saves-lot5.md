@@ -31,3 +31,20 @@ for it.
   Nixx-ares; MAME 0.288 for Arcade, which no save-capable plugin covers.
 
 Probe: `--stock-saves <root> --scratch <dir>`, section 9.
+
+## 2. Step 1: hooked, and D6 (12/10)
+
+- `StockDesk.Integrations` gets the seven; each is classed when hooked: **no save support** = none of the SDK's 13 save
+  methods its own (`StockDesk.NoSave`, process-wide). `SupportsSaveManagement` is hooked on the SDK's body for those only
+  (lot 4's three keep their own answer, never hooked).
+- **D6** (`SaveRouter.OthersCoverPlatformsOf`): true when a plugin WITH saves (ours, or RetroArch/Dolphin/PCSX2) drives a
+  library emulator sharing a platform with one of the integration's emulators; those without saves never count (and are
+  never asked: their answer is this rule). Kept a minute, cleared with `ForgetStock`. Only with `stockDesk` and the new
+  `stockNoSaves` on, the integration Complete (hooked, self-check passed), under LaunchBox.
+- Not for them: the migration of ids (they have no cards of their own).
+- Compatibility page: `stockNoSaves` (Missing, Needs `stockDesk`), check `nosave.saves`.
+- `GetSaves` still the SDK's failure at this step: deployed so, it shows what LaunchBox does with an integration that says
+  it supports saves and lists none (5.0, in LaunchBox).
+- Probe `--stock-saves` section 9: the seven hooked as without saves, DuckStation's self-check; D6 on the real
+  DuckStation (a stand-in DuckStation emulator on PS1): no plugin with saves on PS1 - false; RetroArch on PS1 - true; the
+  switch off - false.

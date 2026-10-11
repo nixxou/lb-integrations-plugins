@@ -47,6 +47,7 @@ namespace LbIntegrations.Compat
                     case "ra.saves": return StockSaves("RetroArch", "RetroArchPlugin");
                     case "dolphin.saves": return StockSaves("Dolphin", "DolphinPlugin");
                     case "pcsx2.saves": return StockSaves("Pcsx2", "Pcsx2Plugin");
+                case "nosave.saves": return NoSaves();
                     case "sdk.saves":
                     {
                         var missing = SaveMethods.Where(n => typeof(EmulatorPlugin).GetMethods(BindingFlags.Public | BindingFlags.Instance).Count(m => m.Name == n && m.IsVirtual) != 1).ToList();
@@ -239,6 +240,42 @@ namespace LbIntegrations.Compat
             if (gone.Count > 0 || !own.Contains("GetSaves") || !own.Contains("AddSaveFile"))
                 return (CompatCheckState.Missing, typeName + ": " + (gone.Count > 0 ? string.Join(", ", gone) + " not found" : "GetSaves / AddSaveFile not its own"));
             return (CompatCheckState.Ok, typeName + ": its own " + string.Join(", ", own) + (sdk.Count > 0 ? "; the SDK's " + string.Join(", ", sdk) : ""));
+        }
+
+        /// <summary>Lot 5: LaunchBox's integrations without save support (the same table as StockDesk's): Ok when each one
+        /// loaded still overrides none of the save methods; one that now has its own is said - it gets lot 4's treatment.</summary>
+        internal static readonly (string Family, string Type)[] NoSaveIntegrations =
+        {
+            ("BigPEmu", "BigPEmuPlugin"), ("Cemu", "CemuPlugin"), ("DuckStation", "DuckStationPlugin"), ("Mame", "MamePlugin"),
+            ("Rpcs3", "Rpcs3Plugin"), ("ScummVm", "ScummVmPlugin"), ("Xemu", "XemuPlugin"),
+        };
+
+        private static (CompatCheckState, string) NoSaves()
+        {
+            var plain = new List<string>(); var changed = new List<string>();
+            foreach (var (family, typeName) in NoSaveIntegrations)
+            {
+                Type? t = null;
+                foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    if (a.IsDynamic || !string.Equals(a.GetName().Name, "Unbroken.LaunchBox.Windows." + family, StringComparison.OrdinalIgnoreCase)) continue;
+                    Type?[] ts;
+                    try { ts = a.GetTypes(); } catch (ReflectionTypeLoadException e) { ts = e.Types; } catch { continue; }
+                    t = ts.FirstOrDefault(x => x != null && x.Name == typeName && typeof(EmulatorPlugin).IsAssignableFrom(x));
+                    if (t != null) break;
+                }
+                if (t == null) continue;
+                var own = SaveMethods.Where(n =>
+                {
+                    var b = typeof(EmulatorPlugin).GetMethods(BindingFlags.Public | BindingFlags.Instance).FirstOrDefault(m => m.Name == n && m.IsVirtual);
+                    var m = b == null ? null : t.GetMethod(n, BindingFlags.Public | BindingFlags.Instance, null, b.GetParameters().Select(p => p.ParameterType).ToArray(), null);
+                    return m != null && m.DeclaringType != typeof(EmulatorPlugin);
+                }).ToList();
+                if (own.Count == 0) plain.Add(family); else changed.Add(typeName + " (its own " + string.Join(", ", own) + ")");
+            }
+            if (plain.Count == 0 && changed.Count == 0) return (CompatCheckState.NotHere, "none of LaunchBox's integrations without save support is loaded");
+            if (changed.Count > 0) return (CompatCheckState.Missing, "now with save methods of their own: " + string.Join("; ", changed));
+            return (CompatCheckState.Ok, "no save method of their own: " + string.Join(", ", plain));
         }
 
         private static (CompatCheckState, string) Statics(string family, params string[] names)

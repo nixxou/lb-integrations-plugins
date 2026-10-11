@@ -124,6 +124,19 @@ namespace LbIntegrations.Compat
             },
             new CompatPatch
             {
+                Id = "stockNoSaves", Group = CompatGroup.Missing, Needs = "stockDesk",
+                Title = "Other emulators' saves on games set to DuckStation, MAME, RPCS3, Cemu, ScummVM, xemu or BigPEmu",
+                Problem = "These LaunchBox integrations have no save support at all: a game set to one of them has no Game Saves, so a "
+                        + "save another emulator keeps for it (RetroArch, ares...) is never listed nor backed up.",
+                Example = "Final Fantasy VII set to DuckStation, played once with RetroArch: its memory card was in no card.",
+                Does = "When another emulator with saves covers one of their platforms, they say they support saves, and list and hand "
+                     + "on the other emulators' saves - as on RetroArch, Dolphin and PCSX2. They have none of their own.",
+                Without = "Those games have no Game Saves, as in LaunchBox.",
+                OffWarning = "Without it, the saves of other emulators on those games are no longer backed up.",
+                Checks = new[] { "nosave.saves", "sdk.saves" },
+            },
+            new CompatPatch
+            {
                 Id = "stockIds", Group = CompatGroup.Data, Title = "RetroArch, Dolphin and PCSX2 save ids in the pack's form",
                 Problem = "Those integrations give their saves ids of their own, or none: whose save a card is cannot always be told "
                         + "(a RetroArch card is only a number).",

@@ -366,6 +366,37 @@ namespace LbIntegrations.Probe
                                   + "  IsSaveActive=" + Try(() => inst.Plugin.IsSaveActive(new GameSaveGame(), "")) + "  AddSaveFile=" + Try(() => inst.Plugin.AddSaveFile(new AddSaveArgs { SaveToAdd = new GameSaveGame() })?.Message ?? "null"));
             }
 
+            // Lot 5, step 1: hooked, and D6 - DuckStation says it supports saves only while a plugin with saves covers PS1.
+            var duck = stock.FirstOrDefault(s => s.Emu == "lb.duckstation").Plugin;
+            if (duck != null)
+            {
+                Expect("DuckStation hooked as an integration without save support", LbIntegrations.Saves.StockDesk.NoSave("lb.duckstation"), "not classed");
+                Expect("RetroArch is not (it has saves of its own)", !LbIntegrations.Saves.StockDesk.NoSave("lb.retroarch"), "classed");
+                var duckEmu = new StubEmulator { Title = "DuckStation", ApplicationPath = Path.Combine(root, "Emulators", "DuckStation", "duckstation-qt-x64-ReleaseLTCG.exe") };
+                Line(duckEmu, "Sony Playstation", "");
+                Blank(duckEmu); foreach (var l in duckEmu.GetAllEmulatorPlatforms()) Blank(l);
+                bool Claimed() { try { return duck.GetApplicableEmulators(new IEmulator[] { duckEmu })?.Any() == true; } catch { return false; } }
+                Console.WriteLine("     DuckStation claims the stand-in emulator: " + Claimed());
+                bool Says(params IEmulator[] library)
+                {
+                    PluginHelper.DataManager = new StubDataManager(library);
+                    LbIntegrations.Saves.SaveRouter.ForgetStock();
+                    try { return duck.SupportsSaveManagement(); } finally { PluginHelper.DataManager = new StubDataManager(raEmu, dolphinEmu); LbIntegrations.Saves.SaveRouter.ForgetStock(); }
+                }
+                if (Claimed())
+                {
+                    Expect("D6: no plugin with saves on PS1 - DuckStation keeps the SDK's false", !Says(duckEmu, raEmu, dolphinEmu), "true");
+                    var raPs1 = new StubEmulator { Title = "RetroArch", ApplicationPath = raEmu.ApplicationPath };
+                    Line(raPs1, "Sony Playstation", "-L \"cores\\mednafen_psx_hw_libretro.dll\" -f");
+                    Blank(raPs1); foreach (var l in raPs1.GetAllEmulatorPlatforms()) Blank(l);
+                    Expect("D6: RetroArch covers PS1 - DuckStation says it supports saves", Says(duckEmu, raPs1), "false");
+                    LbIntegrations.Compat.Compat.UseForTests(new Dictionary<string, bool> { ["stockNoSaves"] = false });
+                    try { Expect("D6: ... the switch off - the SDK's false again", !Says(duckEmu, raPs1), "true"); }
+                    finally { LbIntegrations.Compat.Compat.UseForTests(null); }
+                }
+                else Console.WriteLine("     (the stand-in is not DuckStation's: D6 not tried here - to see in LaunchBox)");
+            }
+
             Console.WriteLine("  " + (bad == 0 ? "all good" : bad + " FAILURE(S)"));
             Console.WriteLine();
             Console.WriteLine("  scratch left in " + scratch);

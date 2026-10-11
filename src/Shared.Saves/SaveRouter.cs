@@ -149,6 +149,42 @@ namespace LbIntegrations.Saves
             lock (StockGate) _stock = null;
             _driver.Clear();
             _routes.Clear();
+            _covered.Clear();
+        }
+
+        private static readonly ConcurrentDictionary<string, (long At, bool Yes)> _covered = new(StringComparer.Ordinal);
+
+        /// <summary>Lot 5, D6: true when a plugin WITH saves (one of ours, or LaunchBox's RetroArch/Dolphin/PCSX2) drives an
+        /// emulator of the library that shares a platform with one of the emulators <paramref name="emu"/> drives. The others
+        /// without saves (<paramref name="noSave"/>) never count - and are never asked, their answer being this very rule.
+        /// Kept a minute: LaunchBox asks it at every game shown, and the library's emulators rarely change.</summary>
+        internal static bool OthersCoverPlatformsOf(string emu, Func<string?, bool> noSave)
+        {
+            var now = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (_covered.TryGetValue(emu, out var known) && now - known.At < System.Diagnostics.Stopwatch.Frequency * 60) return known.Yes;
+            bool yes = false;
+            try
+            {
+                var lib = Library();
+                var mine = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var e in lib)
+                    if (DriverOf(e)?.Emu == emu)
+                        foreach (var p in Safe(() => e.GetAllEmulatorPlatforms()) ?? Array.Empty<IEmulatorPlatform>())
+                            if (!string.IsNullOrEmpty(Safe(() => p?.Platform))) mine.Add(p!.Platform);
+                if (mine.Count > 0)
+                    foreach (var e in lib)
+                    {
+                        var d = DriverOf(e);
+                        if (d == null || d.Value.Emu == emu || noSave(d.Value.Emu)) continue;
+                        bool manages;
+                        try { manages = d.Value.Plugin.SupportsSaveManagement(); } catch { manages = false; }
+                        if (!manages) continue;
+                        if ((Safe(() => e.GetAllEmulatorPlatforms()) ?? Array.Empty<IEmulatorPlatform>()).Any(p => mine.Contains(Safe(() => p?.Platform) ?? ""))) { yes = true; break; }
+                    }
+            }
+            catch { yes = false; }
+            _covered[emu] = (now, yes);
+            return yes;
         }
 
         /// <summary>A parameterless constructor, else LaunchBox 14's one taking IPluginPaths (RetroArch's).</summary>
