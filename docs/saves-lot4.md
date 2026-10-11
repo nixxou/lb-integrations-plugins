@@ -216,3 +216,11 @@ Second independent review (10/10), on those fixes above all; each claim checked 
 - Left as it is: a file two emulators both list (a `.srm` beside the rom) can send an integration's own row with no id
   to the other one - telling them apart needs a table of what each integration listed itself; rare with nothing kept
   beside the games.
+
+Codex review, 11/10, two findings, left as they are (Mehdi):
+- **The uninstall does not give the cards their own ids back** (our JSON once LaunchBox has written it: RetroArch's
+  `saturn-` and PCSX2's `pcsx2:` matching break without the pack) - that is lot 7's, as planned; the Compatibility
+  page's "the setup gives them back" holds once lot 7 is in.
+- **A RetroArch Saturn restore is not all or nothing** (`StockRestore` copies the `.bcr`, then RetroArch's own
+  `CopySaturnCompanionFiles`: a companion that fails leaves the `.bcr` replaced) - those are LaunchBox's own steps and
+  its own behaviour; Dolphin's likewise.
