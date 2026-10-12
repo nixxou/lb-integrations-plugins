@@ -320,6 +320,8 @@ namespace LbIntegrations.Compat
                               "planA", "companionSignature", "companionRestore", "overwriteWarning" },
                 OffWarning = "Turned off, a game shows only the saves of its own emulator, as in LaunchBox: the others are no longer "
                            + "backed up, and the cards of RetroArch, Dolphin and PCSX2 go back to LaunchBox's own ids at the next start.",
+                InLiteBox = "In LiteBox: LiteBox shows every emulator's saves itself. Here this keeps two installs apart and puts "
+                          + "companion files back (a cartridge's clock...); the rest is LaunchBox's.",
             },
             new CompatCard
             {
@@ -333,27 +335,34 @@ namespace LbIntegrations.Compat
                 Line = "Clean import lists for Vita, Xbox 360, Xbox, PSP and arcade games, and their titles, regions and versions "
                      + "read from the games themselves.",
                 Ids = new[] { "importWizard" },
+                LaunchBoxOnly = true,
             },
             new CompatCard
             {
                 Title = "The pack's emulators in LaunchBox's lists",
                 Line = "Flycast, melonDS and every \"Nixx-\" emulator in LaunchBox's \"Add emulator\" list and platform grid.",
                 Ids = new[] { "rowInjection" },
+                LaunchBoxOnly = true,
             },
             new CompatCard
             {
                 Title = "Opening an emulator from LaunchBox",
                 Line = "\"Open emulator\" opens the right window (Cxbx), and the plugins know the emulator ran.",
                 Ids = new[] { "emulatorOpened" },
+                LaunchBoxOnly = true,
             },
         };
 
         /// <summary>What the safe mode turns off: every patch that hooks into LaunchBox (Harmony) or reads its inner workings by
-        /// reflection - what a LaunchBox update can break. What only the pack's own code does stays on.</summary>
+        /// reflection - what a LaunchBox update can break. What only the pack's own code does stays on.
+        /// Kept on (Mehdi, 13/10): rowInjection - it hooks Microsoft.Data.Sqlite, not LaunchBox, and a query it cannot mirror comes
+        /// back as LaunchBox built it, while without it LaunchBox's emulator windows miss the pack's rows; twoInstalls - the
+        /// pack's own code, its reading of LaunchBox's rows fails without harm. stockIds goes off with the rest: its way back
+        /// to LaunchBox's ids is measured exact (lot 4, T4), and on it keeps the hooks on RetroArch, Dolphin and PCSX2.</summary>
         public static readonly string[] Internal =
         {
-            "desk", "retroarchView", "foreignSlots", "stockDesk", "stockNoSaves", "stockRestore", "twoInstalls", "stockIds", "planA",
-            "raConfigCache", "importWizard", "rowInjection", "emulatorOpened",
+            "desk", "retroarchView", "foreignSlots", "stockDesk", "stockNoSaves", "stockRestore", "stockIds", "planA",
+            "raConfigCache", "importWizard", "emulatorOpened",
         };
     }
 
@@ -364,5 +373,9 @@ namespace LbIntegrations.Compat
         public string[] Ids = Array.Empty<string>();
         /// <summary>Asked before turning the card off. Null: no confirmation.</summary>
         public string? OffWarning;
+        /// <summary>Does nothing in LiteBox (it has its own ways): marked there, still switchable - the settings are LaunchBox's too.</summary>
+        public bool LaunchBoxOnly;
+        /// <summary>What the card still does in LiteBox, when only a part of it applies there.</summary>
+        public string? InLiteBox;
     }
 }

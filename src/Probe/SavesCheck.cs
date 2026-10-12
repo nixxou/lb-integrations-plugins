@@ -571,6 +571,13 @@ namespace LbIntegrations.Probe
                 Check("compat: no patch on two cards", cards.SelectMany(c => c.Ids).Distinct(StringComparer.OrdinalIgnoreCase).Count() == cards.Sum(c => c.Ids.Length));
                 Check("compat: the safe mode names switchable patches only", LbIntegrations.Compat.CompatRegistry.Internal.All(id => LbIntegrations.Compat.CompatRegistry.Find(id)?.Switchable == true));
                 Check("compat: the import help can be switched now", LbIntegrations.Compat.CompatRegistry.Find("importWizard")?.Switchable == true);
+                // What the safe mode keeps (13/10): the rows in LaunchBox's lists and the two installs; the ids go off with the hooks.
+                var safeOff = LbIntegrations.Compat.CompatRegistry.Internal;
+                Check("compat: the safe mode keeps rowInjection and twoInstalls, turns stockIds off",
+                      !safeOff.Contains("rowInjection") && !safeOff.Contains("twoInstalls") && safeOff.Contains("stockIds") && safeOff.Contains("desk"));
+                Check("compat: the LaunchBox-only cards are the import, the lists and the opening",
+                      string.Join(",", cards.Where(c => c.LaunchBoxOnly).SelectMany(c => c.Ids)) == "importWizard,rowInjection,emulatorOpened"
+                      && cards.Single(c => c.Ids.Contains("desk")).InLiteBox != null);
                 LbIntegrations.Compat.Compat.Save(ini, new Dictionary<string, bool> { ["planA"] = false }, "advanced", new Dictionary<string, bool> { ["desk"] = true, ["planA"] = false });
                 var page = LbIntegrations.Compat.Compat.LoadPage(ini);
                 var sw = LbIntegrations.Compat.Compat.Load(ini);

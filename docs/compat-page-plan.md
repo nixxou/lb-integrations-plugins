@@ -250,5 +250,24 @@ the ADVANCED view (a link at the top; the view chosen is remembered in `[page] v
 - The checks of the wizard and of "Open emulator" answer "not here" outside LaunchBox / BigBox (LiteBox, the probe), where
   they said "missing" - the simple view would have shown a false alarm.
 
+### Checks, LiteBox, what the safe mode keeps (13/10, Mehdi's questions)
+
+- **When the checks run**: the page is built with the window (its controls and the ini, no check), and parented only when
+  first shown; its checks start on that handle, in the background (the cards say "Checking..." until they end).
+- **In LiteBox** nothing is hidden - `nixx-compat.ini` is LaunchBox's too, a switch changed there applies to LaunchBox.
+  Import help, the lists and "Open emulator" are marked "LaunchBox only" (`CompatCard.LaunchBoxOnly`: the light says so,
+  a dim line under the card); the saves card says what it still does there (`InLiteBox`: two installs kept apart, the
+  companions - LiteBox shows every emulator's saves itself). `CompatChecks.InLiteBox()` = the LiteBox process;
+  `LBIP_AS_LITEBOX=1` with `--nixx-shots` draws the page as LiteBox shows it.
+- **The safe mode keeps** `rowInjection` (it hooks Microsoft.Data.Sqlite, not LaunchBox; a query it cannot mirror comes
+  back as LaunchBox built it; without it the emulator windows miss the pack's rows) and `twoInstalls` (the pack's code; its
+  reading of LaunchBox's rows fails without harm). The `Nixx-` entries themselves never depended on either: they are made
+  through the public plugin interface (`emulatorEntry`, not switchable). `stockIds` goes off with the rest: its way back
+  to LaunchBox's own ids is measured exact (lot 4, T4) - the XML follows only for the games LaunchBox saves afterwards.
+- **Under LiteBox the decoding of RetroArch / Dolphin / PCSX2 ids stays in, whatever is switched** (`StockDesk.Install`):
+  after a safe mode set in LaunchBox, the platform files can still hold their ids in our form, and LiteBox hands them to
+  the integrations as they are (PCSX2 decides by `pcsx2:`, RetroArch's Saturn match by `saturn-`). Our ids are never given
+  out there; the desk's hooks keep their own switches. The self-check (`StockDesk.Verify`) runs at the first listing of
+  any host (`SaveDesk.GetSaves`).
 Probe: `--saves-selftest` (cards and safe mode name switchable patches, no patch on two cards, `[page]` / `[beforeSafe]`
 read back without touching the switches); `LBIP_SHOT_END=1` with `--nixx-shots` draws each page scrolled to its end too.

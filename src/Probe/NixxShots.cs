@@ -30,6 +30,9 @@ namespace LbIntegrations.Probe
             // An xemu for the xemu page to see (LBIP_XEMU_EXE): XemuLibrary.Override, as if LaunchBox had it.
             if (Environment.GetEnvironmentVariable("LBIP_XEMU_EXE") is string xemuExe && xemuExe.Length > 0)
                 foreach (var a in AppDomain.CurrentDomain.GetAssemblies()) a.GetType("LbIntegrations.Xemu.XemuLibrary", false)?.GetField("Override", Any)?.SetValue(null, xemuExe);
+            // The page as LiteBox shows it (LBIP_AS_LITEBOX=1): the relay's copy of the compat checks told it runs there.
+            if (Environment.GetEnvironmentVariable("LBIP_AS_LITEBOX") == "1")
+                menus.GetType("LbIntegrations.Compat.CompatChecks", false)?.GetField("LiteBoxForTests", Any)?.SetValue(null, (bool?)true);
             var providers = menus.GetType("LbIntegrations.Menus.SettingsProviders", true).GetMethod("All", Any).Invoke(null, null);
             var form = (Form)Activator.CreateInstance(menus.GetType("LbIntegrations.Menus.NixxSettingsForm", true), Any, null, new[] { providers }, null);
             var nav = (ListBox)form.GetType().GetField("_nav", Any).GetValue(form);

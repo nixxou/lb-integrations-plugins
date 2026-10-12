@@ -101,7 +101,12 @@ namespace LbIntegrations.Saves
         {
             try
             {
-                if (!LbIntegrations.Compat.Compat.On("stockDesk") && !LbIntegrations.Compat.Compat.On("stockIds")) return;
+                // Under LiteBox, whatever is switched (Mehdi, 13/10): the platform files LaunchBox wrote may hold these integrations'
+                // ids in our form - a safe mode turned on in LaunchBox gives them back only for the games LaunchBox saves after.
+                // LiteBox hands them to the integrations as they are, and PCSX2 decides by its pcsx2: prefix, RetroArch's Saturn
+                // match by its saturn- one: they must be decoded. Our ids are never given out there (Encoding), and the desk's
+                // hooks check their own switches.
+                if (SaveRouter.LaunchBoxHost && !LbIntegrations.Compat.Compat.On("stockDesk") && !LbIntegrations.Compat.Compat.On("stockIds")) return;
                 lock (Gate)
                 {
                     foreach (var a in AppDomain.CurrentDomain.GetAssemblies()) TryPatch(a);

@@ -86,6 +86,7 @@ namespace LbIntegrations.Menus
             safeRow.Controls.Add(_safe);
             _simple.Controls.Add(safeRow);
             _safeNote = Text("");
+            _safeNote.MaximumSize = new Size(Width0 - 30, 0);
             _simple.Controls.Add(_safeNote);
             _simple.Controls.Add(Text("The pack also sets up its own emulators - their entries, scripts and archive extraction: see the "
                                     + "advanced view.", top: 6));
@@ -136,6 +137,9 @@ namespace LbIntegrations.Menus
             head.Controls.Add(light);
             card.Controls.Add(head);
             card.Controls.Add(new Label { Text = c.Line, AutoSize = true, MaximumSize = new Size(Width0 - 40, 0), Margin = new Padding(18, 0, 0, 2), ForeColor = NixxTheme.Text, UseMnemonic = false });
+            // In LiteBox: the same settings (LaunchBox's too), said for what they do there.
+            var here = !CompatChecks.InLiteBox() ? null : c.LaunchBoxOnly ? "Used by LaunchBox only: nothing to do in LiteBox (the setting is kept for LaunchBox)." : c.InLiteBox;
+            if (here != null) card.Controls.Add(new Label { Text = here, AutoSize = true, MaximumSize = new Size(Width0 - 40, 0), Margin = new Padding(18, 0, 0, 2), ForeColor = NixxTheme.Dim, UseMnemonic = false });
 
             var details = new Label { AutoSize = true, MaximumSize = new Size(Width0 - 40, 0), Margin = new Padding(18, 2, 0, 2), ForeColor = NixxTheme.Dim, Visible = false, UseMnemonic = false,
                                       Text = "It covers: " + string.Join("; ", c.Ids.Select(id => CompatRegistry.Find(id)?.Title ?? id)) + ". Each one is in the advanced view." };
@@ -194,6 +198,7 @@ namespace LbIntegrations.Menus
                 box.CheckState = on == 0 ? CheckState.Unchecked : on == ids.Count ? CheckState.Checked : CheckState.Indeterminate;
                 var bad = ids.Where(Effective).FirstOrDefault(id => Problem(id, out _));
                 if (on == 0) { light.Text = "○ Off"; light.ForeColor = NixxTheme.Dim; }
+                else if (c.LaunchBoxOnly && CompatChecks.InLiteBox()) { light.Text = "○ LaunchBox only"; light.ForeColor = NixxTheme.Dim; }
                 else if (bad != null)
                 {
                     light.Text = "● Problem found: LaunchBox changed";
@@ -201,22 +206,25 @@ namespace LbIntegrations.Menus
                     broken.Add(c.Title);
                 }
                 else if (!_checksDone) { light.Text = "Checking..."; light.ForeColor = NixxTheme.Dim; }
-                else if (on < ids.Count) { light.Text = "◐ Partly on (changed in the advanced view)"; light.ForeColor = NixxTheme.Warn; }
+                else if (on < ids.Count) { light.Text = _beforeSafe.Count > 0 ? "◐ Partly on (safe mode)" : "◐ Partly on (changed in the advanced view)"; light.ForeColor = NixxTheme.Warn; }
                 else { light.Text = "● Working"; light.ForeColor = Color.MediumSeaGreen; }
             }
             if (_checksDone)
             {
                 var v = CompatChecks.LaunchBoxVersion();
                 _health.Text = broken.Count == 0
-                    ? "✔ Everything the pack relies on is in place in your LaunchBox" + (v == null ? "." : " (" + v + ").")
+                    ? (CompatChecks.InLiteBox() ? "✔ Everything the pack relies on is in place here (LiteBox)." : "✔ Everything the pack relies on is in place in your LaunchBox" + (v == null ? "." : " (" + v + ")."))
                     : "⚠ LaunchBox changed: " + string.Join(", ", broken.Select(t => "\"" + t + "\"")) + " can no longer work fully. Turn it off below, or update the pack.";
                 _health.ForeColor = broken.Count == 0 ? Color.MediumSeaGreen : NixxTheme.Warn;
             }
             bool safe = _beforeSafe.Count > 0;
             _safe.Text = safe ? "Leave safe mode" : "Safe mode";
-            _safeNote.Text = safe
+            _safeNote.Text = (safe
                 ? "Safe mode: everything that relies on LaunchBox's inner workings is off. \"Leave safe mode\" puts back the switches as they were."
-                : "Safe mode turns off everything that relies on LaunchBox's inner workings, and keeps what only the pack's own code does.";
+                : "Safe mode turns off everything that relies on LaunchBox's inner workings. It keeps what only the pack's own code does "
+                  + "(two installs kept apart, companion files), and the pack's emulators in LaunchBox's lists.")
+                + (CompatChecks.InLiteBox() ? " In LiteBox, the save ids of RetroArch, Dolphin and PCSX2 are always read back: LaunchBox "
+                                              + "may have written them in the pack's form." : "");
             _safeNote.ForeColor = safe ? NixxTheme.Warn : NixxTheme.Dim;
         }
 

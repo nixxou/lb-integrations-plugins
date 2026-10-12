@@ -203,6 +203,18 @@ namespace LbIntegrations.Compat
             catch { return true; }
         }
 
+        /// <summary>Running inside LiteBox (its process): the page marks what only LaunchBox uses. The settings file is the same
+        /// for both, so nothing is hidden there.</summary>
+        internal static bool InLiteBox()
+        {
+            if (LiteBoxForTests is bool forced) return forced;
+            try { return Process.GetCurrentProcess().ProcessName.Equals("LiteBox", StringComparison.OrdinalIgnoreCase); }
+            catch { return false; }
+        }
+
+        /// <summary>The probe's page as LiteBox shows it (--nixx-shots with LBIP_AS_LITEBOX=1).</summary>
+        internal static bool? LiteBoxForTests;
+
         /// <summary>The type, in an assembly whose name holds <paramref name="family"/>, that has the static <paramref name="method"/>.</summary>
         private static Type? StaticsOwner(string family, string method)
         {
