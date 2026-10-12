@@ -157,7 +157,19 @@ save there would take the first's id, and LiteBox would point the first's live r
 Fixed (baa22c1 here, 2f3c047 in LiteBox): `Catalog` `LbPersistedSaves.Of` (a section added, nothing changed),
 filled by LiteBox's `PluginLoader` with the store's `GameSave` rows of the game, read first by `SavePersist.RowsOf`.
 The same three rules in both hosts on the same XML. An older `Catalog` loaded first: the type is missing, caught,
-the plugin reads as before. Probe `--saves-selftest`: 4 cases. Real test under LiteBox: below.
+the plugin reads as before. Probe `--saves-selftest`: 4 cases.
+Real test under LiteBox (13/10, G:\LB1326, XML saved in `Backups\lbip-litebox-2026-10-13\`):
+- a moved save (Zelda's ares live row pointed at a folder that is gone): one ares card, its history kept, the row's path
+  put right in the XML at LiteBox's close (it writes the XML then, not before);
+- restore of an ares backup on that RetroArch game: the file right, but LiteBox handed RetroArch's live .srm row to the
+  ares card. Its guess of "the file about to be overwritten" compares version, entry and CORE, and LaunchBox writes the
+  asking emulator's core on the rows it creates (our rows leave it empty - RetroArch's desk log; Zelda's and FF7's ares
+  rows carry RetroArch's snes9x / mednafen_psx core). Fixed in LiteBox (37b7e8e): a guessed file the restore left
+  exactly as it was is not the destination; tried again, RetroArch's card kept. Data put back from the copy;
+- Secret of Mana (rows on its twin version): the USA saves of the four emulators on the game's view, France's not;
+- RASnes9x through LiteBox: the .srm in `Nixx-RASnes9x\Saves\`. Snes9x sets its own current directory (its `Roms\`)
+  and reads `.\Saves` from its exe - harmless;
+- ares through LiteBox, read off the process: current directory = its exe's folder, as under LaunchBox.
 
 ## 7. Sandbox
 
