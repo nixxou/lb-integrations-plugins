@@ -41,6 +41,10 @@ namespace LbIntegrations.Saves
         IReadOnlyList<string> OwnGetCompanionSaveFiles(string primaryFilePath);
         AddSaveResponse OwnAddSaveFile(AddSaveArgs args);
         PluginResponse OwnRemoveSave(GameSaveBase? save);
+
+        /// <summary>Where a restore of <paramref name="save"/> would write on <paramref name="emulator"/>'s install - the
+        /// computation the plugin's restore uses, read only (ExpectedDir, docs\saves-two-installs.md §5).</summary>
+        ExpectedDir OwnExpectedDir(IEmulator emulator, GameSaveBase save) => ExpectedDir.Unknown("this plugin does not say yet");
     }
 
     internal sealed class SaveDesk

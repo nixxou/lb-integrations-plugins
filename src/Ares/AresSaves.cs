@@ -86,6 +86,9 @@ namespace LbIntegrations.Ares
             return rom;
         }
 
+        /// <summary>ares's folder: a relative path of its settings.bml is relative to it (ExpectedDir.OfConfig).</summary>
+        private static string ExeDir(string exe) { try { return exe == null ? null : Path.GetDirectoryName(Path.GetFullPath(exe)); } catch { return null; } }
+
         internal static string NameOf(string rom, string exe = null) => Path.GetFileNameWithoutExtension(PlayedFile(rom, exe) ?? "");
 
         internal static Folders FoldersFor(string exe, string rom, AresSystem system)
@@ -97,7 +100,7 @@ namespace LbIntegrations.Ares
             {
                 // A big listing: settings.bml read once, not 3 times per game (LbIntegrations.Saves.SaveScan).
                 var v = LbIntegrations.Saves.SaveScan.Memo("ares.saves|" + exe, () => AresBml.Load(AresLaunch.SettingsOf(exe)).Get("Paths/Saves"));
-                if (!string.IsNullOrWhiteSpace(v)) saves = Path.GetFullPath(v.Replace('/', Path.DirectorySeparatorChar));
+                saves = LbIntegrations.Saves.ExpectedDir.OfConfig(v, ExeDir(exe));   // relative: from ares's folder, its current directory
             }
             catch { }
             string Under(string folder) => saves == null || system == null ? null : Path.Combine(saves, folder ?? system.Name);
@@ -127,9 +130,9 @@ namespace LbIntegrations.Ares
                 home = bml.Get("Paths/Home");
             }
             catch { }
-            if (!string.IsNullOrWhiteSpace(saves)) return Path.Combine(Path.GetFullPath(saves.Replace('/', Path.DirectorySeparatorChar)), f.Pak, f.Pak + f.Ext);
+            var savesDir = LbIntegrations.Saves.ExpectedDir.OfConfig(saves, ExeDir(exe));
             string root;
-            if (!string.IsNullOrWhiteSpace(home)) root = Path.GetFullPath(home.Replace('/', Path.DirectorySeparatorChar));
+            if (LbIntegrations.Saves.ExpectedDir.OfConfig(home, ExeDir(exe)) is string h) root = h;
             else
             {
                 var beside = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(exe)), "Systems");
@@ -375,7 +378,7 @@ namespace LbIntegrations.Ares
             try
             {
                 var v = AresBml.Load(settings).Get("Paths/Saves");
-                root = string.IsNullOrWhiteSpace(v) ? null : Path.GetFullPath(v.Replace('/', Path.DirectorySeparatorChar)).TrimEnd(Path.DirectorySeparatorChar);
+                root = LbIntegrations.Saves.ExpectedDir.OfConfig(v, ExeDir(exe))?.TrimEnd(Path.DirectorySeparatorChar);
             }
             catch { }
             _savesRoot[exe] = (written, length, root);
@@ -410,22 +413,19 @@ namespace LbIntegrations.Ares
                 if (string.IsNullOrWhiteSpace(source) || !File.Exists(source)) return new AddSaveResponse("This ares backup is not a file: " + source);
 
                 var original = new[] { save.OriginalFileName, Path.GetFileName(source) }.FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
-                var dm = PluginHelper.DataManager;
-                var game = dm?.GetGameById(save.GameId);
-                var emu = EmulatorOf(game);
+                var emu = EmulatorOf(PluginHelper.DataManager?.GetGameById(save.GameId));
                 var exe = emu == null ? null : ResolveFullPath(Safe(() => emu.ApplicationPath));
                 if (exe == null) return new AddSaveResponse("Could not find the ares this game runs on.");
                 if (AresLaunch.Running(exe)) return new AddSaveResponse("ares is running: it would write the game's own over this one. Close it first.");
-                var to = SaveRows.TargetFor(save, dm, Full);
-                if (to.Warning != null) Log.Warn("restore of " + original + ": " + to.Warning);
-                if (to.Refused) return new AddSaveResponse(to.Warning);
-                var rom = to.RomPath;
-                var system = SystemOf(emu, Safe(() => game?.Id), Safe(() => game?.Platform), rom);
-                var folders = FoldersFor(exe, rom, system);
-                var targetDir = save is GameSaveState ? folders.StateTarget : folders.SaveTarget;
+                // Where it goes: the same answer as OwnExpectedDir gives for this install (one computation).
+                var where = Destination(emu, save, out var to, out var system);
+                if (to?.Warning != null) Log.Warn("restore of " + original + ": " + to.Warning);
+                if (to?.Refused == true) return new AddSaveResponse(to.Warning);
+                var rom = to?.RomPath;
                 // A session left unfinished is finished first: taking its memory back later would undo this restore.
                 AresConsoleSession.Recover();
-                if (targetDir == null) return new AddSaveResponse("Could not work out where ares reads this save from.");
+                if (!where.Known) return new AddSaveResponse(where.Reason);
+                var targetDir = where.Path;
 
                 var name = NameNow(original, save is GameSaveState, rom, exe, system);
                 // A state goes to the slot picked, when ares has it (SlotRestore); the backup's own when none was.
@@ -472,6 +472,26 @@ namespace LbIntegrations.Ares
                 Log.Warn("AddSaveFile failed", ex);
                 return new AddSaveResponse("Could not restore this ares save: " + ex.Message);
             }
+        }
+
+        LbIntegrations.Saves.ExpectedDir IOwnSaves.OwnExpectedDir(IEmulator emulator, GameSaveBase save) => Destination(emulator, save, out _, out _);
+
+        /// <summary>The folder a restore of <paramref name="save"/> writes to on <paramref name="emulator"/>'s install
+        /// (ExpectedDir): today's rom of its game or version (SaveRows.TargetFor), its system, ares's Paths/Saves and the
+        /// system's sub-folder, else beside the played file. Read only.</summary>
+        private static LbIntegrations.Saves.ExpectedDir Destination(IEmulator emulator, GameSaveBase save, out RestoreTarget to, out AresSystem system)
+        {
+            to = null; system = null;
+            var exe = emulator == null ? null : ResolveFullPath(Safe(() => emulator.ApplicationPath));
+            if (exe == null || save == null) return LbIntegrations.Saves.ExpectedDir.Unknown("Could not find the ares this game runs on.");
+            var dm = PluginHelper.DataManager;
+            to = SaveRows.TargetFor(save, dm, Full);
+            if (to.Refused) return LbIntegrations.Saves.ExpectedDir.Unknown(to.Warning);
+            var game = dm?.GetGameById(save.GameId);
+            system = SystemOf(emulator, Safe(() => game?.Id), Safe(() => game?.Platform), to.RomPath);
+            var folders = FoldersFor(exe, to.RomPath, system);
+            return LbIntegrations.Saves.ExpectedDir.FolderOr(save is GameSaveState ? folders.StateTarget : folders.SaveTarget,
+                                                             "Could not work out where ares reads this save from.");
         }
 
         /// <summary>The file name a restored save takes for this rom TODAY - see <see cref="NameFor"/>.</summary>

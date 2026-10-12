@@ -32,6 +32,44 @@ namespace LbIntegrations.Probe
         private static object F(object o, string n) => o?.GetType().GetField(n, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(o)
                                                         ?? o?.GetType().GetProperty(n, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(o);
 
+        /// <summary>--ares-expected: where ares's saves and states go for Paths/Saves relative, absolute and empty - a relative
+        /// value from ares's own folder, its current directory under LaunchBox (measured 12/10), never LaunchBox's.</summary>
+        public static bool Expected(Assembly asm)
+        {
+            _bad = 0;
+            Console.WriteLine("-- ares: Paths/Saves as ares resolves it --");
+            var root = Path.Combine(Path.GetTempPath(), "lbip-ares-expected-" + Guid.NewGuid().ToString("N"));
+            var emu = Path.Combine(root, "emu"); var games = Path.Combine(root, "games");
+            Directory.CreateDirectory(emu); Directory.CreateDirectory(games);
+            var exe = Path.Combine(emu, "ares.exe"); File.WriteAllBytes(exe, Array.Empty<byte>());
+            var rom = Path.Combine(games, "Zelda.sfc"); File.WriteAllBytes(rom, new byte[] { 0 });
+            var bml = Path.Combine(emu, "settings.bml");
+            var sys = T(asm, "AresSystems").GetMethod("System", Any).Invoke(null, new object[] { "Super Famicom" });
+            var foldersFor = T(asm, "AresPlugin").GetMethod("FoldersFor", Any);
+            var cwd = Environment.CurrentDirectory;
+            try
+            {
+                // The probe's current directory is NOT ares's folder: a relative value read from it would show.
+                Environment.CurrentDirectory = root;
+                (string Save, string State) At(string saves)
+                {
+                    File.WriteAllText(bml, "Paths\n  Saves: " + saves + "\n");
+                    var f = foldersFor.Invoke(null, new object[] { exe, rom, sys });
+                    return ((string)F(f, "SaveTarget"), (string)F(f, "StateTarget"));
+                }
+                var rel = At("Saves/");
+                Check("relative \"Saves/\" → under ares's folder", string.Equals(rel.Save, Path.Combine(emu, "Saves", "Super Famicom"), StringComparison.OrdinalIgnoreCase), rel.Save);
+                Check("... the states too", string.Equals(rel.State, Path.Combine(emu, "Saves", "Super Famicom"), StringComparison.OrdinalIgnoreCase), rel.State);
+                var abs = At(Path.Combine(root, "elsewhere").Replace('\\', '/') + "/");
+                Check("absolute → as it is", string.Equals(abs.Save, Path.Combine(root, "elsewhere", "Super Famicom"), StringComparison.OrdinalIgnoreCase), abs.Save);
+                var none = At("");
+                Check("empty → beside the game (ares's default)", string.Equals(none.Save, games, StringComparison.OrdinalIgnoreCase), none.Save);
+            }
+            finally { Environment.CurrentDirectory = cwd; try { Directory.Delete(root, true); } catch { } }
+            Console.WriteLine(_bad == 0 ? "  all good" : "  " + _bad + " FAILED");
+            return _bad == 0;
+        }
+
         public static bool Names(Assembly asm, string exe)
         {
             _bad = 0;

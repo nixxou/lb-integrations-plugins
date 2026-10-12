@@ -677,6 +677,12 @@ namespace LbIntegrations.Probe
             Check("id: its folder kept with the new slot", SaveId.TryRead(SlotRestore.WithSlot(dirId, 4), out var dd) && dd?.Dir == "emulators\\retroarch\\states" && dd?.Slot == 4, SlotRestore.WithSlot(dirId, 4));
             Check("id: its slot read back", SlotRestore.SlotOf(id) == 1 && SlotRestore.SlotOf("guid") == null);
 
+            // A path from an emulator's config, as the emulator resolves it (ExpectedDir.OfConfig, measured 12/10).
+            Check("config path: relative → from the emulator's folder", ExpectedDir.OfConfig("Saves/", @"G:\Emu\ares") == @"G:\Emu\ares\Saves\");
+            Check("config path: \"..\\x\" → beside the emulator's folder", ExpectedDir.OfConfig(@"..\shared", @"G:\Emu\ares") == @"G:\Emu\shared");
+            Check("config path: rooted → as it is", ExpectedDir.OfConfig("D:/Saves/ares/", @"G:\Emu\ares") == @"D:\Saves\ares\");
+            Check("config path: empty → none (the emulator's default applies)", ExpectedDir.OfConfig("  ", @"G:\Emu\ares") == null);
+
             var dir = Path.Combine(Path.GetTempPath(), "lbip-slotrestore-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(dir);
             var asked = 0; string? text = null;
