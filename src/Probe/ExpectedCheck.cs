@@ -42,6 +42,7 @@ namespace LbIntegrations.Probe
                 {
                     case "Bsnes": Bsnes(asm, root, emu, games); break;
                     case "MelonDs": MelonDs(asm, root, emu, games); break;
+                    case "SuperZsnes": SuperZsnes(asm, root, emu, games); break;
                     default: Console.WriteLine("  no expected-folder cases for " + name); return false;
                 }
             }
@@ -78,6 +79,40 @@ namespace LbIntegrations.Probe
             Check("absolute → as it is", Same(abs.Save, Path.Combine(root, "s")) && Same(abs.State, Path.Combine(root, "st")), abs.Save + " | " + abs.State);
             var none = At("", "");
             Check("empty → beside the game (bsnes's default)", Same(none.Save, games) && Same(none.State, games), none.Save + " | " + none.State);
+        }
+
+        private static void SuperZsnes(Assembly asm, string root, string emu, string games)
+        {
+            Console.WriteLine("-- SUPER ZSNES: the first session, its settings file not written yet --");
+            var exe = Path.Combine(emu, "SUPERZSNES.exe"); File.WriteAllBytes(exe, Array.Empty<byte>());
+            var rom = Path.Combine(games, "Zelda.sfc"); File.WriteAllBytes(rom, new byte[] { 0 });
+            var settings = asm.GetType("LbIntegrations.SuperZsnes.SuperZsnesSettings", true);
+            var ini = Path.Combine(root, "pack-settings.ini");
+            settings.GetField("PathOverride", Any).SetValue(null, ini);
+            var foldersFor = asm.GetType("LbIntegrations.SuperZsnes.SuperZsnesPlugin", true).GetMethod("FoldersFor", Any);
+            try
+            {
+                (string Save, string State) At()
+                {
+                    var f = foldersFor.Invoke(null, new object[] { exe, rom });
+                    return ((string)F(f, "SaveDir"), (string)F(f, "StateDir"));
+                }
+                var bare = At();
+                Check("no in-process plugin deployed → beside the ROM (the emulator's default)", Same(bare.Save, games) && Same(bare.State, games), bare.Save + " | " + bare.State);
+                File.WriteAllBytes(Path.Combine(emu, "winhttp.dll"), Array.Empty<byte>());
+                Directory.CreateDirectory(Path.Combine(emu, "BepInEx", "plugins"));
+                File.WriteAllBytes(Path.Combine(emu, "BepInEx", "plugins", "SuperZsnes.BepInEx.dll"), Array.Empty<byte>());
+                Write(ini, "# none\n");
+                var mod = At();
+                Check("deployed, data-folders on (default) → <exe>\\saves and <exe>\\states before the first exit", Same(mod.Save, Path.Combine(emu, "saves")) && Same(mod.State, Path.Combine(emu, "states")), mod.Save + " | " + mod.State);
+                Write(ini, "plugin.data-folders=off\n");
+                var off = At();
+                Check("... plugin.data-folders off → beside the ROM", Same(off.Save, games), off.Save);
+                Write(ini, "plugin.bepinex=off\n");
+                var nobep = At();
+                Check("... the in-process plugin off → beside the ROM", Same(nobep.Save, games), nobep.Save);
+            }
+            finally { settings.GetField("PathOverride", Any).SetValue(null, null); }
         }
 
         private static void MelonDs(Assembly asm, string root, string emu, string games)

@@ -610,6 +610,12 @@ namespace LbIntegrations.Probe
                 }
 
                 // ── save management: no settings file, so beside the ROM ─────────
+                // The in-process plugin was deployed into this install above, and it fills an empty folder setting with
+                // <exe>\saves from the first session (FoldersFor, 12/10 - its own case in --expected): turned off here, so
+                // what is checked is the emulator's own default.
+                var savesIni = Path.Combine(root, "settings-saves.ini");
+                File.WriteAllText(savesIni, "plugin.data-folders=off\n");
+                asm.GetType("LbIntegrations.SuperZsnes.SuperZsnesSettings", true).GetField("PathOverride", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, savesIni);
                 Console.WriteLine("  saves and states");
                 var roms = Path.Combine(root, "roms");
                 var szData = Path.Combine(roms, "Game (USA).data.szsnes");

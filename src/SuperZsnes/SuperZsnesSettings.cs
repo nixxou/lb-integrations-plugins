@@ -68,6 +68,18 @@ namespace LbIntegrations.SuperZsnes
             }
         }
 
+        /// <summary>Does the in-process plugin fill the emulator's empty folder settings ("plugin.data-folders", on unless
+        /// turned off - and the in-process plugin itself wanted)? Then an empty srmPath / gameSavePath means
+        /// {exec}/saves, {exec}/states from the first session, before the emulator has written them (DataFolders.Apply).</summary>
+        public static bool DataFoldersWanted
+            // Asked by IsSaveActive's folders, hundreds of times per Game Saves: read while settings.ini is unchanged.
+            => LbIntegrations.Lbip.StampedCache.Get(SettingsPath, "superzsnes.data-folders", () =>
+            {
+                var all = Read();
+                bool On(string key) => !all.TryGetValue(key, out var s) || s == null || IsTrue(s);
+                return On("plugin.bepinex") && On("plugin.data-folders");
+            });
+
         public static Dictionary<string, string> Read() => Read(SettingsPath);
 
         /// <summary>A game's own options (its right-click window): <c>games\&lt;LaunchBox game id&gt;.ini</c> beside

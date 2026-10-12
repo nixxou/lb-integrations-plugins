@@ -82,9 +82,14 @@ namespace LbIntegrations.SuperZsnes
             var romDir = string.IsNullOrWhiteSpace(romPath) ? null : Path.GetDirectoryName(Path.GetFullPath(romPath));
             // A big listing decodes the settings file once, not once per game (LbIntegrations.Saves.SaveScan).
             var raw = LbIntegrations.Saves.SaveScan.Memo("superzsnes.raw|" + exePath, () => LbIntegrations.Lbip.StampedCache.Get(SuperZsnesPaths.SettingsFile(exePath), "superzsnes.raw|" + exePath, () => SuperZsnesCurrent.Raw(exePath, "srmPath", "gameSavePath", "noDirectoryForSaves")));   // and Game Saves: while the settings file is unchanged
+            // The pack's in-process plugin fills an EMPTY folder setting as the settings are loaded (DataFolders.Apply), so
+            // from the first session - before the emulator has written it into its file (review 12/10: "beside the ROM"
+            // was answered while the session already wrote to <exe>\saves). Only when it is deployed and wanted.
+            bool filled = LbIntegrations.Saves.SaveScan.Memo("superzsnes.filled|" + exePath, () => SuperZsnesPaths.IsPortable(exeDir) && SuperZsnesSettings.DataFoldersWanted);
             string Dir(string member)
             {
                 var v = raw.TryGetValue(member, out var o) ? o as string : null;
+                if (string.IsNullOrWhiteSpace(v) && filled) v = member == "srmPath" ? "{exec}/saves" : member == "gameSavePath" ? "{exec}/states" : null;
                 if (string.IsNullOrWhiteSpace(v)) return romDir;
                 var persist = LbIntegrations.Saves.SaveScan.Memo("superzsnes.persist|" + exePath, () => Path.GetDirectoryName(SuperZsnesPaths.SettingsFile(exePath) ?? "")) ?? exeDir;
                 var expanded = v.Replace("{exec}", exeDir, StringComparison.OrdinalIgnoreCase)
@@ -330,6 +335,15 @@ namespace LbIntegrations.SuperZsnes
             rom ??= SaveRows.TargetFor(save, PluginHelper.DataManager, Full).RomPath;
             var folders = FoldersFor(exe, rom);
             return save is GameSaveState ? StatesOf(folders, NameOf(rom)) : folders.SaveDir;
+        }
+
+        LbIntegrations.Saves.ExpectedDir IOwnSaves.OwnExpectedDir(IEmulator emulator, GameSaveBase save)
+        {
+            var path = Safe(() => emulator?.ApplicationPath);
+            if (save == null || !SuperZsnesPaths.IsSuperZsnesExecutable(path)) return LbIntegrations.Saves.ExpectedDir.Unknown("Could not find the SUPER ZSNES this game runs on.");
+            var to = SaveRows.TargetFor(save, PluginHelper.DataManager, Full);
+            if (to.Refused) return LbIntegrations.Saves.ExpectedDir.Unknown(to.Warning);
+            return LbIntegrations.Saves.ExpectedDir.FolderOr(TargetDirFor(save, ResolveFullPath(path), to.RomPath), "Could not work out where SUPER ZSNES reads this save from.");
         }
 
         /// <summary>A path as LaunchBox stores it, made full; null for nothing.</summary>
