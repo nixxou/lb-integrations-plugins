@@ -8,7 +8,7 @@
 //
 // So when RetroAchievements will log in (its toolset beside the exe, a token in its prefs), the launch leaves the ROM out
 // of the command line and puts it first in Snes9x's recent games ([Settings\Win\Files] Rom:RecentGame1); a watcher waits
-// for the window and for the login's end in RALog.txt (success or failure, 10 s at most), then sends the menu command of
+// for the window and for the login's end in RALog.txt (success or failure, 5 s at most), then sends the menu command of
 // recent game 1 (WM_COMMAND 0xFF00, wsnes9x.cpp) - the same LoadROM, logged in. Without RetroAchievements nothing changes.
 
 using System;
@@ -102,7 +102,7 @@ namespace LbIntegrations.RaSnes9x
                     // The login's end in RALog.txt, written by this run (after what the file held at the launch).
                     string how = "timed out";
                     var login = Stopwatch.StartNew();
-                    while (login.Elapsed < TimeSpan.FromSeconds(10))
+                    while (login.Elapsed < TimeSpan.FromSeconds(5))   // a login takes < 0.1 s; offline, the game waits no longer (Mehdi, 13/10)
                     {
                         var lines = Tail(log, from).Split('\n');
                         if (lines.Any(l => l.IndexOf("logged in successfully", StringComparison.OrdinalIgnoreCase) >= 0)) { how = "logged in"; break; }
