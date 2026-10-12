@@ -684,7 +684,19 @@ namespace LbIntegrations.Probe
                       InstallIds.HintOf(IdFor(b, new SavePersist.Persisted(gone, plain, false), new SavePersist.Persisted(gone + "2", other, false))) == "hhhhhhhh");
                 Check("listing: another save's card (another name) is never taken",
                       InstallIds.HintOf(IdFor(b, new SavePersist.Persisted(gone, SaveId.Write(new SaveIdData { Emu = "ares", Kind = "save", By = "name", Id = "Mana.ram" }), false))) == "hhhhhhhh");
-                // Apply: only this plugin's ids without a hint; the switch off, nothing.
+                // Another install's card (its hint not this one's) is adopted only when its folder is gone from a disk that is there (Codex 12/10).
+                var deleted = Path.Combine(dir, "A2", "Zelda.ram"); Directory.CreateDirectory(Path.GetDirectoryName(deleted)!);
+                var noDisk = Enumerable.Range('D', 23).Select(c => (char)c + @":\").FirstOrDefault(r => !Directory.Exists(r));
+                Check("listing: another install's card, its folder gone (renamed) → adopted",
+                      IdFor(b, new SavePersist.Persisted(gone, other, false), new SavePersist.Persisted(vault, other, true)) == other);
+                Check("listing: another install's card, its save deleted (its folder still there) → not adopted, a card of its own",
+                      InstallIds.HintOf(IdFor(b, new SavePersist.Persisted(deleted, other, false))) == "hhhhhhhh");
+                if (noDisk != null)
+                    Check("listing: another install's card on a disk not there (unplugged) → not adopted, a card of its own",
+                          InstallIds.HintOf(IdFor(b, new SavePersist.Persisted(Path.Combine(noDisk, "Emulators", "ares", "Zelda.ram"), other, false))) == "hhhhhhhh", noDisk);
+                var mine = SaveId.Write(new SaveIdData { Emu = "ares", Kind = "save", By = "name", Id = "Zelda.ram", Inst = "hhhhhhhh" });
+                Check("listing: this install's own card, its save deleted → adopted (the same install)",
+                      IdFor(b, new SavePersist.Persisted(deleted, mine, false)) == mine);                // Apply: only this plugin's ids without a hint; the switch off, nothing.
                 InstallIds.RowsForTests = _ => Array.Empty<SavePersist.Persisted>();
                 var mixed = new List<GameSaveBase> { Listed(a), new GameSaveGame { GameId = "g", FileLocation = b, SaveGroupId = "{\"emu\":\"bsnes\",\"kind\":\"save\",\"by\":\"name\",\"id\":\"Zelda.srm\"}" } };
                 var applied = InstallIds.Apply("ares", @"Emulators\Nixx-ares\ares.exe", mixed, null);

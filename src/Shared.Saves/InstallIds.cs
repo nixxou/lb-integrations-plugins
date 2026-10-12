@@ -10,7 +10,11 @@
 // listed id is given here so that a known file keeps its card and only a NEW card gets the hint:
 //   1. a persisted row of the game at the file's path: its id (whatever it is - an old card stays as it is, no migration);
 //   2. else the ONE card of the same save (its id without "inst") whose live files are all gone, or that has none (a
-//      renamed or moved emulator folder, a plugin that persists only its vault copies): adopted, its history kept;
+//      renamed or moved emulator folder, a plugin that persists only its vault copies): adopted, its history kept. A
+//      card of ANOTHER install (its hint not this one's) only when its files' FOLDER is gone from a disk that is there -
+//      a folder moved or renamed; a file gone from a folder still there (a save deleted), or a disk not there (unplugged,
+//      a share offline), is not a move: that card stays the other install's, this file gets its own (Codex, 12/10 -
+//      else two installs share a card again, the defect this file removes);
 //   3. else the id with this install's hint.
 // The hint is never corrected afterwards, never used as a destination: it only breaks a tie at a restore (SaveRouter).
 
@@ -100,7 +104,8 @@ namespace LbIntegrations.Saves
             var key = Base(listed);
             var orphans = persisted.Where(p => p.SaveGroupId != null && Base(p.SaveGroupId) == key)
                                    .GroupBy(p => p.SaveGroupId!, StringComparer.Ordinal)
-                                   .Where(g => g.Where(p => !p.Vault).All(p => !Exists(p.Path)))
+                                   .Where(g => g.Where(p => !p.Vault).All(p => !Exists(p.Path))
+                                               && (HintOf(g.Key) == null || HintOf(g.Key) == hint || g.Where(p => !p.Vault).All(p => MovedAway(p.Path))))
                                    .Select(g => g.Key).ToList();
             if (orphans.Count == 1) { why = "adopted the card whose file is gone"; return orphans[0]; }
             // 3. A card of its own, with this install's hint.
@@ -109,6 +114,18 @@ namespace LbIntegrations.Saves
         }
 
         private static bool Exists(string path) { try { return File.Exists(path) || Directory.Exists(path); } catch { return true; } }
+
+        /// <summary>The folder of <paramref name="path"/> is gone and its disk is there: moved or renamed, not unplugged.</summary>
+        private static bool MovedAway(string path)
+        {
+            try
+            {
+                var root = Path.GetPathRoot(path);
+                var dir = Path.GetDirectoryName(path);
+                return !string.IsNullOrEmpty(root) && Directory.Exists(root) && !string.IsNullOrEmpty(dir) && !Directory.Exists(dir);
+            }
+            catch { return false; }
+        }
 
         private static string? Full(string? path)
         {

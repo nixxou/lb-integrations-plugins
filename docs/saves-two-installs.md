@@ -52,7 +52,11 @@ second install's changes are never backed up apart.
    tempted into operational use). Existing cards are not touched.
 2. **Adoption at listing**, only for a file found by no path: one live row of ours, same game, emulator, kind and name,
    whose file **no longer exists** → the listed file takes its id (a renamed/moved folder, ares moving files out of the
-   game folder: the card kept as today). Several such rows → none adopted, a new card.
+   game folder: the card kept as today). Several such rows → none adopted, a new card. A card of ANOTHER install (its
+   hint not the listing one's) only when its file's folder is gone from a disk that is there - a move or a rename; a
+   file gone from a folder still there (a save deleted) or a disk not there (unplugged, a share offline) is not a move,
+   that card stays the other install's (Codex 12/10: else B took A's card while A was unplugged, two installs on one card
+   again). Probe `--saves-selftest`: folder gone, save deleted, no disk, this install's own card.
 3. **Restore: the install**, when several of the owner's library emulators tie on the score (`RestoreEmulator`), grouped
    by destination (`OwnExpectedSaveDir/StateDir`, section 5 - two entries writing the same place are one):
    a. the one holding the card's live row (its destination is that row's folder);
@@ -106,7 +110,11 @@ Found while reading the 12 plugins (each its own fix):
    empty folders filled by the mod from the first session; a melonDS state's last resort in savestates\, not saves\;
    Flycast's "data/" and data\ one folder; the exe resolved in Flycast's and PPSSPP's save calls. Not changed:
    RASnes9x with an EMPTY Dir:SRAM and a .7z (Snes9x writes into the %TEMP% unpack folder - decided 12/10: an empty
-   save or state folder set to .\Saves at the launch, what it left moved in, RaSnes9xLaunch.ForceSaveFolders); Flycast listing
+   save or state folder set to .\Saves at the launch, what it left moved in, RaSnes9xLaunch.ForceSaveFolders. Known limit,
+   kept (Codex 12/10): only the game launched has its files moved; another game's left beside its ROM before stays there,
+   that game then starts without it (nothing lost, the file is still there). Not fixed: rare - an install by the pack has
+   .\Saves (Snes9x's default, no snes9x.conf in its zip), an empty folder is a hand edit or an install taken over -, and a
+   move at every launch would take bsnes's .srm, which bsnes writes beside the game under the same name); Flycast listing
    every configured folder but restoring into the first - kept (12/10): Flycast reads and writes ONE folder per kind, the
    configured one else data\, the first of the list; the others only find an old file left in data\. Xenia's target,
    the most recently written profile rather than the signed-in one - decided 12/10: a saved game is the signed-in
