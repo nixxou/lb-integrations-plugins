@@ -41,6 +41,7 @@ namespace LbIntegrations.Probe
                 switch (name)
                 {
                     case "Bsnes": Bsnes(asm, root, emu, games); break;
+                    case "MelonDs": MelonDs(asm, root, emu, games); break;
                     default: Console.WriteLine("  no expected-folder cases for " + name); return false;
                 }
             }
@@ -77,6 +78,35 @@ namespace LbIntegrations.Probe
             Check("absolute → as it is", Same(abs.Save, Path.Combine(root, "s")) && Same(abs.State, Path.Combine(root, "st")), abs.Save + " | " + abs.State);
             var none = At("", "");
             Check("empty → beside the game (bsnes's default)", Same(none.Save, games) && Same(none.State, games), none.Save + " | " + none.State);
+        }
+
+        private static void MelonDs(Assembly asm, string root, string emu, string games)
+        {
+            Console.WriteLine("-- melonDS: [Instance0] SaveFilePath and SavestatePath as melonDS resolves them --");
+            var exe = Path.Combine(emu, "melonDS.exe"); File.WriteAllBytes(exe, Array.Empty<byte>());
+            var toml = Path.Combine(emu, "melonDS.toml");
+            var resolve = asm.GetType("LbIntegrations.MelonDs.MelonDsPaths", true).GetMethod("Resolve", Any);
+            (string Save, string State, object Layout) At(string saves, string states)
+            {
+                Write(toml, "[Instance0]\nSaveFilePath = \"" + saves + "\"\nSavestatePath = \"" + states + "\"\n");
+                var l = resolve.Invoke(null, new object[] { exe });
+                return ((string)F(l, "SaveDir"), (string)F(l, "StateDir"), l);
+            }
+            var rel = At("my saves", "my states");
+            Check("relative \"my saves\" → under melonDS's folder", Same(rel.Save, Path.Combine(emu, "my saves")), rel.Save);
+            Check("relative \"my states\" → under melonDS's folder", Same(rel.State, Path.Combine(emu, "my states")), rel.State);
+            var abs = At(Path.Combine(root, "s").Replace('\\', '/'), Path.Combine(root, "st").Replace('\\', '/'));
+            Check("absolute → as it is", Same(abs.Save, Path.Combine(root, "s")) && Same(abs.State, Path.Combine(root, "st")), abs.Save + " | " + abs.State);
+            var none = At("", "");
+            Check("empty → none configured (beside the rom)", none.Save == null && none.State == null, none.Save + " | " + none.State);
+            // A state restored with nothing configured and no rom: the install's savestates\, not its saves\ (review 12/10).
+            var restoreDirIn = asm.GetType("LbIntegrations.MelonDs.MelonDsPlugin", true).GetMethod("RestoreDirIn", Any);
+            var state = new Unbroken.LaunchBox.Plugins.Data.GameSaveState { GameId = "g" };
+            var dir = (string)restoreDirIn.Invoke(null, new object[] { none.Layout, state, null });
+            Check("a state with no folder and no rom → savestates\\", Same(dir, Path.Combine(emu, "savestates")), dir);
+            var save = new Unbroken.LaunchBox.Plugins.Data.GameSaveGame { GameId = "g" };
+            var sdir = (string)restoreDirIn.Invoke(null, new object[] { none.Layout, save, Path.Combine(games, "mk.nds") });
+            Check("a save with no folder → beside the rom", Same(sdir, games), sdir);
         }
     }
 }

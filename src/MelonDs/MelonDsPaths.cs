@@ -139,8 +139,10 @@ namespace LbIntegrations.MelonDs
             layout.DefaultStateDir = Path.Combine(layout.InstallDir, StateDirName);
 
             var configured = MelonDsToml.Read(layout.ConfigFile, InstanceTable, KeySaveFilePath, KeySavestatePath);
-            layout.SaveDir = Value(configured, KeySaveFilePath);
-            layout.StateDir = Value(configured, KeySavestatePath);
+            // As melonDS opens them (getAssetPath hands the value to Windows as it is): a relative one from its current
+            // directory, its exe's folder under LaunchBox (ExpectedDir.OfConfig) - not the toml's, not LaunchBox's.
+            layout.SaveDir = LbIntegrations.Saves.ExpectedDir.OfConfig(Value(configured, KeySaveFilePath), layout.InstallDir);
+            layout.StateDir = LbIntegrations.Saves.ExpectedDir.OfConfig(Value(configured, KeySavestatePath), layout.InstallDir);
 
             return layout;
         }

@@ -546,22 +546,44 @@ namespace LbIntegrations.MelonDs
             try
             {
                 var dm = PluginHelper.DataManager;
-                var game = dm?.GetGameById(save.GameId);
-
-                var layout = LayoutFor(game, dm);
-                if (layout != null)
-                {
-                    var configured = save is GameSaveState ? layout.StateDir : layout.SaveDir;
-                    if (!string.IsNullOrWhiteSpace(configured)) return configured;
-                }
-
-                var romDir = string.IsNullOrWhiteSpace(romPath) ? null : Path.GetDirectoryName(romPath);
-                if (!string.IsNullOrWhiteSpace(romDir)) return romDir;
-
-                // Last resort: beside where the emulator would have put it by default.
-                return layout?.DefaultSaveDir;
+                return RestoreDirIn(LayoutFor(dm?.GetGameById(save.GameId), dm), save, romPath);
             }
             catch (Exception ex) { Log.Warn("could not resolve a restore folder for " + fileName, ex); return null; }
+        }
+
+        /// <summary>The same for a given install: its configured folder of the kind, else beside the rom, else the kind's
+        /// default folder of the install (a state's is savestates\, never saves\ - review 12/10).</summary>
+        private static string RestoreDirIn(MelonDsLayout layout, GameSaveBase save, string romPath)
+        {
+            bool state = save is GameSaveState;
+            if (layout != null)
+            {
+                var configured = state ? layout.StateDir : layout.SaveDir;
+                if (!string.IsNullOrWhiteSpace(configured)) return configured;
+            }
+            var romDir = string.IsNullOrWhiteSpace(romPath) ? null : Path.GetDirectoryName(romPath);
+            if (!string.IsNullOrWhiteSpace(romDir)) return romDir;
+            return state ? layout?.DefaultStateDir : layout?.DefaultSaveDir;
+        }
+
+        LbIntegrations.Saves.ExpectedDir IOwnSaves.OwnExpectedDir(IEmulator emulator, GameSaveBase save)
+        {
+            try
+            {
+                var path = emulator?.ApplicationPath;
+                if (save == null || !MelonDsPaths.IsMelonDsExecutable(path)) return LbIntegrations.Saves.ExpectedDir.Unknown("Could not locate the melonDS installation.");
+                var layout = MelonDsPaths.ResolveForSaves(ResolveFullPath(path));
+                // DSiWare: the plugin's state file, put into the console at the next launch.
+                if (IsDsiWare(save))
+                {
+                    var pack = DsiWorkspace.SavePathFor(layout, TitleIdOf(save));
+                    return pack == null ? LbIntegrations.Saves.ExpectedDir.Unknown("This DSiWare save names no title.") : LbIntegrations.Saves.ExpectedDir.Pack(pack);
+                }
+                var to = SaveRows.TargetFor(save, PluginHelper.DataManager, Full);
+                if (to.Refused) return LbIntegrations.Saves.ExpectedDir.Unknown(to.Warning);
+                return LbIntegrations.Saves.ExpectedDir.FolderOr(RestoreDirIn(layout, save, to.RomPath), "Could not work out where melonDS reads this save from.");
+            }
+            catch (Exception ex) { return LbIntegrations.Saves.ExpectedDir.Unknown(ex.Message); }
         }
 
         // ── delete ───────────────────────────────────────────────────────────
