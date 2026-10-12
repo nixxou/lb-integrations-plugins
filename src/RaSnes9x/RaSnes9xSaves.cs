@@ -14,7 +14,9 @@
 //
 // THE FOLDERS are Snes9x's own settings, [Settings\Win\Files] Dir:SRAM and Dir:Savestates of snes9x.conf - ".\Saves"
 // for both as it ships, relative to the executable. Measured 06/10: Zelda's 8 KB .srm written to x64\Saves\ when the
-// window was closed (WM_CLOSE) - Snes9x writes the .srm when it quits, or loads another game.
+// window was closed (WM_CLOSE) - Snes9x writes the .srm when it quits, or loads another game. An EMPTY value (Snes9x's
+// "beside the ROM", for a .7z its %TEMP% unpack folder) is set to ".\Saves" at the launch, what it left moved in
+// (RaSnes9xLaunch.ForceSaveFolders, Mehdi 12/10): read here as ".\Saves" already.
 //
 // NOT LISTED, on purpose: <name>.oops, the state Snes9x writes by itself before loading one ("undo"), replaced at
 // every load - as SUPER ZSNES's resume state is left out.
@@ -75,8 +77,9 @@ namespace LbIntegrations.RaSnes9x
             string Dir(string key)
             {
                 var v = conf.Get(Files, key);
-                if (v == null) v = ".\\Saves";              // the file is not written yet: Snes9x's default
-                if (string.IsNullOrWhiteSpace(v)) return romDir;
+                // Missing: the file is not written yet, Snes9x's default. Empty ("beside the game"): what the next launch sets
+                // (RaSnes9xLaunch.ForceSaveFolders) - a restore goes where the game will read it.
+                if (string.IsNullOrWhiteSpace(v)) v = RaSnes9xLaunch.ForcedDir;
                 try { return Path.GetFullPath(Path.IsPathRooted(v) ? v : Path.Combine(exeDir, v)); }
                 catch { return romDir; }
             }

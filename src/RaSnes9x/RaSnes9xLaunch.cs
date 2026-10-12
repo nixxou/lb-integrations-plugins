@@ -3,7 +3,8 @@
 // THE OPTIONS (RaSnes9xSettings.All) go into [Display\Win] before every launch - Snes9x reads the file when it starts
 // and writes it back whole when it quits (RaSnes9xConf), so a key the plugin manages is the plugin's: changed in
 // Snes9x's own menus, it comes back to the Nixx window's value at the next launch. Every other key - the pads, the
-// hotkeys, the sound, the folders - is the user's: only an UNASSIGNED hotkey is ever bound, below.
+// hotkeys, the sound, the folders - is the user's: only an UNASSIGNED hotkey is ever bound, below, and only an EMPTY
+// save or state folder (beside the game) is set to ".\Saves" (ForceSaveFolders).
 //
 // THE HOTKEYS, the pack's keys (Mehdi, 07/10) where Snes9x lets them be bound ([Controls\Win\Hotkeys], "Key:<name> =
 // F2" + "Mods:<name> = none", wconfig.cpp ADD/ADDN): F2 SlotSave, F4 SlotLoad (the CURRENT slot, kept in
@@ -63,11 +64,12 @@ namespace LbIntegrations.RaSnes9x
         }
 
         /// <summary>The game's options written into snes9x.conf. Never throws: a launch with the file as it was beats none.</summary>
-        public static void PrepareConf(string exe, string gameId)
+        public static void PrepareConf(string exe, string gameId, string rom)
         {
             try
             {
                 var conf = RaSnes9xConf.Load(RaSnes9xConf.Of(exe));
+                ForceSaveFolders(conf, exe, rom);
                 bool full = RaSnes9xSettings.BoolFor(gameId, "Fullscreen");
                 conf.SetBool(Display, "Fullscreen:Enabled", full);
                 if (full) conf.SetBool(Display, "Fullscreen:EmulateFullscreen", true);
@@ -89,6 +91,64 @@ namespace LbIntegrations.RaSnes9x
                          + (RaSnes9xSettings.BoolFor(gameId, "IntegerScaling") ? ", integer" : "") + ", " + output);
             }
             catch (Exception ex) { Log.Warn("snes9x.conf could not be written - the game starts with it as it was", ex); }
+        }
+
+        private const string Files = "Settings\\Win\\Files";
+
+        /// <summary>The folder the pack gives an EMPTY Dir:SRAM / Dir:Savestates (Mehdi, 12/10): Snes9x's own default.</summary>
+        internal const string ForcedDir = ".\\Saves";
+
+        /// <summary>An EMPTY Dir:SRAM or Dir:Savestates set to <see cref="ForcedDir"/>. Empty is Snes9x's "beside the ROM" - for
+        /// a .7z the %TEMP% folder it is unpacked to, which the next unpacking empties (RomFor): nothing beside the games
+        /// (no-saves-beside-games). What such a setting left there is moved in, the save and its clock, the states and their
+        /// pictures - never over a file already in the new folder (that one is kept, the old left where it is, said).</summary>
+        private static void ForceSaveFolders(RaSnes9xConf conf, string exe, string rom)
+        {
+            var exeDir = Path.GetDirectoryName(Path.GetFullPath(exe));
+            foreach (var (key, state) in new[] { ("Dir:SRAM", false), ("Dir:Savestates", true) })
+            {
+                var v = conf.Get(Files, key);
+                if (v == null || !string.IsNullOrWhiteSpace(v)) continue;     // missing = ".\Saves" already; set = the user's
+                conf.Set(Files, key, ForcedDir);
+                Log.Info("snes9x.conf: " + key + " was empty (beside the game) - set to " + ForcedDir);
+                if (string.IsNullOrWhiteSpace(rom)) continue;
+                try
+                {
+                    var to = Path.GetFullPath(Path.Combine(exeDir, ForcedDir));
+                    var name = Path.GetFileNameWithoutExtension(rom);
+                    foreach (var from in BesideTheGame(rom).Where(Directory.Exists))
+                        foreach (var file in Directory.GetFiles(from, name + ".*"))
+                        {
+                            var ext = file.Substring(Path.Combine(from, name).Length);   // ".srm", ".000", ".000.png"
+                            bool isState = System.Text.RegularExpressions.Regex.IsMatch(ext, @"^\.\d{3}(\.png)?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                            bool isSave = string.Equals(ext, ".srm", StringComparison.OrdinalIgnoreCase) || string.Equals(ext, ".rtc", StringComparison.OrdinalIgnoreCase);
+                            if (state ? !isState : !isSave) continue;
+                            var target = Path.Combine(to, Path.GetFileName(file));
+                            if (File.Exists(target)) { Log.Warn("left beside the game: " + file + " - " + target + " is already there"); continue; }
+                            Directory.CreateDirectory(to);
+                            File.Move(file, target);
+                            Log.Info("moved " + file + " -> " + target);
+                        }
+                }
+                catch (Exception ex) { Log.Warn("the files beside the game could not all be moved to " + ForcedDir, ex); }
+            }
+        }
+
+        /// <summary>Where an empty folder setting had Snes9x write: beside the ROM, and for a .7z the folder it is unpacked to.</summary>
+        private static IEnumerable<string> BesideTheGame(string rom)
+        {
+            var full = Path.GetFullPath(rom);
+            yield return Path.GetDirectoryName(full);
+            if (string.Equals(Path.GetExtension(full), ".7z", StringComparison.OrdinalIgnoreCase)) yield return UnpackDir(full);
+        }
+
+        /// <summary>The folder a .7z is unpacked to: one per archive PATH, two archives of the same name never share it.</summary>
+        internal static string UnpackDir(string rom)
+        {
+            string hash;
+            using (var md5 = System.Security.Cryptography.MD5.Create())
+                hash = Convert.ToHexString(md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(rom).ToLowerInvariant()))).Substring(0, 8).ToLowerInvariant();
+            return Path.Combine(Path.GetTempPath(), "lbip-rasnes9x", Path.GetFileNameWithoutExtension(rom) + "-" + hash);
         }
 
         private const string HotkeySection = "Controls\\Win\\Hotkeys";
@@ -165,11 +225,7 @@ namespace LbIntegrations.RaSnes9x
                               + "Keep one ROM per archive, or name the one to play \"" + name + Path.GetExtension(roms[0].Key) + "\".";
                     return null;
                 }
-                // One folder per archive PATH: two archives of the same name never share an unpacked ROM.
-                string hash;
-                using (var md5 = System.Security.Cryptography.MD5.Create())
-                    hash = Convert.ToHexString(md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(rom).ToLowerInvariant()))).Substring(0, 8).ToLowerInvariant();
-                var dir = Path.Combine(Path.GetTempPath(), "lbip-rasnes9x", name + "-" + hash);
+                var dir = UnpackDir(rom);
                 var target = Path.Combine(dir, name + Path.GetExtension(pick.Key).ToLowerInvariant());
                 if (File.Exists(target) && new FileInfo(target).Length == pick.Size && File.GetLastWriteTimeUtc(target) >= File.GetLastWriteTimeUtc(rom))
                     return target;

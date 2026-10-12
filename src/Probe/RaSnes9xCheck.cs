@@ -41,7 +41,7 @@ namespace LbIntegrations.Probe
                 File.WriteAllText(Path.Combine(copy, "RASnes9x.exe"), "");
                 if (settings != null) T(asm, "RaSnes9xSettings").GetField("PathOverride", Any).SetValue(null, Path.GetFullPath(settings));
                 var before = File.Exists(target) ? File.ReadAllLines(target) : new string[0];
-                T(asm, "RaSnes9xLaunch").GetMethod("PrepareConf", Any).Invoke(null, new object[] { Path.Combine(copy, "RASnes9x.exe"), "probe-game" });
+                T(asm, "RaSnes9xLaunch").GetMethod("PrepareConf", Any).Invoke(null, new object[] { Path.Combine(copy, "RASnes9x.exe"), "probe-game", null });
                 var after = File.ReadAllLines(target);
                 var changed = after.Where((l, i) => i >= before.Length || before[i] != l).ToList();
                 foreach (var l in changed) Console.WriteLine("    " + l);
@@ -50,13 +50,31 @@ namespace LbIntegrations.Probe
                 // A second pass changes nothing.
                 var stamp = File.GetLastWriteTimeUtc(target);
                 System.Threading.Thread.Sleep(20);
-                T(asm, "RaSnes9xLaunch").GetMethod("PrepareConf", Any).Invoke(null, new object[] { Path.Combine(copy, "RASnes9x.exe"), "probe-game" });
+                T(asm, "RaSnes9xLaunch").GetMethod("PrepareConf", Any).Invoke(null, new object[] { Path.Combine(copy, "RASnes9x.exe"), "probe-game", null });
                 Check("a second launch writes nothing", File.GetLastWriteTimeUtc(target) == stamp);
                 if (before.Length > 0)
                 {
                     var comments = before.Count(l => l.Contains('#'));
                     Check("the comments kept", after.Count(l => l.Contains('#')) == comments, comments + " lines with a comment");
                 }
+                // An EMPTY save / state folder (beside the game, Mehdi 12/10): set to .\Saves, what it left moved in, never over a file.
+                File.WriteAllText(target, "[Settings\\Win\\Files]\r\nDir:SRAM = \r\nDir:Savestates =   # beside the game\r\n");
+                var games = Path.Combine(copy, "games"); Directory.CreateDirectory(games);
+                var saves = Path.Combine(copy, "Saves"); Directory.CreateDirectory(saves);
+                foreach (var f in new[] { "Zelda.srm", "Zelda.rtc", "Zelda.000", "Zelda.000.png", "Zelda.003", "Zelda.oops", "Zelda.sfc", "Other.srm" })
+                    File.WriteAllText(Path.Combine(games, f), f);
+                File.WriteAllText(Path.Combine(saves, "Zelda.003"), "already there");
+                T(asm, "RaSnes9xLaunch").GetMethod("PrepareConf", Any).Invoke(null, new object[] { Path.Combine(copy, "RASnes9x.exe"), "probe-game", Path.Combine(games, "Zelda.sfc") });
+                var text = File.ReadAllText(target);
+                Check("empty Dir:SRAM set to .\\Saves", text.Contains("Dir:SRAM = .\\Saves"), text.Split('\n')[1].Trim());
+                Check("empty Dir:Savestates set to .\\Saves, its comment kept", text.Contains("Dir:Savestates = .\\Saves") && text.Contains("# beside the game"), text.Split('\n')[2].Trim());
+                Check("the save, its clock, a state and its picture moved", new[] { "Zelda.srm", "Zelda.rtc", "Zelda.000", "Zelda.000.png" }.All(f => File.Exists(Path.Combine(saves, f)) && !File.Exists(Path.Combine(games, f))));
+                Check("a state already in Saves kept, the old one left beside the game", File.ReadAllText(Path.Combine(saves, "Zelda.003")) == "already there" && File.Exists(Path.Combine(games, "Zelda.003")));
+                Check("the ROM, the undo state and another game's save not moved", new[] { "Zelda.sfc", "Zelda.oops", "Other.srm" }.All(f => File.Exists(Path.Combine(games, f))));
+                File.WriteAllText(target, "[Settings\\Win\\Files]\r\nDir:SRAM = \r\n");
+                var folders = T(asm, "RaSnes9xPlugin").GetMethod("FoldersFor", Any).Invoke(null, new object[] { Path.Combine(copy, "RASnes9x.exe"), Path.Combine(games, "Zelda.sfc") });
+                var sramDir = (string)folders.GetType().GetField("SaveDir").GetValue(folders);
+                Check("an empty Dir:SRAM read as .\\Saves (where the next launch puts it)", string.Equals(sramDir, saves, StringComparison.OrdinalIgnoreCase), sramDir);
             }
             finally { try { Directory.Delete(copy, true); } catch { } }
             Console.WriteLine(_bad == 0 ? "  all good" : "  " + _bad + " FAILED");

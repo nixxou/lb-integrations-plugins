@@ -348,7 +348,7 @@ namespace LbIntegrations.RaSnes9x
             var toolset = RaSnes9xToolset.Ensure(exe, always: false);
             if (toolset != null) Log.Info("toolset not updated before the launch: " + toolset + " - the emulator asks itself");
 
-            RaSnes9xLaunch.PrepareConf(exe, gameId);
+            RaSnes9xLaunch.PrepareConf(exe, gameId, rom);
             // A PNG beside each state (Zelda.000 -> Zelda.000.png), from the picture Snes9x puts in it, once it has quit.
             RaSnes9xStateThumbs.AfterSession(exe, rom);
 

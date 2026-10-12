@@ -105,7 +105,8 @@ Found while reading the 12 plugins (each its own fix):
    exe's folder. Fixed on the way: those relative paths (read from LaunchBox's current directory before); SUPER ZSNES's
    empty folders filled by the mod from the first session; a melonDS state's last resort in savestates\, not saves\;
    Flycast's "data/" and data\ one folder; the exe resolved in Flycast's and PPSSPP's save calls. Not changed:
-   RASnes9x with an EMPTY Dir:SRAM and a .7z (Snes9x writes into the %TEMP% unpack folder - to decide); Flycast listing
+   RASnes9x with an EMPTY Dir:SRAM and a .7z (Snes9x writes into the %TEMP% unpack folder - decided 12/10: an empty
+   save or state folder set to .\Saves at the launch, what it left moved in, RaSnes9xLaunch.ForceSaveFolders); Flycast listing
    every configured folder but restoring into the first; Xenia's target, the most recently written profile rather than
    the signed-in one (to decide). Probe `Probe <plugin.dll> --expected` (bsnes, melonDS, SUPER ZSNES, RASnes9x, Flycast,
    PPSSPP), `--ares-expected`, `--saves-selftest` (OfConfig). Seen, older than this step: `--melonds` 2 failures (DSi
