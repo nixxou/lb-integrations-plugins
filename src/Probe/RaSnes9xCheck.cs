@@ -80,9 +80,9 @@ namespace LbIntegrations.Probe
                 var late = T(asm, "RaSnes9xLateLoad");
                 string Without(string line, params string[] roms) => (string)late.GetMethod("WithoutRom", Any).Invoke(null, new object[] { line, roms });
                 var gameAbs = Path.Combine(games, "Zelda.sfc");
-                Check("late load: a quoted ROM alone on the line → a single space (an empty line is read as unchanged)", Without("\"" + gameAbs + "\"", gameAbs) == " ");
+                Check("late load: a quoted ROM alone on the line → the placeholder option (a blank line is read as unchanged)", Without("\"" + gameAbs + "\"", gameAbs) == "-lbip-late-load");
                 Check("late load: the other arguments kept", Without("-nosound \"" + gameAbs + "\"", gameAbs) == "-nosound");
-                Check("late load: spelt as the host had it (raw relative path)", Without("\"..\\games\\Zelda.sfc\"", gameAbs, "..\\games\\Zelda.sfc") == " ");
+                Check("late load: spelt as the host had it (raw relative path)", Without("\"..\\games\\Zelda.sfc\"", gameAbs, "..\\games\\Zelda.sfc") == "-lbip-late-load");
                 Check("late load: not on the line → null (the caller keeps the line)", Without("\"other.sfc\"", gameAbs) == null);
                 File.WriteAllText(target, "[Settings\\Win\\Files]\r\nRom:RecentGame1 = C:\\a.sfc\r\nRom:RecentGame2 = " + gameAbs.ToUpperInvariant() + "\r\nRom:RecentGame3 = C:\\b.sfc\r\n");
                 late.GetMethod("PutFirst", Any).Invoke(null, new object[] { Path.Combine(copy, "RASnes9x.exe"), gameAbs });

@@ -50,8 +50,13 @@ namespace LbIntegrations.RaSnes9x
             conf.SaveIfChanged();
         }
 
-        /// <summary>The host's line without the ROM - a single space when nothing is left: an empty line is read by the hosts
-        /// as "unchanged" (LiteBox's EmuPlugins), and the ROM would come back.</summary>
+        /// <summary>What is left on an empty line: an empty (or blank) new line is read by the hosts as "unchanged" and the ROM
+        /// comes back (LiteBox's EmuPlugins; seen 13/10 under LaunchBox: with a single space the game still loaded at once, from the line). Snes9x
+        /// ignores an option it does not know (wconfig.cpp, S9xParseArg: no else), so this one does nothing.</summary>
+        internal const string Placeholder = "-lbip-late-load";
+
+        /// <summary>The host's line without the ROM - <see cref="Placeholder"/> when nothing else is left; null when the ROM is
+        /// not found on it.</summary>
         public static string WithoutRom(string line, params string[] roms)
         {
             line = line ?? "";
@@ -59,7 +64,7 @@ namespace LbIntegrations.RaSnes9x
                 foreach (var form in new[] { "\"" + rom + "\"", rom })
                 {
                     int at = line.LastIndexOf(form, StringComparison.OrdinalIgnoreCase);
-                    if (at >= 0) { var left = line.Remove(at, form.Length).Trim(); return left.Length == 0 ? " " : left; }
+                    if (at >= 0) { var left = line.Remove(at, form.Length).Trim(); return left.Length == 0 ? Placeholder : left; }
                 }
             return null;   // not found: the caller keeps the ROM on the line
         }
