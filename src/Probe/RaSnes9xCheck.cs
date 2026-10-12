@@ -75,7 +75,19 @@ namespace LbIntegrations.Probe
                 var folders = T(asm, "RaSnes9xPlugin").GetMethod("FoldersFor", Any).Invoke(null, new object[] { Path.Combine(copy, "RASnes9x.exe"), Path.Combine(games, "Zelda.sfc") });
                 var sramDir = (string)folders.GetType().GetField("SaveDir").GetValue(folders);
                 Check("an empty Dir:SRAM read as .\\Saves (where the next launch puts it)", string.Equals(sramDir, saves, StringComparison.OrdinalIgnoreCase), sramDir);
-            }
+
+                // The game loaded after RetroAchievements' login (RaSnes9xLateLoad, 13/10): the line without the ROM, the ROM first in the recent games.
+                var late = T(asm, "RaSnes9xLateLoad");
+                string Without(string line, params string[] roms) => (string)late.GetMethod("WithoutRom", Any).Invoke(null, new object[] { line, roms });
+                var gameAbs = Path.Combine(games, "Zelda.sfc");
+                Check("late load: a quoted ROM alone on the line → a single space (an empty line is read as unchanged)", Without("\"" + gameAbs + "\"", gameAbs) == " ");
+                Check("late load: the other arguments kept", Without("-nosound \"" + gameAbs + "\"", gameAbs) == "-nosound");
+                Check("late load: spelt as the host had it (raw relative path)", Without("\"..\\games\\Zelda.sfc\"", gameAbs, "..\\games\\Zelda.sfc") == " ");
+                Check("late load: not on the line → null (the caller keeps the line)", Without("\"other.sfc\"", gameAbs) == null);
+                File.WriteAllText(target, "[Settings\\Win\\Files]\r\nRom:RecentGame1 = C:\\a.sfc\r\nRom:RecentGame2 = " + gameAbs.ToUpperInvariant() + "\r\nRom:RecentGame3 = C:\\b.sfc\r\n");
+                late.GetMethod("PutFirst", Any).Invoke(null, new object[] { Path.Combine(copy, "RASnes9x.exe"), gameAbs });
+                var rec = File.ReadAllText(target);
+                Check("late load: the game first, the others after it once each", rec.Contains("Rom:RecentGame1 = " + gameAbs) && rec.Contains("Rom:RecentGame2 = C:\\a.sfc") && rec.Contains("Rom:RecentGame3 = C:\\b.sfc") && !rec.ToUpperInvariant().Replace(gameAbs.ToUpperInvariant() + "\r\nROM:RECENTGAME2", "").Contains("RECENTGAME4 = " + gameAbs.ToUpperInvariant()), rec.Replace("\r\n", " | "));            }
             finally { try { Directory.Delete(copy, true); } catch { } }
             Console.WriteLine(_bad == 0 ? "  all good" : "  " + _bad + " FAILED");
             return _bad == 0;

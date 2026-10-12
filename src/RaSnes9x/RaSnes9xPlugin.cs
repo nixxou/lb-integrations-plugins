@@ -353,6 +353,7 @@ namespace LbIntegrations.RaSnes9x
             RaSnes9xStateThumbs.AfterSession(exe, rom);
 
             // A .7z: its ROM unpacked under the archive's name, the line pointed at it.
+            string line = null, playedRom = rom;
             if (!string.IsNullOrEmpty(rom) && string.Equals(Path.GetExtension(rom), ".7z", StringComparison.OrdinalIgnoreCase))
             {
                 var played = RaSnes9xLaunch.RomFor(rom, out var problem);
@@ -361,7 +362,31 @@ namespace LbIntegrations.RaSnes9x
                     LbipNotice.Show(PackName + " - " + (title ?? Path.GetFileName(rom)), "This game cannot be started: " + problem);
                     return new PrepareForLaunchResponse(success: false);
                 }
-                var line = RaSnes9xLaunch.SwapRom(args?.CurrentCommandLine, rom, played);
+                line = RaSnes9xLaunch.SwapRom(args?.CurrentCommandLine, rom, played);
+                playedRom = played;
+            }
+            // RetroAchievements on: the game loaded once it has logged in, not from the line (RaSnes9xLateLoad, 13/10).
+            if (!string.IsNullOrEmpty(playedRom) && RaSnes9xLateLoad.Wanted(exe))
+            {
+                try
+                {
+                    string raw = null;
+                    try { raw = args?.GameBeingLaunched?.ApplicationPath; } catch { }
+                    // As the host spelt it on the line: resolved, raw, or the unpacked .7z the line was pointed at.
+                    var without = RaSnes9xLateLoad.WithoutRom(line ?? args?.CurrentCommandLine, playedRom, rom, raw);
+                    if (without != null)
+                    {
+                        RaSnes9xLateLoad.PutFirst(exe, playedRom);
+                        RaSnes9xLateLoad.Watch(exe, playedRom);
+                        Log.Info("launch (the game loaded after RetroAchievements' login): [" + without + "] + recent game 1 = " + playedRom);
+                        return new PrepareForLaunchResponse(success: true) { NewCommandLine = without };
+                    }
+                    Log.Warn("late load: the game is not found on the line [" + (line ?? args?.CurrentCommandLine) + "] - loaded from it as before");
+                }
+                catch (Exception ex) { Log.Warn("late load not set up - the game is loaded from the line as before", ex); }
+            }
+            if (line != null)
+            {
                 Log.Info("launch: " + line);
                 return new PrepareForLaunchResponse(success: true) { NewCommandLine = line };
             }

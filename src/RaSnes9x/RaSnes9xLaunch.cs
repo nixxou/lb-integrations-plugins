@@ -4,7 +4,8 @@
 // and writes it back whole when it quits (RaSnes9xConf), so a key the plugin manages is the plugin's: changed in
 // Snes9x's own menus, it comes back to the Nixx window's value at the next launch. Every other key - the pads, the
 // hotkeys, the sound, the folders - is the user's: only an UNASSIGNED hotkey is ever bound, below, and only an EMPTY
-// save or state folder (beside the game) is set to ".\Saves" (ForceSaveFolders).
+// save or state folder (beside the game) is set to ".\Saves" (ForceSaveFolders), and with RetroAchievements on the game
+// is put first in the recent games, loaded from there once logged in (RaSnes9xLateLoad).
 //
 // THE HOTKEYS, the pack's keys (Mehdi, 07/10) where Snes9x lets them be bound ([Controls\Win\Hotkeys], "Key:<name> =
 // F2" + "Mods:<name> = none", wconfig.cpp ADD/ADDN): F2 SlotSave, F4 SlotLoad (the CURRENT slot, kept in
