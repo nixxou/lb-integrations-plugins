@@ -92,7 +92,7 @@ namespace LbIntegrations.Ppsspp
                 if (!PpssppPaths.IsPpssppExecutable(appPath))
                     return new GetSavesResponse("This emulator is not PPSSPP.");
 
-                var layout = PpssppPaths.Resolve(appPath);
+                var layout = PpssppPaths.Resolve(ResolveFullPath(appPath));
                 // Each folder gates only its own kind: a memstick can perfectly well hold states and
                 // no save yet, which is exactly what a freshly installed game looks like.
                 bool haveSaveData = Directory.Exists(layout.SaveDataDir);
@@ -339,7 +339,7 @@ namespace LbIntegrations.Ppsspp
                 bool ours = IsOurs(save), state = IsOurState(save);
                 if ((!ours && !state) || string.IsNullOrWhiteSpace(emulatorApplicationPath)) return true;
 
-                var layout = PpssppPaths.Resolve(emulatorApplicationPath);
+                var layout = PpssppPaths.Resolve(ResolveFullPath(emulatorApplicationPath));
                 var root = state ? layout.SaveStateDir : layout.SaveDataDir;
                 var loc = save.FileLocation;
                 if (string.IsNullOrWhiteSpace(loc) || string.IsNullOrWhiteSpace(root)) return true;
@@ -709,7 +709,7 @@ namespace LbIntegrations.Ppsspp
         {
             string discId = DiscIdOf(save);
             string saveDataDir = !string.IsNullOrWhiteSpace(emulatorApplicationPath)
-                ? PpssppPaths.Resolve(emulatorApplicationPath).SaveDataDir
+                ? PpssppPaths.Resolve(ResolveFullPath(emulatorApplicationPath)).SaveDataDir
                 : Path.GetDirectoryName(save?.FileLocation ?? "");
 
             if (discId == null && !string.IsNullOrWhiteSpace(save?.FileLocation))
@@ -720,6 +720,14 @@ namespace LbIntegrations.Ppsspp
         }
 
         /// <summary>PSP\SAVEDATA for the emulator this save's game is assigned to.</summary>
+        LbIntegrations.Saves.ExpectedDir IOwnSaves.OwnExpectedDir(IEmulator emulator, GameSaveBase save)
+        {
+            var path = Safe(() => emulator?.ApplicationPath);
+            if (save == null || !PpssppPaths.IsPpssppExecutable(path)) return LbIntegrations.Saves.ExpectedDir.Unknown("Could not locate PPSSPP's memory stick for this game.");
+            var layout = PpssppPaths.Resolve(ResolveFullPath(path));
+            return LbIntegrations.Saves.ExpectedDir.FolderOr(save is GameSaveState ? layout.SaveStateDir : layout.SaveDataDir, "Could not locate PPSSPP's memory stick for this game.");
+        }
+
         private static string SaveDataDirFor(GameSaveBase save)
             => MemstickFolderFor(save, l => l.SaveDataDir);
 
@@ -739,14 +747,14 @@ namespace LbIntegrations.Ppsspp
                 var emu = string.IsNullOrEmpty(emuId) ? null : dm.GetEmulatorById(emuId);
                 var appPath = Safe(() => emu?.ApplicationPath);
                 if (PpssppPaths.IsPpssppExecutable(appPath))
-                    return pick(PpssppPaths.Resolve(appPath));
+                    return pick(PpssppPaths.Resolve(ResolveFullPath(appPath)));
 
                 // No usable emulator: fall back to any PPSSPP the library knows.
                 var any = LbIntegrations.Saves.SaveForward.ViaEmulator(PpssppPaths.IsPpssppExecutable)   // through a desk: the save's install
                           ?? dm?.GetAllEmulators()?
                     .FirstOrDefault(e => PpssppPaths.IsPpssppExecutable(Safe(() => e.ApplicationPath)));
                 var anyPath = Safe(() => any?.ApplicationPath);
-                return anyPath == null ? null : pick(PpssppPaths.Resolve(anyPath));
+                return anyPath == null ? null : pick(PpssppPaths.Resolve(ResolveFullPath(anyPath)));
             }
             catch (Exception ex) { Log.Warn("could not resolve the memory stick", ex); return null; }
         }

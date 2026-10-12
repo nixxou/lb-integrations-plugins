@@ -45,6 +45,7 @@ namespace LbIntegrations.Probe
                     case "SuperZsnes": SuperZsnes(asm, root, emu, games); break;
                     case "RaSnes9x": RaSnes9x(asm, root, emu, games); break;
                     case "Flycast": Flycast(asm, root, emu); break;
+                    case "Ppsspp": Ppsspp(asm, root, emu); break;
                     default: Console.WriteLine("  no expected-folder cases for " + name); return false;
                 }
             }
@@ -81,6 +82,21 @@ namespace LbIntegrations.Probe
             Check("absolute → as it is", Same(abs.Save, Path.Combine(root, "s")) && Same(abs.State, Path.Combine(root, "st")), abs.Save + " | " + abs.State);
             var none = At("", "");
             Check("empty → beside the game (bsnes's default)", Same(none.Save, games) && Same(none.State, games), none.Save + " | " + none.State);
+        }
+
+        private static void Ppsspp(Assembly asm, string root, string emu)
+        {
+            Console.WriteLine("-- PPSSPP: the memory stick from installed.txt --");
+            var exe = Path.Combine(emu, "PPSSPPWindows64.exe"); File.WriteAllBytes(exe, Array.Empty<byte>());
+            var resolve = asm.GetType("LbIntegrations.Ppsspp.PpssppPaths", true).GetMethod("Resolve", Any);
+            var portable = resolve.Invoke(null, new object[] { exe });
+            Check("no installed.txt → memstick\\PSP\\SAVEDATA and PPSSPP_STATE (portable)",
+                  Same((string)F(portable, "SaveDataDir"), Path.Combine(emu, "memstick", "PSP", "SAVEDATA")) && Same((string)F(portable, "SaveStateDir"), Path.Combine(emu, "memstick", "PSP", "PPSSPP_STATE")),
+                  F(portable, "SaveDataDir") + " | " + F(portable, "SaveStateDir"));
+            var stick = Path.Combine(root, "stick"); Directory.CreateDirectory(stick);
+            File.WriteAllText(Path.Combine(emu, "installed.txt"), stick);
+            var given = resolve.Invoke(null, new object[] { exe });
+            Check("installed.txt naming a folder → that folder's PSP\\SAVEDATA", Same((string)F(given, "SaveDataDir"), Path.Combine(stick, "PSP", "SAVEDATA")), (string)F(given, "SaveDataDir"));
         }
 
         private static void Flycast(Assembly asm, string root, string emu)
