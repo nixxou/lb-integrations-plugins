@@ -271,6 +271,8 @@ internal static class InstallerCore
             return (true, head
                         + (swept > 0 ? "\n\n" + swept + " older folder(s) from a previous name were removed." : "")
                         + (notes.Length > 0 ? "\n\n" + notes.ToString().TrimEnd() : "")
+                        + (SafeModeLeftOn(l.Root) ? "\n\nThe safe mode of the Compatibility page is still on, from before (the uninstall keeps the plugins' "
+                           + "settings): Nixx settings > Compatibility > Leave safe mode." : "")
                         + "\n\nRestart LaunchBox / BigBox / LiteBox for it to take effect. Under "
                         + "LiteBox, tick the plugins in Options > Plugins the first time - they are "
                         + "not enabled implicitly, deliberately.");
@@ -396,6 +398,25 @@ internal static class InstallerCore
     /// working - the plugins claim an emulator by its executable path, never by name), the plugins'
     /// data folders under .data\&lt;PluginId&gt;\, the emulators themselves, the NAND dumps and every
     /// save ever made.</summary>
+    /// <summary>The Compatibility page's safe mode left on in this install's nixx-compat.ini (its [beforeSafe] section holds
+    /// the switches to put back): an uninstall keeps Local\Plugins\.data\, so a reinstall starts in it.</summary>
+    internal static bool SafeModeLeftOn(string root)
+    {
+        try
+        {
+            var ini = Path.Combine(root, "Local", "Plugins", ".data", "nixx-compat.ini");
+            if (!File.Exists(ini)) return false;
+            bool inSection = false;
+            foreach (var raw in File.ReadAllLines(ini))
+            {
+                var line = raw.Trim();
+                if (line.StartsWith("[")) { inSection = line.Equals("[beforeSafe]", StringComparison.OrdinalIgnoreCase); continue; }
+                if (inSection && line.IndexOf('=') > 0) return true;
+            }
+        }
+        catch { }
+        return false;
+    }
     public static (bool ok, string message) Uninstall(Layout l) => Uninstall(l, null);
 
     /// <summary><paramref name="askShared"/>: asked when LiteBox shares the RAM disk helper and its task - RamDiskSetup.Remove.</summary>

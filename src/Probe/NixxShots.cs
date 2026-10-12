@@ -33,6 +33,9 @@ namespace LbIntegrations.Probe
             // The page as LiteBox shows it (LBIP_AS_LITEBOX=1): the relay's copy of the compat checks told it runs there.
             if (Environment.GetEnvironmentVariable("LBIP_AS_LITEBOX") == "1")
                 menus.GetType("LbIntegrations.Compat.CompatChecks", false)?.GetField("LiteBoxForTests", Any)?.SetValue(null, (bool?)true);
+            // A session already running with every patch on (LBIP_SESSION_ALL_ON=1): what an Apply waiting for a restart looks like.
+            if (Environment.GetEnvironmentVariable("LBIP_SESSION_ALL_ON") == "1")
+                menus.GetType("LbIntegrations.Compat.Compat", false)?.GetMethod("SessionForTests", Any)?.Invoke(null, new object[] { new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase) });
             var providers = menus.GetType("LbIntegrations.Menus.SettingsProviders", true).GetMethod("All", Any).Invoke(null, null);
             var form = (Form)Activator.CreateInstance(menus.GetType("LbIntegrations.Menus.NixxSettingsForm", true), Any, null, new[] { providers }, null);
             var nav = (ListBox)form.GetType().GetField("_nav", Any).GetValue(form);

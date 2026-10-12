@@ -573,8 +573,22 @@ namespace LbIntegrations.Probe
                 Check("compat: the import help can be switched now", LbIntegrations.Compat.CompatRegistry.Find("importWizard")?.Switchable == true);
                 // What the safe mode keeps (13/10): the rows in LaunchBox's lists and the two installs; the ids go off with the hooks.
                 var safeOff = LbIntegrations.Compat.CompatRegistry.Internal;
-                Check("compat: the safe mode keeps rowInjection and twoInstalls, turns stockIds off",
-                      !safeOff.Contains("rowInjection") && !safeOff.Contains("twoInstalls") && safeOff.Contains("stockIds") && safeOff.Contains("desk"));
+                Check("compat: the safe mode keeps rowInjection, twoInstalls and planA, turns stockIds off",
+                      !safeOff.Contains("rowInjection") && !safeOff.Contains("twoInstalls") && !safeOff.Contains("planA")
+                      && safeOff.Contains("stockIds") && safeOff.Contains("desk"));
+                // One set of switches for the process (13/10): a copy asking late takes what the first one read at start-up.
+                try
+                {
+                    LbIntegrations.Compat.Compat.SessionForTests(new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase) { ["desk"] = false });
+                    LbIntegrations.Compat.Compat.UseForTests(null);
+                    Check("compat: a copy reading late takes the process's session, not the file", !LbIntegrations.Compat.Compat.On("desk")
+                          && !LbIntegrations.Compat.Compat.On("retroarchView") && LbIntegrations.Compat.Compat.On("planA"));
+                    Check("compat: the page reads the running session", LbIntegrations.Compat.Compat.SessionOn("desk") == false
+                          && LbIntegrations.Compat.Compat.SessionOn("stockRestore") == false && LbIntegrations.Compat.Compat.SessionOn("planA") == true);
+                    LbIntegrations.Compat.Compat.SessionForTests(null);
+                    Check("compat: no session yet → the page says nothing about it", LbIntegrations.Compat.Compat.SessionOn("desk") == null);
+                }
+                finally { LbIntegrations.Compat.Compat.SessionForTests(null); LbIntegrations.Compat.Compat.UseForTests(new Dictionary<string, bool>()); }
                 Check("compat: the LaunchBox-only cards are the import, the lists and the opening",
                       string.Join(",", cards.Where(c => c.LaunchBoxOnly).SelectMany(c => c.Ids)) == "importWizard,rowInjection,emulatorOpened"
                       && cards.Single(c => c.Ids.Contains("desk")).InLiteBox != null);

@@ -358,10 +358,13 @@ namespace LbIntegrations.Compat
         /// Kept on (Mehdi, 13/10): rowInjection - it hooks Microsoft.Data.Sqlite, not LaunchBox, and a query it cannot mirror comes
         /// back as LaunchBox built it, while without it LaunchBox's emulator windows miss the pack's rows; twoInstalls - the
         /// pack's own code, its reading of LaunchBox's rows fails without harm. stockIds goes off with the rest: its way back
-        /// to LaunchBox's ids is measured exact (lot 4, T4), and on it keeps the hooks on RetroArch, Dolphin and PCSX2.</summary>
+        /// to LaunchBox's ids is measured exact (lot 4, T4), and on it keeps the hooks on RetroArch, Dolphin and PCSX2.
+        /// Kept on too: planA - off, LaunchBox can file a save into another emulator's card by its name (the pack's own plugins'
+        /// saves included, desk or no desk) and WRITES that into the platform file, which leaving the safe mode does not undo.
+        /// Its reflection fails without writing anything; its hook on LaunchBox's integrations needs theirs, off in safe mode.</summary>
         public static readonly string[] Internal =
         {
-            "desk", "retroarchView", "foreignSlots", "stockDesk", "stockNoSaves", "stockRestore", "stockIds", "planA",
+            "desk", "retroarchView", "foreignSlots", "stockDesk", "stockNoSaves", "stockRestore", "stockIds",
             "raConfigCache", "importWizard", "emulatorOpened",
         };
     }

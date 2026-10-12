@@ -269,5 +269,18 @@ the ADVANCED view (a link at the top; the view chosen is remembered in `[page] v
   the integrations as they are (PCSX2 decides by `pcsx2:`, RetroArch's Saturn match by `saturn-`). Our ids are never given
   out there; the desk's hooks keep their own switches. The self-check (`StockDesk.Verify`) runs at the first listing of
   any host (`SaveDesk.GetSaves`).
-Probe: `--saves-selftest` (cards and safe mode name switchable patches, no patch on two cards, `[page]` / `[beforeSafe]`
+- **An Apply, then games played without a restart** (Mehdi's worry, 13/10): nothing changes in that session. The twelve
+  plugins with saves read the file in their constructor (their `SaveDesk`, through `SaveRouter.Active`), Demul in its
+  constructor too, the menu relay only writes it. Since 13/10 the first plugin to read it publishes what it read on the
+  AppDomain (`Compat.Boot`, `LbIntegrations.Compat.Session`): every copy takes that one set, so a copy that would ask late
+  can never run other switches than the rest. The page reads that session too (`Compat.SessionOn`): a card the session
+  runs otherwise says "Off / On / Partly on at the next start", and the safe mode's note says it begins at the next start.
+- **planA stays on in the safe mode too**: off, LaunchBox files a save into another emulator's card by its name - the
+  pack's own plugins' saves included, desk or no desk (SaveDesk ties them itself) - and writes that into the platform file,
+  which leaving the safe mode does not undo. Its reflection fails without writing; its hook on LaunchBox's integrations
+  needs theirs, which the safe mode removes.
+- **Forcing LaunchBox to close after an Apply: no.** The session never changes, and a forced close is the riskier path
+  (LaunchBox 14's exit deadlock, a killed LaunchBox can empty Data XML files, a close while it writes).
+- The uninstall keeps `Local\Plugins\.data\`, so `nixx-compat.ini` and a safe mode left on: the setup's install message
+  says so (`InstallerCore.SafeModeLeftOn`).Probe: `--saves-selftest` (cards and safe mode name switchable patches, no patch on two cards, `[page]` / `[beforeSafe]`
 read back without touching the switches); `LBIP_SHOT_END=1` with `--nixx-shots` draws each page scrolled to its end too.

@@ -4,8 +4,8 @@
 // be dropped - so every patch can be turned off from the "Compatibility" page of the Nixx settings.
 //
 // READ ONCE, AT START-UP. The page writes Local\Plugins\.data\nixx-compat.ini ([patches] id=on|off, a missing key = on)
-// on Apply and asks for a restart; each plugin (its own copy of this code) reads the file the first time it asks, which
-// is at its start, and keeps that answer for the whole session - no patch changes state in the middle of one.
+// on Apply and asks for a restart; the first plugin to ask (at its start) reads the file for the whole process, the others
+// take what it read (Boot), and that answer holds for the whole session - no patch changes state in the middle of one.
 
 #nullable enable
 
@@ -49,10 +49,40 @@ namespace LbIntegrations.Compat
         public static bool On(string id)
         {
             var boot = _boot;
-            if (boot == null) lock (Gate) boot = _boot ??= Load(PathOf(null));
+            if (boot == null) lock (Gate) boot = _boot ??= Boot();
             if (boot.TryGetValue(id, out var on) && !on) return false;
             var p = CompatRegistry.Find(id);
             return p?.Needs == null || On(p.Needs);
+        }
+
+        /// <summary>The session's switches, ONE set for the whole process (Mehdi, 13/10). Every plugin carries its own copy of
+        /// this class: each copy reading the file at its own first question, a copy asking only after an Apply would run with
+        /// other switches than the rest - two states of the save ids in one session. The first copy to read publishes what it
+        /// read on the AppDomain (framework types only, so every copy can read it); the others take that.</summary>
+        private static Dictionary<string, bool> Boot()
+        {
+            lock (string.Intern(SessionKey))
+            {
+                if (AppDomain.CurrentDomain.GetData(SessionKey) is Dictionary<string, bool> shared) return shared;
+                var read = Load(PathOf(null));
+                AppDomain.CurrentDomain.SetData(SessionKey, read);
+                return read;
+            }
+        }
+
+        private const string SessionKey = "LbIntegrations.Compat.Session";
+
+        /// <summary>The switches the running session took at start-up, null when no plugin has read them yet (the probe). For
+        /// the page: what an Apply changes only at the next start. Never mutated.</summary>
+        internal static IReadOnlyDictionary<string, bool>? Session() => AppDomain.CurrentDomain.GetData(SessionKey) as Dictionary<string, bool>;
+
+        /// <summary><see cref="On"/> as the running session answers it, from <see cref="Session"/> - null without a session.</summary>
+        internal static bool? SessionOn(string id)
+        {
+            if (Session() is not { } s) return null;
+            if (s.TryGetValue(id, out var on) && !on) return false;
+            var p = CompatRegistry.Find(id);
+            return p?.Needs == null || SessionOn(p.Needs) != false;
         }
 
         /// <summary>The file, under the LaunchBox root (this runs inside &lt;root&gt;\Core).</summary>
@@ -136,5 +166,8 @@ namespace LbIntegrations.Compat
 
         /// <summary>For the probe: the switches as if read at start-up.</summary>
         internal static void UseForTests(Dictionary<string, bool>? state) { lock (Gate) _boot = state; }
+
+        /// <summary>For the probe: the process's session as a plugin would have published it (null: none).</summary>
+        internal static void SessionForTests(Dictionary<string, bool>? state) => AppDomain.CurrentDomain.SetData(SessionKey, state);
     }
 }

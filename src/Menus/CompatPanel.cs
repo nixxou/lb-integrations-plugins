@@ -208,6 +208,13 @@ namespace LbIntegrations.Menus
                 else if (!_checksDone) { light.Text = "Checking..."; light.ForeColor = NixxTheme.Dim; }
                 else if (on < ids.Count) { light.Text = _beforeSafe.Count > 0 ? "◐ Partly on (safe mode)" : "◐ Partly on (changed in the advanced view)"; light.ForeColor = NixxTheme.Warn; }
                 else { light.Text = "● Working"; light.ForeColor = Color.MediumSeaGreen; }
+                // The running session took its switches at start-up (Compat.Session): a card it runs otherwise says when it changes.
+                if (bad == null && !(c.LaunchBoxOnly && CompatChecks.InLiteBox()) && Compat.Compat.Session() != null
+                    && ids.Any(id => Compat.Compat.SessionOn(id) != Effective(id)))
+                {
+                    light.Text = on == 0 ? "○ Off at the next start" : on == ids.Count ? "● On at the next start" : "◐ Partly on at the next start";
+                    light.ForeColor = NixxTheme.Warn;
+                }
             }
             if (_checksDone)
             {
@@ -219,10 +226,16 @@ namespace LbIntegrations.Menus
             }
             bool safe = _beforeSafe.Count > 0;
             _safe.Text = safe ? "Leave safe mode" : "Safe mode";
+            // Set, but the running session still has the switches it started with: it begins at the next start.
+            bool waiting = safe && Compat.Compat.Session() != null && CompatRegistry.Internal.Any(id => Compat.Compat.SessionOn(id) == true && !Effective(id));
             _safeNote.Text = (safe
-                ? "Safe mode: everything that relies on LaunchBox's inner workings is off. \"Leave safe mode\" puts back the switches as they were."
-                : "Safe mode turns off everything that relies on LaunchBox's inner workings. It keeps what only the pack's own code does "
-                  + "(two installs kept apart, companion files), and the pack's emulators in LaunchBox's lists.")
+                ? (waiting ? "Safe mode is set: from the next start of LaunchBox, everything that relies on its inner workings is off - "
+                             + "until then, everything runs as before. "
+                           : "Safe mode: everything that relies on LaunchBox's inner workings is off. ")
+                  + "\"Leave safe mode\" puts back the switches as they were."
+                : "Safe mode turns off everything that relies on LaunchBox's inner workings. It keeps what protects your saves or is only "
+                  + "the pack's own code (a save never taken into another emulator's card, two installs kept apart, companion files), and "
+                  + "the pack's emulators in LaunchBox's lists.")
                 + (CompatChecks.InLiteBox() ? " In LiteBox, the save ids of RetroArch, Dolphin and PCSX2 are always read back: LaunchBox "
                                               + "may have written them in the pack's form." : "");
             _safeNote.ForeColor = safe ? NixxTheme.Warn : NixxTheme.Dim;
