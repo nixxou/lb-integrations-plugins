@@ -110,7 +110,22 @@ Found while reading the 12 plugins (each its own fix):
    the signed-in one (to decide). Probe `Probe <plugin.dll> --expected` (bsnes, melonDS, SUPER ZSNES, RASnes9x, Flycast,
    PPSSPP), `--ares-expected`, `--saves-selftest` (OfConfig). Seen, older than this step: `--melonds` 2 failures (DSi
    mode, another game's override), `--vita3k` 8.
-3. The mechanism (section 4), probe cases, a real test with `ares-second`.
+3. **Done 12/10** (27b6a49, b1ac27f). The mechanism of section 4 behind the switch `twoInstalls` (compatibility
+   page): `InstallIds` at listing, `SaveRouter.PickInstall` + `InstallChoice` at restore, `SaveForward.WithVia` for the
+   install chosen, own rows through the same choice. Probe `--saves-selftest` `TwoInstalls` (24 cases). Found by the real
+   test and fixed (b1ac27f): the second install's card was not "Active" - `SaveRouter.EmulatorFor` kept the FIRST of two
+   installs with the same exe name, which judged the file outside its save folder. At a tie: the install that listed
+   this file, else the one whose folder holds it, else the card's hint; and a plugin's own rows get their row's install
+   (`OwnInstallPath`) for IsSaveActive / the signature / the backup when it drives several library emulators.
+   Real test (Zelda ALttP France, Nixx-ares + `ares-second`, both on SNES):
+   - listing: two cards, the second's live row persisted with `"inst":"a9bb7230"`, both "Active" after the fix;
+   - closing a session started with Launch With > ares-second: `-04.ram` = its live file, on its own card;
+   - its live file damaged (64 bytes to `AA`), Restore of `-04` on its card: back into
+     `Emulators\ares-second\Saves\Super Famicom\` (hash equal to `-04`), the pre-restore backup `-05` on its card,
+     Nixx-ares's file untouched, no window (the card's live row decided).
+   Left from before the mechanism: the Nixx-ares card holds `-02.ram`, which is ares-second's content (backed up while
+   both files shared one card) - so the same close also made `-03.ram` of Nixx-ares's unchanged file (its last backup
+   differed). Not cleaned: the history is the user's. Not exercised in LaunchBox: the window (probe only).
 
 ## 7. Sandbox
 
