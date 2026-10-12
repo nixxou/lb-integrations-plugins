@@ -137,7 +137,13 @@ Found while reading the 12 plugins (each its own fix):
      Nixx-ares's file untouched, no window (the card's live row decided).
    Left from before the mechanism: the Nixx-ares card holds `-02.ram`, which is ares-second's content (backed up while
    both files shared one card) - so the same close also made `-03.ram` of Nixx-ares's unchanged file (its last backup
-   differed). Not cleaned: the history is the user's. Not exercised in LaunchBox: the window (probe only).
+   differed). Not cleaned: the history is the user's.
+   The window, real (12/10): the Nixx-ares card left with vault copies only (its live row taken out of the XML, its file
+   moved aside) - no live file, no hint, so Restore of `-03` asked: two folders, Nixx-ares preselected (the game's
+   emulator), chosen, the file back in Nixx-ares equal to `-03`, ares-second untouched. It came TWICE: Zelda is on
+   RetroArch, whose desk chose the install and handed it on (`WithVia`), and ares's own-row branch chose again - fixed
+   (1bbed5c, the install handed on is taken), asked once at the second try. Note: a deleted live FILE never opens the
+   window - the choice reads the card's persisted live rows, not whether the file is still there.
 
 ## 7. Sandbox
 
