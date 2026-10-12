@@ -44,6 +44,7 @@ namespace LbIntegrations.Probe
                     case "MelonDs": MelonDs(asm, root, emu, games); break;
                     case "SuperZsnes": SuperZsnes(asm, root, emu, games); break;
                     case "RaSnes9x": RaSnes9x(asm, root, emu, games); break;
+                    case "Flycast": Flycast(asm, root, emu); break;
                     default: Console.WriteLine("  no expected-folder cases for " + name); return false;
                 }
             }
@@ -80,6 +81,23 @@ namespace LbIntegrations.Probe
             Check("absolute → as it is", Same(abs.Save, Path.Combine(root, "s")) && Same(abs.State, Path.Combine(root, "st")), abs.Save + " | " + abs.State);
             var none = At("", "");
             Check("empty → beside the game (bsnes's default)", Same(none.Save, games) && Same(none.State, games), none.Save + " | " + none.State);
+        }
+
+        private static void Flycast(Assembly asm, string root, string emu)
+        {
+            Console.WriteLine("-- Flycast: Dreamcast.VMUPath / SavePath / SavestatePath as Flycast resolves them --");
+            var exe = Path.Combine(emu, "flycast.exe"); File.WriteAllBytes(exe, Array.Empty<byte>());
+            var cfg = Path.Combine(emu, "emu.cfg");
+            var resolve = asm.GetType("LbIntegrations.Flycast.FlycastPaths", true).GetMethod("Resolve", Any);
+            System.Collections.Generic.List<string> Dirs(object l, string n) => (System.Collections.Generic.List<string>)F(l, n);
+            var data = Path.Combine(emu, "data");
+            var unset = resolve.Invoke(null, new object[] { exe });
+            Check("no emu.cfg → data\\ (Flycast's default)", Dirs(unset, "VmuDirs").Count == 1 && Same(Dirs(unset, "VmuDirs")[0], data), string.Join(" ; ", Dirs(unset, "VmuDirs")));
+            Write(cfg, "[config]\nDreamcast.VMUPath = vmu\nDreamcast.SavePath = data/\nDreamcast.SavestatePath = " + Path.Combine(root, "st") + "\n");
+            var l2 = resolve.Invoke(null, new object[] { exe });
+            Check("relative \"vmu\" → under Flycast's folder, then data\\", Dirs(l2, "VmuDirs").Count == 2 && Same(Dirs(l2, "VmuDirs")[0], Path.Combine(emu, "vmu")) && Same(Dirs(l2, "VmuDirs")[1], data), string.Join(" ; ", Dirs(l2, "VmuDirs")));
+            Check("\"data/\" → data\\ once", Dirs(l2, "ArcadeDirs").Count == 1 && Same(Dirs(l2, "ArcadeDirs")[0], data), string.Join(" ; ", Dirs(l2, "ArcadeDirs")));
+            Check("absolute → as it is, then data\\", Same(Dirs(l2, "StateDirs")[0], Path.Combine(root, "st")), string.Join(" ; ", Dirs(l2, "StateDirs")));
         }
 
         private static void RaSnes9x(Assembly asm, string root, string emu, string games)

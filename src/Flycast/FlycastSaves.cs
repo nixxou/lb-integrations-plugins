@@ -574,10 +574,7 @@ namespace LbIntegrations.Flycast
                         Log.Info("the card came as " + name + " - restored as " + flycastName + ", the name Flycast reads");
                     name = flycastName;
                 }
-                var dirs = save is GameSaveState ? layout.StateDirs
-                         : IsArcade(save) ? layout.ArcadeDirs
-                         : layout.VmuDirs;
-                string targetDir = dirs.FirstOrDefault() ?? layout.DataDir;
+                string targetDir = TargetDirIn(layout, save);
                 // A state goes to the slot picked, when Flycast has it (SlotRestore); the backup's own when none was.
                 // The stem is the id's (a game named "Foo_2" would fool the file name); slot 0 has no suffix.
                 int slot = 0, own = -1;
@@ -715,6 +712,24 @@ namespace LbIntegrations.Flycast
         /// <summary>The Flycast installation behind a save row. AddSaveArgs carries no emulator, so it
         /// is re-resolved through the public data manager: the game's own emulator first, then any
         /// Flycast the library knows.</summary>
+        /// <summary>The folder a restore of <paramref name="save"/> writes to on an install: the first folder of its kind
+        /// (the configured one, else data\).</summary>
+        private static string TargetDirIn(FlycastLayout layout, GameSaveBase save)
+        {
+            var dirs = save is GameSaveState ? layout.StateDirs
+                     : IsArcade(save) ? layout.ArcadeDirs
+                     : layout.VmuDirs;
+            return dirs?.FirstOrDefault() ?? layout.DataDir;
+        }
+
+        LbIntegrations.Saves.ExpectedDir IOwnSaves.OwnExpectedDir(IEmulator emulator, GameSaveBase save)
+        {
+            var path = Safe(() => emulator?.ApplicationPath);
+            if (save == null || !FlycastPaths.IsFlycastExecutable(path)) return LbIntegrations.Saves.ExpectedDir.Unknown("Could not locate the Flycast installation for this game.");
+            var layout = FlycastPaths.ResolveForSaves(ResolveFullPath(path));
+            if (string.IsNullOrEmpty(layout?.InstallDir)) return LbIntegrations.Saves.ExpectedDir.Unknown("Could not locate the Flycast installation for this game.");
+            return LbIntegrations.Saves.ExpectedDir.FolderOr(TargetDirIn(layout, save), "Could not work out where Flycast reads this save from.");
+        }
         private static FlycastLayout LayoutFor(GameSaveBase save)
         {
             try
@@ -724,13 +739,13 @@ namespace LbIntegrations.Flycast
                 var emuId = Safe(() => game?.EmulatorId);
                 var emu = string.IsNullOrEmpty(emuId) ? null : dm.GetEmulatorById(emuId);
                 var appPath = Safe(() => emu?.ApplicationPath);
-                if (FlycastPaths.IsFlycastExecutable(appPath)) return FlycastPaths.Resolve(appPath);
+                if (FlycastPaths.IsFlycastExecutable(appPath)) return FlycastPaths.Resolve(ResolveFullPath(appPath));
 
                 var any = LbIntegrations.Saves.SaveForward.ViaEmulator(FlycastPaths.IsFlycastExecutable)   // through a desk: the save's install
                           ?? dm?.GetAllEmulators()?
                     .FirstOrDefault(e => FlycastPaths.IsFlycastExecutable(Safe(() => e.ApplicationPath)));
                 var anyPath = Safe(() => any?.ApplicationPath);
-                return anyPath == null ? null : FlycastPaths.Resolve(anyPath);
+                return anyPath == null ? null : FlycastPaths.Resolve(ResolveFullPath(anyPath));
             }
             catch (Exception ex) { Log.Warn("could not resolve the Flycast installation", ex); return null; }
         }

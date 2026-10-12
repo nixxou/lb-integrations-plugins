@@ -153,14 +153,14 @@ namespace LbIntegrations.Flycast
                 ? FlycastIni.AsBool(pgv, true)
                 : true;
 
-            layout.VmuDirs = Redirected(cfg, KeyVmuPath, layout.DataDir);
-            layout.ArcadeDirs = Redirected(cfg, KeySavePath, layout.DataDir);
-            layout.StateDirs = Redirected(cfg, KeyStatePath, layout.DataDir);
-            layout.BiosDirs = Redirected(cfg, KeyBiosPath, layout.DataDir);
+            layout.VmuDirs = Redirected(cfg, KeyVmuPath, layout.DataDir, layout.InstallDir);
+            layout.ArcadeDirs = Redirected(cfg, KeySavePath, layout.DataDir, layout.InstallDir);
+            layout.StateDirs = Redirected(cfg, KeyStatePath, layout.DataDir, layout.InstallDir);
+            layout.BiosDirs = Redirected(cfg, KeyBiosPath, layout.DataDir, layout.InstallDir);
 
             // The odd one out: Flycast writes mappings beside the executable, not under data\.
             layout.MappingsDirs = Redirected(cfg, KeyMappingsPath,
-                                             Path.Combine(layout.InstallDir, FlycastLayout.MappingsDirName));
+                                             Path.Combine(layout.InstallDir, FlycastLayout.MappingsDirName), layout.InstallDir);
 
             layout.Reason = File.Exists(layout.ConfigFile)
                 ? "portable install, emu.cfg read"
@@ -180,13 +180,13 @@ namespace LbIntegrations.Flycast
 
         /// <summary>The folders for one setting: its configured value(s) first, then data\ — which is
         /// what Flycast falls back to. Duplicates and blanks are dropped, order preserved.</summary>
-        private static List<string> Redirected(IDictionary<string, string> cfg, string key, string dataDir)
+        private static List<string> Redirected(IDictionary<string, string> cfg, string key, string dataDir, string installDir)
         {
             var dirs = new List<string>();
             if (cfg.TryGetValue(key, out var raw))
                 foreach (var part in SplitList(raw))
-                    Add(dirs, part);
-            Add(dirs, dataDir);
+                    Add(dirs, part, installDir);
+            Add(dirs, dataDir, installDir);
             return dirs;
         }
 
@@ -231,11 +231,13 @@ namespace LbIntegrations.Flycast
             }
         }
 
-        private static void Add(List<string> dirs, string dir)
+        // A relative entry as Flycast opens it (the value goes to the OS as it is, stdclass.cpp): from its current directory,
+        // its exe's folder under LaunchBox (ExpectedDir.OfConfig, 12/10) - not the host's.
+        private static void Add(List<string> dirs, string dir, string installDir)
         {
-            if (string.IsNullOrWhiteSpace(dir)) return;
-            string full;
-            try { full = Path.GetFullPath(dir); } catch { return; }
+            var full = LbIntegrations.Saves.ExpectedDir.OfConfig(dir, installDir);
+            if (full == null) return;
+            if (full.Length > 3) full = full.TrimEnd('\\');   // "data/" and data\ are one folder
             if (!dirs.Any(d => string.Equals(d, full, StringComparison.OrdinalIgnoreCase)))
                 dirs.Add(full);
         }
