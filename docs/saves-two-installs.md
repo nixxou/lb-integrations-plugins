@@ -145,6 +145,20 @@ Found while reading the 12 plugins (each its own fix):
    (1bbed5c, the install handed on is taken), asked once at the second try. Note: a deleted live FILE never opens the
    window - the choice reads the card's persisted live rows, not whether the file is still there.
 
+## 6b. Under LiteBox (13/10)
+
+The router (windows, choice, routing) is off under LiteBox (`HostWillAsk`); the listing's ids are not: LiteBox writes
+the same platform XML, and finds our rows by their id first, then by path (`SaveManager`,
+`UseSaveGroupIdForPersistedMatch` true for our rows). Under LiteBox the plugin could not read the kept rows - they are
+not LaunchBox's objects there - so rules 1-2 never applied and every listed save got a hint: a file at its kept path
+was still found by path, but a MOVED file (rule 2) became a new empty card, its history left on the old one, in the XML
+LaunchBox reads too. Turning the hint off under LiteBox would be worse when both hosts are used: a second install's new
+save there would take the first's id, and LiteBox would point the first's live row at the other install's file.
+Fixed (baa22c1 here, 2f3c047 in LiteBox): `Catalog` `LbPersistedSaves.Of` (a section added, nothing changed),
+filled by LiteBox's `PluginLoader` with the store's `GameSave` rows of the game, read first by `SavePersist.RowsOf`.
+The same three rules in both hosts on the same XML. An older `Catalog` loaded first: the type is missing, caught,
+the plugin reads as before. Probe `--saves-selftest`: 4 cases. Real test under LiteBox: below.
+
 ## 7. Sandbox
 
 Removed 12/10 after the real tests: `ares-second`'s entry and SNES platform row taken out of `Data\Emulators.xml`,
