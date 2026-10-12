@@ -107,9 +107,12 @@ Found while reading the 12 plugins (each its own fix):
    Flycast's "data/" and data\ one folder; the exe resolved in Flycast's and PPSSPP's save calls. Not changed:
    RASnes9x with an EMPTY Dir:SRAM and a .7z (Snes9x writes into the %TEMP% unpack folder - decided 12/10: an empty
    save or state folder set to .\Saves at the launch, what it left moved in, RaSnes9xLaunch.ForceSaveFolders); Flycast listing
-   every configured folder but restoring into the first; Xenia's target, the most recently written profile rather than
-   the signed-in one (to decide). Probe `Probe <plugin.dll> --expected` (bsnes, melonDS, SUPER ZSNES, RASnes9x, Flycast,
-   PPSSPP), `--ares-expected`, `--saves-selftest` (OfConfig). Seen, older than this step: `--melonds` 2 failures (DSi
+   every configured folder but restoring into the first - kept (12/10): Flycast reads and writes ONE folder per kind, the
+   configured one else data\, the first of the list; the others only find an old file left in data\. Xenia's target,
+   the most recently written profile rather than the signed-in one - decided 12/10: a saved game is the signed-in
+   profile's, so its unit, else its folder, then an existing unit, then the most recent profile
+   (`ResolveRestoreTargetIn`, now with the TOML). Probe `Probe <plugin.dll> --expected` (bsnes, melonDS, SUPER ZSNES,
+   RASnes9x, Flycast, PPSSPP, Xenia), `--ares-expected`, `--saves-selftest` (OfConfig). Seen, older than this step: `--melonds` 2 failures (DSi
    mode, another game's override), `--vita3k` 8.
 3. **Done 12/10** (27b6a49, b1ac27f). The mechanism of section 4 behind the switch `twoInstalls` (compatibility
    page): `InstallIds` at listing, `SaveRouter.PickInstall` + `InstallChoice` at restore, `SaveForward.WithVia` for the

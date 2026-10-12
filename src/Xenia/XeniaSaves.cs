@@ -332,19 +332,24 @@ namespace LbIntegrations.Xenia
             if (save == null || !XeniaPaths.IsXeniaExecutable(path)) return LbIntegrations.Saves.ExpectedDir.Unknown("Could not locate Xenia's content folder for this game.");
             var titleId = TitleIdOf(save);
             if (titleId == null) return LbIntegrations.Saves.ExpectedDir.Unknown("This backup does not say which Xbox 360 title it belongs to.");
-            var root = XeniaPaths.Resolve(ResolveFullPath(path), Safe(() => emulator.CommandLine)).ContentRoot;
-            var dir = ResolveRestoreTargetIn(root, titleId, out var why);
+            var layout = XeniaPaths.Resolve(ResolveFullPath(path), Safe(() => emulator.CommandLine));
+            var dir = ResolveRestoreTargetIn(layout.ContentRoot, layout.ConfigFile, titleId, out var why);
             return dir == null ? LbIntegrations.Saves.ExpectedDir.Unknown(why) : LbIntegrations.Saves.ExpectedDir.Folder(dir);
         }
 
-        /// <summary>Where a restore lands. An existing unit for this title wins. Otherwise a profile is
-        /// CHOSEN, never invented: a made-up XUID produces a directory Xenia never reads. With no
-        /// profile at all, say so instead of guessing.</summary>
+        /// <summary>Where a restore lands: where Xenia will READ it - a saved game is the signed-in profile's
+        /// (xam_content.cc), so a unit under another profile is not seen (Mehdi 12/10). In order: this title's unit under
+        /// the profile Xenia signs into at start; else that profile; else an existing unit of this title (no profile
+        /// signed in, or master's tree without profiles); else the most recently used profile. A profile is CHOSEN,
+        /// never invented: a made-up XUID produces a directory Xenia never reads. With no profile at all, say so.</summary>
         private static string ResolveRestoreTarget(GameSaveBase save, string titleId, out string why)
-            => ResolveRestoreTargetIn(ContentRootFor(save), titleId, out why);
+        {
+            var layout = LayoutFor(save);
+            return ResolveRestoreTargetIn(layout?.ContentRoot, layout?.ConfigFile, titleId, out why);
+        }
 
-        /// <summary>The same in a given content folder (OwnExpectedDir: an install's).</summary>
-        private static string ResolveRestoreTargetIn(string contentRoot, string titleId, out string why)
+        /// <summary>The same in a given content folder and TOML (OwnExpectedDir: an install's).</summary>
+        internal static string ResolveRestoreTargetIn(string contentRoot, string configFile, string titleId, out string why)
         {
             why = null;
             if (contentRoot == null)
@@ -353,8 +358,20 @@ namespace LbIntegrations.Xenia
                 return null;
             }
 
-            var existing = XeniaContent.ForTitleId(contentRoot, titleId);
-            if (existing != null) return existing.UnitPath;
+            string signed = null;
+            try { signed = string.IsNullOrWhiteSpace(configFile) ? null : XeniaProfile.SignedIn(configFile); } catch { }
+            if (signed != null && !XeniaContent.IsHex(signed, 16)) signed = null;
+            var units = XeniaContent.Enumerate(contentRoot)
+                .Where(u => string.Equals(u.TitleId, titleId, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(u => u.LastWriteUtc).ToList();
+            if (signed != null)
+            {
+                var mine = units.FirstOrDefault(u => string.Equals(u.Xuid, signed, StringComparison.OrdinalIgnoreCase));
+                if (mine != null) return mine.UnitPath;
+                var profile = Path.Combine(contentRoot, signed);
+                if (Directory.Exists(profile)) return Path.Combine(profile, titleId.ToUpperInvariant(), XeniaContent.SavedGameType);
+            }
+            if (units.Count > 0) return units[0].UnitPath;
 
             // No save for this title yet: put it under the most recently used profile.
             var profiles = SafeDirectories(contentRoot)
@@ -493,13 +510,13 @@ namespace LbIntegrations.Xenia
             catch { return null; }
         }
 
-        /// <summary>Xenia's content root for this save's game, for a RESTORE.
+        /// <summary>Xenia's layout (its content root, its TOML) for this save's game, for a RESTORE.
         ///
         /// Deliberately does not fall back to deriving it from the save's own FileLocation: on the way
         /// in, that path is the BACKUP COPY, not a place in Xenia's tree, and deriving a content root
         /// from it would produce a plausible-looking directory that the emulator never reads. With no
         /// data manager there is no answer, and saying so beats inventing one.</summary>
-        private static string ContentRootFor(GameSaveBase save)
+        private static XeniaLayout LayoutFor(GameSaveBase save)
         {
             try
             {
@@ -510,12 +527,12 @@ namespace LbIntegrations.Xenia
                 var emu = LbIntegrations.Saves.SaveForward.ViaEmulator(XeniaPaths.IsXeniaExecutable) ?? (string.IsNullOrEmpty(emuId) ? null : dm.GetEmulatorById(emuId));
                 var appPath = Safe(() => emu?.ApplicationPath);
                 if (XeniaPaths.IsXeniaExecutable(appPath))
-                    return XeniaPaths.Resolve(appPath, Safe(() => emu.CommandLine)).ContentRoot;
+                    return XeniaPaths.Resolve(appPath, Safe(() => emu.CommandLine));
 
                 var any = dm?.GetAllEmulators()?
                     .FirstOrDefault(e => XeniaPaths.IsXeniaExecutable(Safe(() => e.ApplicationPath)));
                 var anyPath = Safe(() => any?.ApplicationPath);
-                if (anyPath != null) return XeniaPaths.Resolve(anyPath).ContentRoot;
+                if (anyPath != null) return XeniaPaths.Resolve(anyPath);
             }
             catch (Exception ex) { Log.Warn("could not resolve the content folder", ex); }
             return null;

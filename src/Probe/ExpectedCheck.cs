@@ -3,7 +3,8 @@
 // LaunchBox (measured 12/10) -, never the current directory of the host: the probe moves its own elsewhere first, so a
 // value read from it shows.
 //
-//   Probe <Bsnes.dll> --expected       (ares: Probe <Ares.dll> --ares-expected)
+//   Probe <Bsnes.dll> --expected       (ares: Probe <Ares.dll> --ares-expected; also MelonDs, SuperZsnes, RaSnes9x, Flycast,
+//                                      Ppsspp, Xenia)
 
 using System;
 using System.IO;
@@ -46,6 +47,7 @@ namespace LbIntegrations.Probe
                     case "RaSnes9x": RaSnes9x(asm, root, emu, games); break;
                     case "Flycast": Flycast(asm, root, emu); break;
                     case "Ppsspp": Ppsspp(asm, root, emu); break;
+                    case "Xenia": Xenia(asm, root); break;
                     default: Console.WriteLine("  no expected-folder cases for " + name); return false;
                 }
             }
@@ -116,6 +118,38 @@ namespace LbIntegrations.Probe
             Check("absolute → as it is, then data\\", Same(Dirs(l2, "StateDirs")[0], Path.Combine(root, "st")), string.Join(" ; ", Dirs(l2, "StateDirs")));
         }
 
+        private static void Xenia(Assembly asm, string root)
+        {
+            Console.WriteLine("-- Xenia: the profile a restore goes to (the signed-in one first, Mehdi 12/10) --");
+            var target = asm.GetType("LbIntegrations.Xenia.XeniaPlugin", true).GetMethod("ResolveRestoreTargetIn", Any);
+            var content = Path.Combine(root, "content"); var toml = Path.Combine(root, "xenia-canary.config.toml");
+            const string A = "E0000000AAAAAAAA", B = "E0000000BBBBBBBB", Title = "4D5307E6";
+            Directory.CreateDirectory(Path.Combine(content, A, "FFFE07D1"));                         // A: a profile, no save of this game
+            var bUnit = Path.Combine(content, B, Title, "00000001"); Directory.CreateDirectory(Path.Combine(bUnit, "save"));
+            File.WriteAllText(Path.Combine(bUnit, "save", "data.bin"), "b");                          // B: this game's save, written last
+            string At(string signed)
+            {
+                Write(toml, signed == null ? "[Profiles]\n" : "[Profiles]\nlogged_profile_slot_0_xuid = \"" + signed + "\"\n");
+                var args = new object[] { content, toml, Title, null };
+                return (string)target.Invoke(null, args) ?? "(none: " + args[3] + ")";
+            }
+            var aNew = Path.Combine(content, A, Title, "00000001");
+            var r1 = At(A);
+            Check("A signed in, the save under B → A's folder (where Xenia reads it), not B's", Same(r1, aNew), r1);
+            Directory.CreateDirectory(Path.Combine(aNew, "save"));
+            var r2 = At(A);
+            Check("A signed in with its own save → A's", Same(r2, aNew), r2);
+            Directory.Delete(Path.Combine(content, A, Title), true);
+            var r3 = At(null);
+            Check("nobody signed in → the existing save (B's)", Same(r3, bUnit), r3);
+            var r4 = At("E0000000CCCCCCCC");
+            Check("signed in to a profile that is not there → the existing save", Same(r4, bUnit), r4);
+            Directory.Delete(Path.Combine(content, B, Title), true);
+            File.WriteAllText(Path.Combine(content, A, "FFFE07D1", "account"), "a");                  // A now the most recently written
+            var r5 = At(null);
+            Check("nobody signed in, no save → the most recently used profile", Same(r5, aNew), r5);
+        }
+
         private static void RaSnes9x(Assembly asm, string root, string emu, string games)
         {
             Console.WriteLine("-- RASnes9x: Dir:SRAM and Dir:Savestates as Snes9x resolves them --");
@@ -140,7 +174,7 @@ namespace LbIntegrations.Probe
             var abs = At(Path.Combine(root, "s"), Path.Combine(root, "st"));
             Check("absolute → as it is", Same(abs.Save, Path.Combine(root, "s")) && Same(abs.State, Path.Combine(root, "st")), abs.Save + " | " + abs.State);
             var none = At("", "");
-            Check("empty → beside the game", Same(none.Save, games) && Same(none.State, games), none.Save + " | " + none.State);
+            Check("empty → .\\Saves (what the launch sets, Mehdi 12/10)", Same(none.Save, Path.Combine(emu, "Saves")) && Same(none.State, Path.Combine(emu, "Saves")), none.Save + " | " + none.State);
         }
 
         private static void SuperZsnes(Assembly asm, string root, string emu, string games)
