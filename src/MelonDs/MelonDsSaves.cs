@@ -449,7 +449,7 @@ namespace LbIntegrations.MelonDs
                 string target = Path.Combine(targetDir, name);
                 // Over another card's save (another slot, or a card of LaunchBox's own - a manual import): LaunchBox
                 // keeps no copy of it - asked first (SlotRestore).
-                bool otherCard = !IsOurs(save) || (save is GameSaveState && slot != own);
+                bool otherCard = !IsOurs(save) || (save is GameSaveState && slot != own) || SlotRestore.OverAnotherFile(target, save);
                 if (!SlotRestore.MayOverwrite(target, source, otherCard, save is GameSaveState ? "Slot " + slot : "The current save", m => Log.Info(m), out var no))
                     return new AddSaveResponse(no);
                 if (File.Exists(target))

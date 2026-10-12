@@ -205,6 +205,11 @@ namespace LbIntegrations.Bsnes
                 if (BsnesLaunch.Running(exe)) return new AddSaveResponse("bsnes is running: it would write the game's own over this one. Close it first.");
 
                 var target = Path.Combine(targetDir, name);
+                // Over another card's save (a card of LaunchBox's own - a manual import -, or an old-name backup after a
+                // rom rename): LaunchBox keeps no copy of it - asked first (SlotRestore).
+                bool otherCard = !IsOurs(save) || SlotRestore.OverAnotherFile(target, save);
+                if (!SlotRestore.MayOverwrite(target, source, otherCard, IsStates(save) ? "The current states" : "The current save", m => Log.Info(m), out var no))
+                    return new AddSaveResponse(no);
                 if (File.Exists(target))
                 {
                     bool overwrite = true;

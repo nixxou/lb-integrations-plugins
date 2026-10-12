@@ -89,8 +89,12 @@ Found while reading the 12 plugins (each its own fix):
 
 ## 6. Order
 
-1. Codex finding 1 (separate): the restore of an old-name backup after a ROM rename skips the overwrite warning in 6
-   plugins (ares, RASnes9x, Flycast, SUPER ZSNES, melonDS, PPSSPP states).
+1. **Done 12/10.** Codex finding 1 (separate): the restore of an old-name backup after a ROM rename skipped the overwrite
+   warning. `SlotRestore.OverAnotherFile`: the target exists and is none of the restored card's known live files →
+   "another card's", the Yes / No asks. In ares, RASnes9x, Flycast, SUPER ZSNES, melonDS, PPSSPP states, and bsnes, which
+   had no warning at all (it now asks for a manual import too, as the others). A card with no live file known keeps the
+   caller's rule. Probe `--saves-selftest`: 5 checks (old name onto the new name's save, onto its own, no live file,
+   nothing at the target, through MayOverwrite with No).
 2. The expected-folder functions, then the fixes of section 5.
 3. The mechanism (section 4), probe cases, a real test with `ares-second`.
 

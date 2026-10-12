@@ -516,7 +516,7 @@ namespace LbIntegrations.Ppsspp
 
             string target = Path.Combine(stateDir, PpssppStates.NameFor(discId, version, slot.Value));
             // Over another slot's state (or a card of LaunchBox's own): LaunchBox keeps no copy of it - asked first.
-            bool otherCard = !IsOurs(state) || index == null || slot.Value != index.Value;
+            bool otherCard = !IsOurs(state) || index == null || slot.Value != index.Value || SlotRestore.OverAnotherFile(target, state);
             if (!SlotRestore.MayOverwrite(target, source, otherCard, "Slot " + key, m => Log.Info(m), out var no))
                 return new AddSaveResponse(no);
             if (File.Exists(target))

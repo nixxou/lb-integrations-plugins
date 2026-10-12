@@ -705,10 +705,27 @@ namespace LbIntegrations.Probe
                 Check("retroarch save: an \"In Vault\" card (no live file) onto an existing file → another card's", StockRestore.OtherCard(liveOfCard, Array.Empty<string>()));
                 Check("retroarch save: the card lives elsewhere → the target is another card's", StockRestore.OtherCard(liveOfCard, new[] { Path.Combine(dir, "Zelda (Rev 1).srm") }));
                 Check("retroarch save: nothing at the target → nothing to lose", !StockRestore.OtherCard(Path.Combine(dir, "nothing.srm"), Array.Empty<string>()));
+                // A rom renamed since the backup (Codex review 12/10): the restore goes to TODAY's name, over the save of
+                // the new name - another card's. Card A lived as "Zelda (France).ram", the new card's file is "Zelda (F).ram".
+                string oldLive = Path.Combine(dir, "Zelda (France).ram"), newLive = Path.Combine(dir, "Zelda (F).ram");
+                File.WriteAllText(newLive, "card B's 10 new hours");
+                var cardA = new GameSaveGame { GameId = "g", SaveGroupId = "{\"emu\":\"ares\",\"kind\":\"save\",\"by\":\"name\",\"id\":\"Zelda (France).ram\"}" };
+                SlotRestore.LivesForTests = (g, id) => id == cardA.SaveGroupId ? new[] { oldLive } : Array.Empty<string>();
+                Check("renamed rom: an old-name backup onto the new name's save → another card's file", SlotRestore.OverAnotherFile(newLive, cardA));
+                SlotRestore.LivesForTests = (g, id) => new[] { newLive.ToUpperInvariant() };
+                Check("renamed rom: ... onto the card's own live file → not another's", !SlotRestore.OverAnotherFile(newLive, cardA));
+                SlotRestore.LivesForTests = (g, id) => Array.Empty<string>();
+                Check("renamed rom: no live file known → the caller's rule stands (false)", !SlotRestore.OverAnotherFile(newLive, cardA));
+                SlotRestore.LivesForTests = (g, id) => new[] { oldLive };
+                Check("renamed rom: nothing at the target → nothing to lose", !SlotRestore.OverAnotherFile(Path.Combine(dir, "nothing.ram"), cardA));
+                SlotRestore.HostOverride = "launchbox"; asked = 0;
+                SlotRestore.Instead = (t, x) => { asked++; return false; };
+                Check("renamed rom: through MayOverwrite → asked, No keeps the new save",
+                      !SlotRestore.MayOverwrite(newLive, src, SlotRestore.OverAnotherFile(newLive, cardA), "The current save", null, out _) && asked == 1 && File.ReadAllText(newLive) == "card B's 10 new hours");
             }
             finally
             {
-                SlotRestore.Instead = null; SlotRestore.HostOverride = null;
+                SlotRestore.Instead = null; SlotRestore.HostOverride = null; SlotRestore.LivesForTests = null;
                 try { Directory.Delete(dir, true); } catch { }
             }
         }

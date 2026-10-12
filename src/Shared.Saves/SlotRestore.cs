@@ -30,6 +30,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using Unbroken.LaunchBox.Plugins.Data;
 
 namespace LbIntegrations.Saves
 {
@@ -103,6 +104,25 @@ namespace LbIntegrations.Saves
                 return yes;
             }
             catch (Exception ex) { log?.Invoke("overwrite check failed, going on: " + ex.Message); return true; }
+        }
+
+        /// <summary>For the probe: the live files of a card, instead of LaunchBox's data (game id, card id → paths).</summary>
+        internal static Func<string?, string?, IReadOnlyList<string>>? LivesForTests;
+
+        /// <summary>True when <paramref name="target"/> exists and is none of the restored card's live files, those being
+        /// known (Codex review 12/10): a plugin writes a restore under the rom's name TODAY, so after a rename an old-name
+        /// backup lands on the save of the new name - another card's, which LaunchBox's precautionary copy (of the restored
+        /// card's own live file) does not cover. No live file known (an "In Vault" card, a plugin that persists none):
+        /// false, the caller's own rule stands.</summary>
+        public static bool OverAnotherFile(string target, GameSaveBase? save)
+        {
+            try
+            {
+                if (save == null || string.IsNullOrEmpty(target) || !File.Exists(target)) return false;
+                var lives = (LivesForTests ?? SavePersist.LivePathsOf)(save.GameId, save.SaveGroupId);
+                return lives.Count > 0 && StockRestore.OtherCard(target, lives);
+            }
+            catch { return false; }
         }
 
         /// <summary>Lot 5: true to let LaunchBox's SDK body delete <paramref name="file"/> - the file of a row on an
