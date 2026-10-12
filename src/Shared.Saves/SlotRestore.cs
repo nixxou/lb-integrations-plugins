@@ -69,7 +69,7 @@ namespace LbIntegrations.Saves
         public static string? WithSlot(string? id, int slot)
         {
             if (!SaveId.TryRead(id, out var d) || d == null) return id;
-            return SaveId.Write(new SaveIdData { Emu = d.Emu, Kind = d.Kind, Sys = d.Sys, By = d.By, Id = d.Id, Slot = slot, Native = d.Native });
+            return SaveId.Write(new SaveIdData { Emu = d.Emu, Kind = d.Kind, Sys = d.Sys, By = d.By, Id = d.Id, Slot = slot, Native = d.Native, Dir = d.Dir });
         }
 
         /// <summary>The slot inside <paramref name="id"/> (our JSON), if any.</summary>
@@ -103,6 +103,25 @@ namespace LbIntegrations.Saves
                 return yes;
             }
             catch (Exception ex) { log?.Invoke("overwrite check failed, going on: " + ex.Message); return true; }
+        }
+
+        /// <summary>Lot 5: true to let LaunchBox's SDK body delete <paramref name="file"/> - the file of a row on an
+        /// integration without saves that nobody claims (Mehdi 12/10: a Yes / No, No by default). Only LaunchBox asks;
+        /// BigBox, LiteBox and a failed question keep the file. <paramref name="refused"/> is the message otherwise.</summary>
+        public static bool MayDeleteUnclaimed(string? file, Action<string>? log, out string? refused)
+        {
+            refused = "This save belongs to no emulator known here - nothing was deleted.";
+            try
+            {
+                if (string.IsNullOrEmpty(file) || !File.Exists(file)) { refused = null; return true; }   // nothing to lose
+                if (Host() != "launchbox") { log?.Invoke("deletion of an unclaimed save refused (" + Host() + "): " + file); return false; }
+                var text = "Nobody claims this save:\n" + file + "\n\nNo emulator known here owns it, so its file would be deleted for good.\n\nDelete the file anyway?";
+                bool yes = Ask("Delete save", text);
+                log?.Invoke("deletion of an unclaimed save (" + file + "): " + (yes ? "deleted, the user said yes" : "cancelled by the user"));
+                if (yes) refused = null; else refused = "Deletion cancelled: the save file was left as it was.";
+                return yes;
+            }
+            catch (Exception ex) { log?.Invoke("deletion of an unclaimed save not asked, file kept: " + ex.Message); return false; }
         }
 
         private static bool SameContent(string a, string b)

@@ -673,6 +673,8 @@ namespace LbIntegrations.Probe
             Check("id: recomputed for the slot written",
                   SlotRestore.WithSlot(id, 4) == "{\"emu\":\"ares\",\"kind\":\"state\",\"sys\":\"SuperFamicom\",\"by\":\"name\",\"id\":\"Zelda\",\"slot\":4}");
             Check("id: not ours, left as it is", SlotRestore.WithSlot("a2289149085747d39372772546f2fe8c", 4) == "a2289149085747d39372772546f2fe8c");
+            var dirId = SaveId.Write(new SaveIdData { Emu = "lb.retroarch", Kind = "state", By = "name", Id = "Zelda.state", Slot = 1, Dir = "emulators\\retroarch\\states" });
+            Check("id: its folder kept with the new slot", SaveId.TryRead(SlotRestore.WithSlot(dirId, 4), out var dd) && dd?.Dir == "emulators\\retroarch\\states" && dd?.Slot == 4, SlotRestore.WithSlot(dirId, 4));
             Check("id: its slot read back", SlotRestore.SlotOf(id) == 1 && SlotRestore.SlotOf("guid") == null);
 
             var dir = Path.Combine(Path.GetTempPath(), "lbip-slotrestore-" + Guid.NewGuid().ToString("N"));

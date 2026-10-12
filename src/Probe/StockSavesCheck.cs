@@ -409,13 +409,29 @@ namespace LbIntegrations.Probe
                 var orphan = Path.Combine(scratch, "nobody.srm");
                 File.WriteAllText(orphan, "x");
                 var orphanRow = new GameSaveGame { GameId = zelda.Id, FileLocation = orphan, SaveGroupId = "" };
-                var removed = duck.RemoveSave(orphanRow);
-                Expect("a row nobody claims, removed on DuckStation: refused", removed?.WasSuccess == false, removed?.Message ?? "null");
-                Expect("... its file left", File.Exists(orphan), "deleted");
-                LbIntegrations.Compat.Compat.UseForTests(new Dictionary<string, bool> { ["stockNoSaves"] = false });
-                try { duck.RemoveSave(orphanRow); }
-                finally { LbIntegrations.Compat.Compat.UseForTests(null); }
-                Expect("... the switch off: the SDK's body deletes it (the test means something)", !File.Exists(orphan), "still there");
+                // A Yes / No (Mehdi 12/10), No by default; answered here instead of a window.
+                var asked = new List<string>();
+                LbIntegrations.Saves.SlotRestore.Instead = (title, text) => { asked.Add(text); return false; };
+                try
+                {
+                    var removed = duck.RemoveSave(orphanRow);
+                    Expect("a row nobody claims, removed on DuckStation: the user asked", asked.Count == 1 && asked[0].Contains(orphan), string.Join(" | ", asked));
+                    Expect("... answered No: refused, its file left", removed?.WasSuccess == false && File.Exists(orphan), removed?.Message ?? "null");
+                    asked.Clear();
+                    LbIntegrations.Compat.Compat.UseForTests(new Dictionary<string, bool> { ["stockNoSaves"] = false });
+                    try { removed = duck.RemoveSave(orphanRow); }
+                    finally { LbIntegrations.Compat.Compat.UseForTests(null); }
+                    Expect("... `stockNoSaves` off: still asked, still kept", asked.Count == 1 && removed?.WasSuccess == false && File.Exists(orphan), asked.Count + " " + removed?.Message);
+                    asked.Clear();
+                    LbIntegrations.Saves.SlotRestore.HostOverride = "bigbox";
+                    try { removed = duck.RemoveSave(orphanRow); }
+                    finally { LbIntegrations.Saves.SlotRestore.HostOverride = null; }
+                    Expect("... in BigBox: refused without a question, kept", asked.Count == 0 && removed?.WasSuccess == false && File.Exists(orphan), asked.Count + " " + removed?.Message);
+                    LbIntegrations.Saves.SlotRestore.Instead = (title, text) => { asked.Add(text); return true; };
+                    removed = duck.RemoveSave(orphanRow);
+                    Expect("... answered Yes: the SDK's body deletes it", removed?.WasSuccess == true && !File.Exists(orphan), removed?.Message ?? "null");
+                }
+                finally { LbIntegrations.Saves.SlotRestore.Instead = null; }
             }
 
             Console.WriteLine("  " + (bad == 0 ? "all good" : bad + " FAILURE(S)"));

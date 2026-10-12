@@ -441,13 +441,14 @@ namespace LbIntegrations.Saves
         private static bool RemoveSaveIn(object __instance, ref GameSaveBase __0, ref PluginResponse __result)
         {
             if (!RowIn(__instance, ref __0, ref __result, SaveForward.RemoveSave)) return false;
-            // A no-save integration's row nobody claims: the SDK's body deletes its file - refused (lot 5).
+            // A no-save integration's row nobody claims: the SDK's body deletes its file - only when the user says yes (lot 5,
+            // Mehdi 12/10). Not tied to `stockNoSaves`: with it off, LaunchBox still shows the persisted rows (T3).
             try
             {
-                if (EmuOf(__instance) is { } emu && Desk(emu))
+                if (EmuOf(__instance) is { } emu && NoSave(emu) && LbIntegrations.Compat.Compat.On("stockDesk") && Complete(emu)
+                    && !SlotRestore.MayDeleteUnclaimed(__0?.FileLocation, m => SaveRouter.Say("[stock] " + emu + " " + m), out var no))
                 {
-                    __result = new PluginResponse(false, "This save belongs to another emulator, which could not be found - nothing was deleted.");
-                    Once(emu, "RemoveSave " + Show(__0) + " refused - no owner found, the file is left");
+                    __result = new PluginResponse(false, no);
                     return false;
                 }
             }
