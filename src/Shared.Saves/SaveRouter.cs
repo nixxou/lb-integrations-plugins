@@ -150,6 +150,7 @@ namespace LbIntegrations.Saves
             _driver.Clear();
             _routes.Clear();
             _covered.Clear();
+            _ownPaths.Clear();
         }
 
         private static readonly ConcurrentDictionary<string, (long At, bool Yes)> _covered = new(StringComparer.Ordinal);
@@ -296,6 +297,28 @@ namespace LbIntegrations.Saves
             catch { return false; }
         }
 
+        /// <summary>The exe a row of the plugin's OWN is asked about with (IsSaveActive, the signature, the backup): the one
+        /// LaunchBox passes - the game's emulator - unless the plugin drives several installs of the library, then the one the
+        /// row belongs to (EmulatorFor's tiebreak: the folder holding the file, the card's hint). Kept per row: asked hundreds
+        /// of times per Game Saves opening.</summary>
+        internal static string? OwnInstallPath(EmulatorPlugin plugin, GameSaveBase? row, string? given)
+        {
+            try
+            {
+                if (row == null || !Active || !LbIntegrations.Compat.Compat.On("twoInstalls")) return given;
+                var key = plugin.GetType().FullName + "\u0001" + row.SaveGroupId + "\u0001" + row.FileLocation + "\u0001" + row.GameId;
+                if (_ownPaths.TryGetValue(key, out var known)) return known ?? given;
+                string? found = null;
+                if (Library().Count(e => ReferenceEquals(DriverOf(e)?.Plugin, plugin)) > 1)
+                    found = Safe(() => EmulatorFor(plugin, row)?.ApplicationPath);
+                if (_ownPaths.Count > 20000) _ownPaths.Clear();
+                _ownPaths[key] = found;
+                return found ?? given;
+            }
+            catch { return given; }
+        }
+        private static readonly ConcurrentDictionary<string, string?> _ownPaths = new(StringComparer.Ordinal);
+
         /// <summary>The emulator of the library <paramref name="plugin"/> drives that suits <paramref name="row"/>: its exe
         /// name, its core, the game's platform - the best match, else any of that plugin's.</summary>
         private static IEmulator? EmulatorFor(EmulatorPlugin plugin, GameSaveBase row)
@@ -303,6 +326,12 @@ namespace LbIntegrations.Saves
             string? platform = null;
             try { platform = PluginHelper.DataManager?.GetGameById(row.GameId)?.Platform; } catch { }
             IEmulator? best = null; int bestScore = -1;
+            // Between two installs of one exe name (two ares, measured 12/10): the one that listed this very file, else the
+            // one whose folder holds it, else the one whose hint the card carries - else the first, as before. Without it
+            // the second install's live file was asked about as the first's: "not active".
+            var file = FullOf(Safe(() => row.FileLocation));
+            var listedBy = file.Length > 0 ? ListedFrom(file) : null;
+            var hint = InstallIds.HintOf(row.SaveGroupId);
             foreach (var e in Library())
             {
                 if (!ReferenceEquals(DriverOf(e)?.Plugin, plugin)) continue;
@@ -311,6 +340,11 @@ namespace LbIntegrations.Saves
                     && string.Equals(Path.GetFileName(Safe(() => e.ApplicationPath) ?? ""), row.EmulatorFileName, StringComparison.OrdinalIgnoreCase)) score += 4;
                 if (!string.IsNullOrEmpty(row.EmulatorCore) && string.Equals(CoreOf(e, platform), row.EmulatorCore, StringComparison.OrdinalIgnoreCase)) score += 2;
                 if (Covers(e, platform)) score += 1;
+                score *= 8;
+                if (listedBy != null && ReferenceEquals(listedBy, e)) score += 4;
+                else if (file.Length > 0 && EmulatorDir(e) is string dir && dir.Length > 0
+                         && file.StartsWith(dir.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) score += 2;
+                if (hint != null && string.Equals(InstallIds.Hint(Safe(() => e.ApplicationPath)), hint, StringComparison.OrdinalIgnoreCase)) score += 1;
                 if (score > bestScore) { best = e; bestScore = score; }
             }
             return best;

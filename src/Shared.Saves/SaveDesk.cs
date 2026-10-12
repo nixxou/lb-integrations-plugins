@@ -128,7 +128,7 @@ namespace LbIntegrations.Saves
 
         public bool IsSaveActive(GameSaveBase save, string emulatorApplicationPath)
             => Route(save) is { } r ? SaveForward.IsSaveActive(r, save, emulatorApplicationPath)
-                                    : _own.OwnIsSaveActive(save, emulatorApplicationPath);
+                                    : _own.OwnIsSaveActive(save, SaveRouter.OwnInstallPath(_plugin, save, emulatorApplicationPath)!);
 
         public bool IsSaveContainer(GameSaveBase save)
             => Route(save) is { } r ? SaveForward.IsSaveContainer(r, save) : _own.OwnIsSaveContainer(save);
@@ -139,7 +139,7 @@ namespace LbIntegrations.Saves
         public bool TryComputeSaveSignature(GameSaveBase save, string emulatorApplicationPath, out string? signature)
         {
             if (Route(save) is { } r) return SaveForward.TryComputeSaveSignature(r, save, emulatorApplicationPath, out signature);
-            if (_own.OwnTryComputeSaveSignature(save, emulatorApplicationPath, out signature)) return true;
+            if (_own.OwnTryComputeSaveSignature(save, SaveRouter.OwnInstallPath(_plugin, save, emulatorApplicationPath)!, out signature)) return true;
             return WithCompanions(save, out signature);
         }
 
@@ -209,7 +209,7 @@ namespace LbIntegrations.Saves
         public bool TryBackupSave(GameSaveBase save, string emulatorApplicationPath, string destinationFolder, out string? error)
         {
             if (Route(save) is { } r) return SaveForward.TryBackupSave(r, save, emulatorApplicationPath, destinationFolder, out error);
-            return _own.OwnTryBackupSave(save, emulatorApplicationPath, destinationFolder, out error);
+            return _own.OwnTryBackupSave(save, SaveRouter.OwnInstallPath(_plugin, save, emulatorApplicationPath)!, destinationFolder, out error);
         }
 
         public bool TryGetSaveGroupInfo(GameSaveBase save, string primaryFilePath, out string? saveGroupId, out string? saveGroupName)
