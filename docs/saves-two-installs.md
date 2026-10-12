@@ -95,7 +95,21 @@ Found while reading the 12 plugins (each its own fix):
    had no warning at all (it now asks for a manual import too, as the others). A card with no live file known keeps the
    caller's rule. Probe `--saves-selftest`: 5 checks (old name onto the new name's save, onto its own, no live file,
    nothing at the target, through MayOverwrite with No).
-2. The expected-folder functions, then the fixes of section 5.
+2. **Done 12/10** (8c0ca6c, b5a24fa, feb8862, ec96980, 183ff8d, 8dccc81, 5a8a1d2, 5bbffb0). The expected-folder
+   functions, in the 12 plugins, each the computation its restore already uses (extracted where it was inline):
+   ares `Destination`, bsnes / RASnes9x / SUPER ZSNES `TargetDirFor`, melonDS `RestoreDirIn`, Flycast `TargetDirIn`,
+   PPSSPP the memstick's SAVEDATA / PPSSPP_STATE, no$gba BATTERY, packs for Cxbx, xemu (save, or its state's own slot),
+   Vita3K, DSiWare, Xenia's profile folder (`ResolveRestoreTargetIn`). Measured first (12/10): ares, bsnes, melonDS
+   and Flycast hand a configured path to Windows as it is (their sources), and LaunchBox starts an emulator with its
+   exe's folder as current directory (ares, read off the running process) - `ExpectedDir.OfConfig`: relative from the
+   exe's folder. Fixed on the way: those relative paths (read from LaunchBox's current directory before); SUPER ZSNES's
+   empty folders filled by the mod from the first session; a melonDS state's last resort in savestates\, not saves\;
+   Flycast's "data/" and data\ one folder; the exe resolved in Flycast's and PPSSPP's save calls. Not changed:
+   RASnes9x with an EMPTY Dir:SRAM and a .7z (Snes9x writes into the %TEMP% unpack folder - to decide); Flycast listing
+   every configured folder but restoring into the first; Xenia's target, the most recently written profile rather than
+   the signed-in one (to decide). Probe `Probe <plugin.dll> --expected` (bsnes, melonDS, SUPER ZSNES, RASnes9x, Flycast,
+   PPSSPP), `--ares-expected`, `--saves-selftest` (OfConfig). Seen, older than this step: `--melonds` 2 failures (DSi
+   mode, another game's override), `--vita3k` 8.
 3. The mechanism (section 4), probe cases, a real test with `ares-second`.
 
 ## 7. Sandbox
