@@ -55,12 +55,13 @@ namespace LbIntegrations.Bsnes
             var romDir = string.IsNullOrWhiteSpace(romPath) ? null : Path.GetDirectoryName(Path.GetFullPath(romPath));
             // A big listing reads settings.bml once, not once per game (LbIntegrations.Saves.SaveScan).
             var bml = LbIntegrations.Saves.SaveScan.Memo("bsnes.bml|" + exePath, () => LbIntegrations.Lbip.StampedCache.Get(BsnesBml.Of(exePath), "bsnes.bml", () => BsnesBml.Load(BsnesBml.Of(exePath))));   // and Game Saves: while settings.bml is unchanged
+            string exeDir = null;
+            try { exeDir = Path.GetDirectoryName(Path.GetFullPath(exePath)); } catch { }
             string Dir(string node)
             {
                 var v = bml.Get(node);
-                if (string.IsNullOrWhiteSpace(v)) return romDir;
-                try { return Path.GetFullPath(v.Replace('/', Path.DirectorySeparatorChar)); }
-                catch { return romDir; }
+                // Relative: from bsnes's folder, its current directory under LaunchBox (ExpectedDir.OfConfig).
+                return LbIntegrations.Saves.ExpectedDir.OfConfig(v, exeDir) ?? romDir;
             }
             return new Folders { SaveDir = Dir("Path/Saves"), StateDir = Dir("Path/States") };
         }
@@ -244,6 +245,14 @@ namespace LbIntegrations.Bsnes
             }
         }
 
+        LbIntegrations.Saves.ExpectedDir IOwnSaves.OwnExpectedDir(IEmulator emulator, GameSaveBase save)
+        {
+            var path = Safe(() => emulator?.ApplicationPath);
+            if (save == null || !BsnesLaunch.IsBsnesExe(path)) return LbIntegrations.Saves.ExpectedDir.Unknown("Could not find the bsnes this game runs on.");
+            var to = SaveRows.TargetFor(save, PluginHelper.DataManager, Full);
+            if (to.Refused) return LbIntegrations.Saves.ExpectedDir.Unknown(to.Warning);
+            return LbIntegrations.Saves.ExpectedDir.FolderOr(TargetDirFor(save, ResolveFullPath(path), to.RomPath), "Could not work out where bsnes reads this save from.");
+        }
         /// <summary>The folder for this rom - the row's version's or its game's (SaveRows.TargetFor).</summary>
         private static string TargetDirFor(GameSaveBase save, string exe, string rom = null)
         {
