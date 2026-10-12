@@ -241,6 +241,10 @@ namespace LbIntegrations.Saves
             // plugin, the game's own emulator is not necessarily the one the save came from (docs\saves-two-installs.md §4).
             if (args?.SaveToAdd != null && SaveRouter.Active && LbIntegrations.Compat.Compat.On("twoInstalls"))
             {
+                // Handed on by a desk (a game on RetroArch, a LaunchBox integration): that desk already chose the install - asked
+                // again here, the user saw the window twice (measured 12/10).
+                if (SaveForward.ViaEmulator(_ => true) is { } given && ReferenceEquals(SaveRouter.DriverOf(given)?.Plugin, _plugin))
+                    return _own.OwnAddSaveFile(args);
                 var via = SaveRouter.RestoreEmulator(_plugin, args.SaveToAdd, null, out var refused);
                 if (refused != null) { Say("restore of its own save refused: " + refused); return new AddSaveResponse(refused); }
                 if (via != null) return SaveForward.WithVia(via, () => _own.OwnAddSaveFile(args));
