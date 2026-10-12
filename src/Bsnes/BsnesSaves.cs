@@ -270,7 +270,8 @@ namespace LbIntegrations.Bsnes
             {
                 var dm = PluginHelper.DataManager;
                 var id = Safe(() => game?.EmulatorId);
-                var own = string.IsNullOrEmpty(id) ? null : dm?.GetEmulatorById(id);
+                // The install a restore was sent to first (SaveForward.WithVia: the choice among two installs, docs\saves-two-installs.md §4).
+                var own = LbIntegrations.Saves.SaveForward.ViaEmulator(BsnesLaunch.IsBsnesExe) ?? (string.IsNullOrEmpty(id) ? null : dm?.GetEmulatorById(id));
                 var path = Safe(() => own?.ApplicationPath);
                 if (!BsnesLaunch.IsBsnesExe(path))
                     path = Safe(() => (LbIntegrations.Saves.SaveForward.ViaEmulator(BsnesLaunch.IsBsnesExe)   // through a desk: the save's install

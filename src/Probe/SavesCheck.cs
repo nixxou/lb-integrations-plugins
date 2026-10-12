@@ -639,6 +639,89 @@ namespace LbIntegrations.Probe
                   SaveRouter.PickInstall(two, Array.Empty<string>(), _ => -1, out why) == -1 && why != null, why);
             Check("install: a folder prefix is not its sibling (C:\\RA vs C:\\RA2)",
                   SaveRouter.PickInstall(new List<(string, int)> { (@"C:\RA", 7), (@"C:\RA2", 7) }, new[] { @"C:\RA2\saves\x.srm" }, _ => -1, out why) == 1);
+            TwoInstalls();
+        }
+
+        /// <summary>Two installs of one pack plugin (docs\saves-two-installs.md §4): the hint, the listing's three rules, the
+        /// restore's choice.</summary>
+        private static void TwoInstalls()
+        {
+            // The hint: one per folder, the same however the path is written, the exe's name not in it.
+            var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".."));
+            string? hA = InstallIds.Hint(@"Emulators\Nixx-ares\ares.exe"), hA2 = InstallIds.Hint(Path.Combine(root, "Emulators", "NIXX-ARES", "other.exe")),
+                    hB = InstallIds.Hint(@"Emulators\ares-second\ares.exe");
+            Check("hint: 8 hex digits", hA != null && hA.Length == 8 && hA.All(Uri.IsHexDigit), hA);
+            Check("hint: the same folder relative or full, any case, any exe name → the same", hA == hA2, hA + " / " + hA2);
+            Check("hint: another folder → another", hA != hB, hA + " / " + hB);
+            Check("hint: CRC32 as everyone computes it (\"123456789\" → cbf43926)", InstallIds.Crc32("123456789") == 0xCBF43926u);
+            var id = SaveId.Write(new SaveIdData { Emu = "ares", Kind = "save", Sys = "SuperFamicom", By = "name", Id = "Zelda.ram", Inst = "a3f9c2d1" });
+            Check("hint: written last in the id", id == "{\"emu\":\"ares\",\"kind\":\"save\",\"sys\":\"SuperFamicom\",\"by\":\"name\",\"id\":\"Zelda.ram\",\"inst\":\"a3f9c2d1\"}", id);
+            Check("hint: an id's base drops it, its slot kept", InstallIds.Base(SaveId.Write(new SaveIdData { Emu = "ares", Kind = "state", Id = "Z", Slot = 2, Inst = "x" }))
+                                                                == SaveId.Write(new SaveIdData { Emu = "ares", Kind = "state", Id = "Z", Slot = 2 }));
+            Check("hint: a slot change keeps it (WithSlot)", InstallIds.HintOf(SlotRestore.WithSlot(SaveId.Write(new SaveIdData { Emu = "ares", Kind = "state", Id = "Z", Slot = 1, Inst = "x" }), 3)) == "x");
+
+            // The listing's rules, on rows made up for one game.
+            var dir = Path.Combine(Path.GetTempPath(), "lbip-twoinstalls-" + Guid.NewGuid().ToString("N"));
+            string a = Path.Combine(dir, "A", "Zelda.ram"), b = Path.Combine(dir, "B", "Zelda.ram"), gone = Path.Combine(dir, "Gone", "Zelda.ram"), vault = Path.Combine(dir, "Saves", "Zelda.ram");
+            Directory.CreateDirectory(Path.GetDirectoryName(a)!); Directory.CreateDirectory(Path.GetDirectoryName(b)!);
+            File.WriteAllText(a, "A"); File.WriteAllText(b, "B");
+            var plain = SaveId.Write(new SaveIdData { Emu = "ares", Kind = "save", By = "name", Id = "Zelda.ram" });
+            GameSaveBase Listed(string at) => new GameSaveGame { GameId = "g", FileLocation = at, SaveGroupId = plain };
+            string IdFor(string at, params SavePersist.Persisted[] persisted) => InstallIds.IdFor(Listed(at), plain, "hhhhhhhh", persisted, out _);
+            try
+            {
+                Check("listing: nothing persisted → a new card, with the hint", InstallIds.HintOf(IdFor(a)) == "hhhhhhhh");
+                Check("listing: a persisted row at its path → that row's id, an old one too (no migration)",
+                      IdFor(a, new SavePersist.Persisted(a, plain, false)) == plain);
+                Check("listing: another install's card holds a live file → a card of its own",
+                      InstallIds.HintOf(IdFor(b, new SavePersist.Persisted(a, plain, false), new SavePersist.Persisted(vault, plain, true))) == "hhhhhhhh");
+                Check("listing: the one card whose live file is gone (a renamed folder) → adopted, its backups kept",
+                      IdFor(b, new SavePersist.Persisted(gone, plain, false), new SavePersist.Persisted(vault, plain, true)) == plain);
+                Check("listing: a card of vault copies only (no live row persisted) → adopted",
+                      IdFor(b, new SavePersist.Persisted(vault, plain, true)) == plain);
+                var other = SaveId.Write(new SaveIdData { Emu = "ares", Kind = "save", By = "name", Id = "Zelda.ram", Inst = "00000001" });
+                Check("listing: two such cards → none chosen, a new card",
+                      InstallIds.HintOf(IdFor(b, new SavePersist.Persisted(gone, plain, false), new SavePersist.Persisted(gone + "2", other, false))) == "hhhhhhhh");
+                Check("listing: another save's card (another name) is never taken",
+                      InstallIds.HintOf(IdFor(b, new SavePersist.Persisted(gone, SaveId.Write(new SaveIdData { Emu = "ares", Kind = "save", By = "name", Id = "Mana.ram" }), false))) == "hhhhhhhh");
+                // Apply: only this plugin's ids without a hint; the switch off, nothing.
+                InstallIds.RowsForTests = _ => Array.Empty<SavePersist.Persisted>();
+                var mixed = new List<GameSaveBase> { Listed(a), new GameSaveGame { GameId = "g", FileLocation = b, SaveGroupId = "{\"emu\":\"bsnes\",\"kind\":\"save\",\"by\":\"name\",\"id\":\"Zelda.srm\"}" } };
+                var applied = InstallIds.Apply("ares", @"Emulators\Nixx-ares\ares.exe", mixed, null);
+                Check("apply: our row gets its install's hint, another plugin's row untouched", InstallIds.HintOf(applied[0].SaveGroupId) == hA && ReferenceEquals(applied[1], mixed[1]));
+                LbIntegrations.Compat.Compat.UseForTests(new Dictionary<string, bool> { ["twoInstalls"] = false });
+                try { Check("apply: the switch off → as listed", InstallIds.Apply("ares", @"Emulators\Nixx-ares\ares.exe", mixed, null)[0].SaveGroupId == plain); }
+                finally { LbIntegrations.Compat.Compat.UseForTests(null); }
+            }
+            finally { InstallIds.RowsForTests = null; try { Directory.Delete(dir, true); } catch { } }
+
+            // The restore's choice between two installs.
+            string? why;
+            SaveRouter.InstallCandidate C(string d, string? dest = null, string? hint = null) => new SaveRouter.InstallCandidate { Dir = d, Score = 7, Dest = dest, Hint = hint };
+            var two = new List<SaveRouter.InstallCandidate> { C(@"C:\Emu\A", @"C:\Emu\A\Saves\SF", "aaaaaaaa"), C(@"D:\Emu\B", @"D:\Emu\B\Saves\SF", "bbbbbbbb") };
+            Check("restore: the card's live file in B's destination → B",
+                  SaveRouter.PickInstall(two, new[] { @"D:\Emu\B\Saves\SF\Zelda.ram" }, _ => -1, null, out why, out _) == 1);
+            Check("restore: live files in BOTH (one mixed card) → not the first found, the hint decides (Codex 12/10)",
+                  SaveRouter.PickInstall(two, new[] { @"C:\Emu\A\Saves\SF\Zelda.ram", @"D:\Emu\B\Saves\SF\Zelda.ram" }, _ => -1, "bbbbbbbb", out why, out _) == 1);
+            Check("restore: ... and with no hint → nobody, with a reason and both offered",
+                  SaveRouter.PickInstall(two, new[] { @"C:\Emu\A\Saves\SF\Zelda.ram", @"D:\Emu\B\Saves\SF\Zelda.ram" }, _ => -1, null, out why, out var offered) == -1
+                  && why != null && offered.Count == 2, why);
+            Check("restore: no live file (gone) → the card's hint names A",
+                  SaveRouter.PickInstall(two, Array.Empty<string>(), _ => -1, "aaaaaaaa", out why, out _) == 0);
+            Check("restore: a hint no install has (a renamed folder) → nobody, both offered",
+                  SaveRouter.PickInstall(two, Array.Empty<string>(), _ => -1, "cccccccc", out why, out offered) == -1 && offered.Count == 2);
+            var shared = new List<SaveRouter.InstallCandidate> { C(@"C:\Emu\A", @"G:\Saves\ares"), C(@"D:\Emu\B", @"G:\Saves\ares") };
+            Check("restore: two installs writing to ONE folder → one place, no question",
+                  SaveRouter.PickInstall(shared, Array.Empty<string>(), _ => -1, null, out why, out _) == 0 && why == null);
+            // The window: the choice it returns is the install written to; Cancel refuses.
+            InstallChoice.Instead = (choices, pre) => choices.Count == 2 && pre == 1 ? 0 : (int?)null;
+            try
+            {
+                Check("window: the one chosen is returned", InstallChoice.Ask("Zelda.ram", new[] { ("ares", @"C:\Emu\A\Saves\SF"), ("ares-second", @"D:\Emu\B\Saves\SF") }, 1) == 0);
+                InstallChoice.Instead = (choices, pre) => null;
+                Check("window: Cancel → nothing", InstallChoice.Ask("Zelda.ram", new[] { ("ares", "a"), ("ares-second", "b") }, 0) == null);
+            }
+            finally { InstallChoice.Instead = null; }
         }
 
         /// <summary>SaveGameView: the game as RetroArch would run it, everything else the real game's.</summary>

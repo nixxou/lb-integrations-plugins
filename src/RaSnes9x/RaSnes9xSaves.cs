@@ -348,7 +348,8 @@ namespace LbIntegrations.RaSnes9x
             {
                 var dm = PluginHelper.DataManager;
                 var id = Safe(() => game?.EmulatorId);
-                var own = string.IsNullOrEmpty(id) ? null : dm?.GetEmulatorById(id);
+                // The install a restore was sent to first (SaveForward.WithVia: the choice among two installs, docs\saves-two-installs.md §4).
+                var own = LbIntegrations.Saves.SaveForward.ViaEmulator(RaSnes9xLaunch.IsRaSnes9xExe) ?? (string.IsNullOrEmpty(id) ? null : dm?.GetEmulatorById(id));
                 var path = Safe(() => own?.ApplicationPath);
                 if (!RaSnes9xLaunch.IsRaSnes9xExe(path))
                     path = Safe(() => (LbIntegrations.Saves.SaveForward.ViaEmulator(RaSnes9xLaunch.IsRaSnes9xExe)   // through a desk: the save's install

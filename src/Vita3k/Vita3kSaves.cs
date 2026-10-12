@@ -788,7 +788,8 @@ namespace LbIntegrations.Vita3k
                 var dm = PluginHelper.DataManager;
                 var game = dm?.GetGameById(Safe(() => save?.GameId));
                 var emuId = Safe(() => game?.EmulatorId);
-                var emu = string.IsNullOrEmpty(emuId) ? null : dm?.GetEmulatorById(emuId);
+                // The install a restore was sent to first (SaveForward.WithVia: the choice among two installs, docs\saves-two-installs.md §4).
+                var emu = LbIntegrations.Saves.SaveForward.ViaEmulator(Vita3kPaths.IsVita3kExecutable) ?? (string.IsNullOrEmpty(emuId) ? null : dm?.GetEmulatorById(emuId));
                 var appPath = Safe(() => emu?.ApplicationPath);
                 if (Vita3kPaths.IsVita3kExecutable(appPath))
                     return Vita3kPaths.Resolve(ResolveFullPath(appPath));

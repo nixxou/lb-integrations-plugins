@@ -534,7 +534,8 @@ namespace LbIntegrations.Ares
             {
                 var dm = PluginHelper.DataManager;
                 var id = Safe(() => game?.EmulatorId);
-                var own = string.IsNullOrEmpty(id) ? null : dm?.GetEmulatorById(id);
+                // The install a restore was sent to first (SaveForward.WithVia: the choice among two installs, docs\saves-two-installs.md §4).
+                var own = LbIntegrations.Saves.SaveForward.ViaEmulator(AresLaunch.IsAresExe) ?? (string.IsNullOrEmpty(id) ? null : dm?.GetEmulatorById(id));
                 if (own != null && AresLaunch.IsAresExe(Safe(() => own.ApplicationPath))) return own;
                 // Restored through another plugin's desk: the install the save came from (SaveForward).
                 return LbIntegrations.Saves.SaveForward.ViaEmulator(AresLaunch.IsAresExe)

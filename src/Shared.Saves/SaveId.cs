@@ -58,6 +58,11 @@ namespace LbIntegrations.Saves
         /// to LaunchBox's root, lower case. Two of RetroArch's cores keep a state of one name in two folders
         /// (sort_savestates_enable): by name only, they were one card (review 10/10).</summary>
         [JsonPropertyOrder(7)] public string? Dir { get; init; }
+        /// <summary>A hint of the install a pack plugin's card was made on (docs\saves-two-installs.md §4): a CRC32 of the folder
+        /// of the emulator's exe (InstallHint), 8 hex digits. Two installs of one plugin list a save of one name: without it, one
+        /// id, one card, the second install's live file taken for a backup (measured 12/10). Set when a card is made, never
+        /// corrected, never a destination - only a tiebreak between installs.</summary>
+        [JsonPropertyOrder(8)] public string? Inst { get; init; }
     }
 
     internal static class SaveId

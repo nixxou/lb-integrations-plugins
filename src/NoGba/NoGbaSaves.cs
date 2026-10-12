@@ -458,7 +458,8 @@ namespace LbIntegrations.NoGba
                 var dm = PluginHelper.DataManager;
                 var game = dm?.GetGameById(save?.GameId);
                 var emuId = Safe(() => game?.EmulatorId);
-                var emu = string.IsNullOrEmpty(emuId) ? null : dm?.GetEmulatorById(emuId);
+                // The install a restore was sent to first (SaveForward.WithVia: the choice among two installs, docs\saves-two-installs.md §4).
+                var emu = LbIntegrations.Saves.SaveForward.ViaEmulator(NoGbaPaths.IsNoGbaExecutable) ?? (string.IsNullOrEmpty(emuId) ? null : dm?.GetEmulatorById(emuId));
                 var appPath = Safe(() => emu?.ApplicationPath);
                 if (NoGbaPaths.IsNoGbaExecutable(appPath))
                     return NoGbaPaths.Resolve(ResolveFullPath(appPath));

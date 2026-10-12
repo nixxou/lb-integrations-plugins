@@ -73,12 +73,19 @@ namespace LbIntegrations.Saves
                 via = SaveRouter.RestoreEmulator(r.Plugin, args.SaveToAdd, r.Emulator, out var refused);
                 if (refused != null) { SaveRouter.Say("restore of a " + r.Emu + " save refused: " + refused); return new AddSaveResponse(refused); }
             }
+            return WithVia(via, () => Ask(r, () => r.Plugin.AddSaveFile(args!), new AddSaveResponse("The " + r.Emu + " plugin could not restore this save.")));
+        }
+
+        /// <summary><paramref name="call"/> with <paramref name="via"/> as the install the row being restored goes to, for the
+        /// owner's AddSaveFile (ViaEmulator); the value before put back after - a restore within a restore keeps the outer one's.</summary>
+        internal static T WithVia<T>(IEmulator? via, Func<T> call)
+        {
             var key = ViaKey + Environment.CurrentManagedThreadId;
             string? id = null;
             try { id = via?.Id; } catch { }
-            var before = AppDomain.CurrentDomain.GetData(key);   // put back after: a restore within a restore keeps the outer one's
+            var before = AppDomain.CurrentDomain.GetData(key);
             AppDomain.CurrentDomain.SetData(key, id);
-            try { return Ask(r, () => r.Plugin.AddSaveFile(args!), new AddSaveResponse("The " + r.Emu + " plugin could not restore this save.")); }
+            try { return call(); }
             finally { AppDomain.CurrentDomain.SetData(key, before); }
         }
 

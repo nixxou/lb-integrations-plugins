@@ -75,10 +75,20 @@ namespace LbIntegrations.Saves
         /// A restore asks it which install a backup came from (SaveRouter.RestoreEmulator).</summary>
         public static IReadOnlyList<string> LivePathsOf(string? gameId, string? saveGroupId)
         {
-            var found = new List<string>();
+            if (string.IsNullOrEmpty(saveGroupId)) return new List<string>();
+            return RowsOf(gameId).Where(r => !r.Vault && string.Equals(r.SaveGroupId, saveGroupId, StringComparison.Ordinal)).Select(r => r.Path).ToList();
+        }
+
+        /// <summary>One persisted row of a game: its file, full; its card; whether it is a copy in LaunchBox's vault.</summary>
+        internal readonly record struct Persisted(string Path, string? SaveGroupId, bool Vault);
+
+        /// <summary>Every persisted row of the game and its versions, read only, by reflection; nothing when it cannot be read.</summary>
+        internal static IReadOnlyList<Persisted> RowsOf(string? gameId)
+        {
+            var found = new List<Persisted>();
             try
             {
-                if (string.IsNullOrEmpty(gameId) || string.IsNullOrEmpty(saveGroupId)) return found;
+                if (string.IsNullOrEmpty(gameId)) return found;
                 var game = PluginHelper.DataManager?.GetGameById(gameId);
                 if (game == null) return found;
                 var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".."));
@@ -89,12 +99,12 @@ namespace LbIntegrations.Saves
                     foreach (var s in rows.Cast<object>().ToList())
                     {
                         var t = s.GetType();
-                        if (!string.Equals(t.GetProperty("SaveGroupId")?.GetValue(s) as string, saveGroupId, StringComparison.Ordinal)) continue;
                         var p = t.GetProperty("FilePath")?.GetValue(s) as string;
                         if (string.IsNullOrWhiteSpace(p)) continue;
                         string full;
                         try { full = Path.GetFullPath(Path.IsPathRooted(p) ? p : Path.Combine(root, p)); } catch { continue; }
-                        if (!full.StartsWith(vault, StringComparison.OrdinalIgnoreCase)) found.Add(full);
+                        found.Add(new Persisted(full.TrimEnd(Path.DirectorySeparatorChar), t.GetProperty("SaveGroupId")?.GetValue(s) as string,
+                                                full.StartsWith(vault, StringComparison.OrdinalIgnoreCase)));
                     }
                 }
             }

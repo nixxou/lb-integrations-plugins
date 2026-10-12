@@ -137,6 +137,19 @@ namespace LbIntegrations.Compat
             },
             new CompatPatch
             {
+                Id = "twoInstalls", Group = CompatGroup.Missing,
+                Title = "Two installs of the same emulator keep their saves apart",
+                Problem = "The pack names a save by its file name: two installs of one emulator (ares and a second ares, each with "
+                        + "its own Zelda save) gave both files one card, the second one taken for a backup of the first - "
+                        + "and a restore could go to the wrong install.",
+                Example = "ares and ares-nightly both have Zelda's .ram: Game Saves showed one card with an extra backup.",
+                Does = "A new card notes which install it was made on. A restore goes to the install holding the card's save, else "
+                     + "to the one the card was made on; when that is still not clear, you pick the folder it goes to.",
+                Without = "One card for both installs, as before; a restore picks an install itself, or refuses.",
+                OffWarning = "Without it, two installs of one emulator share their saves' cards again.",
+            },
+            new CompatPatch
+            {
                 Id = "stockIds", Group = CompatGroup.Data, Title = "RetroArch, Dolphin and PCSX2 save ids in the pack's form",
                 Problem = "Those integrations give their saves ids of their own, or none: whose save a card is cannot always be told "
                         + "(a RetroArch card is only a number).",

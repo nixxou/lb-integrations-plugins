@@ -103,6 +103,8 @@ namespace LbIntegrations.Saves
                 var exe = System.IO.Path.GetFileName(SafeExe(args));
                 var named = string.IsNullOrEmpty(exe) ? mine.ToList()
                             : mine.Select(r => r != null && string.IsNullOrEmpty(r.EmulatorFileName) ? SaveRows.With(r, exe, null) : r).ToList();
+                // Two installs of this plugin, two cards: a new card gets this install's hint (InstallIds, 12/10).
+                named = InstallIds.Apply(_emu, SafeExe(args), named, Say);
                 var others = SaveRouter.OthersFor(_plugin, args, named);
                 // Plan A (09/10): one game on screen - each row tied as LaunchBox ties its persisted row, and given a
                 // persisted row at its own path (SavePersist).
@@ -233,7 +235,18 @@ namespace LbIntegrations.Saves
                 : _own.OwnGetCompanionSaveFiles(primaryFilePath);
 
         public AddSaveResponse AddSaveFile(AddSaveArgs args)
-            => Route(args?.SaveToAdd) is { } r ? SaveForward.AddSaveFile(r, args!, _log) : _own.OwnAddSaveFile(args!);
+        {
+            if (Route(args?.SaveToAdd) is { } r) return SaveForward.AddSaveFile(r, args!, _log);
+            // The plugin's own row: the install it goes to is chosen as a forwarded row's is - with two installs of this
+            // plugin, the game's own emulator is not necessarily the one the save came from (docs\saves-two-installs.md §4).
+            if (args?.SaveToAdd != null && SaveRouter.Active && LbIntegrations.Compat.Compat.On("twoInstalls"))
+            {
+                var via = SaveRouter.RestoreEmulator(_plugin, args.SaveToAdd, null, out var refused);
+                if (refused != null) { Say("restore of its own save refused: " + refused); return new AddSaveResponse(refused); }
+                if (via != null) return SaveForward.WithVia(via, () => _own.OwnAddSaveFile(args));
+            }
+            return _own.OwnAddSaveFile(args!);
+        }
 
         public PluginResponse RemoveSave(GameSaveBase? save)
             => Route(save) is { } r ? SaveForward.RemoveSave(r, save) : _own.OwnRemoveSave(save);

@@ -737,7 +737,8 @@ namespace LbIntegrations.Flycast
                 var dm = PluginHelper.DataManager;
                 var game = dm?.GetGameById(save.GameId);
                 var emuId = Safe(() => game?.EmulatorId);
-                var emu = string.IsNullOrEmpty(emuId) ? null : dm.GetEmulatorById(emuId);
+                // The install a restore was sent to first (SaveForward.WithVia: the choice among two installs, docs\saves-two-installs.md §4).
+                var emu = LbIntegrations.Saves.SaveForward.ViaEmulator(FlycastPaths.IsFlycastExecutable) ?? (string.IsNullOrEmpty(emuId) ? null : dm.GetEmulatorById(emuId));
                 var appPath = Safe(() => emu?.ApplicationPath);
                 if (FlycastPaths.IsFlycastExecutable(appPath)) return FlycastPaths.Resolve(ResolveFullPath(appPath));
 

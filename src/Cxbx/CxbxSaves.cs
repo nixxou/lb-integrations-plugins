@@ -407,7 +407,8 @@ namespace LbIntegrations.Cxbx
                 var dm = PluginHelper.DataManager;
                 var game = dm?.GetGameById(Safe(() => save?.GameId));
                 var emuId = Safe(() => game?.EmulatorId);
-                var emu = string.IsNullOrEmpty(emuId) ? null : dm.GetEmulatorById(emuId);
+                // The install a restore was sent to first (SaveForward.WithVia: the choice among two installs, docs\saves-two-installs.md §4).
+                var emu = LbIntegrations.Saves.SaveForward.ViaEmulator(p => CxbxPaths.IsCxbx(ResolveFullPath(p))) ?? (string.IsNullOrEmpty(emuId) ? null : dm.GetEmulatorById(emuId));
                 var path = ResolveFullPath(Safe(() => emu?.ApplicationPath));
                 if (CxbxPaths.IsCxbx(path)) return path;
                 var any = LbIntegrations.Saves.SaveForward.ViaEmulator(p => CxbxPaths.IsCxbx(ResolveFullPath(p)))   // through a desk: the save's install

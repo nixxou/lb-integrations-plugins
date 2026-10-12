@@ -338,38 +338,112 @@ namespace LbIntegrations.Saves
                 cands.Add((e, EmulatorDir(e) ?? "", score));
             }
             var lives = SavePersist.LivePathsOf(row.GameId, row.SaveGroupId);
-            int pick = PickInstall(cands.Select(c => (c.Dir, c.Score)).ToList(), lives,
+            // Where each would write it (the plugin's OwnExpectedDir): two entries writing the same place are one; and the
+            // card's own hint of the install it was made on (InstallIds).
+            var full = cands.Select(c => new InstallCandidate
+            {
+                Dir = c.Dir, Score = c.Score,
+                Dest = Expected(plugin, c.E, row),
+                Hint = InstallIds.Hint(Safe(() => c.E.ApplicationPath)),
+            }).ToList();
+            int pick = PickInstall(full, lives,
                                    p => { var from = ListedFrom(p); return from == null ? -1 : cands.FindIndex(c => ReferenceEquals(c.E, from)); },
-                                   out var why);
+                                   InstallIds.HintOf(row.SaveGroupId), out var why, out var tiedAt);
             if (pick >= 0) return cands[pick].E;
             if (why == null) return best;
-            refused = why + ": " + string.Join(", ", cands.Where(c => c.Score == cands.Max(x => x.Score)).Select(c => (Safe(() => c.E.Title) ?? "?") + " (" + c.Dir + ")"))
+            // Still more than one: the user picks the folder it goes to (Mehdi 12/10) - in LaunchBox, the switch on.
+            if (LbIntegrations.Compat.Compat.On("twoInstalls") && SlotRestore.HostName() == "launchbox")
+            {
+                string? gameEmu = null;
+                try { gameEmu = PluginHelper.DataManager?.GetGameById(row.GameId)?.EmulatorId; } catch { }
+                var choices = tiedAt.Select(i => (Label: Safe(() => cands[i].E.Title) ?? "?", Folder: full[i].Dest ?? full[i].Dir)).ToList();
+                int pre = Math.Max(0, tiedAt.FindIndex(i => string.Equals(Safe(() => cands[i].E.Id), gameEmu, StringComparison.OrdinalIgnoreCase)));
+                var chosen = InstallChoice.Ask(Path.GetFileName(row.FileLocation ?? ""), choices, pre);
+                Say("restore of " + Path.GetFileName(row.FileLocation ?? "") + ": " + (chosen is int k ? "the user chose " + choices[k].Label + " (" + choices[k].Folder + ")" : "no install chosen"));
+                if (chosen is int c) return cands[tiedAt[c]].E;
+                refused = "Restore cancelled: no install was chosen.";
+                return null;
+            }
+            refused = why + ": " + string.Join(", ", tiedAt.Select(i => (Safe(() => cands[i].E.Title) ?? "?") + " (" + (full[i].Dest ?? full[i].Dir) + ")"))
                       + ". Restore it with the game set to the right one.";
             return null;
         }
 
-        /// <summary>The rule of <see cref="RestoreEmulator"/>, apart for the probe. The best score's installs; one folder among
-        /// them → the first; else the one that listed a live file of the card (<paramref name="listedIndex"/>, -1 when
-        /// none), else the one whose folder holds one; else -1 with <paramref name="why"/>. -1 and no reason: no candidate.</summary>
-        internal static int PickInstall(IReadOnlyList<(string Dir, int Score)> c, IReadOnlyList<string> lives, Func<string, int> listedIndex, out string? why)
+        /// <summary>One install a restore could go to: its folder, its score, where its plugin would write the row (null:
+        /// unknown), its hint (InstallIds.Hint).</summary>
+        internal sealed class InstallCandidate
         {
-            why = null;
+            public string Dir = "";
+            public int Score;
+            public string? Dest;
+            public string? Hint;
+        }
+
+        /// <summary>Where <paramref name="plugin"/> would write <paramref name="row"/> on <paramref name="e"/>'s install - its
+        /// IOwnSaves.OwnExpectedDir, found by name (each plugin compiles its own copy of the interface); null when it does not
+        /// say (a LaunchBox integration, an older plugin, unknown).</summary>
+        internal static string? Expected(EmulatorPlugin plugin, IEmulator e, GameSaveBase row)
+        {
+            try
+            {
+                var m = _expected.GetOrAdd(plugin.GetType(), t => t.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                                                                   .FirstOrDefault(x => x.Name.EndsWith("IOwnSaves.OwnExpectedDir", StringComparison.Ordinal) && x.GetParameters().Length == 2));
+                if (m == null) return null;
+                var r = m.Invoke(plugin, new object[] { e, row });
+                if (r == null || r.GetType().GetProperty("Kind")?.GetValue(r)?.ToString() == "Unknown") return null;
+                var p = r.GetType().GetProperty("Path")?.GetValue(r) as string;
+                return string.IsNullOrWhiteSpace(p) ? null : Path.GetFullPath(p).TrimEnd(Path.DirectorySeparatorChar);
+            }
+            catch { return null; }
+        }
+        private static readonly ConcurrentDictionary<Type, MethodInfo?> _expected = new();
+
+        /// <summary>The rule of <see cref="RestoreEmulator"/> as it was (no destinations, no hints) - kept for the probe.</summary>
+        internal static int PickInstall(IReadOnlyList<(string Dir, int Score)> c, IReadOnlyList<string> lives, Func<string, int> listedIndex, out string? why)
+            => PickInstall(c.Select(x => new InstallCandidate { Dir = x.Dir, Score = x.Score }).ToList(), lives, listedIndex, null, out why, out _);
+
+        /// <summary>The rule of <see cref="RestoreEmulator"/>, apart for the probe. The best score's installs, one per place they
+        /// write to (Dest, else their folder): one place → the first. Else (docs\saves-two-installs.md §4):
+        ///   a. the installs holding a live file of the card - listed by it (<paramref name="listedIndex"/>), in its
+        ///      destination, or under its folder: exactly one → it (Codex review 12/10: never the first one found);
+        ///   b. else the one whose hint is the card's (<paramref name="rowHint"/>): exactly one → it;
+        ///   c. else -1 with <paramref name="why"/> and the tied ones in <paramref name="tied"/> (one per place).
+        /// -1 and no reason: no candidate.</summary>
+        internal static int PickInstall(IReadOnlyList<InstallCandidate> c, IReadOnlyList<string> lives, Func<string, int> listedIndex,
+                                        string? rowHint, out string? why, out List<int> tied)
+        {
+            why = null; tied = new List<int>();
             if (c.Count == 0) return -1;
             int top = c.Max(x => x.Score);
-            var tied = Enumerable.Range(0, c.Count).Where(i => c[i].Score == top).ToList();
-            if (tied.Select(i => c[i].Dir).Distinct(StringComparer.OrdinalIgnoreCase).Count() <= 1) return tied[0];
+            string Key(int i) => (c[i].Dest ?? c[i].Dir).TrimEnd(Path.DirectorySeparatorChar).ToLowerInvariant();
+            var groups = Enumerable.Range(0, c.Count).Where(i => c[i].Score == top).GroupBy(Key).Select(g => g.ToList()).ToList();
+            tied = groups.Select(g => g[0]).ToList();
+            if (groups.Count <= 1) return tied[0];
+            int GroupOf(int i) => groups.FindIndex(g => g.Contains(i));
+            bool Holds(InstallCandidate x, string p)
+            {
+                string Under(string d) => d.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                if (x.Dest != null && (string.Equals(p.TrimEnd(Path.DirectorySeparatorChar), x.Dest, StringComparison.OrdinalIgnoreCase)
+                                       || p.StartsWith(Under(x.Dest), StringComparison.OrdinalIgnoreCase))) return true;
+                return x.Dir.Length > 0 && p.StartsWith(Under(x.Dir), StringComparison.OrdinalIgnoreCase);
+            }
+            var holders = new HashSet<int>();
             foreach (var p in lives)
             {
                 int i = listedIndex(p);
-                if (i >= 0 && tied.Contains(i)) return i;
+                if (i >= 0 && GroupOf(i) is int g && g >= 0) { holders.Add(g); continue; }
+                for (int k = 0; k < groups.Count; k++) if (Holds(c[groups[k][0]], p)) holders.Add(k);
             }
-            foreach (var p in lives)
-                foreach (var i in tied)
-                    if (c[i].Dir.Length > 0 && p.StartsWith(c[i].Dir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) return i;
-            why = "This save could belong to " + tied.Count + " installs of the same emulator, and nothing says which";
+            if (holders.Count == 1) return tied[holders.First()];
+            if (!string.IsNullOrEmpty(rowHint))
+            {
+                var hinted = Enumerable.Range(0, groups.Count).Where(k => groups[k].Any(i => string.Equals(c[i].Hint, rowHint, StringComparison.OrdinalIgnoreCase))).ToList();
+                if (hinted.Count == 1) return tied[hinted[0]];
+            }
+            why = holders.Count > 1 ? "This save's card holds a file in " + holders.Count + " installs of the same emulator"
+                                    : "This save could belong to " + groups.Count + " installs of the same emulator, and nothing says which";
             return -1;
         }
-
         // ── a row's owner ────────────────────────────────────────────────────
 
         /// <summary>Where <paramref name="row"/> must go, or null when it is <paramref name="self"/>'s own (or the desk is off).</summary>

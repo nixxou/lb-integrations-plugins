@@ -696,7 +696,8 @@ namespace LbIntegrations.MelonDs
             try
             {
                 var emuId = Safe(() => game?.EmulatorId);
-                var emu = string.IsNullOrEmpty(emuId) ? null : dm?.GetEmulatorById(emuId);
+                // The install a restore was sent to first (SaveForward.WithVia: the choice among two installs, docs\saves-two-installs.md §4).
+                var emu = LbIntegrations.Saves.SaveForward.ViaEmulator(MelonDsPaths.IsMelonDsExecutable) ?? (string.IsNullOrEmpty(emuId) ? null : dm?.GetEmulatorById(emuId));
                 var appPath = Safe(() => emu?.ApplicationPath);
                 if (MelonDsPaths.IsMelonDsExecutable(appPath))
                     return MelonDsPaths.Resolve(ResolveFullPath(appPath));

@@ -70,7 +70,7 @@ namespace LbIntegrations.Saves
         public static string? WithSlot(string? id, int slot)
         {
             if (!SaveId.TryRead(id, out var d) || d == null) return id;
-            return SaveId.Write(new SaveIdData { Emu = d.Emu, Kind = d.Kind, Sys = d.Sys, By = d.By, Id = d.Id, Slot = slot, Native = d.Native, Dir = d.Dir });
+            return SaveId.Write(new SaveIdData { Emu = d.Emu, Kind = d.Kind, Sys = d.Sys, By = d.By, Id = d.Id, Slot = slot, Native = d.Native, Dir = d.Dir, Inst = d.Inst });
         }
 
         /// <summary>The slot inside <paramref name="id"/> (our JSON), if any.</summary>
@@ -159,6 +159,9 @@ namespace LbIntegrations.Saves
             }
             return true;
         }
+
+        /// <summary>The host: "launchbox", "bigbox" or "litebox" (HostOverride for the probe).</summary>
+        internal static string HostName() => Host();
 
         private static string Host()
         {
