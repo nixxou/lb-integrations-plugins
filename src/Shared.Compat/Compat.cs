@@ -63,7 +63,31 @@ namespace LbIntegrations.Compat
         }
 
         /// <summary>The switches in <paramref name="path"/> (only those written; a missing one is on).</summary>
-        public static Dictionary<string, bool> Load(string path)
+        public static Dictionary<string, bool> Load(string path) => LoadSection(path, "patches");
+
+        /// <summary>The page's own settings: [page] (view = simple | advanced) and [beforeSafe] (the switches as they were when the
+        /// safe mode was turned on - empty when it is not). Never read by a patch.</summary>
+        public static (string View, Dictionary<string, bool> BeforeSafe) LoadPage(string path)
+        {
+            string view = "simple";
+            try
+            {
+                if (File.Exists(path))
+                {
+                    bool inPage = false;
+                    foreach (var raw in File.ReadAllLines(path))
+                    {
+                        var line = raw.Trim();
+                        if (line.StartsWith("[")) { inPage = line.Equals("[page]", StringComparison.OrdinalIgnoreCase); continue; }
+                        if (inPage && line.StartsWith("view=", StringComparison.OrdinalIgnoreCase)) view = line.Substring(5).Trim().ToLowerInvariant() == "advanced" ? "advanced" : "simple";
+                    }
+                }
+            }
+            catch { }
+            return (view, LoadSection(path, "beforeSafe"));
+        }
+
+        private static Dictionary<string, bool> LoadSection(string path, string section)
         {
             var d = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             try
@@ -74,7 +98,7 @@ namespace LbIntegrations.Compat
                 {
                     var line = raw.Trim();
                     if (line.Length == 0 || line.StartsWith(";") || line.StartsWith("#")) continue;
-                    if (line.StartsWith("[")) { inPatches = line.Equals("[patches]", StringComparison.OrdinalIgnoreCase); continue; }
+                    if (line.StartsWith("[")) { inPatches = line.Equals("[" + section + "]", StringComparison.OrdinalIgnoreCase); continue; }
                     if (!inPatches) continue;
                     int eq = line.IndexOf('=');
                     if (eq <= 0) continue;
@@ -87,7 +111,7 @@ namespace LbIntegrations.Compat
         }
 
         /// <summary>Writes every switchable patch's state (the page's Apply).</summary>
-        public static void Save(string path, IReadOnlyDictionary<string, bool> state)
+        public static void Save(string path, IReadOnlyDictionary<string, bool> state, string? view = null, IReadOnlyDictionary<string, bool>? beforeSafe = null)
         {
             var dir = Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
@@ -99,6 +123,12 @@ namespace LbIntegrations.Compat
             };
             foreach (var p in CompatRegistry.All.Where(p => p.Switchable))
                 lines.Add(p.Id + "=" + (state.TryGetValue(p.Id, out var on) && !on ? "off" : "on"));
+            if (view != null) { lines.Add("[page]"); lines.Add("view=" + view); }
+            if (beforeSafe != null && beforeSafe.Count > 0)
+            {
+                lines.Add("[beforeSafe]");
+                foreach (var kv in beforeSafe) lines.Add(kv.Key + "=" + (kv.Value ? "on" : "off"));
+            }
             var tmp = path + ".tmp";
             File.WriteAllLines(tmp, lines);
             File.Move(tmp, path, overwrite: true);

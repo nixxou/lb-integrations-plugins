@@ -87,6 +87,8 @@ namespace LbIntegrations.Flycast
                 // THE ONE GATE: nothing of the wizard's machinery exists outside LaunchBox.
                 if (!string.Equals(System.Diagnostics.Process.GetCurrentProcess().ProcessName, "LaunchBox", StringComparison.OrdinalIgnoreCase))
                     return;
+                // The Compatibility page's "Import help" (importWizard): off, LaunchBox's wizard as it is.
+                if (!LbIntegrations.Compat.Compat.On("importWizard")) return;
                 var thread = new Thread(() =>
                 {
                     for (int i = 0; i < 120; i++)

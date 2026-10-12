@@ -223,3 +223,32 @@ separate program, LaunchBox closed).
    current LaunchBox (all OK), each bug test (all "still present" on 14.0.1.2).
 6. Real test: turn `planA` off, Apply, restart: Secret of Mana's RASnes9x save is taken again into SUPER ZSNES's card;
    on again, back to its own.
+
+## The simple view (13/10)
+
+Mehdi: 20-odd switches are unreadable for a user. The page now opens on a SIMPLE view; the list one patch at a time is
+the ADVANCED view (a link at the top; the view chosen is remembered in `[page] view=` of `nixx-compat.ini`).
+
+- A health line from the reflection checks: "Everything the pack relies on is in place in your LaunchBox (version)", or
+  "LaunchBox changed: <cards> can no longer work fully. Turn it off below, or update the pack."
+- Five cards (`CompatRegistry.Cards`), each a set of patches under one box, half ticked when they differ (changed in the
+  advanced view), with one light: Working / Problem found / Partly on / Off. Saves of every emulator (the twelve save
+  patches), Faster start (`saveScan`, `raConfigCache`), Import help (`importWizard`), the pack's emulators in LaunchBox's
+  lists (`rowInjection`), opening an emulator from LaunchBox (`emulatorOpened`). The data patches (`emulatorEntry`,
+  `emulatorFields`, `autoExtract`, `importFixes`, `gameCommandLine`) are only in the advanced view.
+- A safe mode (`CompatRegistry.Internal`): off, every patch that hooks into LaunchBox (Harmony) or reads its inner
+  workings by reflection - what a LaunchBox update can break; on, what only the pack's own code does (`saveScan`, the
+  companions, the overwrite warning, the data patches). The switches as they were are kept in `[beforeSafe]`, put back by
+  "Leave safe mode".
+- `importWizard` is switchable now: the seven `Install()` of the wizard's helpers (Vita3K, Xenia, Cxbx, PPSSPP, Flycast,
+  Demul, `LbipImportWatch`) return at once when it is off - and, the watcher being off, the corrections after an import
+  (`importFixes`, now "needs" it) too.
+- Not done, on purpose: turning a patch off by itself when a check fails. The checks walk every type of every loaded
+  assembly (seconds, and "never at start-up" - their header), and at start-up much of what they look into is not loaded
+  yet. A hook whose target is gone does not attach and the code around it is guarded: the patch does nothing. The page
+  says so instead.
+- The checks of the wizard and of "Open emulator" answer "not here" outside LaunchBox / BigBox (LiteBox, the probe), where
+  they said "missing" - the simple view would have shown a false alarm.
+
+Probe: `--saves-selftest` (cards and safe mode name switchable patches, no patch on two cards, `[page]` / `[beforeSafe]`
+read back without touching the switches); `LBIP_SHOT_END=1` with `--nixx-shots` draws each page scrolled to its end too.

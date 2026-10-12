@@ -98,6 +98,8 @@ namespace LbIntegrations.Vita3k
                 // THE ONE GATE: nothing of the wizard's machinery exists outside LaunchBox - see the header.
                 if (!string.Equals(System.Diagnostics.Process.GetCurrentProcess().ProcessName, "LaunchBox", StringComparison.OrdinalIgnoreCase))
                     return;
+                // The Compatibility page's "Import help" (importWizard): off, LaunchBox's wizard as it is.
+                if (!LbIntegrations.Compat.Compat.On("importWizard")) return;
 
                 // The application may not be up yet when plugins are built: waited for, off its thread.
                 var thread = new System.Threading.Thread(() =>

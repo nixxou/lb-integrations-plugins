@@ -50,6 +50,20 @@ namespace LbIntegrations.Probe
                 form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, form.Width, form.Height));
                 var name = new string(title.Select(ch => char.IsLetterOrDigit(ch) ? ch : '-').ToArray());
                 bmp.Save(Path.Combine(outDir, i.ToString("00") + "-" + name + ".png"));
+                // The same page scrolled to its end (LBIP_SHOT_END=1): what is below the fold.
+                if (Environment.GetEnvironmentVariable("LBIP_SHOT_END") == "1")
+                {
+                    ScrollableControl Scroller(Control c) { if (c is ScrollableControl s && s.AutoScroll && s.VerticalScroll.Visible) return s; foreach (Control k in c.Controls) if (Scroller(k) is ScrollableControl f) return f; return null; }
+                    if (Scroller((Control)e.GetType().GetField("View").GetValue(e)) is ScrollableControl sc)
+                    {
+                        sc.AutoScrollPosition = new System.Drawing.Point(0, sc.VerticalScroll.Maximum);
+                        Pump(4);
+                        using var end = new System.Drawing.Bitmap(form.Width, form.Height);
+                        form.DrawToBitmap(end, new System.Drawing.Rectangle(0, 0, form.Width, form.Height));
+                        end.Save(Path.Combine(outDir, i.ToString("00") + "-" + name + "-end.png"));
+                        sc.AutoScrollPosition = new System.Drawing.Point(0, 0);
+                    }
+                }
                 // Every text shown on it longer than 100 characters - what is still to shorten (LBIP_LONG_TEXTS=1).
                 if (Environment.GetEnvironmentVariable("LBIP_LONG_TEXTS") == "1")
                 {

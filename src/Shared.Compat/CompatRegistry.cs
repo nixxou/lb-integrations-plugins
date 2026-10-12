@@ -235,7 +235,7 @@ namespace LbIntegrations.Compat
             },
             new CompatPatch
             {
-                Id = "importFixes", Group = CompatGroup.Data, Switchable = false, Title = "Games and versions corrected after an import",
+                Id = "importFixes", Group = CompatGroup.Data, Switchable = false, Needs = "importWizard", Title = "Games and versions corrected after an import",
                 Problem = "LaunchBox's import drops some games silently, and guesses titles, regions and versions from file names.",
                 Example = "Arcade sets like vf4b or clubkprz never added; a Vita game imported with \"(NoNpDrm) [v1.03]\" as its version.",
                 Does = "Flycast adds the dropped arcade sets as versions of the right game; Xenia, Vita3K, Cxbx and PPSSPP set the "
@@ -290,7 +290,7 @@ namespace LbIntegrations.Compat
             },
             new CompatPatch
             {
-                Id = "importWizard", Group = CompatGroup.Hook, Switchable = false, Title = "LaunchBox's import wizard steered",
+                Id = "importWizard", Group = CompatGroup.Hook, Title = "LaunchBox's import wizard steered",
                 Problem = "LaunchBox's ROM import lists files it should not (updates, DLC, a whole MAME folder) and mishandles some "
                         + "platforms.",
                 Example = "Choosing the Vita platform made the wizard list the games installed in Vita3K and ignore the files you "
@@ -298,11 +298,71 @@ namespace LbIntegrations.Compat
                 Does = "Inside the wizard: Vita3K and Xenia swap the platform for a temporary one while it scans; Vita3K, Xenia, Cxbx "
                      + "and PPSSPP remove updates, DLC, firmware, save data and foreign files from the list; Flycast and Demul keep "
                      + "only their arcade sets. A watcher notices the files LaunchBox drops at the end (read only).",
-                Without = "LaunchBox's wizard as it is.",
+                Without = "LaunchBox's wizard as it is - and, the watcher being off too, the corrections after an import as well (\"Games and versions corrected after an import\").",
                 OwnSwitches = "Each plugin's page: Vita3K \"bypass\" and \"clean the list\", Xenia / Cxbx / PPSSPP import options, "
                             + "Flycast and Demul \"sort the import\".",
                 Checks = new[] { "lb.wizard" },
             },
         };
+
+        // ── the simple view (Mehdi, 13/10) ──
+        // A user does not want 20 switches: the page opens on a few cards in plain words, each one switching a set of the
+        // patches above, with one light for all of them. The advanced view is the list above, one by one.
+
+        public static readonly IReadOnlyList<CompatCard> Cards = new List<CompatCard>
+        {
+            new CompatCard
+            {
+                Title = "Saves of every emulator",
+                Line = "Each game shows the saves of every emulator that made one, backed up when the game closes and restored "
+                     + "into the emulator that made it - even with two installs of one emulator.",
+                Ids = new[] { "desk", "retroarchView", "foreignSlots", "stockDesk", "stockNoSaves", "stockRestore", "twoInstalls", "stockIds",
+                              "planA", "companionSignature", "companionRestore", "overwriteWarning" },
+                OffWarning = "Turned off, a game shows only the saves of its own emulator, as in LaunchBox: the others are no longer "
+                           + "backed up, and the cards of RetroArch, Dolphin and PCSX2 go back to LaunchBox's own ids at the next start.",
+            },
+            new CompatCard
+            {
+                Title = "Faster start",
+                Line = "The saves of a big library listed quickly when LaunchBox starts. The same answers, only sooner.",
+                Ids = new[] { "saveScan", "raConfigCache" },
+            },
+            new CompatCard
+            {
+                Title = "Import help",
+                Line = "Clean import lists for Vita, Xbox 360, Xbox, PSP and arcade games, and their titles, regions and versions "
+                     + "read from the games themselves.",
+                Ids = new[] { "importWizard" },
+            },
+            new CompatCard
+            {
+                Title = "The pack's emulators in LaunchBox's lists",
+                Line = "Flycast, melonDS and every \"Nixx-\" emulator in LaunchBox's \"Add emulator\" list and platform grid.",
+                Ids = new[] { "rowInjection" },
+            },
+            new CompatCard
+            {
+                Title = "Opening an emulator from LaunchBox",
+                Line = "\"Open emulator\" opens the right window (Cxbx), and the plugins know the emulator ran.",
+                Ids = new[] { "emulatorOpened" },
+            },
+        };
+
+        /// <summary>What the safe mode turns off: every patch that hooks into LaunchBox (Harmony) or reads its inner workings by
+        /// reflection - what a LaunchBox update can break. What only the pack's own code does stays on.</summary>
+        public static readonly string[] Internal =
+        {
+            "desk", "retroarchView", "foreignSlots", "stockDesk", "stockNoSaves", "stockRestore", "twoInstalls", "stockIds", "planA",
+            "raConfigCache", "importWizard", "rowInjection", "emulatorOpened",
+        };
+    }
+
+    /// <summary>One card of the simple view: a few patches under one switch.</summary>
+    internal sealed class CompatCard
+    {
+        public string Title = "", Line = "";
+        public string[] Ids = Array.Empty<string>();
+        /// <summary>Asked before turning the card off. Null: no confirmation.</summary>
+        public string? OffWarning;
     }
 }

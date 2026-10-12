@@ -565,6 +565,19 @@ namespace LbIntegrations.Probe
                 Check("compat: a patch whose needed patch is off is off", !LbIntegrations.Compat.Compat.On("retroarchView") && !LbIntegrations.Compat.Compat.On("stockRestore"));
                 Check("compat: the others stay on", LbIntegrations.Compat.Compat.On("planA") && LbIntegrations.Compat.Compat.On("overwriteWarning"));
                 Check("compat: the desk off → SaveRouter inactive", !SaveRouter.Active);
+                // The simple view (13/10): its cards and the safe mode name switchable patches; the page's own sections leave the switches alone.
+                var cards = LbIntegrations.Compat.CompatRegistry.Cards;
+                Check("compat: every card's patch exists and can be switched", cards.SelectMany(c => c.Ids).All(id => LbIntegrations.Compat.CompatRegistry.Find(id)?.Switchable == true));
+                Check("compat: no patch on two cards", cards.SelectMany(c => c.Ids).Distinct(StringComparer.OrdinalIgnoreCase).Count() == cards.Sum(c => c.Ids.Length));
+                Check("compat: the safe mode names switchable patches only", LbIntegrations.Compat.CompatRegistry.Internal.All(id => LbIntegrations.Compat.CompatRegistry.Find(id)?.Switchable == true));
+                Check("compat: the import help can be switched now", LbIntegrations.Compat.CompatRegistry.Find("importWizard")?.Switchable == true);
+                LbIntegrations.Compat.Compat.Save(ini, new Dictionary<string, bool> { ["planA"] = false }, "advanced", new Dictionary<string, bool> { ["desk"] = true, ["planA"] = false });
+                var page = LbIntegrations.Compat.Compat.LoadPage(ini);
+                var sw = LbIntegrations.Compat.Compat.Load(ini);
+                Check("compat: the view and the state before the safe mode read back", page.View == "advanced" && page.BeforeSafe.Count == 2 && page.BeforeSafe["desk"] && !page.BeforeSafe["planA"]);
+                Check("compat: ... and the switches read as before (the page's sections are not patches)", sw.TryGetValue("planA", out var pa) && !pa && !sw.ContainsKey("view") && sw.TryGetValue("desk", out var dk) && dk);
+                File.WriteAllText(ini, "[patches]\r\ndesk=on\r\n");
+                Check("compat: no [page] → the simple view, no safe mode", LbIntegrations.Compat.Compat.LoadPage(ini) is var p0 && p0.View == "simple" && p0.BeforeSafe.Count == 0);
             }
             finally
             {

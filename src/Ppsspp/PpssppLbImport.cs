@@ -46,6 +46,8 @@ namespace LbIntegrations.Ppsspp
             try
             {
                 if (!string.Equals(System.Diagnostics.Process.GetCurrentProcess().ProcessName, "LaunchBox", StringComparison.OrdinalIgnoreCase)) return;
+                // The Compatibility page's "Import help" (importWizard): off, LaunchBox's wizard as it is.
+                if (!LbIntegrations.Compat.Compat.On("importWizard")) return;
                 var thread = new System.Threading.Thread(() =>
                 {
                     for (int i = 0; i < 120; i++)

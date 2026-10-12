@@ -97,9 +97,11 @@ namespace LbIntegrations.Compat
                         return m.Count > 0 ? (CompatCheckState.Ok, "SqliteCommand.ExecuteDbDataReader") : (CompatCheckState.Missing, "SqliteCommand.ExecuteDbDataReader");
                     }
                     case "lb.openEmulator":
+                        if (!InLaunchBox()) return (CompatCheckState.NotHere, "not inside LaunchBox");
                         return TypeNamed("OpenEmulatorMenuAction") != null ? (CompatCheckState.Ok, "OpenEmulatorMenuAction") : (CompatCheckState.Missing, "OpenEmulatorMenuAction (the \"Open emulator\" action)");
                     case "lb.wizard":
                     {
+                        if (!InLaunchBox()) return (CompatCheckState.NotHere, "not inside LaunchBox");
                         var names = new[] { "WizardViewModel", "ImportWizardPlatformSelectViewModel", "RomImportGameListViewModel", "RomImportCustomOptionsViewModel", "RomImportMameOptionsViewModel" };
                         var missing = names.Where(n => TypeNamed(n) == null).ToList();
                         return missing.Count == 0 ? (CompatCheckState.Ok, "the import wizard's view models") : (CompatCheckState.Missing, string.Join(", ", missing));
@@ -193,6 +195,13 @@ namespace LbIntegrations.Compat
         }
 
         private static Type? TypeNamed(string name) => Types().FirstOrDefault(t => t.Name == name);
+
+        /// <summary>Running inside LaunchBox or BigBox - not LiteBox, not the probe: what the application's own types are looked for in.</summary>
+        private static bool InLaunchBox()
+        {
+            try { var n = Process.GetCurrentProcess().ProcessName; return n.Equals("LaunchBox", StringComparison.OrdinalIgnoreCase) || n.Equals("BigBox", StringComparison.OrdinalIgnoreCase); }
+            catch { return true; }
+        }
 
         /// <summary>The type, in an assembly whose name holds <paramref name="family"/>, that has the static <paramref name="method"/>.</summary>
         private static Type? StaticsOwner(string family, string method)

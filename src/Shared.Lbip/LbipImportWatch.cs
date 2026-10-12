@@ -75,6 +75,8 @@ namespace LbIntegrations.Lbip
             try
             {
                 if (!string.Equals(Process.GetCurrentProcess().ProcessName, "LaunchBox", StringComparison.OrdinalIgnoreCase)) return;
+                // The Compatibility page's "Import help" (importWizard): off, LaunchBox's wizard as it is.
+                if (!LbIntegrations.Compat.Compat.On("importWizard")) return;
                 if (!Claim()) return;
                 var thread = new Thread(() =>
                 {
