@@ -374,6 +374,19 @@ namespace LbIntegrations.Cxbx
         /// <summary>A path as LaunchBox stores it, made full; null for nothing.</summary>
         private static string Full(string path) => string.IsNullOrWhiteSpace(path) ? null : ResolveFullPath(path);
 
+        LbIntegrations.Saves.ExpectedDir IOwnSaves.OwnExpectedDir(IEmulator emulator, GameSaveBase save)
+        {
+            var path = Safe(() => emulator?.ApplicationPath);
+            var exe = string.IsNullOrWhiteSpace(path) ? null : ResolveFullPath(path);
+            if (save == null || exe == null || !CxbxPaths.IsCxbx(exe)) return LbIntegrations.Saves.ExpectedDir.Unknown("Could not locate the Cxbx-Reloaded installation.");
+            if (save is GameSaveState) return LbIntegrations.Saves.ExpectedDir.Unknown("Cxbx-Reloaded keeps no savestates.");
+            var titleId = TitleIdFrom(save) ?? TitleIdOfGame(save);
+            if (titleId == null) return LbIntegrations.Saves.ExpectedDir.Unknown("This backup does not say which Xbox game it belongs to.");
+            // The plugin's file, laid into the console's E:\UDATA at the next launch.
+            var pack = CxbxSaves.PackPath(exe, titleId);
+            return pack == null ? LbIntegrations.Saves.ExpectedDir.Unknown("Cxbx-Reloaded has not been set up yet: start it once.") : LbIntegrations.Saves.ExpectedDir.Pack(pack);
+        }
+
         /// <summary>The title id of the game a save is added for, read from its disc - for a file imported without its group.</summary>
         private static string TitleIdOfGame(GameSaveBase save)
         {

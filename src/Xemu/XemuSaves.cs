@@ -462,6 +462,25 @@ namespace LbIntegrations.Xemu
             };
         }
 
+        LbIntegrations.Saves.ExpectedDir IOwnSaves.OwnExpectedDir(IEmulator emulator, GameSaveBase save)
+        {
+            var path = Safe(() => emulator?.ApplicationPath);
+            var exe = string.IsNullOrWhiteSpace(path) ? null : ResolveFullPath(path);
+            if (save == null || exe == null || !XemuPaths.IsOurs(exe)) return LbIntegrations.Saves.ExpectedDir.Unknown("Could not locate the xemu installation.");
+            // Files of the plugin's own, put into the console at the next launch: a state in its own slot (AddState), a save.
+            if (save is GameSaveState || StateOf(save) != null)
+            {
+                var src = Safe(() => save.FileLocation);
+                var meta = !string.IsNullOrWhiteSpace(src) && File.Exists(src) ? XemuStates.Read(src) : null;
+                var tid = StateOf(save)?.TitleId ?? meta?.Title ?? TitleIdOfGame(save);
+                int own = StateOf(save)?.Slot ?? meta?.Slot ?? 0;
+                if (own <= 0) own = meta != null && meta.Slot > 0 ? meta.Slot : 1;
+                return tid == null ? LbIntegrations.Saves.ExpectedDir.Unknown("This savestate does not say which Xbox game it belongs to.") : LbIntegrations.Saves.ExpectedDir.Pack(XemuStates.SlotPath(exe, tid, own));
+            }
+            var titleId = TitleIdFrom(save) ?? TitleIdOfGame(save);
+            return titleId == null ? LbIntegrations.Saves.ExpectedDir.Unknown("This backup does not say which Xbox game it belongs to.") : LbIntegrations.Saves.ExpectedDir.Pack(XemuSaveFiles.PackPath(exe, titleId));
+        }
+
         /// <summary>A savestate's title id (lower case) and slot, from its id {"emu":"xemu","kind":"state",...}.</summary>
         private static (string TitleId, int Slot)? StateOf(GameSaveBase save)
         {

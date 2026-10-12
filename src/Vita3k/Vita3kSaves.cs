@@ -764,6 +764,17 @@ namespace LbIntegrations.Vita3k
             }
         }
 
+        LbIntegrations.Saves.ExpectedDir IOwnSaves.OwnExpectedDir(IEmulator emulator, GameSaveBase save)
+        {
+            var path = Safe(() => emulator?.ApplicationPath);
+            if (save == null || !Vita3kPaths.IsVita3kExecutable(path)) return LbIntegrations.Saves.ExpectedDir.Unknown("Could not locate the Vita3K installation.");
+            var titleId = TitleIdFrom(save);
+            if (titleId == null) return LbIntegrations.Saves.ExpectedDir.Unknown("This backup does not say which Vita title it belongs to.");
+            // The plugin's file, applied to the console at the next launch.
+            var pack = Vita3kWorkspace.SavePathFor(Vita3kPaths.Resolve(ResolveFullPath(path)), titleId);
+            return pack == null ? LbIntegrations.Saves.ExpectedDir.Unknown("Could not work out where this save belongs.") : LbIntegrations.Saves.ExpectedDir.Pack(pack);
+        }
+
         /// <summary>The install a save belongs to. Its own path answers when it is still in place -
         /// a save sits at &lt;install&gt;\portable\saves\&lt;title&gt;\state.vitasav - and a vault copy is
         /// somewhere else entirely, so that case goes through the data manager instead.</summary>

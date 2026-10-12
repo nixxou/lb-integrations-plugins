@@ -185,6 +185,20 @@ namespace LbIntegrations.NoGba
             return null;
         }
 
+        LbIntegrations.Saves.ExpectedDir IOwnSaves.OwnExpectedDir(IEmulator emulator, GameSaveBase save)
+        {
+            var path = Safe(() => emulator?.ApplicationPath);
+            if (save == null || !NoGbaPaths.IsNoGbaExecutable(path)) return LbIntegrations.Saves.ExpectedDir.Unknown("Could not locate the no$gba installation.");
+            var layout = NoGbaPaths.Resolve(ResolveFullPath(path));
+            // DSiWare: the plugin's state file, put into the console at the next launch.
+            if (IsDsiWare(save))
+            {
+                var pack = DsiWorkspace.SavePathFor(layout, TitleIdOf(save));
+                return pack == null ? LbIntegrations.Saves.ExpectedDir.Unknown("This DSiWare save names no title.") : LbIntegrations.Saves.ExpectedDir.Pack(pack);
+            }
+            return LbIntegrations.Saves.ExpectedDir.FolderOr(layout.BatteryDir, "Could not locate no$gba's BATTERY folder.");
+        }
+
         /// <summary>Is this one of ours AND a DSiWare one?</summary>
         private static bool IsDsiWare(GameSaveBase save)
             => IsOurs(save) && SaveId.TryRead(save.SaveGroupId, out var d) && d.Kind == "nand";

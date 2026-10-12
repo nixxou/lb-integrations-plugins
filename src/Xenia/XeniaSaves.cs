@@ -326,13 +326,27 @@ namespace LbIntegrations.Xenia
             }
         }
 
+        LbIntegrations.Saves.ExpectedDir IOwnSaves.OwnExpectedDir(IEmulator emulator, GameSaveBase save)
+        {
+            var path = Safe(() => emulator?.ApplicationPath);
+            if (save == null || !XeniaPaths.IsXeniaExecutable(path)) return LbIntegrations.Saves.ExpectedDir.Unknown("Could not locate Xenia's content folder for this game.");
+            var titleId = TitleIdOf(save);
+            if (titleId == null) return LbIntegrations.Saves.ExpectedDir.Unknown("This backup does not say which Xbox 360 title it belongs to.");
+            var root = XeniaPaths.Resolve(ResolveFullPath(path), Safe(() => emulator.CommandLine)).ContentRoot;
+            var dir = ResolveRestoreTargetIn(root, titleId, out var why);
+            return dir == null ? LbIntegrations.Saves.ExpectedDir.Unknown(why) : LbIntegrations.Saves.ExpectedDir.Folder(dir);
+        }
+
         /// <summary>Where a restore lands. An existing unit for this title wins. Otherwise a profile is
         /// CHOSEN, never invented: a made-up XUID produces a directory Xenia never reads. With no
         /// profile at all, say so instead of guessing.</summary>
         private static string ResolveRestoreTarget(GameSaveBase save, string titleId, out string why)
+            => ResolveRestoreTargetIn(ContentRootFor(save), titleId, out why);
+
+        /// <summary>The same in a given content folder (OwnExpectedDir: an install's).</summary>
+        private static string ResolveRestoreTargetIn(string contentRoot, string titleId, out string why)
         {
             why = null;
-            string contentRoot = ContentRootFor(save);
             if (contentRoot == null)
             {
                 why = "Could not locate Xenia's content folder for this game.";
