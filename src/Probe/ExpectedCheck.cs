@@ -43,6 +43,7 @@ namespace LbIntegrations.Probe
                     case "Bsnes": Bsnes(asm, root, emu, games); break;
                     case "MelonDs": MelonDs(asm, root, emu, games); break;
                     case "SuperZsnes": SuperZsnes(asm, root, emu, games); break;
+                    case "RaSnes9x": RaSnes9x(asm, root, emu, games); break;
                     default: Console.WriteLine("  no expected-folder cases for " + name); return false;
                 }
             }
@@ -79,6 +80,33 @@ namespace LbIntegrations.Probe
             Check("absolute → as it is", Same(abs.Save, Path.Combine(root, "s")) && Same(abs.State, Path.Combine(root, "st")), abs.Save + " | " + abs.State);
             var none = At("", "");
             Check("empty → beside the game (bsnes's default)", Same(none.Save, games) && Same(none.State, games), none.Save + " | " + none.State);
+        }
+
+        private static void RaSnes9x(Assembly asm, string root, string emu, string games)
+        {
+            Console.WriteLine("-- RASnes9x: Dir:SRAM and Dir:Savestates as Snes9x resolves them --");
+            var exe = Path.Combine(emu, "RASnes9x.exe"); File.WriteAllBytes(exe, Array.Empty<byte>());
+            var rom = Path.Combine(games, "Zelda.sfc"); File.WriteAllBytes(rom, new byte[] { 0 });
+            var conf = Path.Combine(emu, "snes9x.conf");
+            var foldersFor = asm.GetType("LbIntegrations.RaSnes9x.RaSnes9xPlugin", true).GetMethod("FoldersFor", Any);
+            (string Save, string State) Now()
+            {
+                var f = foldersFor.Invoke(null, new object[] { exe, rom });
+                return ((string)F(f, "SaveDir"), (string)F(f, "StateDir"));
+            }
+            (string Save, string State) At(string sram, string states)
+            {
+                Write(conf, "[Settings\\Win\\Files]\nDir:SRAM = " + sram + "\nDir:Savestates = " + states + "\n");
+                return Now();
+            }
+            var unset = Now();
+            Check("no snes9x.conf yet → .\\Saves under its folder (Snes9x's default)", Same(unset.Save, Path.Combine(emu, "Saves")) && Same(unset.State, Path.Combine(emu, "Saves")), unset.Save + " | " + unset.State);
+            var rel = At(".\\Battery", ".\\States");
+            Check("relative → under its folder", Same(rel.Save, Path.Combine(emu, "Battery")) && Same(rel.State, Path.Combine(emu, "States")), rel.Save + " | " + rel.State);
+            var abs = At(Path.Combine(root, "s"), Path.Combine(root, "st"));
+            Check("absolute → as it is", Same(abs.Save, Path.Combine(root, "s")) && Same(abs.State, Path.Combine(root, "st")), abs.Save + " | " + abs.State);
+            var none = At("", "");
+            Check("empty → beside the game", Same(none.Save, games) && Same(none.State, games), none.Save + " | " + none.State);
         }
 
         private static void SuperZsnes(Assembly asm, string root, string emu, string games)

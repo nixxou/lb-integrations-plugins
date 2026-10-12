@@ -329,6 +329,15 @@ namespace LbIntegrations.RaSnes9x
             return save is GameSaveState ? folders.StateDir : folders.SaveDir;
         }
 
+        LbIntegrations.Saves.ExpectedDir IOwnSaves.OwnExpectedDir(IEmulator emulator, GameSaveBase save)
+        {
+            var path = Safe(() => emulator?.ApplicationPath);
+            if (save == null || !RaSnes9xLaunch.IsRaSnes9xExe(path)) return LbIntegrations.Saves.ExpectedDir.Unknown("Could not find the RASnes9x this game runs on.");
+            var to = SaveRows.TargetFor(save, PluginHelper.DataManager, Full);
+            if (to.Refused) return LbIntegrations.Saves.ExpectedDir.Unknown(to.Warning);
+            return LbIntegrations.Saves.ExpectedDir.FolderOr(TargetDirFor(save, ResolveFullPath(path), to.RomPath), "Could not work out where Snes9x reads this save from.");
+        }
+
         /// <summary>A path as LaunchBox stores it, made full; null for nothing.</summary>
         private static string Full(string path) => string.IsNullOrWhiteSpace(path) ? null : ResolveFullPath(path);
 
