@@ -82,34 +82,62 @@ namespace LbIntegrations.Saves
         /// <summary>One persisted row of a game: its file, full; its card; whether it is a copy in LaunchBox's vault.</summary>
         internal readonly record struct Persisted(string Path, string? SaveGroupId, bool Vault);
 
-        /// <summary>Every persisted row of the game and its versions, read only, by reflection; nothing when it cannot be read.</summary>
+        /// <summary>Every persisted row of the game and its versions, read only; nothing when it cannot be read. From the host's
+        /// own door when it has one (LiteBox: LbPersistedSaves, 13/10), else from LaunchBox's objects by reflection.</summary>
         internal static IReadOnlyList<Persisted> RowsOf(string? gameId)
         {
             var found = new List<Persisted>();
             try
             {
                 if (string.IsNullOrEmpty(gameId)) return found;
-                var game = PluginHelper.DataManager?.GetGameById(gameId);
-                if (game == null) return found;
                 var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".."));
                 var vault = Path.Combine(root, "Saves") + Path.DirectorySeparatorChar;
+                Persisted? Row(string? p, string? id)
+                {
+                    if (string.IsNullOrWhiteSpace(p)) return null;
+                    string full;
+                    try { full = Path.GetFullPath(Path.IsPathRooted(p) ? p! : Path.Combine(root, p!)); } catch { return null; }
+                    return new Persisted(full.TrimEnd(Path.DirectorySeparatorChar), id, full.StartsWith(vault, StringComparison.OrdinalIgnoreCase));
+                }
+                if (HostRows(gameId!) is { } kept)
+                {
+                    foreach (var (p, id) in kept) if (Row(p, id) is { } r) found.Add(r);
+                    return found;
+                }
+                var game = PluginHelper.DataManager?.GetGameById(gameId);
+                if (game == null) return found;
                 foreach (var (h, _) in PersistedRows.Holders(game))
                 {
                     if (h.GetType().GetProperty("Saves", Inst)?.GetValue(h) is not IEnumerable rows) continue;
                     foreach (var s in rows.Cast<object>().ToList())
                     {
                         var t = s.GetType();
-                        var p = t.GetProperty("FilePath")?.GetValue(s) as string;
-                        if (string.IsNullOrWhiteSpace(p)) continue;
-                        string full;
-                        try { full = Path.GetFullPath(Path.IsPathRooted(p) ? p : Path.Combine(root, p)); } catch { continue; }
-                        found.Add(new Persisted(full.TrimEnd(Path.DirectorySeparatorChar), t.GetProperty("SaveGroupId")?.GetValue(s) as string,
-                                                full.StartsWith(vault, StringComparison.OrdinalIgnoreCase)));
+                        if (Row(t.GetProperty("FilePath")?.GetValue(s) as string, t.GetProperty("SaveGroupId")?.GetValue(s) as string) is { } r) found.Add(r);
                     }
                 }
             }
             catch { }
             return found;
+        }
+
+        /// <summary>For the probe: the host's door, instead of LbPersistedSaves.</summary>
+        internal static Func<string, IReadOnlyList<(string? Path, string? Id)>?>? HostRowsForTests;
+
+        /// <summary>The game's rows through the host's door (LbPersistedSaves.Of), or null when there is none - LaunchBox, or a
+        /// Catalog older than 13/10 loaded first (the type is then missing: caught here, the caller reads as before).</summary>
+        private static IReadOnlyList<(string? Path, string? Id)>? HostRows(string gameId)
+        {
+            if (HostRowsForTests != null) return HostRowsForTests(gameId);
+            try { return HostRowsCore(gameId); } catch { return null; }
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static IReadOnlyList<(string? Path, string? Id)>? HostRowsCore(string gameId)
+        {
+            var of = LbIntegrations.Catalog.LbPersistedSaves.Of;
+            if (of == null) return null;
+            return (of(gameId) ?? new List<LbIntegrations.Catalog.LbPersistedSave>())
+                   .Where(s => s != null).Select(s => ((string?)s.FilePath, (string?)s.SaveGroupId)).ToList();
         }
 
         /// <summary>Gives each of <paramref name="rows"/> (with an id) a persisted row at its path, on the game or version

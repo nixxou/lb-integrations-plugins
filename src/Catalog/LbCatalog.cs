@@ -346,4 +346,31 @@ namespace LbIntegrations.Catalog
             lock (Gate) return new List<KeyValuePair<string, object>>(Owners);
         }
     }
+
+    // ── SAVES: THE ROWS A HOST HAS KEPT FOR A GAME ─────────────────────────────────────────────
+    //
+    // Added 13/10, never to be changed (see the header). When a plugin lists a save it decides its id - its
+    // card - from the rows the host has already kept for the game: a file kept at that path keeps its id, a
+    // card whose file has gone takes the file found in its place (Shared.Saves InstallIds,
+    // docs\saves-two-installs.md). Under LaunchBox the plugin reads LaunchBox's own objects. A host that keeps
+    // them its own way (LiteBox) sets Of, and the plugin reads them through it: the same rules, the same ids,
+    // whichever host wrote the shared XML last.
+
+    /// <summary>One save row a host has kept, as its platform XML holds it.</summary>
+    public sealed class LbPersistedSave
+    {
+        /// <summary>The file, as kept: full, or relative to the LaunchBox root.</summary>
+        public string FilePath;
+        public string SaveGroupId;
+        /// <summary>The version it is tied to, or null for the game itself.</summary>
+        public string AdditionalApplicationId;
+    }
+
+    /// <summary>The host's door to its kept rows.</summary>
+    public static class LbPersistedSaves
+    {
+        /// <summary>A game's kept rows (its versions' included), by its id - set by a host that keeps them outside
+        /// LaunchBox's objects, null under LaunchBox. Read only; quick; null or empty when the game has none.</summary>
+        public static System.Func<string, List<LbPersistedSave>> Of;
+    }
 }

@@ -704,6 +704,22 @@ namespace LbIntegrations.Probe
                 LbIntegrations.Compat.Compat.UseForTests(new Dictionary<string, bool> { ["twoInstalls"] = false });
                 try { Check("apply: the switch off → as listed", InstallIds.Apply("ares", @"Emulators\Nixx-ares\ares.exe", mixed, null)[0].SaveGroupId == plain); }
                 finally { LbIntegrations.Compat.Compat.UseForTests(null); }
+                // A host that keeps its rows its own way (LiteBox, 13/10): read through its door, the same rules as LaunchBox's.
+                InstallIds.RowsForTests = null;
+                try
+                {
+                    SavePersist.HostRowsForTests = _ => new List<(string?, string?)> { (a, plain), (vault, plain) };
+                    var kept = SavePersist.RowsOf("g");
+                    Check("host door: its rows read, the vault copy told apart", kept.Count == 2 && !kept[0].Vault && kept[0].Path == a && kept[0].SaveGroupId == plain, string.Join(" | ", kept));
+                    Check("host door: a file it keeps at its path → its id kept (no hint)", InstallIds.Apply("ares", @"Emulators\Nixx-ares\ares.exe", new List<GameSaveBase> { Listed(a) }, null)[0].SaveGroupId == plain);
+                    SavePersist.HostRowsForTests = _ => new List<(string?, string?)> { (gone, plain), (vault, plain) };
+                    Check("host door: the card's file gone, the save found elsewhere → that card taken, its history kept",
+                          InstallIds.Apply("ares", @"Emulators\Nixx-ares\ares.exe", new List<GameSaveBase> { Listed(b) }, null)[0].SaveGroupId == plain);
+                    SavePersist.HostRowsForTests = _ => new List<(string?, string?)> { (a, plain) };
+                    Check("host door: another install's file, the card's own still there → a card of its own",
+                          InstallIds.HintOf(InstallIds.Apply("ares", @"Emulators\Nixx-ares\ares.exe", new List<GameSaveBase> { Listed(b) }, null)[0].SaveGroupId) == hA);
+                }
+                finally { SavePersist.HostRowsForTests = null; }
             }
             finally { InstallIds.RowsForTests = null; try { Directory.Delete(dir, true); } catch { } }
 
