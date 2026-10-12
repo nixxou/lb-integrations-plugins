@@ -147,6 +147,8 @@ Found while reading the 12 plugins (each its own fix):
 
 ## 7. Sandbox
 
-`Emulators\ares-second` and its entry (id `58d2c0ef-21a6-41c2-98f6-6da1e0c151e1`) kept for the real test. Back: delete
-the folder, put back `Data\Emulators.xml` and `Data\Platforms\Super Nintendo Entertainment System.xml` from
-`Backups\lbip-twoares-2026-10-12\` (the SNES XML holds the second install's row since 12/10 20:17).
+Removed 12/10 after the real tests: `ares-second`'s entry and SNES platform row taken out of `Data\Emulators.xml`,
+the three rows of its card out of the SNES XML, Nixx-ares's live row put back (taken out for the window test); its
+folder and the `-04` / `-05` copies of its card moved to `Backups\lbip-twoares-2026-10-12\removed\` (not deleted).
+The XMLs as they were before: `before-cleanup\` there. Left on the Nixx-ares card: `-02.ram` (ares-second's content,
+from before the mechanism) and `-03.ram`.
