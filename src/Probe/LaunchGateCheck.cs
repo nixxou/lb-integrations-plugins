@@ -34,6 +34,9 @@ namespace LbIntegrations.Probe
             var said = new List<string>();
             notice.GetField("Instead", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, new Action<string, string>((t, x) => { lock (said) said.Add(x); }));
             var run = gate.GetMethod("Run", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+            // Sections 1-4 see the gate itself: no waiting for the end of the last launch (section 5 does).
+            var endWait = gate.GetField("EndWaitSeconds", BindingFlags.NonPublic | BindingFlags.Static);
+            endWait.SetValue(null, 0);
 
             var ping = Path.Combine(Environment.SystemDirectory, "PING.EXE");
             var emu = new StubEmulator { Title = "stand-in", ApplicationPath = ping };
@@ -96,9 +99,47 @@ namespace LbIntegrations.Probe
             hold.Dispose();
             Check("the watcher done: open again, a second after", WaitOpen(5) && let.Elapsed.TotalSeconds >= 0.9, let.Elapsed.TotalSeconds.ToString("0.0") + " s");
 
-            // 4. An emulator that never comes: held for its 60 s, not for ever - not waited here, only told apart.
-            Check("an accepted launch whose emulator never comes is held (released after 60 s)", Go("Game 5", accept) && !Open());
+            // 5. A launch while the last one is ending (Mehdi, 13/10): its emulator gone, it waits for the gate instead of
+            //    being refused - at most EndWaitSeconds; while the emulator runs, refused at once as before.
+            endWait.SetValue(null, 5);
+            Check("a launch accepted (the end-wait on)", Go("Game W", accept));
+            using (var p = Process.Start(new ProcessStartInfo(ping, "-n 9 127.0.0.1") { CreateNoWindow = true, UseShellExecute = false }))
+            {
+                Thread.Sleep(5500);
+                var fast = Stopwatch.StartNew();
+                lock (said) said.Clear();
+                Check("its emulator running: refused at once, not waited", !Go("Game X", accept) && fast.Elapsed.TotalSeconds < 0.5 && said.Count == 1, fast.Elapsed.TotalSeconds.ToString("0.00") + " s, " + string.Join(" | ", said));
+                lock (said) said.Clear();
+                p.WaitForExit();
+            }
+            Thread.Sleep(200);
+            var w = Stopwatch.StartNew();
+            prepared = 0;
+            Check("launched as the last one has just quit: waited, then accepted, nothing said", Go("Game Y", accept) && prepared == 1 && said.Count == 0 && w.Elapsed.TotalSeconds >= 0.3 && w.Elapsed.TotalSeconds < 5, w.Elapsed.TotalSeconds.ToString("0.0") + " s, said " + said.Count);
+            using (var p = Process.Start(new ProcessStartInfo(ping, "-n 2 127.0.0.1") { CreateNoWindow = true, UseShellExecute = false })) p.WaitForExit();
+            Check("  ...and its own launch ends as usual", WaitOpen(5));
 
+            endWait.SetValue(null, 2);
+            hold = null;
+            Check("a launch whose watcher holds the gate (the end-wait 2 s)", Go("Game Z", acceptHeld) && hold != null);
+            using (var p = Process.Start(new ProcessStartInfo(ping, "-n 2 127.0.0.1") { CreateNoWindow = true, UseShellExecute = false })) p.WaitForExit();
+            Thread.Sleep(1000);
+            w.Restart(); prepared = 0; lock (said) said.Clear();
+            Check("its end longer than the wait: refused after the wait, said, the plugin not asked", !Go("Game Z2", accept) && prepared == 0 && w.Elapsed.TotalSeconds >= 1.9 && said.Count == 1 && said[0].Contains("putting its session away"), w.Elapsed.TotalSeconds.ToString("0.0") + " s, " + string.Join(" | ", said));
+            lock (said) said.Clear();
+            hold.Dispose();
+            endWait.SetValue(null, 0);
+            Check("  ...the watcher done: open again", WaitOpen(5));
+
+            // 4. An emulator that never comes: held for its 60 s, not for ever - not waited here, only told apart.
+            endWait.SetValue(null, 5);
+            prepared = 0;
+            Check("an accepted launch whose emulator never comes is held (released after 60 s)", Go("Game 5", accept));
+            w.Restart();
+            Check("  ...a launch meanwhile refused at once - its emulator never came, nothing is ending", !Go("Game 6", accept) && w.Elapsed.TotalSeconds < 0.5 && prepared == 1, w.Elapsed.TotalSeconds.ToString("0.00") + " s");
+            lock (said) said.Clear();
+
+            endWait.SetValue(null, 5);
             gate.GetField("Off", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, true);
             notice.GetField("Instead", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, null);
             Console.WriteLine(_bad == 0 ? "\n  OK - one launch at a time, a double click refused without a word" : "\n  " + _bad + " FAILED");

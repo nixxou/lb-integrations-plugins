@@ -12,6 +12,11 @@
 // then 1 s more. A launch the plugin refused (WasSuccess false) holds nothing. And no launch goes into an emulator already
 // open outside one of ours (its executable running): refused, with a message.
 //
+// A LAUNCH WHILE THE LAST ONE IS ENDING (Mehdi, 13/10: a second game launched as the first had just quit, refused 0.4 s
+// before the gate opened): its emulator gone, only the plugin's own end left - the launch WAITS for the gate, EndWaitSeconds
+// at most, instead of being refused. While the emulator still runs, refused at once as before. (A wait blocks the host's
+// launch call for that long at most - never under the lock.)
+//
 // NEVER A LOCK HELD ACROSS ANYTHING: the state is two fields under a lock taken for a few instructions; the watch runs
 // on a pool thread; the message on a thread of its own (LbipNotice) - the host's launch thread only reads a flag.
 
@@ -33,6 +38,10 @@ namespace LbIntegrations.Lbip
         private static string _what;
         private static int _holds;                // watchers of the launch on, not done yet
         private static int _generation;           // which launch: a hold of an older one lets go of nothing
+        private static bool _ending;              // the launch on: its emulator has come and gone, its end being done
+
+        /// <summary>How long a launch waits for the end of the last one, its emulator gone (the probe sets it).</summary>
+        internal static int EndWaitSeconds = 5;
 
         /// <summary>The longest a hold keeps the gate shut: a watcher that never ends must not lock launches for ever.</summary>
         private const int HoldCapMinutes = 15;
@@ -70,16 +79,31 @@ namespace LbIntegrations.Lbip
             try { title = args?.GameBeingLaunched?.Title; } catch { }
             try { exe = LbipImportWatch.Full(args?.EmulatorBeingLaunched?.ApplicationPath); } catch { }
 
-            DateTime? on; string what;
-            lock (Gate)
+            DateTime? on; string what; bool ending;
+            var waiting = Stopwatch.StartNew();
+            while (true)
             {
-                on = _since; what = _what;
-                if (on == null) { _since = DateTime.UtcNow; _what = title; _generation++; _holds = 0; }
+                lock (Gate)
+                {
+                    on = _since; what = _what; ending = _ending;
+                    if (on == null) { _since = DateTime.UtcNow; _what = title; _generation++; _holds = 0; _ending = false; }
+                }
+                // The last launch ending, its emulator gone: wait for it (never under the lock).
+                if (on == null || !ending || waiting.Elapsed.TotalSeconds >= EndWaitSeconds) break;
+                Thread.Sleep(100);
             }
+            if (on == null && waiting.Elapsed.TotalMilliseconds >= 100)
+                LbipLog.Info("launch of \"" + title + "\": waited " + waiting.Elapsed.TotalSeconds.ToString("0.0") + " s for the end of the last one");
             if (on != null)
             {
                 var age = DateTime.UtcNow - on.Value;
-                if (age.TotalSeconds < SilentSeconds)
+                if (ending)
+                {
+                    LbipLog.Info("launch of \"" + title + "\" refused: \"" + what + "\" has quit, its end not done after " + EndWaitSeconds + " s more");
+                    LbipNotice.Show(pluginName, "\"" + what + "\" has just quit and " + pluginName + " is still putting its session away."
+                                    + "\n\nLaunch the game again in a few seconds.");
+                }
+                else if (age.TotalSeconds < SilentSeconds)
                     LbipLog.Info("launch of \"" + title + "\" refused: \"" + what + "\" was launched " + age.TotalSeconds.ToString("0.0") + " s ago (a double click) - silently");
                 else
                 {
@@ -116,7 +140,7 @@ namespace LbIntegrations.Lbip
 
         private static void Release(string why)
         {
-            lock (Gate) { _since = null; _what = null; }
+            lock (Gate) { _since = null; _what = null; _ending = false; }
             LbipLog.Info("launch gate open again (" + why + ")");
         }
 
@@ -136,6 +160,8 @@ namespace LbIntegrations.Lbip
                     }
                     if (!came) why = "the emulator never came";
                     while (Running(exe)) Thread.Sleep(500);
+                    // Only once it came and went: a launch whose emulator never came stays refused at once (its 60 s).
+                    if (came) lock (Gate) _ending = true;
                     // The plugin's watchers of this launch, done.
                     var holding = Stopwatch.StartNew();
                     while (holding.Elapsed.TotalMinutes < HoldCapMinutes) { int h; lock (Gate) h = _holds; if (h == 0) break; Thread.Sleep(250); }
