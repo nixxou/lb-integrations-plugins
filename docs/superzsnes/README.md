@@ -29,14 +29,19 @@ Il vit à deux endroits, toujours identiques :
 ## Les faits en une page
 
 - **L'émulateur.** SUPER ZSNES, par zsKnight et _Demo_, propriétaire, Unity **6000.3.6f1**, compilé
-  **IL2CPP**, métadonnées **v39**, exécutable **x86 32 bits**. Build de référence : **0.310** du
-  26 septembre 2026. Rien n'est obfusqué.
+  **IL2CPP**, métadonnées **v39**. Build de référence : **0.320** (fichiers datés du 7 octobre 2026), exécutable
+  **x64** (la 0.310 du 26 septembre était **x86 32 bits** : BepInEx doit suivre, voir 02). Rien
+  n'est obfusqué.
+- **RetroAchievements.** Depuis la 0.320 l'émulateur se connecte et envoie les succès, en
+  **softcore seulement** (pas de hardcore chez lui pour l'instant). Le pack lui passe le compte que
+  LaunchBox connaît, par le plugin in-process (03, P8).
 - **Le problème.** Pas de source, pas d'IL, pas de fichier de config lisible (NRBF), aucun mode
   portable, des adresses qui bougent à chaque build.
 - **La réponse.** Deux greffons : `SuperZsnes.dll` dans LaunchBox (catalogue, téléchargement,
   mise à jour, fenêtre d'options, déploiement) et `SuperZsnes.BepInEx.dll` dans l'émulateur
   (patchs Harmony résolus **par nom**, surcharges de réglages en mémoire, confirmation d'Échap,
-  popups, écran principal). Entre les deux, la **ligne de commande** : `--nixx-…`.
+  popups, écran principal, compte RetroAchievements). Entre les deux, la **ligne de commande** :
+  `--nixx-…` (et un seul fichier, `portable\nixx-ra-login.bin`, pour le compte RetroAchievements).
 - **Le chargeur.** BepInEx 6 IL2CPP, build épinglé **be.788**, téléchargé et vérifié par sha256 à
   l'installation, déployé **silencieux** : ni console, ni journal disque.
 - **La règle d'or.** Tout est ancré par nom (classe, méthode, champ), jamais par offset. Une mise

@@ -1,4 +1,5 @@
-// What an installation of SUPER ZSNES looks like, read off the 0.310 Windows build.
+// What an installation of SUPER ZSNES looks like, read off the 0.310 Windows build. 0.320 (13/10) is the same layout,
+// x64: SUPERZSNES.exe 652 KB, Plugins\x86_64\ (rcheevos.dll, steam_api64.dll), UnityCrashHandler64.exe.
 //
 // The zip is flat and the whole player sits at its root:
 //

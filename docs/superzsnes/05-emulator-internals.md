@@ -1,4 +1,4 @@
-# 05 · L'intérieur de l'émulateur (build 0.310)
+# 05 · L'intérieur de l'émulateur (build 0.310, RetroAchievements revus en 0.320)
 
 Tout ce qui suit a été lu sur le build 0.310 : types et adresses par Il2CppInspectorRedux,
 enchaînements d'appels par `xref.ps1`, textes dans `level0` et `resources.assets`, et confirmé
@@ -116,13 +116,35 @@ raencT = IV(16) || AES-256-CBC-PKCS7( clé, IV, UTF8(jeton) )
 connexion ; `Start` déchiffre et appelle `Login`, qui envoie
 `dorequest.php?r=login2&u=<user>&t=<jeton>`. **Depuis le plugin**, appeler `StringEnc` ou `Login`
 directement rend `deviceUniqueIdentifier` inutile ; hors processus, `tools\il2cpp-xref\radecrypt.ps1`
-calibre la recette par force brute. Non implémenté à ce jour.
+calibre la recette par force brute. Implémenté le 13/10 pour la 0.320 (03, P8) : le plugin appelle
+`StringEnc` de l'émulateur. (L'appel à `Login` ci-dessus est celui de la 0.310 ; en 0.320, voir plus bas.)
 
 MESURÉ LE 01/10 (`--nixx-ra-probe`, voir 09) : le panneau est masqué dans la 0.310 et
 `OptionsOverlay.EnableRetroachievements()` l'affiche (`--nixx-ra-unlock`), mais l'émulateur l'ouvre sur
 son propre avertissement : les succès ne sont **ni envoyés ni enregistrés** à ce stade. Le client natif
 `ZRCheevosIntegration` n'est jamais démarré. Rien à brancher côté LaunchBox tant qu'un build ne les
 envoie pas.
+
+### Depuis la 0.320 (13/10)
+
+« Initial Retroachievements implementation… does not have hardcore mode yet » (notes de version).
+C'est le client **natif** qui tourne, derrière un nouveau frontal :
+
+| classe | rôle |
+|---|---|
+| `ZRetroAchievements` (nouveau) | `static Instance`, `rCheevos` ; `Awake`, `Start`, `Initialize()`, `Login(user, password)`, `PerformLogin()`, `LoginCallback(RC_ERROR, message, ClientUser)`, `Logout()`, `LoadNewGame(byte[] rom, RC_CONSOLE)`, `LoadGameCallback(...)`, `EventCallback(ClientEvent)`, `MessageCallback(string)`, `IdleCheck()`, `UpdateFrame()`, `IsLoggedIn()`, `GetSaveStateBytes`/`SetLoadStateBytes` ; widgets de placard, progression, défi, maîtrise |
+| `ZRCheevosIntegration` | `Start`/`Login` **disparus** → `Awake`, `Initialize(RC_LOG_LEVEL)`, `LoginWithPassword`, `LoginWithToken`, `Logout`, `LoadGame(RC_CONSOLE, byte[], int)`, `DoFrame`, `Idle`, `ResetEmulator`, sérialisation de progression pour les états ; `static rc_client_set_hardcore_enabled(client, int)` existe mais **n'est jamais appelé** |
+| `RetroAchievements` (l'ancien client C#) | toujours compilé, **plus de `static Instance`** : ce n'est plus lui qui tourne |
+| `RetroAchievementsOverlay` | `TryLogin` → `Login()`/`Logout()` ; toggles `enableProgressMeter`, `enableChallengeIndicator` |
+| `MainMenuSettings` | `rauserID`, `raencT` inchangés ; nouveaux `raProgressMeterOff`, `raChallengeIndicatorsOff` |
+| `MainMenuManager` | `retroachievementsDialog`, `_raIdleCheckTimer`, `RetroAchievementIdleCheck()` |
+
+Le déroulé mesuré (`--nixx-ra-probe`, compte factice) : `ZRetroAchievements.Awake`,
+`ZRCheevosIntegration.Awake`, [réglages chargés], `ZRetroAchievements.Start` → `Initialize` →
+`ZRCheevosIntegration.Initialize` → `StringEnc.GetNPW(raencT)` → rcheevos « Attempting to log in
+<user> (with token) » ; au chargement de la ROM `LoadNewGame(RC_CONSOLE_SUPER_NINTENDO)` ; la réponse
+arrive dans `LoginCallback`. Sans compte enregistré (`rauserID` vide), ni `Initialize` ni tentative.
+Le pack fournit ce compte : 03, P8.
 
 ## Version et site
 

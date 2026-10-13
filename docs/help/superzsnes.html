@@ -190,7 +190,7 @@
   <tr><td>Controller setup from LaunchBox</td><td class="no">No</td><td>Set it in the emulator, Config &gt; Input.</td></tr>
   <tr><td>Game enhancement toggles from LaunchBox</td><td class="no">No</td><td>Use the emulator's own menu.</td></tr>
   <tr><td>Extra chip files (dsp2.rom, st010.rom...)</td><td class="no">No</td><td>Not managed by the plugin. Most games do not need them.</td></tr>
-  <tr><td>RetroAchievements</td><td class="no">No</td><td>Not supported.</td></tr></table>
+  <tr><td>RetroAchievements</td><td class="partly">Partly</td><td>From SUPER ZSNES 0.320. Your LaunchBox login is passed on (needs the helper). Softcore only: the emulator has no hardcore mode yet.</td></tr></table>
 </section>
 
 <section id="limits"><h2>Limits and things to know</h2>
@@ -203,8 +203,12 @@
     "Write the overrides into the emulator's settings file".</li>
     <li><b>Saves, states and cheats go in the emulator's folder</b> (<code>saves</code>, <code>states</code>, <code>cheats</code>).
     Older saves next to your games are not moved, and the emulator stops seeing them.</li>
-    <li><b>RetroAchievements are not supported.</b> The plugin does not pass your LaunchBox login to the emulator. The emulator's own
-    achievements feature is still marked "work in progress" by its authors.</li>
+    <li><b>RetroAchievements, softcore only.</b> From version 0.320 the emulator connects to RetroAchievements, and the plugin gives it
+    the login set in LaunchBox. It keeps that login afterwards, as if you had typed it in its Config &gt; Retroachievements screen.
+    The emulator has no hardcore mode yet, so a game is always played in softcore, even if hardcore is on in LaunchBox.
+    Older versions of the emulator do not send achievements: update it.</li>
+    <li><b>Updating from 0.310 to 0.320 or later.</b> 0.320 is a 64-bit program; the helper must be reinstalled for it. Updating
+    from LaunchBox does it; after a manual update, open the SUPER ZSNES tab and click <b>Repair / refresh</b> (or <b>Install now</b>).</li>
     <li><b>Emulator updates.</b> SUPER ZSNES is closed source. A new version of the emulator may stop one of the helper's features from working.
     The game still runs; only that feature is lost until the plugin is updated.</li>
     <li>Only the Windows version of SUPER ZSNES is used.</li>

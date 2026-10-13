@@ -18,6 +18,26 @@ date plutôt que d'écraser.
 | version affichée | « v0.310b » | `level0` @ 0x249445 (champ de script) ; leurres « v0.001 » @ 0xF55BC, « v0.100a » @ 0xF6B0C (étiquettes) |
 | site | carte Windows `files/SuperZSNES_v0.310.zip` ; `version.txt` = `Windows,0.310` / `Linux,0.310` / `Mac,0.310` | curl 30/09 |
 
+### 0.320 (mesuré le 13/10)
+
+| quoi | valeur | comment |
+|---|---|---|
+| archive | `SuperZSNES_v0.320.zip`, 115 227 859 octets, Last-Modified 07/10 17:33:30 GMT | `curl -I` |
+| sha256 archive | `18FAD510A7754562F4C774E77DF0DFC5A127EC5A73BBF46109F0951024B98532` | sha256sum |
+| sha256 GameAssembly.dll | `5643F3364802CEA85FAA2202BA5F088818B8614013E4F9B1FCBB1790ECCEFD61` | idem |
+| Unity / metadata | 6000.3.6f1 inchangé, v39 (`AF 1B B1 FA 27 00 00 00`) | LogOutput, en-tête |
+| **architecture** | **x64** (PE 0x8664) ; `Plugins\x86_64\{rcheevos, steam_api64, lib_burst_generated}.dll`, `UnityCrashHandler64.exe` | `file`, contenu de l'archive |
+| version affichée | « v0.320b », une seule occurrence dans `level0` | grep |
+| site | carte Windows `files/SuperZSNES_v0.320.zip` ; `version.txt` = `Windows,0.320` / `Linux,0.320` / `Mac,0.320` ; la sonde lit 0.320 sans changement | curl, `--superzsnes` |
+| interop | 112 assemblies, Assembly-CSharp.dll 1 990 656 o (x64 be.788) | dossier |
+| plugin 0.5.0 (compilé 0.310 x86) dans la 0.320 x64 | se charge ; P1, P3, P5, P7 posés ; seuls tombent 3 patchs de la sonde RA (`ZRCheevosIntegration.Start`/`Login`, `RetroAchievementsOverlay.TryLogin`, disparus) | `nixx-errors.log` 10:49 |
+| mise à jour par-dessus une 0.310 | le BepInEx x86 resté là ne se charge pas : aucun journal du plugin, réglages écrits sous LocalLow | copie de G:\LB1326\Emulators\Nixx-SuperZSNES + 0.320 extraite, 10:48 |
+| déploiement réel sur ce dossier | « removed the x86 BepInEx (x86 BepInEx beside an x64 SUPERZSNES.exe) », « BepInEx … (x64) extracted », plugin 44 544 o ; au lancement : interop régénérée, plugin 0.6.0, `persistentDataPath … portable`, `set: gfxMode None -> Scanlines`, `primary display: 0,0 1920x1080 … full screen window` ; relancé sans surcharge, `options.json` dit `gfxMode` `None` et garde `srmPath` `{exec}/saves` | `--superzsnes-deploy-real`, 11:06–11:10 |
+| nouveaux champs de réglages | `promptOnLoadState`, `raProgressMeterOff`, `raChallengeIndicatorsOff` ; par jeu `audioEnhancementDisable`, `videoEnhancementDisable` ; aucun champ du catalogue disparu | `--nixx-dump-options`, comparé à `SuperZsnesOptions.cs` |
+| RetroAchievements sans compte | `ZRetroAchievements.Awake`, `ZRCheevosIntegration.Awake`, `ZRetroAchievements.Start`, `LoadNewGame RC_CONSOLE_SUPER_NINTENDO` ; aucune tentative de connexion | `--nixx-ra-probe` 10:59 |
+| RetroAchievements, compte factice passé par le pack (P8) | `login set for nixxtest` → `Initialize` → `GetNPW <19 chars>` → « Attempting to log in nixxtest (with token) » → `401 Unauthorized` ; fichier de passage supprimé ; relancé sans fichier, même tentative : compte gardé par l'émulateur | `--nixx-ra-probe` 11:04 et 11:05 |
+| hardcore | `rc_client_set_hardcore_enabled` jamais appelé | `--nixx-ra-probe` |
+
 ## Fichiers et chemins
 
 | quoi | résultat | comment |
@@ -125,3 +145,7 @@ date plutôt que d'écraser.
   (`LbImportFinished`), WPF dans le projet. `SuperZsnes.BepInEx.dll` recompilé depuis les sources contre
   l'interop du dossier transféré (27 136 o ; celui du transfert, 26 624 o, datait d'avant les
   dernières sources). Sonde `--superzsnes` verte. P3–P7 toujours à observer en lancement réel.
+- 13/10 : sortie de la 0.320 (x64, RetroAchievements softcore). Déployeur : un BepInEx d'une autre
+  architecture est remplacé ; plugin 0.6.0 : le compte RetroAchievements de LaunchBox (P8), sonde RA
+  remise aux noms de la 0.320 ; cinq nouveaux réglages catalogués (cachés). Plugin compilé contre
+  l'interop x64 de la 0.320. Reste à observer : une vraie connexion depuis LaunchBox, P2 et P6 en 0.320.

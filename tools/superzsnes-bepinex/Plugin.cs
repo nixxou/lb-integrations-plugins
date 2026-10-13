@@ -20,6 +20,8 @@
 //                 left alone.
 //   POPUPS        the "check out our Patreon" dialog (MainMenuManager.supportUs) is put back to
 //                 sleep the frame it wakes up; the "new version" one can be, on request.
+//   CHEEVOS       0.320+: the RetroAchievements login LaunchBox holds, written into the emulator's settings the
+//                 way its own login screen would (Cheevos.cs).
 //
 // Options.cs has the grammar. Two traps for whoever adds to this: Object.FindObjectOfType and the
 // new Input System's ButtonControl properties are stripped from this build ("Method unstripping
@@ -36,7 +38,7 @@ using UnityEngine;
 
 namespace LbIntegrations.SuperZsnes.Mod
 {
-    [BepInPlugin("com.nixxou.superzsnes", "SUPER ZSNES integration", "0.5.0")]
+    [BepInPlugin("com.nixxou.superzsnes", "SUPER ZSNES integration", "0.6.0")]
     public class Plugin : BasePlugin
     {
         internal static NixxLog Logger;
@@ -80,6 +82,16 @@ namespace LbIntegrations.SuperZsnes.Mod
                 Patch(harmony, typeof(Overrides.AfterGameSettings), "per-game overrides");
                 Patch(harmony, typeof(Overrides.AroundSave), "keeping overrides out of the file");
                 Patch(harmony, typeof(PopupPatch), "popups and primary display");
+                // RetroAchievements (0.320+): the login LaunchBox left, if any, read and deleted now - Cheevos.cs.
+                // A build without ZRetroAchievements (0.310) has nothing to log in: not an error for nixx-errors.log.
+                Cheevos.TakeHandoff(PortableRoot);
+                if (typeof(MainMenuManager).Assembly.GetType("ZRetroAchievements") == null)
+                    Logger.LogInfo("RetroAchievements: this build has no ZRetroAchievements (before 0.320) - nothing to log in");
+                else
+                {
+                    if (Cheevos.Pending) Patch(harmony, typeof(Cheevos.AfterLoad), "RetroAchievements login from LaunchBox");
+                    Patch(harmony, typeof(Cheevos.LoginResult), "RetroAchievements login result in the log");
+                }
                 if (Opt.RaProbe) RaProbe.Install(harmony, Patch);
                 Logger.LogInfo("patched: " + string.Join(", ", harmony.GetPatchedMethods()));
             }
@@ -89,7 +101,7 @@ namespace LbIntegrations.SuperZsnes.Mod
             }
         }
 
-        public const string Version = "0.5.0";
+        public const string Version = "0.6.0";
 
         private void Patch(Harmony harmony, Type patchClass, string feature)
         {
