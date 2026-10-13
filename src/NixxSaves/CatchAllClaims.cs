@@ -96,7 +96,11 @@ namespace LbIntegrations.SavesCatchAll
         {
             var all = LbPluginRegistry.EmulatorPlugins(out why);
             if (all == null) return null;
-            if (Volatile.Read(ref _started) == 1 || AskedByLaunchBox()) return all;
+            if (Volatile.Read(ref _started) == 1) return all;
+            // LaunchBox asking through its own choice of a plugin: its plugins are loaded - for good (measured 13/10: its
+            // question whether the catch-all supports saves came 2 ms after, not through GetBestEmulatorPlugin, and the
+            // settling made it answer no for the session).
+            if (AskedByLaunchBox()) { Started(); return all; }
             var now = System.Diagnostics.Stopwatch.GetTimestamp();
             lock (SettleGate)
             {

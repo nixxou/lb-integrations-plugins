@@ -123,6 +123,8 @@ namespace LbIntegrations.Probe
                 claims.GetMethod("InitializedOnlyForTests", Any).Invoke(null, null);
                 claims.GetField("AskedByLaunchBoxForTests", Any).SetValue(null, true);
                 Check("loaded, LaunchBox itself asking: taken at once", Taken(hand).SequenceEqual(new IEmulator[] { hand }));
+                claims.GetField("AskedByLaunchBoxForTests", Any).SetValue(null, false);
+                Check("... and from then on, the pack's own calls too (LaunchBox's plugins are loaded for good)", Taken(arcade).SequenceEqual(new IEmulator[] { arcade }));
                 claims.GetField("AskedByLaunchBoxForTests", Any).SetValue(null, null);
                 others.RemoveAt(others.Count - 1);
                 Reset(ready: true);
