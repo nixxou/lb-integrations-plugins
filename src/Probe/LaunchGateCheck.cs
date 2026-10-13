@@ -115,7 +115,16 @@ namespace LbIntegrations.Probe
             Thread.Sleep(200);
             var w = Stopwatch.StartNew();
             prepared = 0;
+            // The host's pre-launch bar (LiteBox's LaunchStatus contract, by name in the AppDomain): the wait reports its step.
+            var reports = new List<(string, double)>();
+            AppDomain.CurrentDomain.SetData("LbIntegrations.LaunchStatus.v1", new Action<string, double>((t, f) => { lock (reports) reports.Add((t, f)); }));
             Check("launched as the last one has just quit: waited, then accepted, nothing said", Go("Game Y", accept) && prepared == 1 && said.Count == 0 && w.Elapsed.TotalSeconds >= 0.3 && w.Elapsed.TotalSeconds < 5, w.Elapsed.TotalSeconds.ToString("0.0") + " s, said " + said.Count);
+            AppDomain.CurrentDomain.SetData("LbIntegrations.LaunchStatus.v1", null);
+            List<(string T, double F)> got; lock (reports) got = reports.ToList();
+            Check("  ...the wait shown to the host: one step naming the last game, filling (0..1, never back)",
+                  got.Count >= 2 && got.All(r => r.T != null && r.T.Contains("Game W")) && got.All(r => r.F >= 0 && r.F < 1)
+                  && got.Zip(got.Skip(1), (a, b) => b.F >= a.F).All(x => x),
+                  got.Count + " report(s): " + string.Join(" | ", got.Take(3).Select(r => r.T + " " + r.F.ToString("0.00"))));
             using (var p = Process.Start(new ProcessStartInfo(ping, "-n 2 127.0.0.1") { CreateNoWindow = true, UseShellExecute = false })) p.WaitForExit();
             Check("  ...and its own launch ends as usual", WaitOpen(5));
 

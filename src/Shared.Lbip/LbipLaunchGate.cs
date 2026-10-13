@@ -88,8 +88,12 @@ namespace LbIntegrations.Lbip
                     on = _since; what = _what; ending = _ending;
                     if (on == null) { _since = DateTime.UtcNow; _what = title; _generation++; _holds = 0; _ending = false; }
                 }
-                // The last launch ending, its emulator gone: wait for it (never under the lock).
+                // The last launch ending, its emulator gone: wait for it (never under the lock) - shown by the host
+                // as a step filling over the longest wait (LbipLaunchStatus; LaunchBox shows nothing).
                 if (on == null || !ending || waiting.Elapsed.TotalSeconds >= EndWaitSeconds) break;
+                if (EndWaitSeconds > 0)
+                    LbipLaunchStatus.Report("Waiting for " + (what ?? "the last game") + "'s session to be put away…",
+                                            waiting.Elapsed.TotalSeconds / EndWaitSeconds);
                 Thread.Sleep(100);
             }
             if (on == null && waiting.Elapsed.TotalMilliseconds >= 100)
