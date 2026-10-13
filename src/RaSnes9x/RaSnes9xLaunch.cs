@@ -70,7 +70,7 @@ namespace LbIntegrations.RaSnes9x
             try
             {
                 var conf = RaSnes9xConf.Load(RaSnes9xConf.Of(exe));
-                ForceSaveFolders(conf, exe, rom);
+                ForceSaveFolders(conf, exe);
                 bool full = RaSnes9xSettings.BoolFor(gameId, "Fullscreen");
                 conf.SetBool(Display, "Fullscreen:Enabled", full);
                 if (full) conf.SetBool(Display, "Fullscreen:EmulateFullscreen", true);
@@ -88,6 +88,9 @@ namespace LbIntegrations.RaSnes9x
 
                 bool changed = conf.Changed;
                 conf.SaveIfChanged();
+                // The game's files beside it brought in only now that Snes9x will read the folders from its file (review 13/10:
+                // moved before a save that failed, they were out of Snes9x's sight while it kept writing beside the game).
+                BringBesideTheGame(conf, exe, rom);
                 Log.Info("snes9x.conf: " + (changed ? "written" : "already as wanted") + " - " + (full ? "full screen" : "windowed") + ", " + aspect
                          + (RaSnes9xSettings.BoolFor(gameId, "IntegerScaling") ? ", integer" : "") + ", " + output);
             }
@@ -99,42 +102,75 @@ namespace LbIntegrations.RaSnes9x
         /// <summary>The folder the pack gives an EMPTY Dir:SRAM / Dir:Savestates (Mehdi, 12/10): Snes9x's own default.</summary>
         internal const string ForcedDir = ".\\Saves";
 
-        /// <summary>An EMPTY Dir:SRAM or Dir:Savestates set to <see cref="ForcedDir"/>. Empty is Snes9x's "beside the ROM" - for
-        /// a .7z the %TEMP% folder it is unpacked to, which the next unpacking empties (RomFor): nothing beside the games
-        /// (no-saves-beside-games). What such a setting left there is moved in, the save and its clock, the states and their
-        /// pictures - never over a file already in the new folder (that one is kept, the old left where it is, said).</summary>
-        private static void ForceSaveFolders(RaSnes9xConf conf, string exe, string rom)
+        /// <summary>Snes9x's folders the pack gives a value when they are EMPTY (Snes9x's "beside the ROM"; for a .7z the %TEMP%
+        /// folder it is unpacked to, which the next unpacking empties - RomFor): the saves and states (Mehdi, 12/10), and since
+        /// lot 9 (13/10) the screenshots, movies, SPC dumps and cheats too - Snes9x's own defaults. A folder set is the user's.</summary>
+        internal static readonly (string Key, string Folder)[] Folders =
+        {
+            ("Dir:SRAM", ForcedDir), ("Dir:Savestates", ForcedDir), ("Dir:Screenshots", ".\\Screenshots"),
+            ("Dir:Movies", ".\\Movies"), ("Dir:SPCs", ".\\SPCs"), ("Dir:Cheats", ".\\Cheats"),
+        };
+
+        /// <summary>Every EMPTY folder of <see cref="Folders"/> set to its default - present and empty in snes9x.conf means
+        /// Snes9x has been writing beside the games with it: the moment is noted FIRST (LbipBesideGame), and without it the
+        /// setting is left as it is (every other game's save would be stranded beside it).</summary>
+        private static void ForceSaveFolders(RaSnes9xConf conf, string exe)
         {
             var exeDir = Path.GetDirectoryName(Path.GetFullPath(exe));
-            foreach (var (key, state) in new[] { ("Dir:SRAM", false), ("Dir:Savestates", true) })
+            foreach (var (key, folder) in Folders)
             {
                 var v = conf.Get(Files, key);
-                if (v == null || !string.IsNullOrWhiteSpace(v)) continue;     // missing = ".\Saves" already; set = the user's
-                conf.Set(Files, key, ForcedDir);
-                Log.Info("snes9x.conf: " + key + " was empty (beside the game) - set to " + ForcedDir);
-                if (string.IsNullOrWhiteSpace(rom)) continue;
-                try
-                {
-                    var to = Path.GetFullPath(Path.Combine(exeDir, ForcedDir));
-                    var name = Path.GetFileNameWithoutExtension(rom);
-                    foreach (var from in BesideTheGame(rom).Where(Directory.Exists))
-                        foreach (var file in Directory.GetFiles(from, name + ".*"))
-                        {
-                            var ext = file.Substring(Path.Combine(from, name).Length);   // ".srm", ".000", ".000.png"
-                            bool isState = System.Text.RegularExpressions.Regex.IsMatch(ext, @"^\.\d{3}(\.png)?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                            bool isSave = string.Equals(ext, ".srm", StringComparison.OrdinalIgnoreCase) || string.Equals(ext, ".rtc", StringComparison.OrdinalIgnoreCase);
-                            if (state ? !isState : !isSave) continue;
-                            var target = Path.Combine(to, Path.GetFileName(file));
-                            if (File.Exists(target)) { Log.Warn("left beside the game: " + file + " - " + target + " is already there"); continue; }
-                            Directory.CreateDirectory(to);
-                            File.Move(file, target);
-                            Log.Info("moved " + file + " -> " + target);
-                        }
-                }
-                catch (Exception ex) { Log.Warn("the files beside the game could not all be moved to " + ForcedDir, ex); }
+                if (v == null || !string.IsNullOrWhiteSpace(v)) continue;     // missing = Snes9x's default already; set = the user's
+                if (!LbIntegrations.Lbip.LbipBesideGame.Note(exeDir, key)) { Log.Warn("snes9x.conf: " + key + " left empty - the moment Snes9x stopped writing beside the games could not be noted"); continue; }
+                conf.Set(Files, key, folder);
+                Log.Info("snes9x.conf: " + key + " was empty (beside the game) - set to " + folder);
             }
         }
 
+        /// <summary>What is still beside the game brought into Snes9x's folders, by the pack's rule (docs\saves-lot9.md): Snes9x's
+        /// own files MOVED at every launch - the states .000-.009 with their pictures and the undo .oops, the movies .smv; the
+        /// generic ones - the save .srm and its clock .rtc, the cheats .cht, also written under that name by bsnes, SUPER ZSNES
+        /// and RetroArch - COPIED when last written before the moment their folder was set (LbipBesideGame): Snes9x read them as
+        /// the game's own until then, another emulator may still read them there. A folder set before 13/10 has no moment noted,
+        /// and its generic files beside the games stay. Never over a file already in the folder.</summary>
+        private static void BringBesideTheGame(RaSnes9xConf conf, string exe, string rom)
+        {
+            if (string.IsNullOrWhiteSpace(rom)) return;
+            var exeDir = Path.GetDirectoryName(Path.GetFullPath(exe));
+            string DirOf(string key)
+            {
+                var v = conf.Get(Files, key);
+                // Present and EMPTY: Snes9x still writes beside the game (its moment could not be noted, the folder left so) -
+                // nothing is taken from there, or each session's files would be carried where Snes9x does not look (review 13/10).
+                if (v != null && string.IsNullOrWhiteSpace(v)) return null;
+                var folder = Folders.First(f => f.Key == key).Folder;
+                return LbIntegrations.Saves.ExpectedDir.OfConfig(v ?? folder, exeDir);
+            }
+            try
+            {
+                var name = Path.GetFileNameWithoutExtension(rom);
+                foreach (var from in BesideTheGame(rom).Where(Directory.Exists))
+                    foreach (var file in Directory.GetFiles(from, name + ".*"))
+                    {
+                        var ext = file.Substring(Path.Combine(from, name).Length);   // ".srm", ".000", ".000.png"
+                        string key = null; bool copy = false;
+                        // The %TEMP% unpack folder is the plugin's own: what Snes9x left there is Snes9x's - moved, whatever its date.
+                        bool unpacked = string.Equals(from.TrimEnd('\\'), UnpackDir(Path.GetFullPath(rom)).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+                        bool Before(string setting) => unpacked || LbIntegrations.Lbip.LbipBesideGame.WrittenBefore(file, LbIntegrations.Lbip.LbipBesideGame.Since(exeDir, setting));
+                        // Snes9x's ten slots are .000-.009 - not any three digits (a split archive's Game.012 is no state).
+                        if (System.Text.RegularExpressions.Regex.IsMatch(ext, @"^\.(00\d|oops)(\.png)?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)) key = "Dir:Savestates";
+                        else if (string.Equals(ext, ".smv", StringComparison.OrdinalIgnoreCase)) key = "Dir:Movies";
+                        else if ((string.Equals(ext, ".srm", StringComparison.OrdinalIgnoreCase) || string.Equals(ext, ".rtc", StringComparison.OrdinalIgnoreCase))
+                                 && Before("Dir:SRAM")) { key = "Dir:SRAM"; copy = true; }
+                        else if (string.Equals(ext, ".cht", StringComparison.OrdinalIgnoreCase)
+                                 && Before("Dir:Cheats")) { key = "Dir:Cheats"; copy = true; }
+                        if (key == null) continue;
+                        if (unpacked) copy = false;
+                        LbIntegrations.Lbip.LbipBesideGame.Bring(file, DirOf(key), copy, m => Log.Info(m), installDir: exeDir);
+                    }
+            }
+            catch (Exception ex) { Log.Warn("the files beside the game could not all be brought to Snes9x's folders", ex); }
+        }
         /// <summary>Where an empty folder setting had Snes9x write: beside the ROM, and for a .7z the folder it is unpacked to.</summary>
         private static IEnumerable<string> BesideTheGame(string rom)
         {
@@ -231,7 +267,8 @@ namespace LbIntegrations.RaSnes9x
                 if (File.Exists(target) && new FileInfo(target).Length == pick.Size && File.GetLastWriteTimeUtc(target) >= File.GetLastWriteTimeUtc(rom))
                     return target;
                 Directory.CreateDirectory(dir);
-                foreach (var old in Directory.GetFiles(dir)) try { File.Delete(old); } catch { }
+                // The ROMs unpacked before only: anything else there is Snes9x's (review 13/10: a save left in the folder went with them).
+                foreach (var old in Directory.GetFiles(dir).Where(f => RomExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))) try { File.Delete(old); } catch { }
                 using (var src = pick.OpenEntryStream())
                 using (var dst = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None))
                     src.CopyTo(dst);

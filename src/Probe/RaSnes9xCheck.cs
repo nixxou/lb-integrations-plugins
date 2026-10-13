@@ -68,9 +68,25 @@ namespace LbIntegrations.Probe
                 var text = File.ReadAllText(target);
                 Check("empty Dir:SRAM set to .\\Saves", text.Contains("Dir:SRAM = .\\Saves"), text.Split('\n')[1].Trim());
                 Check("empty Dir:Savestates set to .\\Saves, its comment kept", text.Contains("Dir:Savestates = .\\Saves") && text.Contains("# beside the game"), text.Split('\n')[2].Trim());
-                Check("the save, its clock, a state and its picture moved", new[] { "Zelda.srm", "Zelda.rtc", "Zelda.000", "Zelda.000.png" }.All(f => File.Exists(Path.Combine(saves, f)) && !File.Exists(Path.Combine(games, f))));
+                Check("a state and its picture moved, the save and its clock copied", new[] { "Zelda.000", "Zelda.000.png" }.All(f => File.Exists(Path.Combine(saves, f)) && !File.Exists(Path.Combine(games, f))) && new[] { "Zelda.srm", "Zelda.rtc" }.All(f => File.Exists(Path.Combine(saves, f)) && File.Exists(Path.Combine(games, f))));
                 Check("a state already in Saves kept, the old one left beside the game", File.ReadAllText(Path.Combine(saves, "Zelda.003")) == "already there" && File.Exists(Path.Combine(games, "Zelda.003")));
-                Check("the ROM, the undo state and another game's save not moved", new[] { "Zelda.sfc", "Zelda.oops", "Other.srm" }.All(f => File.Exists(Path.Combine(games, f))));
+                Check("the undo state moved too (Snes9x's own, lot 9)", File.Exists(Path.Combine(saves, "Zelda.oops")) && !File.Exists(Path.Combine(games, "Zelda.oops")));
+                Check("the ROM and another game's save not moved (not its launch)", new[] { "Zelda.sfc", "Other.srm" }.All(f => File.Exists(Path.Combine(games, f))));
+                // A LATER launch (lot 9, the pack's rule): Snes9x's own files moved again, the generic .srm left - its owner unknown.
+                File.WriteAllText(target, "[Settings\\Win\\Files]\r\nDir:SRAM = .\\Saves\r\nDir:Savestates = .\\Saves\r\nDir:Screenshots = \r\nDir:Movies = .\\Movies\r\nDir:Cheats = .\\Cheats\r\n");
+                foreach (var f in new[] { "Zelda.005", "Zelda.005.png", "Zelda.smv", "Zelda.cht" }) File.WriteAllText(Path.Combine(games, f), f);
+                System.Threading.Thread.Sleep(30);
+                File.Delete(Path.Combine(games, "Zelda.srm")); File.WriteAllText(Path.Combine(games, "Zelda.srm"), "somebody's");
+                T(asm, "RaSnes9xLaunch").GetMethod("PrepareConf", Any).Invoke(null, new object[] { Path.Combine(copy, "RASnes9x.exe"), "probe-game", Path.Combine(games, "Zelda.sfc") });
+                text = File.ReadAllText(target);
+                Check("later launch: an empty Dir:Screenshots set to .\\Screenshots", text.Contains("Dir:Screenshots = .\\Screenshots"));
+                Check("later launch: a state and its picture moved", new[] { "Zelda.005", "Zelda.005.png" }.All(f => File.Exists(Path.Combine(saves, f)) && !File.Exists(Path.Combine(games, f))));
+                Check("later launch: a movie moved into Movies", File.Exists(Path.Combine(copy, "Movies", "Zelda.smv")) && !File.Exists(Path.Combine(games, "Zelda.smv")));
+                Check("later launch: a .srm written since the folder was set, and a .cht (its folder never empty), left beside the game", File.Exists(Path.Combine(games, "Zelda.srm")) && File.Exists(Path.Combine(games, "Zelda.cht")));
+                // Another game, later (review 13/10): its .srm from before Dir:SRAM was set moves.
+                File.WriteAllText(Path.Combine(games, "Other.sfc"), "rom"); File.SetLastWriteTimeUtc(Path.Combine(games, "Other.srm"), DateTime.UtcNow.AddDays(-30));
+                T(asm, "RaSnes9xLaunch").GetMethod("PrepareConf", Any).Invoke(null, new object[] { Path.Combine(copy, "RASnes9x.exe"), "probe-game", Path.Combine(games, "Other.sfc") });
+                Check("another game, later: its .srm from before the folder was set copied", File.Exists(Path.Combine(saves, "Other.srm")) && File.Exists(Path.Combine(games, "Other.srm")));
                 File.WriteAllText(target, "[Settings\\Win\\Files]\r\nDir:SRAM = \r\n");
                 var folders = T(asm, "RaSnes9xPlugin").GetMethod("FoldersFor", Any).Invoke(null, new object[] { Path.Combine(copy, "RASnes9x.exe"), Path.Combine(games, "Zelda.sfc") });
                 var sramDir = (string)folders.GetType().GetField("SaveDir").GetValue(folders);

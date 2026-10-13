@@ -39,12 +39,20 @@ namespace LbIntegrations.Ares
                 if (string.IsNullOrEmpty(exe)) return;
                 // A session left unfinished is finished first: its plan names the console files where they were.
                 AresConsoleSession.Recover();
+                // The .cues of the install's Discs folder whose image is gone (a hard link would keep it on the disk).
+                AresLaunch.SweepDiscs(exe);
                 var root = Path.GetDirectoryName(Path.GetFullPath(exe));
                 var bml = AresBml.Load(AresLaunch.SettingsOf(exe));
                 bool savesWereEmpty = string.IsNullOrWhiteSpace(bml.Get("Paths/Saves"));
                 foreach (var (key, folder) in Paths)
                 {
-                    if (!string.IsNullOrWhiteSpace(bml.Get(key))) continue;
+                    var v = bml.Get(key);
+                    // A folder the pack set that no longer points into this install (moved, another drive letter): set again.
+                    bool stale = LbipBesideGame.IsStalePackPath(v, folder, root);
+                    if (!string.IsNullOrWhiteSpace(v) && !stale) continue;
+                    // Present and empty: ares has been writing beside the games with it - noted FIRST (LbipBesideGame), and
+                    // without the moment the setting is left: every other game's save would be stranded beside it.
+                    if (v != null && !stale && !LbipBesideGame.Note(root, key)) { Log.Warn(key + " left empty - the moment ares stopped writing beside the games could not be noted"); continue; }
                     var dir = Path.Combine(root, folder);
                     Directory.CreateDirectory(dir);
                     // ares glues the system's name straight on (locate: {path, system, "/"}): the trailing slash is needed.
@@ -80,8 +88,13 @@ namespace LbIntegrations.Ares
             }
         }
 
-        /// <summary>A game's files still beside it, moved into its folders. Never throws.</summary>
-        public static void Migrate(string exe, AresSystem system, string rom)
+        /// <summary>A game's files still beside it brought into its folders, by the pack's rule (docs\saves-lot9.md,
+        /// LbipBesideGame): ares's own states (.bs1-.bs9, .bsu, .blu and their pictures) MOVED at every launch; the saves and the
+        /// per-game console copies - extensions other emulators write too (.ram, .sav, .rtc...) - COPIED when last written
+        /// before the moment Paths/Saves was set on an ares that had been writing beside the games (a setting made before
+        /// 13/10 has no moment noted: those stay); never a file of a ROM extension of the system (a ZX Spectrum's .wav is a
+        /// tape as well as a save). <paramref name="except"/>: the file a restore reads from, never touched. Never throws.</summary>
+        public static void Migrate(string exe, AresSystem system, string rom, string except = null)
         {
             try
             {
@@ -89,38 +102,55 @@ namespace LbIntegrations.Ares
                 var full = Path.GetFullPath(rom);
                 var played = Path.GetFullPath(AresPlugin.PlayedFile(full, exe) ?? full);
                 var folders = AresPlugin.FoldersFor(exe, full, system);
-                // Beside the file ares was given (a .7z's unpacked folder), and beside the game itself.
-                var besides = new[] { Path.GetDirectoryName(played), Path.GetDirectoryName(full) }.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                // The game's own folder, and the plugin's own folders ares may have been given a file in - a .7z's Unpacked\
+                // folder, a disc's Discs\ folder: what ares wrote there is ares's, whatever its extension (moved, no moment needed).
+                var gameDir = Path.GetDirectoryName(full);
+                var ownDirs = new[] { Path.GetDirectoryName(played), AresLaunch.DiscDir(exe, full) }
+                              .Where(d => d != null && !string.Equals(d, gameDir, StringComparison.OrdinalIgnoreCase)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
                 var identity = AresConsoleSession.IdentityOf(full, exe);
                 var names = new[] { identity }.Concat(system.Disc ? AresConsoleSession.DiscNames(full, system, exe) : Enumerable.Empty<string>())
                                               .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-                int moved = 0;
-                void Move(string beside, string file, string target)
+                var root = Path.GetDirectoryName(Path.GetFullPath(exe));
+                var savesSince = LbipBesideGame.Since(root, "Paths/Saves");
+                int brought = 0;
+                void Say(string m) => Log.Info(m);
+                void Own(string dir, string file, string target)
                 {
-                    if (target == null || string.Equals(beside, target, StringComparison.OrdinalIgnoreCase)) return;
-                    var from = Path.Combine(beside, file);
-                    if (!File.Exists(from) || string.Equals(from, full, StringComparison.OrdinalIgnoreCase) || string.Equals(from, played, StringComparison.OrdinalIgnoreCase)) return;
-                    var to = Path.Combine(target, file);
-                    if (File.Exists(to)) { Log.Info("saves: " + from + " left where it is - " + to + " is already there"); return; }
-                    Directory.CreateDirectory(target);
-                    File.Move(from, to);
-                    moved++;
-                    Log.Info("saves: " + from + " -> " + to);
+                    var from = Path.Combine(dir, file);
+                    if (string.Equals(from, full, StringComparison.OrdinalIgnoreCase) || string.Equals(from, played, StringComparison.OrdinalIgnoreCase)) return;
+                    // Never INTO the game's folder: a target there means ares's folder is empty (its moment could not be noted) -
+                    // ares writes beside what it loaded (Discs\, Unpacked\) and reads it there; taken to the game it is lost to it.
+                    if (string.IsNullOrWhiteSpace(target) || string.Equals(Path.GetFullPath(target).TrimEnd('\\'), gameDir.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)) return;
+                    if (LbipBesideGame.Bring(from, target, copy: false, Say, except)) brought++;
                 }
-                foreach (var beside in besides)
-                    foreach (var name in names)
-                    {
-                        foreach (var ext in system.SaveExtensions) Move(beside, name + ext, folders.SaveTarget);
-                        foreach (var ext in Enumerable.Range(1, 9).Select(i => ".bs" + i).Concat(new[] { ".bsu", ".blu" }))
+                void Generic(string file, string target)
+                {
+                    var from = Path.Combine(gameDir, file);
+                    // Never a ROM of this system (a .wav is a ZX Spectrum's tape as well as its save), never the game itself.
+                    if (system.Extensions.Contains(Path.GetExtension(file).ToLowerInvariant()) || string.Equals(from, full, StringComparison.OrdinalIgnoreCase)) return;
+                    if (LbipBesideGame.WrittenBefore(from, savesSince) && LbipBesideGame.Bring(from, target, copy: true, Say, except, root)) brought++;
+                }
+                var states = Enumerable.Range(1, 9).Select(i => ".bs" + i).Concat(new[] { ".bsu", ".blu" }).ToList();
+                foreach (var name in names)
+                {
+                    foreach (var ext in states)
+                        foreach (var dir in ownDirs.Append(gameDir))
                         {
-                            Move(beside, name + ext, folders.StateTarget);
-                            Move(beside, name + ext + LbipStateThumbs.Suffix, folders.StateTarget);
+                            Own(dir, name + ext, folders.StateTarget);
+                            Own(dir, name + ext + LbipStateThumbs.Suffix, folders.StateTarget);
                         }
+                    foreach (var ext in system.SaveExtensions)
+                    {
+                        foreach (var dir in ownDirs) Own(dir, name + ext, folders.SaveTarget);
+                        Generic(name + ext, folders.SaveTarget);
                     }
-                foreach (var beside in besides)
-                    foreach (var cf in system.ConsoleFiles.Where(c => c.PerGame))
-                        Move(beside, identity + cf.Ext, folders.SaveTarget);
-                if (moved > 0) Log.Info("saves: " + moved + " file(s) of " + identity + " moved out of the game's folder");
+                }
+                foreach (var cf in system.ConsoleFiles.Where(c => c.PerGame))
+                {
+                    foreach (var dir in ownDirs) Own(dir, identity + cf.Ext, folders.SaveTarget);
+                    Generic(identity + cf.Ext, folders.SaveTarget);
+                }
+                if (brought > 0) Log.Info("saves: " + brought + " file(s) of " + identity + " brought out of the game's folder");
             }
             catch (Exception ex) { Log.Warn("saves: could not move the game's files out of its folder", ex); }
         }

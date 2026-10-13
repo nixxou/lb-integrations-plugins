@@ -112,6 +112,51 @@ namespace LbIntegrations.SuperZsnes
 
         internal static string NameOf(string romPath) => Path.GetFileNameWithoutExtension(romPath ?? "");
 
+        /// <summary>Nothing beside the game (Mehdi, 07/10; lot 9, 13/10): a game's states folder still beside it - <name>.data.szsnes\,
+        /// left by SUPER ZSNES before the pack filled its states folder (01/10) - moved into the states folder, file by file,
+        /// never over a file already there (that one is kept, the old left where it is, said); the folder beside the game goes
+        /// once empty. Its name is SUPER ZSNES's own: no other emulator writes it. The .srm beside the game is NOT moved: bsnes,
+        /// Snes9x and RetroArch write that name too, and nothing tells whose it is (docs\saves-lot9.md). Nothing when the states
+        /// folder is the game's own (the pack's folders not in place) or flat (noDirectoryForSaves: no per-game folder).
+        /// Never throws.</summary>
+        internal static int MigrateStates(string exe, string rom)
+        {
+            int moved = 0;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(exe) || string.IsNullOrWhiteSpace(rom)) return 0;
+                var full = Path.GetFullPath(rom);
+                var romDir = Path.GetDirectoryName(full);
+                var name = NameOf(full);
+                var folders = FoldersFor(exe, full);
+                if (name.Length == 0 || folders.Flat || folders.StateDir == null
+                    || string.Equals(Path.GetFullPath(folders.StateDir).TrimEnd('\\'), romDir.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)) return 0;
+                var from = Path.Combine(romDir, name + ".data.szsnes");
+                if (!Directory.Exists(from)) return 0;
+                // Only once SUPER ZSNES ITSELF wrote its states folder into its settings (review 13/10): a folder assumed from the
+                // mod being deployed is not one SUPER ZSNES uses when the mod failed to load - it still writes beside the game,
+                // and each session's states would be carried away at the next launch.
+                var written = SuperZsnesCurrent.Raw(exe, "gameSavePath");
+                if (!(written != null && written.TryGetValue("gameSavePath", out var gsp) && gsp is string g && !string.IsNullOrWhiteSpace(g)))
+                { Log.Info("saves: " + from + " left beside the game - SUPER ZSNES's own settings name no states folder yet"); return 0; }
+                var to = Path.Combine(folders.StateDir, name + ".data.szsnes");
+                foreach (var file in Directory.GetFiles(from, "*", SearchOption.AllDirectories))
+                {
+                    var target = Path.Combine(to, Path.GetRelativePath(from, file));
+                    if (File.Exists(target)) { Log.Info("saves: " + file + " left where it is - " + target + " is already there"); continue; }
+                    Directory.CreateDirectory(Path.GetDirectoryName(target));
+                    File.Move(file, target);
+                    moved++;
+                }
+                // The folder beside the game, once nothing is left in it.
+                foreach (var dir in Directory.GetDirectories(from, "*", SearchOption.AllDirectories).OrderByDescending(d => d.Length).Append(from))
+                    try { if (!Directory.EnumerateFileSystemEntries(dir).Any()) Directory.Delete(dir); } catch { }
+                if (moved > 0) Log.Info("saves: " + moved + " state file(s) of " + name + " moved from " + from + " to " + to);
+            }
+            catch (Exception ex) { Log.Warn("saves: could not move the game's states out of its folder", ex); }
+            return moved;
+        }
+
         // ── listing ──────────────────────────────────────────────────────────
 
         GetSavesResponse IOwnSaves.OwnGetSaves(GetSavesArgs args)

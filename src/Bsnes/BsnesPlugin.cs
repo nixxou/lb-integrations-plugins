@@ -194,6 +194,7 @@ namespace LbIntegrations.Bsnes
                 if (!File.Exists(exe))
                     return new EmulatorInstallResponse("bsnes was extracted to " + targetDir + " but " + BsnesLaunch.ExecutableName + " is not there.");
                 BsnesBuild.Stamp(targetDir, nightly.Version);
+                BsnesSavePaths.Ensure(exe);
                 Log.Info("installed the nightly " + nightly.Version + " to " + targetDir);
 
                 if (reinstall)
@@ -271,6 +272,13 @@ namespace LbIntegrations.Bsnes
             if (!BsnesLaunch.IsBsnesExe(exe) || !File.Exists(exe)) return new PrepareForLaunchResponse(success: true);
             if (BsnesLaunch.Running(exe)) Log.Warn("bsnes is already running from " + Path.GetDirectoryName(exe) + " - what is written now is lost when it quits");
 
+            // Saves, states, cheats and screenshots in the install's folders (lot 9), and this game's still beside it moved.
+            if (!BsnesLaunch.Running(exe))
+            {
+                string rom = null;
+                try { rom = ResolveFullPath(args?.GameBeingLaunched?.ApplicationPath); } catch { }
+                BsnesSavePaths.Ensure(exe); BsnesSavePaths.Migrate(exe, rom);
+            }
             BsnesLaunch.PrepareSettings(exe, gameId);
             // The states' thumbnail (<name>.bsz.png), from bsnes's own preview once it has quit - BsnesStateThumbs.
             try { BsnesStateThumbs.AfterSession(exe, ResolveFullPath(args?.GameBeingLaunched?.ApplicationPath)); } catch { }

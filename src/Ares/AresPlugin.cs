@@ -349,6 +349,9 @@ namespace LbIntegrations.Ares
                 }
             }
 
+            // Saves and states in the emulator's folders FIRST (Mehdi, 07/10): a disc's .cue is made in Discs\, and ares with
+            // no Paths/Saves would write the game's saves beside the file it is given - there (review 13/10).
+            AresSavePaths.Ensure(exe);
             // A .7z or a .m3u.
             string played = rom;
             if (!string.IsNullOrEmpty(rom))
@@ -362,8 +365,7 @@ namespace LbIntegrations.Ares
             }
 
             AresLaunch.PrepareSettings(exe, gameId);
-            // Saves and states in the emulator's folders (Mehdi, 07/10), and this game's still beside it moved there.
-            AresSavePaths.Ensure(exe);
+            // This game's files still beside it moved into the emulator's folders (Mehdi, 07/10).
             AresSavePaths.Migrate(exe, system, rom);
             // The game's own console memory and memory card, put in place - taken back when ares quits.
             AresConsoleSession.Begin(exe, system, rom, played);

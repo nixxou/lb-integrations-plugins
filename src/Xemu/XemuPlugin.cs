@@ -278,6 +278,7 @@ namespace LbIntegrations.Xemu
             XemuToml.Set(toml, "general", "skip_boot_anim", "true", onlyIfAbsent: true);
             XemuToml.Set(toml, "general.updates", "check", "false");
             XemuAhk.BindSnapshotSlots(toml);
+            EnsureScreenshotDir(exe);
 
             // THE BIOS: the user's, copied in from where they are already - Unbroken's plugin's folder, RetroArch's (recursive).
             Report(args, "Looking for the Xbox BIOS...", null);
@@ -470,6 +471,25 @@ namespace LbIntegrations.Xemu
             return null;
         }
 
+        /// <summary>xemu's screenshots (F12) in the install's Screenshots\ (lot 9, 13/10): with general.screenshot_dir empty xemu
+        /// writes them into its working directory - loose at the install's root under LaunchBox, wherever it was started otherwise.
+        /// Set in the USER's xemu.toml ([general] is a table the session file touches, and the merge back would drop it there),
+        /// only when it holds none: a folder the user chose stays. Never throws.</summary>
+        private static void EnsureScreenshotDir(string exe)
+        {
+            try
+            {
+                var toml = XemuPaths.TomlOf(exe);
+                if (!File.Exists(toml)) return;
+                var have = XemuToml.Get(toml, "general", "screenshot_dir");
+                if (have != null && XemuToml.Text(have).Trim().Length > 0) return;
+                var dir = Path.Combine(XemuPaths.Dir(exe), "Screenshots");
+                Directory.CreateDirectory(dir);
+                if (XemuToml.Set(toml, "general", "screenshot_dir", XemuToml.Literal(dir))) Log.Info("xemu.toml: screenshots in " + dir);
+            }
+            catch (Exception ex) { Log.Warn("could not set xemu's screenshot folder", ex); }
+        }
+
         /// <summary>A game's session made ready - shared by its launch and by booting its console without a disc (the game's
         /// menu): its save into its console, its console made, its EEPROM, its certificate key, its session's xemu.toml.
         /// <paramref name="dvd"/> null: no disc. Null when ready, else why not.</summary>
@@ -479,6 +499,7 @@ namespace LbIntegrations.Xemu
             // xemu's snapshot keys named where the user has none (Mehdi, 07/10: F2 / F4 states, XemuAhk) - an install from before
             // has none until its next launch.
             XemuAhk.BindSnapshotSlots(XemuPaths.TomlOf(exe));
+            EnsureScreenshotDir(exe);
             if (live) return MakeLiveSession(exe, xbe, options, dvd, out hdd, out set);
             var mcpx = XemuPaths.McpxPath(exe);
             var flash = XemuPaths.FlashPath(exe);

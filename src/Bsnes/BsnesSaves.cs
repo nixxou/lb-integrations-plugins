@@ -197,6 +197,9 @@ namespace LbIntegrations.Bsnes
                 var to = SaveRows.TargetFor(save, PluginHelper.DataManager, Full);
                 if (to.Warning != null) Log.Warn("restore of " + save.OriginalFileName + ": " + to.Warning);
                 if (to.Refused) return new AddSaveResponse(to.Warning);
+                // Into the install's folders, never beside the game (lot 9) - set now if bsnes has none yet, and the game's
+                // files still beside it moved first, as a launch does: a restore must land where bsnes will read it.
+                if (exe != null && !BsnesLaunch.Running(exe)) { BsnesSavePaths.Ensure(exe); BsnesSavePaths.Migrate(exe, to.RomPath, source); }
                 var targetDir = exe == null ? null : TargetDirFor(save, exe, to.RomPath);
                 if (targetDir == null) return new AddSaveResponse("Could not work out where bsnes reads this save from.");
                 // The name of the rom it goes to TODAY, with the backup's own extension (.srm, .rtc, .psr, .bsz).

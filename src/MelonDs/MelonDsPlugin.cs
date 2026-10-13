@@ -879,6 +879,8 @@ namespace LbIntegrations.MelonDs
                     MelonDsGameSettings.Restore(layout, "left behind by a session that did not end");
                     // F11 full screen when melonDS has no key for it (Mehdi, 07/10) - see MelonDsInput.EnsureHotkeys.
                     MelonDsInput.EnsureHotkeys(layout);
+                    // Saves, states and cheats in the install's folders (lot 9), and this game's still beside it moved.
+                    MelonDsSavePaths.Ensure(layout); MelonDsSavePaths.Migrate(layout, ResolveFullPath(rom));
                     var gameId = Safe(() => args?.GameBeingLaunched?.Id);
                     // Known before the session is prepared: a DSiWare image started with the console's
                     // settings forced holds them - see DsiWorkspace.MarkForced.

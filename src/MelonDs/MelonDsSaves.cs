@@ -426,6 +426,15 @@ namespace LbIntegrations.MelonDs
                 var to = SaveRows.TargetFor(save, PluginHelper.DataManager, Full);
                 if (to.Warning != null) Log.Warn("restore of " + save.OriginalFileName + ": " + to.Warning);
                 if (to.Refused) return new AddSaveResponse(to.Warning);
+                // Into the install's folders, never beside the game (lot 9) - set now if melonDS has none yet, and the game's
+                // files still beside it moved first, as a launch does: the restore lands where melonDS will read it.
+                try
+                {
+                    var dm = PluginHelper.DataManager;
+                    var write = LayoutFor(dm?.GetGameById(save.GameId), dm);
+                    if (write != null) { MelonDsSavePaths.Ensure(write); MelonDsSavePaths.Migrate(write, to.RomPath, source); }
+                }
+                catch (Exception ex) { Log.Warn("restore: could not set melonDS's folders first", ex); }
                 string original = FirstNonBlank(save.OriginalFileName, Path.GetFileName(source));
                 var asset = string.IsNullOrWhiteSpace(to.RomPath) ? null : NdsHeader.Describe(to.RomPath).AssetName;
                 string name = string.IsNullOrWhiteSpace(asset) ? original : asset + Path.GetExtension(original);

@@ -175,6 +175,9 @@ namespace LbIntegrations.Probe
             if (Has(args, "--ares-compat-fetch")) { var compat = asm.GetType("LbIntegrations.Ares.AresCompat", true); var n = (int)compat.GetMethod("Fetch", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { Path.GetFullPath(Arg(args, "--ares-compat-fetch")), new Action<string>(s => Console.WriteLine("  " + s)), default(System.Threading.CancellationToken) }); Console.WriteLine(n + " games"); return n > 0 ? 0 : 1; }
             if (Has(args, "--ares-compat")) { int at = Array.IndexOf(args, "--ares-compat"); return AresCheck.Compat(asm, args[at + 1], args[at + 2], at + 3 < args.Length ? args[at + 3] : null) ? 0 : 1; }
             if (Has(args, "--ares-expected")) return AresCheck.Expected(asm) ? 0 : 1;
+            if (Has(args, "--ares-discs")) return AresCheck.Discs(asm) ? 0 : 1;
+            if (Has(args, "--lot9-bsnes")) return Lot9Check.Bsnes(asm) ? 0 : 1;
+            if (Has(args, "--lot9-melonds")) return Lot9Check.MelonDs(asm) ? 0 : 1;
             if (Has(args, "--expected")) return ExpectedCheck.Run(asm) ? 0 : 1;
             if (Has(args, "--ares-names")) return AresCheck.Names(asm, Path.GetFullPath(Arg(args, "--ares-names"))) ? 0 : 1;
             if (Has(args, "--ares-line")) return AresCheck.Line(asm) ? 0 : 1; if (Has(args, "--ares-name-rule")) return AresCheck.NameRule(asm) ? 0 : 1;

@@ -32,6 +32,135 @@ namespace LbIntegrations.Probe
         private static object F(object o, string n) => o?.GetType().GetField(n, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(o)
                                                         ?? o?.GetType().GetProperty(n, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(o);
 
+        /// <summary>--ares-discs: an .iso's .cue made in the install's Discs\ folder beside a link to it, never beside the game
+        /// (lot 9, 13/10): the plugin's old hidden .cue beside it removed, the user's own kept, a .m3u's discs in one folder,
+        /// a link made again when the image changed, nothing written in the games folder. Temp folders only.</summary>
+        public static bool Discs(Assembly asm)
+        {
+            _bad = 0;
+            var root = Path.Combine(Path.GetTempPath(), "lbip-ares-discs-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            var games = Path.Combine(root, "games"); var emu = Path.Combine(root, "ares");
+            Directory.CreateDirectory(games); Directory.CreateDirectory(emu);
+            var exe = Path.Combine(emu, "ares.exe"); File.WriteAllText(exe, "");
+            var launch = T(asm, "AresLaunch");
+            string Cue(string image, string game = null)
+            {
+                var args = new object[] { image, null, exe, game };
+                return (string)launch.GetMethod("CueFor", Any).Invoke(null, args);
+            }
+            string[] Games() => Directory.GetFiles(games).Select(Path.GetFileName).OrderBy(s => s).ToArray();
+            long Size(string l) { var fi = new FileInfo(l); return fi.LinkTarget != null ? new FileInfo(Path.GetFullPath(Path.Combine(Path.GetDirectoryName(l), fi.LinkTarget))).Length : fi.Length; }
+            try
+            {
+                var iso = Path.Combine(games, "Sonic CD.iso");
+                File.WriteAllBytes(iso, new byte[2048 * 8]);
+                var cue = Cue(iso);
+                Check("the .cue is made in the install's Discs folder", cue != null && cue.StartsWith(Path.Combine(emu, "Discs"), StringComparison.OrdinalIgnoreCase), cue);
+                Check("... named after the image", Path.GetFileName(cue) == "Sonic CD.cue");
+                var link = Path.Combine(Path.GetDirectoryName(cue), "Sonic CD.iso");
+                // A hard link on one volume, else a symbolic link.
+                var how = new FileInfo(link).LinkTarget != null ? "symbolic" : "hard";
+                Check("... beside a link to the image (" + how + ")", File.Exists(link) && Size(link) == 2048 * 8
+                      && (how == "symbolic" ? string.Equals(Path.GetFullPath(Path.Combine(Path.GetDirectoryName(link), new FileInfo(link).LinkTarget)), iso, StringComparison.OrdinalIgnoreCase) : File.Exists(link + ".source")));
+                Check("... naming it relatively", File.ReadAllText(cue).StartsWith("FILE \"Sonic CD.iso\" BINARY") && File.ReadAllText(cue).Contains("MODE1/2048"));
+                Check("nothing written beside the game", Games().SequenceEqual(new[] { "Sonic CD.iso" }), string.Join(", ", Games()));
+                var stamp = File.GetLastWriteTimeUtc(cue);
+                Check("a second launch: the same .cue, nothing rewritten", Cue(iso) == cue && File.GetLastWriteTimeUtc(cue) == stamp);
+
+                // The image replaced by another file: the hard link still holds the old one - made again.
+                File.Delete(iso); File.WriteAllBytes(iso, new byte[2352 * 4]);
+                cue = Cue(iso);
+                Check("the image replaced: the link reaches the new one (the new size)", Size(link) == 2352 * 4, Size(link).ToString());
+
+                // The plugin's own hidden .cue of before, beside the game: removed once ours is made.
+                var old = Path.Combine(games, "Old.iso"); File.WriteAllBytes(old, new byte[2048 * 2]);
+                var oldCue = Path.Combine(games, "Old.cue");
+                File.WriteAllText(oldCue, (string)launch.GetMethod("CueText", Any).Invoke(null, new object[] { "Old.iso", "MODE1/2048" }));
+                File.SetAttributes(oldCue, FileAttributes.Hidden);
+                var made = Cue(old);
+                Check("the plugin's old hidden .cue beside the game removed", !File.Exists(oldCue) && made != null && made.StartsWith(emu, StringComparison.OrdinalIgnoreCase), made);
+
+                // The user's own .cue beside the image: kept and used, nothing of ours made.
+                var mine = Path.Combine(games, "Mine.iso"); File.WriteAllBytes(mine, new byte[2048 * 2]);
+                var mineCue = Path.Combine(games, "Mine.cue"); File.WriteAllText(mineCue, "FILE \"Mine.iso\" BINARY\r\n  TRACK 01 MODE1/2048\r\n    INDEX 01 00:00:00\r\nREM mine\r\n");
+                Check("the user's own .cue beside the image kept and used", Cue(mine) == mineCue && File.Exists(mineCue));
+                // A hidden one of the user's own text is the user's too.
+                File.SetAttributes(mineCue, FileAttributes.Hidden);
+                Check("... even hidden, when its text is not the plugin's", Cue(mine) == mineCue && File.Exists(mineCue));
+
+                // A .m3u: its discs in ONE folder (ares's Change Disc dialog opens in the folder of the disc it loaded).
+                var d1 = Path.Combine(games, "FF (Disc 1).iso"); var d2 = Path.Combine(games, "FF (Disc 2).iso");
+                File.WriteAllBytes(d1, new byte[2048 * 2]); File.WriteAllBytes(d2, new byte[2048 * 2]);
+                var m3u = Path.Combine(games, "FF.m3u"); File.WriteAllText(m3u, "FF (Disc 1).iso\r\nFF (Disc 2).iso\r\n");
+                var c1 = Cue(d1, m3u); var c2 = Cue(d2, m3u);
+                Check("a .m3u's discs share one folder", c1 != null && c2 != null && Path.GetDirectoryName(c1) == Path.GetDirectoryName(c2), c1 + " | " + c2);
+                // Two discs with one name (CD1\X.iso, CD2\X.iso): the second gets a folder of its own, the first keeps its own.
+                Directory.CreateDirectory(Path.Combine(games, "CD1")); Directory.CreateDirectory(Path.Combine(games, "CD2"));
+                var x1 = Path.Combine(games, "CD1", "X.iso"); var x2 = Path.Combine(games, "CD2", "X.iso");
+                File.WriteAllBytes(x1, new byte[2048 * 2]); File.WriteAllBytes(x2, new byte[2048 * 4]);
+                var xm = Path.Combine(games, "X.m3u"); File.WriteAllText(xm, "CD1\\X.iso\r\nCD2\\X.iso\r\n");
+                var xc1 = Cue(x1, xm); var xc2 = Cue(x2, xm);
+                Check("two discs of one name: two folders, each .cue's link its own disc", xc1 != xc2 && Size(Path.Combine(Path.GetDirectoryName(xc1), "X.iso")) == 2048 * 2
+                      && Size(Path.Combine(Path.GetDirectoryName(xc2), "X.iso")) == 2048 * 4, xc1 + " | " + xc2);
+                Check("... and the first stays the first at its next launch", Cue(x1, xm) == xc1 && Size(Path.Combine(Path.GetDirectoryName(xc1), "X.iso")) == 2048 * 2);
+                Check("no .cue beside any game", !Directory.GetFiles(games, "*.cue").Except(new[] { mineCue }).Any(), string.Join(", ", Directory.GetFiles(games, "*.cue")));
+
+                // The image deleted from the library: its link and .cue go at the next sweep, the folder too.
+                var dir = Path.GetDirectoryName(Cue(iso));
+                File.Delete(iso);
+                launch.GetMethod("SweepDiscs", Any).Invoke(null, new object[] { exe });
+                Check("the image deleted: its link, .cue and folder swept", !Directory.Exists(dir), dir);
+                Check("... the other games' links kept", File.Exists(c1) && File.Exists(c2));
+                // A plain file in a Discs folder (a save ares wrote there with Paths/Saves emptied): never swept.
+                var stray = Path.Combine(Path.GetDirectoryName(c1), "FF (Disc 1).ram"); File.WriteAllText(stray, "ares's save");
+                launch.GetMethod("SweepDiscs", Any).Invoke(null, new object[] { exe });
+                Check("a plain file in Discs\\ (not a link of ours) never swept", File.Exists(stray));
+                File.Delete(stray);
+
+                // The image on another volume (no hard link possible): a symbolic link - swept once the image is gone.
+                launch.GetField("NoHardLinkForTests", Any).SetValue(null, true);
+                try
+                {
+                    var sym = Path.Combine(games, "Sym.iso"); File.WriteAllBytes(sym, new byte[2048 * 2]);
+                    var sc = Cue(sym); var sl = Path.Combine(Path.GetDirectoryName(sc), "Sym.iso");
+                    bool isSym = new FileInfo(sl).LinkTarget != null;
+                    Check("no hard link possible: a symbolic link (or, without developer mode, beside the game as before)",
+                          isSym ? Size(sl) == 2048 * 2 : sc == Path.Combine(games, "Sym.cue"), sc);
+                    if (isSym) { File.Delete(sym); launch.GetMethod("SweepDiscs", Any).Invoke(null, new object[] { exe }); Check("... swept once its image is gone", !File.Exists(sl)); }
+                    else { File.SetAttributes(Path.Combine(games, "Sym.cue"), FileAttributes.Normal); File.Delete(Path.Combine(games, "Sym.cue")); }
+                }
+                finally { launch.GetField("NoHardLinkForTests", Any).SetValue(null, false); }
+
+                // No right to a symbolic link either way: the hard link, its source noted; swept once the image is replaced.
+                launch.GetField("NoSymlinkForTests", Any).SetValue(null, true);
+                try
+                {
+                    var hard = Path.Combine(games, "Hard.iso"); File.WriteAllBytes(hard, new byte[2048 * 3]);
+                    var hc = Cue(hard);
+                    var hl = Path.Combine(Path.GetDirectoryName(hc), "Hard.iso");
+                    Check("no symbolic link allowed: a hard link, its source beside it", new FileInfo(hl).LinkTarget == null && new FileInfo(hl).Length == 2048 * 3
+                          && File.ReadAllText(hl + ".source").Trim() == hard, hl);
+                    File.Delete(hard); File.WriteAllBytes(hard, new byte[2048 * 5]);
+                    launch.GetMethod("SweepDiscs", Any).Invoke(null, new object[] { exe });
+                    Check("the image replaced: the hard link (still the old bytes) swept", !File.Exists(hl) && !File.Exists(hl + ".source"));
+                    hc = Cue(hard);
+                    Check("... and made again on the new image", new FileInfo(Path.Combine(Path.GetDirectoryName(hc), "Hard.iso")).Length == 2048 * 5);
+                    // A read-only image: the link removed, the image's own flag back on it (a hard link shares it).
+                    File.SetAttributes(hard, FileAttributes.ReadOnly);
+                    var hl2 = Path.Combine(Path.GetDirectoryName(hc), "Hard.iso");
+                    File.WriteAllText(hl2 + ".source", Path.Combine(games, "elsewhere.iso"));   // its source "gone": swept
+                    launch.GetMethod("SweepDiscs", Any).Invoke(null, new object[] { exe });
+                    Check("a read-only image: its link swept, the image still read-only and there", !File.Exists(hl2) && File.Exists(hard) && (File.GetAttributes(hard) & FileAttributes.ReadOnly) != 0);
+                    File.SetAttributes(hard, FileAttributes.Normal);
+                }
+                finally { launch.GetField("NoSymlinkForTests", Any).SetValue(null, false); }
+            }
+            catch (Exception ex) { Check("ran", false, (ex.InnerException ?? ex).Message); }
+            finally { try { foreach (var f in Directory.GetFiles(root, "*", SearchOption.AllDirectories)) File.SetAttributes(f, FileAttributes.Normal); Directory.Delete(root, true); } catch { } }
+            Console.WriteLine(_bad == 0 ? "  all good" : "  " + _bad + " FAILED");
+            return _bad == 0;
+        }
+
         /// <summary>--ares-expected: where ares's saves and states go for Paths/Saves relative, absolute and empty - a relative
         /// value from ares's own folder, its current directory under LaunchBox (measured 12/10), never LaunchBox's.</summary>
         public static bool Expected(Assembly asm)
@@ -471,7 +600,7 @@ namespace LbIntegrations.Probe
                 var text = File.ReadAllText(bml);
                 Check("Paths/Saves set to the emulator's", text.Contains("Saves: " + emu.Replace('\\', '/') + "/Saves/"));
                 Check("Paths/Screenshots set", text.Contains("Screenshots: " + emu.Replace('\\', '/') + "/Screenshots/"));
-                T(asm, "AresSavePaths").GetMethod("Migrate", Any).Invoke(null, new object[] { exe, sys, game });
+                T(asm, "AresSavePaths").GetMethod("Migrate", Any).Invoke(null, new object[] { exe, sys, game, null });
                 var folders = T(asm, "AresPlugin").GetMethod("FoldersFor", Any).Invoke(null, new object[] { exe, game, sys });
                 var saveDir = (string)F(folders, "SaveTarget");
                 var stateDir = (string)F(folders, "StateTarget");

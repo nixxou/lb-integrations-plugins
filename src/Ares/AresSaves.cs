@@ -417,11 +417,15 @@ namespace LbIntegrations.Ares
                 var exe = emu == null ? null : ResolveFullPath(Safe(() => emu.ApplicationPath));
                 if (exe == null) return new AddSaveResponse("Could not find the ares this game runs on.");
                 if (AresLaunch.Running(exe)) return new AddSaveResponse("ares is running: it would write the game's own over this one. Close it first.");
+                // Into the install's folders, never beside the game (lot 9): set now if ares has none yet, as a launch does.
+                AresSavePaths.Ensure(exe);
                 // Where it goes: the same answer as OwnExpectedDir gives for this install (one computation).
                 var where = Destination(emu, save, out var to, out var system);
                 if (to?.Warning != null) Log.Warn("restore of " + original + ": " + to.Warning);
                 if (to?.Refused == true) return new AddSaveResponse(to.Warning);
                 var rom = to?.RomPath;
+                // The game's files still beside it moved first, as a launch does: the live save the restore replaces is there.
+                AresSavePaths.Migrate(exe, system, rom, source);
                 // A session left unfinished is finished first: taking its memory back later would undo this restore.
                 AresConsoleSession.Recover();
                 if (!where.Known) return new AddSaveResponse(where.Reason);

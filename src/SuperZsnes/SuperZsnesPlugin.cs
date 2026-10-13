@@ -565,7 +565,11 @@ namespace LbIntegrations.SuperZsnes
                 {
                     var exe = ResolveFullPath(args?.EmulatorBeingLaunched?.ApplicationPath);
                     if (SuperZsnesPaths.IsSuperZsnesExecutable(exe))
+                    {
+                        // This game's states folder still beside it, moved into the emulator's states folder (lot 9).
+                        MigrateStates(exe, ResolveFullPath(args?.GameBeingLaunched?.ApplicationPath));
                         SuperZsnesStateThumbs.AfterSession(exe, ResolveFullPath(args?.GameBeingLaunched?.ApplicationPath));
+                    }
                 }
                 catch (Exception ex) { Log.Warn("state thumbnails", ex); }
 
