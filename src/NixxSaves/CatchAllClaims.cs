@@ -9,7 +9,11 @@
 //   - outside LaunchBox (LiteBox asks every plugin itself), with the switch off (Compatibility page, "catchAll");
 //   - while LaunchBox may still be loading plugins (review 13/10: PluginInitialized is sent right after THIS plugin is
 //     loaded, not after all of them): before LaunchBox/BigBox says its start-up is complete, only once the registry
-//     has held the same number of emulator plugins for SettleSeconds - a plugin loaded after Nixx-Saves must be asked;
+//     has held the same number of emulator plugins for SettleSeconds - a plugin loaded after Nixx-Saves must be asked -
+//     unless LaunchBox ITSELF asks, through its PluginRegistry.GetBestEmulatorPlugin: it has loaded its plugins then.
+//     (Measured 13/10: a plugin of Local\Plugins gets PluginInitialized only, never the start-up events, and LaunchBox's
+//     start-up save scan asks 3 s after it - the settling alone made the catch-all miss it, and LaunchBox asks a plugin
+//     whether it supports saves at its start only.)
 //   - when the registry cannot be read - an emulator another plugin might drive is never taken on a guess;
 //   - an emulator another plugin takes, or whose plugin THROWS when asked (it may well take it);
 //   - an exe the pack or one of LaunchBox's integrations is made for (Names): a user who turned that plugin off in
@@ -74,7 +78,7 @@ namespace LbIntegrations.SavesCatchAll
         }
 
         /// <summary>For the probe: loaded, LaunchBox's start not complete, the settling clock reset.</summary>
-        internal static void InitializedOnlyForTests() { Known.Clear(); _initialized = 1; _started = 0; lock (SettleGate) { _lastCount = -1; _countSince = 0; } }
+        internal static void InitializedOnlyForTests() { Known.Clear(); AskedByLaunchBoxForTests = false; _initialized = 1; _started = 0; lock (SettleGate) { _lastCount = -1; _countSince = 0; } }
 
         /// <summary>The catch-all may take emulators now - under LaunchBox, its switch on, LaunchBox loaded it.</summary>
         public static bool Active(out string? why)
@@ -92,7 +96,7 @@ namespace LbIntegrations.SavesCatchAll
         {
             var all = LbPluginRegistry.EmulatorPlugins(out why);
             if (all == null) return null;
-            if (Volatile.Read(ref _started) == 1) return all;
+            if (Volatile.Read(ref _started) == 1 || AskedByLaunchBox()) return all;
             var now = System.Diagnostics.Stopwatch.GetTimestamp();
             lock (SettleGate)
             {
@@ -101,6 +105,26 @@ namespace LbIntegrations.SavesCatchAll
                 { why = "LaunchBox may still be loading plugins (" + all.Count + " so far)"; return null; }
             }
             return all;
+        }
+
+        /// <summary>For the probe: the answer of <see cref="AskedByLaunchBox"/>, instead of the call stack.</summary>
+        internal static bool? AskedByLaunchBoxForTests;
+
+        /// <summary>The question comes from LaunchBox choosing an emulator's plugin (PluginRegistry.GetBestEmulatorPlugin is
+        /// on the stack - its name is kept, measured with the save probe), not from the pack's own code.</summary>
+        private static bool AskedByLaunchBox()
+        {
+            if (AskedByLaunchBoxForTests is bool b) return b;
+            try
+            {
+                foreach (var f in new System.Diagnostics.StackTrace(2, false).GetFrames() ?? Array.Empty<System.Diagnostics.StackFrame>())
+                {
+                    var m = f.GetMethod();
+                    if (m != null && m.Name == "GetBestEmulatorPlugin" && m.DeclaringType?.FullName == LbPluginRegistry.TypeName) return true;
+                }
+            }
+            catch { }
+            return false;
         }
 
         /// <summary>True when the catch-all takes <paramref name="emulator"/> - the rules of the header.</summary>

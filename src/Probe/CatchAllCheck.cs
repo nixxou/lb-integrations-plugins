@@ -119,6 +119,11 @@ namespace LbIntegrations.Probe
                 Check("... a plugin added since: still waiting", !Taken(hand).Any());
                 System.Threading.Thread.Sleep(3500);
                 Check("... the registry unchanged for 3 s: taken", Taken(hand).SequenceEqual(new IEmulator[] { hand }));
+                // LaunchBox itself asking (its GetBestEmulatorPlugin on the stack): no waiting (measured 13/10).
+                claims.GetMethod("InitializedOnlyForTests", Any).Invoke(null, null);
+                claims.GetField("AskedByLaunchBoxForTests", Any).SetValue(null, true);
+                Check("loaded, LaunchBox itself asking: taken at once", Taken(hand).SequenceEqual(new IEmulator[] { hand }));
+                claims.GetField("AskedByLaunchBoxForTests", Any).SetValue(null, null);
                 others.RemoveAt(others.Count - 1);
                 Reset(ready: true);
                 Check("an emulator nobody drives: taken", Taken(hand).SequenceEqual(new IEmulator[] { hand }));

@@ -14,6 +14,10 @@ game moved) is never listed nor backed up.
   saves are recorded.
 - The probe's CatchAll got `PluginInitialized` before any `GetApplicableEmulators` (the probe's log, 6 sessions). The
   SDK says that event is sent right after THIS plugin is loaded - not after all of them (review 13/10).
+- **Measured in LaunchBox 13/10**: a plugin of `Local\Plugins` gets `PluginInitialized` only, never the start-up
+  events; LaunchBox's start-up save scan asks the plugins 3 s later. So a question coming through LaunchBox's own
+  `PluginRegistry.GetBestEmulatorPlugin` is answered at once (LaunchBox has loaded its plugins); only the pack's own
+  calls wait for the registry to settle.
 - `Unbroken.LaunchBox.Windows.Plugins.PluginRegistry` (read 13/10): a public type, members obfuscated; its property
   `EmulatorPlugins` (`ConcurrentDictionary<string, EmulatorPlugin>`) keeps its name, its ilspy body is a decoy (called by
   reflection, the real body runs, as everywhere in the core). **Measured in LaunchBox 13/10**: the static field of the type's
