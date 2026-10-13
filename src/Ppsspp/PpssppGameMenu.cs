@@ -87,7 +87,7 @@ namespace LbIntegrations.Ppsspp
 
         private static IWin32Window OwnerWindow()
         {
-            var handle = GetForegroundWindow();
+            var handle = LbIntegrations.Compat.HostWindow.Handle();   // the host's, never another program's
             return handle == IntPtr.Zero ? null : new Owner(handle);
         }
 

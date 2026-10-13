@@ -187,9 +187,10 @@ namespace LbIntegrations.Saves
         [MethodImpl(MethodImplOptions.NoInlining)]
         private static bool Box(string title, string text)
         {
-            // LaunchBox's window is WPF: the owner is the window in front (Game Saves), so the box is modal to it.
+            // LaunchBox's window is WPF: the owner is the window in front (Game Saves), so the box is modal to it - the host's only,
+            // never another program's (HostWindow: a box owned by it disables that program's window, measured 13/10).
             System.Windows.Forms.IWin32Window? owner = System.Windows.Forms.Form.ActiveForm;
-            if (owner == null) { var h = GetForegroundWindow(); if (h != IntPtr.Zero) owner = new Hwnd(h); }
+            if (owner == null) { var h = LbIntegrations.Compat.HostWindow.Handle(); if (h != IntPtr.Zero) owner = new Hwnd(h); }
             var r = System.Windows.Forms.MessageBox.Show(owner, text, title, System.Windows.Forms.MessageBoxButtons.YesNo,
                                                          System.Windows.Forms.MessageBoxIcon.Warning, System.Windows.Forms.MessageBoxDefaultButton.Button2);
             return r == System.Windows.Forms.DialogResult.Yes;

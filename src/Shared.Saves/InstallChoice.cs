@@ -63,9 +63,10 @@ namespace LbIntegrations.Saves
             layout.Controls.Add(text); layout.Controls.Add(list); layout.Controls.Add(buttons);
             form.Controls.Add(layout);
             form.AcceptButton = ok; form.CancelButton = cancel;
-            // LaunchBox's window is WPF: the owner is the window in front (Game Saves), so the box is modal to it.
+            // LaunchBox's window is WPF: the owner is the window in front (Game Saves), so the box is modal to it - the host's only,
+            // never another program's (HostWindow: a box owned by it disables that program's window, measured 13/10).
             IWin32Window? owner = Form.ActiveForm;
-            if (owner == null) { var h = GetForegroundWindow(); if (h != IntPtr.Zero) owner = new Hwnd(h); }
+            if (owner == null) { var h = LbIntegrations.Compat.HostWindow.Handle(); if (h != IntPtr.Zero) owner = new Hwnd(h); }
             var r = owner != null ? form.ShowDialog(owner) : form.ShowDialog();
             return r == DialogResult.OK && list.SelectedIndex >= 0 ? list.SelectedIndex : (int?)null;
         }

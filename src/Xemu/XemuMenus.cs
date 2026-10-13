@@ -821,7 +821,7 @@ namespace LbIntegrations.Xemu
 
         public static IWin32Window Foreground()
         {
-            var handle = GetForegroundWindow();
+            var handle = LbIntegrations.Compat.HostWindow.Handle();   // the host's, never another program's
             return handle == IntPtr.Zero ? null : new XemuOwnerWindow(handle);
         }
 

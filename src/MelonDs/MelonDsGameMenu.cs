@@ -125,7 +125,7 @@ namespace LbIntegrations.MelonDs
         /// <summary>The host's active window, so the dialog is modal to it and comes up in front.</summary>
         private static IWin32Window OwnerWindow()
         {
-            var handle = GetForegroundWindow();
+            var handle = LbIntegrations.Compat.HostWindow.Handle();   // the host's, never another program's
             return handle == IntPtr.Zero ? null : new Owner(handle);
         }
 
