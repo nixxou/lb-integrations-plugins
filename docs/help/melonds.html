@@ -165,7 +165,7 @@
 <section id="saves"><h2>Saves and save states</h2>
   <p>LaunchBox's save management (the game's Saves page, backups, restore, delete) sees three kinds of melonDS save:</p>
   <ul>
-    <li><b>Cartridge save</b>: the game's own save, a <code>.sav</code> named like the game file. On an install made by this plugin it is in <code>Emulators\Nixx-melonDS\saves</code>; on a melonDS you set up yourself, wherever melonDS keeps it (by default next to the game).</li>
+    <li><b>Cartridge save</b>: the game's own save, a <code>.sav</code> named like the game file. It is in the install's <code>saves\</code> folder (states in <code>savestates\</code>, cheats in <code>cheats\</code>), unless you chose other folders in melonDS: nothing is written beside the games. A save or state left beside a game by an older setup is brought there at that game's launch (a <code>.sav</code> is copied, so another emulator that reads it there keeps it).</li>
     <li><b>Save states</b>: melonDS's 8 slots.</li>
     <li><b>DSiWare save</b>: one <code>.dsisave</code> file per game. It holds everything the game changed in the console (the game's save plus the console settings around it), which is usually a few dozen kilobytes instead of a 240 MB console. Backups of it are named after the game, like <code>The Game (USA).dsisave</code>.</li>
   </ul>

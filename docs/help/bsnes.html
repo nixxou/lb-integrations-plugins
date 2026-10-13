@@ -77,7 +77,10 @@
 <section id="saves"><h2>Saves and save states</h2>
   <ul>
     <li><b>Cartridge save</b>: <code>&lt;game&gt;.srm</code> (and <code>.rtc</code>, <code>.psr</code> when the cart has them), in
-    bsnes's saves folder if you set one, else beside the game.</li>
+    bsnes's saves folder: <code>Emulators\Nixx-bsnes\Saves\</code> unless you chose another one. Nothing is written beside the games:
+    states go to <code>States\</code>, cheats to <code>Cheats\</code>, screenshots to <code>Screenshots\</code> of the same install.</li>
+    <li>A save or state an older bsnes left beside a game is brought into those folders at that game's launch (a <code>.srm</code>
+    is copied, so another emulator that reads it there keeps it).</li>
     <li><b>Save states</b>: bsnes keeps every state of a game in one file, <code>&lt;game&gt;.bsz</code>. LaunchBox's save management
     backs it up and restores it as one.</li>
     <li>Beside it, <code>&lt;game&gt;.bsz.png</code> is a thumbnail of the newest state, taken from the picture bsnes keeps in it.
