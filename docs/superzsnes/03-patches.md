@@ -110,12 +110,20 @@ quitter, puis chercher `Scanlines` dans `portable\szsnes_ui.data` : il ne doit p
 ## P6 · `MainMenuManager.Update()` — postfix
 
 **Classe** : `PopupPatch`. **Options** : `--nixx-support-popup=on|off` (défaut off = cachée),
-`--nixx-version-popup=on|off` (défaut off depuis le 01/10), `--nixx-display=primary`.
+`--nixx-version-popup=on|off` (défaut off depuis le 01/10), `--nixx-welcome-popup=on|off` (défaut
+off depuis le 13/10), `--nixx-display=primary`.
 
 **Fait**, chaque frame :
 - si `supportUs.activeSelf` et popup non voulue → `SetActive(false)` (la boîte « Just this once, we
   want to let you know that you can check out our Discord server… Patreon… ») ;
 - idem `newVersion` ;
+- `welcomeDialog` (« Welcome to SUPER ZSNES! This build is early in development… ») fermé par son
+  propre `BasicOverlay.OnClose()` (ce que fait son bouton Okay), désactivé à défaut ; et, **seulement
+  dans une session où il est apparu**, une fois, `enhancementDialog` (`EnhancementOverlay`, « How to
+  play: Select Game->Load… » + la liste des jeux enrichis), levé en dessous au même moment. Les deux
+  n'apparaissent qu'au **premier démarrage**, quand `szsnes_ui.data` n'existe pas encore : ce n'est
+  pas `welcomeDialogShown` qui les déclenche (mesuré le 13/10 : `--nixx-set:welcomeDialogShown=true`
+  ne change rien). Le même dialogue d'enrichissements ouvert plus tard depuis le menu est laissé ;
 - `PrimaryDisplay.Tick()` si `--nixx-display=primary` (voir P7).
 
 **Pourquoi là.** `supportUs` et `newVersion` sont des `GameObject` publics de `MainMenuManager` ;

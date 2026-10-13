@@ -92,6 +92,9 @@ namespace LbIntegrations.SuperZsnes
                  "The emulator raises it on its own schedule. Off: it is put back to sleep the frame it appears.", "off"),
             Bool(OptionFamily.Plugin, "version-popup", "Integration", "Show the \"a new version is out\" dialog",
                  "Off hides it; the pack's own update check still runs in LaunchBox.", "off"),
+            // 13/10, catalogued, not shown (the plugin's default already hides them): which window, if any, is Mehdi's call.
+            Bool(OptionFamily.Plugin, "welcome-popup", "Integration", "Show the first-start \"Welcome!\" and \"How to play\" dialogs",
+                 "The emulator raises them when it starts without a settings file. Off: closed the frame they appear, the way their own button would.", "off"),
             Bool(OptionFamily.Plugin, "display", "Window", "Always full screen on the primary display",
                  "The display holding the desktop's origin, whatever number Unity gives it: the window is moved there over the first frames, then put in a borderless full screen window at its resolution. Beats -monitor and the remembered display. Needs the BepInEx plugin. A game whose own options set its display mode, size, borderless window or monitor is left to them.", "on"),
             Bool(OptionFamily.Plugin, "persist", "Integration", "Write the overrides into the emulator's settings file",

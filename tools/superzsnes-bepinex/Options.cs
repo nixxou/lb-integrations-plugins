@@ -12,6 +12,7 @@
 //   --nixx-portable=on|off            persistentDataPath -> <exe>\portable (default on)
 //   --nixx-support-popup=on|off       the "check out our Patreon" dialog (default off: hidden)
 //   --nixx-version-popup=on|off       the "a new version is out" dialog (default off: hidden - Mehdi, 01/10)
+//   --nixx-welcome-popup=on|off       the first-start "Welcome!" dialog (default off: hidden - Mehdi, 13/10)
 //   --nixx-display=primary            full screen window on the PRIMARY display, whichever index
 //                                     Unity gives it - see Display.cs
 //   --nixx-log                        write this plugin's lines to <exe>\portable\nixx.log too
@@ -46,6 +47,7 @@ namespace LbIntegrations.SuperZsnes.Mod
         public bool Portable = true;
         public bool SupportPopup = false;
         public bool VersionPopup = false;
+        public bool WelcomePopup = false;
         public bool Persist = false;
         public bool DumpOptions = false;
         public bool DataFolders = true;
@@ -83,6 +85,7 @@ namespace LbIntegrations.SuperZsnes.Mod
                         case "portable":      o.Portable = Flag(value, true); break;
                         case "support-popup": o.SupportPopup = Flag(value, true); break;
                         case "version-popup": o.VersionPopup = Flag(value, true); break;
+                        case "welcome-popup": o.WelcomePopup = Flag(value, true); break;
                         case "persist":       o.Persist = Flag(value, true); break;
                         case "dump-options":  o.DumpOptions = Flag(value, true); break;
                         case "data-folders":  o.DataFolders = Flag(value, true); break;

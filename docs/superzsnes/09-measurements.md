@@ -37,6 +37,11 @@ date plutôt que d'écraser.
 | RetroAchievements sans compte | `ZRetroAchievements.Awake`, `ZRCheevosIntegration.Awake`, `ZRetroAchievements.Start`, `LoadNewGame RC_CONSOLE_SUPER_NINTENDO` ; aucune tentative de connexion | `--nixx-ra-probe` 10:59 |
 | RetroAchievements, compte factice passé par le pack (P8) | `login set for nixxtest` → `Initialize` → `GetNPW <19 chars>` → « Attempting to log in nixxtest (with token) » → `401 Unauthorized` ; fichier de passage supprimé ; relancé sans fichier, même tentative : compte gardé par l'émulateur | `--nixx-ra-probe` 11:04 et 11:05 |
 | hardcore | `rc_client_set_hardcore_enabled` jamais appelé | `--nixx-ra-probe` |
+| premier démarrage | sans `szsnes_ui.data` : « Welcome! » par-dessus « How to play: » (`enhancementDialog`) ; au démarrage suivant, aucun des deux ; `--nixx-set:welcomeDialogShown=true` n'y change rien (`welcomeDialogShown True -> True`) | captures 11:25–11:27 |
+| P6 (accueil) | `welcome popup closed through its BasicOverlay`, `first-start "How to play" dialog closed through its BasicOverlay`, même frame ; le jeu tourne ensuite normalement, l'entrée clavier marche | `nixx.log` et capture 11:29 |
+| P4 | `game: overclock 0 -> 150` | `nixx.log` 11:29 |
+| P2 | Échap (scan code 0x01) : « Press ESC again to quit (F1: menu) », 2ᵉ Échap 1 s après : « Escape confirmed », l'émulateur se ferme seul | `nixx.log` 11:30 ; `keybd_event` sans scan code n'est pas vu par l'émulateur |
+| P6 (Patreon) | non déclenché en 0.320 (l'émulateur choisit quand) ; `newVersion` caché observé sur la 0.310 le 13/10 | — |
 
 ## Fichiers et chemins
 
@@ -148,4 +153,5 @@ date plutôt que d'écraser.
 - 13/10 : sortie de la 0.320 (x64, RetroAchievements softcore). Déployeur : un BepInEx d'une autre
   architecture est remplacé ; plugin 0.6.0 : le compte RetroAchievements de LaunchBox (P8), sonde RA
   remise aux noms de la 0.320 ; cinq nouveaux réglages catalogués (cachés). Plugin compilé contre
-  l'interop x64 de la 0.320. Reste à observer : une vraie connexion depuis LaunchBox, P2 et P6 en 0.320.
+  l'interop x64 de la 0.320. Puis les dialogues du premier démarrage fermés (P6), P2 et P4 observés en
+  0.320. Reste à observer : une vraie connexion RetroAchievements depuis LaunchBox, la popup Patreon.
