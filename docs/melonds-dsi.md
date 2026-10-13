@@ -439,6 +439,27 @@ Emplacements 1 à 8, numérotés pareil sur le disque et à l'écran. **`.mln` e
 n'apparaît que comme filtre de boîte de dialogue (`Window.cpp:1583`). Les fichiers sont `.ml1`
 à `.ml8` (`getSavestateName:696-707`).
 
+### 8.5 Les touches du pack : melonDS ne les suit pas (noté 13/10)
+
+Le standard du pack (Mehdi, 07/10, suivi par bsnes, RASnes9x, ares, Demul) : **F2** sauver l'état,
+**F4** le charger, **F6 / F7** emplacement précédent / suivant, **Échap** quitter, **F11** plein écran.
+melonDS n'en a que deux : Échap (le script Running de LaunchBox) et F11 (`HK_FullscreenToggle`,
+`MelonDsInput.cs`). Pour les états, le greffon garde les touches de melonDS (§ 8.4), parce que :
+
+- ce sont des raccourcis Qt figés, absents des `HK_*` : `melonDS.toml` ne peut pas les changer ;
+- F2, F4, F6 et F7 sont déjà pris : ils **chargent** les emplacements 2, 4, 6 et 7. Une touche du pack
+  ajoutée par-dessus chargerait un état en même temps.
+
+À faire plus tard (pas maintenant, décision de Mehdi) - deux pistes :
+
+1. **Le fork** (§ 1) : rendre les actions d'état configurables (des `HK_*` de plus) ou ôter les
+   raccourcis F1..F8, puis écrire les touches du pack dans `melonDS.toml`. C'est la seule piste
+   propre ; à grouper avec les autres raisons du fork.
+2. **Un remappage AHK** dans le script Running (`MelonDsAhk.cs`) : F2 / F4 envoient Shift+Fn / Fn de
+   l'emplacement courant, F6 / F7 changent l'emplacement tenu par le script. Mais le script doit
+   d'abord AVALER F2..F8 (sinon melonDS charge aussi), l'emplacement courant n'est connu que du script
+   (melonDS n'en a pas), et rien ne s'affiche à l'écran quand il change.
+
 ---
 
 ## 9. Fichiers, chemins, formats
@@ -570,3 +591,4 @@ Nintendo, puis un tmd construit — non signé, et le journal le dit.
 - **La reconstruction d'une NAND depuis ses fichiers** (§ 5.6) — `f_mkfs` et la géométrie.
 - **Un firmware DSi généré.** Le `// TODO` de `loadFirmware:1016-1019`. S'il existait, le DSi
   n'aurait plus besoin d'un firmware fourni.
+- **Les touches d'état du pack** (F2 / F4 / F6 / F7) : melonDS ne les suit pas, § 8.5.
