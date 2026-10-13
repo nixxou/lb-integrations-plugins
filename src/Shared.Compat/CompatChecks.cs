@@ -47,7 +47,18 @@ namespace LbIntegrations.Compat
                     case "ra.saves": return StockSaves("RetroArch", "RetroArchPlugin");
                     case "dolphin.saves": return StockSaves("Dolphin", "DolphinPlugin");
                     case "pcsx2.saves": return StockSaves("Pcsx2", "Pcsx2Plugin");
-                case "nosave.saves": return NoSaves();
+                    case "nosave.saves": return NoSaves();
+                    case "lb.pluginRegistry":
+                    {
+                        // LiteBox loads Unbroken.LaunchBox.Windows too (its installs), but builds no registry of LaunchBox's.
+                        if (InLiteBox() || !AppDomain.CurrentDomain.GetAssemblies().Any(a => !a.IsDynamic && a.GetType(LbPluginRegistry.TypeName, false) != null))
+                            return (CompatCheckState.NotHere, "LaunchBox's plugin registry is not loaded (not LaunchBox)");
+                        var what = LbPluginRegistry.Describe(out var read);
+                        return read ? (CompatCheckState.Ok, "LaunchBox's PluginRegistry: " + what) : (CompatCheckState.Missing, what);
+                    }
+                    case "catchall.loaded":
+                        return AppDomain.CurrentDomain.GetAssemblies().Any(a => !a.IsDynamic && string.Equals(a.GetName().Name, "NixxSaves", StringComparison.OrdinalIgnoreCase))
+                            ? (CompatCheckState.Ok, "Nixx-Saves is loaded") : (CompatCheckState.NotHere, "Nixx-Saves is not installed (the pack's setup installs it)");
                     case "sdk.saves":
                     {
                         var missing = SaveMethods.Where(n => typeof(EmulatorPlugin).GetMethods(BindingFlags.Public | BindingFlags.Instance).Count(m => m.Name == n && m.IsVirtual) != 1).ToList();

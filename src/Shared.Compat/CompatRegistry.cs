@@ -137,6 +137,21 @@ namespace LbIntegrations.Compat
             },
             new CompatPatch
             {
+                Id = "catchAll", Group = CompatGroup.Missing, Needs = "desk",
+                Title = "Other emulators' saves on games set to an emulator no plugin drives",
+                Problem = "LaunchBox asks only the plugin of a game's emulator about its saves. An emulator added by hand, or one LaunchBox "
+                        + "has no integration for, has no plugin: its games have no Game Saves, so a save another emulator keeps for "
+                        + "them (RetroArch, ares...) is never listed nor backed up.",
+                Example = "A SNES game set to an emulator you added yourself, played once with RetroArch: its save was in no card.",
+                Does = "The pack's Nixx-Saves plugin takes the emulators no other plugin takes, and lists and hands on the other "
+                     + "emulators' saves of their games - as the pack's own emulators do. It changes nothing else: the launch, the "
+                     + "emulator's screens and its settings stay as they are, and it has no saves of its own.",
+                Without = "Those games have no Game Saves, as in LaunchBox.",
+                OffWarning = "Without it, the saves of other emulators on those games are no longer backed up.",
+                Checks = new[] { "catchall.loaded", "lb.pluginRegistry", "sdk.saves" },
+            },
+            new CompatPatch
+            {
                 Id = "twoInstalls", Group = CompatGroup.Missing,
                 Title = "Two installs of the same emulator keep their saves apart",
                 Problem = "The pack names a save by its file name: two installs of one emulator (ares and a second ares, each with "
@@ -316,7 +331,7 @@ namespace LbIntegrations.Compat
                 Title = "Saves of every emulator",
                 Line = "Each game shows the saves of every emulator that made one, backed up when the game closes and restored "
                      + "into the emulator that made it - even with two installs of one emulator.",
-                Ids = new[] { "desk", "retroarchView", "foreignSlots", "stockDesk", "stockNoSaves", "stockRestore", "twoInstalls", "stockIds",
+                Ids = new[] { "desk", "retroarchView", "foreignSlots", "stockDesk", "stockNoSaves", "catchAll", "stockRestore", "twoInstalls", "stockIds",
                               "planA", "companionSignature", "companionRestore", "overwriteWarning" },
                 OffWarning = "Turned off, a game shows only the saves of its own emulator, as in LaunchBox: the others are no longer "
                            + "backed up, and the cards of RetroArch, Dolphin and PCSX2 go back to LaunchBox's own ids at the next start.",
@@ -361,10 +376,11 @@ namespace LbIntegrations.Compat
         /// to LaunchBox's ids is measured exact (lot 4, T4), and on it keeps the hooks on RetroArch, Dolphin and PCSX2.
         /// Kept on too: planA - off, LaunchBox can file a save into another emulator's card by its name (the pack's own plugins'
         /// saves included, desk or no desk) and WRITES that into the platform file, which leaving the safe mode does not undo.
-        /// Its reflection fails without writing anything; its hook on LaunchBox's integrations needs theirs, off in safe mode.</summary>
+        /// Its reflection fails without writing anything; its hook on LaunchBox's integrations needs theirs, off in safe mode.
+        /// catchAll goes off: it reads LaunchBox's plugin registry by reflection (lot 6).</summary>
         public static readonly string[] Internal =
         {
-            "desk", "retroarchView", "foreignSlots", "stockDesk", "stockNoSaves", "stockRestore", "stockIds",
+            "desk", "retroarchView", "foreignSlots", "stockDesk", "stockNoSaves", "catchAll", "stockRestore", "stockIds",
             "raConfigCache", "importWizard", "emulatorOpened",
         };
     }

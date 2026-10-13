@@ -663,6 +663,7 @@ internal sealed class InstallerForm : Form
         Payload.Xemu => "Xbox",
         Payload.Xenia => "Xbox 360",
         Payload.Menus => "right-click menus",
+        Payload.Saves => "saves of emulators no plugin drives",
         _ => "",
     };
 

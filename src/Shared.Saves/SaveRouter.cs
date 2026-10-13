@@ -51,6 +51,9 @@ namespace LbIntegrations.Saves
         /// <summary>Where the router writes what it did; set by the plugins (NixxSavePlugin).</summary>
         public static Action<string>? Log;
 
+        /// <summary>The emu of Nixx-Saves, the catch-all (lot 6): no saves of its own, never asked for any.</summary>
+        internal const string CatchAllEmu = "catchall";
+
         // NOT NESTED, ACROSS THE PACK: every plugin carries its own copy of this class, so a [ThreadStatic] would only
         // stop a plugin from nesting into itself - asked by SUPER ZSNES's desk, RASnes9x's desk listed the others again
         // (ares's files came back labelled RASnes9x.exe, measured 08/10). A named thread slot is one per process.
@@ -158,35 +161,38 @@ namespace LbIntegrations.Saves
         /// <summary>Lot 5, D6: true when a plugin WITH saves (one of ours, or LaunchBox's RetroArch/Dolphin/PCSX2) drives an
         /// emulator of the library that shares a platform with one of the emulators <paramref name="emu"/> drives. The others
         /// without saves (<paramref name="noSave"/>) never count - and are never asked, their answer being this very rule.
-        /// Kept a minute: LaunchBox asks it at every game shown, and the library's emulators rarely change.</summary>
-        internal static bool OthersCoverPlatformsOf(string emu, Func<string?, bool> noSave)
+        /// Kept a minute: LaunchBox asks it at every game shown, and the library's emulators rarely change. <paramref name="mine"/>:
+        /// the emulators <paramref name="emu"/> drives, when the plugin tells them itself (lot 6, the catch-all: it takes what nobody else
+        /// takes, decided by its own rule).</summary>
+        internal static bool OthersCoverPlatformsOf(string emu, Func<string?, bool> noSave, Func<IEmulator, bool>? mine = null)
         {
             var now = System.Diagnostics.Stopwatch.GetTimestamp();
             if (_covered.TryGetValue(emu, out var known) && now - known.At < System.Diagnostics.Stopwatch.Frequency * 60) return known.Yes;
             bool yes = false;
             string? by = null;
-            var mine = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var platforms = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             try
             {
                 var lib = Library();
                 foreach (var e in lib)
-                    if (DriverOf(e)?.Emu == emu)
+                    if (mine != null ? mine(e) : DriverOf(e)?.Emu == emu)
                         foreach (var p in Safe(() => e.GetAllEmulatorPlatforms()) ?? Array.Empty<IEmulatorPlatform>())
-                            if (!string.IsNullOrEmpty(Safe(() => p?.Platform))) mine.Add(p!.Platform);
-                if (mine.Count > 0)
+                            if (!string.IsNullOrEmpty(Safe(() => p?.Platform))) platforms.Add(p!.Platform);
+                if (platforms.Count > 0)
                     foreach (var e in lib)
                     {
                         var d = DriverOf(e);
-                        if (d == null || d.Value.Emu == emu || noSave(d.Value.Emu)) continue;
+                        // The catch-all (lot 6) has no saves of its own: it never counts as a plugin with saves.
+                        if (d == null || d.Value.Emu == emu || d.Value.Emu == CatchAllEmu || noSave(d.Value.Emu)) continue;
                         bool manages;
                         try { manages = d.Value.Plugin.SupportsSaveManagement(); } catch { manages = false; }
                         if (!manages) continue;
-                        if ((Safe(() => e.GetAllEmulatorPlatforms()) ?? Array.Empty<IEmulatorPlatform>()).Any(p => mine.Contains(Safe(() => p?.Platform) ?? ""))) { yes = true; by = d.Value.Emu + " (" + Safe(() => e.Title) + ")"; break; }
+                        if ((Safe(() => e.GetAllEmulatorPlatforms()) ?? Array.Empty<IEmulatorPlatform>()).Any(p => platforms.Contains(Safe(() => p?.Platform) ?? ""))) { yes = true; by = d.Value.Emu + " (" + Safe(() => e.Title) + ")"; break; }
                     }
             }
             catch { yes = false; }
             if (!_covered.TryGetValue(emu, out var was) || was.Yes != yes)
-                Say(emu + ": its emulators' platforms [" + string.Join(", ", mine) + "] " + (yes ? "covered by " + by : "covered by no plugin with saves"));
+                Say(emu + ": its emulators' platforms [" + string.Join(", ", platforms) + "] " + (yes ? "covered by " + by : "covered by no plugin with saves"));
             _covered[emu] = (now, yes);
             return yes;
         }
@@ -674,7 +680,7 @@ namespace LbIntegrations.Saves
                 {
                     if (string.Equals(Safe(() => e.Id), selfId, StringComparison.OrdinalIgnoreCase)) continue;
                     var d = DriverOf(e);
-                    if (d == null || ReferenceEquals(d.Value.Plugin, self) || d.Value.Plugin.GetType() == self.GetType()) continue;
+                    if (d == null || ReferenceEquals(d.Value.Plugin, self) || d.Value.Plugin.GetType() == self.GetType() || d.Value.Emu == CatchAllEmu) continue;
                     bool manages;
                     try { manages = d.Value.Plugin.SupportsSaveManagement(); } catch { manages = false; }
                     if (!manages) continue;

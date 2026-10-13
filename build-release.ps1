@@ -48,6 +48,7 @@ $Stage = [ordered]@{
     'Vita3k'  = 'Nixx-Vita3K'
     'Xemu'    = 'Nixx-Xemu'
     'Xenia'   = 'Nixx-Xenia'
+    'NixxSaves' = 'Nixx-Saves'
 }
 
 $payload = Join-Path $repo 'build\payload'

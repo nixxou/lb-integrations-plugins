@@ -144,6 +144,12 @@
     <EmbeddedResource Include="$(PayloadDir)\Nixx-RASnes9x\manifest.json">
       <LogicalName>payload/Nixx-RASnes9x/manifest.json</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-Saves\NixxSaves.dll">
+      <LogicalName>payload/Nixx-Saves/NixxSaves.dll</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-Saves\manifest.json">
+      <LogicalName>payload/Nixx-Saves/manifest.json</LogicalName>
+    </EmbeddedResource>
     <EmbeddedResource Include="$(PayloadDir)\Nixx-Demul\Demul.dll">
       <LogicalName>payload/Nixx-Demul/Demul.dll</LogicalName>
     </EmbeddedResource>

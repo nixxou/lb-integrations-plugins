@@ -1,0 +1,19 @@
+{
+  "SchemaVersion": 1,
+  "PluginId": "835d7ff3-fd97-48e4-ba15-aa926cbb31dd",
+  "UserId": 0,
+  "Name": "Nixx-Saves",
+  "Developer": "nixxou",
+  "Description": "The saves of other emulators on games set to an emulator no plugin drives: listed, backed up and restored into the emulator that made them. Installs nothing, changes no launch.",
+  "Credits": "",
+  "OperatingSystemFamily": "Windows",
+  "InstalledVersion": "1.1.1",
+  "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
+  "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
+  "HomePageUrl": "https://github.com/nixxou/lb-integrations-plugins",
+  "TipJarUrl": "",
+  "SourceKind": "Local",
+  "Tags": [
+    "5aae585f-ffc5-42bc-9f95-e5e190ef99e2"
+  ]
+}

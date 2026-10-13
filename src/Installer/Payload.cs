@@ -31,9 +31,11 @@ internal static class Payload
     public const string Xenia   = "Nixx-Xenia";
     public const string SuperZsnes = "Nixx-SuperZSNES";
     public const string RaSnes9x = "Nixx-RASnes9x";
+    /// <summary>The catch-all of the saves (lot 6): no emulator of its own - see src\NixxSaves.</summary>
+    public const string Saves = "Nixx-Saves";
 
     public static readonly string[] Folders =
-        { Ares, Bsnes, Cxbx, Demul, Flycast, MelonDs, NoGba, Ppsspp, RaSnes9x, SuperZsnes, Vita3k, Xemu, Xenia };
+        { Ares, Bsnes, Cxbx, Demul, Flycast, MelonDs, NoGba, Ppsspp, RaSnes9x, SuperZsnes, Vita3k, Xemu, Xenia, Saves };
 
     /// <summary>Every folder name this pack has been installed under before the rename. They are
     /// swept on install, because PluginLoader dedupes by FILE NAME across plugin roots: a stale
@@ -61,7 +63,7 @@ internal static class Payload
     /// deleting it on the strength of its name alone is how an installer destroys something it was
     /// never told about.</summary>
     public static readonly string[] Assemblies =
-        { "Ares.dll", "Bsnes.dll", "Cxbx.dll", "Demul.dll", "Flycast.dll", "MelonDs.dll", "NoGba.dll", "Ppsspp.dll", "RaSnes9x.dll", "SuperZsnes.dll", "Vita3k.dll", "Xemu.dll", "Xenia.dll", "NixxMenus.dll" };
+        { "Ares.dll", "Bsnes.dll", "Cxbx.dll", "Demul.dll", "Flycast.dll", "MelonDs.dll", "NoGba.dll", "Ppsspp.dll", "RaSnes9x.dll", "SuperZsnes.dll", "Vita3k.dll", "Xemu.dll", "Xenia.dll", "NixxSaves.dll", "NixxMenus.dll" };
 
     /// <summary>The menu relay: the pack's right-click entries on games, shown for the plugins.
     ///
@@ -150,6 +152,10 @@ internal static class Payload
         new("payload/Nixx-RASnes9x/RaSnes9x.dll",      RaSnes9x,   "RaSnes9x.dll"),
         new("payload/Nixx-RASnes9x/manifest.json",     RaSnes9x,   "manifest.json"),
         new(Contract,                                   RaSnes9x,   "LbIntegrations.Catalog.dll"),
+
+        new("payload/Nixx-Saves/NixxSaves.dll",         Saves,      "NixxSaves.dll"),
+        new("payload/Nixx-Saves/manifest.json",        Saves,      "manifest.json"),
+        new(Contract,                                   Saves,      "LbIntegrations.Catalog.dll"),
         new("payload/Nixx-SuperZSNES/SuperZsnes.dll",   SuperZsnes, "SuperZsnes.dll"),
         new("payload/Nixx-SuperZSNES/manifest.json",    SuperZsnes, "manifest.json"),
         new(Contract,                                   SuperZsnes, "LbIntegrations.Catalog.dll"),
