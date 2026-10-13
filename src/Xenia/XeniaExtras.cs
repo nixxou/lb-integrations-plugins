@@ -413,6 +413,7 @@ namespace LbIntegrations.Xenia
                 var plan = Plan(x, choice, layout);
                 Log.Info("extras: " + (plan.Ram ? "RAM disk" : "disk") + " - " + plan.Why);
                 string baseDir = null;
+                if (plan.Ram) LbIntegrations.Lbip.LbipLaunchStatus.Report("Preparing the RAM disk…");
                 if (plan.Ram) baseDir = XeniaRamSession.Open(layout, x.Game.TitleId, Safe(Path.GetFileName(x.Folder)), plan.Total, exe, forced: plan.Placement == "ram");
                 bool ram = baseDir != null;
                 if (!ram)

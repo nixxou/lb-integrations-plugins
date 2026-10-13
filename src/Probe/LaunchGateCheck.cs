@@ -140,6 +140,42 @@ namespace LbIntegrations.Probe
             endWait.SetValue(null, 0);
             Check("  ...the watcher done: open again", WaitOpen(5));
 
+            // 6. The plugins' copies before a launch (LbipLaunchStatus.CopyStream / CopyFile): the bytes, their progress to the host.
+            var status = asm.GetType("LbIntegrations.Lbip.LbipLaunchStatus", throwOnError: true);
+            var copyFile = status.GetMethod("CopyFile", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+            // Beside the probe, not in %TEMP%: a cleaner there takes old-dated files within minutes (the source is dated 2020).
+            var dir = Path.Combine(AppContext.BaseDirectory, "lbip-copycheck-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            try
+            {
+                var src = Path.Combine(dir, "src.bin"); var dst = Path.Combine(dir, "dst.bin");
+                var bytes = new byte[5 * 1024 * 1024 + 123]; new Random(7).NextBytes(bytes); File.WriteAllBytes(src, bytes);
+                File.SetLastWriteTimeUtc(src, new DateTime(2020, 1, 2, 3, 4, 5, DateTimeKind.Utc));
+                var seen = new List<(string T, double F)>();
+                AppDomain.CurrentDomain.SetData("LbIntegrations.LaunchStatus.v1", new Action<string, double>((t, f) => { lock (seen) seen.Add((t, f)); }));
+                bool listening = (bool)status.GetProperty("Listening", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
+                copyFile.Invoke(null, new object[] { src, dst, false, "Copying the test…" });
+                AppDomain.CurrentDomain.SetData("LbIntegrations.LaunchStatus.v1", null);
+                bool listeningAfter = (bool)status.GetProperty("Listening", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
+                List<(string T, double F)> s; lock (seen) s = seen.ToList();
+                var fractions = s.Where(r => !double.IsNaN(r.F)).Select(r => r.F).ToList();
+                Check("a copy: the same bytes, the same date as File.Copy keeps", File.ReadAllBytes(dst).SequenceEqual(bytes) && File.GetLastWriteTimeUtc(dst) == File.GetLastWriteTimeUtc(src));
+                Check("  ...shown as one step, from 0 to 100 %, never back", s.Count >= 3 && s[0].T == "Copying the test…" && s.Skip(1).All(r => r.T == null)
+                      && fractions.First() == 0 && Math.Abs(fractions.Last() - 1) < 1e-9 && fractions.Zip(fractions.Skip(1), (a, b) => b >= a).All(x => x),
+                      s.Count + " report(s), last " + (fractions.Count > 0 ? fractions.Last().ToString("0.000") : "-"));
+                Check("  ...Listening while the host listens, not after", listening && !listeningAfter);
+                bool threw = false;
+                try { copyFile.Invoke(null, new object[] { src, dst, false, "again" }); } catch (TargetInvocationException) { threw = true; }
+                Check("  ...onto an existing file without overwrite: refused, the file kept", threw && File.ReadAllBytes(dst).SequenceEqual(bytes));
+                var keep = Path.Combine(dir, "keep.bin"); File.WriteAllText(keep, "kept");
+                threw = false;
+                try { copyFile.Invoke(null, new object[] { Path.Combine(dir, "missing.bin"), keep, true, "x" }); } catch (TargetInvocationException) { threw = true; }
+                Check("  ...a source that cannot be read: refused, and the target it never touched kept", threw && File.ReadAllText(keep) == "kept");
+                copyFile.Invoke(null, new object[] { src, Path.Combine(dir, "quiet.bin"), false, "nobody listening" });
+                Check("  ...with no host listening (LaunchBox): copies all the same", File.ReadAllBytes(Path.Combine(dir, "quiet.bin")).SequenceEqual(bytes));
+            }
+            finally { try { Directory.Delete(dir, true); } catch { } }
+
             // 4. An emulator that never comes: held for its 60 s, not for ever - not waited here, only told apart.
             endWait.SetValue(null, 5);
             prepared = 0;

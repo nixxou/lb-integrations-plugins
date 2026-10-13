@@ -1618,6 +1618,7 @@ namespace LbIntegrations.MelonDs
         /// nothing downstream - migration, state, marker - has any footing.</summary>
         private static bool InstallTitle(MelonDsLayout layout, NdsRom rom, string romPath, string nandPath)
         {
+            LbIntegrations.Lbip.LbipLaunchStatus.Report("Installing the title into the DSi console…");
             // AN ARCHIVE IS UNPACKED HERE, not refused. melonDS opens archives itself, so a DS game
             // is handed straight over and none of this applies - but a DSiWare title has to be
             // INSTALLED into a NAND first, and both melonDS's importer and ours read a .nds from

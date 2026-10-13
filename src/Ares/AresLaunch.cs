@@ -577,7 +577,7 @@ namespace LbIntegrations.Ares
                 if (File.Exists(target)) File.Delete(target);
                 using (var src = pick.OpenEntryStream())
                 using (var dst = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None))
-                    src.CopyTo(dst);
+                    LbIntegrations.Lbip.LbipLaunchStatus.CopyStream(src, dst, pick.Size, "Extracting " + Path.GetFileName(pick.Key) + "…");
                 Log.Info("unpacked " + pick.Key + " from " + Path.GetFileName(rom) + " -> " + target);
                 return target;
             }

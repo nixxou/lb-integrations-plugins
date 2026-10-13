@@ -175,7 +175,7 @@ namespace LbIntegrations.Dsi
                     Directory.CreateDirectory(Path.GetDirectoryName(destPath));
                     using (var source = entry.OpenEntryStream())
                     using (var target = File.Create(destPath))
-                        source.CopyTo(target);
+                        LbIntegrations.Lbip.LbipLaunchStatus.CopyStream(source, target, entry.Size, "Extracting " + Path.GetFileName(key) + "…");
 
                     entryName = Path.GetFileName(key.Replace('/', Path.DirectorySeparatorChar));
                     return true;
@@ -203,7 +203,7 @@ namespace LbIntegrations.Dsi
                     Directory.CreateDirectory(Path.GetDirectoryName(destPath));
                     using (var source = reader.OpenEntryStream())
                     using (var target = File.Create(destPath))
-                        source.CopyTo(target);
+                        LbIntegrations.Lbip.LbipLaunchStatus.CopyStream(source, target, reader.Entry.Size, "Extracting " + Path.GetFileName(key) + "…");
 
                     entryName = Path.GetFileName(key.Replace('/', Path.DirectorySeparatorChar));
                     return true;

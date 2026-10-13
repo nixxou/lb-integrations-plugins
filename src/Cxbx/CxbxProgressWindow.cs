@@ -27,6 +27,9 @@ namespace LbIntegrations.Cxbx
 
         private readonly bool _modal;
 
+        /// <summary>The host shows the steps (see the constructor): no window, Report forwards them.</summary>
+        private readonly bool _forwardOnly;
+
         /// <summary>Open one, or answer null - a failure to show a window must never stop a game.
         /// <paramref name="always"/>: shown at once, for at least MinimumShownMs, modal to the host - the
         /// closing window (see the header).</summary>
@@ -40,6 +43,11 @@ namespace LbIntegrations.Cxbx
         {
             _title = title;
             _modal = always;
+            // Under a host that shows the launch's steps itself (LiteBox's pre-bar, LbipLaunchStatus), the steps go there
+            // and no window opens: it would only fight the loading screen for the top (Mehdi, 14/10). The closing window
+            // (always) is not a launch's step: it opens as before.
+            _forwardOnly = !always && LbIntegrations.Lbip.LbipLaunchStatus.Listening;
+            if (_forwardOnly) return;
             var thread = new Thread(() =>
             {
                 try
@@ -61,6 +69,8 @@ namespace LbIntegrations.Cxbx
         /// known. Safe from any thread, cheap enough to call per file.</summary>
         public void Report(string step, double? fraction)
         {
+            // The launch's steps to the host's loading screen too (nothing under LaunchBox).
+            if (!_modal) LbIntegrations.Lbip.LbipLaunchStatus.Report(step, fraction.HasValue ? Math.Max(0, Math.Min(1, fraction.Value)) : double.NaN);
             if (step != null) _step = step;
             Volatile.Write(ref _fraction, fraction.HasValue ? Math.Max(0, Math.Min(1, fraction.Value)) : -1);
         }

@@ -67,6 +67,7 @@ namespace LbIntegrations.RaSnes9x
                     return null;
                 if (RaSnes9xLaunch.Running(exe)) return "RASnes9x is running - its toolset is loaded";
 
+                LbIntegrations.Lbip.LbipLaunchStatus.Report("Checking the RetroAchievements toolset…");
                 if (!Call(Host, "dorequest.php", "r=latestintegration", out var status, out var body))
                     return "retroachievements.org could not be reached (status " + status + ")";
                 try { Directory.CreateDirectory(Path.GetDirectoryName(stamp)); File.WriteAllText(stamp, DateTime.UtcNow.ToString("o")); } catch { }
@@ -87,7 +88,8 @@ namespace LbIntegrations.RaSnes9x
                 int slash = url.IndexOf('/', Math.Min(8, url.Length));
                 if (slash < 0) return "the toolset's address is not one (" + url + ")";
                 var download = Path.Combine(dir, "RA_Integration.download");
-                if (!Call(url.Substring(0, slash), url.Substring(slash + 1), null, out status, out var dll) || status != 200)
+                LbIntegrations.Lbip.LbipLaunchStatus.Report("Downloading the RetroAchievements toolset " + latest + "…", 0);
+                if (!Call(url.Substring(0, slash), url.Substring(slash + 1), null, out status, out var dll, LbIntegrations.Lbip.LbipLaunchStatus.Progress) || status != 200)
                     return "the toolset could not be downloaded (status " + status + ")";
                 if (dll.Length < 2 || dll[0] != (byte)'M' || dll[1] != (byte)'Z')
                     return "what was downloaded is not a DLL (" + dll.Length + " bytes) - the toolset is left as it was";
@@ -129,12 +131,12 @@ namespace LbIntegrations.RaSnes9x
         // ── WinHTTP, as DoBlockingHttpCall ───────────────────────────────────
 
         /// <summary>DoBlockingHttpCallWithRetry: up to 4 tries while the failure is a network error.</summary>
-        private static bool Call(string hostUrl, string page, string post, out uint status, out byte[] body)
+        private static bool Call(string hostUrl, string page, string post, out uint status, out byte[] body, Action<double> progress = null)
         {
             int tries = 4;
             do
             {
-                if (Once(hostUrl, page, post, out status, out body)) return true;
+                if (Once(hostUrl, page, post, out status, out body, progress)) return true;
                 if (!IsNetworkError(status)) return false;
             } while (--tries > 0);
             return false;
@@ -144,7 +146,9 @@ namespace LbIntegrations.RaSnes9x
             => code == 12002 || code == 12007 || code == 12017 || code == 12019 || code == 12028 || code == 12029
             || code == 12030 || code == 12031 || code == 12032 || code == 12152 || code == 12163;
 
-        private static bool Once(string hostUrl, string page, string post, out uint status, out byte[] body)
+        /// <param name="progress">The share of the body received (0..1), when its length was announced - for the host's
+        /// pre-launch bar (LbipLaunchStatus). Null: none.</param>
+        private static bool Once(string hostUrl, string page, string post, out uint status, out byte[] body, Action<double> progress = null)
         {
             status = 0; body = Array.Empty<byte>();
             ushort port = 80;   // INTERNET_DEFAULT_HTTP_PORT

@@ -64,6 +64,7 @@ namespace LbIntegrations.Demul
 
             if (RamDisk.RamDrive.CanAttachChd(out var cannot))
             {
+                LbIntegrations.Lbip.LbipLaunchStatus.Report("Attaching " + name + " uncompressed…");
                 var file = RamDisk.RamDrive.AttachChd(rom, out var r, out var error);
                 if (file != null && File.Exists(file)) { root = r; Log.Info("chd: served where it is - " + file); return file; }
                 if (r != null) Release(r);
@@ -84,7 +85,7 @@ namespace LbIntegrations.Demul
                 {
                     Purge(cache, target, plain.Length);
                     using var o = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20);
-                    plain.CopyTo(o, 1 << 20);
+                    LbIntegrations.Lbip.LbipLaunchStatus.CopyStream(plain, o, plain.Length, "Decompressing " + name + " for Demul…");
                 }
                 File.Move(part, target, true);
                 Log.Info("chd: copied uncompressed in " + watch.Elapsed.TotalSeconds.ToString("0") + " s - " + target + " (" + (new FileInfo(target).Length >> 20) + " MB)");

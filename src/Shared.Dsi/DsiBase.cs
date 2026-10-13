@@ -242,7 +242,7 @@ namespace LbIntegrations.Dsi
 
                 var partial = target + ".part";
                 try { if (File.Exists(partial)) File.Delete(partial); } catch { }
-                File.Copy(dumpPath, partial, overwrite: true);
+                LbIntegrations.Lbip.LbipLaunchStatus.CopyFile(dumpPath, partial, true, "Setting up a DSi console…");
                 if (File.Exists(target)) File.Delete(target);
                 File.Move(partial, target);
 
@@ -478,7 +478,7 @@ namespace LbIntegrations.Dsi
                 // something that looks like a finished base.
                 var partial = targetPath + ".part";
                 try { if (File.Exists(partial)) File.Delete(partial); } catch { }
-                File.Copy(originalPath, partial, overwrite: true);
+                LbIntegrations.Lbip.LbipLaunchStatus.CopyFile(originalPath, partial, true, "Rebuilding the DSi console…");
 
                 using (var session = DsiNand.Open(partial, bios7Path, out var openError))
                 {

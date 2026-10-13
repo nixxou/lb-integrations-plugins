@@ -122,6 +122,7 @@ namespace LbIntegrations.Xemu
         public static string Present(string rom, string exe, out string problem, out XemuDiscInfo info, Action<string> report = null, bool? mediaPatch = null)
         {
             problem = null;
+            LbIntegrations.Lbip.LbipLaunchStatus.Report("Reading the disc " + System.IO.Path.GetFileName(rom) + "…");
             info = Describe(rom);
             if (info.Problem != null) { problem = info.Problem; return null; }
             var name = System.IO.Path.GetFileName(rom);
@@ -139,6 +140,7 @@ namespace LbIntegrations.Xemu
             {
                 if (RamDisk.RamDrive.CanAttachXiso(out var why, rom))
                 {
+                    LbIntegrations.Lbip.LbipLaunchStatus.Report("Attaching " + name + " where it is…");
                     var file = RamDisk.RamDrive.AttachXiso(rom, out var root, out var error, patches.Length > 0);
                     if (file != null && File.Exists(file)) { info.AttachedRoot = root; Log.Info("disc: " + name + " served where it is" + (patches.Length > 0 ? ", media patched" : "") + " - " + file); return file; }
                     if (file != null) { info.AttachedRoot = root; Release(info); }
@@ -178,7 +180,7 @@ namespace LbIntegrations.Xemu
                             if (entry == null) { problem = "the disc image is no longer in the archive"; return null; }
                             using var s = entry.OpenEntryStream();
                             using var o = File.Create(unpacked);
-                            s.CopyTo(o, 1 << 20);
+                            LbIntegrations.Lbip.LbipLaunchStatus.CopyStream(s, o, entry.Size, "Extracting " + System.IO.Path.GetFileName(entry.Key) + "…");
                         }
                         var inner = Describe(unpacked);
                         if (inner.Problem != null) { problem = "the image in the archive: " + inner.Problem; return null; }
@@ -193,7 +195,7 @@ namespace LbIntegrations.Xemu
                 {
                     using var x = ZarXiso.Open(rom);
                     using var dst = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20);
-                    x.CopyTo(dst, 1 << 20);
+                    LbIntegrations.Lbip.LbipLaunchStatus.CopyStream(x, dst, x.Length, "Rebuilding the disc of " + name + "…");
                 }
                 else Cut(rom, info.PartitionBase, part);
                 XboxMediaPatch.Write(part, patches);
@@ -252,7 +254,7 @@ namespace LbIntegrations.Xemu
             using var src = Disc.DiscImages.Open(image, RamDisk.RamDiskOptions.Load().ChdThreads);
             src.Seek(from, SeekOrigin.Begin);
             using var dst = new FileStream(to, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20);
-            src.CopyTo(dst, 1 << 20);
+            LbIntegrations.Lbip.LbipLaunchStatus.CopyStream(src, dst, src.Length - from, "Preparing " + System.IO.Path.GetFileName(image) + " for xemu…");
         }
 
         private static long NeededBytes(XemuDiscInfo info)

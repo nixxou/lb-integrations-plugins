@@ -395,6 +395,7 @@ namespace LbIntegrations.Dsi
         /// BEFORE anything rebuilds work.bin, so a session can never be thrown away unread.</summary>
         public static void CaptureWork(DsiHost layout, string bios7Path, string onlyTitle = null)
         {
+            LbIntegrations.Lbip.LbipLaunchStatus.Report("Saving the last DSi session…");
             try
             {
                 var titleId = WorkTitle(layout);
@@ -578,6 +579,7 @@ namespace LbIntegrations.Dsi
         {
             var work = WorkPath(layout);
             if (work == null || !File.Exists(work)) return true;     // nothing to wait for
+            LbIntegrations.Lbip.LbipLaunchStatus.Report("Waiting for the DSi console to be released…");
 
             DsiDialog.Waiting window = null;
             try
@@ -1376,7 +1378,7 @@ namespace LbIntegrations.Dsi
             var tmp = target + "." + Guid.NewGuid().ToString("N") + ".part";
             try
             {
-                File.Copy(source, tmp, overwrite: true);
+                LbIntegrations.Lbip.LbipLaunchStatus.CopyFile(source, tmp, true, "Copying the DSi console…");
                 if (File.Exists(target)) File.Delete(target);
                 File.Move(tmp, target);
             }

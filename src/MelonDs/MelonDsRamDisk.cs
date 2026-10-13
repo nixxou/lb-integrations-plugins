@@ -95,6 +95,7 @@ namespace LbIntegrations.MelonDs
         /// image has been captured and before the rebuild. Never throws, never refuses.</summary>
         public static void Place(MelonDsLayout layout, string sourceNand, bool noRamDisk)
         {
+            LbIntegrations.Lbip.LbipLaunchStatus.Report("Preparing the RAM disk…");
             DsiHost host = layout;
             try
             {
@@ -153,6 +154,7 @@ namespace LbIntegrations.MelonDs
         public static void AfterCapture(DsiHost host)
         {
             if (host == null || RamDir(host) == null) return;
+            LbIntegrations.Lbip.LbipLaunchStatus.Report("Releasing the RAM disk…");
             UseRoot(host);
             if (Release(host, "its session is saved")) DsiWorkspace.ForgetWork(host);
         }

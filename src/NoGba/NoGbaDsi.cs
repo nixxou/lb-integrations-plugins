@@ -219,6 +219,7 @@ namespace LbIntegrations.NoGba
                                     string bios7)
         {
             string unpacked = null;
+            LbIntegrations.Lbip.LbipLaunchStatus.Report("Installing the title into the DSi console…");
             try
             {
                 var appPath = romPath;
