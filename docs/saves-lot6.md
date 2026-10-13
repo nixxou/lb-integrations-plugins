@@ -16,7 +16,8 @@ game moved) is never listed nor backed up.
   SDK says that event is sent right after THIS plugin is loaded - not after all of them (review 13/10).
 - `Unbroken.LaunchBox.Windows.Plugins.PluginRegistry` (read 13/10): a public type, members obfuscated; its property
   `EmulatorPlugins` (`ConcurrentDictionary<string, EmulatorPlugin>`) keeps its name, its ilspy body is a decoy (called by
-  reflection, the real body runs, as everywhere in the core); the instance sits in a static field of the type itself.
+  reflection, the real body runs, as everywhere in the core). **Measured in LaunchBox 13/10**: the static field of the type's
+  own type stays null; the live registry is the instance field of `PluginRuntimeManager.Shared` (read by type).
 - The SDK's own bodies (ilspy on `Unbroken.LaunchBox.Plugins.dll`): `PrepareEmulatorForLaunch` success with no new line
   (the pack's plugins return the same when they change nothing); `IsUpdateAvailable` would answer TRUE for an empty path
   with the first installable version; `RemoveSave` deletes the file.

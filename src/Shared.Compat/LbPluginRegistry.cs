@@ -3,10 +3,13 @@
 //
 // Unbroken.LaunchBox.Windows.Plugins.PluginRegistry is a public type of LaunchBox's core, its members obfuscated (read
 // 13/10, LaunchBox 14.0.1): the property EmulatorPlugins (ConcurrentDictionary<string, EmulatorPlugin>) keeps its name, its
-// body read by ilspy is a decoy - called by reflection, the real body runs (as every reflection into the core, lot 4). The
-// instance is held in a static field of the type itself, under an obfuscated name: found by its TYPE, never by its name,
-// and the whole assembly is searched once if that field is gone in a later build. Not found, unreadable or empty: null,
-// with the reason - the catch-all then takes nothing.
+// body read by ilspy is a decoy - called by reflection, the real body runs (as every reflection into the core, lot 4).
+//
+// THE LIVE REGISTRY (measured 13/10 in LaunchBox: the static field of PluginRegistry's own type stayed null all along the
+// start-up - the catch-all took nothing): PluginRuntimeManager.Shared (a static property that keeps its name) holds the
+// manager, whose instance field of type PluginRegistry is the one LaunchBox fills. Fields are found by their TYPE, never by
+// their obfuscated names. The static field of the registry's own type is kept as a second way. Not found, unreadable or
+// empty: null, with the reason - the catch-all then takes nothing.
 //
 // Under LiteBox there is no such type: LiteBox has a registry of its own and asks every plugin itself.
 
@@ -24,9 +27,13 @@ namespace LbIntegrations.Compat
     internal static class LbPluginRegistry
     {
         public const string TypeName = "Unbroken.LaunchBox.Windows.Plugins.PluginRegistry";
+        public const string ManagerName = "Unbroken.LaunchBox.Windows.Plugins.PluginRuntimeManager";
 
         private static readonly object Gate = new object();
-        private static FieldInfo? _holder;
+        private static FieldInfo? _holder;            // the registry's own static field (second way)
+        private static PropertyInfo? _shared;         // PluginRuntimeManager.Shared
+        private static FieldInfo? _managed;           // the manager's PluginRegistry field
+        private static string _via = "";
         private static PropertyInfo? _plugins;
         private static string? _missing;
         private static bool _searched;
@@ -49,9 +56,15 @@ namespace LbIntegrations.Compat
                 lock (Gate)
                 {
                     if (!_searched) Find();
-                    if (_holder == null || _plugins == null) { why = _missing ?? "LaunchBox's plugin registry not found"; return null; }
+                    if ((_holder == null && _managed == null) || _plugins == null) { why = _missing ?? "LaunchBox's plugin registry not found"; return null; }
                 }
-                var registry = _holder.GetValue(null);
+                object? registry = null;
+                if (_shared != null && _managed != null)
+                {
+                    var manager = _shared.GetValue(null);
+                    if (manager != null) { registry = _managed.GetValue(manager); if (registry != null) _via = "PluginRuntimeManager.Shared"; }
+                }
+                if (registry == null && _holder != null) { registry = _holder.GetValue(null); if (registry != null) _via = _holder.DeclaringType?.Name + "." + _holder.Name; }
                 if (registry == null) { why = "LaunchBox's plugin registry is not built yet"; return null; }
                 var value = _plugins.GetValue(registry);
                 var list = new List<EmulatorPlugin>();
@@ -76,7 +89,7 @@ namespace LbIntegrations.Compat
         {
             var all = EmulatorPlugins(out var why);
             ok = all != null;
-            return all == null ? why ?? "unreadable" : all.Count + " emulator plugins (" + _holder?.DeclaringType?.Name + "." + _holder?.Name + ")";
+            return all == null ? why ?? "unreadable" : all.Count + " emulator plugins (" + _via + ")";
         }
 
         private static void Find()
@@ -94,8 +107,19 @@ namespace LbIntegrations.Compat
             _plugins = t.GetProperty("EmulatorPlugins", BindingFlags.Public | BindingFlags.Instance);
             if (_plugins == null) { _missing = TypeName + " has no EmulatorPlugins any more"; return; }
             const BindingFlags Statics = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+            const BindingFlags Instances = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+            try
+            {
+                var m = t.Assembly.GetType(ManagerName, false);
+                if (m != null)
+                {
+                    _shared = m.GetProperty("Shared", Statics) is { } sp && sp.PropertyType == m ? sp : null;
+                    _managed = m.GetFields(Instances).FirstOrDefault(f => f.FieldType == t);
+                }
+            }
+            catch { _shared = null; _managed = null; }
             _holder = t.GetFields(Statics).FirstOrDefault(f => f.FieldType == t);
-            if (_holder != null) return;
+            if (_holder != null || _managed != null) return;
             // Moved in a later build: any static field of that type in the same assembly.
             Type?[] types;
             try { types = t.Assembly.GetTypes(); } catch (ReflectionTypeLoadException ex) { types = ex.Types; } catch { types = Array.Empty<Type>(); }
