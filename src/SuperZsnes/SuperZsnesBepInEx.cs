@@ -90,7 +90,14 @@ namespace LbIntegrations.SuperZsnes
         /// 0.320 (13/10) went from x86 to x64; an update extracted over a 0.310 folder leaves the x86 BepInEx beside an x64
         /// exe, which Windows skips without a word - measured: no plugin, the settings back under LocalLow.</summary>
         public static bool HasBepInEx(string exeDir)
-            => HasBepInExFiles(exeDir) && WrongArch(exeDir) == null;
+            => HasBepInExFiles(exeDir) && WrongArch(exeDir) == null && !Interrupted(exeDir);
+
+        /// <summary>Beside SUPERZSNES.exe while Deploy replaces BepInEx: from before the first file is touched until the
+        /// extraction is checked. Still there = that install was cut off (a full disk, an antivirus, a killed LaunchBox): the
+        /// files present may be half of them, so BepInEx counts as absent and Repair extracts it again (Codex review 15/10).</summary>
+        internal const string InstallingMarker = "lbip-bepinex-installing";
+
+        public static bool Interrupted(string exeDir) => File.Exists(Path.Combine(exeDir, InstallingMarker));
 
         public static bool HasBepInExFiles(string exeDir)
             => File.Exists(Path.Combine(exeDir, "winhttp.dll"))
@@ -229,12 +236,15 @@ namespace LbIntegrations.SuperZsnes
                     }
                     report?.Invoke("Extracting BepInEx...", null);
                     // Only once the right archive is here and checked: a failed download leaves the old one as it was.
+                    // From here the folder may be left half done: marked until the extraction is checked.
+                    File.WriteAllText(Path.Combine(exeDir, InstallingMarker), "BepInEx " + Build + " (" + arch + ") being extracted - Repair in the Nixx window if this stays");
                     if (wrong != null)
                     {
                         RemoveArchSpecific(exeDir);
                         r.Steps.Add("removed the " + wrong.Split(' ')[0] + " BepInEx (" + wrong + ")");
                     }
                     Archives.ExtractOver(archive, exeDir);
+                    if (HasBepInExFiles(exeDir) && WrongArch(exeDir) == null) File.Delete(Path.Combine(exeDir, InstallingMarker));
                     r.Steps.Add("BepInEx " + Build + " (" + arch + ") extracted");
                     r.Changed = true;
                 }
@@ -331,6 +341,7 @@ namespace LbIntegrations.SuperZsnes
             if (!Directory.Exists(exeDir)) return "no such folder";
             var wrong = WrongArch(exeDir);
             if (wrong != null && HasBepInExFiles(exeDir)) return "BepInEx can't load: " + wrong + " (the emulator changed architecture) - Repair puts the right one";
+            if (Interrupted(exeDir)) return "BepInEx install interrupted - Repair puts it back";
             if (!HasBepInEx(exeDir)) return "BepInEx not installed";
             var version = "?";
             try { version = File.ReadAllText(Path.Combine(exeDir, ".doorstop_version")).Trim(); } catch { }

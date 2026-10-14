@@ -525,6 +525,16 @@ namespace LbIntegrations.SuperZsnes
             try
             {
                 if (args == null) return new PluginResponse(false, "No credentials supplied.");
+                // Turned off in LaunchBox (Codex review 15/10): no login handed over, a pending one withdrawn. What SUPER ZSNES
+                // already keeps is its own (the user may have logged in there himself): left, and said - the plugin cannot
+                // log it out yet.
+                if (args.IsEnabled == false)
+                {
+                    bool withdrawn = SuperZsnesCheevos.Withdraw(ResolveFullPath(args.EmulatorApplicationPath));
+                    Log.Info("RetroAchievements turned off in LaunchBox: no login handed to SUPER ZSNES" + (withdrawn ? " (the pending one withdrawn)" : "")
+                             + " - a login SUPER ZSNES already keeps stays until you log out in its Config > Retroachievements");
+                    return new PluginResponse(true);
+                }
                 var why = SuperZsnesCheevos.Write(ResolveFullPath(args.EmulatorApplicationPath), args.Username, args.Token, args.HardcoreEnabled);
                 return why == null ? new PluginResponse(true) : new PluginResponse(false, why);
             }

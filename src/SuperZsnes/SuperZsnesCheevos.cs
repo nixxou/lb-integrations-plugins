@@ -45,6 +45,21 @@ namespace LbIntegrations.SuperZsnes
         private static readonly ConcurrentDictionary<string, (long Stamp, bool Has)> _known
             = new ConcurrentDictionary<string, (long, bool)>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>RetroAchievements turned off in LaunchBox: a handoff not yet read by the in-process plugin is deleted, so the
+        /// next start logs nobody in. True when there was one. Never throws.</summary>
+        public static bool Withdraw(string exePath)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(exePath)) return false;
+                var path = Path.Combine(Path.GetDirectoryName(exePath), "portable", HandoffName);
+                if (!File.Exists(path)) return false;
+                File.Delete(path);
+                return true;
+            }
+            catch (Exception ex) { Log.Warn("could not withdraw " + HandoffName, ex); return false; }
+        }
+
         /// <summary>The handoff written for the next start. Null when done, else why not. Only what LaunchBox gave: without
         /// both a user and a token nothing is written, and the emulator's own login stays.</summary>
         public static string Write(string exePath, string user, string token, bool? hardcore)

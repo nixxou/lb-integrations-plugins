@@ -623,6 +623,32 @@ namespace LbIntegrations.Probe
                               && File.ReadAllText(Path.Combine(install, "BepInEx", "plugins", "SuperZsnes.BepInEx.dll")) == "the in-process plugin, version B"
                               && File.ReadAllText(Path.Combine(install, "portable", "szsnes_ui.data")) == "the user's settings");
 
+                        // An extraction cut off halfway (Codex review 15/10): what is there may be half of BepInEx. It must
+                        // count as absent until a deploy goes through, and Repair must extract again.
+                        var marker = Path.Combine(install, "lbip-bepinex-installing");
+                        Check("after a good deploy, no install marker is left", !File.Exists(marker));
+                        var broken = Path.Combine(root, "broken.zip");
+                        File.WriteAllBytes(broken, File.ReadAllBytes(zip).Take(200).ToArray());
+                        File.WriteAllBytes(exe, Pe(0x8664));
+                        File.WriteAllBytes(Path.Combine(install, "winhttp.dll"), Pe(0x14C));     // forces a swap, so an extraction runs
+                        deployType.GetField("ZipOverride", flags).SetValue(null, broken);
+                        var cut = Run();
+                        Check("an extraction that fails is reported", !Ok(cut), Problem(cut));
+                        Check("  ...the install stays marked", File.Exists(marker));
+                        // As if the extraction had written the loader and the chainloader, and nothing else, before it broke.
+                        File.WriteAllBytes(Path.Combine(install, "winhttp.dll"), Pe(0x8664));
+                        Directory.CreateDirectory(Path.Combine(install, "BepInEx", "core"));
+                        File.WriteAllText(Path.Combine(install, "BepInEx", "core", "BepInEx.Unity.IL2CPP.dll"), "chainloader");
+                        Check("  ...and counts as not installed, even with its files there",
+                              (bool)deployType.GetMethod("HasBepInExFiles", flags).Invoke(null, new object[] { install })
+                              && !(bool)deployType.GetMethod("HasBepInEx", flags).Invoke(null, new object[] { install }));
+                        Check("  ...Describe says it was interrupted", ((string)deployType.GetMethod("Describe", flags).Invoke(null, new object[] { install })).StartsWith("BepInEx install interrupted"));
+                        deployType.GetField("ZipOverride", flags).SetValue(null, zip);
+                        var repaired = Run();
+                        Check("Repair extracts it again and clears the mark", Ok(repaired) && Changed(repaired) && !File.Exists(marker)
+                              && File.ReadAllText(Path.Combine(install, "winhttp.dll")) == "doorstop", Problem(repaired));
+                        File.WriteAllBytes(exe, Pe(0x8664));
+
                         // RetroAchievements, 0.320 on: the login handed over to the in-process plugin (Cheevos.cs), DPAPI-protected.
                         var scene320 = (byte[])scene.Clone();
                         var about320 = Encoding.ASCII.GetBytes("\0\0\0\0v0.320b\0\0\0\0");
@@ -638,6 +664,9 @@ namespace LbIntegrations.Probe
                         Check("  ...and never in clear on disk",
                               File.Exists(handoff) && Encoding.Latin1.GetString(File.ReadAllBytes(handoff)).IndexOf("probetoken", StringComparison.Ordinal) < 0
                               && Encoding.Unicode.GetString(File.ReadAllBytes(handoff)).IndexOf("probetoken", StringComparison.Ordinal) < 0);
+                        // Turned off in LaunchBox (Codex review 15/10): the pending handoff withdrawn, nothing new written.
+                        var off = plugin.InjectRetroAchievementsCredentials(new InjectRetroAchievementsCredentialsArgs(exe, "probeuser", "probetoken-0123456789", false, false));
+                        Check("  ...turned off: the pending login is withdrawn, nothing written", off.WasSuccess && !File.Exists(handoff), off.Message);
                         Check("  ...nothing written without a token", plugin.InjectRetroAchievementsCredentials(new InjectRetroAchievementsCredentialsArgs(exe, "probeuser", "", true, false)).WasSuccess);
                         try { File.Delete(handoff); } catch { }
                         File.WriteAllBytes(exe, Pe(0x14C));
