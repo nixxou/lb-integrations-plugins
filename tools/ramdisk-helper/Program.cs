@@ -178,6 +178,16 @@
 // keeps from 1.4: flushed, locked if it can be, dismounted, and only then removed; no broadcast of ours.
 // aim_ll only works elevated: unelevated it answers "Arsenal Image Mounter not installed".
 //
+// NO "YOU NEED TO FORMAT THE DISK" (1.15, Mehdi 14/10; docs\ramdisk-format-prompt.md). A blank AIM disk's raw volume
+// was seen by Explorer twice before its format, and Explorer offered to format it: (1) the mount manager's automatic
+// letter (the first free one, I:), taken away by KeepOnly only afterwards; (2) the letter asked for, which aim_ll puts
+// on the raw volume before formatting it (measured: Z: raw for 380 ms). So a blank AIM mount on a letter now runs with
+// Windows' automatic mounting OFF (mountvol /N) when it was on, is mounted and formatted in an empty folder of its own
+// (Explorer asks nothing of a volume in a folder), and only then gets its letter (ToLetter); automatic mounting is put
+// back (mountvol /E) right after. A marker beside the exe (automount-off.marker) says it is ours to put back: a helper
+// that died in between is repaired by this exe's next run, whatever its action (AutoMount.Repair, first in Main). A
+// machine whose automatic mounting was off already is left as it is. ImDisk's disks are not Plug and Play: untouched.
+//
 // THIS IS NOT A PRIVILEGE BOUNDARY, and never was: the cfg is writable by the user and this runs
 // elevated, which is inherent to every no-UAC elevation bridge - LiteBox says the same of its
 // admin-launch helper. 1.1 widens what the cfg can ask for, so the values are held to the shapes
@@ -221,6 +231,8 @@ namespace RamDiskHelper
             string cfgPath = Path.Combine(dir, "ramdisk.cfg");
             string resultPath = Path.Combine(dir, "ramdisk.result");
             string id = "";
+            // 1.15: an automatic mounting this exe turned off and did not get to put back (it died mid-mount) - back now.
+            AutoMount.Repair(dir);
             try
             {
                 var kv = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -363,6 +375,8 @@ namespace RamDiskHelper
                 if (compress && !useAim && format.Length > 0) format = format.Replace(" /c", "");
                 // dynamic=1: the same dynamic disk without the compression - for telling the two apart.
                 bool dynamicOnly = Get(kv, "dynamic", "") == "1";
+                // 1.15: every AIM mount that FORMATS (its volume raw until then) runs with automatic mounting off - see the header.
+                using var noAutoLetter = useAim && format.Length > 0 ? AutoMount.Off(dir) : null;
                 if ((compress || dynamicOnly) && useAim && image.Length == 0)
                 {
                     var ramDyn = Path.Combine(Aim.Folder ?? "", "RamDyn.exe");
@@ -411,17 +425,32 @@ namespace RamDiskHelper
                 if (removable) options.Add("rem");
                 if (options.Count > 0) { psi.ArgumentList.Add("-o"); psi.ArgumentList.Add(string.Join(",", options)); }
 
-                psi.ArgumentList.Add("-m"); psi.ArgumentList.Add(point);
+                // 1.15: a blank AIM disk on a LETTER is mounted and formatted in an empty folder first, its letter given
+                // only once it is formatted (ToLetter) - see the header.
+                string staging = null;
+                if (useAim && format.Length > 0 && token != "folder")
+                {
+                    staging = Path.Combine(dir, "staging", Guid.NewGuid().ToString("N"));
+                    try { Directory.CreateDirectory(staging); } catch { staging = null; }
+                }
+                psi.ArgumentList.Add("-m"); psi.ArgumentList.Add(staging ?? point);
                 if (format.Length > 0) { psi.ArgumentList.Add("-p"); psi.ArgumentList.Add(format); }
 
                 using var p = Process.Start(psi);
                 p.WaitForExit();
+                int exit = p.ExitCode;
+                string moved = "";
+                if (staging != null)
+                {
+                    if (exit == 0) exit = ToLetter(staging, point, out moved);
+                    try { if (VolumeOf(staging + "\\") == null) Directory.Delete(staging); } catch { }
+                }
                 // AIM's disk is a real disk: the mount manager may have given its volume a letter of its
                 // own besides the one asked for. Only the mount point asked for stays.
-                if (p.ExitCode == 0 && useAim) KeepOnly(point);
-                File.WriteAllText(resultPath, (p.ExitCode == 0 ? "OK" : "FAIL") + " mount " + token + " exit=" + p.ExitCode
-                                              + " backend=" + (useAim ? "aim" : "imdisk") + id);
-                return p.ExitCode;
+                if (exit == 0 && useAim) KeepOnly(point);
+                File.WriteAllText(resultPath, (exit == 0 ? "OK" : "FAIL") + " mount " + token + " exit=" + exit
+                                              + " backend=" + (useAim ? "aim" : "imdisk") + (staging != null ? " staged=1" : "") + moved + id);
+                return exit;
             }
             catch (Exception ex)
             {
@@ -664,6 +693,95 @@ namespace RamDiskHelper
                     return;
                 }
                 System.Threading.Thread.Sleep(250);
+            }
+        }
+
+        /// <summary>1.15: the volume formatted in <paramref name="staging"/> (a folder) given <paramref name="point"/> (a letter),
+        /// the folder's mount point taken off. 0 when done; else the disk is dismounted again - nothing half-made is left -
+        /// and <paramref name="why"/> says why (" - ..." for the result line).</summary>
+        private static int ToLetter(string staging, string point, out string why)
+        {
+            why = "";
+            string volume = null;
+            for (int i = 0; i < 30 && volume == null; i++)
+            {
+                volume = VolumeOf(staging + "\\");
+                if (volume == null) System.Threading.Thread.Sleep(100);
+            }
+            if (volume == null) { why = " - the formatted volume did not appear in its folder"; Dismount(staging, "folder"); return -3; }
+            string letter = point.TrimEnd('\\') + "\\";
+            if (!SetVolumeMountPoint(letter, volume))
+            {
+                why = " - " + letter + " could not be given to it (error " + Marshal.GetLastWin32Error() + ")";
+                Dismount(staging, "folder");
+                return -4;
+            }
+            DeleteVolumeMountPoint(staging.TrimEnd('\\') + "\\");
+            return 0;
+        }
+
+        /// <summary>Windows' automatic mounting of new volumes (mountvol /N, /E), turned off around a blank AIM mount - see
+        /// the header. Its state is the mount manager's NoAutoMount value (1 = off); mountvol both sets it and tells the
+        /// running mount manager.</summary>
+        internal static class AutoMount
+        {
+            private const string MarkerName = "automount-off.marker";
+
+            /// <summary>On, off, or null when it cannot be read.</summary>
+            public static bool? Enabled()
+            {
+                try
+                {
+                    using var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\mountmgr");
+                    if (k == null) return null;
+                    var v = k.GetValue("NoAutoMount");
+                    return !(v is int n && n != 0);
+                }
+                catch { return null; }
+            }
+
+            private static bool Set(bool on)
+            {
+                try
+                {
+                    var r = Run(Path.Combine(Environment.SystemDirectory, "mountvol.exe"), on ? "/E" : "/N");
+                    return r.code == 0 && Enabled() == on;
+                }
+                catch { return false; }
+            }
+
+            /// <summary>Off for the life of the returned object, when it was on - and put back on when it is disposed.
+            /// Null when there is nothing to do (already off, unreadable) or it could not be turned off.</summary>
+            public static IDisposable Off(string dir)
+            {
+                if (Enabled() != true) return null;
+                var marker = Path.Combine(dir, MarkerName);
+                try { File.WriteAllText(marker, DateTime.UtcNow.ToString("o") + " pid " + Environment.ProcessId); } catch { }
+                if (Set(false)) return new Restore(marker);
+                try { File.Delete(marker); } catch { }
+                return null;
+            }
+
+            /// <summary>A marker left behind (this exe died while it was off): on again, the marker gone.</summary>
+            public static void Repair(string dir)
+            {
+                var marker = Path.Combine(dir, MarkerName);
+                if (!File.Exists(marker)) return;
+                if (Enabled() == false) Set(true);
+                if (Enabled() != false) try { File.Delete(marker); } catch { }
+            }
+
+            private sealed class Restore : IDisposable
+            {
+                private readonly string _marker;
+                private int _done;
+                public Restore(string marker) { _marker = marker; }
+                public void Dispose()
+                {
+                    if (System.Threading.Interlocked.Exchange(ref _done, 1) == 1) return;
+                    // The marker stays until it is on again: a failure here is the next run's to repair.
+                    if (Set(true)) try { File.Delete(_marker); } catch { }
+                }
             }
         }
 
