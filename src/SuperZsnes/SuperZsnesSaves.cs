@@ -114,8 +114,8 @@ namespace LbIntegrations.SuperZsnes
 
         /// <summary>Nothing beside the game (Mehdi, 07/10; lot 9, 13/10): a game's states folder still beside it - <name>.data.szsnes\,
         /// left by SUPER ZSNES before the pack filled its states folder (01/10) - moved into the states folder, file by file,
-        /// never over a file already there (that one is kept, the old left where it is, said); the folder beside the game goes
-        /// once empty. Its name is SUPER ZSNES's own: no other emulator writes it. The .srm beside the game is NOT moved: bsnes,
+        /// never over a file already there: the same bytes are dropped, different ones go to <c>conflicts\</c> under their date
+        /// (PlaceStateFile); the folder beside the game goes once empty. Its name is SUPER ZSNES's own: no other emulator writes it. The .srm beside the game is NOT moved: bsnes,
         /// Snes9x and RetroArch write that name too, and nothing tells whose it is (docs\saves-lot9.md). Nothing when the states
         /// folder is the game's own (the pack's folders not in place) or flat (noDirectoryForSaves: no per-game folder).
         /// Never throws.</summary>
@@ -140,13 +140,15 @@ namespace LbIntegrations.SuperZsnes
                 if (!(written != null && written.TryGetValue("gameSavePath", out var gsp) && gsp is string g && !string.IsNullOrWhiteSpace(g)))
                 { Log.Info("saves: " + from + " left beside the game - SUPER ZSNES's own settings name no states folder yet"); return 0; }
                 var to = Path.Combine(folders.StateDir, name + ".data.szsnes");
+                var aside = Path.Combine(folders.StateDir, ConflictsFolder, name + ".data.szsnes");
                 foreach (var file in Directory.GetFiles(from, "*", SearchOption.AllDirectories))
                 {
-                    var target = Path.Combine(to, Path.GetRelativePath(from, file));
-                    if (File.Exists(target)) { Log.Info("saves: " + file + " left where it is - " + target + " is already there"); continue; }
-                    Directory.CreateDirectory(Path.GetDirectoryName(target));
-                    File.Move(file, target);
-                    moved++;
+                    var rel = Path.GetRelativePath(from, file);
+                    var target = Path.Combine(to, rel);
+                    var how = PlaceStateFile(file, target, Path.Combine(aside, rel));
+                    if (how == "moved") moved++;
+                    else if (how == "duplicate") Log.Info("saves: " + file + " removed - the same file is already " + target);
+                    else Log.Info("saves: " + file + " differs from " + target + " - moved aside to " + how.Substring("conflict:".Length));
                 }
                 // The folder beside the game, once nothing is left in it.
                 foreach (var dir in Directory.GetDirectories(from, "*", SearchOption.AllDirectories).OrderByDescending(d => d.Length).Append(from))
@@ -155,6 +157,47 @@ namespace LbIntegrations.SuperZsnes
             }
             catch (Exception ex) { Log.Warn("saves: could not move the game's states out of its folder", ex); }
             return moved;
+        }
+
+        /// <summary>Where a state left beside a game goes when the states folder already has a different file of that name.</summary>
+        internal const string ConflictsFolder = "conflicts";
+
+        /// <summary>One file of a game's states folder beside it, put into the states folder (lot 9). Moved; when that name is
+        /// already there: removed if it is the same bytes (nothing is lost), else moved into the conflicts folder under its date,
+        /// never over a file. Never left beside the game (Mehdi, 13/10: Secret of Mana's .szst-last stayed there). Returns
+        /// "moved", "duplicate" or "conflict:" and where it went.</summary>
+        internal static string PlaceStateFile(string file, string target, string asideTarget)
+        {
+            if (!File.Exists(target))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(target));
+                File.Move(file, target);
+                return "moved";
+            }
+            if (SameBytes(file, target)) { File.Delete(file); return "duplicate"; }
+            var dir = Path.GetDirectoryName(asideTarget);
+            var stem = Path.GetFileName(asideTarget) + "." + File.GetLastWriteTime(file).ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+            var dest = Path.Combine(dir, stem);
+            for (int i = 2; File.Exists(dest); i++) dest = Path.Combine(dir, stem + "-" + i);
+            Directory.CreateDirectory(dir);
+            File.Move(file, dest);
+            return "conflict:" + dest;
+        }
+
+        private static bool SameBytes(string a, string b)
+        {
+            var fa = new FileInfo(a); var fb = new FileInfo(b);
+            if (fa.Length != fb.Length) return false;
+            using var sa = fa.OpenRead(); using var sb = fb.OpenRead();
+            var x = new byte[81920]; var y = new byte[81920];
+            int n;
+            while ((n = sa.Read(x, 0, x.Length)) > 0)
+            {
+                int m = 0;
+                while (m < n) { int k = sb.Read(y, m, n - m); if (k <= 0) return false; m += k; }
+                for (int i = 0; i < n; i++) if (x[i] != y[i]) return false;
+            }
+            return sb.Read(y, 0, 1) == 0;
         }
 
         // ── listing ──────────────────────────────────────────────────────────

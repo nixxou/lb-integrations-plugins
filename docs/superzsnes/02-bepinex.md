@@ -10,7 +10,7 @@ sur l'émulateur et survit aux mises à jour sans table d'offsets.
 | pièce | rôle | version dans be.788 |
 |---|---|---|
 | Doorstop | `winhttp.dll` relais posé à côté de l'exe ; `UnityPlayer.dll` l'importe statiquement, Windows la prend dans le dossier de l'exe avant System32 (mesuré au ProcMon : première DLL cherchée là) ; elle démarre CoreCLR et appelle BepInEx | 4.5.0 |
-| `dotnet\` | runtime .NET embarqué, même architecture que le jeu | 6.0.7 x86 |
+| `dotnet\` | runtime .NET embarqué, même architecture que le jeu | 6.0.7 x64 (x86 jusqu'à la 0.310) |
 | Preloader / Chainloader | découvre `BepInEx\plugins\*.dll`, les charge, appelle `Load()` | be.788 |
 | Cpp2IL | lit `global-metadata.dat` + `GameAssembly.dll`, produit les types et signatures | métadonnées 23 → 106 |
 | Il2CppInterop | génère `BepInEx\interop\*.dll`, une classe .NET par type IL2CPP, chaque champ exposé comme propriété (`get_srmPath` / `set_srmPath`), chaque méthode comme appel natif | 1.5.3 |
@@ -28,7 +28,23 @@ sur l'émulateur et survit aux mises à jour sans table d'offsets.
 Épinglé et non « latest » : un chargeur n'est pas quelque chose à laisser dériver sous un plugin
 compilé contre lui. Téléchargé et non embarqué : LGPL 2.1, 30 Mo, et le pack ne redistribue rien
 de lui. Les deux constantes sont dans `src\SuperZsnes\SuperZsnesBepInEx.cs` (`Build`, `Packages`).
-L'architecture est lue dans l'en-tête PE de `SUPERZSNES.exe` (`0x14C` x86, `0x8664` x64).
+L'architecture est lue dans l'en-tête PE de `SUPERZSNES.exe` (`0x14C` x86, `0x8664` x64). La
+0.310 était x86, **la 0.320 est x64** (mesuré le 13/10) : les deux paquets servent.
+
+### Quand l'émulateur change d'architecture
+
+Une mise à jour extraite par-dessus le dossier laisse le `winhttp.dll` de l'ancienne architecture.
+Windows ne le charge pas dans un processus de l'autre (aucun message) : plus de plugin, les
+réglages repartent sous LocalLow (mesuré le 13/10 sur une 0.310 recouverte par la 0.320).
+`SuperZsnesBepInEx.WrongArch` compare l'en-tête PE de `winhttp.dll` à celui de l'exe ;
+`HasBepInEx` répond alors **non**, et `Deploy` (installation ou mise à jour depuis LaunchBox,
+bouton Repair) retire `winhttp.dll`, `doorstop_config.ini`, `.doorstop_version`, `dotnet\`,
+`BepInEx\core`, `interop`, `unity-libs`, `cache`, `patchers` **après** avoir téléchargé et vérifié
+le bon paquet, puis l'extrait. Gardés : `BepInEx\config`, `plugins`, `nixx-docs` et tout ce qui est
+à l'émulateur (`portable\`, `saves\`, `states\`). Au lancement rien n'est téléchargé : une ligne
+dans `superzsnes.log` (« bepinex can't load: x86 BepInEx beside an x64 SUPERZSNES.exe »), et la
+fenêtre Nixx le dit. Le plugin compilé contre l'interop x86 de la 0.310 tourne tel quel dans la
+0.320 x64 (mesuré) : il ne référence que des noms.
 
 ### Ce qui compte dans l'historique de BepInEx
 

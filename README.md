@@ -22,7 +22,7 @@ is published by Unbroken Software), so these are installed by hand.
 | `src/Bsnes` | bsnes (nightly) | Super Nintendo Entertainment System | download / update the project's nightly build, launch, saves and save states |
 | `src/Demul` | Demul | Sega Dreamcast, Sega Naomi, Sega Naomi 2, Sammy Atomiswave, Sega Hikaru (+ System SP, CV1000, Gaelco by platform name) | download / update (the 2025 build, kept in `vendor/demul`), launch - **closed source** |
 | `src/RaSnes9x` | RASnes9x (RetroAchievements' Snes9x) | Super Nintendo Entertainment System | download / update (1.2, from retroachievements.org or `vendor/rasnes9x`), launch, RetroAchievements login, saves and save states |
-| `src/SuperZsnes` | SUPER ZSNES | Super Nintendo Entertainment System | download / update from zsnes.com, launch - **closed source**, see its notes for what is measured and what is not |
+| `src/SuperZsnes` | SUPER ZSNES | Super Nintendo Entertainment System | download / update from zsnes.com, launch, RetroAchievements login (0.320+, softcore) - **closed source**, see its notes for what is measured and what is not |
 
 Five folders are shared sources rather than plugins: `src/Shared.Lbip` (the row injection, used by
 all of them), `src/Shared.Dsi` (the DSi NAND engine, melonDS and no$gba), `src/Shared.Psf` (PARAM.SFO,

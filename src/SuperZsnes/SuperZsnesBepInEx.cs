@@ -19,7 +19,8 @@
 //       the emulator's folder after an update broke something finds the runbook beside the log.
 //
 // The architecture is read off SUPERZSNES.exe's PE header, because BepInEx's runtime must match the
-// process: 0.310 is x86, and the x64 package is pinned too for the day that changes.
+// process: 0.310 is x86, 0.320 (13/10) is x64. A BepInEx of the other architecture counts as absent
+// (HasBepInEx) and Deploy replaces it - what an update from LaunchBox does on its own.
 //
 // NOTHING IS DOWNLOADED AT LAUNCH. PrepareEmulatorForLaunch only puts back the two things that can
 // be put back from this assembly - the plugin DLL and the docs - when BepInEx itself is already
@@ -85,9 +86,46 @@ namespace LbIntegrations.SuperZsnes
 
         // ── status ───────────────────────────────────────────────────────────
 
+        /// <summary>BepInEx is there AND can load: its winhttp.dll is built for the same architecture as SUPERZSNES.exe.
+        /// 0.320 (13/10) went from x86 to x64; an update extracted over a 0.310 folder leaves the x86 BepInEx beside an x64
+        /// exe, which Windows skips without a word - measured: no plugin, the settings back under LocalLow.</summary>
         public static bool HasBepInEx(string exeDir)
+            => HasBepInExFiles(exeDir) && WrongArch(exeDir) == null;
+
+        public static bool HasBepInExFiles(string exeDir)
             => File.Exists(Path.Combine(exeDir, "winhttp.dll"))
                && File.Exists(Path.Combine(exeDir, "BepInEx", "core", "BepInEx.Unity.IL2CPP.dll"));
+
+        /// <summary>"x86 BepInEx beside an x64 SUPERZSNES.exe" when they differ, else null (also when either cannot be read:
+        /// nothing to say then).</summary>
+        public static string WrongArch(string exeDir)
+        {
+            var exe = Path.Combine(exeDir, SuperZsnesPaths.ExecutableName);
+            var loader = Path.Combine(exeDir, "winhttp.dll");
+            if (!File.Exists(exe) || !File.Exists(loader)) return null;
+            string e = ArchOf(exe), l = ArchOf(loader);
+            return e == null || l == null || e == l ? null : l + " BepInEx beside an " + e + " " + SuperZsnesPaths.ExecutableName;
+        }
+
+        /// <summary>What BepInEx brought and what it generated for one architecture, gone before the other is extracted.
+        /// Kept: BepInEx\config, \plugins, \nixx-docs, and everything of the emulator's (portable\, saves\, states\...).
+        /// interop\ is generated from the game, so it is rebuilt at the next start anyway.</summary>
+        private static readonly string[] ArchSpecific =
+        {
+            "winhttp.dll", "doorstop_config.ini", ".doorstop_version", "dotnet",
+            Path.Combine("BepInEx", "core"), Path.Combine("BepInEx", "interop"), Path.Combine("BepInEx", "unity-libs"),
+            Path.Combine("BepInEx", "cache"), Path.Combine("BepInEx", "patchers"),
+        };
+
+        private static void RemoveArchSpecific(string exeDir)
+        {
+            foreach (var rel in ArchSpecific)
+            {
+                var path = Path.Combine(exeDir, rel);
+                if (Directory.Exists(path)) Directory.Delete(path, true);
+                else if (File.Exists(path)) File.Delete(path);
+            }
+        }
 
         public static bool HasPlugin(string exeDir) => File.Exists(Path.Combine(exeDir, "BepInEx", "plugins", PluginFileName));
 
@@ -174,6 +212,7 @@ namespace LbIntegrations.SuperZsnes
 
                 if (!HasBepInEx(exeDir))
                 {
+                    var wrong = WrongArch(exeDir);
                     report?.Invoke("Downloading BepInEx " + Build + " (" + arch + ")...", 0);
                     if (ZipOverride != null) archive = ZipOverride;
                     else
@@ -189,6 +228,12 @@ namespace LbIntegrations.SuperZsnes
                         return r;
                     }
                     report?.Invoke("Extracting BepInEx...", null);
+                    // Only once the right archive is here and checked: a failed download leaves the old one as it was.
+                    if (wrong != null)
+                    {
+                        RemoveArchSpecific(exeDir);
+                        r.Steps.Add("removed the " + wrong.Split(' ')[0] + " BepInEx (" + wrong + ")");
+                    }
                     Archives.ExtractOver(archive, exeDir);
                     r.Steps.Add("BepInEx " + Build + " (" + arch + ") extracted");
                     r.Changed = true;
@@ -284,6 +329,8 @@ namespace LbIntegrations.SuperZsnes
         public static string Describe(string exeDir)
         {
             if (!Directory.Exists(exeDir)) return "no such folder";
+            var wrong = WrongArch(exeDir);
+            if (wrong != null && HasBepInExFiles(exeDir)) return "BepInEx can't load: " + wrong + " (the emulator changed architecture) - Repair puts the right one";
             if (!HasBepInEx(exeDir)) return "BepInEx not installed";
             var version = "?";
             try { version = File.ReadAllText(Path.Combine(exeDir, ".doorstop_version")).Trim(); } catch { }

@@ -92,6 +92,9 @@ namespace LbIntegrations.SuperZsnes
                  "The emulator raises it on its own schedule. Off: it is put back to sleep the frame it appears.", "off"),
             Bool(OptionFamily.Plugin, "version-popup", "Integration", "Show the \"a new version is out\" dialog",
                  "Off hides it; the pack's own update check still runs in LaunchBox.", "off"),
+            // 13/10, catalogued, not shown (the plugin's default already hides them): which window, if any, is Mehdi's call.
+            Bool(OptionFamily.Plugin, "welcome-popup", "Integration", "Show the first-start \"Welcome!\" and \"How to play\" dialogs",
+                 "The emulator raises them when it starts without a settings file. Off: closed the frame they appear, the way their own button would.", "off"),
             Bool(OptionFamily.Plugin, "display", "Window", "Always full screen on the primary display",
                  "The display holding the desktop's origin, whatever number Unity gives it: the window is moved there over the first frames, then put in a borderless full screen window at its resolution. Beats -monitor and the remembered display. Needs the BepInEx plugin. A game whose own options set its display mode, size, borderless window or monitor is left to them.", "on"),
             Bool(OptionFamily.Plugin, "persist", "Integration", "Write the overrides into the emulator's settings file",
@@ -139,6 +142,10 @@ namespace LbIntegrations.SuperZsnes
             Bool(OptionFamily.Setting, "snesRumble", "Gameplay", "Rumble", "Vibration on supported pads."),
             Bool(OptionFamily.Setting, "rightStickGameSpeed", "Gameplay", "Right stick controls game speed", ""),
             Bool(OptionFamily.Setting, "swapAcceptCancel", "Gameplay", "Swap accept and cancel", "Menu navigation buttons."),
+            // New in 0.320 (13/10), catalogued, not shown: which window, if any, is Mehdi's call.
+            Bool(OptionFamily.Setting, "promptOnLoadState", "Gameplay", "Confirm before loading a state", "0.320: the emulator asks before a state replaces the game in progress."),
+            Bool(OptionFamily.Setting, "raProgressMeterOff", "RetroAchievements", "Hide the progress meter", "0.320: the on-screen progress of a measured achievement."),
+            Bool(OptionFamily.Setting, "raChallengeIndicatorsOff", "RetroAchievements", "Hide the challenge indicators", "0.320: the icons of an achievement being attempted."),
 
             Float(OptionFamily.Setting, "uiVolumeInv", "Audio", "Interface volume", "Stored as the emulator stores it (\"Inv\": its own scale, 0 to 1).", 0, 1),
             Float(OptionFamily.Setting, "gameVolumeInv", "Audio", "Game volume", "Same scale.", 0, 1),
@@ -162,6 +169,8 @@ namespace LbIntegrations.SuperZsnes
             Bool(OptionFamily.Game, "disEnhanceWide", "Enhancements (this game)", "Disable the mod's widescreen", ""),
             Bool(OptionFamily.Game, "disEnhanceBorder", "Enhancements (this game)", "Disable the border", ""),
             Bool(OptionFamily.Game, "disEnhanceGSU", "Enhancements (this game)", "Disable the Super FX enhancement", "Star Fox's 3D models."),
+            Bool(OptionFamily.Game, "videoEnhancementDisable", "Enhancements (this game)", "Load no visual enhancement", "0.320: the game's visual enhancement data is not loaded at all."),
+            Bool(OptionFamily.Game, "audioEnhancementDisable", "Enhancements (this game)", "Load no audio enhancement", "0.320: the game's audio enhancement data is not loaded at all."),
             Bool(OptionFamily.Game, "inaccurateEmuMode", "Enhancements (this game)", "Inaccurate legacy mode", "For old patches that relied on ZSNES's quirks."),
             Int(OptionFamily.Game, "overclock", "Enhancements (this game)", "CPU overclock (%)", "0 is stock.", 0, 400),
             Bool(OptionFamily.Game, "widescreenOverride", "Widescreen (this game)", "Force widescreen", "The emulator's own note: SNES games were not coded for it; for widescreen ROM hacks and the rare game where it works."),

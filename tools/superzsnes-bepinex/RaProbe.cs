@@ -34,8 +34,13 @@ namespace LbIntegrations.SuperZsnes.Mod
                 typeof(RaGameId), typeof(RaSession), typeof(RaSets), typeof(RaGrant),
                 // Not the native callbacks (LoginCallback, load_game_callback, LogMessage): patched, they were called at
                 // once with garbage (01/10) - rcheevos holds pointers to them.
-                typeof(RcStart), typeof(RcLogin), typeof(RcLoadGame),
-                typeof(OptionsOpened), typeof(OptionsEnableRa), typeof(RaOverlayOpened), typeof(RaOverlayTryLogin), typeof(MenuState),
+                typeof(RcAwake), typeof(RcInitialize), typeof(RcLoginPassword), typeof(RcLoginToken), typeof(RcLogout), typeof(RcLoadGame),
+                typeof(RcHardcore),
+                // 0.320: the front end of the native client.
+                typeof(ZraAwake), typeof(ZraStart), typeof(ZraInitialize), typeof(ZraLogin), typeof(ZraPerformLogin), typeof(ZraLoginCallback),
+                typeof(ZraLogout), typeof(ZraLoadNewGame), typeof(ZraLoadGameCallback), typeof(ZraEvent), typeof(ZraMessage),
+                typeof(EncGet), typeof(EncPut),
+                typeof(OptionsOpened), typeof(OptionsEnableRa), typeof(RaOverlayOpened), typeof(RaOverlayLogin), typeof(MenuState),
             })
                 patch(harmony, t, "ra probe: " + t.Name);
         }
@@ -64,12 +69,61 @@ namespace LbIntegrations.SuperZsnes.Mod
     [HarmonyPatch(typeof(RetroAchievements), "GrantAchievement")] internal static class RaGrant
     { private static void Prefix(string title, int numPoints) => RaProbe.Say("RetroAchievements.GrantAchievement \"" + title + "\" " + numPoints + " pt"); }
 
-    // ── the native rcheevos client ──────────────────────────────────────────
-    [HarmonyPatch(typeof(ZRCheevosIntegration), "Start")] internal static class RcStart { private static void Prefix() => RaProbe.Say("ZRCheevosIntegration.Start"); }
-    [HarmonyPatch(typeof(ZRCheevosIntegration), "Login")] internal static class RcLogin
-    { private static void Prefix(string userID, string password) => RaProbe.Say("ZRCheevosIntegration.Login user=" + userID + " password=" + RaProbe.Len(password)); }
+    // ── the native rcheevos client (0.320: Start/Login became Awake/Initialize/LoginWithPassword/LoginWithToken) ──
+    [HarmonyPatch(typeof(ZRCheevosIntegration), "Awake")] internal static class RcAwake { private static void Prefix() => RaProbe.Say("ZRCheevosIntegration.Awake"); }
+    [HarmonyPatch(typeof(ZRCheevosIntegration), "Initialize")] internal static class RcInitialize { private static void Prefix() => RaProbe.Say("ZRCheevosIntegration.Initialize"); }
+    [HarmonyPatch(typeof(ZRCheevosIntegration), "LoginWithPassword")] internal static class RcLoginPassword
+    { private static void Prefix(string userID, string password) => RaProbe.Say("ZRCheevosIntegration.LoginWithPassword user=" + userID + " password=" + RaProbe.Len(password)); }
+    [HarmonyPatch(typeof(ZRCheevosIntegration), "LoginWithToken")] internal static class RcLoginToken
+    { private static void Prefix(string userID, string token) => RaProbe.Say("ZRCheevosIntegration.LoginWithToken user=" + userID + " token=" + RaProbe.Len(token)); }
+    [HarmonyPatch(typeof(ZRCheevosIntegration), "Logout")] internal static class RcLogout { private static void Prefix() => RaProbe.Say("ZRCheevosIntegration.Logout"); }
     [HarmonyPatch(typeof(ZRCheevosIntegration), "LoadGame")] internal static class RcLoadGame
     { private static void Prefix(int rom_size) => RaProbe.Say("ZRCheevosIntegration.LoadGame " + rom_size + " bytes"); }
+    [HarmonyPatch(typeof(ZRCheevosIntegration), "rc_client_set_hardcore_enabled")] internal static class RcHardcore
+    { private static void Prefix(int enabled) => RaProbe.Say("rc_client_set_hardcore_enabled " + enabled); }
+
+    // ── 0.320's front end, ZRetroAchievements ───────────────────────────────
+    [HarmonyPatch(typeof(ZRetroAchievements), "Awake")] internal static class ZraAwake { private static void Prefix() => RaProbe.Say("ZRetroAchievements.Awake"); }
+    [HarmonyPatch(typeof(ZRetroAchievements), "Start")] internal static class ZraStart { private static void Prefix() => RaProbe.Say("ZRetroAchievements.Start"); }
+    [HarmonyPatch(typeof(ZRetroAchievements), "Initialize")] internal static class ZraInitialize { private static void Prefix() => RaProbe.Say("ZRetroAchievements.Initialize"); }
+    [HarmonyPatch(typeof(ZRetroAchievements), "Login")] internal static class ZraLogin
+    { private static void Prefix(string userID, string password) => RaProbe.Say("ZRetroAchievements.Login user=" + userID + " password=" + RaProbe.Len(password)); }
+    [HarmonyPatch(typeof(ZRetroAchievements), "PerformLogin")] internal static class ZraPerformLogin
+    {
+        private static void Prefix()
+        {
+            var s = MainMenuManager.Instance?.mainMenuSettings;
+            RaProbe.Say("ZRetroAchievements.PerformLogin - settings rauserID=" + (s == null ? "?" : s.rauserID ?? "null")
+                        + " raencT=" + (s == null ? "?" : s.raencT == null ? "null" : "<" + s.raencT.Length + " bytes>"));
+        }
+    }
+    [HarmonyPatch(typeof(ZRetroAchievements), "LoginCallback")] internal static class ZraLoginCallback
+    {
+        private static void Prefix(ZRCheevosIntegration.RC_ERROR val, string message, ZRCheevosIntegration.ClientUser clientUser)
+            => RaProbe.Say("ZRetroAchievements.LoginCallback " + val + " \"" + message + "\" user="
+                           + (clientUser == null ? "null" : clientUser.username + " token=" + RaProbe.Len(clientUser.token)));
+    }
+    [HarmonyPatch(typeof(ZRetroAchievements), "Logout")] internal static class ZraLogout { private static void Prefix() => RaProbe.Say("ZRetroAchievements.Logout"); }
+    [HarmonyPatch(typeof(ZRetroAchievements), "LoadNewGame")] internal static class ZraLoadNewGame
+    { private static void Prefix(ZRCheevosIntegration.RC_CONSOLE console) => RaProbe.Say("ZRetroAchievements.LoadNewGame " + console); }
+    [HarmonyPatch(typeof(ZRetroAchievements), "LoadGameCallback")] internal static class ZraLoadGameCallback
+    {
+        private static void Prefix(ZRCheevosIntegration.RC_ERROR error, ZRCheevosIntegration.GameClientInfo gameClient)
+            => RaProbe.Say("ZRetroAchievements.LoadGameCallback " + error + " game " + gameClient?.id + " \"" + gameClient?.title + "\"");
+    }
+    [HarmonyPatch(typeof(ZRetroAchievements), "EventCallback")] internal static class ZraEvent
+    {
+        private static void Prefix(ZRCheevosIntegration.ClientEvent clientEvent)
+            => RaProbe.Say("ZRetroAchievements.EventCallback " + clientEvent?.eventType + (clientEvent?.achievement == null ? "" : " \"" + clientEvent.achievement.title + "\""));
+    }
+    [HarmonyPatch(typeof(ZRetroAchievements), "MessageCallback")] internal static class ZraMessage
+    { private static void Prefix(string message) => RaProbe.Say("rcheevos: " + RaProbe.Cut(message, 300)); }
+
+    // ── the token's encryption ──────────────────────────────────────────────
+    [HarmonyPatch(typeof(StringEnc), "GetNPW")] internal static class EncGet
+    { private static void Postfix(string __result) => RaProbe.Say("StringEnc.GetNPW -> " + RaProbe.Len(__result)); }
+    [HarmonyPatch(typeof(StringEnc), "GetEPW")] internal static class EncPut
+    { private static void Prefix(string password) => RaProbe.Say("StringEnc.GetEPW " + RaProbe.Len(password)); }
 
     // ── the menus ───────────────────────────────────────────────────────────
     [HarmonyPatch(typeof(OptionsOverlay), "OnEnable")] internal static class OptionsOpened
@@ -93,8 +147,8 @@ namespace LbIntegrations.SuperZsnes.Mod
     [HarmonyPatch(typeof(RetroAchievementsOverlay), "OnEnable")] internal static class RaOverlayOpened
     { private static void Prefix() => RaProbe.Say("the RetroAchievements screen opened"); }
 
-    [HarmonyPatch(typeof(RetroAchievementsOverlay), "TryLogin")] internal static class RaOverlayTryLogin
-    { private static void Prefix() => RaProbe.Say("RetroAchievementsOverlay.TryLogin"); }
+    [HarmonyPatch(typeof(RetroAchievementsOverlay), "Login")] internal static class RaOverlayLogin
+    { private static void Prefix() => RaProbe.Say("RetroAchievementsOverlay.Login"); }
 
     /// <summary>In the main menu (no ROM): the state at 4 s; with --nixx-ra-unlock, the options dialog opened at 6 s and
     /// the RetroAchievements dialog at 12 s, the way the menu would open them - their GameObjects set active.</summary>
@@ -129,8 +183,10 @@ namespace LbIntegrations.SuperZsnes.Mod
 
         private static void State(MainMenuManager m, string when)
         {
-            var ra = RetroAchievements.Instance;
-            RaProbe.Say(when + " (" + (int)Time.realtimeSinceStartup + " s): RetroAchievements.Instance " + (ra == null ? "none" : "there, logged in " + ra.IsLoggedIn)
+            // 0.320 dropped RetroAchievements.Instance: the C# client is no longer the one that runs.
+            string z;
+            try { var zra = ZRetroAchievements.Instance; z = zra == null ? "none" : "there, logged in " + zra.IsLoggedIn(); } catch (Exception ex) { z = ex.GetType().Name; }
+            RaProbe.Say(when + " (" + (int)Time.realtimeSinceStartup + " s): ZRetroAchievements.Instance " + z
                         + "; optionsDialog " + RaProbe.Active(m.optionsDialog) + "; retroachievementsDialog " + RaProbe.Active(m.retroachievementsDialog)
                         + "; devBuild " + RaProbe.Active(m.devBuild));
         }

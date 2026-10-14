@@ -20,6 +20,8 @@
 //                 left alone.
 //   POPUPS        the "check out our Patreon" dialog (MainMenuManager.supportUs) is put back to
 //                 sleep the frame it wakes up; the "new version" one can be, on request.
+//   CHEEVOS       0.320+: the RetroAchievements login LaunchBox holds, written into the emulator's settings the
+//                 way its own login screen would (Cheevos.cs).
 //
 // Options.cs has the grammar. Two traps for whoever adds to this: Object.FindObjectOfType and the
 // new Input System's ButtonControl properties are stripped from this build ("Method unstripping
@@ -36,7 +38,7 @@ using UnityEngine;
 
 namespace LbIntegrations.SuperZsnes.Mod
 {
-    [BepInPlugin("com.nixxou.superzsnes", "SUPER ZSNES integration", "0.5.0")]
+    [BepInPlugin("com.nixxou.superzsnes", "SUPER ZSNES integration", "0.6.0")]
     public class Plugin : BasePlugin
     {
         internal static NixxLog Logger;
@@ -64,7 +66,7 @@ namespace LbIntegrations.SuperZsnes.Mod
                 for (int i = 0; i < args.Length; i++) Logger.LogInfo("  [" + i + "] " + args[i]);
                 foreach (var u in Opt.Unknown) Logger.LogWarning("unknown option ignored: " + u);
                 Logger.LogInfo("options: portable=" + Opt.Portable + " quit-confirm=" + Opt.QuitConfirm + " menu-key=" + Opt.MenuKey
-                            + " support-popup=" + Opt.SupportPopup + " version-popup=" + Opt.VersionPopup + " persist=" + Opt.Persist
+                            + " support-popup=" + Opt.SupportPopup + " version-popup=" + Opt.VersionPopup + " welcome-popup=" + Opt.WelcomePopup + " persist=" + Opt.Persist
                             + " display=" + (Opt.Display ?? "as is") + " data-folders=" + Opt.DataFolders + " log=" + Opt.Log + " set=" + Opt.Settings.Count + " game=" + Opt.GameSettings.Count);
                 if (Opt.Display != null && Opt.Display != "primary") Logger.LogWarning("display \"" + Opt.Display + "\" is not understood; only \"primary\" is");
 
@@ -80,6 +82,16 @@ namespace LbIntegrations.SuperZsnes.Mod
                 Patch(harmony, typeof(Overrides.AfterGameSettings), "per-game overrides");
                 Patch(harmony, typeof(Overrides.AroundSave), "keeping overrides out of the file");
                 Patch(harmony, typeof(PopupPatch), "popups and primary display");
+                // RetroAchievements (0.320+): the login LaunchBox left, if any, read and deleted now - Cheevos.cs.
+                // A build without ZRetroAchievements (0.310) has nothing to log in: not an error for nixx-errors.log.
+                Cheevos.TakeHandoff(PortableRoot);
+                if (typeof(MainMenuManager).Assembly.GetType("ZRetroAchievements") == null)
+                    Logger.LogInfo("RetroAchievements: this build has no ZRetroAchievements (before 0.320) - nothing to log in");
+                else
+                {
+                    if (Cheevos.Pending) Patch(harmony, typeof(Cheevos.AfterLoad), "RetroAchievements login from LaunchBox");
+                    Patch(harmony, typeof(Cheevos.LoginResult), "RetroAchievements login result in the log");
+                }
                 if (Opt.RaProbe) RaProbe.Install(harmony, Patch);
                 Logger.LogInfo("patched: " + string.Join(", ", harmony.GetPatchedMethods()));
             }
@@ -89,7 +101,7 @@ namespace LbIntegrations.SuperZsnes.Mod
             }
         }
 
-        public const string Version = "0.5.0";
+        public const string Version = "0.6.0";
 
         private void Patch(Harmony harmony, Type patchClass, string feature)
         {
@@ -218,8 +230,25 @@ namespace LbIntegrations.SuperZsnes.Mod
     [HarmonyPatch(typeof(MainMenuManager), "Update")]
     internal static class PopupPatch
     {
-        private static int _hiddenSupport, _hiddenVersion;
-        private static bool _failureLogged;
+        private static int _hiddenSupport, _hiddenVersion, _hiddenWelcome;
+        private static bool _failureLogged, _firstStart, _howToPlayClosed;
+
+        /// <summary>An active dialog closed the way its own close button would (BasicOverlay.OnClose) when it has one,
+        /// deactivated otherwise. False when it was not showing.</summary>
+        private static bool Close(GameObject go, out string how)
+        {
+            how = null;
+            if (go == null || !go.activeSelf) return false;
+            how = "deactivated";
+            try
+            {
+                var overlay = go.GetComponent<BasicOverlay>();
+                if (overlay != null) { overlay.OnClose(); how = "closed through its BasicOverlay"; }
+            }
+            catch (Exception ex) { how = "deactivated (OnClose: " + ex.Message + ")"; }
+            if (go.activeSelf) go.SetActive(false);
+            return true;
+        }
 
         private static void Postfix(MainMenuManager __instance)
         {
@@ -243,6 +272,25 @@ namespace LbIntegrations.SuperZsnes.Mod
                     {
                         go.SetActive(false);
                         if (_hiddenVersion++ == 0) Plugin.Logger.LogInfo("new-version popup hidden");
+                    }
+                }
+                // "Welcome! This build is early in development..." - raised on a FIRST start, when there is no settings file
+                // yet (measured 13/10: welcomeDialogShown is not what gates it). Closed through its own BasicOverlay.OnClose
+                // when it has one, so the menu's state is what the Okay button leaves; deactivated otherwise.
+                // Under it, the same first start raises "How to play: Select Game->Load..." with the list of enhanced
+                // games (enhancementDialog, an EnhancementOverlay): closed ONCE, only in a session that saw the welcome
+                // dialog, so the same dialog opened later from the menu is left alone.
+                if (!Plugin.Opt.WelcomePopup)
+                {
+                    if (Close(__instance.welcomeDialog, out var how))
+                    {
+                        _firstStart = true;
+                        if (_hiddenWelcome++ == 0) Plugin.Logger.LogInfo("welcome popup " + how);
+                    }
+                    if (_firstStart && !_howToPlayClosed && Close(__instance.enhancementDialog, out how))
+                    {
+                        _howToPlayClosed = true;
+                        Plugin.Logger.LogInfo("first-start \"How to play\" dialog " + how);
                     }
                 }
             }

@@ -110,12 +110,20 @@ quitter, puis chercher `Scanlines` dans `portable\szsnes_ui.data` : il ne doit p
 ## P6 · `MainMenuManager.Update()` — postfix
 
 **Classe** : `PopupPatch`. **Options** : `--nixx-support-popup=on|off` (défaut off = cachée),
-`--nixx-version-popup=on|off` (défaut off depuis le 01/10), `--nixx-display=primary`.
+`--nixx-version-popup=on|off` (défaut off depuis le 01/10), `--nixx-welcome-popup=on|off` (défaut
+off depuis le 13/10), `--nixx-display=primary`.
 
 **Fait**, chaque frame :
 - si `supportUs.activeSelf` et popup non voulue → `SetActive(false)` (la boîte « Just this once, we
   want to let you know that you can check out our Discord server… Patreon… ») ;
 - idem `newVersion` ;
+- `welcomeDialog` (« Welcome to SUPER ZSNES! This build is early in development… ») fermé par son
+  propre `BasicOverlay.OnClose()` (ce que fait son bouton Okay), désactivé à défaut ; et, **seulement
+  dans une session où il est apparu**, une fois, `enhancementDialog` (`EnhancementOverlay`, « How to
+  play: Select Game->Load… » + la liste des jeux enrichis), levé en dessous au même moment. Les deux
+  n'apparaissent qu'au **premier démarrage**, quand `szsnes_ui.data` n'existe pas encore : ce n'est
+  pas `welcomeDialogShown` qui les déclenche (mesuré le 13/10 : `--nixx-set:welcomeDialogShown=true`
+  ne change rien). Le même dialogue d'enrichissements ouvert plus tard depuis le menu est laissé ;
 - `PrimaryDisplay.Tick()` si `--nixx-display=primary` (voir P7).
 
 **Pourquoi là.** `supportUs` et `newVersion` sont des `GameObject` publics de `MainMenuManager` ;
@@ -142,7 +150,49 @@ qu'exclusif : le journal de l'émulateur montre « Failed to change display to
 ExclusiveFullscreen...reverting to FullscreenWindow ».
 
 **État** : écrit, compilé, **non encore observé en conditions réelles** au moment de cette doc ;
-vérifier les lignes `primary display: …` du journal.
+vérifier les lignes `primary display: …` du journal. (Observé depuis : 01/10 en 0.310, 13/10 en
+0.320 x64, `primary display: 0,0 1920x1080 … full screen window`.)
+
+---
+
+## P8 · le compte RetroAchievements — `MainMenuManager.LoadMainMenuSave()` postfix, code `Cheevos.cs`
+
+**Classes** : `Cheevos.AfterLoad` (posée seulement quand un compte attend), `Cheevos.LoginResult`
+(préfixe de `ZRetroAchievements.LoginCallback`, journal seul). **Pas d'option** : c'est LaunchBox
+qui décide, en passant ou non un compte au lancement (`RetroAchievementCredentials`).
+
+**Fait** : juste avant le lancement, le greffon LaunchBox (`SuperZsnesCheevos.Write`) écrit
+`portable\nixx-ra-login.bin` = `"v1\n<utilisateur>\n<jeton>"` protégé **DPAPI** pour l'utilisateur
+Windows (entropie `nixx-superzsnes-ra-v1`) : le jeton n'est jamais en clair sur le disque. Le plugin
+le lit et **le supprime** dans `Load()`, puis à la fin de `LoadMainMenuSave` écrit
+`settings.rauserID = utilisateur` et `settings.raencT = new StringEnc().Init().GetEPW(jeton)` si le
+compte n'est pas déjà celui-là. L'émulateur fait le reste lui-même, comme si l'utilisateur avait
+tapé ses identifiants dans Config > Retroachievements, et garde le compte dans ses réglages, chiffré
+à sa façon.
+
+**Pourquoi là.** `raencT` est chiffré avec une clé dérivée de `SystemInfo.deviceUniqueIdentifier`
+(05) : seul le processus de l'émulateur la calcule sans deviner. `LoadMainMenuSave` finit avant
+`ZRetroAchievements.Start`, qui lit les réglages et se connecte (mesuré : 32,155 s puis 32,770 s).
+Pas de mot de passe : LaunchBox donne le **jeton de connexion**, celui que rcheevos prend
+(`rc_client_begin_login_with_token`).
+
+**Hardcore** : jamais. La 0.320 n'en a pas (notes de version) et laisse états, rembobinage et
+triches ; un client rcheevos en hardcore à côté, c'est ce qui fait signaler un compte. Le greffon
+annonce `isHardcore: false` et une demande de hardcore de LaunchBox devient une ligne de journal.
+
+**Mesuré le 13/10** (compte factice) : `RetroAchievements: a login from LaunchBox for nixxtest`,
+`login set for nixxtest`, puis l'émulateur seul : `StringEnc.GetNPW -> <19 chars>`,
+`rcheevos: Attempting to log in nixxtest (with token)`, `Login failed: HTTP/1.1 401 Unauthorized` ;
+fichier supprimé ; au lancement suivant sans fichier, même tentative : le compte est resté dans ses
+réglages. **Reste à observer** : une connexion réussie avec un vrai compte, depuis LaunchBox.
+
+**Avant la 0.320** (pas de `ZRetroAchievements` dans l'interop) : rien n'est posé, une ligne
+d'information dans `nixx.log`, **pas** d'erreur dans `nixx-errors.log` (mesuré le 13/10 sur la 0.310
+avec le plugin 0.6.0 compilé contre la 0.320).
+
+**Si ça casse** : `rauserID`/`raencT` renommés → `--nixx-dump-options` ; `StringEnc` renommé →
+`--nixx-ra-probe` (qui journalise `GetEPW`/`GetNPW`) et 06 ; la connexion ne part plus de
+`ZRetroAchievements.Start/Initialize` → `--nixx-ra-probe` dit qui se connecte et quand.
 
 ---
 
@@ -152,5 +202,6 @@ vérifier les lignes `primary display: …` du journal.
   (`Application.Quit` direct).
 - `MasterExecutor.Awake` (analyse des arguments) : il ignore déjà nos `--nixx-…` et trouve la ROM
   quelle que soit sa position.
-- `RetroAchievements.*`, `StringEnc` : pas encore ; voir 05 pour ce qui est prêt.
+- Le client RetroAchievements lui-même (`ZRetroAchievements`, `ZRCheevosIntegration`) : seul son
+  compte est fourni (P8) ; `--nixx-ra-probe` l'observe sans le modifier.
 - Les entrées manette (`inputData`) : hors périmètre pour l'instant.

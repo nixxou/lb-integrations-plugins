@@ -499,16 +499,41 @@ namespace LbIntegrations.SuperZsnes
 
         // ── RetroAchievements ────────────────────────────────────────────────
 
-        /// <summary>Not through this plugin. The EMULATOR supports RetroAchievements natively - its
-        /// build carries rcheevos (rc_client_begin_login_with_password, RC_CONSOLE_SUPER_NINTENDO,
-        /// a hardcore switch) and a Config > Retroachievements page with a Web API key field, even
-        /// though the site still lists the feature under "coming". But it keeps the credentials in a
-        /// settings store this pack has not located, as a user id and an ENCRYPTED token (its fields
-        /// are named rauserID and raencT), so there is nothing to write them into. Claiming support
-        /// and silently doing nothing would be worse than saying so; the user logs in inside the
-        /// emulator, once.</summary>
+        /// <summary>From 0.320 on, and only with the pack's in-process plugin: the emulator keeps its login encrypted with a
+        /// key only its own process can compute, so the login goes through the plugin - see SuperZsnesCheevos. Before 0.320
+        /// the build had a client that sent nothing (measured 01/10); without the plugin there is nothing to write into.
+        /// Never hardcore: SUPER ZSNES has none yet. What the emulator itself holds is not readable from here, so neither
+        /// enabled nor the user is claimed.</summary>
         public override RetroAchievementSupportResponse SupportsRetroAchievements(string emulatorApplicationPath)
-            => new RetroAchievementSupportResponse(isSupported: false);
+        {
+            try
+            {
+                var exe = ResolveFullPath(emulatorApplicationPath);
+                if (!SuperZsnesSettings.BepInExWanted || !SuperZsnesCheevos.BuildHasCheevos(exe))
+                    return new RetroAchievementSupportResponse(isSupported: false);
+                return new RetroAchievementSupportResponse(isSupported: true, isHardcore: false);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("could not tell whether this SUPER ZSNES has RetroAchievements", ex);
+                return new RetroAchievementSupportResponse(isSupported: false);
+            }
+        }
+
+        public override PluginResponse InjectRetroAchievementsCredentials(InjectRetroAchievementsCredentialsArgs args)
+        {
+            try
+            {
+                if (args == null) return new PluginResponse(false, "No credentials supplied.");
+                var why = SuperZsnesCheevos.Write(ResolveFullPath(args.EmulatorApplicationPath), args.Username, args.Token, args.HardcoreEnabled);
+                return why == null ? new PluginResponse(true) : new PluginResponse(false, why);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("could not hand over the RetroAchievements login", ex);
+                return new PluginResponse(false, "Could not hand the RetroAchievements login to SUPER ZSNES: " + ex.Message);
+            }
+        }
 
         // ── launch ───────────────────────────────────────────────────────────
 
@@ -554,10 +579,27 @@ namespace LbIntegrations.SuperZsnes
                             foreach (var step in put.Steps) if (put.Changed) Log.Info("bepinex at launch: " + step);
                             if (!put.Ok) Log.Warn("bepinex at launch: " + put.Problem);
                         }
+                        else if (SuperZsnesBepInEx.WrongArch(exeDir) is string wrong && SuperZsnesBepInEx.HasBepInExFiles(exeDir))
+                            Log.Warn("bepinex can't load: " + wrong + " (the emulator was updated by hand?) - the --nixx-* options will be ignored; Repair in the Nixx window, or update from LaunchBox");
                         else Log.Info("bepinex is not installed beside " + Path.GetFileName(exe) + " - the --nixx-* options will be ignored; install it from the Nixx window");
                     }
                 }
                 catch (Exception ex) { Log.Warn("bepinex at launch", ex); }
+
+                // The RetroAchievements login LaunchBox holds, for the plugin to put in the emulator's settings (0.320+) -
+                // after the plugin was put back above. Never fails the launch: without it the emulator's own login stays.
+                try
+                {
+                    if (args?.RetroAchievementCredentials != null)
+                    {
+                        var creds = args.RetroAchievementCredentials.Value;
+                        bool hardcore = false;
+                        try { hardcore = args.EmulatorBeingLaunched?.EnableHardcoreAchievements ?? false; } catch { }
+                        var why = SuperZsnesCheevos.Write(ResolveFullPath(args.EmulatorBeingLaunched?.ApplicationPath), creds.Username, creds.Token, hardcore);
+                        if (why != null) Log.Warn("RetroAchievements login not handed over: " + why + " - launching anyway");
+                    }
+                }
+                catch (Exception ex) { Log.Warn("RetroAchievements login at launch", ex); }
 
                 // A PNG beside each slot state (X.szst0 -> X.szst0.png), from the screenshot the state carries, once
                 // SUPER ZSNES has quit - SuperZsnesStateThumbs.

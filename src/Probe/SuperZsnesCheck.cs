@@ -75,7 +75,17 @@ namespace LbIntegrations.Probe
             if (!Check("the deploy succeeds", ok)) Console.WriteLine("     " + (string)r.GetType().GetField("Problem").GetValue(r));
             Check("BepInEx, Doorstop and the runtime are there", File.Exists(Path.Combine(dir, "winhttp.dll")) && File.Exists(Path.Combine(dir, "BepInEx", "core", "BepInEx.Unity.IL2CPP.dll")) && Directory.Exists(Path.Combine(dir, "dotnet")));
             var cfg = Path.Combine(dir, "BepInEx", "config", "BepInEx.cfg");
-            Check("the config is silent", File.Exists(cfg) && File.ReadAllText(cfg).Replace("\r\n", "\n").Contains("[Logging.Console]\n\nEnabled = false"));
+            // Read by section: a folder BepInEx has already started in holds its own rewrite, comments between the keys.
+            bool Off(string section)
+            {
+                var text = File.ReadAllText(cfg).Replace("\r\n", "\n");
+                int at = text.IndexOf("[" + section + "]", StringComparison.Ordinal);
+                if (at < 0) return false;
+                int next = text.IndexOf("\n[", at + 1, StringComparison.Ordinal);
+                var body = next < 0 ? text.Substring(at) : text.Substring(at, next - at);
+                return System.Text.RegularExpressions.Regex.IsMatch(body, @"(?m)^Enabled = false$");
+            }
+            Check("the config is silent", File.Exists(cfg) && Off("Logging.Console") && Off("Logging.Disk"));
             Check("the plugin is in BepInEx\\plugins", File.Exists(Path.Combine(dir, "BepInEx", "plugins", "SuperZsnes.BepInEx.dll")));
             Check("the docs are in BepInEx\\nixx-docs", File.Exists(Path.Combine(dir, "BepInEx", "nixx-docs", "README.md")));
             Console.WriteLine(_fail == 0 ? "  OK - BepInEx deployed for real" : "  " + _fail + " FAILED");
@@ -303,7 +313,7 @@ namespace LbIntegrations.Probe
                       bios.Count == 1 && bios[0].FileName == "dsp1b.rom" && !bios[0].Required && bios[0].Md5 == "332273cc0df5775d3803f2fd88e95d18"
                       && plugin.GetBiosFilesForPlatform(exe, Snes, "").Count() == 1 && !plugin.GetBiosFilesForPlatform("Nintendo 64").Any(),
                       string.Join(", ", bios.Select(b => b.FileName + (b.Required ? " required" : "") + " " + b.Md5)));
-                Check("RetroAchievements: not by the plugin", !plugin.SupportsRetroAchievements(exe).IsSupported);
+                Check("RetroAchievements: not offered for a build older than 0.320 (or of unknown version)", !plugin.SupportsRetroAchievements(exe).IsSupported);
                 Check("save management is on: the cartridge save and the states", plugin.SupportsSaveManagement());
                 Check("the launch gets the primary display alone - on by default since 04/10",
                       plugin.PrepareEmulatorForLaunch(new PrepareForLaunchArgs(mine, null, "", null, null))?.NewCommandLine == "--nixx-display=primary");
@@ -589,6 +599,49 @@ namespace LbIntegrations.Probe
                         Check("Describe says it is installed", ((string)deployType.GetMethod("Describe", flags).Invoke(null, new object[] { install })).StartsWith("BepInEx installed"));
                         Check("IsDeployed agrees", (bool)deployType.GetMethod("IsDeployed", flags).Invoke(null, new object[] { install }));
 
+                        // 0.320 (13/10) went x86 -> x64: an update extracted over the folder leaves an x86 BepInEx that an
+                        // x64 exe never loads (measured). It counts as absent, and Deploy swaps it, keeping what is not its own.
+                        byte[] Pe(ushort machine) { var b = (byte[])pe.Clone(); BitConverter.GetBytes(machine).CopyTo(b, 0x84); return b; }
+                        File.WriteAllBytes(Path.Combine(install, "winhttp.dll"), Pe(0x14C));
+                        File.WriteAllBytes(exe, Pe(0x8664));
+                        Directory.CreateDirectory(Path.Combine(install, "BepInEx", "interop"));
+                        File.WriteAllText(Path.Combine(install, "BepInEx", "interop", "Assembly-CSharp.dll"), "the x86 interop");
+                        Directory.CreateDirectory(Path.Combine(install, "portable"));
+                        File.WriteAllText(Path.Combine(install, "portable", "szsnes_ui.data"), "the user's settings");
+                        var wrongArch = (string)deployType.GetMethod("WrongArch", flags).Invoke(null, new object[] { install });
+                        Check("an x86 BepInEx beside an x64 exe is seen", wrongArch == "x86 BepInEx beside an x64 SUPERZSNES.exe", wrongArch);
+                        Check("  ...and counts as not installed", !(bool)deployType.GetMethod("HasBepInEx", flags).Invoke(null, new object[] { install }));
+                        Check("  ...Describe says why", ((string)deployType.GetMethod("Describe", flags).Invoke(null, new object[] { install })).StartsWith("BepInEx can't load"));
+                        steps.Clear();
+                        var swapped = Run();
+                        var swapSteps = string.Join("; ", (IEnumerable<string>)swapped.GetType().GetField("Steps").GetValue(swapped));
+                        Check("Deploy swaps it", Ok(swapped) && Changed(swapped) && swapSteps.Contains("removed the x86 BepInEx"), swapSteps + " " + Problem(swapped));
+                        Check("  ...the old interop is gone (regenerated at the next start)", !File.Exists(Path.Combine(install, "BepInEx", "interop", "Assembly-CSharp.dll")));
+                        Check("  ...the new loader is in place", File.ReadAllText(Path.Combine(install, "winhttp.dll")) == "doorstop");
+                        Check("  ...the user's config, the plugin and the emulator's data are kept",
+                              File.ReadAllText(cfg).Contains("Enabled = true")
+                              && File.ReadAllText(Path.Combine(install, "BepInEx", "plugins", "SuperZsnes.BepInEx.dll")) == "the in-process plugin, version B"
+                              && File.ReadAllText(Path.Combine(install, "portable", "szsnes_ui.data")) == "the user's settings");
+
+                        // RetroAchievements, 0.320 on: the login handed over to the in-process plugin (Cheevos.cs), DPAPI-protected.
+                        var scene320 = (byte[])scene.Clone();
+                        var about320 = Encoding.ASCII.GetBytes("\0\0\0\0v0.320b\0\0\0\0");
+                        Array.Copy(about320, 0, scene320, 1000, about320.Length);
+                        var level0 = Path.Combine(data, "level0");
+                        File.WriteAllBytes(level0, scene320);
+                        File.SetLastWriteTimeUtc(level0, DateTime.UtcNow.AddMinutes(1));
+                        var ra = plugin.SupportsRetroAchievements(exe);
+                        Check("RetroAchievements: offered from 0.320 with the plugin in place, never hardcore", ra.IsSupported && ra.IsHardcore != true);
+                        var handoff = Path.Combine(install, "portable", "nixx-ra-login.bin");
+                        var injected = plugin.InjectRetroAchievementsCredentials(new InjectRetroAchievementsCredentialsArgs(exe, "probeuser", "probetoken-0123456789", true, true));
+                        Check("  ...the login is handed over", injected.WasSuccess && File.Exists(handoff), injected.Message);
+                        Check("  ...and never in clear on disk",
+                              File.Exists(handoff) && Encoding.Latin1.GetString(File.ReadAllBytes(handoff)).IndexOf("probetoken", StringComparison.Ordinal) < 0
+                              && Encoding.Unicode.GetString(File.ReadAllBytes(handoff)).IndexOf("probetoken", StringComparison.Ordinal) < 0);
+                        Check("  ...nothing written without a token", plugin.InjectRetroAchievementsCredentials(new InjectRetroAchievementsCredentialsArgs(exe, "probeuser", "", true, false)).WasSuccess);
+                        try { File.Delete(handoff); } catch { }
+                        File.WriteAllBytes(exe, Pe(0x14C));
+
                         // PutBack alone, the launch-time path: no zip, no network, and it refuses where BepInEx is absent.
                         var bare = Path.Combine(root, "bare");
                         Directory.CreateDirectory(bare);
@@ -643,9 +696,52 @@ namespace LbIntegrations.Probe
                 try { Directory.Delete(root, true); } catch { }
             }
 
+            PlaceStateFiles(pluginType);
+
             Console.WriteLine();
             Console.WriteLine(_fail == 0 ? "  OK - SUPER ZSNES agrees with what was measured" : "  " + _fail + " FAILURE(S)");
             return _fail == 0;
+        }
+
+        /// <summary>A state left beside a game (lot 9, then Mehdi 13/10): never left there, never over a file - moved, dropped
+        /// when the states folder has the same bytes, else into conflicts\ under its date. Beside the probe, not in %TEMP%.</summary>
+        private static void PlaceStateFiles(Type pluginType)
+        {
+            Console.WriteLine("  [a state left beside a game]");
+            var place = pluginType.GetMethod("PlaceStateFile", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static);
+            if (!Check("PlaceStateFile is there", place != null)) return;
+            string Place(string file, string target, string aside) => (string)place.Invoke(null, new object[] { file, target, aside });
+            var dir = Path.Combine(AppContext.BaseDirectory, "szs-place-check");
+            try
+            {
+                if (Directory.Exists(dir)) Directory.Delete(dir, true);
+                string beside = Path.Combine(dir, "roms", "Game.data.szsnes"), states = Path.Combine(dir, "states", "Game.data.szsnes"),
+                       aside = Path.Combine(dir, "states", "conflicts", "Game.data.szsnes");
+                Directory.CreateDirectory(beside); Directory.CreateDirectory(states);
+                string F(string d, string n, string text) { var p = Path.Combine(d, n); File.WriteAllText(p, text); return p; }
+
+                var a = F(beside, "Game.szst1", "new");
+                Check("a file the states folder lacks is moved", Place(a, Path.Combine(states, "Game.szst1"), Path.Combine(aside, "Game.szst1")) == "moved"
+                      && !File.Exists(a) && File.ReadAllText(Path.Combine(states, "Game.szst1")) == "new");
+
+                var b = F(beside, "Game.szst-last", "same"); F(states, "Game.szst-last", "same");
+                Check("the same bytes already there: the copy beside the game is dropped", Place(b, Path.Combine(states, "Game.szst-last"), Path.Combine(aside, "Game.szst-last")) == "duplicate"
+                      && !File.Exists(b) && File.ReadAllText(Path.Combine(states, "Game.szst-last")) == "same");
+
+                var c = F(beside, "Game.szst2", "older"); F(states, "Game.szst2", "kept");
+                var how = Place(c, Path.Combine(states, "Game.szst2"), Path.Combine(aside, "Game.szst2"));
+                var went = how.StartsWith("conflict:") ? how.Substring(9) : "";
+                Check("different bytes: moved into conflicts\\, the states folder's own untouched", went.Length > 0 && File.Exists(went) && File.ReadAllText(went) == "older"
+                      && Path.GetDirectoryName(went) == aside && File.ReadAllText(Path.Combine(states, "Game.szst2")) == "kept" && !File.Exists(c), how);
+
+                var d = F(beside, "Game.szst2", "older");
+                File.SetLastWriteTime(d, File.GetLastWriteTime(went));
+                var how2 = Place(d, Path.Combine(states, "Game.szst2"), Path.Combine(aside, "Game.szst2"));
+                Check("a second one of the same date does not overwrite the first", how2.StartsWith("conflict:") && how2.Substring(9) != went
+                      && File.Exists(went) && File.Exists(how2.Substring(9)), how2);
+            }
+            catch (Exception ex) { Check("placing states", false, ex.ToString()); }
+            finally { try { Directory.Delete(dir, true); } catch { } }
         }
 
         private static bool AllComments(string script)

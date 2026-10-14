@@ -64,11 +64,11 @@ The same in every plugin:
 - **Cxbx `DataStorageToggle`**: set to the exe's folder at install, not re-checked at launch (a user who sets %APPDATA% moves
   the saves there - his choice).
 - **SUPER ZSNES's `.srm` and `.cht` beside games** from 01/10 (`G:\LB\FakeCatalog`): left, owner unknown.
-- **To do at the merge of the SUPER ZSNES rewrite (Mehdi, 13/10)**: a `.data.szsnes\` state left beside the ROM must not
-  stay there when a file of the same name is already in `states\` (measured 13/10, Secret of Mana: `.szst-last` in both,
-  the old one left beside the ROM by the never-overwrite rule). Move it into a folder of its own in the install
-  (a `last`/conflict folder under `states\`), never beside the game. Not done now: the plugin is being rewritten for the
-  emulator's update.
+- **Done at the merge of the SUPER ZSNES rewrite (15/10)** (Mehdi, 13/10: a `.data.szsnes\` state left beside the ROM must
+  not stay there when a file of the same name is already in `states\` - measured 13/10, Secret of Mana's `.szst-last` in
+  both): `PlaceStateFile` drops it when the states folder has the same bytes, else moves it to
+  `states\conflicts\<name>.data.szsnes\<file>.<its date>` (a second of the same date gets `-2`), never over a file. Probe
+  `--superzsnes`, "a state left beside a game". To see at the next launch of Zelda and Secret of Mana on SUPER ZSNES.
 - **ares installs whose `Paths/*` were set before 13/10** (2a5dbb8, 07/10) have no moment noted: their generic leftovers
   beside games (Mehdi's FF7 `.card`) stay where they are. Copy them by hand if they are ares's.
 - **RASnes9x installs whose `Dir:SRAM` was set on 12/10** have no moment either: the other games' `.srm`/`.rtc` beside

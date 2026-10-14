@@ -120,10 +120,33 @@ téléchargement est corrompu/intercepté. Ne jamais désactiver la vérificatio
 téléchargement manuel, comparer, et si le site a vraiment changé le fichier, réépingler (cas 2,
 étapes 2-3).
 
+## Cas 12 · Après une mise à jour, plus rien du pack, les réglages sous LocalLow
+
+L'émulateur a changé d'architecture (0.310 x86 → 0.320 x64) et le `winhttp.dll` resté dans le
+dossier est de l'autre : Windows ne le charge pas, sans rien dire. `superzsnes.log` :
+« bepinex can't load: x86 BepInEx beside an x64 SUPERZSNES.exe ». Mise à jour depuis LaunchBox ou
+bouton Repair de la fenêtre Nixx : le bon paquet est téléchargé, l'ancien retiré (02, « Quand
+l'émulateur change d'architecture »), l'interop se régénère au lancement suivant (cas 9). Les
+réglages restés sous LocalLow pendant ce temps n'ont pas écrasé ceux de `portable\` (cas 6).
+
+## Cas 13 · RetroAchievements : LaunchBox a un compte, l'émulateur ne se connecte pas
+
+1. Version : avant la 0.320, l'émulateur n'envoie rien ; le greffon ne propose alors pas
+   RetroAchievements (`SupportsRetroAchievements` = non).
+2. `superzsnes.log` : « RetroAchievements login handed to SUPER ZSNES for <user> » ? Sinon la
+   raison est sur la ligne « login not handed over: … » (plugin absent, BepInEx mal installé…).
+3. `portable\nixx.log` (`--nixx-log`) : « a login from LaunchBox for <user> », « login set for … »,
+   puis « RetroAchievements: login OK » ou le refus du serveur (« 401 Unauthorized » = jeton
+   périmé : se reconnecter dans les options RetroAchievements de LaunchBox). Plus de détail :
+   `--nixx-ra-probe` (03, P8).
+4. Si `portable\nixx-ra-login.bin` reste là après un lancement : le plugin ne s'est pas chargé
+   (cas 1) ; le fichier est protégé DPAPI, il ne se lit que sous le même compte Windows.
+
 ## Après toute réparation
 
 - `dotnet .\src\Probe\bin\Release\Probe.dll src\SuperZsnes\bin\Release\SuperZsnes.dll --platform "Super Nintendo Entertainment System" --superzsnes`
-- un lancement réel avec `--nixx-log --nixx-set:gfxMode=Scanlines`, puis vérifier que
-  `portable\szsnes_ui.data` ne contient pas « Scanlines » (P5), qu'Échap demande deux fois (P2), que
-  la popup ne revient pas (P6).
+- un lancement réel avec `--nixx-log --nixx-set:gfxMode=Scanlines`, puis un second avec
+  `--nixx-dump-options` : `portable\options.json` doit dire `gfxMode` = `None` (P5 ; chercher
+  « Scanlines » dans `szsnes_ui.data` ne prouve rien, la valeur y est un entier). Puis qu'Échap
+  demande deux fois (P2), que la popup ne revient pas (P6).
 - mettre à jour 03, 05 et 09 avec ce qui a changé et la date.
