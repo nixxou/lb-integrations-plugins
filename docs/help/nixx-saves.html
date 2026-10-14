@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nixx-Saves - Nixx plugin guide</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#ffffff; --ink:#1d1d1f; --muted:#5f6368; --line:#e3e3e0; --accent:#0a6ed1; --ok:#1e8e3e; --warn:#b06000; --no:#c5221f; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17181a; --card:#1f2124; --ink:#e8e8e6; --muted:#a0a3a7; --line:#33363a; --accent:#5aa9ff; --ok:#5bc27a; --warn:#e3a34a; --no:#ff7b72; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 "Segoe UI", system-ui, sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 64px; }
+  header h1 { margin:0 0 4px; font-size:30px; }
+  header p { margin:0; color:var(--muted); }
+  nav { margin:20px 0 8px; display:flex; flex-wrap:wrap; gap:8px; }
+  nav a { font-size:14px; color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; background:var(--card); }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 24px; margin:18px 0; }
+  h2 { margin:0 0 10px; font-size:21px; }
+  h3 { margin:18px 0 6px; font-size:17px; }
+  ul { padding-left:22px; } li { margin:4px 0; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .yes { color:var(--ok); font-weight:600; } .partly { color:var(--warn); font-weight:600; } .no { color:var(--no); font-weight:600; }
+  .tip, .warn { border-left:4px solid var(--accent); padding:8px 14px; margin:12px 0; background:color-mix(in srgb, var(--accent) 8%, transparent); border-radius:0 8px 8px 0; }
+  .warn { border-color:var(--warn); background:color-mix(in srgb, var(--warn) 10%, transparent); }
+  code, kbd { font-family:Consolas, monospace; font-size:14px; background:color-mix(in srgb, var(--ink) 8%, transparent); padding:1px 5px; border-radius:4px; }
+  footer { color:var(--muted); font-size:13px; text-align:center; margin-top:30px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Nixx-Saves</h1>
+  <p>What the pack does for the saves of games set to an emulator that is not one of its own.</p>
+</header>
+<nav>
+  <a href="#overview">In short</a><a href="#why">Why</a><a href="#stock">LaunchBox's integrations</a><a href="#handmade">An emulator you added</a>
+  <a href="#options">Turning it off</a><a href="#litebox">In LiteBox</a><a href="#limits">Limits</a><a href="#trouble">If something goes wrong</a>
+</nav>
+
+<section id="overview"><h2>In short</h2>
+  <p>Nixx-Saves has no emulator of its own and nothing to set up. It comes with the pack and makes sure that a game's
+  <b>Game Saves</b> shows every save any emulator keeps for that game - and that each one is backed up when the game quits and
+  restored where its own emulator reads it - also on games whose emulator is not one of the pack's.</p>
+  <p>The pack's own emulators (ares, bsnes, melonDS...) already do this for their games; Nixx-Saves covers the rest.</p>
+</section>
+
+<section id="why"><h2>Why it is needed</h2>
+  <p>LaunchBox asks only the emulator a game is set to about that game's saves. A save made by another emulator - a game played
+  once with <b>Launch With</b>, or moved from one emulator to another - is never shown, never backed up, and a restore would put it
+  in the wrong emulator's folders.</p>
+  <p class="tip">Example: Final Fantasy VII is set to DuckStation, and you played it once with RetroArch. Without the pack, its
+  RetroArch memory card is in no card at all; with it, it shows in Game Saves, is backed up when the game quits, and a restore
+  writes it back into RetroArch's folder.</p>
+</section>
+
+<section id="stock"><h2>Games set to LaunchBox's own integrations</h2>
+  <ul>
+    <li><b>RetroArch, Dolphin, PCSX2</b>: their own saves are shown as before, and the other emulators' saves of the game beside them.
+    The cards of these three get an id in the pack's form (their original id is kept inside it, and they always see their own);
+    the pack's setup gives them back their original form if you uninstall it.</li>
+    <li><b>DuckStation, MAME, RPCS3, Cemu, ScummVM, xemu, BigPEmu</b>: LaunchBox gives them no save support at all. When another
+    emulator with saves covers one of their platforms (RetroArch, ares...), their games get a <b>Game Saves</b> page with those
+    emulators' saves. They have none of their own: a MAME arcade game no other emulator runs still has no Game Saves.</li>
+  </ul>
+</section>
+
+<section id="handmade"><h2>An emulator you added yourself</h2>
+  <p>An emulator no plugin drives - one you added by hand, or one LaunchBox has no integration for - is taken by Nixx-Saves, so that
+  its games show the other emulators' saves too. It changes nothing else:</p>
+  <ul>
+    <li>the launch is exactly as you set it (its command line, its options);</li>
+    <li>its Edit Emulator screens show no version, no download and no update;</li>
+    <li>it is never offered when you add an emulator or import games.</li>
+  </ul>
+  <p>Nixx-Saves never takes an emulator another plugin takes, nor one the pack or LaunchBox has an integration for (RetroArch,
+  DuckStation, ares... even when you turned that integration off). Its log says which emulators it took and why.</p>
+</section>
+
+<section id="options"><h2>Turning it off</h2>
+  <p>Everything above is on the <b>Compatibility</b> page of <b>Tools &gt; Nixx Integration Plugins Configuration...</b>, in the
+  card <b>Saves of every emulator</b> (the advanced view has one line each):</p>
+  <table><tr><th>Line</th><th>What it covers</th></tr>
+  <tr><td>Every emulator's saves on games set to RetroArch, Dolphin or PCSX2</td><td>The first list above.</td></tr>
+  <tr><td>Other emulators' saves on games set to DuckStation, MAME, RPCS3, Cemu, ScummVM, xemu or BigPEmu</td><td>The second list.</td></tr>
+  <tr><td>Other emulators' saves on games set to an emulator no plugin drives</td><td>An emulator you added yourself.</td></tr>
+  <tr><td>RetroArch, Dolphin and PCSX2 save ids in the pack's form</td><td>Turned off, their cards go back to LaunchBox's own ids at the next start.</td></tr>
+  </table>
+  <p>Turned off, a game shows only its own emulator's saves, as in plain LaunchBox. Changes apply when LaunchBox (or BigBox) is restarted.</p>
+</section>
+
+<section id="litebox"><h2>In LiteBox</h2>
+  <p>LiteBox shows every emulator's saves of a game by itself: under LiteBox, Nixx-Saves steps aside and takes no emulator.</p>
+</section>
+
+<section id="limits"><h2>Limits and things to know</h2>
+  <ul>
+    <li>On a game set to an emulator you added yourself, a save changed during the session may not be backed up when the game quits.
+    Use <b>Backup Save</b> on its card if you want a copy right away.</li>
+    <li>A card no emulator lists any more (its emulator removed, a save left from long ago) is deleted by LaunchBox itself when you
+    choose Delete Save, after its own warning: the file goes for good.</li>
+    <li>To restore a save state, LaunchBox offers the slots of the game's emulator, even for another emulator's state; that
+    emulator then takes the slot or says which one it needs.</li>
+    <li>Uninstall the pack only through its setup: it gives the RetroArch, Dolphin and PCSX2 cards back their original ids. The pack's
+    own cards stay listed afterwards; restoring one of them through another emulator is not advised.</li>
+  </ul>
+</section>
+
+<section id="trouble"><h2>If something goes wrong</h2>
+  <ul><li>The plugin's log: <code>%LOCALAPPDATA%\lb-integrations-plugins\nixx-saves.log</code> (General tab: "Open the logs folder").
+  It lists the emulators taken or left at each start, and every save handed to another emulator.</li></ul>
+</section>
+
+<footer>Nixx integration plugins for LaunchBox</footer>
+</main>
+</body>
+</html>

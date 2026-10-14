@@ -125,6 +125,13 @@
   <tr><td><kbd>Escape</kbd></td><td>Quit Flycast</td></tr>
   <tr><td><kbd>F11</kbd> or <kbd>Alt</kbd>+<kbd>Enter</kbd></td><td>Toggle full screen (built into Flycast, always on)</td></tr></table>
   <p>Flycast's normal controls are kept. A key you already use is never taken, an action you already bound keeps your key, and a keyboard mapping file you already have is never rewritten. The emulator entry's pause-screen scripts (save state, load state, exit) are filled with the keys Flycast really has, so LaunchBox's and Big Box's pause screen work. Only empty scripts are filled.</p>
+  <h3 id="other-saves">The other emulators' saves</h3>
+  <ul>
+    <li>A game's <b>Game Saves</b> also shows the saves the other emulators keep for it - one played with <b>Launch With</b>, or before the game moved to Flycast: RetroArch's, Dolphin's, PCSX2's and the other Nixx plugins'. Each card names its emulator.</li>
+    <li>They are backed up with Flycast's when the game quits, and a restore puts each one back where its own emulator reads it, never into Flycast's folders.</li>
+    <li>Two installs of one emulator (two folders) keep their cards apart; when a restore cannot tell which install a card is for, it asks you.</li>
+    <li>Turned off on the <b>Compatibility</b> page of the Nixx window (<b>Saves of every emulator</b>), a game shows only Flycast's saves, as in LaunchBox. The <b>Nixx-Saves</b> guide tells the same for games set to LaunchBox's own integrations.</li>
+  </ul>
 </section>
 
 <section id="support"><h2>What works</h2>

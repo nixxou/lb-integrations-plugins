@@ -133,17 +133,29 @@
     when they are empty, and LaunchBox's pause screen uses them. Each state gets a picture of the game next to it,
     <code>Zelda.bs1.png</code>, kept with it in LaunchBox's backups.</li>
   </ul>
+  <h3 id="other-saves">The other emulators' saves</h3>
+  <ul>
+    <li>A game's <b>Game Saves</b> also shows the saves the other emulators keep for it - one played with <b>Launch With</b>, or before the game moved to ares: RetroArch's, Dolphin's, PCSX2's and the other Nixx plugins'. Each card names its emulator.</li>
+    <li>They are backed up with ares's when the game quits, and a restore puts each one back where its own emulator reads it, never into ares's folders.</li>
+    <li>Two installs of one emulator (two folders) keep their cards apart; when a restore cannot tell which install a card is for, it asks you.</li>
+    <li>Turned off on the <b>Compatibility</b> page of the Nixx window (<b>Saves of every emulator</b>), a game shows only ares's saves, as in LaunchBox. The <b>Nixx-Saves</b> guide tells the same for games set to LaunchBox's own integrations.</li>
+  </ul>
 </section>
 
 <section id="limits"><h2>Limits and things to know</h2>
   <ul>
     <li>No RetroAchievements in ares.</li>
-    <li>A disc as an <code>.iso</code>, <code>.bin</code> or <code>.img</code> with no <code>.cue</code>: ares opens discs only through a .cue, so the plugin writes a hidden
-    <code>&lt;game&gt;.cue</code> beside it, once. A cooked (2048-byte) ISO has no CD audio tracks - and on the PlayStation no XA sound or video sectors -
+    <li>A disc as an <code>.iso</code>, <code>.bin</code> or <code>.img</code> with no <code>.cue</code>: ares opens discs only through a .cue, so the plugin writes one
+    in <code>Emulators\Nixx-ares\Discs\</code>, beside a link to the image - a hard link when the image is on the same drive as LaunchBox, a
+    symbolic one otherwise (that one needs Windows' developer mode). Nothing is written beside the game; the hidden <code>&lt;game&gt;.cue</code>
+    an older build left there is removed. A <code>.cue</code> of your own beside the image is used as it is. A cooked (2048-byte) ISO has no CD audio tracks - and on the PlayStation no XA sound or video sectors -
     so a game may play without its music, or not at all: a <code>.bin/.cue</code> or <code>.chd</code> dump is the safe choice.</li>
     <li>ares reads <code>.zip</code>, <code>.cue</code> and <code>.chd</code>; a cartridge in a <code>.7z</code> is unpacked by the plugin into
     <code>Emulators\Nixx-ares\Unpacked</code>; a disc in one is refused. A <code>.m3u</code> starts on its first disc - ares has no playlists.</li>
-    <li>To change discs (PlayStation, Mega CD): leave full screen, then <b>PlayStation</b> (or <b>Mega CD</b>) <b>&gt; Change Disc</b> - the file dialog opens in the game's folder. The PC Engine CD has no disc change in ares.</li>
+    <li>To change discs (PlayStation, Mega CD): leave full screen, then <b>PlayStation</b> (or <b>Mega CD</b>) <b>&gt; Change Disc</b> - the file dialog opens in the folder of the disc ares loaded: the game's folder, or for an <code>.iso</code> the
+    plugin's <code>Discs\</code> folder, where the other discs of its <code>.m3u</code> are too. The PC Engine CD has no disc change in ares.</li>
+    <li>When you copy or back up the LaunchBox folder, leave out <code>Emulators\Nixx-ares\Discs\</code>: a hard link there is the image itself, so
+    a plain copy copies the whole image. The folder is rebuilt at each launch, and a link whose image is gone is removed.</li>
     <li>Satellaview and Sufami Turbo games need two cartridges at once: not handled yet.</li>
   </ul>
 </section>

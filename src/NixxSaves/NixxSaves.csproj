@@ -41,6 +41,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The plugin's user guide, shown from the General tab of the Nixx window (src\Menus\Settings.cs). -->
+    <EmbeddedResource Include="..\..\docs\help\nixx-saves.html" LogicalName="help.html" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Same version as the other plugins, so HarmonySharedState is shared and they coordinate. -->
     <PackageReference Include="Lib.Harmony" Version="2.4.2" />
   </ItemGroup>
