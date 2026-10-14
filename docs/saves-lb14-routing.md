@@ -399,7 +399,7 @@ integration calls when the picked slot is occupied, answers true without asking.
 the pick (Dolphin; measured with a test plugin).
 ## 6. The sandbox left on G:\LB1326 - removed 15/10
 
-**Removed 15/10**, LaunchBox closed: the two SaveProbe emulators (Emulators.xml, their folders and Nixx-SaveProbeCatchAll),
+**Removed 15/10**, LaunchBox closed: the two SaveProbe emulators (`Emulators.xml`, their folders and `Nixx-SaveProbeCatchAll`),
 the two games and their 36 `<GameSave>` rows, the 3 fake ROMs, the 21 vault files and the ares `.ram`, all MOVED to
 `Backups\lbip-lot10-sandbox-2026-10-15\` (with `Data` before); the probe plugins were already out. FakeEmu and the
 hand-made `Aaa`/`Bbb` emulators kept. `PlaySessions\2026.jsonl` still names the two games (history only). Not done:
