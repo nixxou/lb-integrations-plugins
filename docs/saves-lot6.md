@@ -84,5 +84,23 @@ To see in LaunchBox (Mehdi; `Data` saved first):
    listing at every start (as on lot 5's DuckStation).
 9. The pack's logs after a session: no line repeated every few minutes about a free emulator.
 
+### Measured in LaunchBox, 14-15/10 (G:\LB1326, `Data` saved in `Backups\lbip-before-lot6-2026-10-14\`)
+
+- **Passed.** Point 5: at each start, the registry is read (20 emulator plugins); FakeEmu, the two SaveProbe emulators and
+  two hand-made ones (`yt-dlp (2).exe`) are taken; no pack or stock emulator. Point 2, listing: FakeEmu's game lists the
+  ares `.ram` through Nixx-Saves. Restore: "handed to ares", the file written in ares's folder, twice (to the first copy,
+  then to `-01`). Point 3: FakeEmu starts as before. Point 4: no version, update or download in Edit Emulator. Point 7:
+  Nixx-Saves not offered in Add Emulator for Nintendo 64.
+- **No backup at the game's close.** The `.ram` changed while FakeEmu ran (content and time, same size), and no
+  `[SaveBackup]` line at the close, twice, nor at the next start's automatic backup. A restore of the same card did make
+  its precautionary copy ("content signature/timestamp changed"). So the comparison can see the change; the exit and
+  start-up paths do not take it. LaunchBox's code for it cannot be read (its bodies are decrypted at run time). Next:
+  the same change on a game whose emulator is a pack plugin (Zelda on ares) - if it fails too, it is every plugin of
+  ours (no content signature: lot 3's F); if not, it is the catch-all's.
+- **A row nobody lists is deleted by LaunchBox itself.** Delete Save on the old probe card: LaunchBox's own question
+  ("This will permanently delete the save file...") and the file gone, with no plugin asked (no `RemoveSave` in any of
+  the pack's logs). `MayDeleteUnclaimed` only runs when a plugin is asked; for a card no plugin lists, LaunchBox does
+  not ask one. Its own question is explicit, so left as it is.
+
 Known and left: with two taken emulators of one exe name in two folders, restoring a save nobody claims says "which
 install" instead of "belongs to no emulator" (still refused).
