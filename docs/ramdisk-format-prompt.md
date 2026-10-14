@@ -1,38 +1,42 @@
-# To do: the "You need to format the disk" prompt on AIM RAM disks
+# On hold: the "You need to format the disk" prompt on AIM RAM disks
 
-Seen by Mehdi on 14/10, at a melonDS DSiWare launch. Each blank AIM RAM disk makes Windows ask to format a drive: I:
-first, then Z: once the first cause was fixed. Clicking Cancel is harmless: the disk is the empty RAM disk, and the
+Seen by Mehdi on 14/10, at two melonDS DSiWare launches (01:13 and 01:22). A blank AIM RAM disk made Windows ask to
+format a drive: I: the first time, Z: the second. Clicking Cancel is harmless: the disk is the empty RAM disk, and the
 helper formats it a moment later.
 
-## Measured (14/10, drive letters polled every 40 ms)
+**Not reproduced since.** From 21:04 the same evening, no prompt with any helper version, so there is no way to tell
+whether a fix works. Everything tried was reverted (Mehdi, 14/10): the helper is 1.14 everywhere. Pick this up again
+if the prompt comes back.
 
-The helper 1.14 mounts with `aim_ll -a -t vm -s <MB>M -o rem -m Z: -p "/fs:ntfs /q /y"`. There are two causes:
+## What was measured (14/10, drive letters polled every 40 ms)
 
-1. **Windows' automatic letter.** The mount manager gives the new raw volume the first free letter (I:). `KeepOnly`
+The helper 1.14 mounts with `aim_ll -a -t vm -s <MB>M -o rem -m Z: -p "/fs:ntfs /q /y"`. The raw volume was seen
+twice before its format:
+
+1. **Windows' automatic letter.** The mount manager gave the new raw volume the first free letter (I:). `KeepOnly`
    takes it away, but only after the prompt has already shown.
 2. **aim_ll itself.** It puts Z: on the raw volume, then formats it: Z: was raw for 380 ms.
 
-## Tried and reverted (helper 1.15, not shipped)
+**Our own access is not the cause.** The plugin writes only after the helper's "OK mount", once the volume is
+NTFS (Z: raw 31.191, NTFS 31.572, melonDS "mounted" 31.649). The prompt is Explorer's reaction to a volume arriving.
 
-Windows' automatic mounting was turned off around a blank AIM mount (`mountvol /N`, then `/E`). A marker file beside
-the exe let the next run turn it back on if the helper died in between.
+## What was tried (all reverted)
 
-- I: was gone, `-o rem` included.
-- `NoAutoMount` went back to 0.
-- The prompt came back for Z:, because of cause 2.
+- **Automatic mounting off around the mount** (`mountvol /N`, then `/E`): I: was gone (`-o rem` included), but the
+  prompt came back for Z:.
+- **Helper 1.15:** automatic mounting off **and** the disk formatted in an empty folder of its own, its letter given
+  only afterwards (`SetVolumeMountPoint`). No prompt at 21:04, but no prompt either at 21:08 and 21:10 with 1.14 back
+  in place: the test proved nothing. Commits 64f4149 (plugins), 971ce6e (ExtendDB), 2d80d8e (LiteBox), all reverted.
+- **Windows' letter memory:** `HKLM\SYSTEM\MountedDevices` holds `\DosDevices\Z:` for AIM disk unit 000000, and Y:
+  for unit 000100. Deleting the Z: entry (backup in `C:\lbip-lab\MountedDevices-backup.reg`) did not bring the prompt
+  back. aim_ll writes the entry again at the next mount.
 
-Mehdi asked to revert. The source and the deployed exe are back at 1.14.
+## If it comes back
 
-## Next idea, not tried
-
-Turn automatic mounting off **and** format out of sight:
-
-1. Mount the blank disk in an empty folder: `aim_ll -m <folder> -p …`. Explorer asks nothing of a volume mounted in
-   a folder.
-2. Once it is formatted, give it its letter (`SetVolumeMountPoint`).
-3. Take the folder's mount point off.
-
-This has to be measured first: no prompt at all, the letter right, the dismount unchanged.
+- First find out what makes it appear: repeated mounts with the letters and Explorer's dialogs watched. A small
+  elevated test program, run by a scheduled task, was started and then dropped.
+- Then measure the 1.15 approach against it. The reverted commit 64f4149 holds the code: `AutoMount` (with a marker
+  file repaired at the next run) and `ToLetter`.
 
 ## Constraints
 
