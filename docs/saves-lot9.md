@@ -107,3 +107,19 @@ To see in LaunchBox (Mehdi):
 4. melonDS: a state saved lands in `savestates\`, its thumbnail beside it; `CheatFilePath` set.
 5. xemu: F12 lands in `Emulators\Nixx-Xemu\Screenshots`.
 6. SUPER ZSNES: Zelda's `.data.szsnes\` beside the ROM moved into `states\` at its launch.
+
+Seen in LaunchBox (13-15/10, G:\LB1326):
+- **1** done 13/10: Sonic CD from an ISO on G: and one on C:, both booted through `Discs\<hash>\`. On 15/10 the two ISOs
+  were moved out of the library, and the next ares call (a restore, 00:24) removed both links: "its image is gone or
+  replaced". The ISOs themselves, elsewhere, untouched.
+- **3** bsnes: the four folders set in `settings.bml` (`Saves:`, `States:`, `Cheats:`, `Screenshots:` under the install).
+  Not seen: a second game's `.srm` copied at its own launch.
+- **4** melonDS: `SaveFilePath`, `SavestatePath`, `CheatFilePath` set; Mario Kart DS's `.ml1` and its `.ml1.png` in
+  `savestates\` (13/10 23:28).
+- **5** xemu: F12 in `Emulators\Nixx-Xemu\Screenshots` (13/10 23:42).
+- **6** not met: Zelda's and Secret of Mana's `.szst-last` are in `states\` AND beside the ROM - the conflict of §3, left
+  for the SUPER ZSNES rewrite.
+- **2** not done: no multi-disc game of ISOs in the library.
+- Still beside games, all from before 13/10: `G:\Sonic CD (U).bs1` and `.bram`, `G:\play\Final Fantasy VII (Europe)
+  (Disc 1).bs1` and `.card` (ares, 06-07/10: the `.bs1` goes at the game's next launch on ares, the `.bram` and `.card`
+  are §3's "copy by hand"), `G:\LB\FakeCatalog\Secret of Mana (France).ram` (ares, 06/10, same).
