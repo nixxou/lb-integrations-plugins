@@ -6,10 +6,12 @@
 // (ZincGames - MAME renamed most of them since ZiNc), give ZiNc EX a folder holding its zips under ZiNc's names
 // (ZincRoms), point ZiNc EX's ROMs folder there for the launch (ZincExConfig) and put it back after (ZincExSession).
 //
-// MEASURED, AND NOT: the ZiNc listings, the release's layout, ZiNc EX's sources (command line, settings, ROM check) and the
-// CRCs of a MAME 0.288 folder were read on 15/10. Running a game was NOT tried here - ZiNc's saves (its cfg\ folder) are
-// not done for that reason: their files are measured before they are written. No RetroAchievements: ZiNc has none, and
-// RetroAchievements does not cover these boards.
+// Also: ZiNc EX's own per-game settings from the game's window (ZincExGameMenu, ZincExGameCfg), the import wizard kept to
+// ZiNc's games (ZincExLbImport), and the high scores - cfg\<set>.cfg, measured on 16/10 (ZincExSaves).
+//
+// MEASURED: the ZiNc listings, the release's layout, ZiNc EX's sources (command line, settings, ROM check) and the CRCs of a
+// MAME 0.288 folder on 15/10; launches, refusals and the cfg files on G:\LB1326 on 16/10. No RetroAchievements: ZiNc has
+// none, and RetroAchievements does not cover these boards.
 //
 // Like every plugin here, this talks ONLY to the public SDK, and every entry point catches, logs and degrades - the host
 // swallows exceptions silently.
@@ -41,9 +43,15 @@ namespace LbIntegrations.ZincEx
 
         public ZincExPlugin()
         {
+            // First: the save front desk registers this plugin for the others (Shared.Saves SaveDesk).
+            _desk = new LbIntegrations.Saves.SaveDesk(this, this, SaveEmu, SaveLog);
             Log.Info("plugin constructed, assembly " + typeof(ZincExPlugin).Assembly.Location);
             LbipLog.Use(Log.Info, Log.Warn, Log.Disabled, () => Log.Tracing);
             LbipRowInjection.Install("com.nixxou.lbip.zincex", MetadataRows());
+
+            // LaunchBox's Import ROM Files wizard: its game list kept to ZiNc's games for an import to ZiNc EX - see
+            // ZincExLbImport. It does nothing at all outside LaunchBox.exe.
+            ZincExLbImport.Install();
         }
 
         /// <summary>LaunchBox's metadata has no ZiNc EX row; this one is ours. AutoExtract is false: the romsets ARE the zips.</summary>
@@ -304,7 +312,7 @@ namespace LbIntegrations.ZincEx
                 if (folder == null) return Refuse(problem);
 
                 pointed = ZincExConfig.Point(exeDir, folder);
-                var line = ZincExLaunch.CommandLine(Safe(() => args?.CurrentCommandLine) ?? "", rom, match.Game.Set, ZincExSettings.ScreenFor(gameId));
+                var line = ZincExLaunch.CommandLine(Safe(() => args?.CurrentCommandLine) ?? "", rom, match.Game.Set, ScreenOf(exeDir, match.Game));
                 Log.Info("command line: " + line);
                 _sessionOn = true;
                 ZincExSession.Watch(exe, PackName, () => _sessionOn = false);
@@ -320,6 +328,15 @@ namespace LbIntegrations.ZincEx
             {
                 if (pointed) ZincExConfig.Restore(exeDir);
             }
+        }
+
+        /// <summary>The Nixx page's window flag - none for a game that has its own Window in zinc-games.cfg: ZiNc EX's
+        /// --fullscreen / --windowed would win over the game's own setting (settings.c zinc_args_ex: the play options last).</summary>
+        internal static string ScreenOf(string exeDir, ZincGame game)
+        {
+            try { if (ZincExGameCfg.Of(exeDir, game.Id).ContainsKey("fullscreen")) return "zincex"; }
+            catch (Exception ex) { Log.Warn("could not read zinc-games.cfg", ex); }
+            return ZincExSettings.Screen;
         }
 
         private static PrepareForLaunchResponse Refuse(string message)

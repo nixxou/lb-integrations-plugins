@@ -5,6 +5,10 @@
 //                                           file of the folder touched), zinc-settings.cfg pointed there and given back
 //   --zincex-explain <zip>                  what a launch of it says: the game, or the refusal's message
 //   --zincex-line                           the command line from the lines LaunchBox hands over
+//   --zincex-import <folder> --emu <ZiNc-EX.exe>  the import wizard's sort over every file of the folder
+//   --zincex-gamecfg [--scratch <dir>]      zinc-games.cfg written and read back in a scratch folder
+//   --zincex-globals --emu <ZiNc-EX.exe>    ZiNc EX's own value of each per-game setting
+//   --zincex-save --emu <ZiNc-EX.exe> --rom <zip>   the save file of a romset
 //   --zincex-latest                         the latest release as GitHub has it
 
 using System;
@@ -168,6 +172,93 @@ namespace LbIntegrations.Probe
                   L("--game tekken --windowed --foo \"" + rom + "\"", rom, "sfex", "fullscreen"));
             Console.WriteLine(_bad == 0 ? "OK" : _bad + " FAILED");
             return _bad == 0;
+        }
+
+        /// <summary>The import wizard's sort over every zip of <paramref name="folder"/>, as ZincExLbImport.Judge does it.</summary>
+        public static bool Import(Assembly asm, string folder, string exe)
+        {
+            _bad = 0;
+            Console.WriteLine("-- the import's sort, " + folder + " --");
+            var finding = T(asm, "ZincExLbImport+Finding");
+            var listType = typeof(List<>).MakeGenericType(finding);
+            var list = (IList)Activator.CreateInstance(listType);
+            foreach (var f in Directory.EnumerateFiles(folder))
+            {
+                var o = Activator.CreateInstance(finding);
+                finding.GetField("Path", Any).SetValue(o, f);
+                list.Add(o);
+            }
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            T(asm, "ZincExLbImport").GetMethod("Judge", Any).Invoke(null, new object[] { list, exe, null });
+            var kept = list.Cast<object>().Where(o => Get(o, "Drop") == null).ToList();
+            Console.WriteLine("  " + list.Count + " file(s) judged in " + watch.Elapsed.TotalSeconds.ToString("0.0") + " s: " + kept.Count + " kept");
+            foreach (var o in kept)
+                Console.WriteLine("    " + Path.GetFileName((string)Get(o, "Path")).PadRight(18) + " " + Get(Get(Get(o, "Match"), "Game"), "Set"));
+            foreach (var g in list.Cast<object>().Where(o => Get(o, "Drop") != null).GroupBy(o => ((string)Get(o, "Drop")).StartsWith("another") ? "another romset kept" : (string)Get(o, "Drop")))
+                Console.WriteLine("  " + g.Count() + " removed - " + g.Key);
+            Check("one romset per ZiNc game", kept.Select(o => (string)Get(Get(Get(o, "Match"), "Game"), "Set")).Distinct().Count() == kept.Count);
+            return _bad == 0;
+        }
+
+        /// <summary>zinc-games.cfg written as ZiNc EX writes it: a copy in a scratch folder, changed, read back.</summary>
+        public static bool GameCfg(Assembly asm, string scratchRoot)
+        {
+            _bad = 0;
+            Console.WriteLine("-- zinc-games.cfg --");
+            var dir = Path.Combine(scratchRoot ?? Path.GetTempPath(), "lbip-zincex-cfg-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            try
+            {
+                var file = Path.Combine(dir, "zinc-games.cfg");
+                File.WriteAllText(file, "; ZiNc EX per-game settings (written by ZiNc EX; a missing line means: same as the main settings)\r\n\r\n[game 2]\r\nrenderer=OpenGL\r\nfullscreen=0\r\nfuture_key=7\r\n\r\n[game 9]\r\nscale=3\r\n");
+                var cfg = T(asm, "ZincExGameCfg");
+                var of = cfg.GetMethod("Of", Any); var write = cfg.GetMethod("Write", Any);
+                var changes = new Dictionary<int, IDictionary<string, string>>
+                {
+                    [2] = new Dictionary<string, string> { ["fullscreen"] = null, ["xbrz"] = "1", ["rotate"] = "-1" },
+                    [45] = new Dictionary<string, string> { ["sound"] = "0" },
+                };
+                write.Invoke(null, new object[] { dir, changes });
+                var text = File.ReadAllText(file);
+                Console.WriteLine("  " + text.Trim().Replace("\r\n", "\n  "));
+                var two = (IDictionary<string, string>)of.Invoke(null, new object[] { dir, 2 });
+                Check("game 2: renderer kept, fullscreen taken out, xbrz and rotate set", two["renderer"] == "OpenGL" && !two.ContainsKey("fullscreen") && two["xbrz"] == "1" && two["rotate"] == "-1");
+                Check("game 2: a key ZiNc EX does not know kept", two.ContainsKey("future_key"));
+                Check("ZiNc EX's key order (renderer, rotate, xbrz)", text.IndexOf("renderer=") < text.IndexOf("rotate=") && text.IndexOf("rotate=") < text.IndexOf("xbrz="));
+                Check("game 9 untouched", ((IDictionary<string, string>)of.Invoke(null, new object[] { dir, 9 }))["scale"] == "3");
+                Check("game 45 added", ((IDictionary<string, string>)of.Invoke(null, new object[] { dir, 45 }))["sound"] == "0");
+                // Every setting taken out: the file goes, as ZiNc EX deletes it.
+                write.Invoke(null, new object[] { dir, new Dictionary<int, IDictionary<string, string>>
+                {
+                    [2] = new Dictionary<string, string> { ["renderer"] = null, ["xbrz"] = null, ["rotate"] = null, ["future_key"] = null },
+                    [9] = new Dictionary<string, string> { ["scale"] = null }, [45] = new Dictionary<string, string> { ["sound"] = null },
+                } });
+                Check("no setting left: no file", !File.Exists(file));
+            }
+            finally { try { Directory.Delete(dir, true); } catch { } }
+            Console.WriteLine(_bad == 0 ? "OK" : _bad + " FAILED");
+            return _bad == 0;
+        }
+
+        /// <summary>ZiNc EX's own global values for each per-game key, read from an install.</summary>
+        public static bool Globals(Assembly asm, string exe)
+        {
+            var dir = Path.GetDirectoryName(exe);
+            var cfg = T(asm, "ZincExGameCfg");
+            foreach (var key in (string[])cfg.GetField("Keys", Any).GetValue(null))
+                Console.WriteLine("  " + key.PadRight(18) + " " + cfg.GetMethod("Global", Any).Invoke(null, new object[] { dir, key }));
+            Console.WriteLine("  renderers: " + string.Join(", ", (IEnumerable<string>)cfg.GetMethod("Renderers", Any).Invoke(null, new object[] { dir })));
+            return true;
+        }
+
+        /// <summary>The save of a romset: the ZiNc set it is, its cfg file and whether it is there.</summary>
+        public static bool Save(Assembly asm, string exe, string rom)
+        {
+            var plugin = T(asm, "ZincExPlugin");
+            var set = (string)plugin.GetMethod("SetOf", Any).Invoke(null, new object[] { exe, rom, null });
+            var cfg = set == null ? null : (string)plugin.GetMethod("CfgOf", Any).Invoke(null, new object[] { exe, set });
+            Console.WriteLine("  " + Path.GetFileName(rom) + " -> " + (set ?? "none of ZiNc's games") + (cfg != null ? "  " + cfg + (File.Exists(cfg) ? " (there, " + new FileInfo(cfg).Length + " bytes)" : " (not yet)") : ""));
+            return set != null;
         }
 
         public static bool Latest(Assembly asm)

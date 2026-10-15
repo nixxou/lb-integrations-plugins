@@ -32,6 +32,8 @@
   <ItemGroup>
     <!-- THE SHARED ROW INJECTION, compiled in rather than referenced - see src\Shared.Lbip. -->
     <Compile Include="..\Shared.Lbip\**\*.cs" />
+    <!-- THE SAVE IDS, shared by every plugin of the pack (docs\saves-lb14-routing.md §3, §4c). -->
+    <Compile Include="..\Shared.Saves\**\*.cs" />
     <!-- The pack's switchable patches (the Compatibility page of the Nixx settings) - see src\Shared.Compat. -->
     <Compile Include="..\Shared.Compat\**\*.cs" />
     <!-- And the menu helpers: the right-click entry's icon (LbipMenuIcon). -->

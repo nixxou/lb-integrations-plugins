@@ -199,6 +199,10 @@ namespace LbIntegrations.Probe
             if (Has(args, "--zincex-serve")) { int at = Array.IndexOf(args, "--zincex-serve"); return ZincExCheck.Serve(asm, Path.GetFullPath(args[at + 1]), Path.GetFullPath(args[at + 2]), Arg(args, "--scratch")) ? 0 : 1; }
             if (Has(args, "--zincex-explain")) return ZincExCheck.Explain(asm, Path.GetFullPath(Arg(args, "--zincex-explain"))) ? 0 : 1;
             if (Has(args, "--zincex-line")) return ZincExCheck.Line(asm) ? 0 : 1;
+            if (Has(args, "--zincex-import")) return ZincExCheck.Import(asm, Path.GetFullPath(Arg(args, "--zincex-import")), Path.GetFullPath(emuPath)) ? 0 : 1;
+            if (Has(args, "--zincex-gamecfg")) return ZincExCheck.GameCfg(asm, Arg(args, "--scratch")) ? 0 : 1;
+            if (Has(args, "--zincex-globals")) return ZincExCheck.Globals(asm, Path.GetFullPath(emuPath)) ? 0 : 1;
+            if (Has(args, "--zincex-save")) return ZincExCheck.Save(asm, Path.GetFullPath(emuPath), Path.GetFullPath(Arg(args, "--rom"))) ? 0 : 1;
             if (Has(args, "--zincex-latest")) return ZincExCheck.Latest(asm) ? 0 : 1;
             // The bsnes plugin's pieces, without a host - see BsnesCheck.
             if (Has(args, "--bsnes-settings")) return BsnesCheck.Settings(asm, Path.GetFullPath(Arg(args, "--bsnes-settings")), Arg(args, "--settings")) ? 0 : 1;

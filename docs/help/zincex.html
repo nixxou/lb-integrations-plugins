@@ -35,7 +35,7 @@
   <p>What the Nixx plugin does for you, and what to expect.</p>
 </header>
 <nav>
-  <a href="#overview">In short</a><a href="#start">Getting started</a><a href="#play">Playing</a><a href="#options">Options</a>
+  <a href="#overview">In short</a><a href="#start">Getting started</a><a href="#play">Playing</a><a href="#options">Options</a><a href="#import">Importing</a>
   <a href="#saves">Saves</a><a href="#keys">Keys</a><a href="#support">What works</a><a href="#trouble">If something goes wrong</a>
 </nav>
 
@@ -60,13 +60,19 @@
 </section>
 
 <section id="options"><h2>Options</h2>
-  <p>Picture, resolution, sound, controls and bezels are ZiNc EX's own: set them in ZiNc EX's window, for every game or per game (Game &gt; Game Settings). The launch from LaunchBox takes them as they are.</p>
-  <p>In <b>Tools &gt; Nixx Integration Plugins Configuration</b>, page <b>ZiNc EX</b>: the install, where the parent and BIOS zips are looked for, which BIOS sets are found, and how the game's window opens - full screen (the default), windowed, or as set in ZiNc EX.</p>
-  <p>Right-click a game, <b>Nixx-ZiNc-EX : Options...</b>: which of ZiNc's games its romset was found to be and what ZiNc EX is given - or why it cannot start - the ZiNc game to start it as when you want another one (a merged set holds several), and its own window option. Several games selected: the option goes to each.</p>
+  <p>Right-click a game, <b>Nixx-ZiNc-EX : Options...</b>. The window has ZiNc EX's own per-game settings, in the same tabs as its Game Settings window - <b>General</b> (renderer, rotation, window or full screen, resolution, bezel), <b>Video</b> (the Direct3D 11 renderer: fullscreen mode, aspect ratio, internal resolution, xBRZ, texture smoothing, FXAA, dither smoothing, V-Sync, overscan crop, slow geometry), <b>Audio</b> and <b>Other</b> (controls profile, trainer). Each one says "As set in ZiNc EX" with ZiNc EX's own value until you change it; what you change is written into ZiNc EX's <code>zinc-games.cfg</code>, so ZiNc EX's own window shows it too. Reset to defaults puts them back.</p>
+  <p>The General tab also says which of ZiNc's games the romset was found to be and what ZiNc EX is given - or why it cannot start - with the ZiNc game to start it as when you want another one (a merged set holds several). At the bottom, the command line ZiNc EX gets.</p>
+  <p>Several games selected: "All selected games" at the top, a setting they do not share shows "Various" in purple - left so, each keeps its own; changed, it goes to all.</p>
+  <p>In <b>Tools &gt; Nixx Integration Plugins Configuration</b>, page <b>ZiNc EX</b>: the install, where the parent and BIOS zips are looked for and which BIOS sets are found, the window a game opens in (as set in ZiNc EX - the default -, full screen or windowed; a game with its own Window setting keeps it), and the sort of the import wizard. Everything else for every game is set in ZiNc EX itself (Open).</p>
+</section>
+
+<section id="import"><h2>Importing</h2>
+  <p>Import a whole MAME folder with <b>Import &gt; ROM Files</b> and Nixx-ZiNc-EX as the emulator: the last list keeps only the romsets that are ZiNc's games, told by their ROMs - one per game when MAME has several versions of it - and drops the BIOS sets and everything else. Measured on a MAME 0.288 folder of 43,974 zips: 64 games kept, in 2 seconds. LaunchBox's MAME page keeps the clones for this import: ZiNc's games are often MAME's clones (<code>sfexu</code>, <code>tekken3je1</code>).</p>
+  <p>Turn it off on the ZiNc EX page if you want the list as LaunchBox makes it.</p>
 </section>
 
 <section id="saves"><h2>Saves</h2>
-  <p>Not handled by the plugin yet: ZiNc keeps the games' settings and high scores in the <code>cfg</code> folder beside it, and has no save states. Its files are looked at before the plugin backs them up.</p>
+  <p>ZiNc keeps each game's high scores and settings in one file, <code>cfg\&lt;set&gt;.cfg</code> beside it (2 KB, written when the game ends) - named after ZiNc's game, so <code>sfexu.zip</code> played as ZiNc's sfex keeps <code>cfg\sfex.cfg</code>. LaunchBox backs it up after each game, lists it in Game Saves ("High scores and settings") and restores it - onto the ZiNc game the romset is. ZiNc has no save states.</p>
 </section>
 
 <section id="keys"><h2>Keys</h2>
@@ -83,7 +89,9 @@
   <tr><td>Download and update</td><td class="yes">Yes</td><td>The latest release on GitHub - a new upload of the same version too.</td></tr>
   <tr><td>Romsets of any MAME</td><td class="yes">Yes</td><td>Told by their ROMs; zipped, in any folder.</td></tr>
   <tr><td>BIOS under MAME's new names</td><td class="yes">Yes</td><td>coh1000c, coh3002c...</td></tr>
-  <tr><td>Saves</td><td class="no">Not yet</td><td></td></tr>
+  <tr><td>Saves</td><td class="yes">Yes</td><td>High scores and settings, cfg\&lt;set&gt;.cfg. No save states in ZiNc.</td></tr>
+  <tr><td>Import wizard</td><td class="yes">Yes</td><td>A whole MAME folder: only ZiNc's games are kept.</td></tr>
+  <tr><td>Per-game settings</td><td class="yes">Yes</td><td>ZiNc EX's own, from the game's right-click.</td></tr>
   <tr><td>RetroAchievements</td><td class="no">No</td><td>ZiNc has none.</td></tr></table>
 </section>
 

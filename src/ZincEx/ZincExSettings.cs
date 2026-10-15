@@ -8,9 +8,10 @@
 // next launch sees them. The page is ZincExSettingsPage.cs, a game's window ZincExGameMenu.cs.
 //
 // WHAT THERE IS, ON PURPOSE LITTLE (Mehdi, 06/10: the Nixx page simple, the emulator's own settings are the emulator's):
-// ZiNc EX keeps every picture, sound and control setting itself - globally and per game, in its own window - and the
-// launch takes them as they are. The plugin only says how the window opens (ZiNc EX's --fullscreen / --windowed, for that
-// launch only) and, per game, which of ZiNc's games a romset is when telling it by its content is not what is wanted.
+// ZiNc EX keeps every picture, sound and control setting itself - globally, and per game in zinc-games.cfg, which the
+// game's window edits (ZincExGameCfg) - and the launch takes them as they are. Here: how the window opens (ZiNc EX's
+// --fullscreen / --windowed, for the launch only - nothing by default), the import wizard's sort, and per game which of
+// ZiNc's games a romset is when telling it by its content is not what is wanted.
 
 using System;
 using System.Collections.Generic;
@@ -27,19 +28,22 @@ namespace LbIntegrations.ZincEx
         /// <summary>For the probe: a settings file somewhere else than beside the install.</summary>
         internal static string PathOverride;
 
-        /// <summary>"fullscreen" (the default: --fullscreen), "windowed" (--windowed) or "zincex" (neither: ZiNc EX's own
-        /// setting, Video > Full Screen and the game's in its Game Settings).</summary>
+        /// <summary>"zincex" (the default: no flag - ZiNc EX's own Video > Full Screen, and a game's Window in its Game
+        /// Settings), "fullscreen" (--fullscreen) or "windowed" (--windowed). A game with its own Window gets no flag
+        /// (ZincExPlugin.ScreenOf): ZiNc EX's flag would win over it.</summary>
         public static string Screen
         {
-            get { var v = Text(SettingsPath, "Screen"); return v == "windowed" || v == "zincex" ? v : "fullscreen"; }
+            get { var v = Text(SettingsPath, "Screen"); return v == "windowed" || v == "fullscreen" ? v : "zincex"; }
         }
-        public static void SetScreen(string value) => Write(SettingsPath, "Screen", value == "windowed" || value == "zincex" ? value : "fullscreen");
+        public static void SetScreen(string value) => Write(SettingsPath, "Screen", value == "windowed" || value == "fullscreen" ? value : "zincex");
 
-        public static string ScreenFor(string gameId)
+        /// <summary>In LaunchBox's Import ROM Files wizard, to Nixx-ZiNc-EX: the last list keeps only the romsets that are ZiNc's
+        /// games (ZincExLbImport). ON unless turned off.</summary>
+        public static bool SortImport
         {
-            var v = GameValue(gameId, "Screen");
-            return v == "fullscreen" || v == "windowed" || v == "zincex" ? v : Screen;
+            get { var v = Text(SettingsPath, "ImportSort"); return v != "false"; }
         }
+        public static void SetSortImport(bool on) => Write(SettingsPath, "ImportSort", on ? "true" : "false");
 
         /// <summary>The ZiNc set a game is started as, chosen in its window - null: told by the romset's content (ZincGames).</summary>
         public static string SetFor(string gameId)

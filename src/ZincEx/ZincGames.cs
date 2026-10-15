@@ -48,9 +48,9 @@ namespace LbIntegrations.ZincEx
             ["konamigv"] = new string[0],
         };
 
-        private static List<ZincGame> _all;
+        private static readonly Lazy<List<ZincGame>> _all = new Lazy<List<ZincGame>>(Load);
 
-        public static IReadOnlyList<ZincGame> All => _all ??= Load();
+        public static IReadOnlyList<ZincGame> All => _all.Value;
 
         public static ZincGame BySet(string set)
             => All.FirstOrDefault(g => string.Equals(g.Set, (set ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
@@ -90,6 +90,9 @@ namespace LbIntegrations.ZincEx
             public bool ByName;
             public readonly Dictionary<string, string> Zips = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         }
+
+        /// <summary>The start of a Miss.Reason for a BIOS set, and for a game of a ZiNc board that is none of ZiNc's games.</summary>
+        public const string BiosReason = "it is the BIOS set ", BoardReason = "it is a game of the board of ";
 
         /// <summary>Why nothing matched, and the game it comes closest to (most of its CRCs found), for the message.</summary>
         internal sealed class Miss
@@ -144,7 +147,12 @@ namespace LbIntegrations.ZincEx
                     var lacking = Lacking(closest, own, dirs, romZip, crcs, out var parentZip, out var biosZip);
                     miss = new Miss { Reason = "it lacks ROMs ZiNc needs", Closest = closest, Lacking = lacking, ParentZip = parentZip, BiosZip = biosZip };
                 }
-                else miss = new Miss { Reason = biosOf != null ? "it is the BIOS set " + biosOf + ", not a game" : "it holds none of the ROMs of ZiNc's 71 games" };
+                // A BIOS set by its name (ZiNc's or MAME's); a zip that only carries a BIOS's ROM is another game of that board.
+                else if (biosOf != null && (string.Equals(name, biosOf, StringComparison.OrdinalIgnoreCase)
+                                            || (BiosAliases.TryGetValue(biosOf, out var names) && names.Contains(name, StringComparer.OrdinalIgnoreCase))))
+                    miss = new Miss { Reason = BiosReason + biosOf + ", not a game" };
+                else if (biosOf != null) miss = new Miss { Reason = BoardReason + biosOf + " that ZiNc 1.1 does not run" };
+                else miss = new Miss { Reason = "it holds none of the ROMs of ZiNc's 71 games" };
                 return null;
             }
             // Several (a merged set holds its clones too): the one named so, then the one with most of its own ROMs in the
@@ -166,7 +174,13 @@ namespace LbIntegrations.ZincEx
 
         /// <summary>The CRCs a game shares with its family - its parent and the parent's other clones, or its own clones - and
         /// with its BIOS (the ROMs common to every game of that BIOS): what does not tell it from its relatives.</summary>
-        private static HashSet<uint> SharedCrcs(ZincGame g)
+        private static HashSet<uint> SharedCrcs(ZincGame g) => _shared.GetOrAdd(g, SharedCrcsOf);
+
+        /// <summary>Worked out once per game: an import reads thousands of zips against the 71 games.</summary>
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<ZincGame, HashSet<uint>> _shared
+            = new System.Collections.Concurrent.ConcurrentDictionary<ZincGame, HashSet<uint>>();
+
+        private static HashSet<uint> SharedCrcsOf(ZincGame g)
         {
             var shared = new HashSet<uint>();
             var mine = new HashSet<uint>(g.Roms.Select(r => r.Crc));

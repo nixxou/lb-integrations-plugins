@@ -41,6 +41,7 @@ namespace LbIntegrations.ZincEx
     internal sealed class ZincExSettingsPage : UserControl
     {
         private readonly ComboBox _screen;
+        private readonly CheckBox _sort;
 
         public ZincExSettingsPage()
         {
@@ -78,18 +79,21 @@ namespace LbIntegrations.ZincEx
             }
             stack.Controls.Add(Card("ZiNc EX", rows.ToArray()));
 
-            // ── the window ──
+            // ── the window, and the import ──
             _screen = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 320 };
-            _screen.Items.AddRange(new object[] { "Full screen (default)", "Windowed", "As set in ZiNc EX" });
-            _screen.SelectedIndex = ZincExSettings.Screen == "windowed" ? 1 : ZincExSettings.Screen == "zincex" ? 2 : 0;
-            LbipHint.Attach(_screen, "ZiNc EX's --fullscreen or --windowed, for the launch only - nothing is written into ZiNc EX's settings. "
-                                   + "\"As set in ZiNc EX\": neither, its Video > Full Screen and the game's own Game Settings decide.");
+            _screen.Items.AddRange(new object[] { "As set in ZiNc EX (default)", "Full screen", "Windowed" });
+            _screen.SelectedIndex = ZincExSettings.Screen == "fullscreen" ? 1 : ZincExSettings.Screen == "windowed" ? 2 : 0;
+            LbipHint.Attach(_screen, "ZiNc EX's --fullscreen or --windowed, for the launch only - nothing is written into its settings. "
+                                   + "Not passed for a game that has its own Window (its options window, or ZiNc EX's Game Settings).");
             var screenRow = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true, Margin = new Padding(0, 2, 0, 2) };
             screenRow.Controls.Add(new Label { Text = "Screen", Width = 170, Height = 24, TextAlign = ContentAlignment.MiddleLeft, UseMnemonic = false });
             screenRow.Controls.Add(_screen);
-            stack.Controls.Add(Card("Every game", screenRow,
-                LbipHint.Note("Renderer, resolution, sound, controls and bezels are ZiNc EX's: set them in its own window.", "Open ZiNc EX from here (Open), "
-                              + "for every game, or per game in its Game > Game Settings - the launch from LaunchBox takes them as they are.", 600, new Padding(0, 4, 0, 2))));
+            _sort = new CheckBox { Text = "Import ROM Files wizard: keep only ZiNc's games", AutoSize = true, Checked = ZincExSettings.SortImport, Margin = new Padding(0, 6, 0, 2) };
+            LbipHint.Attach(_sort, "Importing to Nixx-ZiNc-EX, the wizard's last list keeps the romsets that are one of ZiNc's 71 games - told by their ROMs, "
+                                 + "so a whole MAME folder can be imported - and LaunchBox's MAME page keeps the clones (ZiNc's sfex is MAME's clone sfexu).");
+            stack.Controls.Add(Card("Every game", screenRow, _sort,
+                LbipHint.Note("Picture, sound, controls and bezels are ZiNc EX's: its own window, or a game's options window.", "Open ZiNc EX from here (Open) for "
+                              + "every game; a game's own settings (Nixx-ZiNc-EX : Options... on the game) are ZiNc EX's per-game settings.", 600, new Padding(0, 4, 0, 2))));
 
             Controls.Add(stack);
         }
@@ -107,6 +111,10 @@ namespace LbIntegrations.ZincEx
             return found.Count == 0 ? "none - a MAME non-merged set carries its own, or put them beside the games" : string.Join(", ", found);
         }
 
-        public void Save() => ZincExSettings.SetScreen(_screen.SelectedIndex == 1 ? "windowed" : _screen.SelectedIndex == 2 ? "zincex" : "fullscreen");
+        public void Save()
+        {
+            ZincExSettings.SetScreen(_screen.SelectedIndex == 1 ? "fullscreen" : _screen.SelectedIndex == 2 ? "windowed" : "zincex");
+            if (ZincExSettings.SortImport != _sort.Checked) ZincExSettings.SetSortImport(_sort.Checked);
+        }
     }
 }
