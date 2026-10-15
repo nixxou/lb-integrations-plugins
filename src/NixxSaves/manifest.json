@@ -7,7 +7,7 @@
   "Description": "The saves of other emulators on games set to an emulator no plugin drives: listed, backed up and restored into the emulator that made them. Installs nothing, changes no launch.",
   "Credits": "",
   "OperatingSystemFamily": "Windows",
-  "InstalledVersion": "1.1.1",
+  "InstalledVersion": "1.2.0",
   "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
   "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
   "HomePageUrl": "https://github.com/nixxou/lb-integrations-plugins",
