@@ -194,6 +194,12 @@ namespace LbIntegrations.Probe
             if (Has(args, "--ares-saves")) { int at = Array.IndexOf(args, "--ares-saves"); return AresCheck.Saves(asm, Path.GetFullPath(args[at + 1]), args[at + 2], Path.GetFullPath(args[at + 3])) ? 0 : 1; }
             if (Has(args, "--ares-cue")) { var cueFor = asm.GetType("LbIntegrations.Ares.AresLaunch", true).GetMethod("CueFor", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static); var cueArgs = new object[] { Path.GetFullPath(Arg(args, "--ares-cue")), null }; var cue = (string)cueFor.Invoke(null, cueArgs); Console.WriteLine(cue != null ? cue + Environment.NewLine + File.ReadAllText(cue) : "refused: " + cueArgs[1]); return cue != null ? 0 : 1; }
             if (Has(args, "--ares-latest")) return AresCheck.Latest(asm) ? 0 : 1;
+            // The ZiNc EX plugin's pieces, without a host - see ZincExCheck.
+            if (Has(args, "--zincex-identify")) { int at = Array.IndexOf(args, "--zincex-identify"); return ZincExCheck.IdentifyFolder(asm, Path.GetFullPath(args[at + 1]), args.Skip(at + 2).Where(x => !x.StartsWith("--")).ToArray()) ? 0 : 1; }
+            if (Has(args, "--zincex-serve")) { int at = Array.IndexOf(args, "--zincex-serve"); return ZincExCheck.Serve(asm, Path.GetFullPath(args[at + 1]), Path.GetFullPath(args[at + 2]), Arg(args, "--scratch")) ? 0 : 1; }
+            if (Has(args, "--zincex-explain")) return ZincExCheck.Explain(asm, Path.GetFullPath(Arg(args, "--zincex-explain"))) ? 0 : 1;
+            if (Has(args, "--zincex-line")) return ZincExCheck.Line(asm) ? 0 : 1;
+            if (Has(args, "--zincex-latest")) return ZincExCheck.Latest(asm) ? 0 : 1;
             // The bsnes plugin's pieces, without a host - see BsnesCheck.
             if (Has(args, "--bsnes-settings")) return BsnesCheck.Settings(asm, Path.GetFullPath(Arg(args, "--bsnes-settings")), Arg(args, "--settings")) ? 0 : 1;
             if (Has(args, "--bsnes-saves")) { int at = Array.IndexOf(args, "--bsnes-saves"); return BsnesCheck.Saves(asm, Path.GetFullPath(args[at + 1]), Path.GetFullPath(args[at + 2])) ? 0 : 1; }

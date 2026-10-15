@@ -662,6 +662,7 @@ internal sealed class InstallerForm : Form
         Payload.Vita3k => "PS Vita",
         Payload.Xemu => "Xbox",
         Payload.Xenia => "Xbox 360",
+        Payload.ZincEx => "Arcade: Sony ZN-1 / ZN-2 (ZiNc)",
         Payload.Menus => "right-click menus",
         Payload.Saves => "saves of emulators no plugin drives",
         _ => "",

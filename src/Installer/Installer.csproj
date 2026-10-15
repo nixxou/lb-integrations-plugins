@@ -163,6 +163,12 @@
     <EmbeddedResource Include="$(PayloadDir)\Nixx-Xenia\manifest.json">
       <LogicalName>payload/Nixx-Xenia/manifest.json</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-ZiNc-EX\ZincEx.dll">
+      <LogicalName>payload/Nixx-ZiNc-EX/ZincEx.dll</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-ZiNc-EX\manifest.json">
+      <LogicalName>payload/Nixx-ZiNc-EX/manifest.json</LogicalName>
+    </EmbeddedResource>
 
     <EmbeddedResource Include="$(PayloadDir)\Nixx-Menus\NixxMenus.dll">
       <LogicalName>payload/Nixx-Menus/NixxMenus.dll</LogicalName>

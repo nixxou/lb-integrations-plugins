@@ -1,0 +1,827 @@
+ZiNc 1.1 (C)1997-2005 Drunken Muppets (www.emuhype.com)
+Star Gladiator (US 960627) [starglad, BIOS cpzn1]
+coh-1000c.353  50033af6
+ps1u-04.2h     121fb234
+ps1-05m.3h     8ad72c4f
+ps1-06m.4h     95d8ed61
+ps1-07m.5h     c06752db
+ps1-08m.2k     381f9ded
+ps1-09m.3k     bd894812
+ps1-10m.4k     ff80c18a
+ps1-02a.2e     b854df92
+ps1-03a.3e     a2562fbb
+ps1-01m.3b     0bfb17aa
+
+Street Fighter EX (US 961219) [sfex, BIOS cpzn1]
+coh-1000c.353  50033af6
+sfeu-04b       de02bd29
+sfe-05m        eab781fe
+sfe-06m        999de60c
+sfe-07m        76117b0a
+sfe-08m        a36bbec5
+sfe-09m        62c424cc
+sfe-10m        83791a8b
+sfe-02         1908475c
+sfe-03         95c1e2e0
+sfe-01m        f5afff0d
+
+Street Fighter EX (JP 961130) [sfexj, parent sfex, BIOS cpzn1]
+coh-1000c.353  50033af6
+sfej-04        ea100607
+sfe-05m        eab781fe
+sfe-06m        999de60c
+sfe-07m        76117b0a
+sfe-08m        a36bbec5
+sfe-09m        62c424cc
+sfe-10m        83791a8b
+sfe-02         1908475c
+sfe-03         95c1e2e0
+sfe-01m        f5afff0d
+
+Street Fighter EX (ASIA 961219) [sfexa, parent sfex, BIOS cpzn1]
+coh-1000c.353  50033af6
+sfea-04        08247bd4
+sfe-05m        eab781fe
+sfe-06m        999de60c
+sfe-07m        76117b0a
+sfe-08m        a36bbec5
+sfe-09m        62c424cc
+sfe-10m        83791a8b
+sfe-02         1908475c
+sfe-03         95c1e2e0
+sfe-01m        f5afff0d
+
+Street Fighter EX Plus (US 970407) [sfexp, BIOS cpzn1]
+coh-1000c.353  50033af6
+sfexp_u-04a    4617adc2
+sfp-05         ac7dcc5e
+sfp-06         1d504758
+sfp-07         0f585f30
+sfp-08         65eabc61
+sfp-09         15f8b71e
+sfp-10         c1ecf652
+sfe-02         1908475c
+sfe-03         95c1e2e0
+sfe-01m        f5afff0d
+
+Street Fighter EX Plus (US 970311) [sfexpu1, parent sfexp, BIOS cpzn1]
+coh-1000c.353  50033af6
+sfpu-04        305e4ec0
+sfp-05         ac7dcc5e
+sfp-06         1d504758
+sfp-07         0f585f30
+sfp-08         65eabc61
+sfp-09         15f8b71e
+sfp-10         c1ecf652
+sfe-02         1908475c
+sfe-03         95c1e2e0
+sfe-01m        f5afff0d
+
+Street Fighter EX Plus (JP 970311) [sfexpj, parent sfexp, BIOS cpzn1]
+coh-1000c.353  50033af6
+sfpj-04        18d043f5
+sfp-05         ac7dcc5e
+sfp-06         1d504758
+sfp-07         0f585f30
+sfp-08         65eabc61
+sfp-09         15f8b71e
+sfp-10         c1ecf652
+sfe-02         1908475c
+sfe-03         95c1e2e0
+sfe-01m        f5afff0d
+
+Street Fighter EX 2 (US 980526) [sfex2, BIOS cpzn2]
+coh-3002c.353  e860ea8b
+ex2u-04a       8dc5317f
+ex2-05m        78726b17
+ex2-06m        be1075ed
+ex2-07m        6496c6ed
+ex2-08m        3194132e
+ex2-09m        075ae585
+ex2-02         9489875e
+ex2-01m        14a5bb0e
+
+Street Fighter EX 2 (JP 980312) [sfex2j, parent sfex2, BIOS cpzn2]
+coh-3002c.353  e860ea8b
+ex2j-04        5d603586
+ex2-05m        78726b17
+ex2-06m        be1075ed
+ex2-07m        6496c6ed
+ex2-08m        3194132e
+ex2-09m        075ae585
+ex2-02         9489875e
+ex2-01m        14a5bb0e
+
+Street Fighter EX 2 PLUS (US 990611) [sfex2p, BIOS cpzn2]
+coh-3002c.353  e860ea8b
+extp-04u       2938118c
+x2p-05m        4ee3110f
+x2p-06m        4cd53a45
+x2p-07m        11207c2a
+x2p-08m        3560c2cc
+x2p-09m        344aa227
+x2p-10m        2eef5931
+extp-02        3705de5e
+extp-03        6ae828f6
+x2p-01m        14a5bb0e
+
+Street Fighter EX 2 PLUS (JP 990611) [sfex2pj, parent sfex2p, BIOS cpzn2]
+coh-3002c.353  e860ea8b
+extp-04j       c6d0aea3
+x2p-05m        4ee3110f
+x2p-06m        4cd53a45
+x2p-07m        11207c2a
+x2p-08m        3560c2cc
+x2p-09m        344aa227
+x2p-10m        2eef5931
+extp-02        3705de5e
+extp-03        6ae828f6
+x2p-01m        14a5bb0e
+
+Street Fighter EX 2 PLUS (ASIA 990611) [sfex2pa, parent sfex2p, BIOS cpzn2]
+coh-3002c.353  e860ea8b
+extp-04a       c437d602
+x2p-05m        4ee3110f
+x2p-06m        4cd53a45
+x2p-07m        11207c2a
+x2p-08m        3560c2cc
+x2p-09m        344aa227
+x2p-10m        2eef5931
+extp-02        3705de5e
+extp-03        6ae828f6
+x2p-01m        14a5bb0e
+
+Plasma Sword (US 980316) [plsmaswd, BIOS cpzn2]
+coh-3002c.353  e860ea8b
+sg2u-04        154187c0
+sg2-05m        f1759236
+sg2-06m        33de4f72
+sg2-07m        72f724ba
+sg2-08m        9e169eee
+sg2-09m        33f73d4c
+sg2-02         415ee138
+sg2-03         43806735
+sg2-01m        643ea27b
+
+Star Gladiator 2 (JP 980316) [stargld2, parent plsmaswd, BIOS cpzn2]
+coh-3002c.353  e860ea8b
+sg2j-04        cf4ce6ac
+sg2-05m        f1759236
+sg2-06m        33de4f72
+sg2-07m        72f724ba
+sg2-08m        9e169eee
+sg2-09m        33f73d4c
+sg2-02         415ee138
+sg2-03         43806735
+sg2-01m        643ea27b
+
+Rival Schools (ASIA 971117) [rvschola, parent rvschool, BIOS cpzn2]
+coh-3002c.353  e860ea8b
+jsta-04        034b1011
+jst-05m        723372b8
+jst-06m        4248988e
+jst-07m        c84c5a16
+jst-08m        791b57f3
+jst-09m        6df42048
+jst-10m        d7e22769
+jst-11m        0a033ac5
+jst-12m        43bd2ddd
+jst-13m        6b443235
+jst-02         7809e2c3
+jst-03         860ff24d
+jst-01m        9a7c98f9
+
+Justice Gakuen (JP 991117) [jgakuen, parent rvschool, BIOS cpzn2]
+coh-3002c.353  e860ea8b
+jstj-04        28b8000a
+jst-05m        723372b8
+jst-06m        4248988e
+jst-07m        c84c5a16
+jst-08m        791b57f3
+jst-09m        6df42048
+jst-10m        d7e22769
+jst-11m        0a033ac5
+jst-12m        43bd2ddd
+jst-13m        6b443235
+jst-02         7809e2c3
+jst-03         860ff24d
+jst-01m        9a7c98f9
+
+Rival Schools (US 971117) [rvschool, BIOS cpzn2]
+coh-3002c.353  e860ea8b
+jstu-04        d83724ae
+jst-05m        723372b8
+jst-06m        4248988e
+jst-07m        c84c5a16
+jst-08m        791b57f3
+jst-09m        6df42048
+jst-10m        d7e22769
+jst-11m        0a033ac5
+jst-12m        43bd2ddd
+jst-13m        6b443235
+jst-02         7809e2c3
+jst-03         860ff24d
+jst-01m        9a7c98f9
+
+Strider Hiryu 2 (JP 991213) [shiryu2, parent strider2, BIOS cpzn2]
+coh-3002c.353  e860ea8b
+hr2j-04        0824ee5f
+hr2-05m.bin    18716fe8
+hr2-06m.bin    6f13b69c
+hr2-07m.bin    3925701b
+hr2-08m.bin    d844c0dc
+hr2-09m.bin    cdd43e6b
+hr2-10m.bin    d95b3f37
+hr2-02.bin     acd8d385
+hr2-01m.bin    510a16d1
+hr2-01m.bin    510a16d1
+
+Strider 2 (ASIA 991213) [strider2, BIOS cpzn2]
+coh-3002c.353  e860ea8b
+hr2a-04        56ff9394
+hr2-05m.bin    18716fe8
+hr2-06m.bin    6f13b69c
+hr2-07m.bin    3925701b
+hr2-08m.bin    d844c0dc
+hr2-09m.bin    cdd43e6b
+hr2-10m.bin    d95b3f37
+hr2-02.bin     acd8d385
+hr2-01m.bin    510a16d1
+hr2-01m.bin    510a16d1
+
+Kikaioh (JP 980914) [kikaioh, parent techromn, BIOS cpzn2]
+coh-3002c.353  e860ea8b
+kioj-04        3a2a3bc8
+kio-05m.bin    98e9eb24
+kio-06m.bin    be8d7d73
+kio-07m.bin    ffd81f18
+kio-08m.bin    17302226
+kio-09m.bin    a34f2119
+kio-10m.bin    7400037a
+kio-02.bin     174309b3
+kio-03.bin     0b313ae5
+kio-01m.bin    6dc5bd07
+
+Tech Romancer (US 980914) [techromn, BIOS cpzn2]
+coh-3002c.353  e860ea8b
+kiou-04        08aca34a
+kio-05m.bin    98e9eb24
+kio-06m.bin    be8d7d73
+kio-07m.bin    ffd81f18
+kio-08m.bin    17302226
+kio-09m.bin    a34f2119
+kio-10m.bin    7400037a
+kio-02.bin     174309b3
+kio-03.bin     0b313ae5
+kio-01m.bin    6dc5bd07
+
+Battle Arena Toshinden 2 (US 951124) [ts2, BIOS cpzn1]
+coh-1000c.353  50033af6
+ts2u-04        ddb52e7c
+ts2-05         7f4228e2
+ts2-06m        cd7e0a27
+ts2-08m        b1f7f115
+ts2-10         ad90679a
+ts2-02         2f45c461
+ts2-01         d7a505e0
+
+Battle Arena Toshinden 2 (JP 951124) [ts2j, parent ts2, BIOS cpzn1]
+coh-1000c.353  50033af6
+ts2j-04        4aba8c5e
+ts2-05         7f4228e2
+ts2-06m        cd7e0a27
+ts2-08m        b1f7f115
+ts2-10         ad90679a
+ts2-02         2f45c461
+ts2-01         d7a505e0
+
+Tetris The Grand Master (JP 980710) [tgmj, BIOS cpzn2]
+coh-3002c.353  e860ea8b
+atej-04        bb4bbb96
+ate-05         50977f5a
+ate-06         05973f16
+ate-02         f4f6e82f
+ate-01         a21c6521
+
+Sonic Wings Limited (JP) [sncwgltd]
+coh-1002v.353  5ff165f3
+ic5.bin        458f14aa
+ic6.bin        8233dd1e
+ic7.bin        df5ba2f7
+ic8.bin        e8145f2b
+ic9.bin        605c9370
+ic11.bin       a93f6fee
+ic12.bin       9f584ef7
+ic13.bin       652e9c78
+ic14.bin       c4ef1424
+ic15.bin       2551d816
+ic16.bin       21b401bc
+
+Beastorizer (US) *bootleg* [beastrzb, BIOS psarc95]
+coh-1002e.353  910f3a8b
+27c160.1       820855e2
+27c160.4       2d2b25f4
+27c160.5       10fe6f4d
+27c160.2       1712af34
+27c800.3       7192eb4e
+27c4096.1      217734a1
+27c4096.2      d1f2a9b2
+27c240.3       509cdc8b
+
+Beastorizer (US) [beastrzr, BIOS psarc95]
+coh-1002e.353  910f3a8b
+broar.212      1c85d7fb
+broar.213      2c586534
+broar.214      1cdc450a
+broar.215      31c8e055
+rabroar1.217   11f1ba36
+rabroar2.216   d46d46b7
+broar.046      d4bb261a
+broar.042      4d537f88
+rabroar3.snd   b74cc4d1
+
+Bloody Roar 2 (JP) [bldyror2, BIOS psarc95]
+coh-1002e.353  910f3a8b
+flash0.021     fa7602e1
+flash1.024     4866dce3
+rom-1a.028     0e711461
+rom-1b.29      0cf153f9
+rom-2a.026     b71d955d
+rom-2b.210     89959dde
+br2_u049.049   10dc855b
+br2_u0412.412  e254dd8a
+rom-3.336      b74cc4d1
+
+Brave Blade (JP) [brvblade, BIOS tps]
+coh-1002m.353  69ffbcb4
+flash0.021     97e12c63
+flash1.024     d9d40a34
+ra-bbl_rom1.028 418535e0
+spu0u049.bin   c9df8ed9
+spu1u412.bin   6408b5b2
+ra-bbl_rom2.336 cd052c02
+
+Psychic Force (JP 2.4J) [psyforcj, parent psyforce, BIOS taitofx1]
+coh-1000t.353  e3f23b6e
+e22-10.7       f6341d63
+e22-05.2       7770242c
+e22-03.19      8372f839
+e22-04.21      397b71aa
+e22-02.16      03b50064
+e22-07.22      739af589
+e22-01.15      808b8340
+
+Psychic Force (World 2.4O) [psyforce, BIOS taitofx1]
+coh-1000t.353  e3f23b6e
+e22-10.7       f6341d63
+pfexic2.bin    997e4500
+e22-03.19      8372f839
+e22-04.21      397b71aa
+e22-02.16      03b50064
+e22-07.22      739af589
+e22-01.15      808b8340
+
+Psychic Force EX (JP 2.0J) [psyfrcex, parent psyforce, BIOS taitofx1]
+coh-1000t.353  e3f23b6e
+e22-11.2       a263b41f
+e22-12.7       7426ffc5
+e22-03.19      8372f839
+e22-04.21      397b71aa
+e22-02.16      03b50064
+e22-07.22      739af589
+e22-01.15      808b8340
+
+Magical Date EX - sotsugyou kokuhaku daisakusen (JP 2.01J) [mgcldtex, BIOS taitofx1]
+coh-1000t.353  e3f23b6e
+e32-09.7       db7ec115
+e32-08.2       3d42cd28
+e32-01.1       cf5f1d01
+e32-02.6       61c8438c
+e32-03.12      190d1618
+e32-10.22      adf3feb5
+e32-04.15      c72f9eea
+
+Raystorm (JP 2.05J) [raystorj, parent raystorm, BIOS taitofx1]
+coh-1000t.353  e3f23b6e
+e24-05.4       40097ab9
+e24-06.3       d70cdf46
+e24-02.1       9f70950d
+e24-03.2       6c1f0a5d
+e24-09.14      808589e1
+e24-04.27      f403493a
+
+Raystorm (US 2.06A) [raystorm, BIOS taitofx1]
+coh-1000t.353  e3f23b6e
+raystorm.ic4   33f63638
+raystorm.ic3   5eeed3b2
+e24-02.1       9f70950d
+e24-03.2       6c1f0a5d
+e24-09.14      808589e1
+e24-04.27      f403493a
+
+Fighters Impact A (JP 2.00J) [ftimpcta, BIOS taitofx1]
+coh-1000t.353  e3f23b6e
+e25-14.3       0c5f474f
+e25-13.4       7f078d7b
+e25-01.1       8cc4be0c
+e25-02.2       8e8b4c82
+e25-03.12      43b1c085
+
+G-Darius (JP 2.01J) [gdarius, BIOS taitofx1]
+coh-1000t.353  e3f23b6e
+e39-05.3       750e5b13
+e39-06.4       2980c30d
+e39-01.1       bdaaa251
+e39-02.2       a47aab5d
+e39-03.12      a883b6a5
+
+G-Darius Ver.2 (JP 2.03J) [gdarius2, parent gdarius, BIOS taitofx1]
+coh-1000t.353  e3f23b6e
+e39-11.3       766f73df
+e39-12.4       b23266c3
+e39-01.1       bdaaa251
+e39-02.2       a47aab5d
+e39-03.12      a883b6a5
+
+Dancing Eyes (JP) Ver. A [danceyes]
+dc1vera.2l     b164ad67
+dc1vera.2j     28e4cb3d
+dc1vera.2k     bdd9484e
+dc1vera.2f     25a2f06f
+dc1rm0l.5      8b5b4b13
+dc1rm0u.6      93ca9bd0
+dc1rm1l.3      380e0282
+dc1rm1u.8      47d966a7
+dc1rm2l.4      8f130220
+dc1rm2u.7      24514dc6
+dc1rm3l.1      a76bcd4c
+dc1rm3u.9      1405d123
+dc1sprg.6d     96cd7788
+dc1wave.8k     8ba0f6a7
+
+Xevious 3D/G (JP) Ver. A [xevi3dg]
+xv31vera.2l    419e0f13
+xv31vera.2j    df95373a
+xv31vera.2k    3d58138e
+xv31vera.2f    9e8780a2
+xv31rm0l.5     24e1e262
+xv31rm0u.6     cae38ef3
+xv31rm1l.3     46b4cb72
+xv31rm1u.8     be0eb5d1
+xv31rm2l.4     8403a277
+xv31rm2u.7     ecf70432
+xv31sprg.6d    e50b856a
+xv31wave.8k    14f25ddd
+
+Star Sweep (JP) Ver. A [starswep]
+stp1vera.1j    ef83e126
+stp1vera.1l    0ee7fe1e
+stp1sprg.7e    08aaaf6a
+stp1wave.bin   18f30e92
+
+Kosodate Quiz My Angel 3 (JP) Ver. A [myangel3]
+kqt1vera.1j    df7aef8a
+kqt1vera.1l    ffc51c01
+kqt1pr0l.bin   d67eee66
+kqt1pr0u.bin   4d1c7bf3
+kqt1pr1l.bin   298d8eeb
+kqt1pr1u.bin   911783db
+kqt1sprg.7e    bb1888a6
+kqt1wave.bin   92ca8e4f
+
+Tekken (JP) Ver. B [tekkenb, parent tekken]
+te1verb.2l     4291afee
+te1verb.2j     5c534705
+te1verb.2k     b9860b29
+te1verb.2f     3dc01aad
+te1rm0l.5      03786e09
+te1rm0u.6      75d91051
+te1rm1l.3      81416f8e
+te1rm1u.8      fa7ba433
+te1rm2l.4      41d77846
+te1rm2u.7      a678987e
+te1sprg.6d     849587e9
+te1wave.8k     fce6c57a
+
+Tekken (WORLD) Ver. B [tekkena, parent tekken]
+te2verb.2l     246cfbdd
+te2verb.2j     dfa83e47
+te1verb.2k     b9860b29
+te1verb.2f     3dc01aad
+te1rm0l.5      03786e09
+te1rm0u.6      75d91051
+te1rm1l.3      81416f8e
+te1rm1u.8      fa7ba433
+te1rm2l.4      41d77846
+te1rm2u.7      a678987e
+te1sprg.6d     849587e9
+te1wave.8k     fce6c57a
+
+Tekken (WORLD) Ver. C [tekken]
+te4verc.2l     7ecb7892
+te4verc.2j     eea3365d
+te1verb.2k     b9860b29
+te1verb.2f     3dc01aad
+te1rm0l.5      03786e09
+te1rm0u.6      75d91051
+te1rm1l.3      81416f8e
+te1rm1u.8      fa7ba433
+te1rm2l.4      41d77846
+te1rm2u.7      a678987e
+te1sprg.6d     849587e9
+te1wave.8k     fce6c57a
+
+Tekken 2 (JP) Ver. B [tekken2a, parent tekken2]
+tes2verb.2l    aa9a4503
+tes2verb.2j    63706d8c
+tes1verb.2k    668ca712
+tes1verb.2f    c4f66a0a
+tes1rm0l.6     fc904ede
+tes1rm0u.5     57b38f5d
+tes1rm1l.8     aa48f04b
+tes1rm1u.3     b147c543
+tes1rm2l.7     b08da52c
+tes1rm2u.4     8a1561b8
+tes1rm3l.9     d5ac0f18
+tes1rm3u.1     44ed509d
+tes1sprg.6d    af18759f
+tes1wave.8k    af5eadb1
+
+Tekken 2 (World) Ver. A [tekken2b, parent tekken2]
+tes2vera.2l    8bb82bf0
+tes2vera.2j    4e02f921
+tes1vera.2k    78e2ce1a
+tes1vera.2f    fbb0b146
+tes1rm0l.6     fc904ede
+tes1rm0u.5     57b38f5d
+tes1rm1l.8     aa48f04b
+tes1rm1u.3     b147c543
+tes1rm2l.7     b08da52c
+tes1rm2u.4     8a1561b8
+tes1rm3l.9     d5ac0f18
+tes1rm3u.1     44ed509d
+tes1sprg.6d    af18759f
+tes1wave.8k    af5eadb1
+
+Tekken 2 (World) Ver. B [tekken2]
+tes3verb.2l    4692075f
+tes3verb.2j    db3ec640
+tes1verb.2k    668ca712
+tes1verb.2f    c4f66a0a
+tes1rm0l.6     fc904ede
+tes1rm0u.5     57b38f5d
+tes1rm1l.8     aa48f04b
+tes1rm1u.3     b147c543
+tes1rm2l.7     b08da52c
+tes1rm2u.4     8a1561b8
+tes1rm3l.9     d5ac0f18
+tes1rm3u.1     44ed509d
+tes1sprg.6d    af18759f
+tes1wave.8k    af5eadb1
+
+Soul Edge (JP) SO3 Ver. A [souledga, parent souledge]
+so3vera.2l     19b39096
+so3vera.2j     09eda46f
+so1vera.2k     29bdc6bb
+so1vera.2f     c035b71b
+so1rm0u.5      e364d673
+so1rm0l.6      9c5b0858
+so1rm1u.3      8f9d8c5b
+so1rm1l.8      4406ef16
+so1rm2u.4      b4baa886
+so1rm2l.7      37c1f66e
+so1rm3u.1      f11bd521
+so1rm3l.9      84465bcc
+so1sprg.6d     f6f682b7
+so1wave.8k     0e68836b
+
+Soul Edge (JP) SO1 Ver. A [souledgb, parent souledge]
+so1vera.2l     bafb94c8
+so1vera.2j     abe2d28e
+so1vera.2k     29bdc6bb
+so1vera.2f     c035b71b
+so1rm0u.5      e364d673
+so1rm0l.6      9c5b0858
+so1rm1u.3      8f9d8c5b
+so1rm1l.8      4406ef16
+so1rm2u.4      b4baa886
+so1rm2l.7      37c1f66e
+so1rm3u.1      f11bd521
+so1rm3l.9      84465bcc
+so1sprg.6d     2bbc118c
+so1wave.8k     0e68836b
+
+Soul Edge Ver. II (JP) SO4 Ver. C [souledge]
+so4verc.2l     12b8ae0d
+so4verc.2j     938262b0
+so1verc.2k     1789e399
+so1verc.2f     8cffe1c3
+so1rm0u.5      e364d673
+so1rm0l.6      9c5b0858
+so1rm1u.3      8f9d8c5b
+so1rm1l.8      4406ef16
+so1rm2u.4      b4baa886
+so1rm2l.7      37c1f66e
+so1rm3u.1      f11bd521
+so1rm3l.9      84465bcc
+so1sprc.6d     2bbc118c
+so1wave.8k     0e68836b
+
+Dunk Mania (US) DM2 Ver. C [dunkmnia]
+dm2verc.2l     f6a6c46e
+dm2verc.2j     1df539ce
+dm1verc.2k     c8d72f78
+dm1verc.2f     d379dfa9
+dm1rm0l.5      4bb5d71d
+dm1rm0u.6      c16b47c5
+dm1rm1l.3      20dd3294
+dm1rm1u.8      01e905d3
+dm1sprg.6d     de1cbc78
+dm1wave.8k     4891d53e
+
+Dunk Mania (JP) DM1 Ver. C [dunkmnic, parent dunkmnia]
+dm1verc.2l     6c81654a
+dm1verc.2j     10329b7e
+dm1verc.2k     c8d72f78
+dm1verc.2f     d379dfa9
+dm1rm0l.5      4bb5d71d
+dm1rm0u.6      c16b47c5
+dm1rm1l.3      20dd3294
+dm1rm1u.8      01e905d3
+dm1sprg.6d     de1cbc78
+dm1wave.8k     4891d53e
+
+Prime Goal EX (JP) Ver. A [primglex]
+pg1vera.2l     fc15fd1a
+pg1vera.2j     79955553
+pg1rm0u.5      2a503f2f
+pg1rm0l.6      54cef992
+pg1rm1u.3      1ee41152
+pg1rm1l.8      59b5a71c
+pg1sprg.6d     e7c3396d
+pg1wave.8k     fc9ad9eb
+
+Wedding Rhapsody (JP) Ver. JAA [weddingr, BIOS konamigv]
+999a01.7e      ad498d2d
+weddingr.25c   b90509a0
+weddingr.chd   (disk)
+
+Hyper Athlete (JP) Ver. 1.00 [hyperath, BIOS konamigv]
+999a01.7e      ad498d2d
+hyperath.25c   20a8c435
+hyperath.chd   (disk)
+
+Powerful Baseball 96 (JP) Ver. 1.03 [pbball96, BIOS konamigv]
+999a01.7e      ad498d2d
+pbball96.25c   405a7fc9
+pbball96.chd   (disk)
+
+Susume! Taisen Puzzle-Dama (JP) Ver. 1.20 [susume, BIOS konamigv]
+999a01.7e      ad498d2d
+susume.25c     52f17df7
+susume.chd     (disk)
+
+Fighting Layer (JP) Ver. B [fgtlayer]
+ftl1vera.2e    f4156e79
+ftl1vera.2j    c65b57c0
+ftl1rm0.9      e33ce365
+ftl1rm1.10     a1ec7d08
+ftl1rm2.11     204be858
+ftl1fl3l.7     e4fb01e1
+ftl1fl3h.8     67a5c56f
+ftl1fl4l.5     8039242c
+ftl1fl4h.6     5ad59726
+ftl1vera.11s   e3f957cd
+ftl1wav0.2     ee009a2b
+ftl1wav1.1     a54a89cd
+
+Ehrgeiz (US) Ver. A [ehrgeiz]
+eg3vera.2l     64c00ff0
+eg3vera.2p     e722c030
+eg1rm0l.12     fe11a48e
+eg1rm0u.11     7cb90c25
+eg1fl1l.9      dd4cac2b
+eg1fl1u.10     e3348407
+eg1fl2l.7      34493262
+eg1fl2u.8      4fb84f1d
+eg1fl3l.5      f9441f87
+eg1fl3u.6      cea397de
+eg3vera.11s    9e44645e
+eg1wav0.2      961fe69f
+
+Tekken 3 (JP) Ver. A [tekken3]
+tet1vere.2e    8b01113b
+tet1vere.2j    df4c96fb
+tet1rm0l.6     2886bb32
+tet1rm0u.9     c5705b92
+tet1rm1l.7     0397d283
+tet1rm1u.10    502ba5cd
+tet1rm2l.8     e03b1c24
+tet1rm2u.11    75eb2ab3
+tet1fl3l.12    45513073
+tet1fl3u.13    1917d993
+tet1vere.11s   c92b98d1
+tet1wav0.5     77ba7975
+tet1wav1.4     ffeba79f
+
+Mr Driller (JP) Ver. A [mrdrillr]
+dri1vera.2l    751ca21d
+dri1vera.2p    2a2b0704
+dri1rm0l.6     021bb2fa
+dri1rm0u.9     5aae85ea
+dri1vera.11s   33ea9c0e
+dri1wav0.5     32928df1
+
+Aqua Rush (JP) Ver. A [aquarush]
+aq1vera.2l     91eb9258
+aq1vera.2p     a92f21aa
+aq1rm0.7       3e64dd33
+aq1rm1.8       e4d415cf
+aq1vera.11s    78277e02
+aq1wav0.2      0cf7278d
+
+Paca Paca Passion (JP) Ver. A [pacapp]
+ppp1vera.2l    6e74bd05
+ppp1vera.2p    b7a2f724
+ppp1rm0l.6     b152fdd8
+ppp1rm0u.9     c615c26e
+ppp1rm1l.7     46eaedbd
+ppp1rm1u.10    32f27dce
+ppp1rm2l.8     dca7e5ed
+ppp1rm2u.11    cada7a0d
+ppp1vera.11s   22242317
+ppp1wav0.5     184ccc7d
+ppp1wav1.4     cbcf74c5
+
+Gallop Racer 3 (JP) [glpracr3, BIOS tps]
+coh-1002m.353  69ffbcb4
+gra3u119.119   aba69017
+gra3u120.120   8aa98d99
+gra3-0.216     b405ee65
+gra3-1.217     a06f05ac
+gra3-2.218     31793f9b
+gra3-3.219     d59fb3eb
+gra3-4.220     59a0a105
+gra3-5.221     4994fb17
+gra3-6.222     1362c1af
+gra3-7.223     73565e1f
+
+Shanghai Matekibuyuu (JP) [shngmtkb, BIOS tps]
+coh-1002m.353  69ffbcb4
+shmj-b.119     65522c67
+shmj-a.120     a789defa
+sh-00.217      081fed1c
+sh-01.218      5a84ea96
+sh-02.219      c8f80d76
+sh-03.220      daaa4c73
+
+Cool Boarders Arcade Jam (US) [cbaj, BIOS tps]
+coh-1002m.353  69ffbcb4
+cbaj_1.119     814f8b4b
+cbaj_2.120     89286229
+cb-00.216      3db68bea
+cb-01.217      481040bc
+cb-02.218      858f116c
+cb-03.219      3576ea2a
+cb-04.220      551c4b29
+cb-05.221      7da453da
+cb-06.222      833cb18b
+cb-07.223      3b64ce9e
+
+Dead or Alive++ [doapp, BIOS tps]
+coh-1002m.353  69ffbcb4
+doapp119.bin   bbe04cef
+doapp120.bin   b614d7e6
+doapp-0.216    acc6c539
+doapp-1.217    14b961c4
+doapp-2.218    134f698f
+doapp-3.219    1c6540f3
+doapp-4.220    f83bacf7
+doapp-5.221    e11e8b71
+
+Tondemo Crisis [tondemo, BIOS tps]
+coh-1002m.353  69ffbcb4
+u0119.bin      5711e301
+u0120.bin      0b8312c6
+tca-0.217      ef175910
+tca-1.218      c3474e8a
+tca-2.219      89b8e1a8
+tca-3.220      4fcf8032
+tca-4.221      c9e23f25
+
+Monster Farm Jump (JP) [mfjump, BIOS tps]
+coh-1002m.353  69ffbcb4
+mfj-o.119      0d724dc5
+mfj-e.120      86292bca
+mfj.216        0d518dba
+
+Heaven's Gate [hvnsgate, BIOS atluspsx]
+coh-1001l.353  6721146b
+athg-01b.18    e820136f
+athg-02b.17    11bfa89b
+athg-07.027    46411f67
+athg-08.028    85289345
+athg-09.210    19e558b5
+athg-10.029    748f936e
+athg-11.215    ac8e53bd
+

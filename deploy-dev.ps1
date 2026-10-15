@@ -59,12 +59,13 @@ $Pack = @{
     'Vita3k'  = @{ Folder = 'Nixx-Vita3K';  Old = @() }
     'SuperZsnes' = @{ Folder = 'Nixx-SuperZSNES'; Old = @() }
     'RaSnes9x' = @{ Folder = 'Nixx-RASnes9x'; Old = @() }
+    'ZincEx'  = @{ Folder = 'Nixx-ZiNc-EX'; Old = @() }
     # The catch-all of the saves (lot 6): no emulator of its own - see src\NixxSaves.
     'NixxSaves' = @{ Folder = 'Nixx-Saves'; Old = @() }
 }
 
 if ($All) {
-    foreach ($name in @('Ares', 'Bsnes', 'Cxbx', 'Demul', 'Flycast', 'MelonDs', 'NoGba', 'Ppsspp', 'RaSnes9x', 'SuperZsnes', 'Vita3k', 'Xemu', 'Xenia', 'NixxSaves')) {
+    foreach ($name in @('Ares', 'Bsnes', 'Cxbx', 'Demul', 'Flycast', 'MelonDs', 'NoGba', 'Ppsspp', 'RaSnes9x', 'SuperZsnes', 'Vita3k', 'Xemu', 'Xenia', 'ZincEx', 'NixxSaves')) {
         Write-Host ""
         Write-Host ("=== " + $name) -ForegroundColor Magenta
         & $MyInvocation.MyCommand.Path -Plugin $name -LbRoot $LbRoot -Configuration $Configuration -SuperZsnesDir $SuperZsnesDir
