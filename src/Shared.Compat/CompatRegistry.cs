@@ -312,10 +312,10 @@ namespace LbIntegrations.Compat
                         + "picked; importing Naomi games offered a whole MAME folder.",
                 Does = "Inside the wizard: Vita3K and Xenia swap the platform for a temporary one while it scans; Vita3K, Xenia, Cxbx "
                      + "and PPSSPP remove updates, DLC, firmware, save data and foreign files from the list; Flycast and Demul keep "
-                     + "only their arcade sets. A watcher notices the files LaunchBox drops at the end (read only).",
+                     + "only their arcade sets; ZiNc EX keeps only ZiNc's games, told by their ROMs. A watcher notices the files LaunchBox drops at the end (read only).",
                 Without = "LaunchBox's wizard as it is - and, the watcher being off too, the corrections after an import as well (\"Games and versions corrected after an import\").",
                 OwnSwitches = "Each plugin's page: Vita3K \"bypass\" and \"clean the list\", Xenia / Cxbx / PPSSPP import options, "
-                            + "Flycast and Demul \"sort the import\".",
+                            + "Flycast and Demul \"sort the import\", ZiNc EX \"keep only ZiNc's games\".",
                 Checks = new[] { "lb.wizard" },
             },
         };

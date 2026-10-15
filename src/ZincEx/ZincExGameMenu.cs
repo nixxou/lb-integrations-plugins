@@ -162,6 +162,11 @@ namespace LbIntegrations.ZincEx
                 {
                     AddText(tables["General"], "ZiNc's game", e.Match.Game.Title + " - set " + e.Match.Game.Set + ", game " + e.Match.Game.Id
                                                              + (ZincExSettings.SetFor(e.Id) != null ? " (chosen below)" : e.Match.ByName ? "" : " (told by its ROMs)"), bold: true);
+                    AddText(tables["General"], "Hardware", ZincCompat.Board(e.Match.Game));
+                    var notes = ZincCompat.Notes(e.Match.Game);
+                    var known = AddText(tables["General"], "Known issues", notes.Count == 0 ? "None in ZiNc's notes." : string.Join("\n", notes));
+                    if (notes.Count > 0) { known.ForeColor = Color.FromArgb(0xE3, 0xA3, 0x4A); known.Tag = LbIntegrations.Ui.NixxTheme.Own; }
+                    LbipHint.Attach(known, "From ZiNc 1.1's own readme, which lists its faults by board - there is no game-by-game compatibility list of ZiNc.");
                     AddText(tables["General"], "Given as", string.Join(", ", e.Match.Zips.Select(kv => kv.Key + ".zip" + (ZincGames.SamePath(kv.Value, e.Rom)
                                                              ? (kv.Key == e.Match.Game.Set ? "" : " (this romset)") : " <- " + Path.GetFileName(kv.Value)))));
                     var save = e.ExeDir == null ? null : Path.Combine(e.ExeDir, "cfg", e.Match.Game.Set + ".cfg");
@@ -419,8 +424,12 @@ namespace LbIntegrations.ZincEx
             t.Controls.Add(field, 2, r);
         }
 
-        private void AddText(TableLayoutPanel t, string label, string text, bool bold = false)
-            => AddRow(t, null, label, new Label { Text = text, AutoSize = true, MaximumSize = new Size(520, 0), Margin = new Padding(3, 7, 0, 4), UseMnemonic = false, Font = bold ? new Font(Font, FontStyle.Bold) : Font });
+        private Label AddText(TableLayoutPanel t, string label, string text, bool bold = false)
+        {
+            var l = new Label { Text = text, AutoSize = true, MaximumSize = new Size(520, 0), Margin = new Padding(3, 7, 0, 4), UseMnemonic = false, Font = bold ? new Font(Font, FontStyle.Bold) : Font };
+            AddRow(t, null, label, l);
+            return l;
+        }
 
         // ── the screen's modes, for Resolution ───────────────────────────────
 
