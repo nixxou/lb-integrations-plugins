@@ -28,6 +28,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 
 namespace LbIntegrations.Saves
@@ -51,6 +52,28 @@ namespace LbIntegrations.Saves
         {
             var o = SaveOwner.Of(saveGroupId);
             return o.Kind == SaveOwnerKind.Nixx && string.Equals(o.Name, emu, StringComparison.Ordinal);
+        }
+
+        /// <summary>A game's web link (Mehdi, 17/10): LaunchBox keeps a game's links as additional applications whose path is
+        /// a URL, and hands them to GetSaves with the real versions. A save name derived from "https://site/" is empty, and a
+        /// plugin that looks for saves by name or prefix would take saves that are not its. A Windows path never holds "://".</summary>
+        public static bool IsLink(string? path)
+        {
+            var p = (path ?? "").Trim();
+            return p.Length > 0 && (p.Contains("://") || p.StartsWith("www.", StringComparison.OrdinalIgnoreCase)
+                                    || p.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary><paramref name="args"/> without the game's web links among its versions (IsLink): the same object when
+        /// there are none, else a copy - GetSavesArgs is Emulator, Games and AdditionalApplications, nothing else.</summary>
+        public static GetSavesArgs WithoutLinks(GetSavesArgs args, Action<string>? say = null)
+        {
+            var apps = args?.AdditionalApplications;
+            if (args == null || apps == null || apps.Count == 0) return args!;
+            var kept = apps.Where(a => a == null || !IsLink(Safe(() => a.ApplicationPath))).ToList();
+            if (kept.Count == apps.Count) return args;
+            say?.Invoke("GetSaves: " + (apps.Count - kept.Count) + " web link(s) among the versions left out - no save is a link's");
+            return new GetSavesArgs { Emulator = args.Emulator, Games = args.Games, AdditionalApplications = kept };
         }
 
         /// <summary>The cheap comparison behind IsSaveActive: the same string, nothing more.</summary>

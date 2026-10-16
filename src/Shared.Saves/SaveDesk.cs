@@ -85,6 +85,8 @@ namespace LbIntegrations.Saves
 
         public GetSavesResponse GetSaves(GetSavesArgs args)
         {
+            // A game's web links come in among its versions: never a save's (SaveRows.IsLink, 17/10).
+            args = SaveRows.WithoutLinks(args, Say);
             StockDesk.Verify();
             // The cards of LaunchBox's integrations in step with our ids before this listing is matched (lot 4).
             StockDesk.EnsureIds(args);

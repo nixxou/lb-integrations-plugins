@@ -200,6 +200,9 @@ namespace LbIntegrations.Probe
             Check("a version on its game's file is not tied", SaveRows.TieTo(V, a, a, Full) == null);
             Check("a version on another file is tied", SaveRows.TieTo(V, a, b, Full) == V);
             Check("a game save is not tied", SaveRows.TieTo(null, a, null, Full) == null);
+            // A game's web links come among its versions (17/10): never handed to a plugin's GetSaves.
+            Check("a web link is a link (https, ending in /)", SaveRows.IsLink("https://www.example.com/") && SaveRows.IsLink("www.example.com") && SaveRows.IsLink("steam://run/1"));
+            Check("a file is not a link (drive, relative, UNC)", !SaveRows.IsLink(@"C:\Games\Mana.sfc") && !SaveRows.IsLink(@"..\Games\Mana.sfc") && !SaveRows.IsLink(@"\\nas\roms\Mana.sfc") && !SaveRows.IsLink(null));
 
             Check("IsSaveActive compares strings, exactly", SaveRows.SameId("{\"a\":1}", "{\"a\":1}") && !SaveRows.SameId("{\"a\":1}", "{\"A\":1}"));
         }
