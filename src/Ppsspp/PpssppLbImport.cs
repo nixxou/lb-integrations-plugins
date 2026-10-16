@@ -104,7 +104,7 @@ namespace LbIntegrations.Ppsspp
         }
 
         private static bool IsPsp() => _platformPage != null && (Is(Get(_platformPage, "Platform")) || Is(Get(_platformPage, "ScrapeAs")));
-        private static bool Is(string platform) => string.Equals(platform, Platform, StringComparison.OrdinalIgnoreCase);
+        private static bool Is(string platform) => PpssppPlugin.IsPsp(platform);
 
         /// <summary>The list fills after its page appears: the work once it is complete (LbipListFill).</summary>
         private static void WhenFilled(System.Windows.Window window, object gameList)

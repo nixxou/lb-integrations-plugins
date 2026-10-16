@@ -36,6 +36,13 @@ namespace LbIntegrations.Ppsspp
         private const string Repo = "hrydgard/ppsspp";
         private const string PspPlatform = "Sony PSP";       // exactly as LaunchBox's metadata db spells it
 
+        /// <summary>PSP games under LaunchBox's other PSP platform, "Sony PSP Minis" (its metadata, Mehdi 17/10: 353 games in
+        /// LiteBox's) - the same console. The main one first: the defaults go by it.</summary>
+        internal static readonly string[] PspPlatforms = { PspPlatform, "Sony PSP Minis" };
+
+        internal static bool IsPsp(string platform)
+            => PspPlatforms.Any(p => string.Equals(p, (platform ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+
         /// <summary>The LaunchBox default for this emulator, straight out of the metadata database.
         /// --pause-menu-exit keeps the pause menu reachable while still letting the frontend regain
         /// control, which is why it is preferred to --escape-exit.</summary>
@@ -173,7 +180,7 @@ namespace LbIntegrations.Ppsspp
         {
             const string extensions = ".iso; .cso; .zso; .chd; .pbp; .elf; .prx; .zip; .ppdmp";
 
-            yield return new LbCatalogEmulator
+            var row = new LbCatalogEmulator
             {
                 Name = PackName,
                 CommandLine = DefaultCommandLine,
@@ -181,13 +188,9 @@ namespace LbIntegrations.Ppsspp
                 Url = "https://www.ppsspp.org/",
                 BinaryFileName = PpssppPaths.ExecutableNames[0],
                 AutoExtract = false,
-                Platforms =
-                {
-                    new LbCatalogPlatform { Platform = PspPlatform,
-                                          ApplicableFileExtensions = extensions,
-                                          Recommended = true },
-                },
             };
+            foreach (var p in PspPlatforms) row.Platforms.Add(new LbCatalogPlatform { Platform = p, ApplicableFileExtensions = extensions, Recommended = true });
+            yield return row;
         }
 
         public override string EmulatorName => PackName;
@@ -335,8 +338,7 @@ namespace LbIntegrations.Ppsspp
 
         public override EmulatorSupportResponse IsPlatformSupported(string platform)
         {
-            bool supported = string.Equals((platform ?? "").Trim(), PspPlatform,
-                                           StringComparison.InvariantCultureIgnoreCase);
+            bool supported = IsPsp(platform);
             // Supported implies recommended here: PPSSPP is the reference PSP emulator, and the only
             // standalone one LaunchBox knows about.
             Log.Verbose("IsPlatformSupported(\"" + platform + "\") -> " + supported);
@@ -627,9 +629,12 @@ namespace LbIntegrations.Ppsspp
             // and not this one. What actually matters is IsDefault on each platform row, which says
             // "this emulator is the default FOR that platform", and we do set that.
 
-            var platform = emu.AddNewEmulatorPlatform();
-            platform.Platform = PspPlatform;
-            platform.IsDefault = true;
+            foreach (var name in PspPlatforms)
+            {
+                var platform = emu.AddNewEmulatorPlatform();
+                platform.Platform = name;
+                platform.IsDefault = true;
+            }
 
             try { dm.Save(false); } catch (Exception ex) { Log.Warn("data manager save failed", ex); }
             Log.Info("created emulator entry \"PPSSPP\""
