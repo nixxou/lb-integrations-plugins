@@ -117,6 +117,27 @@ namespace LbIntegrations.Compat
                         var missing = names.Where(n => TypeNamed(n) == null).ToList();
                         return missing.Count == 0 ? (CompatCheckState.Ok, "the import wizard's view models") : (CompatCheckState.Missing, string.Join(", ", missing));
                     }
+                    case "lb.launchWithMenu":
+                    {
+                        // What the labels lean on (src\LaunchWithLabels\README.md §9): LaunchBox's "Launch With" label in its resx; in
+                        // Big Box, the popup's view model and its PopupOption (Value, DisplayString).
+                        if (!InLaunchBox()) return (CompatCheckState.NotHere, "not inside LaunchBox or Big Box");
+                        bool bigBox = false;
+                        try { bigBox = Process.GetCurrentProcess().ProcessName.Equals("BigBox", StringComparison.OrdinalIgnoreCase); } catch { }
+                        if (!bigBox)
+                        {
+                            var strings = Types().FirstOrDefault(x => x.FullName == "Unbroken.LaunchBox.Properties.Strings");
+                            var rm = strings?.GetProperty("ResourceManager", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)?.GetValue(null) as System.Resources.ResourceManager;
+                            var label = rm?.GetString("LabelLaunchWithMenu", System.Globalization.CultureInfo.InvariantCulture);
+                            return label != null ? (CompatCheckState.Ok, "the \"Launch With\" label (" + label + ")") : (CompatCheckState.Missing, "Strings.LabelLaunchWithMenu");
+                        }
+                        var popup = TypeNamed("SelectOptionPopupViewModel`1");
+                        var option = TypeNamed("PopupOption`1") ?? TypeNamed("PopupOption");
+                        var missing = new List<string>();
+                        if (popup == null) missing.Add("SelectOptionPopupViewModel");
+                        if (option == null || option.GetProperty("Value") == null || option.GetProperty("DisplayString") == null) missing.Add("PopupOption.Value / DisplayString");
+                        return missing.Count == 0 ? (CompatCheckState.Ok, "Big Box's option popup") : (CompatCheckState.Missing, string.Join(", ", missing));
+                    }
                     case "lb.version":
                     {
                         var v = LaunchBoxVersion();

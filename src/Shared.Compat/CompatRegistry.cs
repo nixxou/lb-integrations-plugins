@@ -318,6 +318,19 @@ namespace LbIntegrations.Compat
                             + "Flycast and Demul \"sort the import\", ZiNc EX \"keep only ZiNc's games\".",
                 Checks = new[] { "lb.wizard" },
             },
+            new CompatPatch
+            {
+                Id = "launchWithLabels", Group = CompatGroup.Hook, Title = "How well each emulator runs the game, in \"Launch With\"",
+                Problem = "An arcade platform gathers emulators that each run a part of its games: \"Launch With\" offers all of them "
+                        + "for every game, with no way to tell which one runs it.",
+                Example = "Nixx-ZiNc-EX offered on every MAME game, though it runs 71 of them.",
+                Does = "When \"Launch With\" opens (LaunchBox's right-click menu, Big Box's popup), each line of a pack emulator shows "
+                     + "its plugin's verdict for that game - Perfect, Recommended, Playable, Glitches, Won't run - as a coloured badge "
+                     + "in LaunchBox, as text in Big Box. Only the text on screen: no emulator, game or file is changed. A table, "
+                     + "emu-labels.json beside the plugins' logs, can name the others or change a verdict.",
+                Without = "\"Launch With\" as LaunchBox shows it.",
+                Checks = new[] { "lb.launchWithMenu" },
+            },
         };
 
         // ── the simple view (Mehdi, 13/10) ──
@@ -361,6 +374,13 @@ namespace LbIntegrations.Compat
             },
             new CompatCard
             {
+                Title = "Compatibility in \"Launch With\"",
+                Line = "Each emulator of the pack says how well it runs the game, right in the \"Launch With\" menu.",
+                Ids = new[] { "launchWithLabels" },
+                LaunchBoxOnly = true,
+            },
+            new CompatCard
+            {
                 Title = "Opening an emulator from LaunchBox",
                 Line = "\"Open emulator\" opens the right window (Cxbx), and the plugins know the emulator ran.",
                 Ids = new[] { "emulatorOpened" },
@@ -381,7 +401,7 @@ namespace LbIntegrations.Compat
         public static readonly string[] Internal =
         {
             "desk", "retroarchView", "foreignSlots", "stockDesk", "stockNoSaves", "catchAll", "stockRestore", "stockIds",
-            "raConfigCache", "importWizard", "emulatorOpened",
+            "raConfigCache", "importWizard", "emulatorOpened", "launchWithLabels",
         };
     }
 

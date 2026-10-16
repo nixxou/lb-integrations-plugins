@@ -7,6 +7,8 @@
     <OutputType>Library</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
+    <!-- WPF: the "Launch With" labels (LaunchWith\) work on LaunchBox's and Big Box's WPF menus. -->
+    <UseWPF>true</UseWPF>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>latest</LangVersion>

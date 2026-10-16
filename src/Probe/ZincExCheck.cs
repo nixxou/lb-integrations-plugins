@@ -261,6 +261,25 @@ namespace LbIntegrations.Probe
             return set != null;
         }
 
+        /// <summary>The "Launch With" level of each zip, as Nixx-Menus asks it, timed.</summary>
+        public static bool Level(Assembly asm, string exe, string[] roms)
+        {
+            var m = asm.GetType("LbIntegrations.ZincEx.LaunchWith", true).GetMethod("Level", BindingFlags.Public | BindingFlags.Static);
+            foreach (var rom in roms)
+            {
+                var game = StubGame.Create(Guid.NewGuid().ToString(), Path.GetFileNameWithoutExtension(rom), rom);
+                for (int pass = 1; pass <= 2; pass++)
+                {
+                    var w = System.Diagnostics.Stopwatch.StartNew();
+                    var level = (string)m.Invoke(null, new object[] { game, exe });
+                    Console.WriteLine("  " + Path.GetFileName(rom).PadRight(18) + " " + (level ?? "null").PadRight(12) + " " + w.Elapsed.TotalMilliseconds.ToString("0.0") + " ms (pass " + pass + ")");
+                }
+            }
+            var other = (string)m.Invoke(null, new object[] { StubGame.Create("x", "x", roms[0]), @"C:\Emu\mame.exe" });
+            Check("another emulator: no answer", other == null);
+            return _bad == 0;
+        }
+
         public static bool Latest(Assembly asm)
         {
             _bad = 0;

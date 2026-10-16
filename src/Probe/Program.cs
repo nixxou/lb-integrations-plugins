@@ -203,6 +203,7 @@ namespace LbIntegrations.Probe
             if (Has(args, "--zincex-gamecfg")) return ZincExCheck.GameCfg(asm, Arg(args, "--scratch")) ? 0 : 1;
             if (Has(args, "--zincex-globals")) return ZincExCheck.Globals(asm, Path.GetFullPath(emuPath)) ? 0 : 1;
             if (Has(args, "--zincex-save")) return ZincExCheck.Save(asm, Path.GetFullPath(emuPath), Path.GetFullPath(Arg(args, "--rom"))) ? 0 : 1;
+            if (Has(args, "--zincex-level")) { int at = Array.IndexOf(args, "--zincex-level"); return ZincExCheck.Level(asm, Path.GetFullPath(emuPath), args.Skip(at + 1).TakeWhile(x => !x.StartsWith("--")).Select(Path.GetFullPath).ToArray()) ? 0 : 1; }
             if (Has(args, "--zincex-latest")) return ZincExCheck.Latest(asm) ? 0 : 1;
             // The bsnes plugin's pieces, without a host - see BsnesCheck.
             if (Has(args, "--bsnes-settings")) return BsnesCheck.Settings(asm, Path.GetFullPath(Arg(args, "--bsnes-settings")), Arg(args, "--settings")) ? 0 : 1;
