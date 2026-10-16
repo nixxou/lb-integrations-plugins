@@ -25,6 +25,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using LbIntegrations.Compat;
 using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 
@@ -106,13 +107,13 @@ namespace LbIntegrations.Saves
             }
 
             var t = route.Plugin.GetType();
-            var saveDir = Step(t, "GetGameSaveDirectory", typeof(IEmulator), typeof(IGame), typeof(IAdditionalApplication), typeof(bool));
-            var stateDir = Step(t, "GetSaveStateDirectory", typeof(IEmulator), typeof(IGame), typeof(IAdditionalApplication), typeof(bool));
-            var isSaturn = Step(t, "IsSaturnSaveContext", typeof(string), typeof(IGame));
-            var companions = Step(t, "CopySaturnCompanionFiles", typeof(string), typeof(string));
-            var saturnId = Step(t, "GetSaturnGroupId", typeof(string));
-            var missing = new[] { ("GetGameSaveDirectory", saveDir), ("GetSaveStateDirectory", stateDir), ("IsSaturnSaveContext", isSaturn),
-                                  ("CopySaturnCompanionFiles", companions), ("GetSaturnGroupId", saturnId) }.Where(x => x.Item2 == null).Select(x => x.Item1).ToList();
+            // Their exact signatures are NativeStatics' - the ones the Compatibility page checks.
+            var saveDir = NativeStatics.Find(t, NativeStatics.RaGameSaveDirectory);
+            var stateDir = NativeStatics.Find(t, NativeStatics.RaSaveStateDirectory);
+            var isSaturn = NativeStatics.Find(t, NativeStatics.RaIsSaturn);
+            var companions = NativeStatics.Find(t, NativeStatics.RaSaturnCompanions);
+            var saturnId = NativeStatics.Find(t, NativeStatics.RaSaturnGroupId);
+            var missing = NativeStatics.Missing(t, NativeStatics.RetroArch);
             if (missing.Count > 0) return Refuse(log, "RetroArch's integration has changed (" + string.Join(", ", missing) + " not found)");
 
             string target;
@@ -175,14 +176,13 @@ namespace LbIntegrations.Saves
             if (!Context(row, out var game, out _, out var rom, out var why)) return new AddSaveResponse(why);
 
             var t = route.Plugin.GetType();
-            var platformOf = Step(t, "GetPlatformType", typeof(IGame), typeof(string));
-            var roots = Step(t, "BuildUserRoots", typeof(IEmulator));
-            var discId = Step(t, "TryGetDiscId", typeof(string), typeof(IEmulator), typeof(string).MakeByRefType());
-            var gc = Named(t, "RestoreGameCubeSave", 4);
-            var wii = Named(t, "RestoreWiiSave", 4);
-            var st = Named(t, "RestoreSaveState", 4);
-            var missing = new[] { ("GetPlatformType", platformOf), ("BuildUserRoots", roots), ("TryGetDiscId", discId),
-                                  ("RestoreGameCubeSave", gc), ("RestoreWiiSave", wii), ("RestoreSaveState", st) }.Where(x => x.Item2 == null).Select(x => x.Item1).ToList();
+            var platformOf = NativeStatics.Find(t, NativeStatics.DolPlatformType);
+            var roots = NativeStatics.Find(t, NativeStatics.DolUserRoots);
+            var discId = NativeStatics.Find(t, NativeStatics.DolDiscId);
+            var gc = NativeStatics.Find(t, NativeStatics.DolGameCube);
+            var wii = NativeStatics.Find(t, NativeStatics.DolWii);
+            var st = NativeStatics.Find(t, NativeStatics.DolState);
+            var missing = NativeStatics.Missing(t, NativeStatics.Dolphin);
             if (missing.Count > 0) return Refuse(log, "Dolphin's integration has changed (" + string.Join(", ", missing) + " not found)");
 
             var platform = platformOf!.Invoke(null, new object?[] { game, rom })?.ToString();
@@ -232,25 +232,6 @@ namespace LbIntegrations.Saves
             if (string.IsNullOrWhiteSpace(path)) { why = "No Game/App application path found!"; return false; }
             rom = path!;
             return true;
-        }
-
-        private const BindingFlags Statics = BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public;
-
-        /// <summary>A static of theirs by its exact parameters; null when it is not there any more.</summary>
-        private static MethodInfo? Step(Type t, string name, params Type[] parameters)
-        {
-            try { return t.GetMethod(name, Statics, null, parameters, null); } catch { return null; }
-        }
-
-        /// <summary>A static of theirs whose parameter types are partly theirs (DolphinUserDataRoots): by name and count.</summary>
-        private static MethodInfo? Named(Type t, string name, int count)
-        {
-            try
-            {
-                var all = t.GetMethods(Statics).Where(m => m.Name == name && m.GetParameters().Length == count && typeof(AddSaveResponse).IsAssignableFrom(m.ReturnType)).ToList();
-                return all.Count == 1 ? all[0] : null;
-            }
-            catch { return null; }
         }
 
         private static AddSaveResponse Refuse(Action<string> log, string why)

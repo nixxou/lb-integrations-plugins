@@ -67,6 +67,7 @@ namespace LbIntegrations.Menus
                                       + "LaunchBox's inner workings, which an update can change - and the day LaunchBox fixes a bug, its "
                                       + "patch can go. Each one can be turned off here; all are on by default.", NixxTheme.Text));
             _advanced.Controls.Add(Text("Changes apply when LaunchBox (or BigBox) is restarted: the plugins read these choices when they start."));
+            _advanced.Controls.Add(ShapeLine());
             foreach (var group in CompatRegistry.All.GroupBy(p => p.Group))
             {
                 _advanced.Controls.Add(Text(CompatRegistry.GroupTitle(group.Key), NixxTheme.Caption, bold: true, top: 10));
@@ -78,6 +79,7 @@ namespace LbIntegrations.Menus
             _health = Text("Checking what the pack relies on in LaunchBox...", NixxTheme.Text, bold: true);
             _health.MaximumSize = new Size(Width0 - 30, 0);
             _simple.Controls.Add(_health);
+            _simple.Controls.Add(ShapeLine());
             foreach (var c in CompatRegistry.Cards) _simple.Controls.Add(SimpleCard(c));
             var safeRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 10, 0, 2) };
             safeRow.Controls.Add(Text("Something broke after a LaunchBox update?", NixxTheme.Text, top: 6));
@@ -102,6 +104,19 @@ namespace LbIntegrations.Menus
             RefreshCards();
             Pending(saved);
             HandleCreated += (_, _) => RunChecks();
+        }
+
+        /// <summary>The host's shape (LbHostShape: versions, v1/v2 model, registry, LaunchBox's integrations), shown once
+        /// the checks ran - one in each view.</summary>
+        private readonly List<Label> _shapeLines = new List<Label>();
+
+        private Label ShapeLine()
+        {
+            var l = Text("");
+            l.MaximumSize = new Size(Width0 - 30, 0);
+            l.Visible = false;
+            _shapeLines.Add(l);
+            return l;
         }
 
         private static FlowLayoutPanel Stack() => new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Margin = new Padding(0) };
@@ -371,7 +386,14 @@ namespace LbIntegrations.Menus
                         var missing = results.Where(r => r.State == CompatCheckState.Missing).ToList();
                         if (missing.Count > 0) { check = "Reflection: MISSING - " + string.Join("; ", missing.Select(r => r.Detail)); checkColor = NixxTheme.Error; worst = (CompatCheckState.Missing, string.Join("; ", missing.Select(r => r.Detail))); }
                         else if (results.All(r => r.State == CompatCheckState.NotHere)) { check = "Reflection: not loaded now - " + string.Join("; ", results.Select(r => r.Detail)); worst = (CompatCheckState.NotHere, ""); }
-                        else { check = "Reflection: OK - " + string.Join("; ", results.Where(r => r.State == CompatCheckState.Ok).Select(r => r.Detail)); checkColor = Color.MediumSeaGreen; worst = (CompatCheckState.Ok, ""); }
+                        else
+                        {
+                            // An Ok beside a "not loaded" says both (16/10: the not-loaded half was hidden behind the Ok).
+                            var notHere = results.Where(r => r.State == CompatCheckState.NotHere).ToList();
+                            check = "Reflection: OK - " + string.Join("; ", results.Where(r => r.State == CompatCheckState.Ok).Select(r => r.Detail))
+                                    + (notHere.Count > 0 ? ". Not loaded now - " + string.Join("; ", notHere.Select(r => r.Detail)) : "");
+                            checkColor = Color.MediumSeaGreen; worst = (CompatCheckState.Ok, "");
+                        }
                     }
                     if (p.BugTest != null)
                     {
@@ -387,7 +409,18 @@ namespace LbIntegrations.Menus
                     }
                     try { if (IsHandleCreated && !IsDisposed) BeginInvoke((Action)Show); } catch { }
                 }
-                try { if (IsHandleCreated && !IsDisposed) BeginInvoke((Action)(() => { _checksDone = true; RefreshCards(); })); } catch { }
+                string shape;
+                try { shape = "This LaunchBox: " + Compat.LbHostShape.Describe(); } catch (Exception ex) { shape = "This LaunchBox: unreadable (" + ex.Message + ")"; }
+                try
+                {
+                    if (IsHandleCreated && !IsDisposed) BeginInvoke((Action)(() =>
+                    {
+                        _checksDone = true;
+                        foreach (var l in _shapeLines) { l.Text = shape; l.Visible = true; }
+                        RefreshCards();
+                    }));
+                }
+                catch { }
             });
         }
     }
