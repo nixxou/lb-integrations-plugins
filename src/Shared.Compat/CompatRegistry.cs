@@ -325,7 +325,7 @@ namespace LbIntegrations.Compat
                         + "for every game, with no way to tell which one runs it.",
                 Example = "Nixx-ZiNc-EX offered on every MAME game, though it runs 71 of them.",
                 Does = "When \"Launch With\" opens (LaunchBox's right-click menu, Big Box's popup), each line of a pack emulator shows "
-                     + "its plugin's verdict for that game - Perfect, Recommended, Playable, Glitches, Won't run - as a coloured badge "
+                     + "its plugin's verdict for that game - Perfect, Recommended, Playable, Major issues, Won't run - as a coloured badge "
                      + "in LaunchBox, as text in Big Box. Only the text on screen: no emulator, game or file is changed. A table, "
                      + "emu-labels.json beside the plugins' logs, can name the others or change a verdict.",
                 Without = "\"Launch With\" as LaunchBox shows it.",

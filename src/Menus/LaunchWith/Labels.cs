@@ -13,8 +13,10 @@
 //      "this emulator is not mine", or "nothing to say" - the line is then left as LaunchBox wrote it. Called on every
 //      opening of the menu, for each line: it must answer from memory or from a cache.
 //
-// The scale is fixed and its words are the relay's, so every plugin's verdict reads alike; the colours are the PoC's, measured
-// against LaunchBox's dark menu (README, "Badge colours").
+// The scale is fixed and its words are the relay's, so every plugin's verdict reads alike. Its colours (Mehdi, 16/10): green
+// for a game that can be played through, yellow only for faults that spoil it, red for one that does not get in game; cyan
+// above green for perfect, blue for the plugin's own recommendation. Light badges under dark text, measured against
+// LaunchBox's dark menu as the PoC's were (README, "Badge colours").
 
 using System;
 using System.Collections.Generic;
@@ -37,10 +39,10 @@ namespace LbIntegrations.Menus.LaunchWith
         /// <summary>The levels a plugin may answer, their words and badge colours.</summary>
         public static readonly IReadOnlyList<(string Key, string Text, string Color)> Scale = new[]
         {
-            ("perfect", "Perfect", "#66BB6A"),
-            ("recommended", "Recommended", "#4DD0E1"),
-            ("playable", "Playable", "#FFD54F"),
-            ("glitches", "Glitches", "#FFA726"),
+            ("perfect", "Perfect", "#4DD0E1"),
+            ("recommended", "Recommended", "#64B5F6"),
+            ("playable", "Playable", "#66BB6A"),
+            ("glitches", "Major issues", "#FFD54F"),
             ("nostart", "Won't run", "#FF7961"),
             ("untested", "Untested", "#BDBDBD"),
         };
