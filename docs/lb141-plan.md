@@ -38,6 +38,29 @@ unchanged byte for byte (the trunk overwrite remains).
 Unchanged and working: row injection (Sqlite), the menus relay, the import wizard watch, `Process.Start` patch,
 retroarch.cfg cache.
 
+## 2b. LaunchBox's save defects on 14.1 b3 (measured 16/10, LaunchBox alone)
+
+Sandbox `tools\lb141-sandbox\sandbox.ps1` in `G:\LB14B3`, the pack moved aside (`-Action pack-off`), RetroArch twice
+(snes9x and bsnes, one exe), made-up saves whose bytes say what they are. **Automatic Save Backups is OFF in a new
+install**: until ticked, the close scans ("Scanning ... without creating backups") and backs nothing up.
+
+| Test | 14.0.1 | 14.1 b3 |
+|---|---|---|
+| T1 Launch With: the save of the emulator actually used, at close | never asked | **fixed**: "Scanning ... with the Launch With emulator 'RetroArch bsnes'", backed up |
+| T2 restore of another emulator's save (game on snes9x, save of bsnes) | written into the game's core folder | **fixed**: back into `saves\bsnes`, `AddSaveFile` given the emulator, the live file backed up first (`-01`) |
+| T3 a state restored into another, occupied slot | that slot's state lost | **fixed**: "Slot 1 already contains ... LaunchBox will back it up and then replace it", `-01` in the vault |
+| T4 Backup Save, a version on the game's own file | "Can't find the game for this save item!" | **fixed** |
+| T5 the row of a game whose version runs the game's own file | tied to the version | **unchanged**: tied to "Play (USA) Version..." (listed and vault) |
+| T6 a version on its OWN file, another emulator: which one at close | the version's | **fixed**: the game's (the one that ran) |
+| T7 Make Default | game overwritten by the version, saves duplicated | **unchanged**: the game takes the version's path and emulator, the version stays (same id, same path), the game's own file is no longer referenced, the game's 2 save rows are copied onto the version (3 → 5) |
+| Saturn trunk (`CopySaturnCompanionFiles`) | another group overwritten | **unchanged** (code identical, read) |
+| A save taken into another card by its file name (`ApplyPersistedMetadata`) | present | **unchanged** (the page's bug test, 16/10) |
+
+Consequences for the steps below: most of the pack's routing exists for T1/T2/T6 and is no longer needed on 14.1 for
+LaunchBox's own integrations; the overwrite warning (T3) neither. What stays: T5's tie, the Saturn trunk, the merge by
+file name, Make Default (LiteBox already follows the demoted rom), and everything about OUR plugins, which are v1 and still
+get no emulator in `AddSaveFile`.
+
 ## 3. The rule
 
 One build, against the 14.0.1.2 SDK. Each zone that differs picks its way ONCE, from `Shared.Compat\LbHostShape.cs`
