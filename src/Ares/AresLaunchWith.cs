@@ -6,12 +6,14 @@
 //   playable    Completable
 //   glitches    In-Game
 //   nostart     Starts (never gets in game), Nothing
+//   missing     file: the game's file is not there
 //   (none)      not in the list, or a system ares has no page for - nothing to say: the list is a list of reports, a game
 //               it lacks may well run
 // Worked out once per game (names, system, the LaunchBox database entry's names) and kept in memory while the game's file,
 // title and platform stay and the list is not read again. The list itself is read in the background the first time.
 
 using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using Unbroken.LaunchBox.Plugins;
@@ -31,6 +33,8 @@ namespace LbIntegrations.Ares
                 if (game == null || !AresLaunch.IsAresExe(emulatorPath)) return null;
                 var rom = game.ApplicationPath;
                 if (string.IsNullOrWhiteSpace(rom)) return null;
+                var full = AresPlugin.ResolveFullPathForUi(rom);
+                if (full != null && !full.Contains("://") && !File.Exists(full) && !Directory.Exists(full)) return "missing:file";
                 // The list's first reading takes a second: done in the background, no label until then - never on the menu's time.
                 if (!AresCompat.Loaded) { System.Threading.Tasks.Task.Run(() => { try { _ = AresCompat.Generation; } catch { } }); return null; }
                 var key = game.Id + "|" + rom + "|" + game.Title + "|" + game.Platform + "|" + emulatorPath;

@@ -6,8 +6,10 @@
 //   perfect     Perfect
 //   playable    Playable
 //   glitches    Starts (gets in game, with serious faults)
-//   nostart     Intro, Broken - and a file xemu cannot open: an Xbox 360 disc, a disc without default.xbe, an archive of the
-//               game's files rather than of a disc image
+//   nostart     Intro, Broken
+//   unsupported what xemu does not take: an Xbox 360 disc (Xenia's), an archive of the game's files rather than of a disc image
+//   invalid     a disc without a default.xbe
+//   missing     file: the game's file is not there
 //   untested    the list has the title, with no state ("Unknown") - its own word
 //   (none)      not in the list, an archive never launched (its disc unknown until then)
 // The disc is read once per file (its date and size); an archive whose image is not unpacked yet is looked at again every
@@ -24,9 +26,9 @@ namespace LbIntegrations.Xemu
     /// <summary>What Nixx-Menus calls, by name. Public, its signature fixed.</summary>
     public static class LaunchWith
     {
-        private sealed class Disc { public string TitleId; public bool Refused, Pending; public DateTime At; }
+        private sealed class DiscFacts { public string TitleId, Level; public bool Pending; public DateTime At; }
 
-        private static readonly Dictionary<string, Disc> Discs = new Dictionary<string, Disc>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, DiscFacts> Discs = new Dictionary<string, DiscFacts>(StringComparer.OrdinalIgnoreCase);
 
         public static string Level(IGame game, string emulatorPath)
         {
@@ -36,7 +38,7 @@ namespace LbIntegrations.Xemu
                 var rom = XemuPlugin.ResolveFullPath(game.ApplicationPath);
                 var disc = DiscOf(rom, XemuPlugin.ResolveFullPath(emulatorPath));
                 if (disc == null || disc.Pending) return null;
-                if (disc.Refused) return "nostart";
+                if (disc.Level != null) return disc.Level;
                 var (report, title) = XboxCompat.Xemu(disc.TitleId);
                 var state = !string.IsNullOrEmpty(report?.Rating) ? report.Rating : title?.Status;
                 return state switch
@@ -53,22 +55,23 @@ namespace LbIntegrations.Xemu
             catch (Exception ex) { Log.Warn("LaunchWith.Level", ex); return null; }
         }
 
-        private static Disc DiscOf(string rom, string exe)
+        private static DiscFacts DiscOf(string rom, string exe)
         {
             if (string.IsNullOrWhiteSpace(rom)) return null;
             var fi = new FileInfo(rom);
-            if (!fi.Exists) return null;
+            if (!fi.Exists) return Directory.Exists(rom) ? null : new DiscFacts { Level = "missing:file" };
             var key = fi.FullName + "|" + fi.Length + "|" + fi.LastWriteTimeUtc.Ticks;
             lock (Discs) if (Discs.TryGetValue(key, out var known) && (!known.Pending || DateTime.UtcNow - known.At < TimeSpan.FromMinutes(2))) return known;
-            Disc disc;
+            DiscFacts disc;
             var id = XemuDisc.TitleIdOf(rom, exe);
-            if (id != null) disc = new Disc { TitleId = id };
+            if (id != null) disc = new DiscFacts { TitleId = id };
             else
             {
                 var d = XemuDisc.Describe(rom);
-                if (d.Kind == XemuDiscKind.ImageInArchive) disc = new Disc { Pending = true, At = DateTime.UtcNow };
+                if (d.Kind == XemuDiscKind.ImageInArchive) disc = new DiscFacts { Pending = true, At = DateTime.UtcNow };
                 else if (d.Kind == XemuDiscKind.Unknown) return null;   // not read (a lock, an error): asked again next time
-                else disc = new Disc { Refused = true };                 // an Xbox 360 disc, no default.xbe, a tree in an archive
+                else if (d.Kind == XemuDiscKind.Xbox360 || d.Kind == XemuDiscKind.TreeInArchive) disc = new DiscFacts { Level = "unsupported" };
+                else disc = new DiscFacts { Level = "invalid" };             // a disc, a ZArchive: no default.xbe in it
             }
             lock (Discs) { if (Discs.Count > 4096) Discs.Clear(); Discs[key] = disc; }
             return disc;

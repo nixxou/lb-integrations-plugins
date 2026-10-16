@@ -6,11 +6,13 @@
 //   playable    Playable
 //   glitches    Ingame+, Ingame (gets in game, with faults)
 //   nostart     Menu, Intro, Boots, Nothing (never gets in game)
+//   missing     file: the game's file is not there
 //   (none)      not in the list, a state label the plugin does not know, no title id on the file
 // The title id is read once per file (Vita3kPlugin.TitleIdOf, GlobalCache across sessions); the list's answer is kept while
 // the list keeps its date and size.
 
 using System;
+using System.IO;
 using Unbroken.LaunchBox.Plugins.Data;
 
 namespace LbIntegrations.Vita3k
@@ -23,6 +25,9 @@ namespace LbIntegrations.Vita3k
             try
             {
                 if (game == null || !Vita3kPaths.IsVita3kExecutable(emulatorPath)) return null;
+                var rom = Vita3kPlugin.ResolveFullPath(game.ApplicationPath);
+                if (string.IsNullOrWhiteSpace(rom)) return null;
+                if (!File.Exists(rom) && !Directory.Exists(rom)) return "missing:file";
                 var id = Vita3kPlugin.TitleIdOf(game.ApplicationPath);
                 if (id == null) return null;
                 var layout = Vita3kPaths.Resolve(Vita3kPlugin.ResolveFullPath(emulatorPath));

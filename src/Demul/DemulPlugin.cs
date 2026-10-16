@@ -448,6 +448,9 @@ namespace LbIntegrations.Demul
             catch { return fullPath; }
         }
 
+        /// <summary>ResolveFullPath for the window and "Launch With" (DemulLaunchWith).</summary>
+        internal static string ResolveFullPathForUi(string maybeRelative) => ResolveFullPath(maybeRelative);
+
         private static string ResolveFullPath(string maybeRelative)
         {
             try

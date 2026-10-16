@@ -3,8 +3,9 @@
 //
 // Flycast keeps no compatibility list; its arcade table is a strict one: an arcade zip runs only as one of the sets Flycast
 // knows (flycast-id --sets, the table of the very Flycast it ships with), by the zip's name.
-//   nostart     a zip or 7z that is none of Flycast's sets, a BIOS, or a Naomi GD-ROM game whose image is not there (the
-//               launch refuses it - FlycastPlugin.PrepareForLaunch)
+//   unsupported a zip or 7z that is none of Flycast's sets, or a BIOS
+//   missing     CHD: a Naomi GD-ROM game whose image is not there (the launch refuses it - FlycastPlugin.PrepareForLaunch);
+//               file: the game's file is not there
 //   (none)      a set Flycast knows, a disc, anything else - nothing to say
 // The table is asked in the background the first time (the tool may take seconds); until it is there, no label.
 
@@ -24,12 +25,14 @@ namespace LbIntegrations.Flycast
                 if (game == null || !FlycastPaths.IsFlycastExecutable(emulatorPath)) return null;
                 var rom = game.ApplicationPath;
                 if (string.IsNullOrWhiteSpace(rom)) return null;
+                var full = FlycastPlugin.ResolveFullPath(rom);
+                if (full != null && !File.Exists(full) && !Directory.Exists(full)) return "missing:file";
                 var ext = Path.GetExtension(rom).ToLowerInvariant();
                 if (ext != ".zip" && ext != ".7z") return null;
                 var sets = FlycastGameIdentity.SetsIfReady(FlycastPaths.Resolve(FlycastPlugin.ResolveFullPath(emulatorPath)));
                 if (sets == null) return null;
-                if (!sets.TryGetValue(Path.GetFileNameWithoutExtension(rom), out var set) || set.System == FlycastGameIdentity.BiosSystem) return "nostart";
-                if (set.GdRom != null && FlycastGameIdentity.GdRomImage(FlycastPlugin.ResolveFullPath(rom), set) == null) return "nostart";
+                if (!sets.TryGetValue(Path.GetFileNameWithoutExtension(rom), out var set) || set.System == FlycastGameIdentity.BiosSystem) return "unsupported";
+                if (set.GdRom != null && FlycastGameIdentity.GdRomImage(full, set) == null) return "missing:CHD";
                 return null;
             }
             catch (Exception ex) { Log.Warn("LaunchWith.Level", ex); return null; }

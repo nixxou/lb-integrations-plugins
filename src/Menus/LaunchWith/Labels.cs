@@ -9,7 +9,8 @@
 //          public static class LbIntegrations.<assembly name>.LaunchWith
 //              string Level(IGame game, string emulatorPath)
 //
-//      emulatorPath as LaunchBox stores it (relative to its root, or full). The answer is one of the keys of Scale, or null:
+//      emulatorPath as LaunchBox stores it (relative to its root, or full). The answer is one of the keys of Scale - "missing"
+//      followed by what is missing: "missing:CHD", "missing:BIOS", "missing:file" - or null:
 //      "this emulator is not mine", or "nothing to say" - the line is then left as LaunchBox wrote it. Called on every
 //      opening of the menu, for each line: it must answer from memory or from a cache.
 //
@@ -17,6 +18,10 @@
 // for a game that can be played through, yellow only for faults that spoil it, red for one that does not get in game; cyan
 // above green for perfect, blue for the plugin's own recommendation. Light badges under dark text, measured against
 // LaunchBox's dark menu as the PoC's were (README, "Badge colours").
+// What is NOT about how well the game runs is told apart (Mehdi, 16/10: "1942 sur Flycast, c'est pas que le jeu tourne pas,
+// c'est que c'est pas un format supporté"): Not supported (lavender) - a file or set the emulator does not take at all;
+// Other version (lavender too) - a game the emulator runs, but not this dump of it; Missing ... and Invalid file (orange) -
+// something the user can put right. Won't run stays the list's own verdict.
 
 using System;
 using System.Collections.Generic;
@@ -44,6 +49,10 @@ namespace LbIntegrations.Menus.LaunchWith
             ("playable", "Playable", "#66BB6A"),
             ("glitches", "Major issues", "#FFD54F"),
             ("nostart", "Won't run", "#FF7961"),
+            ("unsupported", "Not supported", "#B39DDB"),
+            ("version", "Other version", "#B39DDB"),
+            ("missing", "Missing", "#FFA726"),
+            ("invalid", "Invalid file", "#FFA726"),
             ("untested", "Untested", "#BDBDBD"),
         };
 
@@ -61,9 +70,14 @@ namespace LbIntegrations.Menus.LaunchWith
             if (raw != null) return new Verdict { Text = raw, Color = Table.ColorFor(raw) ?? Scale.FirstOrDefault(s => s.Text.Equals(raw, StringComparison.OrdinalIgnoreCase)).Color, Source = "emu-labels.json" };
             var (level, who) = Providers.Ask(game, Safe(() => emulator.ApplicationPath));
             if (level == null) return null;
-            var step = Scale.FirstOrDefault(s => s.Key.Equals(level, StringComparison.OrdinalIgnoreCase));
+            // "missing:CHD" -> "Missing CHD": the level's word, then what the plugin says is missing (a word or two, kept short).
+            var colon = level.IndexOf(':');
+            var key = colon < 0 ? level : level.Substring(0, colon);
+            var what = colon < 0 ? null : level.Substring(colon + 1).Trim();
+            if (what != null && what.Length > 16) what = what.Substring(0, 16);
+            var step = Scale.FirstOrDefault(s => s.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
             if (step.Key == null) { Log.Info(who + " answered \"" + level + "\", not a level of the scale: left alone"); return null; }
-            return new Verdict { Text = step.Text, Color = step.Color, Source = who };
+            return new Verdict { Text = string.IsNullOrEmpty(what) ? step.Text : step.Text + " " + what, Color = step.Color, Source = who };
         }
 
         private static string Safe(Func<string> f) { try { return f(); } catch { return null; } }

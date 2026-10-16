@@ -7,10 +7,12 @@
 //   playable    Playable
 //   glitches    Ingame
 //   nostart     Menu/Intro, Doesn't Boot
+//   missing     file: the game's file is not there
 //   (none)      not in the list, or in it with no report yet - nothing to say
 // The PARAM.SFO is read once per file (PspDiscId's cache, psp-sfo.tsv across sessions).
 
 using System;
+using System.IO;
 using Unbroken.LaunchBox.Plugins.Data;
 
 namespace LbIntegrations.Ppsspp
@@ -25,6 +27,7 @@ namespace LbIntegrations.Ppsspp
                 if (game == null || !PpssppPaths.IsPpssppExecutable(emulatorPath)) return null;
                 var rom = PpssppPlugin.ResolveFullPathOf(game.ApplicationPath);
                 if (string.IsNullOrWhiteSpace(rom)) return null;
+                if (!File.Exists(rom) && !Directory.Exists(rom)) return "missing:file";
                 var discId = PspDiscId.Of(rom);
                 var version = discId == null ? null : PspDiscId.SfoOf(rom)?.GetString("DISC_VERSION");
                 return PpssppCompat.Of(discId, version)?.Rating switch
