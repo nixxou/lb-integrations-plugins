@@ -615,7 +615,7 @@ namespace LbIntegrations.Vita3k
         /// <summary>The GlobalCache file of the title ids (its version moves when the way an id is read changes).</summary>
         private const string TitleIdsKind = "vita3k-title-ids-v1";
 
-        private static string TitleIdOf(string romPath)
+        internal static string TitleIdOf(string romPath)
         {
             try
             {

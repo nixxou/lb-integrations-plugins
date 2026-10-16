@@ -1,0 +1,43 @@
+// PPSSPP's verdict in "Launch With" - what Nixx-Menus shows on its line for a game (src\Menus\LaunchWith\Labels.cs has the
+// contract, by name: LbIntegrations.<assembly name>.LaunchWith.Level).
+//
+// From PPSSPP's own report site (PpssppCompat, report.ppsspp.org), the best report of the disc's DISC_ID and DISC_VERSION -
+// what the game's window shows:
+//   perfect     Perfect
+//   playable    Playable
+//   glitches    Ingame
+//   nostart     Menu/Intro, Doesn't Boot
+//   (none)      not in the list, or in it with no report yet - nothing to say
+// The PARAM.SFO is read once per file (PspDiscId's cache, psp-sfo.tsv across sessions).
+
+using System;
+using Unbroken.LaunchBox.Plugins.Data;
+
+namespace LbIntegrations.Ppsspp
+{
+    /// <summary>What Nixx-Menus calls, by name. Public, its signature fixed.</summary>
+    public static class LaunchWith
+    {
+        public static string Level(IGame game, string emulatorPath)
+        {
+            try
+            {
+                if (game == null || !PpssppPaths.IsPpssppExecutable(emulatorPath)) return null;
+                var rom = PpssppPlugin.ResolveFullPathOf(game.ApplicationPath);
+                if (string.IsNullOrWhiteSpace(rom)) return null;
+                var discId = PspDiscId.Of(rom);
+                var version = discId == null ? null : PspDiscId.SfoOf(rom)?.GetString("DISC_VERSION");
+                return PpssppCompat.Of(discId, version)?.Rating switch
+                {
+                    "Perfect" => "perfect",
+                    "Playable" => "playable",
+                    "Ingame" => "glitches",
+                    "Menu/Intro" => "nostart",
+                    "Doesn't Boot" => "nostart",
+                    _ => null,
+                };
+            }
+            catch (Exception ex) { Log.Warn("LaunchWith.Level", ex); return null; }
+        }
+    }
+}

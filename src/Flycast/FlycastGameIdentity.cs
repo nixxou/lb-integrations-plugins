@@ -288,6 +288,25 @@ namespace LbIntegrations.Flycast
             catch (Exception ex) { why = "the tool could not be run (" + ex.Message + ")"; return null; }
         }
 
+        private static readonly HashSet<string> SetsAsked = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Sets, never waited for: the list already asked, or null - and then asked once in the background, so a
+        /// later call has it. For what runs on the UI thread at every menu opening ("Launch With"): the tool may take seconds.</summary>
+        public static Dictionary<string, ArcadeSet> SetsIfReady(FlycastLayout layout)
+        {
+            if (layout == null) return null;
+            var tool = Tool(layout, out _);
+            if (tool == null) return null;
+            string key;
+            try { var info = new FileInfo(tool); key = info.FullName + "|" + info.Length + "|" + info.LastWriteTimeUtc.Ticks; } catch { return null; }
+            string hash;
+            lock (Hashes) Hashes.TryGetValue(key, out hash);
+            if (hash != null) lock (SetLists) if (SetLists.TryGetValue(hash, out var known)) return known;
+            lock (SetsAsked) if (!SetsAsked.Add(key)) return null;
+            System.Threading.Tasks.Task.Run(() => { try { Sets(layout, out _); } catch { } });
+            return null;
+        }
+
         /// <summary>What a zip's CONTENT is, by its files' CRCs (flycast-id --identify): the set it matches best
         /// (Best, all of its files there when BestWhole) and the set it is NAMED as (Own, all of its files there -
         /// its parent's zip counted in - when OwnWhole).</summary>

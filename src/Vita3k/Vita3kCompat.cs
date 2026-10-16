@@ -133,6 +133,23 @@ namespace LbIntegrations.Vita3k
             catch (Exception ex) { Log.Warn("compatibility list: could not read it", ex); return null; }
         }
 
+        private static readonly Dictionary<string, VitaCompat> Looked = new Dictionary<string, VitaCompat>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Lookup, kept in memory while the list keeps its date and size - for what asks often ("Launch With", at every
+        /// opening of a menu): Lookup reads the list from its start each time.</summary>
+        public static VitaCompat LookupKept(Vita3kLayout layout, string titleId)
+        {
+            if (string.IsNullOrWhiteSpace(titleId)) return null;
+            string list = "embedded";
+            try { var db = DbPath(layout); if (db != null && File.Exists(db)) { var fi = new FileInfo(db); list = fi.FullName + "|" + fi.Length + "|" + fi.LastWriteTimeUtc.Ticks; } }
+            catch { }
+            var key = list + "|" + titleId;
+            lock (Looked) if (Looked.TryGetValue(key, out var known)) return known;
+            var found = Lookup(layout, titleId);
+            lock (Looked) { if (Looked.Count > 4096) Looked.Clear(); Looked[key] = found; }
+            return found;
+        }
+
         private static Dictionary<long, Label> ReadLabels(Vita3kLayout layout)
         {
             var labels = new Dictionary<long, Label>();

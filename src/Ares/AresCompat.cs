@@ -135,8 +135,16 @@ namespace LbIntegrations.Ares
                 if (!bySlug.TryGetValue(e.Slug, out var l)) bySlug[e.Slug] = l = new List<AresCompatEntry>();
                 l.Add(e);
             }
-            _entries = entries; _bySlug = bySlug; _when = when;
+            // _entries last: Load's check outside the lock reads it, and FindAll then reads _bySlug - set before it, never seen null.
+            _bySlug = bySlug; _when = when; _entries = entries;
         }
+
+        /// <summary>The list in memory, as an identity: another object once the list is read again (Refresh) - what the
+        /// "Launch With" verdicts (AresLaunchWith) keep theirs by.</summary>
+        internal static object Generation { get { Load(); return _entries; } }
+
+        /// <summary>Whether the list is in memory already - reading it takes a second (fifteen thousand titles, their keys).</summary>
+        internal static bool Loaded => _entries != null;
 
         /// <summary>How many games the list has, from when, and whether it is the embedded one.</summary>
         public static (int Count, DateTime? When, bool Embedded) Info()
