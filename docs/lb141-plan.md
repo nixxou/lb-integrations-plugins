@@ -92,3 +92,25 @@ both installs.
    emulator of a game, menu roles from `Local\Plugins`).
 
 Later, at 14.1 stable: move our plugins to v2 (minimum 14.1).
+
+## 5. Where it stands (17/10)
+
+Done: steps 0-4 and 6 (b7b81f7 ... e4f0bd8); step 5 moot on 14.1 (LaunchBox's integrations are v2, nothing of ours is
+hooked into them). Step 7 under way, found and fixed on the way:
+
+- **Import sorts ran too early** (ee57106): 14.1 fills the wizard's list in batches with pauses; "500 ms of quiet" sorted
+  600 lines of 15 081. `Shared.Lbip\LbipListFill` (the 7 plugins that sort) also waits for Finish to be enabled and any
+  IsBusy / IsLoading, and sorts again what comes after. Measured: Finish greyed while filling, 42 917 files, 245 Naomi
+  sets kept.
+- **Platforms** (5817b12, cbaf1b5, 1c01eab): LiteBox's own platforms claimed by name like Nintendo DSiware - ares: Pocket
+  Challenge V2 and the NES/SNES/Mega Drive hacks, MSU-1; bsnes, RASnes9x, SUPER ZSNES: MSU-1 and SMW hacks; PPSSPP: Sony PSP
+  Minis. Flycast and Demul claim "Arcade" (supported, never recommended): import sort over all their boards, Demul starts
+  an Arcade game with its set's board. LaunchBox's "ZiNc" platform is a text-adventure interpreter - not ZiNc EX's.
+- **Nothing recommended any more** (21416fa): a recommended emulator is offered by the import wizard before it is
+  installed, and the sort then finds no emulator of ours.
+- **Seen, left as it is (Mehdi 17/10):** the Add/Edit Emulator window ticks "Default Emulator" on any platform that has
+  no default yet (Arcade without MAME) and asks to move its games - our row is created unticked.
+
+Still to do: step 7's Big Box popup, Launch With and launch on Arcade under 14.1; step 8 (probes on both installs,
+release 1.3.0); step 9 (forum texts for Make Default and the Saturn trunk written; T5 and the merge by name to add).
+Then LiteBox.
