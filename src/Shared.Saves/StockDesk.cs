@@ -659,10 +659,14 @@ namespace LbIntegrations.Saves
             catch { return true; }
         }
 
-        private static void GetSavesIn(object __instance, GetSavesArgs __0, out long __state)
+        private static void GetSavesIn(object __instance, ref GetSavesArgs __0, out long __state)
         {
             __state = EmuOf(__instance) == null ? 0 : Stopwatch.GetTimestamp();
-            if (__state != 0) EnsureIds(__0);
+            if (__state == 0) return;
+            // A game's web links and documents come among its versions: the integration's own listing never sees them (14.0,
+            // measured 17/10 in G:\LB1326: a "https://www.example.com/" link of Lylatwars held Zelda's RetroArch save).
+            try { __0 = SaveRows.WithoutLinks(__0, m => SaveRouter.Say("[stock] " + m)); } catch { }
+            EnsureIds(__0);
         }
 
         /// <summary>The persisted cards of LaunchBox's integrations in the form `stockIds` says (step 8, StockIdMigration),
