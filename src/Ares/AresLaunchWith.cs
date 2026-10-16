@@ -26,11 +26,17 @@ namespace LbIntegrations.Ares
     /// <summary>What Nixx-Menus calls, by name. Public, its signature fixed.</summary>
     public static class LaunchWith
     {
-        private static readonly Dictionary<string, (object Generation, string Level, string Note)> Known = new Dictionary<string, (object, string, string)>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, (object Generation, string Level, string Note, string Url)> Known = new Dictionary<string, (object, string, string, string)>(StringComparer.OrdinalIgnoreCase);
 
         public static string Level(IGame game, string emulatorPath) => Ask(game, emulatorPath).Level;
 
         public static string Note(IGame game, string emulatorPath) => Ask(game, emulatorPath).Note;
+
+        /// <summary>A page about the verdict, for a click (LiteBox's detail card): the list's own page of the game. Null when none.
+        /// The last Ask on this thread leaves it - asked right after Level, as the hosts do.</summary>
+        public static string Url(IGame game, string emulatorPath) { _url = null; Ask(game, emulatorPath); return _url; }
+
+        [ThreadStatic] private static string _url;
 
         private static (string Level, string Note) Ask(IGame game, string emulatorPath)
         {
@@ -45,7 +51,7 @@ namespace LbIntegrations.Ares
                 if (!AresCompat.Loaded) { System.Threading.Tasks.Task.Run(() => { try { _ = AresCompat.Generation; } catch { } }); return (null, null); }
                 var key = game.Id + "|" + rom + "|" + game.Title + "|" + game.Platform + "|" + emulatorPath;
                 var generation = AresCompat.Generation;
-                lock (Known) if (Known.TryGetValue(key, out var k) && ReferenceEquals(k.Generation, generation)) return Gone(gone, full, k.Level, k.Note);
+                lock (Known) if (Known.TryGetValue(key, out var k) && ReferenceEquals(k.Generation, generation)) { _url = k.Url; return Gone(gone, full, k.Level, k.Note); }
 
                 var emu = PluginHelper.DataManager?.GetAllEmulators()?.FirstOrDefault(e => string.Equals(Safe(() => e.ApplicationPath), emulatorPath, StringComparison.OrdinalIgnoreCase));
                 var system = AresSettings.GameSystem(game.Id) ?? AresPlugin.SystemOfForUi(emu, null, game.Platform, rom);
@@ -54,7 +60,9 @@ namespace LbIntegrations.Ares
                 var best = matches.FirstOrDefault();
                 var level = Of(best?.Entry?.Status);
                 var note = level == null ? null : NoteOf(best);
-                lock (Known) { if (Known.Count > 4096) Known.Clear(); Known[key] = (generation, level, note); }
+                var url = level == null ? null : AresCompat.PageOf(best.Entry);
+                _url = url;
+                lock (Known) { if (Known.Count > 4096) Known.Clear(); Known[key] = (generation, level, note, url); }
                 return Gone(gone, full, level, note);
             }
             catch (Exception ex) { Log.Warn("LaunchWith.Level", ex); return (null, null); }

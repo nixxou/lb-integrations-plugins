@@ -22,6 +22,12 @@ namespace LbIntegrations.Ppsspp
     {
         public static string Level(IGame game, string emulatorPath) => Ask(game, emulatorPath).Level;
 
+        /// <summary>A page about the verdict, for a click (LiteBox's detail card): the list's own page of the game. Null when none.
+        /// The last Ask on this thread leaves it - asked right after Level, as the hosts do.</summary>
+        public static string Url(IGame game, string emulatorPath) { _url = null; Ask(game, emulatorPath); return _url; }
+
+        [ThreadStatic] private static string _url;
+
         private static (string Level, string Note) Ask(IGame game, string emulatorPath)
         {
             try
@@ -43,6 +49,7 @@ namespace LbIntegrations.Ppsspp
                     _ => null,
                 };
                 if (level == null) return (null, null);
+                _url = PpssppCompat.PageOf(discId, version);
                 return (level, null);   // the site keeps a rating, no comment: no tooltip
             }
             catch (Exception ex) { Log.Warn("LaunchWith.Level", ex); return (null, null); }

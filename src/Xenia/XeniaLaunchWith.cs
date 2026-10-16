@@ -26,6 +26,12 @@ namespace LbIntegrations.Xenia
         /// <summary>The tooltip: the report's title and state label, its other labels (crashes, graphics...), its issue number.</summary>
         public static string Note(IGame game, string emulatorPath) => Ask(game, emulatorPath).Note;
 
+        /// <summary>A page about the verdict, for a click (LiteBox's detail card): the list's own page of the game. Null when none.
+        /// The last Ask on this thread leaves it - asked right after Level, as the hosts do.</summary>
+        public static string Url(IGame game, string emulatorPath) { _url = null; Ask(game, emulatorPath); return _url; }
+
+        [ThreadStatic] private static string _url;
+
         private static (string Level, string Note) Ask(IGame game, string emulatorPath)
         {
             try
@@ -47,6 +53,7 @@ namespace LbIntegrations.Xenia
                     _ => null,
                 };
                 if (level == null) return (null, null);
+                _url = string.IsNullOrWhiteSpace(e.Url) ? null : e.Url;
                 var others = e.Labels.Where(l => !l.StartsWith("state-", StringComparison.OrdinalIgnoreCase)).ToList();
                 var note = "Xenia's list: " + e.State + (string.IsNullOrEmpty(e.Detail) || e.Detail.Equals(e.State, StringComparison.OrdinalIgnoreCase) ? "" : " (" + e.Detail + ")")
                            + (string.IsNullOrEmpty(e.Title) ? "" : " - " + e.Title) + (e.Issue > 0 ? ", report #" + e.Issue : "")

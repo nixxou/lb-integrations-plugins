@@ -32,6 +32,12 @@ namespace LbIntegrations.Cxbx
         /// is not one Cxbx-Reloaded takes.</summary>
         public static string Note(IGame game, string emulatorPath) => Ask(game, emulatorPath).Note;
 
+        /// <summary>A page about the verdict, for a click (LiteBox's detail card): the list's own page of the game. Null when none.
+        /// The last Ask on this thread leaves it - asked right after Level, as the hosts do.</summary>
+        public static string Url(IGame game, string emulatorPath) { _url = null; Ask(game, emulatorPath); return _url; }
+
+        [ThreadStatic] private static string _url;
+
         private static (string Level, string Note) Ask(IGame game, string emulatorPath)
         {
             try
@@ -64,6 +70,7 @@ namespace LbIntegrations.Cxbx
                     _ => null,
                 };
                 if (level == null) return (null, null);
+                _url = string.IsNullOrWhiteSpace(e.Url) ? null : e.Url;
                 var version = CxbxCompat.VersionOf(disc.Xbe.Version);
                 var note = "Cxbx-Reloaded's list: " + e.State + " - " + e.Serial + " " + e.Version + (string.IsNullOrEmpty(e.Region) ? "" : ", " + e.Region)
                            + (string.IsNullOrEmpty(e.Updated) || e.Updated == "N/A" ? "" : ", updated " + e.Updated)

@@ -33,6 +33,8 @@ namespace LbIntegrations.Probe
                     Console.WriteLine("  " + Path.GetFileName(roms[i]).PadRight(40) + " " + (level ?? "null").PadRight(12) + " " + w.Elapsed.TotalMilliseconds.ToString("0.0") + " ms (pass " + pass + ")");
                     var note = pass == 2 ? type.GetMethod("Note", BindingFlags.Public | BindingFlags.Static)?.Invoke(null, new object[] { games[i], exe }) as string : null;
                     if (note != null) Console.WriteLine("      note: " + note.Replace("\n", "\n            "));
+                    var url = pass == 2 ? type.GetMethod("Url", BindingFlags.Public | BindingFlags.Static)?.Invoke(null, new object[] { games[i], exe }) as string : null;
+                    if (url != null) Console.WriteLine("      url:  " + url);
                 }
             }
             var other = (string)m.Invoke(null, new object[] { StubGame.Create("x", "x", roms.Length > 0 ? roms[0] : "x.zip"), @"C:\Emu\mame.exe" });
