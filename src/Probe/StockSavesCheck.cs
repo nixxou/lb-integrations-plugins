@@ -209,6 +209,14 @@ namespace LbIntegrations.Probe
             var after = raRows.Concat(pcsx2Rows).Select(r => Answers(r.EmulatorFileName == "pcsx2-qt.exe" ? pcsx2 : ra, r, r.EmulatorFileName == "pcsx2-qt.exe" ? pcsx2Emu.ApplicationPath : raEmu.ApplicationPath)).ToList();
             var all = Harmony.GetAllPatchedMethods().Where(m => Harmony.GetPatchInfo(m)?.Owners.Contains(LbIntegrations.Saves.StockDesk.HarmonyId) == true).ToList();
             Console.WriteLine("  hooked: " + all.Count + " method(s), each " + string.Join(",", all.Select(m => Harmony.GetPatchInfo(m).Prefixes.Count(p => p.owner == LbIntegrations.Saves.StockDesk.HarmonyId)).Distinct()) + " prefix");
+            // A v2 host (LaunchBox 14.1): its integrations route their saves themselves and the desk hooks none of them
+            // (lb141-plan step 4) - what follows tests the hooks, so it is 14.0's.
+            if (LbIntegrations.Compat.LbHostShape.Describe().Contains("retroarch V2"))
+            {
+                Console.WriteLine(all.Count == 0 ? "  OK    a v2 host (LaunchBox 14.1): nothing hooked - the steps below are 14.0's"
+                                                 : "  FAIL  a v2 host, and " + all.Count + " method(s) hooked");
+                return all.Count == 0;
+            }
             for (int i = 0; i < before.Count; i++)
                 Console.WriteLine("  " + (before[i] == after[i] ? "same   " : "CHANGED") + " " + after[i] + (before[i] == after[i] ? "" : "   (was " + before[i] + ")"));
 
