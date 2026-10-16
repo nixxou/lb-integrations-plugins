@@ -396,6 +396,9 @@ namespace LbIntegrations.Compat
     internal static class FixedIn
     {
         /// <summary>The precautionary copy of the overwritten file at a restore (SlotRestore's warning).</summary>
-        public static readonly Version? OverwriteBackup = null;
+        /// Measured 16/10 on 14.1 beta 3, LaunchBox alone with its RetroArch integration (docs\lb141-plan.md §2b): a state
+        /// restored into another, occupied slot ("Slot 1 already contains ... LaunchBox will back it up") and an imported
+        /// "In Vault" card restored over another card's live save - both overwritten files copied to the vault first.
+        public static readonly Version? OverwriteBackup = new Version(14, 1, 0, 3);
     }
 }

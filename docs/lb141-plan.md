@@ -49,6 +49,7 @@ install**: until ticked, the close scans ("Scanning ... without creating backups
 | T1 Launch With: the save of the emulator actually used, at close | never asked | **fixed**: "Scanning ... with the Launch With emulator 'RetroArch bsnes'", backed up |
 | T2 restore of another emulator's save (game on snes9x, save of bsnes) | written into the game's core folder | **fixed**: back into `saves\bsnes`, `AddSaveFile` given the emulator, the live file backed up first (`-01`) |
 | T3 a state restored into another, occupied slot | that slot's state lost | **fixed**: "Slot 1 already contains ... LaunchBox will back it up and then replace it", `-01` in the vault |
+| T3b an imported "In Vault" card restored over another card's live save | that save lost | **fixed**: the live save copied to the vault first (`-01`) - `FixedIn.OverwriteBackup` = 14.1.0.3 |
 | T4 Backup Save, a version on the game's own file | "Can't find the game for this save item!" | **fixed** |
 | T5 the row of a game whose version runs the game's own file | tied to the version | **unchanged**: tied to "Play (USA) Version..." (listed and vault) |
 | T6 a version on its OWN file, another emulator: which one at close | the version's | **fixed**: the game's (the one that ran) |
