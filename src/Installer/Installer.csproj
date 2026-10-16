@@ -16,8 +16,8 @@
          header, may run ahead of it when only the setup changed: 1.1.1b (Mehdi, 04/10 - the self-contained RAM disk helper,
          the uninstall that removes it). Version stays numeric (the file version needs it); the header reads
          InformationalVersion, cut at its "+". -->
-    <Version>1.2.1</Version>
-    <InformationalVersion>1.2.1</InformationalVersion>
+    <Version>1.2.2</Version>
+    <InformationalVersion>1.2.2</InformationalVersion>
     <!-- Drawn by tools\installer-icon. The window takes it from the exe (Icon.ExtractAssociatedIcon). -->
     <ApplicationIcon>nixx.ico</ApplicationIcon>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>

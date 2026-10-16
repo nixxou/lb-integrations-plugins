@@ -7,7 +7,7 @@
   "Description": "Download, update, launch and save integration for RASnes9x - RetroAchievements' own Snes9x (Super Nintendo).",
   "Credits": "Many thanks to the Snes9x team, and to RetroAchievements, who keep RASnes9x.",
   "OperatingSystemFamily": "Windows",
-  "InstalledVersion": "1.2.1",
+  "InstalledVersion": "1.2.2",
   "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
   "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
   "HomePageUrl": "https://github.com/RetroAchievements/RASnes9x",
