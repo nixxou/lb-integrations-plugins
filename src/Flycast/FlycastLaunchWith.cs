@@ -18,24 +18,35 @@ namespace LbIntegrations.Flycast
     /// <summary>What Nixx-Menus calls, by name. Public, its signature fixed.</summary>
     public static class LaunchWith
     {
-        public static string Level(IGame game, string emulatorPath)
+        public static string Level(IGame game, string emulatorPath) => Ask(game, emulatorPath).Level;
+
+        /// <summary>The tooltip: why the set does not run on Flycast, or where its GD-ROM image goes.</summary>
+        public static string Note(IGame game, string emulatorPath) => Ask(game, emulatorPath).Note;
+
+        private static (string Level, string Note) Ask(IGame game, string emulatorPath)
         {
             try
             {
-                if (game == null || !FlycastPaths.IsFlycastExecutable(emulatorPath)) return null;
+                if (game == null || !FlycastPaths.IsFlycastExecutable(emulatorPath)) return (null, null);
                 var rom = game.ApplicationPath;
-                if (string.IsNullOrWhiteSpace(rom)) return null;
+                if (string.IsNullOrWhiteSpace(rom)) return (null, null);
                 var full = FlycastPlugin.ResolveFullPath(rom);
-                if (full != null && !File.Exists(full) && !Directory.Exists(full)) return "missing:file";
+                if (full != null && !File.Exists(full) && !Directory.Exists(full)) return ("missing:file", "The game's file is not there: " + full);
                 var ext = Path.GetExtension(rom).ToLowerInvariant();
-                if (ext != ".zip" && ext != ".7z") return null;
+                if (ext != ".zip" && ext != ".7z") return (null, null);
                 var sets = FlycastGameIdentity.SetsIfReady(FlycastPaths.Resolve(FlycastPlugin.ResolveFullPath(emulatorPath)));
-                if (sets == null) return null;
-                if (!sets.TryGetValue(Path.GetFileNameWithoutExtension(rom), out var set) || set.System == FlycastGameIdentity.BiosSystem) return "unsupported";
-                if (set.GdRom != null && FlycastGameIdentity.GdRomImage(full, set) == null) return "missing:CHD";
-                return null;
+                if (sets == null) return (null, null);
+                var name = Path.GetFileNameWithoutExtension(rom);
+                if (!sets.TryGetValue(name, out var set))
+                    return ("unsupported", "\"" + name + "\" is not one of the " + sets.Count + " arcade sets Flycast runs (Naomi, Naomi 2, Atomiswave, System SP).");
+                if (set.System == FlycastGameIdentity.BiosSystem) return ("unsupported", name + " is a BIOS set, not a game: Flycast wants it in its data folder.");
+                if (set.GdRom != null && FlycastGameIdentity.GdRomImage(full, set) == null)
+                    return ("missing:CHD", "This Naomi GD-ROM game needs its disc image: " + set.GdRom + ".chd, in a folder named " + set.Name
+                                           + (set.Parent != null ? " (or " + set.Parent + ")" : "") + " beside the zip:\n"
+                                           + Path.Combine(Path.GetDirectoryName(full) ?? "", set.Name, set.GdRom + ".chd"));
+                return (null, null);
             }
-            catch (Exception ex) { Log.Warn("LaunchWith.Level", ex); return null; }
+            catch (Exception ex) { Log.Warn("LaunchWith.Level", ex); return (null, null); }
         }
     }
 }

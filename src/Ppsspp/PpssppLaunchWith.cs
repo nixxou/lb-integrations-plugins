@@ -20,17 +20,20 @@ namespace LbIntegrations.Ppsspp
     /// <summary>What Nixx-Menus calls, by name. Public, its signature fixed.</summary>
     public static class LaunchWith
     {
-        public static string Level(IGame game, string emulatorPath)
+        public static string Level(IGame game, string emulatorPath) => Ask(game, emulatorPath).Level;
+
+        private static (string Level, string Note) Ask(IGame game, string emulatorPath)
         {
             try
             {
-                if (game == null || !PpssppPaths.IsPpssppExecutable(emulatorPath)) return null;
+                if (game == null || !PpssppPaths.IsPpssppExecutable(emulatorPath)) return (null, null);
                 var rom = PpssppPlugin.ResolveFullPathOf(game.ApplicationPath);
-                if (string.IsNullOrWhiteSpace(rom)) return null;
-                if (!File.Exists(rom) && !Directory.Exists(rom)) return "missing:file";
+                if (string.IsNullOrWhiteSpace(rom)) return (null, null);
+                if (!File.Exists(rom) && !Directory.Exists(rom)) return ("missing:file", "The game's file is not there: " + rom);
                 var discId = PspDiscId.Of(rom);
                 var version = discId == null ? null : PspDiscId.SfoOf(rom)?.GetString("DISC_VERSION");
-                return PpssppCompat.Of(discId, version)?.Rating switch
+                var c = PpssppCompat.Of(discId, version);
+                var level = c?.Rating switch
                 {
                     "Perfect" => "perfect",
                     "Playable" => "playable",
@@ -39,8 +42,10 @@ namespace LbIntegrations.Ppsspp
                     "Doesn't Boot" => "nostart",
                     _ => null,
                 };
+                if (level == null) return (null, null);
+                return (level, null);   // the site keeps a rating, no comment: no tooltip
             }
-            catch (Exception ex) { Log.Warn("LaunchWith.Level", ex); return null; }
+            catch (Exception ex) { Log.Warn("LaunchWith.Level", ex); return (null, null); }
         }
     }
 }

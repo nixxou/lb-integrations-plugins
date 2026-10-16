@@ -28,27 +28,40 @@ namespace LbIntegrations.Demul
     /// <summary>What Nixx-Menus calls, by name. Public, its signature fixed.</summary>
     public static class LaunchWith
     {
-        public static string Level(IGame game, string emulatorPath)
+        public static string Level(IGame game, string emulatorPath) => Ask(game, emulatorPath).Level;
+
+        /// <summary>The tooltip: the DEmul team's note on the set and the BIOS region it wants, or why it does not start.</summary>
+        public static string Note(IGame game, string emulatorPath) => Ask(game, emulatorPath).Note;
+
+        private static (string Level, string Note) Ask(IGame game, string emulatorPath)
         {
             try
             {
-                if (game == null || !Settings.IsDemulExe(emulatorPath)) return null;
+                if (game == null || !Settings.IsDemulExe(emulatorPath)) return (null, null);
                 var rom = game.ApplicationPath;
-                if (string.IsNullOrWhiteSpace(rom)) return null;
+                if (string.IsNullOrWhiteSpace(rom)) return (null, null);
                 var ext = Path.GetExtension(rom).ToLowerInvariant();
                 var full = DemulPlugin.ResolveFullPathForUi(rom);
-                if (full != null && !File.Exists(full)) return "missing:file";
+                if (full != null && !File.Exists(full)) return ("missing:file", "The game's file is not there: " + full);
                 if (DemulPlatforms.BoardOf(game.Platform) == "Dreamcast")
-                    return ext == ".gdi" || ext == ".cdi" || ext == ".chd" ? null : "unsupported";
-                if (ext != ".zip" && ext != ".7z") return "unsupported";
-                if (!DemulSets.All.TryGetValue(Path.GetFileNameWithoutExtension(rom), out var set) || !set.Known || set.Board == DemulSets.Bios) return "unsupported";
-                if (set.GdRom != null && !HasGdRom(set, full, Path.GetDirectoryName(DemulPlugin.ResolveFullPathForUi(emulatorPath)))) return "missing:CHD";
+                    return ext == ".gdi" || ext == ".cdi" || ext == ".chd" ? (null, null) : ("unsupported", "Demul reads a Dreamcast disc as .gdi, .cdi or .chd.");
+                if (ext != ".zip" && ext != ".7z") return ("unsupported", "Demul runs an arcade game from its MAME romset, a .zip or .7z.");
+                var name = Path.GetFileNameWithoutExtension(rom);
+                if (!DemulSets.All.TryGetValue(name, out var set)) return ("unsupported", "\"" + name + "\" is not a set of the boards Demul runs (Naomi, Naomi 2, Atomiswave, Hikaru, System SP, CV1000, Gaelco).");
+                if (set.Board == DemulSets.Bios) return ("unsupported", name + " is a BIOS set, not a game: Demul wants it in its roms folder.");
+                if (!set.Known) return ("unsupported", set.Title + " (" + set.Board + ") is not in this build of Demul's game table.");
+                if (set.GdRom != null && !HasGdRom(set, full, Path.GetDirectoryName(DemulPlugin.ResolveFullPathForUi(emulatorPath))))
+                    return ("missing:CHD", "This GD-ROM game needs its disc image: " + set.GdRom + ".chd, in a folder named " + set.Name
+                                           + (set.Parent != null ? " (or " + set.Parent + ")" : "") + " beside the zip:\n"
+                                           + Path.Combine(Path.GetDirectoryName(full) ?? "", set.Name, set.GdRom + ".chd"));
                 var compat = DemulCompat.Of(rom);
-                if (compat == null) return null;
-                if (compat.Game) return string.IsNullOrEmpty(compat.Notes) ? "perfect" : "playable";
-                return "nostart";
+                if (compat == null) return (null, null);
+                var note = "The DEmul team's list (" + DemulCompat.Date + "): " + compat.Meaning + "."
+                           + (DemulCompat.BiosText(compat.Bios) is string bios ? "\nWants " + bios + "." : "");
+                if (compat.Game) return (string.IsNullOrEmpty(compat.Notes) ? "perfect" : "playable", note);
+                return ("nostart", note);
             }
-            catch (Exception ex) { Log.Warn("LaunchWith.Level", ex); return null; }
+            catch (Exception ex) { Log.Warn("LaunchWith.Level", ex); return (null, null); }
         }
 
         private static bool HasGdRom(DemulSet set, string rom, string emuDir)

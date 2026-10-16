@@ -32,7 +32,7 @@ namespace LbIntegrations.Menus.LaunchWith
 {
     internal static class LaunchBoxMenus
     {
-        private sealed class Seen { public string Original; public Link Link; }
+        private sealed class Seen { public string Original; public Link Link; public object Tip; public bool TipSeen; }
         private static readonly ConditionalWeakTable<MenuItem, Seen> Items = new ConditionalWeakTable<MenuItem, Seen>();
 
         public static void Install()
@@ -105,6 +105,7 @@ namespace LbIntegrations.Menus.LaunchWith
             var verdict = Labels.For(game, link.Emulator);
             var raw = verdict?.Text;
             var badge = Brush(verdict?.Color);
+            Tip(mi, seen, verdict?.Note);
             if (raw != null && badge != null)
             {
                 mi.Header = Badged(seen.Original, raw, badge, Brush(Labels.BadgeText) ?? Brushes.Black);
@@ -113,6 +114,22 @@ namespace LbIntegrations.Menus.LaunchWith
             var wanted = WithLabel(seen.Original, raw == null ? null : Labels.Format.Replace("{label}", raw));
             if (!Equals(mi.Header, wanted)) mi.Header = wanted;
             return raw != null;
+        }
+
+        /// <summary>The line's tooltip: the plugin's note on the game (the list's comments, what is missing) - wrapped, shown
+        /// long enough to read; LaunchBox's own tooltip back when there is none.</summary>
+        private static void Tip(MenuItem mi, Seen seen, string note)
+        {
+            if (!seen.TipSeen) { seen.Tip = mi.ToolTip; seen.TipSeen = true; }
+            if (string.IsNullOrEmpty(note)) { if (!ReferenceEquals(mi.ToolTip, seen.Tip)) mi.ToolTip = seen.Tip; return; }
+            if (mi.ToolTip is ToolTip own && own.Tag as string == note) return;
+            mi.ToolTip = new ToolTip
+            {
+                Tag = note,
+                Content = new TextBlock { Text = note, TextWrapping = TextWrapping.Wrap, MaxWidth = 420 },
+            };
+            ToolTipService.SetShowDuration(mi, 60000);
+            ToolTipService.SetInitialShowDelay(mi, 300);
         }
 
         /// <summary>"Nixx-bsnes" [Perfect] "...": the name as LaunchBox wrote it (AccessText keeps its access

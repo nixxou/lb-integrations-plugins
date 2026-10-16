@@ -24,7 +24,14 @@ namespace LbIntegrations.ZincEx
     /// <summary>What Nixx-Menus calls, by name. Public, its signature fixed.</summary>
     public static class LaunchWith
     {
-        public static string Level(IGame game, string emulatorPath)
+        private sealed class Answer { public string Level, Note; }
+
+        public static string Level(IGame game, string emulatorPath) => Ask(game, emulatorPath)?.Level;
+
+        /// <summary>The tooltip: the known faults of the game's board (ZiNc's readme), what is missing, or which game ZiNc runs.</summary>
+        public static string Note(IGame game, string emulatorPath) => Ask(game, emulatorPath)?.Note;
+
+        private static Answer Ask(IGame game, string emulatorPath)
         {
             try
             {
@@ -32,35 +39,42 @@ namespace LbIntegrations.ZincEx
                 var exe = ZincExPlugin.ResolveFullPathForUi(emulatorPath);
                 var rom = ZincExPlugin.ResolveFullPathForUi(game.ApplicationPath);
                 if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe) || string.IsNullOrWhiteSpace(rom)) return null;
-                if (!File.Exists(rom)) return "missing:file";
-                if (!rom.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) return "unsupported";
+                if (!File.Exists(rom)) return new Answer { Level = "missing:file", Note = "The game's file is not there: " + rom };
+                if (!rom.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) return new Answer { Level = "unsupported", Note = "ZiNc EX reads its games as MAME zips." };
                 var chosen = ZincGames.BySet(ZincExSettings.SetFor(game.Id));
                 var exeDir = Path.GetDirectoryName(exe);
 
-                string last = null;
+                Answer last = null;
                 var kept = StampedCache.Get(rom, "zincex.launchwith|" + (chosen?.Set ?? "") + "|" + exeDir, () =>
                 {
                     last = Classify(rom, exeDir, chosen);
-                    return last.StartsWith("missing", StringComparison.Ordinal) ? null : last;
+                    return last.Level.StartsWith("missing", StringComparison.Ordinal) ? null : last;
                 }, keepNull: false);
                 return kept ?? last ?? Classify(rom, exeDir, chosen);
             }
             catch (Exception ex) { Log.Warn("LaunchWith.Level", ex); return null; }
         }
 
-        private static string Classify(string rom, string exeDir, ZincGame chosen)
+        private static Answer Classify(string rom, string exeDir, ZincGame chosen)
         {
             var match = ZincGames.Identify(rom, ZincExLaunch.Folders(exeDir, rom), out var miss, chosen);
-            if (match != null) return ZincCompat.Notes(match.Game).Count > 0 ? "playable" : "recommended";
+            if (match != null)
+            {
+                var notes = ZincCompat.Notes(match.Game);
+                var head = "ZiNc runs it as " + match.Game.Title + " (" + match.Game.Set + ")";
+                return new Answer { Level = notes.Count > 0 ? "playable" : "recommended", Note = notes.Count > 0 ? head + "\n" + string.Join("\n", notes) : head + "." };
+            }
             if (miss?.Closest != null && miss.Lacking.Length > 0)
             {
                 var g = miss.Closest;
-                if (!string.IsNullOrEmpty(g.Bios) && miss.BiosZip == null) return "missing:BIOS";
-                if (!string.IsNullOrEmpty(g.Parent) && miss.ParentZip == null) return "missing:parent";
-                return "version";
+                if (!string.IsNullOrEmpty(g.Bios) && miss.BiosZip == null)
+                    return new Answer { Level = "missing:BIOS", Note = g.Title + " needs its BIOS set, " + g.Bios + ".zip (or MAME's name for it), beside the game or in ZiNc's roms folder." };
+                if (!string.IsNullOrEmpty(g.Parent) && miss.ParentZip == null)
+                    return new Answer { Level = "missing:parent", Note = g.Title + " needs its parent set, " + g.Parent + ".zip, beside the game." };
+                return new Answer { Level = "version", Note = "Not the dump of " + g.Title + " ZiNc knows (ZiNc's " + g.Set + "): " + (miss.Lacking.Length == 1 ? "one of its ROMs is" : miss.Lacking.Length + " of its ROMs are") + " not in this zip - another version of the game, or an incomplete set." };
             }
-            if (miss?.Reason == "it could not be read as a zip") return "invalid";
-            return "unsupported";
+            if (miss?.Reason == "it could not be read as a zip") return new Answer { Level = "invalid", Note = "This file does not read as a zip." };
+            return new Answer { Level = "unsupported", Note = "Not one of ZiNc's 71 games: " + (miss?.Reason ?? "unknown") + "." };
         }
     }
 }

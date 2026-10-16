@@ -20,18 +20,24 @@ namespace LbIntegrations.Vita3k
     /// <summary>What Nixx-Menus calls, by name. Public, its signature fixed.</summary>
     public static class LaunchWith
     {
-        public static string Level(IGame game, string emulatorPath)
+        public static string Level(IGame game, string emulatorPath) => Ask(game, emulatorPath).Level;
+
+        /// <summary>The tooltip: the state's description and the report's other labels (its problems), its issue number.</summary>
+        public static string Note(IGame game, string emulatorPath) => Ask(game, emulatorPath).Note;
+
+        private static (string Level, string Note) Ask(IGame game, string emulatorPath)
         {
             try
             {
-                if (game == null || !Vita3kPaths.IsVita3kExecutable(emulatorPath)) return null;
+                if (game == null || !Vita3kPaths.IsVita3kExecutable(emulatorPath)) return (null, null);
                 var rom = Vita3kPlugin.ResolveFullPath(game.ApplicationPath);
-                if (string.IsNullOrWhiteSpace(rom)) return null;
-                if (!File.Exists(rom) && !Directory.Exists(rom)) return "missing:file";
+                if (string.IsNullOrWhiteSpace(rom)) return (null, null);
+                if (!File.Exists(rom) && !Directory.Exists(rom)) return ("missing:file", "The game's file is not there: " + rom);
                 var id = Vita3kPlugin.TitleIdOf(game.ApplicationPath);
-                if (id == null) return null;
+                if (id == null) return (null, null);
                 var layout = Vita3kPaths.Resolve(Vita3kPlugin.ResolveFullPath(emulatorPath));
-                return Vita3kCompat.LookupKept(layout, id)?.State switch
+                var c = Vita3kCompat.LookupKept(layout, id);
+                var level = c?.State switch
                 {
                     "Playable" => "playable",
                     "Ingame+" => "glitches",
@@ -42,8 +48,13 @@ namespace LbIntegrations.Vita3k
                     "Nothing" => "nostart",
                     _ => null,
                 };
+                if (level == null) return (null, null);
+                var note = "Vita3K's list: " + c.State + (string.IsNullOrWhiteSpace(c.StateDescription) ? "" : " - " + c.StateDescription.Trim())
+                           + (c.IssueId > 0 ? " (report #" + c.IssueId + ")" : "")
+                           + (c.Problems.Count > 0 ? "\n" + string.Join(", ", c.Problems) : "");
+                return (level, note);
             }
-            catch (Exception ex) { Log.Warn("LaunchWith.Level", ex); return null; }
+            catch (Exception ex) { Log.Warn("LaunchWith.Level", ex); return (null, null); }
         }
     }
 }

@@ -24,30 +24,37 @@ namespace LbIntegrations.Cxbx
     /// <summary>What Nixx-Menus calls, by name. Public, its signature fixed.</summary>
     public static class LaunchWith
     {
-        private sealed class DiscFacts { public XbeInfo Xbe; public string Level; }
+        private sealed class DiscFacts { public XbeInfo Xbe; public string Level, Note; }
 
-        public static string Level(IGame game, string emulatorPath)
+        public static string Level(IGame game, string emulatorPath) => Ask(game, emulatorPath).Level;
+
+        /// <summary>The tooltip: the list's line - its state, the version and region it was reported for, when - or why the file
+        /// is not one Cxbx-Reloaded takes.</summary>
+        public static string Note(IGame game, string emulatorPath) => Ask(game, emulatorPath).Note;
+
+        private static (string Level, string Note) Ask(IGame game, string emulatorPath)
         {
             try
             {
-                if (game == null || !CxbxPaths.IsCxbx(emulatorPath)) return null;
+                if (game == null || !CxbxPaths.IsCxbx(emulatorPath)) return (null, null);
                 var rom = CxbxPlugin.ResolveFullPathForUi(game.ApplicationPath);
-                if (string.IsNullOrWhiteSpace(rom)) return null;
-                if (!File.Exists(rom)) return Directory.Exists(rom) ? null : "missing:file";
+                if (string.IsNullOrWhiteSpace(rom)) return (null, null);
+                if (!File.Exists(rom)) return Directory.Exists(rom) ? (null, null) : ("missing:file", "The game's file is not there: " + rom);
                 var disc = StampedCache.Get(rom, "launch-with.xbe", () =>
                 {
                     var d = CxbxGame.Describe(rom, openArchives: false);
                     if (d.Xbe?.TitleId > 0) return new DiscFacts { Xbe = d.Xbe };
-                    if (d.Kind == CxbxRomKind.Xbox360) return new DiscFacts { Level = "unsupported" };
-                    if (d.Kind == CxbxRomKind.Xbe || d.Kind == CxbxRomKind.Image || d.Kind == CxbxRomKind.Zar) return new DiscFacts { Level = "invalid" };
+                    if (d.Kind == CxbxRomKind.Xbox360) return new DiscFacts { Level = "unsupported", Note = Sentence(d.Problem) };
+                    if (d.Kind == CxbxRomKind.Xbe || d.Kind == CxbxRomKind.Image || d.Kind == CxbxRomKind.Zar) return new DiscFacts { Level = "invalid", Note = Sentence(d.Problem) };
                     // Unknown: an archive not unpacked yet (known at its first launch) - nothing said, asked again; else a file
                     // that is no Xbox game at all.
-                    if (d.Kind == CxbxRomKind.Unknown && !CxbxGame.IsArchive(rom) && !Disc.SectorImage.IsLaterPart(rom)) return new DiscFacts { Level = "unsupported" };
+                    if (d.Kind == CxbxRomKind.Unknown && !CxbxGame.IsArchive(rom) && !Disc.SectorImage.IsLaterPart(rom)) return new DiscFacts { Level = "unsupported", Note = Sentence(d.Problem) };
                     return null;
                 }, keepNull: false);
-                if (disc == null) return null;
-                if (disc.Level != null) return disc.Level;
-                return CxbxCompat.For(disc.Xbe).Exact?.State switch
+                if (disc == null) return (null, null);
+                if (disc.Level != null) return (disc.Level, disc.Note);
+                var e = CxbxCompat.For(disc.Xbe).Exact;
+                var level = e?.State switch
                 {
                     "Playable" => "playable",
                     "In-Game" => "glitches",
@@ -56,8 +63,16 @@ namespace LbIntegrations.Cxbx
                     "Untested" => "untested",
                     _ => null,
                 };
+                if (level == null) return (null, null);
+                var version = CxbxCompat.VersionOf(disc.Xbe.Version);
+                var note = "Cxbx-Reloaded's list: " + e.State + " - " + e.Serial + " " + e.Version + (string.IsNullOrEmpty(e.Region) ? "" : ", " + e.Region)
+                           + (string.IsNullOrEmpty(e.Updated) || e.Updated == "N/A" ? "" : ", updated " + e.Updated)
+                           + (e.Version != version ? "\nReported for " + e.Version + "; this disc is " + version + "." : "");
+                return (level, note);
             }
-            catch (Exception ex) { Log.Warn("LaunchWith.Level", ex); return null; }
+            catch (Exception ex) { Log.Warn("LaunchWith.Level", ex); return (null, null); }
         }
+
+        private static string Sentence(string s) => string.IsNullOrEmpty(s) ? null : char.ToUpperInvariant(s[0]) + s.Substring(1) + ".";
     }
 }

@@ -31,6 +31,8 @@ namespace LbIntegrations.Probe
                     var w = System.Diagnostics.Stopwatch.StartNew();
                     var level = (string)m.Invoke(null, new object[] { games[i], exe });
                     Console.WriteLine("  " + Path.GetFileName(roms[i]).PadRight(40) + " " + (level ?? "null").PadRight(12) + " " + w.Elapsed.TotalMilliseconds.ToString("0.0") + " ms (pass " + pass + ")");
+                    var note = pass == 2 ? type.GetMethod("Note", BindingFlags.Public | BindingFlags.Static)?.Invoke(null, new object[] { games[i], exe }) as string : null;
+                    if (note != null) Console.WriteLine("      note: " + note.Replace("\n", "\n            "));
                 }
             }
             var other = (string)m.Invoke(null, new object[] { StubGame.Create("x", "x", roms.Length > 0 ? roms[0] : "x.zip"), @"C:\Emu\mame.exe" });

@@ -9,6 +9,8 @@
 //   missing     file: the game's file is not there
 //   (none)      not in the list, or a system ares has no page for - nothing to say: the list is a list of reports, a game
 //               it lacks may well run
+// Note (the tooltip): the line's status as the site writes it - "not verified yet" for its Unverified badge -, the ares version
+// it was tried with, the title it was found as when it is not the file's, and its notes ("Some vertical jiddering").
 // Worked out once per game (names, system, the LaunchBox database entry's names) and kept in memory while the game's file,
 // title and platform stay and the list is not read again. The list itself is read in the background the first time.
 
@@ -24,32 +26,48 @@ namespace LbIntegrations.Ares
     /// <summary>What Nixx-Menus calls, by name. Public, its signature fixed.</summary>
     public static class LaunchWith
     {
-        private static readonly Dictionary<string, (object Generation, string Level)> Known = new Dictionary<string, (object, string)>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, (object Generation, string Level, string Note)> Known = new Dictionary<string, (object, string, string)>(StringComparer.OrdinalIgnoreCase);
 
-        public static string Level(IGame game, string emulatorPath)
+        public static string Level(IGame game, string emulatorPath) => Ask(game, emulatorPath).Level;
+
+        public static string Note(IGame game, string emulatorPath) => Ask(game, emulatorPath).Note;
+
+        private static (string Level, string Note) Ask(IGame game, string emulatorPath)
         {
             try
             {
-                if (game == null || !AresLaunch.IsAresExe(emulatorPath)) return null;
+                if (game == null || !AresLaunch.IsAresExe(emulatorPath)) return (null, null);
                 var rom = game.ApplicationPath;
-                if (string.IsNullOrWhiteSpace(rom)) return null;
+                if (string.IsNullOrWhiteSpace(rom)) return (null, null);
                 var full = AresPlugin.ResolveFullPathForUi(rom);
-                if (full != null && !full.Contains("://") && !File.Exists(full) && !Directory.Exists(full)) return "missing:file";
+                if (full != null && !full.Contains("://") && !File.Exists(full) && !Directory.Exists(full)) return ("missing:file", "The game's file is not there: " + full);
                 // The list's first reading takes a second: done in the background, no label until then - never on the menu's time.
-                if (!AresCompat.Loaded) { System.Threading.Tasks.Task.Run(() => { try { _ = AresCompat.Generation; } catch { } }); return null; }
+                if (!AresCompat.Loaded) { System.Threading.Tasks.Task.Run(() => { try { _ = AresCompat.Generation; } catch { } }); return (null, null); }
                 var key = game.Id + "|" + rom + "|" + game.Title + "|" + game.Platform + "|" + emulatorPath;
                 var generation = AresCompat.Generation;
-                lock (Known) if (Known.TryGetValue(key, out var k) && ReferenceEquals(k.Generation, generation)) return k.Level;
+                lock (Known) if (Known.TryGetValue(key, out var k) && ReferenceEquals(k.Generation, generation)) return (k.Level, k.Note);
 
                 var emu = PluginHelper.DataManager?.GetAllEmulators()?.FirstOrDefault(e => string.Equals(Safe(() => e.ApplicationPath), emulatorPath, StringComparison.OrdinalIgnoreCase));
                 var system = AresSettings.GameSystem(game.Id) ?? AresPlugin.SystemOfForUi(emu, null, game.Platform, rom);
                 var alts = Safe(() => game.GetAllAlternateNames())?.Select(a => a?.Name).Where(n => !string.IsNullOrWhiteSpace(n)).ToList();
                 var matches = AresCompat.FindAll(system, AresPlugin.ResolveFullPathForUi(rom), game.Title, alts, Safe(() => game.LaunchBoxDbId));
-                var level = Of(matches.FirstOrDefault()?.Entry?.Status);
-                lock (Known) { if (Known.Count > 4096) Known.Clear(); Known[key] = (generation, level); }
-                return level;
+                var best = matches.FirstOrDefault();
+                var level = Of(best?.Entry?.Status);
+                var note = level == null ? null : NoteOf(best);
+                lock (Known) { if (Known.Count > 4096) Known.Clear(); Known[key] = (generation, level, note); }
+                return (level, note);
             }
-            catch (Exception ex) { Log.Warn("LaunchWith.Level", ex); return null; }
+            catch (Exception ex) { Log.Warn("LaunchWith.Level", ex); return (null, null); }
+        }
+
+        private static string NoteOf(AresCompatMatch m)
+        {
+            var e = m.Entry;
+            var line = "ares's list: " + e.Status + (e.Unverified ? " (not verified yet)" : "") + (string.IsNullOrEmpty(e.Version) ? "" : ", tried with " + e.Version);
+            if (!m.Best) line += "\nFound as " + e.Title;
+            if (!string.IsNullOrWhiteSpace(e.Notes)) line += "\n" + e.Notes.Trim();
+            if (e.Issues > 0) line += "\nGitHub issues: " + e.Issues;
+            return line;
         }
 
         private static string Of(string status) => status switch

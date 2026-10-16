@@ -13,6 +13,12 @@
 //      followed by what is missing: "missing:CHD", "missing:BIOS", "missing:file" - or null:
 //      "this emulator is not mine", or "nothing to say" - the line is then left as LaunchBox wrote it. Called on every
 //      opening of the menu, for each line: it must answer from memory or from a cache.
+//      Optional beside it (Mehdi, 16/10: "un petit tooltip avec les éventuels commentaires"):
+//
+//              string Note(IGame game, string emulatorPath)
+//
+//      what the line's tooltip says - the list's own comments on the game, or what is missing and where it goes; null
+//      when there is nothing more to say. Asked only after a level, as cheaply.
 //
 // The scale is fixed and its words are the relay's, so every plugin's verdict reads alike. Its colours (Mehdi, 16/10): green
 // for a game that can be played through, yellow only for faults that spoil it, red for one that does not get in game; cyan
@@ -34,7 +40,7 @@ namespace LbIntegrations.Menus.LaunchWith
 {
     internal sealed class Verdict
     {
-        public string Text, Color, Source;
+        public string Text, Color, Source, Note;
     }
 
     internal static class Labels
@@ -68,7 +74,7 @@ namespace LbIntegrations.Menus.LaunchWith
             var title = Safe(() => emulator.Title);
             var raw = Table.RawLabelFor(game, emulator, title);
             if (raw != null) return new Verdict { Text = raw, Color = Table.ColorFor(raw) ?? Scale.FirstOrDefault(s => s.Text.Equals(raw, StringComparison.OrdinalIgnoreCase)).Color, Source = "emu-labels.json" };
-            var (level, who) = Providers.Ask(game, Safe(() => emulator.ApplicationPath));
+            var (level, who, note) = Providers.Ask(game, Safe(() => emulator.ApplicationPath));
             if (level == null) return null;
             // "missing:CHD" -> "Missing CHD": the level's word, then what the plugin says is missing (a word or two, kept short).
             var colon = level.IndexOf(':');
@@ -77,7 +83,7 @@ namespace LbIntegrations.Menus.LaunchWith
             if (what != null && what.Length > 16) what = what.Substring(0, 16);
             var step = Scale.FirstOrDefault(s => s.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
             if (step.Key == null) { Log.Info(who + " answered \"" + level + "\", not a level of the scale: left alone"); return null; }
-            return new Verdict { Text = string.IsNullOrEmpty(what) ? step.Text : step.Text + " " + what, Color = step.Color, Source = who };
+            return new Verdict { Text = string.IsNullOrEmpty(what) ? step.Text : step.Text + " " + what, Color = step.Color, Source = who, Note = note };
         }
 
         private static string Safe(Func<string> f) { try { return f(); } catch { return null; } }
@@ -85,13 +91,13 @@ namespace LbIntegrations.Menus.LaunchWith
         /// <summary>The plugins' LaunchWith classes, bound once per assembly.</summary>
         private static class Providers
         {
-            private sealed class Provider { public string Name; public MethodInfo Level; }
+            private sealed class Provider { public string Name; public MethodInfo Level, Note; }
 
             private static readonly Dictionary<Assembly, Provider> Seen = new Dictionary<Assembly, Provider>();
 
-            public static (string Level, string Who) Ask(IGame game, string emulatorPath)
+            public static (string Level, string Who, string Note) Ask(IGame game, string emulatorPath)
             {
-                if (string.IsNullOrWhiteSpace(emulatorPath)) return (null, null);
+                if (string.IsNullOrWhiteSpace(emulatorPath)) return (null, null, null);
                 foreach (var p in All())
                 {
                     var watch = Stopwatch.StartNew();
@@ -99,11 +105,16 @@ namespace LbIntegrations.Menus.LaunchWith
                     {
                         var level = p.Level.Invoke(null, new object[] { game, emulatorPath }) as string;
                         if (watch.ElapsedMilliseconds > 200) Log.Info(p.Name + ".LaunchWith.Level took " + watch.ElapsedMilliseconds + " ms");
-                        if (!string.IsNullOrEmpty(level)) return (level, p.Name);
+                        if (string.IsNullOrEmpty(level)) continue;
+                        string note = null;
+                        try { note = p.Note?.Invoke(null, new object[] { game, emulatorPath }) as string; }
+                        catch (Exception ex) { Log.Warn(p.Name + ".LaunchWith.Note", ex.InnerException ?? ex); }
+                        if (watch.ElapsedMilliseconds > 200) Log.Info(p.Name + ".LaunchWith.Level and Note took " + watch.ElapsedMilliseconds + " ms");
+                        return (level, p.Name, string.IsNullOrWhiteSpace(note) ? null : note.Trim());
                     }
                     catch (Exception ex) { Log.Warn(p.Name + ".LaunchWith.Level", ex.InnerException ?? ex); }
                 }
-                return (null, null);
+                return (null, null, null);
             }
 
             private static List<Provider> All()
@@ -133,8 +144,10 @@ namespace LbIntegrations.Menus.LaunchWith
                         Log.Info(type.FullName + " is there but not as expected (string Level(IGame, string))");
                         return null;
                     }
-                    Log.Info("labels of " + name + "'s emulators come from " + type.FullName);
-                    return new Provider { Name = name, Level = level };
+                    var note = type.GetMethod("Note", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(IGame), typeof(string) }, null);
+                    if (note != null && note.ReturnType != typeof(string)) note = null;
+                    Log.Info("labels of " + name + "'s emulators come from " + type.FullName + (note != null ? " (with notes)" : ""));
+                    return new Provider { Name = name, Level = level, Note = note };
                 }
                 catch (Exception ex) { Log.Warn("looking at " + asm.FullName, ex); return null; }
             }
