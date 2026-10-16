@@ -122,7 +122,7 @@ namespace LbIntegrations.Xenia
                 {
                     new LbCatalogPlatform { Platform = Xbox360Platform,
                                           ApplicableFileExtensions = extensions,
-                                          Recommended = true },
+                                          Recommended = false },
                 },
             };
         }
@@ -285,7 +285,8 @@ namespace LbIntegrations.Xenia
             bool supported = string.Equals((platform ?? "").Trim(), Xbox360Platform,
                                            StringComparison.InvariantCultureIgnoreCase);
             Log.Verbose("IsPlatformSupported(\"" + platform + "\") -> " + supported);
-            return new EmulatorSupportResponse(supported, supported);
+            // Never recommended (Mehdi, 17/10): LaunchBox pushes a recommended emulator - in the import wizard too, not installed yet.
+            return new EmulatorSupportResponse(supported, false);
         }
 
         // ── versions ─────────────────────────────────────────────────────────

@@ -90,7 +90,7 @@ namespace LbIntegrations.Cxbx
                 AutoExtract = false,
                 Platforms =
                 {
-                    new LbCatalogPlatform { Platform = XboxPlatform, ApplicableFileExtensions = extensions, Recommended = true },
+                    new LbCatalogPlatform { Platform = XboxPlatform, ApplicableFileExtensions = extensions, Recommended = false },
                 },
             };
         }
@@ -182,7 +182,8 @@ namespace LbIntegrations.Cxbx
         {
             bool supported = string.Equals((platform ?? "").Trim(), XboxPlatform, StringComparison.InvariantCultureIgnoreCase);
             Log.Verbose("IsPlatformSupported(\"" + platform + "\") -> " + supported);
-            return new EmulatorSupportResponse(supported, supported);
+            // Never recommended (Mehdi, 17/10): LaunchBox pushes a recommended emulator - in the import wizard too, not installed yet.
+            return new EmulatorSupportResponse(supported, false);
         }
 
         // ── versions ─────────────────────────────────────────────────────────

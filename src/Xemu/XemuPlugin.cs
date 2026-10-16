@@ -84,7 +84,7 @@ namespace LbIntegrations.Xemu
                 Url = "https://xemu.app/",
                 BinaryFileName = XemuPaths.Exe,
                 AutoExtract = false,
-                Platforms = { new LbCatalogPlatform { Platform = XboxPlatform, ApplicableFileExtensions = extensions, Recommended = true } },
+                Platforms = { new LbCatalogPlatform { Platform = XboxPlatform, ApplicableFileExtensions = extensions, Recommended = false } },
             };
         }
 
@@ -148,7 +148,8 @@ namespace LbIntegrations.Xemu
         public override EmulatorSupportResponse IsPlatformSupported(string platform)
         {
             bool supported = string.Equals((platform ?? "").Trim(), XboxPlatform, StringComparison.InvariantCultureIgnoreCase);
-            return new EmulatorSupportResponse(supported, supported);
+            // Never recommended (Mehdi, 17/10): LaunchBox pushes a recommended emulator - in the import wizard too, not installed yet.
+            return new EmulatorSupportResponse(supported, false);
         }
 
         private static void EnsureHotkeyScripts(IEmulator emu)

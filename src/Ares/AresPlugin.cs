@@ -52,7 +52,7 @@ namespace LbIntegrations.Ares
                 AutoExtract = false,
             };
             foreach (var p in AresSystems.Platforms)
-                row.Platforms.Add(new LbCatalogPlatform { Platform = p.Platform, ApplicableFileExtensions = AresSystems.AllExtensions(p), Recommended = true });
+                row.Platforms.Add(new LbCatalogPlatform { Platform = p.Platform, ApplicableFileExtensions = AresSystems.AllExtensions(p), Recommended = false });
             yield return row;
         }
 
@@ -155,7 +155,8 @@ namespace LbIntegrations.Ares
         public override EmulatorSupportResponse IsPlatformSupported(string platform)
         {
             bool supported = AresSystems.Platform(platform) != null;
-            return new EmulatorSupportResponse(supported, supported);
+            // Never recommended (Mehdi, 17/10): LaunchBox pushes a recommended emulator - in the import wizard too, not installed yet.
+            return new EmulatorSupportResponse(supported, false);
         }
 
         // ── versions ─────────────────────────────────────────────────────────

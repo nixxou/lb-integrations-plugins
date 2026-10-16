@@ -205,7 +205,7 @@ namespace LbIntegrations.Vita3k
                 {
                     new LbCatalogPlatform { Platform = VitaPlatform,
                                             ApplicableFileExtensions = extensions,
-                                            Recommended = true },
+                                            Recommended = false },
                 },
             };
         }
@@ -275,7 +275,8 @@ namespace LbIntegrations.Vita3k
             bool supported = string.Equals((platform ?? "").Trim(), VitaPlatform,
                                            StringComparison.InvariantCultureIgnoreCase);
             Log.Verbose("IsPlatformSupported(\"" + platform + "\") -> " + supported);
-            return new EmulatorSupportResponse(supported, supported);
+            // Never recommended (Mehdi, 17/10): LaunchBox pushes a recommended emulator - in the import wizard too, not installed yet.
+            return new EmulatorSupportResponse(supported, false);
         }
 
         // -- versions -------------------------------------------------------

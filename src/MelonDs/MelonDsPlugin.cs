@@ -224,7 +224,7 @@ namespace LbIntegrations.MelonDs
                     {
                         Platform = DsPlatform,
                         ApplicableFileExtensions = extensions,
-                        Recommended = true,
+                        Recommended = false,
                     },
                 },
             };
@@ -363,7 +363,8 @@ namespace LbIntegrations.MelonDs
         {
             bool supported = IsDsPlatform(platform) || IsDsiPlatform(platform);
             Log.Verbose("IsPlatformSupported(\"" + platform + "\") -> " + supported);
-            return new EmulatorSupportResponse(supported, supported);
+            // Never recommended (Mehdi, 17/10): LaunchBox pushes a recommended emulator - in the import wizard too, not installed yet.
+            return new EmulatorSupportResponse(supported, false);
         }
 
         // ── versions ─────────────────────────────────────────────────────────

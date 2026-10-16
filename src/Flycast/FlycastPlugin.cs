@@ -215,7 +215,7 @@ namespace LbIntegrations.Flycast
                 {
                     new LbCatalogPlatform { Platform = FlycastPlatforms.Dreamcast,
                                           ApplicableFileExtensions = discExtensions,
-                                          Recommended = true },
+                                          Recommended = false },
                     new LbCatalogPlatform { Platform = FlycastPlatforms.Naomi,
                                           ApplicableFileExtensions = arcadeExtensions,
                                           RequiredBiosFile = "naomi.zip" },
@@ -335,7 +335,8 @@ namespace LbIntegrations.Flycast
                                              StringComparison.InvariantCultureIgnoreCase);
             Log.Verbose("IsPlatformSupported(\"" + platform + "\") -> " + supported
                      + (supported && !recommended ? " (supported, not recommended)" : ""));
-            return new EmulatorSupportResponse(supported, recommended);
+            // Never recommended (Mehdi, 17/10): LaunchBox pushes a recommended emulator - in the import wizard too, not installed yet.
+            return new EmulatorSupportResponse(supported, false);
         }
 
         // ── versions ─────────────────────────────────────────────────────────

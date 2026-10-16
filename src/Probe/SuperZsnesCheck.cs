@@ -305,7 +305,7 @@ namespace LbIntegrations.Probe
                 Check("fills the blank AutoHotkey fields on the way",
                       !string.IsNullOrWhiteSpace(mine.ExitAutoHotkeyScript) && !string.IsNullOrWhiteSpace(mine.AutoHotkeyScript));
 
-                Check("supports the SNES", plugin.IsPlatformSupported(Snes).Supported && plugin.IsPlatformSupported(Snes).Recommended);
+                Check("supports the SNES, never recommended", plugin.IsPlatformSupported(Snes).Supported && !plugin.IsPlatformSupported(Snes).Recommended);
                 Check("and nothing else", !plugin.IsPlatformSupported("Nintendo 64").Supported
                                           && !plugin.IsPlatformSupported("Nintendo Entertainment System").Supported);
                 var bios = plugin.GetBiosFilesForPlatform(Snes).ToList();
@@ -331,8 +331,8 @@ namespace LbIntegrations.Probe
                           row != null && new[] { ".sfc", ".smc", ".swc", ".zip" }.All(e => row.ApplicableFileExtensions.Contains(e))
                           && !row.ApplicableFileExtensions.Contains(".7z"));
                     Check("the archive is handed over unextracted", row != null && !row.AutoExtract);
-                    Check("one platform, the SNES, recommended",
-                          row?.Platforms.Count == 1 && row.Platforms[0].Platform == Snes && row.Platforms[0].Recommended);
+                    Check("the SNES first, then MSU-1 and the SMW hacks, none recommended",
+                          row?.Platforms.Count == 3 && row.Platforms[0].Platform == Snes && row.Platforms.All(p => !p.Recommended));
                     Check("pointing at zsnes.com", row?.Url == "https://www.zsnes.com/");
                 }
 

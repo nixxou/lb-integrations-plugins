@@ -73,7 +73,7 @@ namespace LbIntegrations.Demul
                     new LbCatalogPlatform { Platform = DemulPlatforms.Naomi, ApplicableFileExtensions = ArcadeExtensions, RequiredBiosFile = "naomi.zip" },
                     new LbCatalogPlatform { Platform = DemulPlatforms.Naomi2, ApplicableFileExtensions = ArcadeExtensions, RequiredBiosFile = "naomi2.zip" },
                     new LbCatalogPlatform { Platform = DemulPlatforms.Atomiswave, ApplicableFileExtensions = ArcadeExtensions, RequiredBiosFile = "awbios.zip" },
-                    new LbCatalogPlatform { Platform = DemulPlatforms.Hikaru, ApplicableFileExtensions = ArcadeExtensions, RequiredBiosFile = "hikaru.zip", Recommended = true },
+                    new LbCatalogPlatform { Platform = DemulPlatforms.Hikaru, ApplicableFileExtensions = ArcadeExtensions, RequiredBiosFile = "hikaru.zip", Recommended = false },
                     new LbCatalogPlatform { Platform = DemulPlatforms.Arcade, ApplicableFileExtensions = ArcadeExtensions },
                 },
             };
@@ -165,7 +165,8 @@ namespace LbIntegrations.Demul
         {
             bool ours = DemulPlatforms.IsOurs(platform), arcade = DemulPlatforms.IsArcadeCatchAll(platform);
             Log.Verbose("IsPlatformSupported(\"" + platform + "\") -> " + (ours || arcade) + (arcade ? " (supported, not recommended)" : ""));
-            return new EmulatorSupportResponse(ours || arcade, ours);
+            // Never recommended (Mehdi, 17/10): LaunchBox pushes a recommended emulator - in the import wizard too, not installed yet.
+            return new EmulatorSupportResponse(ours || arcade, false);
         }
 
         // ── versions ─────────────────────────────────────────────────────────

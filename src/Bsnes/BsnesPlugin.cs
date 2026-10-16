@@ -63,7 +63,7 @@ namespace LbIntegrations.Bsnes
                 BinaryFileName = BsnesLaunch.ExecutableName,
                 AutoExtract = false,
             };
-            foreach (var p in SnesPlatforms) row.Platforms.Add(new LbCatalogPlatform { Platform = p, ApplicableFileExtensions = Extensions, Recommended = true });
+            foreach (var p in SnesPlatforms) row.Platforms.Add(new LbCatalogPlatform { Platform = p, ApplicableFileExtensions = Extensions, Recommended = false });
             yield return row;
         }
 
@@ -145,7 +145,8 @@ namespace LbIntegrations.Bsnes
         public override EmulatorSupportResponse IsPlatformSupported(string platform)
         {
             bool supported = IsSnes(platform);
-            return new EmulatorSupportResponse(supported, supported);
+            // Never recommended (Mehdi, 17/10): LaunchBox pushes a recommended emulator - in the import wizard too, not installed yet.
+            return new EmulatorSupportResponse(supported, false);
         }
 
         // ── versions ─────────────────────────────────────────────────────────

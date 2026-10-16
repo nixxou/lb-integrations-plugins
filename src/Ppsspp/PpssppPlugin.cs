@@ -189,7 +189,7 @@ namespace LbIntegrations.Ppsspp
                 BinaryFileName = PpssppPaths.ExecutableNames[0],
                 AutoExtract = false,
             };
-            foreach (var p in PspPlatforms) row.Platforms.Add(new LbCatalogPlatform { Platform = p, ApplicableFileExtensions = extensions, Recommended = true });
+            foreach (var p in PspPlatforms) row.Platforms.Add(new LbCatalogPlatform { Platform = p, ApplicableFileExtensions = extensions, Recommended = false });
             yield return row;
         }
 
@@ -342,7 +342,8 @@ namespace LbIntegrations.Ppsspp
             // Supported implies recommended here: PPSSPP is the reference PSP emulator, and the only
             // standalone one LaunchBox knows about.
             Log.Verbose("IsPlatformSupported(\"" + platform + "\") -> " + supported);
-            return new EmulatorSupportResponse(supported, supported);
+            // Never recommended (Mehdi, 17/10): LaunchBox pushes a recommended emulator - in the import wizard too, not installed yet.
+            return new EmulatorSupportResponse(supported, false);
         }
 
         // ── versions ─────────────────────────────────────────────────────────
