@@ -204,34 +204,23 @@ namespace LbIntegrations.ZincEx
             }
         }
 
-        /// <summary>The sort, once the list has stopped filling (500 ms without a change). Until then a window says LaunchBox is
+        /// <summary>The sort, once the list is complete (LbipListFill). Until then a window says LaunchBox is
         /// listing the files; then the romsets are read off the window's thread, the window saying how far, and the list sorted
         /// on it.</summary>
         private static void WhenFilled(System.Windows.Window window, object gameList, string exe)
         {
-            object games = null;
-            try { games = gameList.GetType().GetProperty("Games")?.GetValue(gameList); } catch { }
-            if (!(games is System.Collections.Specialized.INotifyCollectionChanged changes)) return;
-            var since = System.Diagnostics.Stopwatch.StartNew();
             var waiting = Waiting(new WindowOwner(window));
-            var timer = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background, window.Dispatcher)
-            { Interval = TimeSpan.FromMilliseconds(500) };
-            var count = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Normal, window.Dispatcher)
-            { Interval = TimeSpan.FromMilliseconds(300) };
-            count.Tick += (_, _) => waiting?.Say("LaunchBox is listing the files: " + ((games as ICollection)?.Count ?? 0) + " so far...");
-            count.Start();
-            System.Collections.Specialized.NotifyCollectionChangedEventHandler restart = (_, _) => { timer.Stop(); timer.Start(); };
-            changes.CollectionChanged += restart;
-            timer.Tick += (_, _) =>
-            {
-                timer.Stop();
-                count.Stop();
-                changes.CollectionChanged -= restart;
-                Log.Info("[import] LaunchBox listed " + ((games as ICollection)?.Count ?? 0) + " file(s) in " + since.Elapsed.TotalSeconds.ToString("0.0") + " s");
-                try { Sort(window, gameList, exe, waiting); }
-                catch (Exception ex) { waiting?.Close(); Log.Warn("[import] could not sort the list", ex); }
-            };
-            timer.Start();
+            LbIntegrations.Lbip.LbipListFill.Watch(window, gameList,
+                n => waiting?.Say("LaunchBox is listing the files: " + n + " so far..."),
+                (n, took, again) =>
+                {
+                    Log.Info(again ? "[import] LaunchBox added more lines after the sort: " + n + " now - sorted again"
+                                   : "[import] LaunchBox listed " + n + " file(s) in " + took.TotalSeconds.ToString("0.0") + " s");
+                    // The first sort carries on in the listing window; a later one gets its own.
+                    var w = again ? Waiting(new WindowOwner(window)) : waiting;
+                    try { Sort(window, gameList, exe, w); }
+                    catch (Exception ex) { w?.Close(); Log.Warn("[import] could not sort the list", ex); }
+                });
         }
 
         private static void GreyBack(System.Windows.Window window)

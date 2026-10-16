@@ -174,37 +174,23 @@ namespace LbIntegrations.Vita3k
             catch (Exception ex) { Log.Warn("[import] page change", ex); }
         }
 
-        /// <summary>The cleanup, once the list has stopped filling: 500 ms without a change. Not from
+        /// <summary>The cleanup, once the list is complete (LbipListFill). Not from
         /// inside the list's own notification - WPF refuses a collection changed while it notifies.</summary>
         private static void WhenFilled(System.Windows.Window window, object gameList)
         {
-            object games = null;
-            try { games = gameList.GetType().GetProperty("Games")?.GetValue(gameList); } catch { }
-            if (!(games is System.Collections.Specialized.INotifyCollectionChanged changes)) return;
-
             // WHILE LAUNCHBOX FILLS THE LIST (Mehdi, 30/09, as for Flycast): a window says so, the lines counted as
             // they come, until the reading below takes over with its own bar.
-            var since = System.Diagnostics.Stopwatch.StartNew();
             var waiting = Waiting(new WindowOwner(window));
-            var count = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Normal, window.Dispatcher)
-            { Interval = TimeSpan.FromMilliseconds(300) };
-            count.Tick += (_, _) => waiting?.Say("LaunchBox is listing the files: " + ((games as System.Collections.ICollection)?.Count ?? 0) + " so far...");
-            count.Start();
-            var timer = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background, window.Dispatcher)
-            { Interval = TimeSpan.FromMilliseconds(500) };
-            System.Collections.Specialized.NotifyCollectionChangedEventHandler restart = (_, _) => { timer.Stop(); timer.Start(); };
-            changes.CollectionChanged += restart;
-            timer.Tick += (_, _) =>
-            {
-                timer.Stop();
-                count.Stop();
-                changes.CollectionChanged -= restart;
-                waiting?.Close();
-                Log.Info("[import] LaunchBox listed " + ((games as System.Collections.ICollection)?.Count ?? 0) + " file(s) in " + since.Elapsed.TotalSeconds.ToString("0.0") + " s");
-                try { Vita3kImportCleanup.Run(new WindowOwner(window), gameList); }
-                catch (Exception ex) { Log.Warn("[import] could not put the list right", ex); }
-            };
-            timer.Start();
+            LbIntegrations.Lbip.LbipListFill.Watch(window, gameList,
+                n => waiting?.Say("LaunchBox is listing the files: " + n + " so far..."),
+                (n, took, again) =>
+                {
+                    waiting?.Close();
+                    Log.Info(again ? "[import] LaunchBox added more lines after the cleanup: " + n + " now - cleaned again"
+                                   : "[import] LaunchBox listed " + n + " file(s) in " + took.TotalSeconds.ToString("0.0") + " s");
+                    try { Vita3kImportCleanup.Run(new WindowOwner(window), gameList); }
+                    catch (Exception ex) { Log.Warn("[import] could not put the list right", ex); }
+                });
         }
 
         /// <summary>A small window that says what is going on, not modal - LaunchBox goes on filling the list under it.</summary>

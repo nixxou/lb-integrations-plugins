@@ -145,24 +145,15 @@ namespace LbIntegrations.Xenia
 
         private static bool Is360(string platform) => string.Equals(platform, Platform, StringComparison.OrdinalIgnoreCase);
 
-        /// <summary>The list fills after its page appears (measured on Vita): the cleanup once it has stopped changing, 500 ms.</summary>
+        /// <summary>The list fills after its page appears (measured on Vita): the cleanup once it is complete (LbipListFill).</summary>
         private static void WhenFilled(System.Windows.Window window, object gameList)
         {
-            object games = null;
-            try { games = gameList.GetType().GetProperty("Games")?.GetValue(gameList); } catch { }
-            if (!(games is System.Collections.Specialized.INotifyCollectionChanged changes)) return;
-            var timer = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background, window.Dispatcher)
-            { Interval = TimeSpan.FromMilliseconds(500) };
-            System.Collections.Specialized.NotifyCollectionChangedEventHandler restart = (_, _) => { timer.Stop(); timer.Start(); };
-            changes.CollectionChanged += restart;
-            timer.Tick += (_, _) =>
+            LbIntegrations.Lbip.LbipListFill.Watch(window, gameList, null, (n, took, again) =>
             {
-                timer.Stop();
-                changes.CollectionChanged -= restart;
+                if (again) Log.Info("[import] LaunchBox added more lines after the cleanup: " + n + " now - looked at again");
                 try { Clean(gameList); }
                 catch (Exception ex) { Log.Warn("[import] could not put the list right", ex); }
-            };
-            timer.Start();
+            });
         }
 
         /// <summary>The verdict on each line, by its file's content.</summary>

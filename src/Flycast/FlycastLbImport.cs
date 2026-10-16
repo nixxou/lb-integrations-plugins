@@ -268,37 +268,24 @@ namespace LbIntegrations.Flycast
             }
         }
 
-        /// <summary>The check, once the list has stopped filling (500 ms without a change) - as Vita3kLbImport. Until
+        /// <summary>The check, once the list is complete (LbipListFill) - as Vita3kLbImport. Until
         /// then a window says LaunchBox is listing the files, and how many so far.</summary>
         private static void WhenFilled(System.Windows.Window window, object gameList, string system, bool quick, bool crc, FlycastLayout layout)
         {
-            object games = null;
-            try { games = gameList.GetType().GetProperty("Games")?.GetValue(gameList); } catch { }
-            if (!(games is System.Collections.Specialized.INotifyCollectionChanged changes)) return;
-            var since = System.Diagnostics.Stopwatch.StartNew();
             var waiting = Waiting(new WindowOwner(window));
-            var timer = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background, window.Dispatcher)
-            { Interval = TimeSpan.FromMilliseconds(500) };
-            var count = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Normal, window.Dispatcher)
-            { Interval = TimeSpan.FromMilliseconds(300) };
-            count.Tick += (_, _) => waiting?.Say("LaunchBox is listing the files: " + ((games as ICollection)?.Count ?? 0) + " so far...");
-            count.Start();
-            System.Collections.Specialized.NotifyCollectionChangedEventHandler restart = (_, _) => { timer.Stop(); timer.Start(); };
-            changes.CollectionChanged += restart;
-            timer.Tick += (_, _) =>
-            {
-                timer.Stop();
-                count.Stop();
-                changes.CollectionChanged -= restart;
-                waiting?.Close();
-                Log.Info("[import] LaunchBox listed " + ((games as ICollection)?.Count ?? 0) + " file(s) in " + since.Elapsed.TotalSeconds.ToString("0.0") + " s");
-                try
+            LbIntegrations.Lbip.LbipListFill.Watch(window, gameList,
+                n => waiting?.Say("LaunchBox is listing the files: " + n + " so far..."),
+                (n, took, again) =>
                 {
-                    if (Filter(new WindowOwner(window), gameList, system, quick, crc, layout)) GreyBack(window);
-                }
-                catch (Exception ex) { Log.Warn("[import] could not sort the list", ex); }
-            };
-            timer.Start();
+                    waiting?.Close();
+                    Log.Info(again ? "[import] LaunchBox added more lines after the sort: " + n + " now - sorted again"
+                                   : "[import] LaunchBox listed " + n + " file(s) in " + took.TotalSeconds.ToString("0.0") + " s");
+                    try
+                    {
+                        if (Filter(new WindowOwner(window), gameList, system, quick, crc, layout)) GreyBack(window);
+                    }
+                    catch (Exception ex) { Log.Warn("[import] could not sort the list", ex); }
+                });
         }
 
         /// <summary>The wizard's Back button greyed: back and forth over a sorted list leaves it broken.</summary>
