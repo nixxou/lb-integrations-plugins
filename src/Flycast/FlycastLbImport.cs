@@ -385,20 +385,16 @@ namespace LbIntegrations.Flycast
             if (!quick) foreach (var f in findings) if (f.Drop != null && f.Drop.StartsWith("?")) f.Drop = null;
 
             // IN ONE GO (measured 30/09: 36 563 lines taken out one by one, each looked up in the whole list and
-            // each redrawn by the grid, took 27 s and made the titles flicker). The findings are in the list's own
-            // order, so line i is finding i; the list - Caliburn's BindableCollection - is told nothing until the
+            // each redrawn by the grid, took 27 s and made the titles flicker). Each line is found by reference in one walk
+            // of the list (LbipListRows.Remove); the list - Caliburn's BindableCollection - is told nothing until the
             // end (IsNotifying), then refreshed once. Without that switch, the lines go one by one all the same.
             int kept = 0, dropped = 0, titled = 0;
             bool silenced = SetProperty(list, "IsNotifying", false);
             try
             {
-                for (int i = findings.Count - 1; i >= 0; i--)
-                {
-                    if (i >= list.Count || !ReferenceEquals(list[i], findings[i].Record)) continue;   // changed meanwhile: left alone
-                    if (findings[i].Drop == null) { kept++; continue; }
-                    list.RemoveAt(i);
-                    dropped++;
-                }
+                // By reference, not by place (Codex review 17/10): another pass may have shifted the list since the snapshot.
+                kept = LbIntegrations.Lbip.LbipListRows.CountIn(list, findings.Where(f => f.Drop == null).Select(f => f.Record));
+                dropped = LbIntegrations.Lbip.LbipListRows.Remove(list, findings.Where(f => f.Drop != null).Select(f => f.Record));
                 // A game LaunchBox could not name keeps its file's name ("wldkicksj"): Flycast's own name for its set.
                 foreach (var f in findings.Where(x => x.Drop == null && x.Set?.Description != null))
                 {

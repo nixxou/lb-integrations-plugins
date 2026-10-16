@@ -343,13 +343,9 @@ namespace LbIntegrations.ZincEx
             bool silenced = SetProperty(list, "IsNotifying", false);
             try
             {
-                for (int i = findings.Count - 1; i >= 0; i--)
-                {
-                    if (i >= list.Count || !ReferenceEquals(list[i], findings[i].Record)) continue;
-                    if (findings[i].Drop == null) { kept++; continue; }
-                    list.RemoveAt(i);
-                    dropped++;
-                }
+                // By reference, not by place (Codex review 17/10): another pass may have shifted the list since the snapshot.
+                kept = LbIntegrations.Lbip.LbipListRows.CountIn(list, findings.Where(f => f.Drop == null).Select(f => f.Record));
+                dropped = LbIntegrations.Lbip.LbipListRows.Remove(list, findings.Where(f => f.Drop != null).Select(f => f.Record));
                 // A game LaunchBox could not name keeps its file's name ("sfexu"): ZiNc's title for it.
                 foreach (var f in findings.Where(x => x.Drop == null && x.Match != null))
                 {

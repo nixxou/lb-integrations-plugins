@@ -200,6 +200,18 @@ namespace LbIntegrations.Probe
             Check("a version on its game's file is not tied", SaveRows.TieTo(V, a, a, Full) == null);
             Check("a version on another file is tied", SaveRows.TieTo(V, a, b, Full) == V);
             Check("a game save is not tied", SaveRows.TieTo(null, a, null, Full) == null);
+            // Two import passes over a list that moved between them (Codex review 17/10): each takes ITS lines out, wherever they are.
+            {
+                object A = new object(), B = new object(), C = new object();
+                var live = new System.Collections.ArrayList { A, B, C };
+                var first = new[] { A };          // pass 1 saw [A, B], A invalid
+                var second = new[] { A, C };      // pass 2 saw [A, B, C], A and C invalid
+                int one = LbIntegrations.Lbip.LbipListRows.Remove(live, first);
+                int two = LbIntegrations.Lbip.LbipListRows.Remove(live, second);
+                Check("import: a pass after another took its lines out by reference (A once, then C, B kept)",
+                      one == 1 && two == 1 && live.Count == 1 && ReferenceEquals(live[0], B));
+                Check("import: the kept lines still there are counted by reference", LbIntegrations.Lbip.LbipListRows.CountIn(live, new[] { A, B, C }) == 1);
+            }
             // A game's web links come among its versions (17/10): never handed to a plugin's GetSaves.
             Check("a web link is a link (https, ending in /)", SaveRows.IsLink("https://www.example.com/") && SaveRows.IsLink("www.example.com") && SaveRows.IsLink("steam://run/1"));
             Check("a file is not a link (drive, relative, UNC)", !SaveRows.IsLink(@"C:\Games\Mana.sfc") && !SaveRows.IsLink(@"..\Games\Mana.sfc") && !SaveRows.IsLink(@"\\nas\roms\Mana.sfc") && !SaveRows.IsLink(null));

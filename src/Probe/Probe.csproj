@@ -66,6 +66,7 @@
     <Compile Include="..\Shared.Lbip\LbipStateThumbs.cs" Link="Shared.Lbip\LbipStateThumbs.cs" />
     <Compile Include="..\Shared.Lbip\GlobalCache.cs" Link="Shared.Lbip\GlobalCache.cs" />
     <Compile Include="..\Shared.Lbip\StampedCache.cs" Link="Shared.Lbip\StampedCache.cs" />
+    <Compile Include="..\Shared.Lbip\LbipListRows.cs" Link="Shared.Lbip\LbipListRows.cs" />
   </ItemGroup>
 
 

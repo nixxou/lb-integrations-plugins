@@ -10,6 +10,12 @@
 // and what was found is logged once. Past three minutes of quiet with Finish still greyed, the list is taken as it is
 // (a list Finish never allows, an empty one, would otherwise keep the waiting window up for ever).
 //
+// ONE PASS AT A TIME, LINES TAKEN OUT BY REFERENCE (Codex review 17/10): a pass is never started while the previous one
+// is still in its callback (Flycast's check window pumps messages, LaunchBox may add lines meanwhile) - the wait starts
+// again instead. A plugin whose sort finishes later (ZiNc EX reads the romsets off the window's thread) can still overlap
+// the next one: every sort takes its lines out by reference (LbipListRows.Remove), not by their place in a snapshot, so a pass that
+// runs after another has shifted the list still takes all of its own lines out.
+//
 // AND LINES THAT COME AFTER THE SORT ARE SORTED TOO: the list stays watched until the wizard window closes; a line
 // added after the sort starts the same wait again, and the plugin's sort runs again over the whole list - every sort
 // here only takes lines out or retitles them, so a second pass leaves the lines kept by the first one as they are.
@@ -46,7 +52,7 @@ namespace LbIntegrations.Lbip
             var quietSince = System.Diagnostics.Stopwatch.StartNew();
             var timer = new DispatcherTimer(DispatcherPriority.Background, window.Dispatcher) { Interval = Quiet };
             var count = new DispatcherTimer(DispatcherPriority.Normal, window.Dispatcher) { Interval = TimeSpan.FromMilliseconds(300) };
-            bool sorted = false, said = false, saidBusy = false, grewSinceSort = false;
+            bool sorted = false, said = false, saidBusy = false, grewSinceSort = false, inPass = false;
             int last = Count();
 
             count.Tick += (_, _) => { if (!sorted) listing?.Invoke(Count()); };
@@ -71,6 +77,7 @@ namespace LbIntegrations.Lbip
             timer.Tick += (_, _) =>
             {
                 timer.Stop();
+                if (inPass) { timer.Start(); return; }       // the previous pass is still in its callback: later
                 if (!said) { said = true; LbipLog.Info("[import] list-filled signals here: " + Signals(window, wizard, gameList)); }
                 var busy = Busy(window, wizard, gameList);
                 if (busy != null && quietSince.Elapsed < GiveUp)
@@ -86,8 +93,10 @@ namespace LbIntegrations.Lbip
                 sorted = true;
                 grewSinceSort = false;
                 count.Stop();
+                inPass = true;
                 try { filled(Count(), since.Elapsed, again); }
                 catch (Exception ex) { LbipLog.Warn("[import] the sort", ex); }
+                finally { inPass = false; }
                 last = Count();
             };
 
