@@ -1,7 +1,8 @@
 // Which emulators the catch-all takes (lot 6, docs\saves-lot6.md): those NO OTHER plugin drives.
 //
 // LaunchBox picks an emulator's plugin by asking each loaded plugin, emulator by emulator, whether it takes it
-// (PluginRegistry.GetBestEmulatorPlugin -> GetApplicableEmulators, measured with the save probe 09/10). Two plugins
+// (PluginRegistry.GetBestEmulatorPlugin -> GetApplicableEmulators, measured with the save probe 09/10; 14.1: GetBestEmulatorIntegration,
+// its own integrations v2 objects - LbPluginRegistry's drivers ask both kinds). Two plugins
 // taking one emulator is a choice LaunchBox makes in obfuscated code - so the catch-all never competes: it asks every
 // OTHER plugin LaunchBox loaded (LbPluginRegistry) first, and takes the emulator only when none of them does.
 //
@@ -92,9 +93,9 @@ namespace LbIntegrations.SavesCatchAll
         }
 
         /// <summary>The registry's plugins once LaunchBox has loaded them all (see the header), else null and why.</summary>
-        private static IReadOnlyList<EmulatorPlugin>? Settled(out string? why)
+        private static IReadOnlyList<LbDriver>? Settled(out string? why)
         {
-            var all = LbPluginRegistry.EmulatorPlugins(out why);
+            var all = LbPluginRegistry.Drivers(out why);
             if (all == null) return null;
             if (Volatile.Read(ref _started) == 1) return all;
             // LaunchBox asking through its own choice of a plugin: its plugins are loaded - for good (measured 13/10: its
@@ -114,7 +115,7 @@ namespace LbIntegrations.SavesCatchAll
         /// <summary>For the probe: the answer of <see cref="AskedByLaunchBox"/>, instead of the call stack.</summary>
         internal static bool? AskedByLaunchBoxForTests;
 
-        /// <summary>The question comes from LaunchBox choosing an emulator's plugin (PluginRegistry.GetBestEmulatorPlugin is
+        /// <summary>The question comes from LaunchBox choosing an emulator's plugin (PluginRegistry.GetBestEmulatorPlugin, 14.1's GetBestEmulatorIntegration, is
         /// on the stack - its name is kept, measured with the save probe), not from the pack's own code.</summary>
         private static bool AskedByLaunchBox()
         {
@@ -124,7 +125,7 @@ namespace LbIntegrations.SavesCatchAll
                 foreach (var f in new System.Diagnostics.StackTrace(2, false).GetFrames() ?? Array.Empty<System.Diagnostics.StackFrame>())
                 {
                     var m = f.GetMethod();
-                    if (m != null && m.Name == "GetBestEmulatorPlugin" && m.DeclaringType?.FullName == LbPluginRegistry.TypeName) return true;
+                    if (m != null && LbPluginRegistry.PickerNames.Contains(m.Name) && m.DeclaringType?.FullName == LbPluginRegistry.TypeName) return true;
                 }
             }
             catch { }
@@ -176,33 +177,26 @@ namespace LbIntegrations.SavesCatchAll
             return false;
         }
 
-        private static bool Decide(EmulatorPlugin self, IEmulator emulator, IReadOnlyList<EmulatorPlugin> all, out string why)
+        private static bool Decide(EmulatorPlugin self, IEmulator emulator, IReadOnlyList<LbDriver> all, out string why)
         {
             Asking.Value++;
             try
             {
                 foreach (var p in all)
                 {
-                    if (p == null || ReferenceEquals(p, self) || p.GetType().Assembly == typeof(CatchAllClaims).Assembly) continue;
+                    if (p == null || ReferenceEquals(p.Plugin, self) || p.Type.Assembly == typeof(CatchAllClaims).Assembly) continue;
                     try
                     {
                         var taken = p.GetApplicableEmulators(new[] { emulator });
                         if (taken != null && taken.Any(x => ReferenceEquals(x, emulator) || (x != null && string.Equals(Safe(() => x.Id), Safe(() => emulator.Id), StringComparison.OrdinalIgnoreCase))))
-                        { why = "driven by " + PluginName(p); return false; }
+                        { why = "driven by " + p.Describe(); return false; }
                     }
-                    catch (Exception ex) { why = PluginName(p) + " threw when asked (" + ex.GetType().Name + ") - it may take it"; return false; }
+                    catch (Exception ex) { why = p.Describe() + " threw when asked (" + ex.GetType().Name + ") - it may take it"; return false; }
                 }
             }
             finally { Asking.Value--; }
             why = "no other plugin takes it (" + all.Count + " asked)";
             return true;
-        }
-
-        private static string PluginName(EmulatorPlugin p)
-        {
-            string n = "";
-            try { n = p.EmulatorName ?? ""; } catch { }
-            return (n.Length > 0 ? n : p.GetType().Name) + " [" + p.GetType().Name + "]";
         }
 
         private static T? Safe<T>(Func<T> f) { try { return f(); } catch { return default; } }
