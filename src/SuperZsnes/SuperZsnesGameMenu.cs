@@ -41,7 +41,7 @@ namespace LbIntegrations.SuperZsnes
                 if (dm == null || game == null) return false;
                 var own = string.IsNullOrWhiteSpace(game.EmulatorId) ? null : dm.GetEmulatorById(game.EmulatorId);
                 if (own != null && SuperZsnesPaths.IsSuperZsnesExecutable(own.ApplicationPath)) return true;
-                if (!string.Equals(game.Platform, SnesPlatform, StringComparison.OrdinalIgnoreCase)) return false;
+                if (!SuperZsnesPlugin.IsSnes(game.Platform)) return false;
                 return (dm.GetAllEmulators() ?? new IEmulator[0]).Any(e => e != null && SuperZsnesPaths.IsSuperZsnesExecutable(e.ApplicationPath));
             }
             catch { return false; }

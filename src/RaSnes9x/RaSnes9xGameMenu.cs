@@ -39,7 +39,7 @@ namespace LbIntegrations.RaSnes9x
                 if (dm == null || game == null) return false;
                 var own = string.IsNullOrWhiteSpace(game.EmulatorId) ? null : dm.GetEmulatorById(game.EmulatorId);
                 if (own != null && RaSnes9xLaunch.IsRaSnes9xExe(own.ApplicationPath)) return true;
-                if (!string.Equals((game.Platform ?? "").Trim(), RaSnes9xPlugin.SnesPlatform, StringComparison.OrdinalIgnoreCase)) return false;
+                if (!RaSnes9xPlugin.IsSnes(game.Platform)) return false;
                 return (dm.GetAllEmulators() ?? new IEmulator[0]).Any(e => e != null && RaSnes9xLaunch.IsRaSnes9xExe(e.ApplicationPath));
             }
             catch { return false; }

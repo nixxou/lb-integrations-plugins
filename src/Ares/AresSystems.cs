@@ -210,6 +210,13 @@ namespace LbIntegrations.Ares
             P("Microsoft MSX", "MSX", "MSX2"),
             P("Microsoft MSX2", "MSX2", "MSX"),
             P("Sinclair ZX Spectrum", "ZX Spectrum", "ZX Spectrum 128"),
+            // The same consoles under LiteBox's own platform names (its metadata, Mehdi 17/10): not in LaunchBox's list, claimed
+            // by name all the same, as Nintendo DSiware is.
+            P("Pocket Challenge V2", "Pocket Challenge V2"),
+            P("Nes - Super Mario Bros. Hacks", "Famicom", "Dendy"),
+            P("Snes - Super Mario World Hacks", "Super Famicom"),
+            P("Super Nintendo MSU-1", "Super Famicom"),
+            P("Megadrive - Sonic The Hedgehog 2 Hacks", "Mega Drive"),
         };
 
         public static AresSystem System(string name)

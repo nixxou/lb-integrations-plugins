@@ -30,7 +30,14 @@ namespace LbIntegrations.SuperZsnes
 {
     public partial class SuperZsnesPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
     {
-        private const string SnesPlatform = "Super Nintendo Entertainment System";
+        internal const string SnesPlatform = "Super Nintendo Entertainment System";
+
+        /// <summary>SNES games under another platform name (LiteBox's metadata, Mehdi 17/10): MSU-1 packs and Super Mario World
+        /// hacks - the same console, the same command line. The main one first: it is the one the BIOS and defaults go by.</summary>
+        internal static readonly string[] SnesPlatforms = { SnesPlatform, "Super Nintendo MSU-1", "Snes - Super Mario World Hacks" };
+
+        internal static bool IsSnes(string platform)
+            => SnesPlatforms.Any(p => string.Equals(p, (platform ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
 
         /// <summary>Nothing. Whether SUPER ZSNES takes a ROM path as its first argument is exactly
         /// what a run on a real machine has to measure (see README); the host appends the ROM path
@@ -121,7 +128,7 @@ namespace LbIntegrations.SuperZsnes
         /// first would hand it a folder for no gain.</summary>
         private static IEnumerable<LbCatalogEmulator> MetadataRows()
         {
-            yield return new LbCatalogEmulator
+            var row = new LbCatalogEmulator
             {
                 Name = PackName,
                 CommandLine = DefaultCommandLine,
@@ -129,13 +136,9 @@ namespace LbIntegrations.SuperZsnes
                 Url = SuperZsnesSite.Home,
                 BinaryFileName = SuperZsnesPaths.ExecutableName,
                 AutoExtract = false,
-                Platforms =
-                {
-                    new LbCatalogPlatform { Platform = SnesPlatform,
-                                          ApplicableFileExtensions = Extensions,
-                                          Recommended = true },
-                },
             };
+            foreach (var p in SnesPlatforms) row.Platforms.Add(new LbCatalogPlatform { Platform = p, ApplicableFileExtensions = Extensions, Recommended = true });
+            yield return row;
         }
 
         public override string EmulatorName => PackName;
@@ -242,8 +245,7 @@ namespace LbIntegrations.SuperZsnes
 
         public override EmulatorSupportResponse IsPlatformSupported(string platform)
         {
-            bool supported = string.Equals((platform ?? "").Trim(), SnesPlatform,
-                                           StringComparison.InvariantCultureIgnoreCase);
+            bool supported = IsSnes(platform);
             Log.Verbose("IsPlatformSupported(\"" + platform + "\") -> " + supported);
             return new EmulatorSupportResponse(supported, supported);
         }
@@ -473,9 +475,12 @@ namespace LbIntegrations.SuperZsnes
             // DefaultPlatform IS NOT SET - see the note in XeniaPlugin.CreateEmulator: the Edit
             // Emulator window grows a duplicate platform row from it. IsDefault on the row is what
             // says "this emulator is the default for that platform", and that is set.
-            var platform = emu.AddNewEmulatorPlatform();
-            platform.Platform = SnesPlatform;
-            platform.IsDefault = true;
+            foreach (var name in SnesPlatforms)
+            {
+                var platform = emu.AddNewEmulatorPlatform();
+                platform.Platform = name;
+                platform.IsDefault = true;
+            }
 
             try { dm.Save(false); } catch (Exception ex) { Log.Warn("data manager save failed", ex); }
             Log.Info("created emulator entry \"" + PackName + "\""
@@ -490,7 +495,7 @@ namespace LbIntegrations.SuperZsnes
         /// (level0) also lists dsp2/3/4.rom and st010/011/018.rom with their CRC32s, left out by Mehdi's choice - the
         /// handful of games built around those chips.</summary>
         public override IEnumerable<EmulatorBiosFile> GetBiosFilesForPlatform(string platform)
-            => !string.Equals(platform, SnesPlatform, StringComparison.OrdinalIgnoreCase) ? Array.Empty<EmulatorBiosFile>()
+            => !IsSnes(platform) ? Array.Empty<EmulatorBiosFile>()
              : new[] { new EmulatorBiosFile(".", SuperZsnesBios.FileName, false, "DSP-1 ROM - optional, for Super Mario Kart, Pilotwings and the other DSP-1 games", SuperZsnesBios.Md5, null) };
 
         public override IEnumerable<EmulatorBiosFile> GetBiosFilesForPlatform(

@@ -26,6 +26,13 @@ namespace LbIntegrations.RaSnes9x
     {
         internal const string SnesPlatform = "Super Nintendo Entertainment System";
 
+        /// <summary>SNES games under another platform name (LiteBox's metadata, Mehdi 17/10): MSU-1 packs and Super Mario World
+        /// hacks - the same console, the same command line. The main one first: it is the one the BIOS and defaults go by.</summary>
+        internal static readonly string[] SnesPlatforms = { SnesPlatform, "Super Nintendo MSU-1", "Snes - Super Mario World Hacks" };
+
+        internal static bool IsSnes(string platform)
+            => SnesPlatforms.Any(p => string.Equals(p, (platform ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+
         /// <summary>Nothing: the host appends the game's path, which is all Snes9x needs ("RASnes9x.exe &lt;rom&gt;"). Full
         /// screen is snes9x.conf's, written at each launch - not -fullscreen, which would stay set when Snes9x saves its file.</summary>
         private const string DefaultCommandLine = "";
@@ -53,7 +60,7 @@ namespace LbIntegrations.RaSnes9x
         /// AutoExtract is false: Snes9x opens a .zip itself, and the name of the zip is the name of its save.</summary>
         private static IEnumerable<LbCatalogEmulator> MetadataRows()
         {
-            yield return new LbCatalogEmulator
+            var row = new LbCatalogEmulator
             {
                 Name = PackName,
                 CommandLine = DefaultCommandLine,
@@ -61,11 +68,9 @@ namespace LbIntegrations.RaSnes9x
                 Url = RaSnes9xBuild.Home,
                 BinaryFileName = RaSnes9xLaunch.ExecutableName,
                 AutoExtract = false,
-                Platforms =
-                {
-                    new LbCatalogPlatform { Platform = SnesPlatform, ApplicableFileExtensions = Extensions, Recommended = true },
-                },
             };
+            foreach (var p in SnesPlatforms) row.Platforms.Add(new LbCatalogPlatform { Platform = p, ApplicableFileExtensions = Extensions, Recommended = true });
+            yield return row;
         }
 
         public override string EmulatorName => PackName;
@@ -150,7 +155,7 @@ namespace LbIntegrations.RaSnes9x
 
         public override EmulatorSupportResponse IsPlatformSupported(string platform)
         {
-            bool supported = string.Equals((platform ?? "").Trim(), SnesPlatform, StringComparison.InvariantCultureIgnoreCase);
+            bool supported = IsSnes(platform);
             Log.Verbose("IsPlatformSupported(\"" + platform + "\") -> " + supported);
             return new EmulatorSupportResponse(supported, supported);
         }
@@ -241,11 +246,12 @@ namespace LbIntegrations.RaSnes9x
             if (dm == null) return null;
 
             // The default of the platform only when no emulator of the library is yet - an existing choice is the user's.
-            bool taken = false;
+            var taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             try
             {
-                taken = (dm.GetAllEmulators() ?? Array.Empty<IEmulator>()).Any(e => (e.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>())
-                            .Any(r => r.IsDefault && string.Equals(r.Platform, SnesPlatform, StringComparison.OrdinalIgnoreCase)));
+                foreach (var e in dm.GetAllEmulators() ?? Array.Empty<IEmulator>())
+                    foreach (var r in e.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>())
+                        try { if (r.IsDefault && !string.IsNullOrEmpty(r.Platform)) taken.Add(r.Platform); } catch { }
             }
             catch { }
             var emu = dm.AddNewEmulator();
@@ -256,9 +262,12 @@ namespace LbIntegrations.RaSnes9x
 
             // DefaultPlatform IS NOT SET - see the note in XeniaPlugin.CreateEmulator: the Edit Emulator window grows a
             // duplicate platform row from it. IsDefault on the row says "the default for that platform".
-            var platform = emu.AddNewEmulatorPlatform();
-            platform.Platform = SnesPlatform;
-            platform.IsDefault = !taken;
+            foreach (var name in SnesPlatforms)
+            {
+                var platform = emu.AddNewEmulatorPlatform();
+                platform.Platform = name;
+                platform.IsDefault = !taken.Contains(name);
+            }
 
             try { dm.Save(false); } catch (Exception ex) { Log.Warn("data manager save failed", ex); }
             Log.Info("created emulator entry \"" + PackName + "\" -> " + emu.ApplicationPath);

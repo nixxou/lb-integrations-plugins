@@ -39,7 +39,7 @@ namespace LbIntegrations.Bsnes
                 if (dm == null || game == null) return false;
                 var own = string.IsNullOrWhiteSpace(game.EmulatorId) ? null : dm.GetEmulatorById(game.EmulatorId);
                 if (own != null && BsnesLaunch.IsBsnesExe(own.ApplicationPath)) return true;
-                if (!string.Equals((game.Platform ?? "").Trim(), BsnesPlugin.SnesPlatform, StringComparison.OrdinalIgnoreCase)) return false;
+                if (!BsnesPlugin.IsSnes(game.Platform)) return false;
                 return (dm.GetAllEmulators() ?? new IEmulator[0]).Any(e => e != null && BsnesLaunch.IsBsnesExe(e.ApplicationPath));
             }
             catch { return false; }
