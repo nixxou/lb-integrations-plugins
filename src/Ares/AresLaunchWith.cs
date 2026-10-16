@@ -40,12 +40,12 @@ namespace LbIntegrations.Ares
                 var rom = game.ApplicationPath;
                 if (string.IsNullOrWhiteSpace(rom)) return (null, null);
                 var full = AresPlugin.ResolveFullPathForUi(rom);
-                if (full != null && !full.Contains("://") && !File.Exists(full) && !Directory.Exists(full)) return ("missing:file", "The game's file is not there: " + full);
+                bool gone = full != null && !full.Contains("://") && !File.Exists(full) && !Directory.Exists(full);
                 // The list's first reading takes a second: done in the background, no label until then - never on the menu's time.
                 if (!AresCompat.Loaded) { System.Threading.Tasks.Task.Run(() => { try { _ = AresCompat.Generation; } catch { } }); return (null, null); }
                 var key = game.Id + "|" + rom + "|" + game.Title + "|" + game.Platform + "|" + emulatorPath;
                 var generation = AresCompat.Generation;
-                lock (Known) if (Known.TryGetValue(key, out var k) && ReferenceEquals(k.Generation, generation)) return (k.Level, k.Note);
+                lock (Known) if (Known.TryGetValue(key, out var k) && ReferenceEquals(k.Generation, generation)) return Gone(gone, full, k.Level, k.Note);
 
                 var emu = PluginHelper.DataManager?.GetAllEmulators()?.FirstOrDefault(e => string.Equals(Safe(() => e.ApplicationPath), emulatorPath, StringComparison.OrdinalIgnoreCase));
                 var system = AresSettings.GameSystem(game.Id) ?? AresPlugin.SystemOfForUi(emu, null, game.Platform, rom);
@@ -55,10 +55,14 @@ namespace LbIntegrations.Ares
                 var level = Of(best?.Entry?.Status);
                 var note = level == null ? null : NoteOf(best);
                 lock (Known) { if (Known.Count > 4096) Known.Clear(); Known[key] = (generation, level, note); }
-                return (level, note);
+                return Gone(gone, full, level, note);
             }
             catch (Exception ex) { Log.Warn("LaunchWith.Level", ex); return (null, null); }
         }
+
+        /// <summary>A file not there: "missing:file" first, the list's verdict (found by the game's names) after it.</summary>
+        private static (string Level, string Note) Gone(bool gone, string full, string level, string note)
+            => !gone ? (level, note) : ("missing:file" + (level == null ? "" : ";" + level), "The game's file is not there: " + full + (note == null ? "" : "\n" + note));
 
         private static string NoteOf(AresCompatMatch m)
         {
@@ -66,7 +70,9 @@ namespace LbIntegrations.Ares
             var line = "ares's list: " + e.Status + (e.Unverified ? " (not verified yet)" : "") + (string.IsNullOrEmpty(e.Version) ? "" : ", tried with " + e.Version);
             if (!m.Best) line += "\nFound as " + e.Title;
             if (!string.IsNullOrWhiteSpace(e.Notes)) line += "\n" + e.Notes.Trim();
-            if (e.Issues > 0) line += "\nGitHub issues: " + e.Issues;
+            if (e.IssueList.Count > 0) line += "\nGitHub: " + string.Join("\n        ", e.IssueList.Take(5).Select(i => "#" + i.Number + " " + i.Title))
+                                               + (e.IssueList.Count > 5 ? "\n        and " + (e.IssueList.Count - 5) + " more" : "");
+            else if (e.Issues > 0) line += "\nGitHub issues: " + e.Issues;
             return line;
         }
 

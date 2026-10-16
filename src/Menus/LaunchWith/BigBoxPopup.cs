@@ -64,7 +64,8 @@ namespace LbIntegrations.Menus.LaunchWith
                                  + Safe(() => game?.Title) + "\" (from " + (link.Game != null ? link.ActionName : "the selection") + ")");
 
                     var verdict = Labels.For(game, emulator);
-                    var label = verdict == null ? null : Labels.Format.Replace("{label}", verdict.Text);
+                    var label = verdict == null ? null : Labels.Format.Replace("{label}", verdict.Text)
+                                                         + string.Concat(verdict.More.Select(m => Labels.Format.Replace("{label}", m.Text)));
                     var wanted = string.IsNullOrEmpty(label) ? original : original + label;
                     if (Write(option, display, wanted) && label != null) labelled++;
                 }

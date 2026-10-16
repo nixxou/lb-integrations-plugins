@@ -55,22 +55,32 @@ namespace LbIntegrations.ZincEx
             catch (Exception ex) { Log.Warn("LaunchWith.Level", ex); return null; }
         }
 
+        /// <summary>One of ZiNc's games: recommended, or playable with its board's known faults.</summary>
+        private static Answer Runs(ZincGame g, string head)
+        {
+            var notes = ZincCompat.Notes(g);
+            head += g.Title + " (" + g.Set + ")";
+            return new Answer { Level = notes.Count > 0 ? "playable" : "recommended", Note = notes.Count > 0 ? head + "\n" + string.Join("\n", notes) : head + "." };
+        }
+
         private static Answer Classify(string rom, string exeDir, ZincGame chosen)
         {
             var match = ZincGames.Identify(rom, ZincExLaunch.Folders(exeDir, rom), out var miss, chosen);
-            if (match != null)
-            {
-                var notes = ZincCompat.Notes(match.Game);
-                var head = "ZiNc runs it as " + match.Game.Title + " (" + match.Game.Set + ")";
-                return new Answer { Level = notes.Count > 0 ? "playable" : "recommended", Note = notes.Count > 0 ? head + "\n" + string.Join("\n", notes) : head + "." };
-            }
+            if (match != null) return Runs(match.Game, "ZiNc runs it as ");
             if (miss?.Closest != null && miss.Lacking.Length > 0)
             {
                 var g = miss.Closest;
+                // What keeps it from starting, then how it runs once it is there - two badges (16/10).
                 if (!string.IsNullOrEmpty(g.Bios) && miss.BiosZip == null)
-                    return new Answer { Level = "missing:BIOS", Note = g.Title + " needs its BIOS set, " + g.Bios + ".zip (or MAME's name for it), beside the game or in ZiNc's roms folder." };
+                {
+                    var then = Runs(g, "Once there, ZiNc runs it as ");
+                    return new Answer { Level = "missing:BIOS;" + then.Level, Note = g.Title + " needs its BIOS set, " + g.Bios + ".zip (or MAME's name for it), beside the game or in ZiNc's roms folder.\n" + then.Note };
+                }
                 if (!string.IsNullOrEmpty(g.Parent) && miss.ParentZip == null)
-                    return new Answer { Level = "missing:parent", Note = g.Title + " needs its parent set, " + g.Parent + ".zip, beside the game." };
+                {
+                    var then = Runs(g, "Once there, ZiNc runs it as ");
+                    return new Answer { Level = "missing:parent;" + then.Level, Note = g.Title + " needs its parent set, " + g.Parent + ".zip, beside the game.\n" + then.Note };
+                }
                 return new Answer { Level = "version", Note = "Not the dump of " + g.Title + " ZiNc knows (ZiNc's " + g.Set + "): " + (miss.Lacking.Length == 1 ? "one of its ROMs is" : miss.Lacking.Length + " of its ROMs are") + " not in this zip - another version of the game, or an incomplete set." };
             }
             if (miss?.Reason == "it could not be read as a zip") return new Answer { Level = "invalid", Note = "This file does not read as a zip." };

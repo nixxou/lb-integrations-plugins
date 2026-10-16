@@ -42,7 +42,8 @@ namespace LbIntegrations.Demul
                 if (string.IsNullOrWhiteSpace(rom)) return (null, null);
                 var ext = Path.GetExtension(rom).ToLowerInvariant();
                 var full = DemulPlugin.ResolveFullPathForUi(rom);
-                if (full != null && !File.Exists(full)) return ("missing:file", "The game's file is not there: " + full);
+                bool gone = full != null && !File.Exists(full);
+                if (gone && DemulPlatforms.BoardOf(game.Platform) == "Dreamcast") return ("missing:file", "The game's file is not there: " + full);
                 if (DemulPlatforms.BoardOf(game.Platform) == "Dreamcast")
                     return ext == ".gdi" || ext == ".cdi" || ext == ".chd" ? (null, null) : ("unsupported", "Demul reads a Dreamcast disc as .gdi, .cdi or .chd.");
                 if (ext != ".zip" && ext != ".7z") return ("unsupported", "Demul runs an arcade game from its MAME romset, a .zip or .7z.");
@@ -50,19 +51,31 @@ namespace LbIntegrations.Demul
                 if (!DemulSets.All.TryGetValue(name, out var set)) return ("unsupported", "\"" + name + "\" is not a set of the boards Demul runs (Naomi, Naomi 2, Atomiswave, Hikaru, System SP, CV1000, Gaelco).");
                 if (set.Board == DemulSets.Bios) return ("unsupported", name + " is a BIOS set, not a game: Demul wants it in its roms folder.");
                 if (!set.Known) return ("unsupported", set.Title + " (" + set.Board + ") is not in this build of Demul's game table.");
-                if (set.GdRom != null && !HasGdRom(set, full, Path.GetDirectoryName(DemulPlugin.ResolveFullPathForUi(emulatorPath))))
-                    return ("missing:CHD", "This GD-ROM game needs its disc image: " + set.GdRom + ".chd, in a folder named " + set.Name
-                                           + (set.Parent != null ? " (or " + set.Parent + ")" : "") + " beside the zip:\n"
-                                           + Path.Combine(Path.GetDirectoryName(full) ?? "", set.Name, set.GdRom + ".chd"));
+                // What keeps it from starting (its file, its GD-ROM image), then how it runs once it does - two badges (16/10).
+                string block = null, blockNote = null;
+                if (gone) { block = "missing:file"; blockNote = "The game's file is not there: " + full; }
+                else if (set.GdRom != null && !HasGdRom(set, full, Path.GetDirectoryName(DemulPlugin.ResolveFullPathForUi(emulatorPath))))
+                {
+                    block = "missing:CHD";
+                    blockNote = "This GD-ROM game needs its disc image: " + set.GdRom + ".chd, in a folder named " + set.Name
+                                + (set.Parent != null ? " (or " + set.Parent + ")" : "") + " beside the zip:\n"
+                                + Path.Combine(Path.GetDirectoryName(full) ?? "", set.Name, set.GdRom + ".chd");
+                }
+                string level = null, note = null;
                 var compat = DemulCompat.Of(rom);
-                if (compat == null) return (null, null);
-                var note = "The DEmul team's list (" + DemulCompat.Date + "): " + compat.Meaning + "."
+                if (compat != null)
+                {
+                    note = "The DEmul team's list (" + DemulCompat.Date + "): " + compat.Meaning + "."
                            + (DemulCompat.BiosText(compat.Bios) is string bios ? "\nWants " + bios + "." : "");
-                if (compat.Game) return (string.IsNullOrEmpty(compat.Notes) ? "perfect" : "playable", note);
-                return ("nostart", note);
+                    level = compat.Game ? (string.IsNullOrEmpty(compat.Notes) ? "perfect" : "playable") : "nostart";
+                }
+                return (Join(block, level), Join(blockNote, note, "\n"));
             }
             catch (Exception ex) { Log.Warn("LaunchWith.Level", ex); return (null, null); }
         }
+
+        private static string Join(string a, string b, string between = ";")
+            => a == null ? b : b == null ? a : a + between + b;
 
         private static bool HasGdRom(DemulSet set, string rom, string emuDir)
         {

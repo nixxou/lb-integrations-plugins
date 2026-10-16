@@ -108,7 +108,9 @@ namespace LbIntegrations.Menus.LaunchWith
             Tip(mi, seen, verdict?.Note);
             if (raw != null && badge != null)
             {
-                mi.Header = Badged(seen.Original, raw, badge, Brush(Labels.BadgeText) ?? Brushes.Black);
+                var badges = new List<(string, Brush)> { (raw, badge) };
+                foreach (var more in verdict.More) badges.Add((more.Text, Brush(more.Color) ?? badge));
+                mi.Header = Badged(seen.Original, badges, Brush(Labels.BadgeText) ?? Brushes.Black);
                 return true;
             }
             var wanted = WithLabel(seen.Original, raw == null ? null : Labels.Format.Replace("{label}", raw));
@@ -135,20 +137,21 @@ namespace LbIntegrations.Menus.LaunchWith
         /// <summary>"Nixx-bsnes" [Perfect] "...": the name as LaunchBox wrote it (AccessText keeps its access
         /// key), a rounded badge in the label's colour, then LaunchBox's trailing ellipsis. The badge colours are
         /// light and its text dark, measured against LaunchBox's dark menu (README, "Badge colours").</summary>
-        private static object Badged(string original, string label, Brush background, Brush text)
+        private static object Badged(string original, List<(string Label, Brush Background)> badges, Brush text)
         {
             var core = original.TrimEnd('.', '…');
             var panel = new StackPanel { Orientation = Orientation.Horizontal };
             panel.Children.Add(new AccessText { Text = core, VerticalAlignment = VerticalAlignment.Center });
-            panel.Children.Add(new Border
-            {
-                Background = background,
-                CornerRadius = new CornerRadius(3),
-                Padding = new Thickness(6, 0, 6, 1),
-                Margin = new Thickness(8, 0, 0, 0),
-                VerticalAlignment = VerticalAlignment.Center,
-                Child = new TextBlock { Text = label, Foreground = text, FontWeight = FontWeights.SemiBold },
-            });
+            for (int i = 0; i < badges.Count; i++)
+                panel.Children.Add(new Border
+                {
+                    Background = badges[i].Background,
+                    CornerRadius = new CornerRadius(3),
+                    Padding = new Thickness(6, 0, 6, 1),
+                    Margin = new Thickness(i == 0 ? 8 : 4, 0, 0, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Child = new TextBlock { Text = badges[i].Label, Foreground = text, FontWeight = FontWeights.SemiBold },
+                });
             if (core.Length < original.Length)
                 panel.Children.Add(new TextBlock { Text = original.Substring(core.Length), VerticalAlignment = VerticalAlignment.Center });
             return panel;

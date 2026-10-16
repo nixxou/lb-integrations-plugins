@@ -202,7 +202,14 @@ namespace LbIntegrations.Ares
                     if (m.Best) line.Font = new Font(Font, FontStyle.Bold);
                     LbipHint.Attach(line, e.Title + " - found by " + m.How + "." + (e.Issues > 0 ? " " + e.Issues + " GitHub issue(s)." : ""));
                     lines.Controls.Add(line);
+                    // Its GitHub issues, as the site links them (16/10): one link each, under its line.
+                    foreach (var issue in e.IssueList.Take(5))
+                        lines.Controls.Add(Link("#" + issue.Number + " " + issue.Title, AresCompatEntry.IssuesUrl + issue.Number, new Padding(18, 0, 0, 1)));
+                    if (e.IssueList.Count > 5)
+                        lines.Controls.Add(Link("and " + (e.IssueList.Count - 5) + " more on ares-emu.net", AresCompat.PageOf(e), new Padding(18, 0, 0, 1)));
                 }
+                // The game on the site, its system's page searched for its title.
+                if (matches.Count > 0) lines.Controls.Add(Link("On ares-emu.net", AresCompat.PageOf(matches[0].Entry), new Padding(3, 4, 0, 2)));
                 if (matches.Count > Shown)
                     lines.Controls.Add(new Label { AutoSize = true, Margin = new Padding(3, 1, 0, 4), UseMnemonic = false, ForeColor = SystemColors.GrayText, Text = "and " + (matches.Count - Shown) + " more" });
                 LbipHint.Attach(lines, "ares-emu.net/compatibility.");
@@ -585,6 +592,18 @@ namespace LbIntegrations.Ares
         private static Color CompatColor(string status)
             => status == "Completable" ? Color.FromArgb(0x3C, 0xB3, 0x71) : status == "In-Game" ? Color.FromArgb(0xDE, 0x96, 0x00)
              : status == "Starts" ? Color.FromArgb(0xE0, 0x6C, 0x20) : status == "Nothing" ? Color.FromArgb(0xCD, 0x2D, 0x2D) : SystemColors.GrayText;
+
+        private static LinkLabel Link(string text, string url, Padding margin)
+        {
+            var link = new LinkLabel { Text = text, AutoSize = true, MaximumSize = new Size(500, 0), Margin = margin, UseMnemonic = false };
+            link.LinkClicked += (_, _) =>
+            {
+                try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }
+                catch (Exception ex) { Log.Warn("could not open " + url, ex); }
+            };
+            LbipHint.Attach(link, url);
+            return link;
+        }
 
         private static T Safe<T>(Func<T> get) { try { return get(); } catch { return default; } }
     }

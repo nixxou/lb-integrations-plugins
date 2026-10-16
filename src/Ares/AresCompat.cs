@@ -34,6 +34,11 @@ namespace LbIntegrations.Ares
         public string Slug, Title, Status, Version, Notes;
         public bool Unverified;
         public int Issues;
+        /// <summary>The GitHub issues the site links to the game (its "GitHub Issues" column opens them): number and title.
+        /// Empty in a list fetched before 16/10 - only their count was kept then.</summary>
+        public List<(int Number, string Title)> IssueList = new List<(int, string)>();
+
+        public const string IssuesUrl = "https://github.com/ares-emulator/ares/issues/";
 
         internal string Key;   // its CompareName (AresCompat.Key)
 
@@ -126,7 +131,8 @@ namespace LbIntegrations.Ares
                 if (line.Length == 0 || line.StartsWith("#")) continue;
                 var f = line.Split('\t');
                 if (f.Length < 7) continue;
-                entries.Add(new AresCompatEntry { Slug = f[0], Title = f[1], Status = f[2], Unverified = f[3] == "1", Version = f[4], Notes = f[5], Issues = int.TryParse(f[6], out var n) ? n : 0 });
+                entries.Add(new AresCompatEntry { Slug = f[0], Title = f[1], Status = f[2], Unverified = f[3] == "1", Version = f[4], Notes = f[5], Issues = int.TryParse(f[6], out var n) ? n : 0,
+                                                  IssueList = f.Length > 7 ? ParseIssues(f[7]) : new List<(int, string)>() });
             }
             var bySlug = new Dictionary<string, List<AresCompatEntry>>(StringComparer.Ordinal);
             foreach (var e in entries)
@@ -138,6 +144,9 @@ namespace LbIntegrations.Ares
             // _entries last: Load's check outside the lock reads it, and FindAll then reads _bySlug - set before it, never seen null.
             _bySlug = bySlug; _when = when; _entries = entries;
         }
+
+        /// <summary>A line's game on the site: its system's page, searched for its title (the page's own search, ?search=).</summary>
+        public static string PageOf(AresCompatEntry e) => Site + e.Slug + "?status=-1&search=" + Uri.EscapeDataString(e.Title ?? "");
 
         /// <summary>The list in memory, as an identity: another object once the list is read again (Refresh) - what the
         /// "Launch With" verdicts (AresLaunchWith) keep theirs by.</summary>
@@ -379,10 +388,11 @@ namespace LbIntegrations.Ares
                 }
             }
             var sb = new StringBuilder();
-            sb.Append("# ares compatibility list, from ").Append(Site).Append(" - slug, title, status, unverified, version, notes, issues\n");
+            sb.Append("# ares compatibility list, from ").Append(Site).Append(" - slug, title, status, unverified, version, notes, issues, the issues (number:title, ").Append(IssueSeparator).Append(" between)\n");
             sb.Append("# fetched ").Append(DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)).Append('\n');
             foreach (var e in entries.GroupBy(e => e.Slug + "\t" + e.Title).Select(g => g.First()))
-                sb.Append(string.Join("\t", e.Slug, e.Title, e.Status, e.Unverified ? "1" : "0", e.Version, e.Notes, e.Issues.ToString(CultureInfo.InvariantCulture))).Append('\n');
+                sb.Append(string.Join("\t", e.Slug, e.Title, e.Status, e.Unverified ? "1" : "0", e.Version, e.Notes, e.Issues.ToString(CultureInfo.InvariantCulture),
+                                      string.Join(IssueSeparator, e.IssueList.Select(i => i.Number.ToString(CultureInfo.InvariantCulture) + ":" + i.Title)))).Append('\n');
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)));
             var tmp = path + ".part";
             File.WriteAllText(tmp, sb.ToString(), new UTF8Encoding(false));
@@ -397,6 +407,42 @@ namespace LbIntegrations.Ares
             var s = Regex.Replace(html ?? "", "<[^>]+>", " ");
             s = WebUtility.HtmlDecode(s);
             return Regex.Replace(s, @"\s+", " ").Trim();
+        }
+
+        /// <summary>Between two issues in the file's last column - a character no issue title has.</summary>
+        private const string IssueSeparator = " \u00A6 ";
+
+        private static List<(int, string)> ParseIssues(string s)
+        {
+            var list = new List<(int, string)>();
+            foreach (var part in (s ?? "").Split(new[] { IssueSeparator }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var colon = part.IndexOf(':');
+                if (colon > 0 && int.TryParse(part.Substring(0, colon), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n)) list.Add((n, part.Substring(colon + 1).Trim()));
+            }
+            return list;
+        }
+
+        /// <summary>A row's issues: its count cell opens a dialog (data-bs-target="#issues_N") written right after the row, a
+        /// link per issue - https://github.com/ares-emulator/ares/issues/124, "124 - [N64] AI Shougi 3 (J): No voice clips".</summary>
+        private static List<(int, string)> IssuesOf(string html, string row)
+        {
+            var list = new List<(int, string)>();
+            var target = Regex.Match(row, "data-bs-target=\"#(issues_[0-9]+)\"");
+            if (!target.Success) return list;
+            var at = html.IndexOf("id=\"" + target.Groups[1].Value + "\"", StringComparison.Ordinal);
+            if (at < 0) return list;
+            var end = html.IndexOf("</ul>", at, StringComparison.Ordinal);
+            var block = end < 0 ? html.Substring(at) : html.Substring(at, end - at);
+            foreach (Match a in Regex.Matches(block, "<a href=\"https://github\\.com/ares-emulator/ares/issues/([0-9]+)\"[^>]*>(.*?)</a>", RegexOptions.Singleline))
+            {
+                var n = int.Parse(a.Groups[1].Value, CultureInfo.InvariantCulture);
+                var title = Clean(a.Groups[2].Value).Replace('\t', ' ').Replace("\u00A6", "|");
+                var prefix = n.ToString(CultureInfo.InvariantCulture) + " - ";
+                if (title.StartsWith(prefix, StringComparison.Ordinal)) title = title.Substring(prefix.Length);
+                list.Add((n, title));
+            }
+            return list;
         }
 
         private static IEnumerable<AresCompatEntry> Rows(string html, string slug)
@@ -415,6 +461,7 @@ namespace LbIntegrations.Ares
                     Unverified = spans.Any(s => s.Equals("Unverified", StringComparison.OrdinalIgnoreCase)) || cells[1].IndexOf("Unverified", StringComparison.OrdinalIgnoreCase) >= 0,
                     Version = Clean(cells[2]), Notes = Clean(cells[3]).Replace('\t', ' '),
                     Issues = cells.Count > 4 && int.TryParse(Clean(cells[4]), out var n) ? n : 0,
+                    IssueList = IssuesOf(html, tr.Value),
                 };
             }
         }

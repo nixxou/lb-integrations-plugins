@@ -10,7 +10,9 @@
 //              string Level(IGame game, string emulatorPath)
 //
 //      emulatorPath as LaunchBox stores it (relative to its root, or full). The answer is one of the keys of Scale - "missing"
-//      followed by what is missing: "missing:CHD", "missing:BIOS", "missing:file" - or null:
+//      followed by what is missing: "missing:CHD", "missing:BIOS", "missing:file" - or several, ';' between, each a badge
+//      of its own: "missing:CHD;perfect" (Mehdi, 16/10: what keeps the game from starting, then how it runs once it does) -
+//      or null:
 //      "this emulator is not mine", or "nothing to say" - the line is then left as LaunchBox wrote it. Called on every
 //      opening of the menu, for each line: it must answer from memory or from a cache.
 //      Optional beside it (Mehdi, 16/10: "un petit tooltip avec les éventuels commentaires"):
@@ -41,6 +43,8 @@ namespace LbIntegrations.Menus.LaunchWith
     internal sealed class Verdict
     {
         public string Text, Color, Source, Note;
+        /// <summary>The badges after the first ("missing:CHD;perfect": Perfect), in order.</summary>
+        public List<(string Text, string Color)> More = new List<(string, string)>();
     }
 
     internal static class Labels
@@ -76,14 +80,27 @@ namespace LbIntegrations.Menus.LaunchWith
             if (raw != null) return new Verdict { Text = raw, Color = Table.ColorFor(raw) ?? Scale.FirstOrDefault(s => s.Text.Equals(raw, StringComparison.OrdinalIgnoreCase)).Color, Source = "emu-labels.json" };
             var (level, who, note) = Providers.Ask(game, Safe(() => emulator.ApplicationPath));
             if (level == null) return null;
-            // "missing:CHD" -> "Missing CHD": the level's word, then what the plugin says is missing (a word or two, kept short).
+            Verdict verdict = null;
+            foreach (var part in level.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var badge = Badge(part.Trim());
+                if (badge.Text == null) { Log.Info(who + " answered \"" + part + "\", not a level of the scale: left alone"); continue; }
+                if (verdict == null) verdict = new Verdict { Text = badge.Text, Color = badge.Color, Source = who, Note = note };
+                else verdict.More.Add(badge);
+            }
+            return verdict;
+        }
+
+        /// <summary>"missing:CHD" -> ("Missing CHD", its colour): the level's word, then what the plugin says is missing (a word or
+        /// two, kept short). (null, null) for a word that is not of the scale.</summary>
+        private static (string Text, string Color) Badge(string level)
+        {
             var colon = level.IndexOf(':');
             var key = colon < 0 ? level : level.Substring(0, colon);
             var what = colon < 0 ? null : level.Substring(colon + 1).Trim();
             if (what != null && what.Length > 16) what = what.Substring(0, 16);
             var step = Scale.FirstOrDefault(s => s.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
-            if (step.Key == null) { Log.Info(who + " answered \"" + level + "\", not a level of the scale: left alone"); return null; }
-            return new Verdict { Text = string.IsNullOrEmpty(what) ? step.Text : step.Text + " " + what, Color = step.Color, Source = who, Note = note };
+            return step.Key == null ? (null, null) : (string.IsNullOrEmpty(what) ? step.Text : step.Text + " " + what, step.Color);
         }
 
         private static string Safe(Func<string> f) { try { return f(); } catch { return null; } }
