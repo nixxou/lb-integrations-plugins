@@ -343,15 +343,7 @@ namespace LbIntegrations.Compat
             return missing.Count == 0 ? (CompatCheckState.Ok, family + "'s integration: " + string.Join(", ", names)) : (CompatCheckState.Missing, string.Join(", ", missing));
         }
 
-        internal static Version? LaunchBoxVersion()
-        {
-            try
-            {
-                var fv = FileVersionInfo.GetVersionInfo(Path.Combine(AppContext.BaseDirectory, "LaunchBox.dll"));
-                return new Version(fv.FileMajorPart, fv.FileMinorPart, fv.FileBuildPart, fv.FilePrivatePart);
-            }
-            catch { return null; }
-        }
+        internal static Version? LaunchBoxVersion() => LbHostShape.LaunchBoxVersion();
 
         /// <summary>A game with a platform, a path and a command line, nothing else - for RetroArch's folder function.</summary>
         public class StubGame : DispatchProxy
