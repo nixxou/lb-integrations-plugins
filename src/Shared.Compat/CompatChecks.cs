@@ -300,10 +300,9 @@ namespace LbIntegrations.Compat
             var (t, form) = LbHostShape.Native(n.Assembly, n.Type);
             if (form == LbForm.NotLoaded) return (CompatCheckState.NotHere, n.Type + ": its LaunchBox integration is not loaded");
             if (t == null) return (CompatCheckState.Missing, n.Type + " is gone from " + n.Assembly);
+            // LaunchBox 14.1 routes a v2 integration's saves itself (measured 16/10): not hooked, nothing to check.
             if (form == LbForm.V2)
-                return (CompatCheckState.Missing, n.Type + " is a v2 integration (LaunchBox 14.1)"
-                        + (LbHostShape.Implements(t, LbHostShape.V2SaveCapability) ? " with IEmulatorSaveCapability" : " without save support")
-                        + ": the pack does not hook v2 integrations yet");
+                return (CompatCheckState.Ok, n.Type + ": a v2 integration (LaunchBox 14.1) - LaunchBox routes its saves itself, the pack does not hook it");
             if (form != LbForm.V1) return (CompatCheckState.Missing, n.Type + ": " + FormName(form));
             var own = new List<string>(); var sdk = new List<string>(); var gone = new List<string>();
             foreach (var name in SaveMethods)
@@ -330,7 +329,7 @@ namespace LbIntegrations.Compat
                 var (t, form) = LbHostShape.Native(n.Assembly, n.Type);
                 if (form == LbForm.NotLoaded) continue;
                 if (t == null) { changed.Add(n.Type + " gone from " + n.Assembly); continue; }
-                if (form == LbForm.V2) { v2.Add(n.Type); continue; }
+                if (form == LbForm.V2) { plain.Add(n.Type + " (v2, routed by LaunchBox 14.1)"); continue; }
                 if (form != LbForm.V1) { changed.Add(n.Type + " (" + FormName(form) + ")"); continue; }
                 var own = SaveMethods.Where(name =>
                 {
@@ -356,6 +355,8 @@ namespace LbIntegrations.Compat
             var (t, form) = LbHostShape.Native(n.Assembly, n.Type);
             if (form == LbForm.NotLoaded) return (CompatCheckState.NotHere, n.Type + ": its LaunchBox integration is not loaded");
             if (t == null) return (CompatCheckState.Missing, n.Type + " is gone from " + n.Assembly);
+            // LaunchBox 14.1 restores to the save's own emulator (measured 16/10): the statics are not called there.
+            if (form == LbForm.V2) return (CompatCheckState.Ok, n.Type + ": a v2 integration (LaunchBox 14.1), which restores to the right emulator itself - not called");
             var missing = NativeStatics.Missing(t, wanted);
             return missing.Count == 0
                 ? (CompatCheckState.Ok, n.Type + ": " + string.Join(", ", wanted.Select(w => w.Name)))

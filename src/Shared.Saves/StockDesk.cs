@@ -132,12 +132,53 @@ namespace LbIntegrations.Saves
             catch { }
         }
 
+        /// <summary>LaunchBox 14.1: the cards of its integrations back to their own ids, once per process, as soon as the
+        /// library is loaded - before LaunchBox's start-up scan hands them to a v2 integration that knows nothing of ours
+        /// (a library that ran the pack under 14.0 holds them in our form). EnsureIds does it: nothing is hooked, so no
+        /// integration is "ours" and every card is given back.</summary>
+        private static void GiveIdsBackSoon()
+        {
+            if (!SaveRouter.LaunchBoxHost) return;
+            lock (string.Intern(Marker + "|v2back"))
+            {
+                if (AppDomain.CurrentDomain.GetData(Marker + "|v2back") is true) return;
+                AppDomain.CurrentDomain.SetData(Marker + "|v2back", true);
+            }
+            new System.Threading.Thread(() =>
+            {
+                for (int i = 0; i < 240; i++)
+                {
+                    try
+                    {
+                        var dm = PluginHelper.DataManager;
+                        if (dm != null && (dm.GetAllGames()?.Length ?? 0) > 0) { EnsureIds(null); return; }
+                    }
+                    catch { }
+                    System.Threading.Thread.Sleep(250);
+                }
+                SaveRouter.Say("[stock] ids: the library was not loaded within a minute - given back at the first listing");
+            }) { IsBackground = true, Name = "lbip-v2-ids-back" }.Start();
+        }
+
         private static void TryPatch(Assembly a)
         {
             if (a.IsDynamic) return;
             var name = a.GetName().Name ?? "";
             var entry = Integrations.FirstOrDefault(i => string.Equals(i.Assembly, name, StringComparison.OrdinalIgnoreCase));
             if (entry.Type == null) return;
+            // LaunchBox 14.1 (docs\lb141-plan.md, step 4): its integrations are v2 and LaunchBox routes their saves itself
+            // (Launch With, restore to the save's emulator, a version on its own file - measured 16/10). Nothing hooked;
+            // their cards get their own ids back, so the v2 integration never sees ours.
+            if (LbIntegrations.Compat.LbHostShape.Native(entry.Assembly, entry.Type).Form == LbIntegrations.Compat.LbForm.V2)
+            {
+                if (AppDomain.CurrentDomain.GetData(Marker + "|v2|" + entry.Emu) is not true)
+                {
+                    AppDomain.CurrentDomain.SetData(Marker + "|v2|" + entry.Emu, true);
+                    SaveRouter.Say("[stock] " + entry.Emu + ": a v2 integration (LaunchBox 14.1), which routes its saves itself - not hooked");
+                }
+                GiveIdsBackSoon();
+                return;
+            }
             var type = a.GetType(entry.Assembly + "." + entry.Type.Replace("Plugin", "") + "." + entry.Type, false)
                        ?? SafeTypes(a).FirstOrDefault(t => t.Name == entry.Type && typeof(EmulatorPlugin).IsAssignableFrom(t));
             if (type == null) { SaveRouter.Say("[stock] " + entry.Type + " not found in " + name + " - not hooked"); return; }
