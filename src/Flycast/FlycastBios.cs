@@ -87,6 +87,15 @@ namespace LbIntegrations.Flycast
             if (Is(name, FlycastPlatforms.Atomiswave))
                 return new[] { Zip("awbios.zip", "Atomiswave BIOS - needed by every Atomiswave title", required: true) };
 
+            // The catch-all arcade platform: every board's, none required - most of its games are not Flycast's.
+            if (FlycastPlatforms.IsArcadeCatchAll(name))
+                return new[]
+                {
+                    Zip("naomi.zip",  "Naomi BIOS - for Flycast's Naomi sets",           required: false),
+                    Zip("naomi2.zip", "Naomi 2 BIOS - for Flycast's Naomi 2 sets",       required: false),
+                    Zip("awbios.zip", "Atomiswave BIOS - for Flycast's Atomiswave sets", required: false),
+                };
+
             return Array.Empty<EmulatorBiosFile>();
         }
 

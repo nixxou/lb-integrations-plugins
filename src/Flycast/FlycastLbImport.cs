@@ -148,7 +148,10 @@ namespace LbIntegrations.Flycast
 
                 var platform = Get(_platformPage, "Platform");
                 var scrapeAs = Get(_platformPage, "ScrapeAs");
-                var system = FlycastPlatforms.SystemOf(platform) ?? FlycastPlatforms.SystemOf(scrapeAs);
+                // "Arcade" (Mehdi, 17/10): a MAME folder imported to the catch-all platform keeps the sets of every arcade
+                // board Flycast runs. Only the list is sorted - the MAME pages keep LaunchBox's choices (SystemOf: null).
+                var system = FlycastPlatforms.SystemOf(platform) ?? FlycastPlatforms.SystemOf(scrapeAs)
+                             ?? (FlycastPlatforms.IsArcadeCatchAll(platform) || FlycastPlatforms.IsArcadeCatchAll(scrapeAs) ? AnyArcade : null);
                 if (system == null) return;
                 bool quick = FlycastSettings.QuickCheck(system), crc = FlycastSettings.CrcCheck(system);
                 if (!quick && !crc) { Log.Info("[import] " + system + ": no check ticked in the settings - the list is left as it is"); return; }
@@ -465,6 +468,15 @@ namespace LbIntegrations.Flycast
 
         /// <summary>The quick check - a verdict by name or extension. A drop the content may overturn (an unknown
         /// name, when only the CRC check is on) starts with "?".</summary>
+        /// <summary>The import's "system" for the catch-all arcade platform: any arcade board of Flycast's.</summary>
+        internal const string AnyArcade = "Arcade";
+
+        /// <summary>A set of this board belongs to the import: the same board, or any arcade one for "Arcade".</summary>
+        private static bool Fits(string setSystem, string system)
+            => system == AnyArcade ? !string.Equals(setSystem, "Dreamcast", StringComparison.OrdinalIgnoreCase)
+                                     && !string.Equals(setSystem, FlycastGameIdentity.BiosSystem, StringComparison.OrdinalIgnoreCase)
+                                   : string.Equals(setSystem, system, StringComparison.OrdinalIgnoreCase);
+
         private static void Quick(Finding f, string system, Dictionary<string, FlycastGameIdentity.ArcadeSet> sets)
         {
             var ext = (Path.GetExtension(f.Path) ?? "").ToLowerInvariant();
@@ -473,13 +485,13 @@ namespace LbIntegrations.Flycast
                 if (!Discs.Contains(ext)) f.Drop = "not a Dreamcast disc Flycast reads (" + (ext.Length > 0 ? ext : "no extension") + ")";
                 return;
             }
-            if (Decrypted.Contains(ext)) { if (system != "Naomi") f.Drop = "a decrypted Naomi rom, not " + system; return; }
+            if (Decrypted.Contains(ext)) { if (system != "Naomi" && system != AnyArcade) f.Drop = "a decrypted Naomi rom, not " + system; return; }
             if (!Archives.Contains(ext)) { f.Drop = "not an arcade set (" + (ext.Length > 0 ? ext : "no extension") + ")"; return; }
             var name = Path.GetFileNameWithoutExtension(f.Path);
             if (!sets.TryGetValue(name, out var set)) { f.Drop = "?" + UnknownName; return; }
             f.Set = set;
             if (set.System == FlycastGameIdentity.BiosSystem) { f.Drop = "a BIOS, not a game - Flycast wants it in its data folder"; return; }
-            if (!string.Equals(set.System, system, StringComparison.OrdinalIgnoreCase))
+            if (!Fits(set.System, system))
             { f.Drop = (set.System.StartsWith("A") ? "an " : "a ") + set.System + " set, not " + system; return; }
             if (set.GdRom != null && FlycastGameIdentity.GdRomImage(f.Path, set) == null) f.NoGdRom = true;
         }
@@ -534,7 +546,7 @@ namespace LbIntegrations.Flycast
                                 if (!found.TryGetValue(f.Path, out var id)) continue;
                                 if (f.Set != null && f.Drop == null && !id.OwnWhole) f.Drop = "not every file of " + f.Set.Name + " is there";
                                 else if (f.Set == null && id.BestWhole && sets.TryGetValue(id.Best, out var real)
-                                         && string.Equals(real.System, system, StringComparison.OrdinalIgnoreCase))
+                                         && Fits(real.System, system))
                                 {
                                     f.Rename = id.Best;
                                     f.Drop = "it is " + id.Best + " by its files: Flycast finds a set by its name - rename it " + id.Best + Path.GetExtension(f.Path);

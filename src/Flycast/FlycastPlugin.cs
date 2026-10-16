@@ -33,6 +33,15 @@ namespace LbIntegrations.Flycast
 
         public static readonly string[] All = { Dreamcast, Naomi, Naomi2, Atomiswave };
 
+        /// <summary>LaunchBox's catch-all arcade platform (Mehdi, 17/10): a whole MAME folder filed under one platform holds
+        /// Flycast's sets among the others. Supported, never recommended nor the default - MAME is - and a set Flycast does
+        /// not know is simply one it does not run. Flycast needs no platform to start a set: it finds the board by the
+        /// file's name (naomi_cart.cpp, FindGame).</summary>
+        public const string Arcade = "Arcade";
+
+        public static bool IsArcadeCatchAll(string platform)
+            => string.Equals((platform ?? "").Trim(), Arcade, StringComparison.InvariantCultureIgnoreCase);
+
         /// <summary>SEGA SYSTEM SP has no platform in LaunchBox's metadata, so a user makes one - named as they
         /// like (Mehdi, 29/09): ANY platform whose name holds "system sp", whatever the case, is it.</summary>
         public static bool IsSystemSp(string platform)
@@ -42,7 +51,7 @@ namespace LbIntegrations.Flycast
         /// platform of the library that is a System SP one. Never throws.</summary>
         public static List<string> Wanted()
         {
-            var names = new List<string>(All);
+            var names = new List<string>(All) { Arcade };
             try
             {
                 foreach (var p in PluginHelper.DataManager?.GetAllPlatforms() ?? Array.Empty<IPlatform>())
@@ -216,6 +225,8 @@ namespace LbIntegrations.Flycast
                     new LbCatalogPlatform { Platform = FlycastPlatforms.Atomiswave,
                                           ApplicableFileExtensions = arcadeExtensions,
                                           RequiredBiosFile = "awbios.zip" },
+                    new LbCatalogPlatform { Platform = FlycastPlatforms.Arcade,
+                                          ApplicableFileExtensions = arcadeExtensions },
                 },
             };
         }
@@ -319,7 +330,7 @@ namespace LbIntegrations.Flycast
         public override EmulatorSupportResponse IsPlatformSupported(string platform)
         {
             var name = (platform ?? "").Trim();
-            bool supported = FlycastPlatforms.IsOurs(name);
+            bool supported = FlycastPlatforms.IsOurs(name) || FlycastPlatforms.IsArcadeCatchAll(name);
             bool recommended = string.Equals(name, FlycastPlatforms.Dreamcast,
                                              StringComparison.InvariantCultureIgnoreCase);
             Log.Verbose("IsPlatformSupported(\"" + platform + "\") -> " + supported
@@ -629,8 +640,8 @@ namespace LbIntegrations.Flycast
                 // headed "Default Emulator". Setting it on one platform only left the other three as
                 // rows LaunchBox pruned when the dialog saved: of the four we created, only the one
                 // carrying IsDefault survived. Every platform we claim gets it, which is also what
-                // Unbroken's own example does and what the PPSSPP and Xenia plugins already did.
-                platform.IsDefault = true;
+                // Unbroken's own example does and what the PPSSPP and Xenia plugins already did. Not Arcade: MAME's.
+                platform.IsDefault = !FlycastPlatforms.IsArcadeCatchAll(name);
                 added.Add(name);
             }
 

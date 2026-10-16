@@ -74,6 +74,7 @@ namespace LbIntegrations.Demul
                     new LbCatalogPlatform { Platform = DemulPlatforms.Naomi2, ApplicableFileExtensions = ArcadeExtensions, RequiredBiosFile = "naomi2.zip" },
                     new LbCatalogPlatform { Platform = DemulPlatforms.Atomiswave, ApplicableFileExtensions = ArcadeExtensions, RequiredBiosFile = "awbios.zip" },
                     new LbCatalogPlatform { Platform = DemulPlatforms.Hikaru, ApplicableFileExtensions = ArcadeExtensions, RequiredBiosFile = "hikaru.zip", Recommended = true },
+                    new LbCatalogPlatform { Platform = DemulPlatforms.Arcade, ApplicableFileExtensions = ArcadeExtensions },
                 },
             };
         }
@@ -162,9 +163,9 @@ namespace LbIntegrations.Demul
 
         public override EmulatorSupportResponse IsPlatformSupported(string platform)
         {
-            bool supported = DemulPlatforms.IsOurs(platform);
-            Log.Verbose("IsPlatformSupported(\"" + platform + "\") -> " + supported);
-            return new EmulatorSupportResponse(supported, supported);
+            bool ours = DemulPlatforms.IsOurs(platform), arcade = DemulPlatforms.IsArcadeCatchAll(platform);
+            Log.Verbose("IsPlatformSupported(\"" + platform + "\") -> " + (ours || arcade) + (arcade ? " (supported, not recommended)" : ""));
+            return new EmulatorSupportResponse(ours || arcade, ours);
         }
 
         // ── versions ─────────────────────────────────────────────────────────
@@ -299,6 +300,16 @@ namespace LbIntegrations.Demul
             var system = DemulPlatforms.SystemOf(platform);
             if (DemulPlatforms.IsDreamcast(platform)) return new[] { Zip("dc.zip", "Dreamcast BIOS - Demul has no built-in BIOS") };
             if (DemulPlatforms.IsSystemSp(platform)) return new[] { Zip("segasp.zip", "System SP BIOS"), Zip("naomi.zip", "Naomi BIOS") };
+            // The catch-all arcade platform: every board's, none required - most of its games are not Demul's.
+            if (DemulPlatforms.IsArcadeCatchAll(platform))
+                return new[]
+                {
+                    Zip("naomi.zip", "Naomi BIOS - for Demul's Naomi and System SP sets", required: false),
+                    Zip("naomi2.zip", "Naomi 2 BIOS - for Demul's Naomi 2 sets", required: false),
+                    Zip("awbios.zip", "Atomiswave BIOS - for Demul's Atomiswave sets", required: false),
+                    Zip("hikaru.zip", "Hikaru BIOS - for Demul's Hikaru sets", required: false),
+                    Zip("segasp.zip", "System SP BIOS - for Demul's System SP sets", required: false),
+                };
             if (string.Equals((platform ?? "").Trim(), DemulPlatforms.Naomi2, StringComparison.InvariantCultureIgnoreCase))
                 return new[] { Zip("naomi2.zip", "Naomi 2 BIOS") };
             return system switch
@@ -333,14 +344,19 @@ namespace LbIntegrations.Demul
                 if (string.IsNullOrWhiteSpace(exe) || !IsDemul(exe)) return new PrepareForLaunchResponse(success: true);
                 var rom = ResolveFullPath(Safe(() => args?.GameBeingLaunched?.ApplicationPath));
                 var platform = Safe(() => args?.GameBeingLaunched?.Platform);
-                var system = DemulPlatforms.SystemOf(platform);
+                // On "Arcade", the board is the set's own (17/10).
+                var board = DemulPlatforms.BoardOf(platform, rom);
+                var system = DemulPlatforms.IsArcadeCatchAll(platform) ? DemulPlatforms.SystemOfBoard(board) : DemulPlatforms.SystemOf(platform);
+                if (system == null && DemulPlatforms.IsArcadeCatchAll(platform))
+                    return Refuse("\"" + Path.GetFileNameWithoutExtension(rom ?? "") + "\" is not a game set of the boards Demul runs "
+                                  + "(Naomi, Naomi 2, Atomiswave, Hikaru, System SP, CV1000, Gaelco), so Demul can't start it from the Arcade platform.");
                 if (system == null)
                     return Refuse("Demul doesn't know which system to start for the platform \"" + platform + "\".\n\n"
                                   + "Name the platform with \"System SP\", \"CV1000\" or \"Gaelco\" in it for those boards.");
                 if (string.IsNullOrWhiteSpace(rom)) return Refuse("No game was given to Demul.");
 
                 // Its BIOS set, looked for once more when roms\ does not have it: one added to the library since the install.
-                var bios = DemulBios.For(system, DemulPlatforms.BoardOf(platform));
+                var bios = DemulBios.For(system, board);
                 if (bios != null) DemulBios.Import(Path.GetDirectoryName(exe), new[] { bios });
 
                 // A Dreamcast CHD Demul cannot read (a zstd one: its reader crashes) handed over uncompressed - served where it

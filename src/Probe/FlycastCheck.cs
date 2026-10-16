@@ -609,7 +609,7 @@ namespace LbIntegrations.Probe
 
             events.OnEventRaised(SystemEventTypes.LaunchBoxStartupCompleted);
             var platforms = emu.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>();
-            bool swept = platforms.Length == 4;
+            bool swept = platforms.Length == 5;   // the four of the metadata and Arcade (not its default)
             Console.WriteLine("  platforms after the startup event : "
                               + string.Join(", ", platforms.Select(p => p.Platform)));
             Console.WriteLine("  the startup event completes the entry unasked   " + (swept ? "OK" : "FAIL"));
@@ -630,17 +630,18 @@ namespace LbIntegrations.Probe
 
             var platforms = emu.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>();
             var names = platforms.Select(p => p.Platform).OrderBy(n => n, StringComparer.Ordinal).ToList();
-            var expected = new[] { "Sammy Atomiswave", "Sega Dreamcast", "Sega Naomi", "Sega Naomi 2" }
+            var expected = new[] { "Arcade", "Sammy Atomiswave", "Sega Dreamcast", "Sega Naomi", "Sega Naomi 2" }
                            .OrderBy(n => n, StringComparer.Ordinal).ToList();
 
             Console.WriteLine("  platforms : " + string.Join(", ", names));
             bool ok = names.SequenceEqual(expected, StringComparer.Ordinal);
-            Console.WriteLine("  a hand-made entry is completed with the four platforms   " + (ok ? "OK" : "FAIL"));
+            Console.WriteLine("  a hand-made entry is completed with the four platforms and Arcade   " + (ok ? "OK" : "FAIL"));
 
             // IsDefault is per PLATFORM - "this emulator is the default emulator for it" - so every
             // platform we claim carries it. Setting it on one only made LaunchBox prune the others.
-            bool defaultOk = platforms.Length > 0 && platforms.All(p => p.IsDefault);
-            Console.WriteLine("  every platform marks Flycast as its default emulator   " + (defaultOk ? "OK" : "FAIL"));
+            // Arcade is the exception: MAME's platform, Flycast only runs some of its sets.
+            bool defaultOk = platforms.Length > 0 && platforms.All(p => p.IsDefault != (p.Platform == "Arcade"));
+            Console.WriteLine("  every platform but Arcade marks Flycast as its default emulator   " + (defaultOk ? "OK" : "FAIL"));
 
             bool cmdOk = !string.IsNullOrWhiteSpace(emu.CommandLine);
             Console.WriteLine("  an empty command line was filled   " + (cmdOk ? "OK" : "FAIL"));
@@ -676,11 +677,11 @@ namespace LbIntegrations.Probe
             var after = shaped.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>();
             var naomi = after.FirstOrDefault(p => p.Platform == "Sega Naomi");
             bool keptTheirs = naomi != null && naomi.IsDefault;
-            bool completed = after.Length == 4;
+            bool completed = after.Length == 5;   // the three others and Arcade
             bool keptCommandLine = shaped.CommandLine == "-config window:fullscreen=no";
             Console.WriteLine("  a filled row : " + string.Join(", ", after.Select(p => p.Platform + (p.IsDefault ? "*" : ""))));
             Console.WriteLine("  the platform they chose keeps its tick       " + (keptTheirs ? "OK" : "FAIL"));
-            Console.WriteLine("  the three Flycast also runs were added       " + (completed ? "OK" : "FAIL"));
+            Console.WriteLine("  the three Flycast also runs and Arcade were added   " + (completed ? "OK" : "FAIL"));
             Console.WriteLine("  their command line is left untouched         " + (keptCommandLine ? "OK" : "FAIL"));
             ok &= keptTheirs && completed && keptCommandLine;
 

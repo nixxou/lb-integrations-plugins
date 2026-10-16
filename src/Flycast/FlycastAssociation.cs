@@ -151,8 +151,8 @@ namespace LbIntegrations.Flycast
                     var platform = emu.AddNewEmulatorPlatform();
                     if (platform == null) continue;
                     platform.Platform = name;
-                    // See FlycastPlugin.EnsureEmulator: IsDefault is per PLATFORM, not per emulator.
-                    platform.IsDefault = true;
+                    // See FlycastPlugin.EnsureEmulator: IsDefault is per PLATFORM, not per emulator. Not Arcade: MAME's.
+                    platform.IsDefault = !FlycastPlatforms.IsArcadeCatchAll(name);
                     added.Add(name);
                 }
 

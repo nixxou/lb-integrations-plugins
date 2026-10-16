@@ -105,6 +105,12 @@ namespace LbIntegrations.Demul
             catch (Exception ex) { Log.Warn("[import] wizard opened", ex); }
         }
 
+        /// <summary>The import's "board" for the catch-all arcade platform: any arcade board of Demul's.</summary>
+        internal const string AnyArcade = "Arcade";
+
+        private static bool IsArcadeImport()
+            => DemulPlatforms.IsArcadeCatchAll(Get(_platformPage, "Platform")) || DemulPlatforms.IsArcadeCatchAll(Get(_platformPage, "ScrapeAs"));
+
         /// <summary>The board of the platform picked or scraped as, or null.</summary>
         private static string Board()
             => DemulPlatforms.BoardOf(Get(_platformPage, "Platform")) ?? DemulPlatforms.BoardOf(Get(_platformPage, "ScrapeAs"));
@@ -130,7 +136,9 @@ namespace LbIntegrations.Demul
                 if (name != GameListPage || ReferenceEquals(_filteredList, page)) return;
                 _filteredList = page;
 
-                var board = Board();
+                // "Arcade" (Mehdi, 17/10): a MAME folder imported to the catch-all platform keeps the sets of every board Demul
+                // runs. Only the list is sorted - the MAME pages keep LaunchBox's choices (Board(): null).
+                var board = Board() ?? (IsArcadeImport() ? AnyArcade : null);
                 if (board == null) return;
                 if (!DemulSettings.SortImport(board)) { Log.Info("[import] " + board + " import: sorting turned off in the Nixx window - the list is left as it is"); return; }
                 var exe = ChosenEmulator(wizard, out var where);
@@ -316,7 +324,7 @@ namespace LbIntegrations.Demul
             if (!Archives.Contains(ext)) { drop = "not an arcade set (" + (ext.Length > 0 ? ext : "no extension") + ")"; return; }
             if (!sets.TryGetValue(System.IO.Path.GetFileNameWithoutExtension(path), out set)) { drop = UnknownName; return; }
             if (set.Board == DemulSets.Bios) { drop = "a BIOS, not a game - it goes in Demul's roms folder"; return; }
-            if (!string.Equals(set.Board, board, StringComparison.OrdinalIgnoreCase))
+            if (board != AnyArcade && !string.Equals(set.Board, board, StringComparison.OrdinalIgnoreCase))
             { drop = (set.Board.StartsWith("A") ? "an " : "a ") + set.Board + " set, not " + board; return; }
             unknown = !set.Known;
         }

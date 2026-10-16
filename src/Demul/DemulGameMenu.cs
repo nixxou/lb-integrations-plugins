@@ -41,7 +41,9 @@ namespace LbIntegrations.Demul
                 if (dm == null || game == null) return false;
                 var own = string.IsNullOrWhiteSpace(game.EmulatorId) ? null : dm.GetEmulatorById(game.EmulatorId);
                 if (own != null && Settings.IsDemulExe(own.ApplicationPath)) return true;
-                if (!DemulPlatforms.IsOurs(game.Platform)) return false;
+                // On "Arcade", only a set of Demul's boards - not every game of a MAME library.
+                if (!DemulPlatforms.IsOurs(game.Platform)
+                    && !(DemulPlatforms.IsArcadeCatchAll(game.Platform) && DemulPlatforms.BoardOf(game.Platform, game.ApplicationPath) != null)) return false;
                 return (dm.GetAllEmulators() ?? new IEmulator[0]).Any(e => e != null && Settings.IsDemulExe(e.ApplicationPath));
             }
             catch { return false; }
@@ -106,7 +108,7 @@ namespace LbIntegrations.Demul
 
             // ── the header: its title and its compatibility - one game only; several have the selection's list at the top ──
             var rom = Safe(() => game.ApplicationPath) ?? "";
-            var board = DemulPlatforms.BoardOf(Safe(() => game.Platform));
+            var board = DemulPlatforms.BoardOf(Safe(() => game.Platform), rom);
             var compat = board == "Dreamcast" || several ? null : DemulCompat.Of(rom);
             if (!several)
             {
@@ -140,7 +142,7 @@ namespace LbIntegrations.Demul
                 }
 
                 // ── the game to Demul ──
-                var gameRows = new List<Control> { Line("Platform: " + Safe(() => game.Platform) + (board != null ? "  -  Demul runs it as " + DemulPlatforms.SystemOf(Safe(() => game.Platform)) : "")) };
+                var gameRows = new List<Control> { Line("Platform: " + Safe(() => game.Platform) + (board != null ? "  -  Demul runs it as " + DemulPlatforms.SystemOfBoard(board) : "")) };
                 if (board == "Dreamcast") gameRows.Add(Line("Disc: " + Path.GetFileName(rom) + (DemulLaunchDisc(rom) ? "" : "  -  not a disc Demul reads (.gdi, .cdi, .chd)")));
                 else if (rom.Length > 0)
                 {
@@ -149,7 +151,7 @@ namespace LbIntegrations.Demul
                     if (set != null) gameRows.Add(Line(set.Known ? "This build of Demul knows it." : "This build of Demul does not know it: it will most likely not run."));
                 }
                 var exe = Settings.Emulators().Select(e => e.Split('\t').Last()).FirstOrDefault(File.Exists);
-                var biosSet = DemulBios.For(DemulPlatforms.SystemOf(Safe(() => game.Platform)), board);
+                var biosSet = DemulBios.For(DemulPlatforms.SystemOfBoard(board), board);
                 if (exe != null && biosSet != null)
                 {
                     bool there = File.Exists(Path.Combine(Path.GetDirectoryName(exe), DemulLaunch.BiosFolder, biosSet));

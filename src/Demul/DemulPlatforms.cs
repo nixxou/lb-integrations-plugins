@@ -44,6 +44,34 @@ namespace LbIntegrations.Demul
 
         public static bool IsDreamcast(string platform) => Is(platform, Dreamcast);
 
+        /// <summary>LaunchBox's catch-all arcade platform (Mehdi, 17/10): a whole MAME folder filed under one platform holds
+        /// Demul's sets among the others. Supported, never recommended nor the default - MAME is. The board, and so the
+        /// system to start, is the set's own (demul-sets.tsv), found by the file's name.</summary>
+        public const string Arcade = "Arcade";
+
+        public static bool IsArcadeCatchAll(string platform) => Is(platform, Arcade);
+
+        /// <summary>The board of a game: its platform's, or for "Arcade" its set's by the file's name (null when the file is
+        /// no game set of Demul's boards).</summary>
+        public static string BoardOf(string platform, string romPath)
+        {
+            if (!IsArcadeCatchAll(platform)) return BoardOf(platform);
+            var name = System.IO.Path.GetFileNameWithoutExtension(romPath ?? "");
+            return name.Length > 0 && DemulSets.All.TryGetValue(name, out var set) && set.Board != DemulSets.Bios ? set.Board : null;
+        }
+
+        /// <summary>Demul's -run= value for a board as demul-sets.tsv names it (BoardOf), or null.</summary>
+        public static string SystemOfBoard(string board) => board switch
+        {
+            "Dreamcast" => "dc",
+            "Naomi" or "Naomi 2" or "System SP" => "naomi",
+            "Atomiswave" => "awave",
+            "Hikaru" => "hikaru",
+            "CV1000" => "cave3rd",
+            "Gaelco" => "gaelco",
+            _ => null,
+        };
+
         /// <summary>Demul's -run= value for a platform, or null for a platform not ours.</summary>
         public static string SystemOf(string platform)
         {
@@ -76,7 +104,7 @@ namespace LbIntegrations.Demul
         /// platform of the library named for one of the other three boards. Never throws.</summary>
         public static List<string> Wanted()
         {
-            var names = new List<string>(Metadata);
+            var names = new List<string>(Metadata) { Arcade };
             try
             {
                 foreach (var p in PluginHelper.DataManager?.GetAllPlatforms() ?? Array.Empty<IPlatform>())
