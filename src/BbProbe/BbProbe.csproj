@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A throw-away probe for Big Box: what builds the emulator lists ("Launch With", "Select Emulator"),
+    which framework calls bracket them, and in what order a launch from them happens. Logs only, plus one
+    display-only experiment (see BbProbePlugin). Installed in the CLASSIC root, Plugins\Nixx-BbProbe\,
+    because LaunchBox 14's Local\Plugins only loads emulator plugins.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Platforms>AnyCPU;x64</Platforms>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>BbProbe</AssemblyName>
+    <RootNamespace>LbIntegrations.BbProbe</RootNamespace>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <MSBuildWarningsAsMessages>MSB3277</MSBuildWarningsAsMessages>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Lib.Harmony" Version="2.4.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Unbroken.LaunchBox.Plugins">
+      <HintPath>..\..\vendor\Unbroken.LaunchBox.Plugins.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Fold Harmony INTO BbProbe.dll, internalized. See Xenia.csproj for why. -->
+  <Target Name="MergePlugin" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <PropertyGroup>
+      <MergedDir>$(OutDir)merged\</MergedDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <MergeInput Include="$(OutDir)$(AssemblyName).dll" />
+      <MergeInput Include="$(OutDir)*.dll" Exclude="$(OutDir)$(AssemblyName).dll" />
+      <MergeLib Include="@(ReferencePath->'%(RootDir)%(Directory).')" />
+    </ItemGroup>
+    <MakeDir Directories="$(MergedDir)" />
+    <Exec Command="dotnet ilrepack /out:&quot;$(MergedDir)$(AssemblyName).dll&quot; /internalize @(MergeLib->Distinct()->'/lib:&quot;%(Identity)&quot;', ' ') @(MergeInput->'&quot;%(FullPath)&quot;', ' ')"
+          WorkingDirectory="$(MSBuildProjectDirectory)" StandardOutputImportance="low" />
+    <Message Importance="high" Text="  merged -> $(MergedDir)$(AssemblyName).dll" />
+  </Target>
+
+</Project>

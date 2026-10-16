@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Bench for Nixx-EmuLabels, run outside LaunchBox but against LaunchBox's REAL Emulator class
+    (NecroBit-protected, read from $(LbCore) at run time, never copied):
+
+        dotnet build src\EmuLabelsBench -c Release
+        dotnet src\EmuLabelsBench\bin\Release\EmuLabelsBench.dll
+
+    It compiles the plugin's sources in, and checks: the field behind Title is found, the label shows
+    through IEmulator.Title and comes off exactly, the setter is not used (EmulatorsChanged untouched),
+    and the label reaches a DataSet and Emulators.xml WITHOUT the guard and does not WITH it.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>LbIntegrations.EmuLabelsBench</RootNamespace>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <MSBuildWarningsAsMessages>MSB3277</MSBuildWarningsAsMessages>
+    <ResolveAssemblyWarnOrErrorOnTargetArchitectureMismatch>None</ResolveAssemblyWarnOrErrorOnTargetArchitectureMismatch>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- A LaunchBox 14 Core folder, read only. -->
+    <LbCore Condition="'$(LbCore)' == ''">G:\LB1326\Core</LbCore>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\EmuLabels\*.cs" Link="EmuLabels\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Lib.Harmony" Version="2.4.2" />
+    <!-- IGame has a member typed from System.Drawing; DispatchProxy needs it to build the fake game. -->
+    <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Compiled against, loaded from $(LbCore) at run time (Program.Resolve). -->
+    <Reference Include="Unbroken.LaunchBox.Plugins"><HintPath>$(LbCore)\Unbroken.LaunchBox.Plugins.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Unbroken"><HintPath>$(LbCore)\Unbroken.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Unbroken.LaunchBox"><HintPath>$(LbCore)\Unbroken.LaunchBox.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Unbroken.LaunchBox.Windows"><HintPath>$(LbCore)\Unbroken.LaunchBox.Windows.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Newtonsoft.Json"><HintPath>$(LbCore)\Newtonsoft.Json.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>LbCore</_Parameter1>
+      <_Parameter2>$(LbCore)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,17 @@
+{
+  "SchemaVersion": 1,
+  "PluginId": "e35f0119-3936-43d4-9a4e-8dee7fd0efab",
+  "UserId": 0,
+  "Name": "Nixx-EmuLabels",
+  "Developer": "nixxou",
+  "Description": "Shows, in every emulator list, how well each emulator runs the selected game - by adding a label to the emulator's name, in memory only.",
+  "Credits": "",
+  "OperatingSystemFamily": "Windows",
+  "InstalledVersion": "0.1.0",
+  "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
+  "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
+  "HomePageUrl": "",
+  "TipJarUrl": "",
+  "SourceKind": "Local",
+  "Tags": []
+}

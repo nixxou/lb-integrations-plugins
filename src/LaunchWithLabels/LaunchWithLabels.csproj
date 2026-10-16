@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    PoC: in LaunchBox's "Launch With" menu and Big Box's "Launch With" popup, each emulator's line says how
+    well it runs the game (emu-labels.json). DISPLAY ONLY: no emulator, no game, no file is changed, and
+    there is no Harmony patch at all - WPF class handlers and reflection, on LaunchBox's own UI objects.
+    See README.md for what was measured and why it is built this way.
+
+    Installed in the CLASSIC root, Plugins\Nixx-LaunchWithLabels\LaunchWithLabels.dll: LaunchBox 14's
+    Local\Plugins only loads emulator plugins.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>LaunchWithLabels</AssemblyName>
+    <RootNamespace>LbIntegrations.LaunchWithLabels</RootNamespace>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <MSBuildWarningsAsMessages>MSB3277</MSBuildWarningsAsMessages>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="Unbroken.LaunchBox.Plugins">
+      <HintPath>..\..\vendor\Unbroken.LaunchBox.Plugins.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

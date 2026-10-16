@@ -1,0 +1,59 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Platforms>AnyCPU;x64</Platforms>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>EmuLabels</AssemblyName>
+    <RootNamespace>LbIntegrations.EmuLabels</RootNamespace>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <!-- true so the dependencies land in bin\ for the merge step below. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- MSB3277: the vendored SDK and a host's newer one differ in version; that is the point of Private=false. -->
+    <MSBuildWarningsAsMessages>MSB3277</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+
+  <!-- No reference to LaunchBox's own assemblies: the emulators are reached through the SDK's IEmulator,
+       and the one private member it needs (the field behind Title) is found by reflection at run time -
+       so nothing here is tied to the obfuscated names of one LaunchBox build. -->
+
+  <ItemGroup>
+    <!-- Same version as the other plugins, so HarmonySharedState is shared and they coordinate. -->
+    <PackageReference Include="Lib.Harmony" Version="2.4.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Reference the SDK but DON'T copy it: the host loads the plugin into ITS assembly load context and provides the SDK. -->
+    <Reference Include="Unbroken.LaunchBox.Plugins">
+      <HintPath>..\..\vendor\Unbroken.LaunchBox.Plugins.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="manifest.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Fold every dependency INTO EmuLabels.dll, internalized. See Xenia.csproj for why. -->
+  <Target Name="MergePlugin" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <PropertyGroup>
+      <MergedDir>$(OutDir)merged\</MergedDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <MergeInput Include="$(OutDir)$(AssemblyName).dll" />
+      <MergeInput Include="$(OutDir)*.dll" Exclude="$(OutDir)$(AssemblyName).dll" />
+      <!-- The trailing "." keeps a directory ending in \ from escaping the closing quote. -->
+      <MergeLib Include="@(ReferencePath->'%(RootDir)%(Directory).')" />
+    </ItemGroup>
+    <MakeDir Directories="$(MergedDir)" />
+    <Exec Command="dotnet ilrepack /out:&quot;$(MergedDir)$(AssemblyName).dll&quot; /internalize @(MergeLib->Distinct()->'/lib:&quot;%(Identity)&quot;', ' ') @(MergeInput->'&quot;%(FullPath)&quot;', ' ')"
+          WorkingDirectory="$(MSBuildProjectDirectory)" StandardOutputImportance="low" />
+    <Copy SourceFiles="manifest.json" DestinationFolder="$(MergedDir)" />
+    <Message Importance="high" Text="  merged -> $(MergedDir)$(AssemblyName).dll" />
+  </Target>
+
+</Project>
