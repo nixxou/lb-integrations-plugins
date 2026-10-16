@@ -7,7 +7,7 @@
   "Description": "Download, update, disc formats (redump, CSO, CCI, CHD) and one console per game for the xemu emulator (Microsoft Xbox).",
   "Credits": "Many thanks to the developers of xemu!",
   "OperatingSystemFamily": "Windows",
-  "InstalledVersion": "1.2.0",
+  "InstalledVersion": "1.2.1",
   "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
   "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
   "HomePageUrl": "https://xemu.app/",

@@ -7,7 +7,7 @@
   "Description": "Download, update, launch, BIOS and save integration for ares, the accurate multi-system emulator (Nintendo, Sega, NEC, SNK, Sony and more).",
   "Credits": "Many thanks to Near, who began ares, and to the ares team who carry it on.",
   "OperatingSystemFamily": "Windows",
-  "InstalledVersion": "1.2.0",
+  "InstalledVersion": "1.2.1",
   "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
   "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
   "HomePageUrl": "https://ares-emu.net/",

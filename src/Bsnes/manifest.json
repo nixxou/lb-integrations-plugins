@@ -7,7 +7,7 @@
   "Description": "Download, update, launch and save integration for bsnes, the accurate Super Nintendo emulator (its nightly builds).",
   "Credits": "Many thanks to Near, who wrote bsnes, and to everyone who keeps it going.",
   "OperatingSystemFamily": "Windows",
-  "InstalledVersion": "1.2.0",
+  "InstalledVersion": "1.2.1",
   "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
   "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
   "HomePageUrl": "https://github.com/bsnes-emu/bsnes",

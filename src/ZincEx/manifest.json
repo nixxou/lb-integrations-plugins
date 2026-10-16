@@ -7,7 +7,7 @@
   "Description": "Download, update and launch integration for ZiNc EX, the launcher of the ZiNc 1.1 arcade emulator (Sony ZN-1 / ZN-2 boards: Capcom, Taito FX-1, Namco System 11 / 12, Tecmo, Konami GV...).",
   "Credits": "Many thanks to Hazem Abdelghani, who wrote ZiNc EX, and to The_Author, DynaChicken, R. Belmont and smf, who wrote ZiNc.",
   "OperatingSystemFamily": "Windows",
-  "InstalledVersion": "1.2.0",
+  "InstalledVersion": "1.2.1",
   "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
   "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
   "HomePageUrl": "https://github.com/hazem-abdelghani/ZiNc-EX",
