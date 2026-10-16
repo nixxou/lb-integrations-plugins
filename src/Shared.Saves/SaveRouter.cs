@@ -653,7 +653,7 @@ namespace LbIntegrations.Saves
             var found = new List<GameSaveBase>();
             if (!Active || Inner > 0 || args == null) return found;
             var games = (args.Games ?? Array.Empty<IGame>()).Where(g => g != null).ToList();
-            var apps = (args.AdditionalApplications ?? Array.Empty<IAdditionalApplication?>()).Where(a => a != null && !SaveRows.IsLink(Safe(() => a.ApplicationPath))).Select(a => a!).ToList();
+            var apps = (args.AdditionalApplications ?? Array.Empty<IAdditionalApplication?>()).Where(a => a != null && !SaveRows.IsNoGame(Safe(() => a.ApplicationPath))).Select(a => a!).ToList();
             Once("first listing: " + games.Count + " game(s), " + apps.Count + " version(s), " + Library().Count + " emulator(s) in the library");
             if (games.Count == 0 && apps.Count == 0) return found;
             var selfId = Safe(() => args.Emulator?.Id);

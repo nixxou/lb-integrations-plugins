@@ -64,15 +64,34 @@ namespace LbIntegrations.Saves
                                     || p.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase));
         }
 
-        /// <summary><paramref name="args"/> without the game's web links among its versions (IsLink): the same object when
-        /// there are none, else a copy - GetSavesArgs is Emulator, Games and AdditionalApplications, nothing else.</summary>
+        /// <summary>Documents, pictures and videos a game's additional applications open (Mehdi, 17/10: manuals, scans, comics, readmes,
+        /// trailers); the extension's case does not matter
+        /// - no emulator runs them, so no save is theirs. None of them is a game's file.</summary>
+        private static readonly HashSet<string> DocumentExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ".pdf", ".doc", ".docx", ".rtf", ".txt", ".md", ".nfo", ".htm", ".html", ".url",
+            ".cbz", ".cbr", ".cb7", ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp",
+            ".mp4", ".mkv", ".avi", ".webm", ".mov", ".wmv",
+        };
+
+        /// <summary>A document or picture by its extension (DocumentExtensions).</summary>
+        public static bool IsDocument(string? path)
+        {
+            try { return DocumentExtensions.Contains(Path.GetExtension((path ?? "").Trim())); } catch { return false; }
+        }
+
+        /// <summary>An additional application that cannot hold a save: a web link or a document.</summary>
+        public static bool IsNoGame(string? path) => IsLink(path) || IsDocument(path);
+
+        /// <summary><paramref name="args"/> without the game's web links and documents among its versions (IsNoGame): the same
+        /// object when there are none, else a copy - GetSavesArgs is Emulator, Games and AdditionalApplications, nothing else.</summary>
         public static GetSavesArgs WithoutLinks(GetSavesArgs args, Action<string>? say = null)
         {
             var apps = args?.AdditionalApplications;
             if (args == null || apps == null || apps.Count == 0) return args!;
-            var kept = apps.Where(a => a == null || !IsLink(Safe(() => a.ApplicationPath))).ToList();
+            var kept = apps.Where(a => a == null || !IsNoGame(Safe(() => a.ApplicationPath))).ToList();
             if (kept.Count == apps.Count) return args;
-            say?.Invoke("GetSaves: " + (apps.Count - kept.Count) + " web link(s) among the versions left out - no save is a link's");
+            say?.Invoke("GetSaves: " + (apps.Count - kept.Count) + " web link(s) or document(s) among the versions left out - no save is theirs");
             return new GetSavesArgs { Emulator = args.Emulator, Games = args.Games, AdditionalApplications = kept };
         }
 
