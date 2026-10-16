@@ -20,6 +20,10 @@ namespace LbIntegrations.Demul
         /// <summary>The set's name is in demul.exe. Not a promise that it plays.</summary>
         public bool Known;
         public string Title;
+        /// <summary>MAME's parent set (cloneof), or null.</summary>
+        public string Parent;
+        /// <summary>A Naomi GD-ROM set's disc: the CHD's name without ".chd" (MAME's &lt;disk&gt;), or null - a cartridge.</summary>
+        public string GdRom;
     }
 
     internal static class DemulSets
@@ -45,7 +49,12 @@ namespace LbIntegrations.Demul
                         if (line.Length == 0 || line[0] == '#') continue;
                         var f = line.Split('\t');
                         if (f.Length < 4) continue;
-                        sets[f[0]] = new DemulSet { Name = f[0], Board = f[1], Known = f[2] == "1", Title = f[3] };
+                        sets[f[0]] = new DemulSet
+                        {
+                            Name = f[0], Board = f[1], Known = f[2] == "1", Title = f[3],
+                            Parent = f.Length > 4 && f[4].Trim().Length > 0 ? f[4].Trim() : null,
+                            GdRom = f.Length > 5 && f[5].Trim().Length > 0 ? f[5].Trim() : null,
+                        };
                     }
                     Log.Info("set table: " + sets.Count + " sets");
                 }
