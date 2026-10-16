@@ -118,12 +118,15 @@ namespace LbIntegrations.Compat
                         return missing.Count == 0 ? (CompatCheckState.Ok, "the import wizard's view models") : (CompatCheckState.Missing, string.Join(", ", missing));
                     }
                     case "lb.launchWithMenu":
+                    case "bb.launchWithPopup":
                     {
                         // What the labels lean on (src\LaunchWithLabels\README.md §9): LaunchBox's "Launch With" label in its resx; in
-                        // Big Box, the popup's view model and its PopupOption (Value, DisplayString).
+                        // Big Box, the popup's view model and its PopupOption (Value, DisplayString). Each check in its own host.
                         if (!InLaunchBox()) return (CompatCheckState.NotHere, "not inside LaunchBox or Big Box");
                         bool bigBox = false;
                         try { bigBox = Process.GetCurrentProcess().ProcessName.Equals("BigBox", StringComparison.OrdinalIgnoreCase); } catch { }
+                        if (bigBox != (id == "bb.launchWithPopup"))
+                            return (CompatCheckState.NotHere, bigBox ? "checked in LaunchBox, not in Big Box" : "checked in Big Box, not in LaunchBox");
                         if (!bigBox)
                         {
                             var strings = Types().FirstOrDefault(x => x.FullName == "Unbroken.LaunchBox.Properties.Strings");

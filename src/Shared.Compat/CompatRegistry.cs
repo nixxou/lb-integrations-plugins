@@ -320,16 +320,29 @@ namespace LbIntegrations.Compat
             },
             new CompatPatch
             {
-                Id = "launchWithLabels", Group = CompatGroup.Hook, Title = "How well each emulator runs the game, in \"Launch With\"",
+                Id = "launchWithLabels", Group = CompatGroup.Hook, Title = "How well each emulator runs the game, in LaunchBox's \"Launch With\" menu",
                 Problem = "An arcade platform gathers emulators that each run a part of its games: \"Launch With\" offers all of them "
                         + "for every game, with no way to tell which one runs it.",
                 Example = "Nixx-ZiNc-EX offered on every MAME game, though it runs 71 of them.",
-                Does = "When \"Launch With\" opens (LaunchBox's right-click menu, Big Box's popup), each line of a pack emulator shows "
-                     + "its plugin's verdict for that game - Perfect, Recommended, Playable, Major issues, Won't run, Not supported, Missing BIOS / CHD - as a coloured badge "
-                     + "in LaunchBox, as text in Big Box. Only the text on screen: no emulator, game or file is changed. A table, "
-                     + "emu-labels.json beside the plugins' logs, can name the others or change a verdict.",
+                Does = "When the right-click menu's \"Launch With\" opens, each line of a pack emulator shows its plugin's verdict for that "
+                     + "game as coloured badges - Perfect, Recommended, Playable, Major issues, Won't run, Not supported, Missing BIOS / CHD - "
+                     + "and, on hover, the list's notes (comments, GitHub issues, what is missing and where it goes). Only the menu on "
+                     + "screen changes: no emulator, game or file. A table, emu-labels.json beside the plugins' logs, can name the "
+                     + "others or change a verdict.",
                 Without = "\"Launch With\" as LaunchBox shows it.",
                 Checks = new[] { "lb.launchWithMenu" },
+            },
+            new CompatPatch
+            {
+                Id = "launchWithLabelsBigBox", Group = CompatGroup.Hook, Title = "How well each emulator runs the game, in Big Box's emulator choice",
+                Problem = "The same in Big Box: the popup that picks the emulator offers every emulator of the platform, with no way to tell "
+                        + "which one runs the game.",
+                Example = "Nixx-ZiNc-EX offered on every MAME game, though it runs 71 of them.",
+                Does = "In Big Box's popup of emulators, each line of a pack emulator gets its plugin's verdict as text after its name "
+                     + "(\" [Playable]\", \" [Missing CHD] [Perfect]\"). Kept to the text on purpose: themes draw the popup their own way. "
+                     + "No emulator, game or file is changed.",
+                Without = "The popup as Big Box shows it.",
+                Checks = new[] { "bb.launchWithPopup" },
             },
         };
 
@@ -376,7 +389,7 @@ namespace LbIntegrations.Compat
             {
                 Title = "Compatibility in \"Launch With\"",
                 Line = "Each emulator of the pack says how well it runs the game, right in the \"Launch With\" menu.",
-                Ids = new[] { "launchWithLabels" },
+                Ids = new[] { "launchWithLabels", "launchWithLabelsBigBox" },
                 LaunchBoxOnly = true,
             },
             new CompatCard
@@ -401,7 +414,7 @@ namespace LbIntegrations.Compat
         public static readonly string[] Internal =
         {
             "desk", "retroarchView", "foreignSlots", "stockDesk", "stockNoSaves", "catchAll", "stockRestore", "stockIds",
-            "raConfigCache", "importWizard", "emulatorOpened", "launchWithLabels",
+            "raConfigCache", "importWizard", "emulatorOpened", "launchWithLabels", "launchWithLabelsBigBox",
         };
     }
 
