@@ -326,6 +326,7 @@ namespace LbIntegrations.Probe
                 Check("fcs / snaps / cheats junctions to States / Screenshots / Cheats", IsJunctionTo(Path.Combine(bin, "fcs"), Path.Combine(nesDir, "States"))
                       && IsJunctionTo(Path.Combine(bin, "snaps"), Path.Combine(nesDir, "Screenshots")) && IsJunctionTo(Path.Combine(bin, "cheats"), Path.Combine(nesDir, "Cheats")));
                 Check("full screen by default (SDL.Fullscreen = 1)", Get("SDL.Fullscreen") == "1", Get("SDL.Fullscreen"));
+                Check("the menu hidden in full screen (SDL.AutoHideMenuFullsreen = 1)", Get("SDL.AutoHideMenuFullsreen") == "1");
                 Check("the hotkeys bound", Get("SDL.Hotkeys.SaveState") == "F2" && Get("SDL.Hotkeys.Quit") == "Esc");
                 Check("its .sav moved", File.Exists(Path.Combine(nesDir, "Zelda II - The Adventure of Link (Europe).sav")));
                 Check("its state moved to States\\", File.Exists(Path.Combine(nesDir, "States", "Zelda II - The Adventure of Link (Europe).fc1")));

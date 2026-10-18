@@ -31,6 +31,8 @@ namespace LbIntegrations.Fceux
 
         // The names the plugin reads or writes (drivers\Qt\config.cpp InitConfig at the tag).
         public const string FullScreen = "SDL.Fullscreen";
+        /// <summary>View > "Auto-Hide Menu on Fullscreen" (ConsoleWindow.cpp) - FCEUX's own spelling, "Fullsreen", at the tag.</summary>
+        public const string HideMenuFullScreen = "SDL.AutoHideMenuFullsreen";
         public const string Pal = "SDL.PAL";
         public const string Hotkey = "SDL.Hotkeys.";
 

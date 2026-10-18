@@ -10,6 +10,7 @@
 //                   on the line: an option on the line is stored too (measured 18/10, "--pal 1" left "SDL.PAL = 1"), so the
 //                   file is the one place it is said. Qt's full screen is a borderless window (QWidget::showFullScreen,
 //                   drivers\Qt\ConsoleWindow.cpp): the display's mode is never changed.
+//   the menu        "SDL.AutoHideMenuFullsreen" 1 (FCEUX's spelling): no menu bar over the game in full screen
 //   the hotkeys     the pack's, where FCEUX lets them be (FceuxHotkeys)
 //
 // THE LINE: the host's (the game's quoted path), nothing added. Two things are checked before it goes:
@@ -80,6 +81,8 @@ namespace LbIntegrations.Fceux
                     cfg.Set(name, value);
                     if (!o.OnPage) said.Add(name + " = " + value);
                 }
+                // The menu bar hidden in full screen (Mehdi 19/10): the plugin's, as the screen - always on.
+                cfg.Set(FceuxCfg.HideMenuFullScreen, "1");
                 foreach (var line in FceuxHotkeys.Bind(cfg)) Log.Info(line);
                 bool changed = cfg.Changed;
                 cfg.SaveIfChanged();
