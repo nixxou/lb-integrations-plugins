@@ -1,7 +1,9 @@
-// input.cfg - 3dSen's keys and pads, in its user data folder. The plugin binds the pack's save-state keys there, ONLY
-// when 3dSen has none: QuickSave = F2, QuickLoad = F4 (the pack's keys, Mehdi 07/10; what ThreeDSenAhk sends). 3dSen
-// ships both UNBOUND (Gamepads.DefKeys: QuickSave / QuickLoad = Key.None) - the pause screens of LaunchBox and BigBox
-// would have nothing to press.
+// input.cfg - 3dSen's keys and pads, in its user data folder. The plugin binds the pack's keys there (Table):
+//   QuickSave F2, QuickLoad F4   - 3dSen ships both UNBOUND (Gamepads.DefKeys: Key.None); what ThreeDSenAhk sends
+//   Menu F1                      - off Escape, its default: Esc quits, as everywhere in the pack (Mehdi 19/10), through
+//                                  the running AutoHotkey script (3dSen has no quit action)
+//   FastForward L                - off Period, its default: the pack's held fast forward (VRUIController reads it with
+//                                  Pressed every frame and Engine re-arms 30 fast frames - it runs while held)
 //
 // THE FORMAT, read in 3dSen 1.1.2 (Gamepads.SaveConfig; InControl's PlayerActionSet.Save, PlayerAction.Save,
 // KeyCombo.Save) and measured on its own file (docs\3dsen.md section 7, an exact round trip of both layers):
@@ -10,18 +12,20 @@
 //   - a keyboard value: base64 of "BIND", u16 version (2), i32 action count, then per action a .NET BinaryWriter string
 //     (7-bit length + UTF-8), i32 binding count, per binding i32 type (2 = KeyBindingSource) then a KeyCombo: i32 include
 //     count, u64 include keys (one InControl.Key per byte), i32 exclude count, u64 exclude keys.
-//   - InControl.Key: None 0x00, Escape 0x0D, F1 0x0E ... F12 0x19.
+//   - InControl.Key (enum order of InControl\Key.cs): None 0x00, Escape 0x0D, F1 0x0E ... F12 0x19, A 0x24 ... Z 0x3D
+//     (L 0x2F), Period 0x4A.
 // [run] F2 (0x0F) and F4 (0x11) written this way into QuickSave / QuickLoad were used by 3dSen (a quick save on F2, its load
 // on F4 in a new session) and kept by its own rewrite at quit.
 //
-// THE RULE: an action is bound only when every binding it has is Key.None (or it has none), and only when no action of
-// either keyboard set already holds the key. Anything this reader does not know (another binding type, a version other
-// than 2, a value that does not decode) leaves the whole file as it is. 3dSen writes input.cfg whole at quit
-// (Gamepads.OnApplicationQuit): never written while it runs. No input.cfg (3dSen never run): nothing written - 3dSen makes
-// its defaults at its first quit, the keys come at the next launch.
+// THE RULE (the pack's, as puNES and FCEUX): an action is set only when it is unbound, on 3dSen's default, or already on the
+// pack's key - one the user changed is the user's. A pack key another action of the user's holds leaves the action as it
+// is; an action that keeps a key another action of this pass takes is unbound - never one key on two actions. Anything
+// this reader does not know (another binding type, a version other than 2, a value that does not decode) leaves the whole
+// file as it is. 3dSen writes input.cfg whole at quit (Gamepads.OnApplicationQuit): never written while it runs. No
+// input.cfg (3dSen never run): nothing written - 3dSen makes its defaults at its first quit, the keys come at the next launch.
 //
-// THE PACK'S OTHER KEYS CANNOT BE HAD (docs\3dsen.md section 7): F6 / F7 rotate the camera (and there is one quick slot, no
-// slot to change), Esc opens 3dSen's menu (question Q3), 3dSen has no full screen action for F11, F3 exports the scene.
+// THE PACK'S OTHER KEYS CANNOT BE HAD (docs\3dsen.md section 7): F6 / F7 / F8 turn the camera (and there is one quick slot,
+// no slot to change), 3dSen has no full screen action for F11, F3 exports the scene.
 
 using System;
 using System.Collections.Generic;
@@ -34,9 +38,13 @@ namespace LbIntegrations.ThreeDSen
     internal static class ThreeDSenInput
     {
         public const string FileName = "input.cfg";
-        public const byte KeyNone = 0x00, KeyF2 = 0x0F, KeyF4 = 0x11;
+        public const byte KeyNone = 0x00, KeyEscape = 0x0D, KeyF1 = 0x0E, KeyF2 = 0x0F, KeyF4 = 0x11, KeyL = 0x2F, KeyPeriod = 0x4A;
 
-        internal static readonly (string Action, byte Key)[] Wanted = { ("QuickSave", KeyF2), ("QuickLoad", KeyF4) };
+        /// <summary>The pack's key on each of 3dSen's actions, with 3dSen 1.1.2's default (Gamepads.DefKeys).</summary>
+        internal static readonly (string Action, byte Key, byte Default)[] Table =
+        {
+            ("QuickSave", KeyF2, KeyNone), ("QuickLoad", KeyF4, KeyNone), ("Menu", KeyF1, KeyEscape), ("FastForward", KeyL, KeyPeriod),
+        };
         private static readonly string[] KeyboardSets = { "Keyboard0 Binding", "Keyboard1 Binding" };
 
         internal sealed class Binding { public int Type, IncSize, ExcSize; public ulong Inc, Exc; }
@@ -152,18 +160,25 @@ namespace LbIntegrations.ThreeDSen
             for (int i = 0; i < Math.Min(8, Math.Max(0, b.IncSize)); i++) yield return (byte)(b.Inc >> (8 * i));
         }
 
-        private static bool Unbound(Action a) => a.Bindings.All(b => KeysOf(b).All(k => k == KeyNone));
+        private static List<byte> Bound(Action a) => a.Bindings.SelectMany(KeysOf).Where(k => k != KeyNone).Distinct().ToList();
+
+        /// <summary>An action this plugin may set: unbound, on 3dSen's default, or on the pack's key already.</summary>
+        private static bool IsOurs(Action a, byte key, byte dflt)
+        {
+            var keys = Bound(a);
+            return keys.Count == 0 || (keys.Count == 1 && (keys[0] == key || (dflt != KeyNone && keys[0] == dflt)));
+        }
 
         // ── the launch's edit ────────────────────────────────────────────────
 
-        /// <summary>QuickSave = F2 and QuickLoad = F4 bound in input.cfg when unbound and free. Never throws; the file is
-        /// written only when something changed, and left as it is when anything in it is not understood.</summary>
+        /// <summary>The pack's keys (Table) bound in input.cfg where the rule lets them be. Never throws; the file is written
+        /// only when something changed, and left as it is when anything in it is not understood.</summary>
         public static void BindStateKeys(string dataDir)
         {
             var path = Path.Combine(dataDir ?? "", FileName);
             try
             {
-                if (!File.Exists(path)) { Log.Info("input.cfg not there yet (3dSen never quit once) - F2 / F4 bound at a later launch"); return; }
+                if (!File.Exists(path)) { Log.Info("input.cfg not there yet (3dSen never quit once) - the pack's keys bound at a later launch"); return; }
                 var raw = File.ReadAllBytes(path);
                 var entries = ParseMap(raw);
                 var sets = new Dictionary<string, Set>();
@@ -176,17 +191,20 @@ namespace LbIntegrations.ThreeDSen
                 if (!sets.TryGetValue(KeyboardSets[0], out var main)) { Log.Info("input.cfg has no first keyboard - nothing bound"); return; }
 
                 var done = new List<string>();
-                foreach (var (actionName, key) in Wanted)
+                var ours = Table.Select(t => (t, Action: main.Actions.FirstOrDefault(a => a.Name == t.Action)))
+                                .Where(x => x.Action != null && IsOurs(x.Action, x.t.Key, x.t.Default)).ToList();
+                var moving = new HashSet<Action>(ours.Select(x => x.Action));
+                foreach (var (t, action) in ours)
                 {
-                    var action = main.Actions.FirstOrDefault(a => a.Name == actionName);
-                    if (action == null) { Log.Info("input.cfg: no action " + actionName); continue; }
-                    if (!Unbound(action)) continue;   // the user's, or already ours
-                    var holder = sets.Values.SelectMany(s => s.Actions).FirstOrDefault(a => a != action && a.Bindings.Any(b => KeysOf(b).Contains(key)));
-                    if (holder != null) { Log.Info("input.cfg: " + actionName + " left unbound - its key is already " + holder.Name + "'s"); continue; }
+                    var now = Bound(action);
+                    if (now.Count == 1 && now[0] == t.Key) continue;   // already the pack's
+                    var holder = sets.Values.SelectMany(s => s.Actions).FirstOrDefault(a => a != action && !moving.Contains(a) && Bound(a).Contains(t.Key));
+                    if (holder != null) { Log.Info("input.cfg: " + t.Action + " left as it is - " + KeyText(t.Key) + " is already " + holder.Name + "'s"); continue; }
                     action.Bindings.Clear();
-                    action.Bindings.Add(new Binding { Type = 2, IncSize = 1, Inc = key, ExcSize = 0, Exc = 0 });
-                    done.Add(actionName + " = F" + (key - 0x0D));
+                    action.Bindings.Add(new Binding { Type = 2, IncSize = 1, Inc = t.Key, ExcSize = 0, Exc = 0 });
+                    done.Add(t.Action + " = " + KeyText(t.Key));
                 }
+                foreach (var t in Table.Where(t => main.Actions.All(a => a.Name != t.Action))) Log.Info("input.cfg: no action " + t.Action);
                 if (done.Count == 0) return;
 
                 for (int i = 0; i < entries.Count; i++)
@@ -197,7 +215,7 @@ namespace LbIntegrations.ThreeDSen
                 File.Move(temp, path, true);
                 Log.Info("input.cfg: " + string.Join(", ", done));
             }
-            catch (Exception ex) { Log.Warn("input.cfg left as it is - the save-state keys were not bound", ex); }
+            catch (Exception ex) { Log.Warn("input.cfg left as it is - the pack's keys were not bound", ex); }
         }
 
         /// <summary>The key of an action of the first keyboard ("F2", "None"), for the pages; null when unreadable.</summary>
@@ -217,6 +235,7 @@ namespace LbIntegrations.ThreeDSen
             catch { return null; }
         }
 
-        private static string KeyText(byte k) => k >= 0x0E && k <= 0x19 ? "F" + (k - 0x0D) : k == 0x0D ? "Esc" : "key 0x" + k.ToString("X2");
+        private static string KeyText(byte k) => k >= 0x0E && k <= 0x19 ? "F" + (k - 0x0D) : k == KeyEscape ? "Esc" : k >= 0x24 && k <= 0x3D ? ((char)('A' + k - 0x24)).ToString()
+                                                : k == KeyPeriod ? "Period" : "key 0x" + k.ToString("X2");
     }
 }

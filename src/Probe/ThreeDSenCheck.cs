@@ -177,7 +177,9 @@ namespace LbIntegrations.Probe
             Call(asm, "ThreeDSenInput", "BindStateKeys", dir);
             Check("QuickSave = F2", (string)Call(asm, "ThreeDSenInput", "KeyName", dir, "QuickSave") == "F2");
             Check("QuickLoad = F4", (string)Call(asm, "ThreeDSenInput", "KeyName", dir, "QuickLoad") == "F4");
-            Check("byte for byte the file 3dSen used and rewrote with F2 / F4 (locallow-after-tests)", File.ReadAllBytes(path).SequenceEqual(File.ReadAllBytes(Path.Combine(after, "input.cfg"))));
+            Check("Menu = F1 (off Esc, which quits)", (string)Call(asm, "ThreeDSenInput", "KeyName", dir, "Menu") == "F1", (string)Call(asm, "ThreeDSenInput", "KeyName", dir, "Menu"));
+            Check("FastForward = L (off Period)", (string)Call(asm, "ThreeDSenInput", "KeyName", dir, "FastForward") == "L", (string)Call(asm, "ThreeDSenInput", "KeyName", dir, "FastForward"));
+            Check("RotLeft still F5 (the camera untouched)", (string)Call(asm, "ThreeDSenInput", "KeyName", dir, "RotLeft") == "F5");
             var stamp = File.GetLastWriteTimeUtc(path);
             System.Threading.Thread.Sleep(30);
             Call(asm, "ThreeDSenInput", "BindStateKeys", dir);
@@ -328,7 +330,7 @@ namespace LbIntegrations.Probe
             try
             {
                 refusal = (string)prepare.Invoke(null, a);
-                Check("a game with no profile: refused, saying how to choose one", refusal != null && refusal.Contains("Nixx-3DSen : Options"), refusal);
+                Check("a game with no profile: launched in 2D Mode (Mehdi 19/10)", refusal == null && ((string)a[5] ?? "").StartsWith("-id=47 "), refusal ?? (string)a[5]);
                 Call(asm, "ThreeDSenSettings", "SetGameValue", "probe-unknown", "Profile", "47");
                 Call(asm, "ThreeDSenSettings", "SetGameValue", "probe-unknown", "Screen", "window");
                 refusal = (string)prepare.Invoke(null, a);

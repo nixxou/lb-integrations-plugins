@@ -321,10 +321,16 @@ namespace LbIntegrations.ThreeDSen
             {
                 profile = ThreeDSenProfiles.Match(profiles, title, rom);
                 if (profile == null)
-                    return "3dSen has no 3D profile for \"" + (title ?? Path.GetFileNameWithoutExtension(rom)) + "\" - it draws in 3D only the games it has a profile for. "
-                           + "If it has one under another name, choose it: right-click the game > Nixx-3DSen : Options... (\"2D Mode\" plays any game flat).";
+                {
+                    // No 3D data for it: 3dSen's 2D Mode, flat (Mehdi 19/10). A profile under another name is the game's window's.
+                    profile = profiles.FirstOrDefault(p => p.Id == ThreeDSenProfiles.TwoDModeId);
+                    if (profile == null)
+                        return "3dSen has no 3D profile for \"" + (title ?? Path.GetFileNameWithoutExtension(rom)) + "\", and its 2D Mode is not in its list. "
+                               + "Choose a profile: right-click the game > Nixx-3DSen : Options...";
+                    Log.Info("profile: none matches the title - 2D Mode (flat)");
+                }
             }
-            Log.Info("profile: " + profile + (chosen != null ? ", the game's own choice" : ", matched by its title"));
+            if (profile.Id != ThreeDSenProfiles.TwoDModeId || chosen != null) Log.Info("profile: " + profile + (chosen != null ? ", the game's own choice" : ", matched by its title"));
 
             var file = ThreeDSenLaunch.RomFor(exe, rom, out var problem);
             if (file == null) return problem;

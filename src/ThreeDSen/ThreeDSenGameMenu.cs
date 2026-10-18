@@ -121,7 +121,7 @@ namespace LbIntegrations.ThreeDSen
                 RowOf(ThreeDSenSettings.ProfileKey, "Profile",
                     "3dSen draws a game in 3D from its profile: Automatic finds it by the game's title. Choose one when the title does not match "
                     + "(3dSen spells some its own way). 3dSen does not check the ROM: a wrong profile plays it with another game's 3D. "
-                    + "2D Mode plays any game flat."),
+                    + "2D Mode plays any game flat - a game no profile matches starts in it."),
                 Text_(!Several ? "File: " + (Safe(() => game.ApplicationPath) ?? "") : "Automatic: each game by its own title.")));
 
             var screen = new List<Control>();
@@ -181,7 +181,7 @@ namespace LbIntegrations.ThreeDSen
             if (r.Key == ThreeDSenSettings.ProfileKey)
             {
                 var auto = Automatic();
-                r.Combo.Items.Add(Several ? "Automatic (by each game's title)" : auto != null ? "Automatic (" + auto.Title + ")" : "Automatic - no profile matches this title: choose one");
+                r.Combo.Items.Add(Several ? "Automatic (by each game's title, else 2D Mode)" : auto != null ? "Automatic (" + auto.Title + ")" : "Automatic - no 3D profile matches this title: 2D Mode");
                 r.Values.Add(null);
                 var two = _profiles.FirstOrDefault(p => p.Id == ThreeDSenProfiles.TwoDModeId);
                 if (two != null) { r.Combo.Items.Add("2D Mode - flat, any game"); r.Values.Add(two.Id); }
@@ -208,7 +208,7 @@ namespace LbIntegrations.ThreeDSen
         {
             if (_count == null || _rows.Count == 0) return;
             string Shown(string key) { var r = _rows.First(x => x.Key == key); var v = r.Chosen(); return v == LbipSelection.Various ? null : v; }
-            var profile = Shown(ThreeDSenSettings.ProfileKey) ?? Automatic()?.Id;
+            var profile = Shown(ThreeDSenSettings.ProfileKey) ?? Automatic()?.Id ?? (Several ? null : ThreeDSenProfiles.TwoDModeId);
             var screen = Shown("Screen") ?? ThreeDSenSettings.Value("Screen");
             var size = Shown("WindowSize") ?? ThreeDSenSettings.Value("WindowSize");
             var switches = ThreeDSenLaunch.Switches(profile ?? "<profile>", screen, size);
@@ -216,7 +216,7 @@ namespace LbIntegrations.ThreeDSen
             int various = _rows.Count(r => r.Chosen() == LbipSelection.Various);
             _count.Text = switches.Count(s => s.StartsWith("-")) + " option(s) on 3dSen's command line - the game itself goes by its profile, never by its path"
                           + (various > 0 ? " (" + various + " vary, kept per game)" : "") + ":";
-            _line.Text = string.Join(" ", switches) + (profile == null && !Several ? "\r\n(no profile: the launch is refused until one is chosen)" : "");
+            _line.Text = string.Join(" ", switches);
         }
 
         private void Reset()

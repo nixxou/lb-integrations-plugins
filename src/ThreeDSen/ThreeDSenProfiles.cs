@@ -7,9 +7,8 @@
 //      LaunchBox's CompareName) and through the aliases below: 3dSen spells some titles its own way ("Digdug", "Pacman",
 //      "Adv of Lolo", "Kungfu / Spartan X"). The WHOLE title only: the text before a ":" would make "Batman: Return of
 //      the Joker" the profile "Batman" (another game). One profile must answer; two answering is no answer.
-//   3. Else no profile: the launch is refused with a notice saying how to choose one (Mehdi: offer 3dSen only on the
-//      games it can draw in 3D). "2D Mode" (id 47, 3dSen's plain 2D emulator, any ROM) is never chosen automatically;
-//      the game's window offers it (question Q5 of docs\3dsen.md).
+//   3. Else no profile: "2D Mode" (id 47, 3dSen's plain 2D emulator, any ROM) - Mehdi 19/10 (question Q5 of
+//      docs\3dsen.md): a game 3dSen has no 3D data for still plays, flat. The match never picks 2D Mode itself.
 //
 // NOTHING CHECKS THAT THE ROM IS THE PROFILE'S GAME (docs\3dsen.md section 2: no CRC nor hash anywhere in 3dSen's code):
 // a wrong match plays the ROM with another game's 3D data. Hence the exact matching and the refusal rather than a guess.
