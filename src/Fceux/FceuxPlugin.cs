@@ -411,6 +411,8 @@ namespace LbIntegrations.Fceux
 
             // fceux.cfg: this platform's folders, the screen, the hotkeys - never while FCEUX runs (it writes the file back).
             if (!running) FceuxLaunch.PrepareConfig(exe, gameId, platform, rom);
+            // A PNG beside each state (x.fc0 -> x.fc0.png), from the picture FCEUX puts in it, once it has quit.
+            if (!running) FceuxStateThumbs.AfterSession(exe, rom, platform);
 
             var current = args?.CurrentCommandLine ?? "";
             var line = played == rom ? current.Trim() : FceuxLaunch.SwapRom(current, rom, played);
