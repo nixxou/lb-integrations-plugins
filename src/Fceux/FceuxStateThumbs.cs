@@ -170,21 +170,12 @@ namespace LbIntegrations.Fceux
             return crc;
         }
 
-        /// <summary>Once the FCEUX of this launch has come and gone (a minute to appear), the thumbnails of the game's states
-        /// made again.</summary>
-        public static void AfterSession(string exe, string rom, string platform)
+        /// <summary>The thumbnails of the game's states made again - once the FCEUX of a launch has come and gone
+        /// (FceuxLaunch.AfterSession).</summary>
+        public static void RefreshAll(string exe, string rom, string platform)
         {
-            if (string.IsNullOrEmpty(exe) || string.IsNullOrWhiteSpace(rom)) return;
-            Task.Run(async () =>
-            {
-                try
-                {
-                    for (int i = 0; i < 120 && !FceuxLaunch.Running(exe); i++) await Task.Delay(500).ConfigureAwait(false);
-                    while (FceuxLaunch.Running(exe)) await Task.Delay(1000).ConfigureAwait(false);
-                    foreach (var state in FceuxPlugin.StatesOf(exe, rom, platform)) Refresh(state, exe);
-                }
-                catch (Exception ex) { Log.Warn("thumbnails after the session", ex); }
-            });
+            try { foreach (var state in FceuxPlugin.StatesOf(exe, rom, platform)) Refresh(state, exe); }
+            catch (Exception ex) { Log.Warn("thumbnails after the session", ex); }
         }
     }
 }

@@ -37,7 +37,7 @@ namespace LbIntegrations.Fceux
         }
 
         /// <summary>The first FCEUX of the library that is on disk, or null.</summary>
-        internal static string FirstExe() => Emulators().Select(e => e.Split('\t').Last()).FirstOrDefault(File.Exists);
+        internal static string FirstExe() => Emulators().Select(e => FceuxPlugin.ResolveFullPathForUi(e.Split('\t').Last())).FirstOrDefault(File.Exists);
     }
 
     internal sealed class FceuxSettingsPage : UserControl
@@ -71,8 +71,10 @@ namespace LbIntegrations.Fceux
                 var said = FceuxBuild.DescribedVersion(exe);
                 rows.Add(Line("FCEUX " + (ours ?? (said != null ? said + " (a build this plugin did not install)" : "(a build this plugin did not install)")) + " - " + exe));
                 rows.Add(Line("Updates: the Download button of LaunchBox's emulator window offers a newer release when there is one."));
-                rows.Add(Line("Keys in a game: F2 saves a state in the current slot, F4 loads it, F6 / F7 change the slot, Esc quits, Alt+Enter "
-                              + "switches the full screen - bound by the plugin where FCEUX had nothing else on them. No RetroAchievements in FCEUX."));
+                rows.Add(Line("Keys in a game: F2 saves a state in the current slot, F4 loads it, F6 / F7 change the slot, F11 full screen, "
+                              + "Esc quits, Shift+Esc resets, H soft reset, P pause, L fast forward (held), F8 screenshot, F9 mute - bound by the "
+                              + "plugin where FCEUX had nothing else on them. No RetroAchievements in FCEUX."));
+                rows.Add(Line("A game's own options (region, video driver, PPU...): right-click it, Nixx-FCEUX : Options."));
                 rows.Add(Line("Saves, states, screenshots and cheats: " + Path.Combine(FceuxSavePaths.InstallDir(exe), FceuxSavePaths.Root) + "\\<platform>."));
             }
             stack.Controls.Add(Card("FCEUX", rows.ToArray()));
@@ -97,7 +99,7 @@ namespace LbIntegrations.Fceux
 
             // ── the screen ──
             var picture = new List<Control>();
-            foreach (var o in FceuxSettings.All)
+            foreach (var o in FceuxSettings.All.Where(x => x.OnPage))
             {
                 var row = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true, Margin = new Padding(0, 2, 0, 2) };
                 row.Controls.Add(new Label { Text = o.Label, Width = 150, Height = 24, TextAlign = ContentAlignment.MiddleLeft, UseMnemonic = false });
@@ -128,7 +130,7 @@ namespace LbIntegrations.Fceux
 
         public void Save()
         {
-            foreach (var o in FceuxSettings.All)
+            foreach (var o in FceuxSettings.All.Where(x => x.OnPage))
             {
                 var c = _choices[o.Key];
                 var value = o.Values[Math.Max(0, c.SelectedIndex)];

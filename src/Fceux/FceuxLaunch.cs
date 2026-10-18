@@ -61,23 +61,101 @@ namespace LbIntegrations.Fceux
 
         // ── fceux.cfg ────────────────────────────────────────────────────────
 
-        /// <summary>The screen and the hotkeys written into fceux.cfg for this game, and FCEUX's folders pointed at its
-        /// platform's. Never throws: a launch with things as they were beats none.</summary>
+        /// <summary>The screen, the game's own options and the hotkeys written into fceux.cfg for this game, and FCEUX's
+        /// folders pointed at its platform's. Never throws: a launch with things as they were beats none.</summary>
         public static void PrepareConfig(string exe, string gameId, string platform, string rom)
         {
             try
             {
                 var cfg = FceuxCfg.Load(FceuxCfg.Of(exe));
                 var fresh = !cfg.Existed;
-                bool full = FceuxSettings.BoolFor(gameId, "Fullscreen");
-                cfg.SetInt(FceuxCfg.FullScreen, full ? 1 : 0);
+                // A session whose end was not seen (LaunchBox closed first): FCEUX's own values back before anything.
+                var back = PutBack(exe, cfg);
+                var session = new List<(string Name, string Was)>();
+                var said = new List<string>();
+                foreach (var (o, name, value) in FceuxSettings.LinesFor(gameId))
+                {
+                    if (!o.OnPage && !session.Any(s => s.Name == name))
+                        session.Add((name, cfg.Get(name) ?? (FceuxSettings.Defaults.TryGetValue(name, out var d) ? d : value)));
+                    cfg.Set(name, value);
+                    if (!o.OnPage) said.Add(name + " = " + value);
+                }
                 foreach (var line in FceuxHotkeys.Bind(cfg)) Log.Info(line);
                 bool changed = cfg.Changed;
                 cfg.SaveIfChanged();
-                Log.Info("fceux.cfg: " + (changed ? (fresh ? "made" : "written") : "already as wanted") + " - " + (full ? "full screen" : "windowed"));
+                WriteSession(exe, session);
+                Log.Info("fceux.cfg: " + (changed ? (fresh ? "made" : "written") : "already as wanted") + " - "
+                         + (FceuxSettings.BoolFor(gameId, "Fullscreen") ? "full screen" : "windowed")
+                         + (said.Count > 0 ? ", for this game: " + string.Join(", ", said) + " (FCEUX's own put back when it quits)" : "")
+                         + (back > 0 ? ", " + back + " value(s) of an earlier session put back first" : ""));
             }
             catch (Exception ex) { Log.Warn("fceux.cfg could not be written - the game starts with it as it was", ex); }
             Log.Info("folders: " + FceuxSavePaths.Ensure(exe, platform));
+        }
+
+        // ── a game's own options, for its session only ───────────────────────
+
+        /// <summary>Beside fceux.cfg: FCEUX's own values of the lines a game's options changed, "name=value" - put back when
+        /// FCEUX has quit (AfterSession), else at the next launch.</summary>
+        public const string SessionFile = "lbip-fceux-session.txt";
+
+        internal static string SessionPath(string exe) => Path.Combine(Path.GetDirectoryName(Path.GetFullPath(exe)), SessionFile);
+
+        private static void WriteSession(string exe, List<(string Name, string Was)> session)
+        {
+            var path = SessionPath(exe);
+            if (session.Count == 0) { if (File.Exists(path)) File.Delete(path); return; }
+            File.WriteAllBytes(path, System.Text.Encoding.Latin1.GetBytes(string.Concat(session.Select(s => s.Name + "=" + s.Was + "\r\n"))));
+        }
+
+        /// <summary>The values noted in the session file set back into <paramref name="cfg"/> (in memory; the caller saves
+        /// and then removes the file). Returns how many.</summary>
+        private static int PutBack(string exe, FceuxCfg cfg)
+        {
+            var path = SessionPath(exe);
+            if (!File.Exists(path)) return 0;
+            int n = 0;
+            foreach (var line in System.Text.Encoding.Latin1.GetString(File.ReadAllBytes(path)).Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                int at = line.IndexOf('=');
+                if (at <= 0) continue;
+                cfg.Set(line.Substring(0, at), line.Substring(at + 1));
+                n++;
+            }
+            return n;
+        }
+
+        /// <summary>FCEUX's own values put back now, when a session file is there and FCEUX is not running. Never throws.</summary>
+        public static void PutBackNow(string exe)
+        {
+            try
+            {
+                if (!File.Exists(SessionPath(exe)) || Running(exe)) return;
+                var cfg = FceuxCfg.Load(FceuxCfg.Of(exe));
+                int n = PutBack(exe, cfg);
+                cfg.SaveIfChanged();
+                File.Delete(SessionPath(exe));
+                Log.Info("fceux.cfg: " + n + " value(s) of FCEUX's own put back after the session");
+            }
+            catch (Exception ex) { Log.Warn("fceux.cfg: FCEUX's own values could not be put back (they will be at the next launch)", ex); }
+        }
+
+        /// <summary>Once FCEUX has quit after a launch (a minute to appear): its own values back, then a thumbnail beside each
+        /// state of the game.</summary>
+        public static void AfterSession(string exe, string rom, string platform)
+        {
+            if (string.IsNullOrEmpty(exe)) return;
+            System.Threading.Tasks.Task.Run(async () =>
+            {
+                try
+                {
+                    for (int i = 0; i < 120 && !Running(exe); i++) await System.Threading.Tasks.Task.Delay(500).ConfigureAwait(false);
+                    while (Running(exe)) await System.Threading.Tasks.Task.Delay(1000).ConfigureAwait(false);
+                    PutBackNow(exe);
+                    if (!string.IsNullOrWhiteSpace(rom)) FceuxStateThumbs.RefreshAll(exe, rom, platform);
+                }
+                catch (Exception ex) { Log.Warn("after the session", ex); }
+            });
         }
 
         // ── the line ─────────────────────────────────────────────────────────

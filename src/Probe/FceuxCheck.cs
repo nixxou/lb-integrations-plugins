@@ -375,6 +375,27 @@ namespace LbIntegrations.Probe
                 Go("Nintendo Entertainment System", zelda, "g-window");
                 Check("a game set windowed: SDL.Fullscreen = 0", Get("SDL.Fullscreen") == "0");
 
+                // A game's own options: written for its session, FCEUX's own values put back after.
+                var session = Path.Combine(bin, "lbip-fceux-session.txt");
+                var was = (Get("SDL.PAL"), Get("SDL.AutoDetectPAL"), Get("SDL.VideoDriver"));
+                var setGame = T(asm, "FceuxSettings").GetMethod("SetGameValue", Any);
+                setGame.Invoke(null, new object[] { "g-own", "Region", "pal" });
+                setGame.Invoke(null, new object[] { "g-own", "VideoDriver", "3" });
+                Go("Nintendo Entertainment System", zelda, "g-own");
+                Check("a game's region and driver written: SDL.PAL 1, SDL.AutoDetectPAL 0, SDL.VideoDriver 3",
+                      Get("SDL.PAL") == "1" && Get("SDL.AutoDetectPAL") == "0" && Get("SDL.VideoDriver") == "3", Get("SDL.PAL") + " / " + Get("SDL.AutoDetectPAL") + " / " + Get("SDL.VideoDriver"));
+                Check("FCEUX's own values noted beside fceux.cfg", File.Exists(session) && File.ReadAllText(session).Contains("SDL.PAL=" + (was.Item1 ?? "0")), File.Exists(session) ? File.ReadAllText(session).Replace("\r\n", " | ") : "none");
+                Call(asm, "FceuxLaunch", "PutBackNow", exe);
+                Check("FCEUX quit: its own values back, the note gone", Get("SDL.PAL") == (was.Item1 ?? "0") && Get("SDL.AutoDetectPAL") == (was.Item2 ?? "1") && Get("SDL.VideoDriver") == (was.Item3 ?? "0") && !File.Exists(session),
+                      Get("SDL.PAL") + " / " + Get("SDL.AutoDetectPAL") + " / " + Get("SDL.VideoDriver"));
+                Go("Nintendo Entertainment System", zelda, "g-own");
+                Go("Nintendo Entertainment System", zelda);   // the end of the first was not seen
+                Check("an end not seen: put back at the next launch of another game", Get("SDL.PAL") == (was.Item1 ?? "0") && Get("SDL.VideoDriver") == (was.Item3 ?? "0") && !File.Exists(session));
+                Go("Nintendo Entertainment System", zelda, "g-own");
+                Go("Nintendo Entertainment System", zelda, "g-own");
+                Call(asm, "FceuxLaunch", "PutBackNow", exe);
+                Check("two launches of the game in a row: FCEUX's own values still the ones put back", Get("SDL.PAL") == (was.Item1 ?? "0") && Get("SDL.VideoDriver") == (was.Item3 ?? "0"));
+
                 // A path FCEUX cannot open: refused, said.
                 var japanese = Path.Combine(games, "\u30bc\u30eb\u30c0\u306e\u4f1d\u8aac.nes");
                 File.WriteAllBytes(japanese, new byte[16]);
@@ -459,6 +480,35 @@ namespace LbIntegrations.Probe
                 Check("GetCurrentVersion reads the stamp", plugin.GetCurrentVersion(exe) == (string)Field(r, "Version"));
             }
             finally { try { Directory.Delete(dir, true); } catch { } }
+            return Done();
+        }
+
+        /// <summary>The Nixx page and a game's window (one game, two games), drawn into PNGs beside <paramref name="output"/>.</summary>
+        public static bool Shot(Assembly asm, string output, string exe)
+        {
+            _bad = 0;
+            Console.WriteLine("-- the Nixx page and a game's window, drawn --");
+            try
+            {
+                if (exe != null) T(asm, "FceuxGameForm").GetField("ExeForProbe", Any).SetValue(null, exe);
+                var page = (System.Windows.Forms.Control)T(asm, "Settings").GetMethod("CreatePage").Invoke(null, null);
+                var host = new System.Windows.Forms.Form { ClientSize = new System.Drawing.Size(700, 720), Font = new System.Drawing.Font("Segoe UI", 9f) };
+                page.Dock = System.Windows.Forms.DockStyle.Fill; host.Controls.Add(page); host.Show();
+                System.Windows.Forms.Application.DoEvents();
+                using (var bmp = new System.Drawing.Bitmap(host.Width, host.Height)) { host.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, host.Width, host.Height)); bmp.Save(Path.ChangeExtension(output, ".page.png")); }
+                host.Close();
+                var g1 = StubGame.With(StubGame.Create("shot-1", "Zelda II - The Adventure of Link (Europe)", @"G:\LB\FakeCatalog\nes\Zelda II - The Adventure of Link (Europe).nes"), "Platform", "Nintendo Entertainment System");
+                var g2 = StubGame.With(StubGame.Create("shot-2", "Zelda no Densetsu", @"C:\games\Zelda no Densetsu.fds"), "Platform", "Nintendo Famicom Disk System");
+                foreach (var (name, games) in new[] { ("one", new[] { g1 }), ("two", new[] { g1, g2 }) })
+                {
+                    var form = (System.Windows.Forms.Form)Activator.CreateInstance(T(asm, "FceuxGameForm"), BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new object[] { games }, null);
+                    form.Show(); System.Windows.Forms.Application.DoEvents();
+                    using (var bmp = new System.Drawing.Bitmap(form.Width, form.Height)) { form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, form.Width, form.Height)); bmp.Save(Path.ChangeExtension(output, "." + name + ".png")); }
+                    form.Close();
+                }
+                Check("drawn", true, Path.GetDirectoryName(Path.GetFullPath(output)));
+            }
+            catch (Exception ex) { Check("ran", false, (ex.InnerException ?? ex).ToString()); }
             return Done();
         }
 

@@ -576,3 +576,24 @@ the `.sav`). The scripts written for the classic build are replaced when found a
 - Full screen on Mehdi's real display (F11, and `SDL.Fullscreen = 1` at start).
 - Non-ANSI paths with the Qt build (kept refused, as for the classic build, until measured).
 - The FDS disk side / eject keys - not bound yet.
+
+## 15. A game's own options (build B, 18/10/2026)
+
+Right-click a game, "Nixx-FCEUX : Options..." (the puNES window's model: tabs Game / Picture / Emulation, "All selected
+games" and groups, "Various (n of N)", Reset to defaults). Options (`FceuxSettings.All`, names read in
+`drivers\Qt\config.cpp` at the tag):
+
+| Option | fceux.cfg lines |
+|---|---|
+| Screen (every game's, the Nixx page) | `SDL.Fullscreen` 1 / 0 - kept |
+| Region | auto: `SDL.AutoDetectPAL = 1, SDL.PAL = 0`; NTSC / PAL / Dendy: `AutoDetectPAL = 0`, `SDL.PAL` 0 / 1 / 2 |
+| Video driver | `SDL.VideoDriver` 0 OpenGL / 3 Vulkan / 1 SDL / 2 QPainter |
+| Clip the sides | `SDL.ClipSides` |
+| PPU | `SDL.NewPPU` |
+| Sprite limit | `SDL.DisableSpriteLimit` |
+
+Every option but the screen is "As set in FCEUX" until a game chooses one. Since the Qt build stores even its
+command-line options, a game's lines are written into fceux.cfg before the launch and FCEUX's own values noted in
+`bin\lbip-fceux-session.txt`; once FCEUX has quit they are put back (`FceuxLaunch.AfterSession`), else at the next launch
+(LaunchBox closed first). A line fceux.cfg did not have is put back as FCEUX's compiled default (`FceuxSettings.Defaults`).
+Probe: `--fceux-launch` (written, noted, put back, an end not seen, two launches in a row), `--fceux-shot <png> [--emu]`.
