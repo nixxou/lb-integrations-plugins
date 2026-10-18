@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The BepInEx plugin that runs INSIDE 3dSen (Mehdi 19/10: as the SUPER ZSNES one, tools\superzsnes-bepinex).
+
+       3dSen is Unity 2019.4 on MONO, 32-bit: its code is plain IL (3dSen_Data\Managed\Assembly-CSharp.dll), so BepInEx 5's
+       Mono flavour (x86) loads this plugin and HarmonyX patches the game's methods directly. Everything of the game is
+       reached BY NAME (AccessTools, reflection): an update of 3dSen that renames costs a feature and a line in
+       nixx-errors.log, never the plugin. Only Unity's engine assemblies and BepInEx are referenced at build time.
+
+       It builds against a 3dSen folder (for Unity's assemblies) and BepInEx 5's core:
+
+           dotnet build tools\3dsen-bepinex -c Release -p:ThreeDSenDir=G:\3DSen\3dsenpc-win -p:BepInExCore=<...>\BepInEx\core
+
+       netstandard2.0: 3dSen's Mono ships netstandard.dll (3dSen_Data\Managed), and BepInEx 5 loads such plugins. -->
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <AssemblyName>ThreeDSen.BepInEx</AssemblyName>
+    <RootNamespace>LbIntegrations.ThreeDSen.Mod</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <ThreeDSenDir Condition="'$(ThreeDSenDir)' == ''">$(THREEDSEN_DIR)</ThreeDSenDir>
+    <ThreeDSenDir Condition="'$(ThreeDSenDir)' == ''">G:\LB1326\lbip-3dsen-lab\emu</ThreeDSenDir>
+    <BepInExCore Condition="'$(BepInExCore)' == ''">G:\LB1326\lbip-3dsen-lab\bepinex-pkg\BepInEx\core</BepInExCore>
+    <Managed>$(ThreeDSenDir)\3dSen_Data\Managed</Managed>
+  </PropertyGroup>
+
+  <Target Name="NeedGameDir" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('$(Managed)\UnityEngine.CoreModule.dll')"
+           Text="No $(Managed)\UnityEngine.CoreModule.dll. Pass -p:ThreeDSenDir=&lt;a 3dSen folder&gt; or set THREEDSEN_DIR." />
+    <Error Condition="!Exists('$(BepInExCore)\BepInEx.dll')"
+           Text="No $(BepInExCore)\BepInEx.dll. Pass -p:BepInExCore=&lt;BepInEx 5 x86's BepInEx\core&gt;." />
+  </Target>
+
+  <ItemGroup>
+    <Reference Include="BepInEx"><HintPath>$(BepInExCore)\BepInEx.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(BepInExCore)\0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>$(Managed)\UnityEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(Managed)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.InputLegacyModule"><HintPath>$(Managed)\UnityEngine.InputLegacyModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UI"><HintPath>$(Managed)\UnityEngine.UI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UIModule"><HintPath>$(Managed)\UnityEngine.UIModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.TextRenderingModule"><HintPath>$(Managed)\UnityEngine.TextRenderingModule.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+</Project>
