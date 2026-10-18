@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3dSen - Nixx plugin guide</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#ffffff; --ink:#1d1d1f; --muted:#5f6368; --line:#e3e3e0; --accent:#0a6ed1; --ok:#1e8e3e; --warn:#b06000; --no:#c5221f; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17181a; --card:#1f2124; --ink:#e8e8e6; --muted:#a0a3a7; --line:#33363a; --accent:#5aa9ff; --ok:#5bc27a; --warn:#e3a34a; --no:#ff7b72; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 "Segoe UI", system-ui, sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 64px; }
+  header h1 { margin:0 0 4px; font-size:30px; }
+  header p { margin:0; color:var(--muted); }
+  nav { margin:20px 0 8px; display:flex; flex-wrap:wrap; gap:8px; }
+  nav a { font-size:14px; color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; background:var(--card); }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 24px; margin:18px 0; }
+  h2 { margin:0 0 10px; font-size:21px; }
+  h3 { margin:18px 0 6px; font-size:17px; }
+  ul { padding-left:22px; } li { margin:4px 0; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .yes { color:var(--ok); font-weight:600; } .partly { color:var(--warn); font-weight:600; } .no { color:var(--no); font-weight:600; }
+  .tip, .warn { border-left:4px solid var(--accent); padding:8px 14px; margin:12px 0; background:color-mix(in srgb, var(--accent) 8%, transparent); border-radius:0 8px 8px 0; }
+  .warn { border-color:var(--warn); background:color-mix(in srgb, var(--warn) 10%, transparent); }
+  code, kbd { font-family:Consolas, monospace; font-size:14px; background:color-mix(in srgb, var(--ink) 8%, transparent); padding:1px 5px; border-radius:4px; }
+  footer { color:var(--muted); font-size:13px; text-align:center; margin-top:30px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>3dSen</h1>
+  <p>What the Nixx plugin does for you, and what to expect.</p>
+</header>
+<nav>
+  <a href="#overview">In short</a><a href="#start">Getting started</a><a href="#play">Playing</a><a href="#options">Options</a>
+  <a href="#saves">Saves</a><a href="#support">What works</a><a href="#limits">Limits</a><a href="#trouble">If something goes wrong</a>
+</nav>
+
+<section id="overview"><h2>In short</h2>
+  <p>3dSen PC, by Geod Studio, plays NES games as 3D dioramas. It does not turn just any ROM into 3D: it has a <b>3D profile</b>
+  for each game it knows (about a hundred built in, more from the community), and plays a game in 3D through its profile.</p>
+  <p>The plugin lets LaunchBox start a NES game straight into 3dSen: it finds the game's profile, tells 3dSen which ROM file to
+  use for it, and starts 3dSen on that profile, full screen or in a window.</p>
+</section>
+
+<section id="start"><h2>Getting started</h2>
+  <p>3dSen is sold on Steam: the plugin never downloads it. In LaunchBox, <b>Tools &gt; Manage Emulators &gt; Add</b>, choose
+  <b>Nixx-3DSen</b> and click <b>Download</b>. A window asks which 3dSen to use:</p>
+  <ul>
+    <li><b>Use the Steam install</b> - when Steam has 3dSen installed on this computer;</li>
+    <li><b>Install it with Steam</b> - Steam is asked to install it; when Steam has finished, click Download again;</li>
+    <li><b>Choose the folder...</b> - the folder of a copy you have, the one holding <code>3dSen.exe</code>.</li>
+  </ul>
+  <p>The emulator is set up for the platform <i>Nintendo Entertainment System</i> (and LiteBox's <i>Nes - Super Mario Bros. Hacks</i>).</p>
+</section>
+
+<section id="play"><h2>Playing a game</h2>
+  <p>When you click Play, the plugin looks for the game's 3D profile by its title (3dSen spells some titles its own way: the
+  plugin knows those). It writes the game's file into 3dSen's list of games, then starts 3dSen on that profile: the game
+  begins at once, in 3D.</p>
+  <p>If no profile matches, the game is not started and a message says so: right-click the game, <b>Nixx-3DSen : Options...</b>,
+  and choose its profile there - or <b>2D Mode</b>, which plays any game flat.</p>
+  <div class="warn">3dSen does not check that the ROM is the right game: a wrong profile plays the game with another game's 3D.</div>
+  <p>3dSen must not be running when you start a game: it rewrites its list of games when it quits.</p>
+</section>
+
+<section id="options"><h2>Options</h2>
+  <ul>
+    <li><b>Tools &gt; Nixx Integration Plugins Configuration..., page 3dSen</b>: the 3dSen in use and its version, where it keeps
+    its files, and the screen every game gets (full screen at the monitor's resolution, a window of a size, or as 3dSen last had it).</li>
+    <li><b>Right-click a game &gt; Nixx-3DSen : Options...</b>: the game's 3D profile and its own screen. The bottom shows the
+    command line 3dSen will be given.</li>
+    <li>3dSen's own settings (speed, shadows, the sky, the TV mode, the pads) stay in 3dSen's menu.</li>
+  </ul>
+</section>
+
+<section id="saves"><h2>Saves and save states</h2>
+  <p><b>F2</b> quick saves, <b>F4</b> quick loads (bound by the plugin when 3dSen had no key for them). <b>Esc</b> opens 3dSen's
+  menu, with its 36 save slots.</p>
+  <div class="warn">3dSen has no cartridge saves: a game that saves its progress on the cartridge (Zelda II, Final Fantasy,
+  Dragon Warrior...) forgets it when 3dSen quits. Keep your progress with save states.</div>
+  <p>3dSen keeps its states in its own folder, <code>%USERPROFILE%\AppData\LocalLow\Geod Studio\3dSen</code>, shared by every
+  copy of 3dSen. Their listing in LaunchBox's Game Saves is not there yet.</p>
+</section>
+
+<section id="support"><h2>What works</h2>
+  <table><tr><th>Feature</th><th></th><th>Notes</th></tr>
+  <tr><td>Steam install or your own copy</td><td class="yes">Yes</td><td>Nothing downloaded; Steam updates its install.</td></tr>
+  <tr><td>NES games with a 3D profile</td><td class="yes">Yes</td><td>Found by title, or chosen in the game's window.</td></tr>
+  <tr><td>.zip and .7z</td><td class="yes">Yes</td><td>A .zip whose first file is the ROM is given as is; otherwise the ROM is unpacked into <code>Unpacked\</code> of the 3dSen folder.</td></tr>
+  <tr><td>Famicom Disk System, Vs. System</td><td class="no">No</td><td>3dSen plays .nes cartridges only.</td></tr>
+  <tr><td>Cartridge saves</td><td class="no">No</td><td>3dSen has none - states only.</td></tr>
+  <tr><td>RetroAchievements</td><td class="no">No</td><td>3dSen has none.</td></tr>
+  <tr><td>3dSen VR</td><td class="no">Not yet</td><td>Another program (3dSenVR.exe).</td></tr>
+  </table>
+</section>
+
+<section id="limits"><h2>Limits and things to know</h2>
+  <ul>
+    <li>F6 / F7 / F11 do nothing special here: 3dSen uses F5-F8 to turn the camera, F9 / F10 to zoom, F3 to export the scene.</li>
+    <li>A game with no profile is refused rather than played with a guess.</li>
+  </ul>
+</section>
+
+<section id="trouble"><h2>If something goes wrong</h2>
+  <ul><li>The plugin's log: <code>%LOCALAPPDATA%\lb-integrations-plugins\3dsen.log</code> (General tab: "Open the logs folder").</li>
+  <li>3dSen's own log: <code>Player.log</code> in its folder of files (above) - "Load profile ..." names the game it started.</li></ul>
+</section>
+
+<footer>Nixx integration plugins for LaunchBox</footer>
+</main>
+</body>
+</html>

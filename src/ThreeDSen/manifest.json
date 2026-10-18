@@ -1,0 +1,19 @@
+{
+  "SchemaVersion": 1,
+  "PluginId": "c466f77e-dde3-46ad-942b-636b904dbe66",
+  "UserId": 0,
+  "Name": "Nixx-3DSen",
+  "Developer": "nixxou",
+  "Description": "Setup, launch and save integration for 3dSen PC, the NES emulator that turns games into 3D dioramas (your Steam install or your own copy).",
+  "Credits": "Many thanks to Geod Studio, who made 3dSen and its 3D profiles.",
+  "OperatingSystemFamily": "Windows",
+  "InstalledVersion": "1.2.2",
+  "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
+  "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
+  "HomePageUrl": "https://store.steampowered.com/app/1147940/",
+  "TipJarUrl": "",
+  "SourceKind": "Local",
+  "Tags": [
+    "5aae585f-ffc5-42bc-9f95-e5e190ef99e2"
+  ]
+}

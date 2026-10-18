@@ -1,9 +1,10 @@
-# Nixx-3DSen: research notes (stage 1)
+# Nixx-3DSen: research notes (stage 1) and build notes (stage 2)
 
 3dSen PC (Geod Studio) turns NES games into 3D voxel dioramas. It is a commercial Unity game sold on Steam: the
 plugin never downloads it, it **asks** the user whether to use the Steam install or a folder they pick (Mehdi's
 install flow). These notes are what was measured on 18/10/2026, and how; the plan of the plugin is at the end
-(section 12). Stage 2 starts from here and must not re-derive anything below.
+(section 12). Stage 2 starts from here and must not re-derive anything below. **What stage 2 built, and what
+is left, is section 13.**
 
 Lab: `G:\LB1326\lbip-3dsen-lab\`
 - `emu\` - the 3dSen copy used for every oracle run (extracted from `G:\3DSen\3dsenpc-win.zip`, never `G:\3DSen`
@@ -365,3 +366,90 @@ Mapped onto the reference files (brief section 3). `emu` id for saves: `"3dsen"`
 | `src\Probe\ThreeDSenCheck.cs` | `BsnesCheck.cs` | profile table vs a `rom.json` copy; `rom.json` edit round trip; `input.cfg` and `sav.cfg` round trips on copies of the lab files (`locallow-after-tests`); version constant read from the lab's `Assembly-CSharp.dll`; Steam vdf/acf parsing on fixtures; platform rows only added |
 
 Shared code needs: none foreseen (KeyValues/protobuf readers are local to the plugin).
+
+---
+
+## 13. Stage 2, build A (18/10/2026): what is done, what is open
+
+Branch `nes-3dsen`. `dotnet build src\ThreeDSen\ThreeDSen.csproj -c Release` is green, the ILRepack merge passes
+(`bin\Release\merged\ThreeDSen.dll`), the probe check `--3dsen` is green.
+
+### Files (`src\ThreeDSen\`)
+
+| File | What it does |
+|---|---|
+| `ThreeDSen.csproj`, `manifest.json` | as Bsnes's; AssemblyName `ThreeDSen`, RootNamespace `LbIntegrations.ThreeDSen`, **PluginId `c466f77e-dde3-46ad-942b-636b904dbe66`**, Name `Nixx-3DSen`, help `docs\help\3dsen.html` |
+| `ThreeDSenPlugin.cs` | the one `EmulatorPlugin` (direct, no base in between - checked by the probe); catalogue row + platform rows (`Nintendo Entertainment System`, `Nes - Super Mario Bros. Hacks`, `.nes; .zip; .7z`, AutoExtract false, never recommended); claim by `3dSen.exe`; AHK fields filled when empty; versions; `InstallEmulator` = the question; `PrepareCore` -> `Prepare` (host-free, the probe calls it) |
+| `ThreeDSenSteam.cs` | Steam root (registry `SteamPath`), logged in (`ActiveProcess` `ActiveUser` + a live `pid`), `libraryfolders.vdf` / `appmanifest_1147940.acf` (KeyValues reader), `StateFlags & 4`, `steam://install/1147940` |
+| `ThreeDSenInstall.cs` | the version (`Nes3D.Info.Version` read from `Assembly-CSharp.dll`'s metadata with System.Reflection.Metadata, never loaded), the folder check (`3dSen.exe` there or in its one sub-folder; the VR exe named and refused), the question window (own STA thread, TopMost, no owner - see its comment) |
+| `ThreeDSenProfiles.cs` | the 101 built-in profiles (= rom.json of 1.1.2, checked by the probe id for id), rom.json's profiles first; the matching: the game's choice > whole title / file name, normalised as LaunchBox's CompareName, + an alias table; ambiguous = none; 2D Mode never automatic |
+| `ThreeDSenRomJson.cs` | rom.json reader (Utf8JsonReader, keeps byte offsets) and in-place editor of ONE `romPath` (the rest byte for byte: LF, no BOM, no final newline; re-read before writing; temp + move); adds a missing item; makes the file when absent; REFUSES when only `rom.cfg` exists (3dSen would delete it) |
+| `ThreeDSenInput.cs` | input.cfg (both layers: protobuf map + InControl BIND) reader/writer; QuickSave F2 / QuickLoad F4 only when all their bindings are `None` and no action of either keyboard set holds the key; anything not understood = file untouched |
+| `ThreeDSenLaunch.cs` | exe name, `AnyRunning` (any 3dSen: one shared data folder), the data folder (`FOLDERID_LocalAppDataLow` + `Geod Studio\3dSen`), the screen switches (always the full set; primary monitor via `EnumDisplaySettings` with the thread per-monitor DPI aware), the command line (game path and our old switches out, the user's tokens kept), archives (`RomFor`) |
+| `ThreeDSenAhk.cs` | Running note, Exit `WinClose, ahk_exe 3dSen.exe`, SaveState F2, LoadState F4 |
+| `ThreeDSenSettings.cs` | options `Screen` (full / window / asis, default full), `WindowSize` (1280x720 default ... 2560x1440); per game `Profile` (any profile id) |
+| `ThreeDSenSettingsPage.cs` | the Nixx page (simple): the install(s) and versions, Steam's state, the data folder, the keys as read in input.cfg, the screen for every game |
+| `ThreeDSenGameMenu.cs` | `GameMenu` contract + per-game window: profile ("Automatic (<matched title>)", 2D Mode, the list), screen, window size; the multi-game rule (LbipSelection, Various, Reset); the command line live at the bottom |
+| `Log.cs` | `%LOCALAPPDATA%\lb-integrations-plugins\3dsen.log` |
+| `docs\help\3dsen.html` | the user guide |
+
+### Decisions taken in this build (from the measurements above)
+
+- **Launch line** `-id=<id> -screen-fullscreen 1 -screen-width W -screen-height H` (or `0` + the window's size; nothing
+  for "As 3dSen last had it"). The game path is taken OFF the host's line (NewCommandLine replaces the whole line).
+- **Archives**: a `.zip` whose FIRST entry is a `.nes` is given as is (measured in stage 1); a `.7z` (read in the source
+  only, never measured) and any other `.zip` are unpacked to `<3dSen folder>\Unpacked\<name>-<md5 of its path>\<name>.nes`.
+  For a Steam install that folder is inside Steam's `common\3dSen` (a cache; Steam's uninstall removes it). Q4 may move it.
+- **Games without a profile** (Q5): refused with a notice that says how to choose one; 2D Mode is offered in the game's
+  window, never automatic. Matching uses the WHOLE title only (the text before ":" would make "Batman: Return of the
+  Joker" the profile "Batman").
+- **3dSen running** (any copy): launch refused - rom.json is rewritten whole at its quit.
+- **rom.json absent but rom.cfg present**: refused (making rom.json makes 3dSen delete rom.cfg).
+- **Esc** (Q3): not mapped; Esc keeps opening 3dSen's menu (its 36 slots). F6 / F7 / F11 not bound (camera keys / no action).
+- **Save folders / "nothing beside the game"**: nothing to do - 3dSen writes nothing beside the game (stage 1, measured)
+  and its data folder cannot be moved (Q4 open). No SaveDesk in this build.
+
+### Measured in stage 2
+
+- **[run] end to end, 18/10**: the probe's `--3dsen-prepare` (the plugin's own `Prepare`) wrote into the REAL data folder
+  (`rom.json`: profile 73 -> the lab's Zelda II `.nes`; `input.cfg`: QuickSave F2 / QuickLoad F4) and printed
+  `-id=73 -screen-fullscreen 1 -screen-width 1920 -screen-height 1080`; `tools\oracle.ps1` started the lab's 3dSen with
+  it: window `0,0 1920x1080`, Player.log "Load profile Zelda II: The Adventure of Link", the game on screen in 3D
+  (`t6-stage2-full.png`); WM_CLOSE -> exit 0 in 312 ms; 3dSen's own rewrite kept our `romPath` (lastTime set) and F2 / F4.
+  The data folder and the registry key were backed up first (`locallow-before-stage2\`, `registry-before-stage2.reg`),
+  what the run left is kept in `locallow-after-stage2\`, then both were RESTORED and checked identical (12 files by
+  SHA-256, the registry export byte-identical).
+- **input.cfg**: the C# writer, on a copy of 3dSen's default file, produces BYTE FOR BYTE the file 3dSen itself wrote
+  after the stage-1 F2 / F4 test (`locallow-after-tests\input.cfg`) - a probe check.
+- **The primary monitor here**: `EnumDisplaySettings` 1920x1080, as `Win32_VideoController` and `Screen.PrimaryScreen`
+  say (this machine has virtual display adapters; Unity's remembered 2560x1440 comes from another display setup). DPI
+  virtualisation of that call is guarded against (thread per-monitor aware), not measured.
+- Steam on this machine (`--3dsen-steam`): found, logged in, 3dSen not installed - as stage 1 said.
+
+### Not measured / open (for build B and Mehdi)
+
+- **Saves (build B)**: SaveDesk + `IOwnSaves` (one row per `sav.cfg` slot whose `gameId` = the game's profile; slots
+  1-36 + quick; restore = the `.sav` + its `sav.cfg` record; `SlotRestore.MayOverwrite`), `ThreeDSenSavCfg.cs` (protobuf
+  reader/writer), thumbnails (`sav.cfg` texture RGB24 bottom-up; uniform 0xCD = a hotkey save -> `LbipStateThumbs.Watch`),
+  the save id (profile id vs rom name - decide before release), the battery notice (Q6).
+- Q1 (direct exe launch on a real Steam build), Q2 (`steam://install` for a non-owner), Q3 (Esc), Q4 (data folder, and the
+  Unpacked folder of a Steam install), Q5 (implemented as refusal + a choice in the game's window).
+- The AHK `Send {F2}` (SendInput) reaching 3dSen: only PostMessage WM_KEYDOWN was measured (stage 1).
+- `-window-mode` / `-monitor`: not used, not tried. A second monitor as the primary: not tried.
+- The question window: built and compiled, never shown in LaunchBox (Mehdi's click: Add Emulator > Nixx-3DSen > Download).
+- `.3dn` custom profiles are read through rom.json only (3dSen lists them there once it has run after their import); a
+  `.3dn` imported and never seen by 3dSen since is not offered until then.
+
+### For the lead (integration, brief section 17)
+
+- `deploy-dev.ps1` `$Pack`: `'ThreeDSen' = @{ Folder = 'Nixx-3DSen'; Old = @() }` and `ThreeDSen` in the `-All` list (no
+  vendored archive).
+- `build-release.ps1` `$Stage`: the ThreeDSen row.
+- `src\Installer\Payload.cs`: folder `Nixx-3DSen`, assembly `ThreeDSen.dll`, files dll / manifest / `Contract`;
+  `Installer.csproj` two EmbeddedResource; `InstallerForm.What()`: "3dSen PC (NES games in 3D, from your Steam install or
+  your copy)".
+- `src\NixxSaves\CatchAllClaims.cs` `Names`: `3dSen.exe`.
+- `src\Probe\Program.cs`: ALREADY wired on this branch, just before the bsnes lines: `--3dsen [<lab>]` (default
+  `G:\LB1326\lbip-3dsen-lab`), `--3dsen-steam` (read only), `--3dsen-prepare <3dSen.exe> --rom <game> --title <title>`
+  (WRITES 3dSen's real data folder - oracle use only, back it up first).
+- Shared code: **no change**.
