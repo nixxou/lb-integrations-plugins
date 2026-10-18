@@ -34,11 +34,12 @@ internal static class Payload
     public const string ZincEx = "Nixx-ZiNc-EX";
     public const string Punes = "Nixx-puNES";
     public const string Fceux = "Nixx-FCEUX";
+    public const string ThreeDSen = "Nixx-3DSen";
     /// <summary>The catch-all of the saves (lot 6): no emulator of its own - see src\NixxSaves.</summary>
     public const string Saves = "Nixx-Saves";
 
     public static readonly string[] Folders =
-        { Ares, Bsnes, Cxbx, Demul, Flycast, MelonDs, NoGba, Ppsspp, RaSnes9x, SuperZsnes, Vita3k, Xemu, Xenia, ZincEx, Punes, Fceux, Saves };
+        { Ares, Bsnes, Cxbx, Demul, Flycast, MelonDs, NoGba, Ppsspp, RaSnes9x, SuperZsnes, Vita3k, Xemu, Xenia, ZincEx, Punes, Fceux, ThreeDSen, Saves };
 
     /// <summary>Every folder name this pack has been installed under before the rename. They are
     /// swept on install, because PluginLoader dedupes by FILE NAME across plugin roots: a stale
@@ -66,7 +67,7 @@ internal static class Payload
     /// deleting it on the strength of its name alone is how an installer destroys something it was
     /// never told about.</summary>
     public static readonly string[] Assemblies =
-        { "Ares.dll", "Bsnes.dll", "Cxbx.dll", "Demul.dll", "Flycast.dll", "MelonDs.dll", "NoGba.dll", "Ppsspp.dll", "RaSnes9x.dll", "SuperZsnes.dll", "Vita3k.dll", "Xemu.dll", "Xenia.dll", "ZincEx.dll", "Punes.dll", "Fceux.dll", "NixxSaves.dll", "NixxMenus.dll" };
+        { "Ares.dll", "Bsnes.dll", "Cxbx.dll", "Demul.dll", "Flycast.dll", "MelonDs.dll", "NoGba.dll", "Ppsspp.dll", "RaSnes9x.dll", "SuperZsnes.dll", "Vita3k.dll", "Xemu.dll", "Xenia.dll", "ZincEx.dll", "Punes.dll", "Fceux.dll", "ThreeDSen.dll", "NixxSaves.dll", "NixxMenus.dll" };
 
     /// <summary>The menu relay: the pack's right-click entries on games, shown for the plugins.
     ///
@@ -163,6 +164,10 @@ internal static class Payload
         new("payload/Nixx-FCEUX/Fceux.dll", Fceux, "Fceux.dll"),
         new("payload/Nixx-FCEUX/manifest.json", Fceux, "manifest.json"),
         new(Contract, Fceux, "LbIntegrations.Catalog.dll"),
+
+        new("payload/Nixx-3DSen/ThreeDSen.dll", ThreeDSen, "ThreeDSen.dll"),
+        new("payload/Nixx-3DSen/manifest.json", ThreeDSen, "manifest.json"),
+        new(Contract, ThreeDSen, "LbIntegrations.Catalog.dll"),
 
         new("payload/Nixx-Saves/NixxSaves.dll",         Saves,      "NixxSaves.dll"),
         new("payload/Nixx-Saves/manifest.json",        Saves,      "manifest.json"),
