@@ -1,7 +1,8 @@
 // "Install" for 3dSen: nothing is downloaded. 3dSen PC is a commercial game (Geod Studio, sold on Steam), so the plugin
-// ASKS (Mehdi's install flow): use the Steam install, have Steam install it, or point at the folder of a copy the user has.
-// The emulator entry is then made on that folder as it is - nothing copied, no stamp (the only thing the plugin ever puts
-// there is Unpacked\, for a game's archive 3dSen cannot play itself - ThreeDSenLaunch.RomFor).
+// ASKS (Mehdi's install flow): use the Steam install, have Steam install it, or point at a copy the user has - its folder,
+// or an archive of it (.zip, .rar, .7z). Steam's install is used where it is; a copy of the user's is COPIED into
+// <LaunchBox>\Emulators\Nixx-3DSen (Mehdi 19/10: the pack's emulators live there), an archive extracted there through a
+// temporary folder. Copied over what is there, nothing taken away: the portable folder, Saves\ and BepInEx stay.
 //
 // THE QUESTION is asked from the Download button of LaunchBox's Add Emulator window (IsUpdateAvailable answers true for
 // the empty path, ThreeDSenPlugin), on a thread of its own (STA, as LbipNotice), above every window, and
@@ -31,7 +32,7 @@ namespace LbIntegrations.ThreeDSen
 {
     internal static class ThreeDSenInstall
     {
-        internal enum Pick { Cancel, UseSteam, InstallWithSteam, Folder }
+        internal enum Pick { Cancel, UseSteam, InstallWithSteam, Folder, Archive }
 
         /// <summary>For the probe: the answer instead of the window (what Steam says -> the choice and, for Folder, the folder).</summary>
         internal static Func<ThreeDSenSteam.Status, (Pick, string)> Instead;
@@ -112,6 +113,68 @@ namespace LbIntegrations.ThreeDSen
                 return exe;
             }
             catch (Exception ex) { problem = ex.Message; return null; }
+        }
+
+        // ── a copy of the user's, into Emulators ────────────────────────────
+
+        /// <summary>The archive lists 3dSen.exe (read from its entries only, nothing extracted).</summary>
+        public static bool ArchiveHoldsExe(string archive, out string problem)
+        {
+            problem = null;
+            try
+            {
+                using var a = SharpCompress.Archives.ArchiveFactory.Open(archive);
+                var names = a.Entries.Where(e => !e.IsDirectory).Select(e => Path.GetFileName((e.Key ?? "").Replace('/', '\\'))).ToList();
+                if (names.Any(n => string.Equals(n, ThreeDSenLaunch.ExecutableName, StringComparison.OrdinalIgnoreCase))) return true;
+                problem = names.Any(n => string.Equals(n, "3dSenVR.exe", StringComparison.OrdinalIgnoreCase))
+                    ? "this is 3dSen VR (3dSenVR.exe), which this plugin does not drive yet."
+                    : "there is no " + ThreeDSenLaunch.ExecutableName + " in " + Path.GetFileName(archive) + ".";
+                return false;
+            }
+            catch (Exception ex) { problem = "it could not be read (" + ex.Message + ")."; return false; }
+        }
+
+        /// <summary>The archive extracted into <paramref name="into"/> (an empty folder), every entry kept inside it.</summary>
+        public static void Extract(string archive, string into, Action<string> report)
+        {
+            var root = Path.GetFullPath(into).TrimEnd('\\') + "\\";
+            using var a = SharpCompress.Archives.ArchiveFactory.Open(archive);
+            using var reader = a.ExtractAllEntries();   // one pass: a solid 7z decodes once
+            int n = 0;
+            while (reader.MoveToNextEntry())
+            {
+                var e = reader.Entry;
+                if (e.IsDirectory || string.IsNullOrEmpty(e.Key)) continue;
+                var target = Path.GetFullPath(Path.Combine(into, e.Key.Replace('/', '\\')));
+                if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase)) throw new IOException("the archive's entry " + e.Key + " points outside its folder");
+                Directory.CreateDirectory(Path.GetDirectoryName(target));
+                using (var o = File.Create(target)) reader.WriteEntryTo(o);
+                if (++n % 50 == 0) report?.Invoke("Extracting 3dSen... " + n + " files");
+            }
+        }
+
+        /// <summary>3dSen.exe anywhere under <paramref name="dir"/>, found once (an archive's top folder may be any). Null with
+        /// <paramref name="problem"/> otherwise.</summary>
+        public static string ExeUnder(string dir, out string problem)
+        {
+            var found = Directory.GetFiles(dir, ThreeDSenLaunch.ExecutableName, SearchOption.AllDirectories);
+            if (found.Length == 1) return ExeIn(Path.GetDirectoryName(found[0]), out problem);
+            problem = found.Length == 0 ? "there is no " + ThreeDSenLaunch.ExecutableName + " in it." : "it holds " + found.Length + " copies of 3dSen - which one cannot be told.";
+            return null;
+        }
+
+        /// <summary>Every file of <paramref name="from"/> into <paramref name="to"/>, over what is there; nothing removed.</summary>
+        public static int CopyInto(string from, string to, Action<string> report)
+        {
+            int n = 0;
+            foreach (var f in Directory.GetFiles(from, "*", SearchOption.AllDirectories))
+            {
+                var target = Path.Combine(to, Path.GetRelativePath(from, f));
+                Directory.CreateDirectory(Path.GetDirectoryName(target));
+                File.Copy(f, target, overwrite: true);
+                if (++n % 50 == 0) report?.Invoke("Copying 3dSen... " + n + " files");
+            }
+            return n;
         }
 
         // ── the question ─────────────────────────────────────────────────────
@@ -204,6 +267,14 @@ namespace LbIntegrations.ThreeDSen
                 if (dialog.ShowDialog(form) != DialogResult.OK) return;
                 if (ExeIn(dialog.SelectedPath, out var problem) == null) { error.Text = "Not this folder: " + problem; return; }
                 result = (Pick.Folder, dialog.SelectedPath);
+                form.Close();
+            });
+            Add("Choose an archive...", true, () =>
+            {
+                using var dialog = new OpenFileDialog { Title = "An archive of 3dSen PC (its folder, zipped)", Filter = "Archives (*.zip;*.rar;*.7z)|*.zip;*.rar;*.7z", CheckFileExists = true };
+                if (dialog.ShowDialog(form) != DialogResult.OK) return;
+                if (!ArchiveHoldsExe(dialog.FileName, out var problem)) { error.Text = "Not this archive: " + problem; return; }
+                result = (Pick.Archive, dialog.FileName);
                 form.Close();
             });
             var cancel = Add("Cancel", true, () => { result = (Pick.Cancel, null); form.Close(); });

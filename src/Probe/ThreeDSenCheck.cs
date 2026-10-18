@@ -96,6 +96,38 @@ namespace LbIntegrations.Probe
             args = new object[] { Path.Combine(lab, "roms"), null };
             found = (string)T(asm, "ThreeDSenInstall").GetMethod("ExeIn", Any).Invoke(null, args);
             Check("a folder without 3dSen.exe is refused, saying why", found == null && ((string)args[1] ?? "").Contains("3dSen.exe"), (string)args[1]);
+
+            // A copy given as an archive: listed, extracted, found at any depth, copied over a folder that has the user's data.
+            var work = Path.Combine(Path.GetTempPath(), "lbip-3dsen-arch-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(work);
+            try
+            {
+                var zip = Path.Combine(work, "3dsen copy.zip");
+                using (var z = ZipFile.Open(zip, ZipArchiveMode.Create))
+                {
+                    z.CreateEntryFromFile(exe, "outer/3dsenpc-win/3dSen.exe");
+                    z.CreateEntryFromFile(Path.Combine(Path.GetDirectoryName(exe), "3dSen_Data", "Managed", "Assembly-CSharp.dll"), "outer/3dsenpc-win/3dSen_Data/Managed/Assembly-CSharp.dll");
+                }
+                var la = new object[] { zip, null };
+                Check("an archive holding 3dSen.exe is taken, from its listing", (bool)T(asm, "ThreeDSenInstall").GetMethod("ArchiveHoldsExe", Any).Invoke(null, la), (string)la[1]);
+                var bad = Path.Combine(work, "roms.zip");
+                using (var z = ZipFile.Open(bad, ZipArchiveMode.Create)) z.CreateEntry("game.nes");
+                la = new object[] { bad, null };
+                Check("... one without it refused, saying why", !(bool)T(asm, "ThreeDSenInstall").GetMethod("ArchiveHoldsExe", Any).Invoke(null, la) && ((string)la[1] ?? "").Contains("3dSen.exe"), (string)la[1]);
+                var into = Path.Combine(work, "x");
+                Directory.CreateDirectory(into);
+                Call(asm, "ThreeDSenInstall", "Extract", zip, into, null);
+                var ua = new object[] { into, null };
+                var under = (string)T(asm, "ThreeDSenInstall").GetMethod("ExeUnder", Any).Invoke(null, ua);
+                Check("extracted: 3dSen.exe found two folders down, its version read", under == Path.Combine(into, "outer", "3dsenpc-win", "3dSen.exe"), under ?? (string)ua[1]);
+                var dest = Path.Combine(work, "Emulators", "Nixx-3DSen");
+                Directory.CreateDirectory(Path.Combine(dest, "portable"));
+                File.WriteAllText(Path.Combine(dest, "portable", "rom.json"), "mine");
+                var n = (int)Call(asm, "ThreeDSenInstall", "CopyInto", Path.GetDirectoryName(under), dest, null);
+                Check("copied into the Emulators folder, the user's portable data kept", n == 2 && File.Exists(Path.Combine(dest, "3dSen.exe"))
+                      && File.ReadAllText(Path.Combine(dest, "portable", "rom.json")) == "mine", n.ToString());
+            }
+            finally { try { Directory.Delete(work, true); } catch { } }
         }
 
         private static IList<object> ProfileList(Assembly asm, string data) => ((System.Collections.IEnumerable)Call(asm, "ThreeDSenProfiles", "All", data)).Cast<object>().ToList();

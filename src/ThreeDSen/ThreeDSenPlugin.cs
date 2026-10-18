@@ -209,13 +209,19 @@ namespace LbIntegrations.ThreeDSen
                     case ThreeDSenInstall.Pick.Folder:
                         exe = ThreeDSenInstall.ExeIn(folder, out var problem);
                         if (exe == null) return new EmulatorInstallResponse("Not this folder: " + problem);
+                        exe = IntoEmulators(Path.GetDirectoryName(exe), args, out problem);
+                        if (exe == null) return new EmulatorInstallResponse(problem);
+                        break;
+                    case ThreeDSenInstall.Pick.Archive:
+                        exe = FromArchive(folder, args, out problem);
+                        if (exe == null) return new EmulatorInstallResponse(problem);
                         break;
                     default:
                         return new EmulatorInstallResponse("Cancelled: 3dSen was not set up.");
                 }
 
                 var version = ThreeDSenInstall.VersionOf(exe);
-                Log.Info("install: " + (pick == ThreeDSenInstall.Pick.UseSteam ? "Steam's" : "the user's copy") + " " + exe + " (" + version + ")");
+                Log.Info("install: " + (pick == ThreeDSenInstall.Pick.UseSteam ? "Steam's" : "the user's copy, in Emulators") + " " + exe + " (" + version + ")");
 
                 // THE IN-PROCESS PLUGIN, unless the Nixx page said no. Its failure is a note and never a failed install: 3dSen
                 // runs without it, as it ships.
@@ -244,6 +250,49 @@ namespace LbIntegrations.ThreeDSen
                 Log.Warn("install failed", ex);
                 return new EmulatorInstallResponse("3dSen could not be set up: " + ex.Message);
             }
+        }
+
+        /// <summary>Where a copy of the user's goes: &lt;LaunchBox&gt;\Emulators\Nixx-3DSen.</summary>
+        private static string EmulatorsTarget() => Path.Combine(LaunchBoxRoot(), "Emulators", PackName);
+
+        /// <summary>The 3dSen folder copied into Emulators (unless it is that folder already); its exe there, or null and why.</summary>
+        private static string IntoEmulators(string from, InstallEmulatorArgs args, out string problem)
+        {
+            problem = null;
+            var to = EmulatorsTarget();
+            try
+            {
+                var src = Path.GetFullPath(from).TrimEnd('\\');
+                var dst = Path.GetFullPath(to).TrimEnd('\\');
+                if (string.Equals(src, dst, StringComparison.OrdinalIgnoreCase)) return Path.Combine(dst, ThreeDSenLaunch.ExecutableName);
+                if (dst.StartsWith(src + "\\", StringComparison.OrdinalIgnoreCase)) { problem = "This folder holds LaunchBox's own Emulators folder: choose 3dSen's folder itself."; return null; }
+                if (ThreeDSenLaunch.AnyRunning()) { problem = "3dSen is running: close it, then click Download again."; return null; }
+                Report(args, "Copying 3dSen to " + dst + "...", null);
+                var n = ThreeDSenInstall.CopyInto(src, dst, m => Report(args, m, null));
+                Log.Info("install: " + n + " file(s) of " + src + " copied into " + dst);
+                var exe = ThreeDSenInstall.ExeIn(dst, out problem);
+                if (exe == null) problem = "3dSen was copied to " + dst + " but is not usable there: " + problem;
+                return exe;
+            }
+            catch (Exception ex) { Log.Warn("install: copy failed", ex); problem = "3dSen could not be copied to " + to + ": " + ex.Message; return null; }
+        }
+
+        /// <summary>The archive extracted in a temporary folder, then its 3dSen folder copied into Emulators.</summary>
+        private static string FromArchive(string archive, InstallEmulatorArgs args, out string problem)
+        {
+            var temp = Path.Combine(Path.GetTempPath(), "lbip-3dsen-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(temp);
+                Report(args, "Extracting " + Path.GetFileName(archive) + "...", null);
+                ThreeDSenInstall.Extract(archive, temp, m => Report(args, m, null));
+                var exe = ThreeDSenInstall.ExeUnder(temp, out problem);
+                if (exe == null) { problem = "Not this archive: " + problem; return null; }
+                Log.Info("install: " + Path.GetFileName(archive) + " extracted");
+                return IntoEmulators(Path.GetDirectoryName(exe), args, out problem);
+            }
+            catch (Exception ex) { Log.Warn("install: extraction failed", ex); problem = Path.GetFileName(archive) + " could not be extracted: " + ex.Message; return null; }
+            finally { try { Directory.Delete(temp, true); } catch { } }
         }
 
         private static IEmulator CreateEmulator(string exePath)
