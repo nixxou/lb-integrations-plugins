@@ -1,8 +1,9 @@
 # FCEUX: research notes for the Nixx-FCEUX plugin
 
-Stage 1 (research), 18/10/2026. Everything below was either MEASURED on the real executables in the lab or READ in
-FCEUX's own source at the released tag; each fact says which. Nothing here comes from a wiki. The next stage starts
-from this file: read section 11 (the plan) and section 12 (open questions) first, then come back to the facts.
+Stage 1 (research), 18/10/2026; stage 2 build A (the first lot of code), 18/10/2026. Everything below was either
+MEASURED on the real executables in the lab or READ in FCEUX's own source at the released tag; each fact says which.
+Nothing here comes from a wiki. The next stage starts from this file: read section 13 (what is built, what is open)
+first, then section 11 (the plan) and section 12 (open questions), then come back to the facts.
 
 Lab: `G:\LB1326\lbip-fceux-lab\` (not %TEMP%: a cleaner wipes old files there).
 
@@ -439,3 +440,82 @@ games (open question 2).
    with the plugin's full screen on his real display. If it misbehaves, the alternative is the Qt build
    (`qfceux.exe --fullscreen 1`, 97 MB, other config format) - a second integration, not planned.
 6. `qfceux.exe` (Qt build) installed by a user: claim it (needs its own config editor) or leave it to the catch-all?
+
+---
+
+## 13. Stage 2, build A: what is built, what is open (18/10/2026)
+
+### Built (src\Fceux, assembly `Fceux`, namespace `LbIntegrations.Fceux`)
+
+PackName `Nixx-FCEUX`, PluginId `f805dff2-11aa-4a4c-8117-9deb2698c755` (manifest.json and `FceuxSettings.PluginId`),
+`emu = "fceux"` in the save ids. One public `EmulatorPlugin` type, `FceuxPlugin`, deriving it directly.
+
+| File | State |
+|---|---|
+| `Fceux.csproj`, `manifest.json`, `Log.cs` | copies of Bsnes's, names changed; help `docs\help\fceux.html` embedded as `help.html`; the ILRepack merge passes (`bin\Release\merged\Fceux.dll`) |
+| `FceuxSystems.cs` | the one table (section 2): systems `nes` (`.nes .unf .unif .nsf`), `fds` (`.fds`, `disksys.rom` 8 192 B); platforms `Nintendo Entertainment System` (`.fds` there = disk), `Nintendo Famicom Disk System`, `Nintendo Famicom` (LiteBox's RomM name, claimed by name - decision of this stage on open question 1), `Nes - Super Mario Bros. Hacks`; `SystemFor` (extension, the ROM inside an archive, else the platform's); `FolderOf` (the platform's folder name under `Saves\`) |
+| `FceuxPlugin.cs` | catalogue row (`AutoExtract = false`, one `LbCatalogPlatform` per platform with its own extensions, the FDS BIOS named), row injection in the constructor and the three host events, claim by exe name (`fceux64.exe`, `fceux.exe`; not `qfceux.exe`), hotkey scripts filled when empty, missing platform rows ADDED (in memory on a claimed entry, only the platforms the library has; all of them on an entry the install creates; never a row removed or unticked; default only where no emulator is), `IsUpdateAvailable`'s three answers, install/update, BIOS per platform, no RetroAchievements, `PrepareCore` |
+| `FceuxBuild.cs` | API `releases/latest` (asset `fceux-<v>-win64.zip`, `digest` SHA-256 checked after the download), fallback HEAD `/releases/latest` -> tag from `Location`, version = `\d+\.\d+\.\d+` of the tag, 10-minute cache, stamp `lbip-fceux-build.txt`, `DescribedVersion` ("FCEUX x.y.z" in the exe's bytes, for the page only) |
+| `Archives.cs` | release zip extracted OVER the install (flat; a single top folder would be stripped; `fceux.cfg` never replaced); a game's archive: its ROM entries (`RomInside` for the save name / system), `Unpack` for the UNIF case |
+| `FceuxCfg.cs` | fceux.cfg editor: lines kept as bytes, a key set in place (its CR kept), a new key at its byte-order place, LF, no BOM, ANSI code page, written only when changed (temp + move); `Representable` (a path FCEUX can take) |
+| `FceuxHotkeys.cs` | the 92-byte records of `FCEUD_CommandMapping_V2`; FCEUX 2.7.0's default table rebuilt byte for byte; the pack's F2 / F4 / F6 / F7 / Esc bound by the rule of section 11; a table of another length (2.6.4: 128 commands) left alone |
+| `FceuxSavePaths.cs` | `"odnonvol"` / `"odstates"` / `"odsnaps"` / `"odcheats"` = `<exe>\Saves\<platform>` (+ `States`, `Screenshots`, `Cheats`) of the GAME's platform at each launch when empty or the pack's (under this install's `Saves\`, or the pack's shape gone stale); a folder the user chose is kept; at install the NES's; the game's files in FCEUX's own `sav\` `fcs\` `snaps\` `cheats\` MOVED (never over a file); nothing beside the game is FCEUX's, so nothing there is touched |
+| `FceuxFirmware.cs` | `disksys.rom` (or `fds_bios.bin`) copied from RetroArch's `system\` and the other emulators' bios/system/firmware folders (`LbipBiosImport`) at install and at each disk launch; a disk launch without an 8 192-byte BIOS refused with `LbipNotice` naming the file and folder |
+| `FceuxLaunch.cs` | `PrepareConfig` before the launch (never while FCEUX runs from that folder): folders, `"fs"` from the Fullscreen option, `vmcx`/`vmcy`/`vmcb` = the primary display's mode when 0 (section 5), the hotkeys, then the migration; the line is the host's, unchanged, except a `.unf`/`.unif` inside an archive (FCEUX does not look for them there): unpacked into `<exe>\Unpacked\<archive>-<hash>\` and the line pointed at it; a path outside the ANSI code page refused with a notice (decision of this stage on open question 4: refused, no copy) |
+| `FceuxAhk.cs` | Exit `WinClose, ahk_exe <exe>`; Save / Load State = `PostMessage, 0x111, 40344 / 40343` to `ahk_class FCEUXWindowClass` (FCEUX's own menu commands, current slot): they need neither the focus nor a key, so a rebound key cannot turn a save into a load; `Superseded` = the other exe name's scripts |
+| `FceuxSettings.cs`, `FceuxSettingsPage.cs` | the store (Bsnes's) with one option, `Fullscreen` (default full screen); the simple Nixx page: the install and its version, the FDS BIOS (state + "Look for it"), the screen |
+| `FceuxGameMenu.cs` | the `GameMenu` contract and the menu icon (`LbipMenuIcon`); `Entries` returns none yet |
+| `FceuxSaveDesk.cs`, `FceuxSaves.cs` | the front desk wired (other emulators' saves listed, rows routed to their owners); `GetPotentialSaveSlots` = 0..9; FCEUX's own files NOT listed yet |
+
+### Measured in this stage (lab `G:\LB1326\lbip-fceux-lab\run-plugin\`, a copy of the 2.7.0 win64 install)
+
+- `--fceux-prepare` wrote fceux.cfg for Zelda II on `Nintendo Entertainment System` (windowed), then FCEUX was started by
+  hand on the copied ROM with `tools\plugin-keys.ahk` (AutoHotkey 1.1.24 Send) then `tools\plugin-scripts.ahk` (the
+  plugin's PostMessage scripts, the taskbar holding the focus): the states `.fc0` / `.fc1`, their `-bak` copies and the
+  `.bak.fc0` undo landed in `Saves\Nintendo Entertainment System\States\`, the `.sav` (8 192 bytes) in
+  `Saves\Nintendo Entertainment System\`; F7 + F2 wrote `.fc1`, F6 + F4 loaded slot 0, Esc quit; the menu-command scripts
+  saved / changed slot / loaded without the focus and `WinClose` quit (exit 0). Files dated 18/10 18:31.
+- The pack's folders survived FCEUX's own exit save (they are in the file it rewrote).
+- Full screen was NOT tried again (section 5).
+
+### Probe checks (`src\Probe\FceuxCheck.cs`, wired in `src\Probe\Program.cs`), all green on 18/10
+
+```
+dotnet run --project src\Probe -c Release -- src\Fceux\bin\Release\merged\Fceux.dll --fceux-systems G:\LB1326\lbip-fceux-lab\src-2.7.0
+dotnet run --project src\Probe -c Release -- <dll> --fceux-cfg G:\LB1326\lbip-fceux-lab\fceux.cfg.firstrun
+dotnet run --project src\Probe -c Release -- <dll> --fceux-hotkeys G:\LB1326\lbip-fceux-lab\fceux.cfg.firstrun
+dotnet run --project src\Probe -c Release -- <dll> --fceux-launch [G:\LB1326\lbip-fceux-lab\fceux.cfg.firstrun]
+dotnet run --project src\Probe -c Release -- <dll> --fceux-latest            (network)
+dotnet run --project src\Probe -c Release -- <dll> --fceux-extract G:\LB1326\lbip-fceux-lab\dl\fceux-2.7.0-win64.zip <new folder>
+dotnet run --project src\Probe -c Release -- <dll> --fceux-prepare <fceux64.exe> --rom <rom> --platform <name> [--settings <ini>]   (writes a REAL install's fceux.cfg, for oracles)
+```
+
+The generic probe (`<dll> --emu <exe> --platform ...`) CALLS PrepareEmulatorForLaunch, which writes the install's
+fceux.cfg (full screen by default): point it at a lab copy only. `--saves-selftest` stays green.
+
+### Open, for build B (next stage)
+
+1. Saves listing (`OwnGetSaves`): `.sav` / `.fds` (disk save) as GameSaveGame, `.fc0`-`.fc9` one row per slot, ids
+   `{emu fceux, kind, sys nes|fds, by name, id <rom name, the ROM inside an archive>, slot}` (decided, section 11);
+   `-bak.fcN`, `.bak.fc0`, `-resume.fcs`, `-autosaveN.fcs` ignored; restore / delete (`SaveRows.TargetFor`,
+   `SlotRestore`, `SaveCompanions`), `OwnExpectedDir`, `ExecutableOf` (two installs: `inst` is the desk's).
+2. State thumbnails `<state>.png` from chunk 8 (section 8), at listing and after the session; `OwnGetCompanionSaveFiles`
+   / `OwnIsSecondarySaveFile` for the `.png`.
+3. The per-game window (SuperZsnes model): region (-pal / -dendy - MEASURE first whether they persist in fceux.cfg, with
+   a USA-named copy of the ROM), Game Genie, clip sides, no sprite limit, full screen per game; the bottom line of switches;
+   putting back after the session what a switch leaked into fceux.cfg (section 3). `GameMenu.Entries` then offers
+   "Nixx-FCEUX : Options...".
+4. Mehdi's tests in LaunchBox: install from Add Emulator, a NES launch (full screen on his real display - open question 5),
+   Esc / pause-screen Save / Load / Exit, an FDS game with his `disksys.rom`.
+5. Still open for Mehdi: questions 2 (FDS side keys), 3 (F11 as a second full-screen binding), 5, 6 of section 12;
+   questions 1 and 4 were decided as above and can be overruled.
+
+### For the lead's integration (brief section 17)
+
+- `deploy-dev.ps1`: `'Fceux' = @{ Folder = 'Nixx-FCEUX'; Old = @() }` and `Fceux` in the `-All` list (no vendored archive).
+- `build-release.ps1`: a `$Stage` row for `Fceux` / `Nixx-FCEUX`.
+- `src\Installer`: folder `Nixx-FCEUX`, assembly `Fceux.dll`, dll + manifest + contract; `What()`: "NES, Famicom, Famicom
+  Disk System".
+- `src\NixxSaves\CatchAllClaims.cs`: `fceux64.exe`, `fceux.exe` in `Names`.
+- `src\Probe\Program.cs`: the seven `--fceux-*` lines are already in this branch (near the `--bsnes-*` lines).
+- No change to any `Shared.*` folder.

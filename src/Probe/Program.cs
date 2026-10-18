@@ -213,6 +213,14 @@ namespace LbIntegrations.Probe
             if (Has(args, "--bsnes-saves")) { int at = Array.IndexOf(args, "--bsnes-saves"); return BsnesCheck.Saves(asm, Path.GetFullPath(args[at + 1]), Path.GetFullPath(args[at + 2])) ? 0 : 1; }
             if (Has(args, "--bsnes-latest")) return BsnesCheck.Latest(asm) ? 0 : 1;
             if (Has(args, "--bsnes-extract")) { int at = Array.IndexOf(args, "--bsnes-extract"); return BsnesCheck.Extract(asm, Path.GetFullPath(args[at + 1]), Path.GetFullPath(args[at + 2])) ? 0 : 1; }
+            // The FCEUX plugin's pieces, without a host - see FceuxCheck.
+            if (Has(args, "--fceux-systems")) { int at = Array.IndexOf(args, "--fceux-systems"); return FceuxCheck.Systems(asm, at + 1 < args.Length && !args[at + 1].StartsWith("--") ? Path.GetFullPath(args[at + 1]) : null) ? 0 : 1; }
+            if (Has(args, "--fceux-cfg")) return FceuxCheck.Cfg(asm, Path.GetFullPath(Arg(args, "--fceux-cfg"))) ? 0 : 1;
+            if (Has(args, "--fceux-hotkeys")) return FceuxCheck.Hotkeys(asm, Path.GetFullPath(Arg(args, "--fceux-hotkeys"))) ? 0 : 1;
+            if (Has(args, "--fceux-launch")) { int at = Array.IndexOf(args, "--fceux-launch"); return FceuxCheck.Launch(asm, at + 1 < args.Length && !args[at + 1].StartsWith("--") ? Path.GetFullPath(args[at + 1]) : null) ? 0 : 1; }
+            if (Has(args, "--fceux-prepare")) return FceuxCheck.Prepare(asm, Path.GetFullPath(Arg(args, "--fceux-prepare")), Path.GetFullPath(Arg(args, "--rom")), Arg(args, "--platform"), Arg(args, "--settings")) ? 0 : 1;
+            if (Has(args, "--fceux-latest")) return FceuxCheck.Latest(asm) ? 0 : 1;
+            if (Has(args, "--fceux-extract")) { int at = Array.IndexOf(args, "--fceux-extract"); return FceuxCheck.Extract(asm, Path.GetFullPath(args[at + 1]), Path.GetFullPath(args[at + 2])) ? 0 : 1; }
             // The RASnes9x plugin's pieces, without a host - see RaSnes9xCheck.
             if (Has(args, "--rasnes9x-conf")) return RaSnes9xCheck.Conf(asm, Path.GetFullPath(Arg(args, "--rasnes9x-conf")), Arg(args, "--settings")) ? 0 : 1;
             if (Has(args, "--rasnes9x-saves")) { int at = Array.IndexOf(args, "--rasnes9x-saves"); return RaSnes9xCheck.Saves(asm, Path.GetFullPath(args[at + 1]), Path.GetFullPath(args[at + 2])) ? 0 : 1; }

@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FCEUX - Nixx plugin guide</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#ffffff; --ink:#1d1d1f; --muted:#5f6368; --line:#e3e3e0; --accent:#0a6ed1; --ok:#1e8e3e; --warn:#b06000; --no:#c5221f; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17181a; --card:#1f2124; --ink:#e8e8e6; --muted:#a0a3a7; --line:#33363a; --accent:#5aa9ff; --ok:#5bc27a; --warn:#e3a34a; --no:#ff7b72; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 "Segoe UI", system-ui, sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 64px; }
+  header h1 { margin:0 0 4px; font-size:30px; }
+  header p { margin:0; color:var(--muted); }
+  nav { margin:20px 0 8px; display:flex; flex-wrap:wrap; gap:8px; }
+  nav a { font-size:14px; color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; background:var(--card); }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 24px; margin:18px 0; }
+  h2 { margin:0 0 10px; font-size:21px; }
+  h3 { margin:18px 0 6px; font-size:17px; }
+  ul { padding-left:22px; } li { margin:4px 0; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .yes { color:var(--ok); font-weight:600; } .partly { color:var(--warn); font-weight:600; } .no { color:var(--no); font-weight:600; }
+  .tip, .warn { border-left:4px solid var(--accent); padding:8px 14px; margin:12px 0; background:color-mix(in srgb, var(--accent) 8%, transparent); border-radius:0 8px 8px 0; }
+  .warn { border-color:var(--warn); background:color-mix(in srgb, var(--warn) 10%, transparent); }
+  code, kbd { font-family:Consolas, monospace; font-size:14px; background:color-mix(in srgb, var(--ink) 8%, transparent); padding:1px 5px; border-radius:4px; }
+  footer { color:var(--muted); font-size:13px; text-align:center; margin-top:30px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>FCEUX</h1>
+  <p>What the Nixx plugin does for you, and what to expect.</p>
+</header>
+<nav>
+  <a href="#overview">In short</a><a href="#start">Getting started</a><a href="#play">Playing</a><a href="#options">Options</a>
+  <a href="#saves">Saves</a><a href="#support">What works</a><a href="#limits">Limits</a><a href="#trouble">If something goes wrong</a>
+</nav>
+
+<section id="overview"><h2>In short</h2>
+  <p>FCEUX is a Nintendo Entertainment System / Famicom emulator that also runs the Famicom Disk System. It tells a cartridge
+  from a disk by the file itself, so one emulator covers every platform below.</p>
+  <p>The plugin downloads and updates FCEUX, adds it to LaunchBox for these platforms, puts each platform's saves, states and
+  screenshots in their own folder of the emulator, finds the disk system's BIOS for you, starts games in full screen and
+  binds the usual keys.</p>
+  <table><tr><th>LaunchBox platform</th><th>Games</th></tr>
+  <tr><td>Nintendo Entertainment System</td><td>.nes, .unf, .nsf - and .fds disks among them</td></tr>
+  <tr><td>Nintendo Famicom Disk System</td><td>.fds (needs <code>disksys.rom</code>)</td></tr>
+  <tr><td>Nintendo Famicom, Nes - Super Mario Bros. Hacks</td><td>as the NES</td></tr></table>
+  <p>Archives (.zip, .7z, .rar, .gz) are opened by FCEUX itself.</p>
+</section>
+
+<section id="start"><h2>Getting started</h2>
+  <p>In LaunchBox: Tools &gt; Manage &gt; Emulators &gt; Add, pick <b>Nixx-FCEUX</b> and press Download. FCEUX's latest release
+  goes to <code>Emulators\Nixx-FCEUX</code> and the emulator is created with its platforms (the default only where you had none).</p>
+  <p>For the Famicom Disk System, the BIOS <code>disksys.rom</code> (8 192 bytes) must sit beside <code>fceux64.exe</code>. If you already
+  have it in RetroArch's <code>system</code> folder or another emulator's BIOS folder (also as <code>fds_bios.bin</code>), the plugin
+  copies it there itself.</p>
+</section>
+
+<section id="play"><h2>Playing a game</h2>
+  <p>Before FCEUX starts, the plugin writes into its <code>fceux.cfg</code>: the game's platform folders, the screen (full screen or
+  window) and the keys below. FCEUX rewrites that file when it quits, so these settings come back at each launch.</p>
+  <table><tr><th>Key</th><th>Does</th></tr>
+  <tr><td><kbd>F2</kbd> / <kbd>F4</kbd></td><td>save / load a state in the current slot (FCEUX's own <kbd>I</kbd> / <kbd>P</kbd> still work)</td></tr>
+  <tr><td><kbd>F6</kbd> / <kbd>F7</kbd></td><td>previous / next slot</td></tr>
+  <tr><td><kbd>Esc</kbd></td><td>quit (the game's save is written)</td></tr>
+  <tr><td><kbd>Alt</kbd>+<kbd>Enter</kbd></td><td>full screen on and off</td></tr></table>
+  <p>A key you already use for something else in FCEUX is never taken. FCEUX's own default "load slot 2 / 4 / 6 / 7" on F2 / F4 /
+  F6 / F7 and "hide the menu" on Esc are given up for these.</p>
+</section>
+
+<section id="options"><h2>Options</h2>
+  <p>Tools &gt; Nixx Integration Plugins Configuration..., the FCEUX page: the install, the disk system's BIOS, and the screen
+  (full screen or windowed). Everything else is set in FCEUX itself.</p>
+</section>
+
+<section id="saves"><h2>Saves and save states</h2>
+  <p>Nothing is written beside your games. Each platform has its own folder:</p>
+  <ul>
+  <li><code>Emulators\Nixx-FCEUX\Saves\&lt;platform&gt;</code> - the cartridge saves (<code>.sav</code>) and the disk saves (<code>.fds</code>)</li>
+  <li><code>...\States</code>, <code>...\Screenshots</code>, <code>...\Cheats</code> beside them</li>
+  </ul>
+  <p>A save is named after the ROM - for an archive, the ROM inside it. What FCEUX had in its own <code>sav</code>, <code>fcs</code>,
+  <code>snaps</code> and <code>cheats</code> folders is moved into the game's platform folder when the game is launched. If you set your
+  own folders in FCEUX (Config &gt; Directories), they are kept.</p>
+  <p>LaunchBox's Game Saves window does not list FCEUX's files yet.</p>
+</section>
+
+<section id="support"><h2>What works</h2>
+  <table><tr><th>Feature</th><th></th><th>Notes</th></tr>
+  <tr><td>Download and update</td><td class="yes">Yes</td><td>FCEUX's numbered releases (the 64-bit classic build)</td></tr>
+  <tr><td>NES, Famicom, Famicom Disk System</td><td class="yes">Yes</td><td>NTSC, PAL and Dendy games; Vs. games from .nes files</td></tr>
+  <tr><td>Full screen</td><td class="yes">Yes</td><td>FCEUX's own, at the display's current resolution</td></tr>
+  <tr><td>Saves per platform</td><td class="yes">Yes</td><td></td></tr>
+  <tr><td>Game Saves window</td><td class="partly">Not yet</td><td></td></tr>
+  <tr><td>RetroAchievements</td><td class="no">No</td><td>FCEUX has none</td></tr>
+  <tr><td>PlayChoice-10</td><td class="no">No</td><td>FCEUX does not emulate it</td></tr></table>
+</section>
+
+<section id="limits"><h2>Limits and things to know</h2>
+  <ul>
+  <li>FCEUX cannot open a file whose path has characters outside Windows' ANSI code page (Japanese names, for instance): such a
+  launch is refused with a message. Rename the file with plain letters.</li>
+  <li>A disk game without <code>disksys.rom</code> is refused with a message saying where to put it.</li>
+  <li>An archive holding several ROMs makes FCEUX ask which one to play.</li>
+  </ul>
+</section>
+
+<section id="trouble"><h2>If something goes wrong</h2>
+  <ul><li>The plugin's log: <code>%LOCALAPPDATA%\lb-integrations-plugins\fceux.log</code> (General tab: "Open the logs folder").</li></ul>
+</section>
+
+<footer>Nixx integration plugins for LaunchBox</footer>
+</main>
+</body>
+</html>

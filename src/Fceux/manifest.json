@@ -1,0 +1,19 @@
+{
+  "SchemaVersion": 1,
+  "PluginId": "f805dff2-11aa-4a4c-8117-9deb2698c755",
+  "UserId": 0,
+  "Name": "Nixx-FCEUX",
+  "Developer": "nixxou",
+  "Description": "Download, update, launch and save integration for FCEUX, the NES, Famicom and Famicom Disk System emulator.",
+  "Credits": "Many thanks to the FCEUX team and to everyone who wrote FCE Ultra before them.",
+  "OperatingSystemFamily": "Windows",
+  "InstalledVersion": "1.2.2",
+  "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
+  "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
+  "HomePageUrl": "https://fceux.com/",
+  "TipJarUrl": "",
+  "SourceKind": "Local",
+  "Tags": [
+    "5aae585f-ffc5-42bc-9f95-e5e190ef99e2"
+  ]
+}
