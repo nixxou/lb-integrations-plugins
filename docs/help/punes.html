@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>puNES - Nixx plugin guide</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#ffffff; --ink:#1d1d1f; --muted:#5f6368; --line:#e3e3e0; --accent:#0a6ed1; --ok:#1e8e3e; --warn:#b06000; --no:#c5221f; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17181a; --card:#1f2124; --ink:#e8e8e6; --muted:#a0a3a7; --line:#33363a; --accent:#5aa9ff; --ok:#5bc27a; --warn:#e3a34a; --no:#ff7b72; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 "Segoe UI", system-ui, sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 64px; }
+  header h1 { margin:0 0 4px; font-size:30px; }
+  header p { margin:0; color:var(--muted); }
+  nav { margin:20px 0 8px; display:flex; flex-wrap:wrap; gap:8px; }
+  nav a { font-size:14px; color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; background:var(--card); }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 24px; margin:18px 0; }
+  h2 { margin:0 0 10px; font-size:21px; }
+  h3 { margin:18px 0 6px; font-size:17px; }
+  ul { padding-left:22px; } li { margin:4px 0; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .yes { color:var(--ok); font-weight:600; } .partly { color:var(--warn); font-weight:600; } .no { color:var(--no); font-weight:600; }
+  .tip, .warn { border-left:4px solid var(--accent); padding:8px 14px; margin:12px 0; background:color-mix(in srgb, var(--accent) 8%, transparent); border-radius:0 8px 8px 0; }
+  .warn { border-color:var(--warn); background:color-mix(in srgb, var(--warn) 10%, transparent); }
+  code, kbd { font-family:Consolas, monospace; font-size:14px; background:color-mix(in srgb, var(--ink) 8%, transparent); padding:1px 5px; border-radius:4px; }
+  footer { color:var(--muted); font-size:13px; text-align:center; margin-top:30px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>puNES</h1>
+  <p>What the Nixx plugin does for you, and what to expect.</p>
+</header>
+<nav>
+  <a href="#overview">In short</a><a href="#start">Getting started</a><a href="#play">Playing</a><a href="#options">Options</a>
+  <a href="#saves">Saves</a><a href="#support">What works</a><a href="#limits">Limits</a><a href="#trouble">If something goes wrong</a>
+</nav>
+
+<section id="overview"><h2>In short</h2>
+  <p>puNES is an accurate Nintendo Entertainment System emulator by Fabio Cavallo (FHorse). It runs NES and Famicom
+  cartridges - Vs. System dumps in the NES 2.0 format too - and Famicom Disk System disks.</p>
+  <p>The plugin installs puNES 0.111, sets it up for the NES, the Famicom Disk System and LiteBox's NES platforms, starts
+  each game full screen with the options you chose for it, finds the Famicom Disk System BIOS for you, and refuses a game
+  puNES could not start rather than showing an empty screen.</p>
+</section>
+
+<section id="start"><h2>Getting started</h2>
+  <ul>
+    <li>In LaunchBox, <b>Tools &gt; Manage &gt; Emulators &gt; Add</b>, pick <b>Nixx-puNES</b> and <b>Download</b>: puNES 0.111 (64-bit,
+    Direct3D 9) is installed into <code>Emulators\Nixx-puNES</code>, for the platforms Nintendo Entertainment System, Nintendo Famicom
+    Disk System, Nes - Super Mario Bros. Hacks and Nintendo Famicom. It becomes a platform's default emulator only where none is set yet.</li>
+    <li>puNES is set up <b>portable</b>: its settings, keys and saves stay in its own folder, and its first-run wizard never shows.</li>
+    <li>For Famicom Disk System games, puNES needs <code>disksys.rom</code>. The plugin copies it into <code>Emulators\Nixx-puNES\bios</code>
+    from RetroArch's <code>system</code> folder or another emulator's BIOS folder when you have it there; otherwise put it there yourself.</li>
+  </ul>
+</section>
+
+<section id="play"><h2>Playing a game</h2>
+  <p>puNES opens <code>.nes</code>, <code>.unf</code>, <code>.fds</code> and <code>.qd</code> files, and picks the system from the file
+  itself. An archive (<code>.zip</code>, <code>.7z</code>) holding one game named after it is given to puNES as it is; any other
+  archive (<code>.rar</code> too) is unpacked by the plugin into <code>Emulators\Nixx-puNES\Unpacked</code> under the archive's name,
+  so a game's saves are always named after it.</p>
+  <p>Quitting from the pause screen closes the window, as its own close button does: puNES writes the game's save then.</p>
+  <div class="warn">One puNES at a time: a game launched while puNES is already open is refused - puNES would hand the game to the
+  open window and quit at once.</div>
+</section>
+
+<section id="options"><h2>Options</h2>
+  <p><b>Tools &gt; Nixx Integration Plugins Configuration...</b>, page puNES: the screen every game starts on (full screen,
+  windowed, or as set in puNES), and the Famicom Disk System BIOS. Right-click a game, <b>Nixx-puNES : Options...</b>: that game's
+  own options - for several games at once too.</p>
+  <table><tr><th>Option</th><th>Choices</th></tr>
+  <tr><td>Screen</td><td>Full screen, windowed, or as set in puNES</td></tr>
+  <tr><td>Region (timing)</td><td>Auto (puNES's game database), NTSC, PAL, Dendy</td></tr>
+  <tr><td>Picture</td><td>Window size, integer scaling, pixel aspect ratio, filter, shader, palette, VSync, interpolation</td></tr>
+  <tr><td>Emulation</td><td>Pause in the background, save the cartridge every 3 minutes, rewind length</td></tr></table>
+  <div class="tip">Every option of a game starts as <b>As set in puNES</b>: nothing is changed, puNES's own settings are used. A value
+  chosen for a game is given to puNES on its command line when the game starts, and puNES does not keep it: its own settings come
+  back when it quits. The bottom of the window shows that command line.</div>
+</section>
+
+<section id="saves"><h2>Saves and save states</h2>
+  <ul>
+    <li>puNES keeps them in its own folders, never beside the games: cartridge saves in <code>prb\</code>
+    (<code>&lt;game&gt;.prb</code>), save states in <code>save\</code> (<code>&lt;game&gt;.p00</code> to <code>.p0B</code>, 12 slots),
+    Famicom Disk System disk changes in <code>diff\</code>, screenshots in <code>screenshot\</code> - all in
+    <code>Emulators\Nixx-puNES</code>. puNES has no setting to move them.</li>
+    <li>Keys: <kbd>F1</kbd> saves the state of the current slot, <kbd>F4</kbd> loads it, <kbd>F2</kbd> / <kbd>F3</kbd> change the slot,
+    <kbd>Alt</kbd>+<kbd>Enter</kbd> full screen, <kbd>Alt</kbd>+<kbd>Q</kbd> quits - puNES's own keys. The pack's usual keys
+    (F2, F4, F6, F7, F11, Esc) are bound only where puNES has nothing on them, and puNES's defaults use them all. LaunchBox's pause
+    screen sends F1 / F4.</li>
+    <li>LaunchBox's save management for puNES comes with a later version of the plugin.</li>
+  </ul>
+</section>
+
+<section id="support"><h2>What works</h2>
+  <table><tr><th>Feature</th><th></th><th>Notes</th></tr>
+  <tr><td>Install and update</td><td class="yes">Yes</td><td>puNES 0.111, the latest release, checked before it is unpacked</td></tr>
+  <tr><td>NES / Famicom cartridges</td><td class="yes">Yes</td><td>.nes (iNES, NES 2.0), .unf; Vs. System dumps in NES 2.0</td></tr>
+  <tr><td>Famicom Disk System</td><td class="yes">Yes</td><td>.fds, .qd - with disksys.rom</td></tr>
+  <tr><td>Archives</td><td class="yes">Yes</td><td>.zip, .7z, .rar</td></tr>
+  <tr><td>Saves in LaunchBox</td><td class="partly">Later</td><td>puNES's folders, see above</td></tr>
+  <tr><td>RetroAchievements</td><td class="no">No</td><td>puNES has none</td></tr></table>
+</section>
+
+<section id="limits"><h2>Limits and things to know</h2>
+  <ul>
+    <li>A game whose path holds an <code>=</code> sign cannot be opened by puNES (it cuts its command line there): the plugin says so
+    and does not start it. Rename the file or its folder.</li>
+    <li>PlayChoice-10 dumps run as plain NES games: puNES does not emulate the PlayChoice hardware. MAME's Vs. System sets are not
+    puNES's: they belong to MAME.</li>
+    <li>No newer puNES build can be downloaded today: the project's development builds have expired. A newer release comes with an
+    update of the plugin.</li>
+  </ul>
+</section>
+
+<section id="trouble"><h2>If something goes wrong</h2>
+  <ul><li>The plugin's log: <code>%LOCALAPPDATA%\lb-integrations-plugins\punes.log</code> (General tab: "Open the logs folder").</li>
+  <li>A disk game shows nothing: <code>disksys.rom</code> is missing or is not the Famicom Disk System BIOS (puNES does not check it).</li></ul>
+</section>
+
+<footer>Nixx integration plugins for LaunchBox</footer>
+</main>
+</body>
+</html>

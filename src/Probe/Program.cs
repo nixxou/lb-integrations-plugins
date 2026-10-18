@@ -220,6 +220,17 @@ namespace LbIntegrations.Probe
             if (Has(args, "--rasnes9x-cheevos")) return RaSnes9xCheck.Cheevos(asm) ? 0 : 1;
             if (Has(args, "--rasnes9x-toolset")) return RaSnes9xCheck.Toolset(asm, Path.GetFullPath(Arg(args, "--rasnes9x-toolset"))) ? 0 : 1;
             if (Has(args, "--rasnes9x-fetch")) return RaSnes9xCheck.Fetch(asm) ? 0 : 1;
+            // The puNES plugin's pieces, without a host - see PunesCheck.
+            if (Has(args, "--punes-systems")) return PunesCheck.Systems(asm, Path.GetFullPath(Arg(args, "--punes-systems"))) ? 0 : 1;
+            if (Has(args, "--punes-cfg")) return PunesCheck.Cfg(asm, Path.GetFullPath(Arg(args, "--punes-cfg"))) ? 0 : 1;
+            if (Has(args, "--punes-line")) return PunesCheck.Line(asm) ? 0 : 1;
+            if (Has(args, "--punes-archives")) return PunesCheck.ArchivesCheck(asm) ? 0 : 1;
+            if (Has(args, "--punes-hotkeys")) return PunesCheck.Hotkeys(asm, Path.GetFullPath(Arg(args, "--punes-hotkeys"))) ? 0 : 1;
+            if (Has(args, "--punes-bios")) return PunesCheck.Bios(asm) ? 0 : 1;
+            if (Has(args, "--punes-versions")) return PunesCheck.Versions(asm, Path.GetFullPath(Arg(args, "--punes-versions"))) ? 0 : 1;
+            if (Has(args, "--punes-e2e")) return PunesCheck.E2E(asm) ? 0 : 1;
+            if (Has(args, "--punes-fetch")) return PunesCheck.Fetch(asm) ? 0 : 1;
+            if (Has(args, "--punes-shot")) return PunesCheck.Shot(asm, Path.GetFullPath(Arg(args, "--punes-shot")), emuPath == null ? null : Path.GetFullPath(emuPath)) ? 0 : 1;
             if (Has(args, "--compat-embedded")) return CompatEmbeddedCheck.Run(asm, Arg(args, "--also") is string ca ? Path.GetFullPath(ca) : null) ? 0 : 1;
             if (Has(args, "--xenia-compat")) return XeniaCompatCheck.Run(asm, Has(args, "--online")) ? 0 : 1;
             // What a first install of Xenia sets up, and the options at launch: --xenia-setup [--xconfig f] [--account f] [--toml f].

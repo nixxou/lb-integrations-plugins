@@ -1,0 +1,19 @@
+{
+  "SchemaVersion": 1,
+  "PluginId": "44210e28-d6be-44e4-a69d-4780f6546aee",
+  "UserId": 0,
+  "Name": "Nixx-puNES",
+  "Developer": "nixxou",
+  "Description": "Download, update, launch and save integration for puNES, the accurate Nintendo Entertainment System, Famicom and Famicom Disk System emulator.",
+  "Credits": "Many thanks to Fabio Cavallo (FHorse), who writes puNES, and to everyone who contributes to it.",
+  "OperatingSystemFamily": "Windows",
+  "InstalledVersion": "1.2.2",
+  "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
+  "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
+  "HomePageUrl": "https://github.com/punesemu/puNES",
+  "TipJarUrl": "",
+  "SourceKind": "Local",
+  "Tags": [
+    "5aae585f-ffc5-42bc-9f95-e5e190ef99e2"
+  ]
+}

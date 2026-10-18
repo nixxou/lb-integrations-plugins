@@ -343,3 +343,82 @@ share a state file name). New PluginId GUID at stage 2.
 6. **D3D9 or OpenGL** build (OpenGL has the GLSL shaders; D3D9 is the Windows default)?
 7. **ROM path with `=`**: puNES cannot open it (measured). Refuse with a notice, or hand puNES a copy/hard link under
    `Unpacked\` (the save would then follow that name)?
+
+---
+
+## 15. Stage 2, build A (18/10): what is done
+
+The plugin exists in `src\Punes` (assembly `Punes`, namespace `LbIntegrations.Punes`, PackName `Nixx-puNES`, PluginId
+`44210e28-d6be-44e4-a69d-4780f6546aee`, manifest 1.2.2). `dotnet build src\Punes\Punes.csproj -c Release` is green and the
+ILRepack merge gives `src\Punes\bin\Release\merged\Punes.dll`. One public type derives from `EmulatorPlugin`
+(`PunesPlugin`, directly).
+
+| File | What it does now |
+|---|---|
+| `PunesSystems.cs` | the ONE table: systems `nes` (.nes .unf .unif .nsf .nsfe) and `fds` (.fds .qd, `disksys.rom` required, aliases `FdsBios.bin`, `fds_bios.bin`); platforms `Nintendo Entertainment System` (+ .fds/.qd by extension), `Nintendo Famicom Disk System`, `Nes - Super Mario Bros. Hacks`, `Nintendo Famicom` (question 3 taken as "yes" - the task names the pack's Famicom names; one line to remove if Mehdi says no). `SystemFor`: the file's extension first (the one inside an archive), else the platform's default, else nothing - puNES itself picks by file, there is no `--system` |
+| `PunesPlugin.cs` | constructor (log, row injection), catalogue row (one `LbCatalogPlatform` per platform with its own extensions, FDS `RequiredBiosFile = disksys.rom`, `AutoExtract = false`), claiming by exe name (`punes64.exe`, `punes.exe`, `punes64_p.exe`, `punes_p.exe`), AutoHotkey fields filled only when empty, `IsPlatformSupported` (never recommended), versions, `IsUpdateAvailable` (empty path true / not ours false / ours older true), `InstallEmulator`, `CreateEmulator` (one row per platform, IsDefault only where no emulator is default yet, DefaultPlatform not set), BIOS per platform, no RA, `PrepareCore` |
+| `PunesBuild.cs` | pinned v0.111 x86_64 D3D9, SHA-256 checked before extraction, developer copy in `%LOCALAPPDATA%\lb-integrations-plugins\dev\`, exe MD5s of both 0.111 builds, stamp `lbip-punes-build.txt`, `/releases/latest` asked once per process off the host's thread (a newer tag only logged and shown on the page) |
+| `Archives.cs` | flat zip extracted over the install; `puNES.cfg`, `input.cfg`, `recent.cfg` kept if a zip ever ships them; `dip.cfg` / `nes20db.xml` replaced (puNES's own data) |
+| `PunesCfg.cs` | editor of puNES.cfg / input.cfg in place (UTF-8 no BOM, CRLF, nothing dropped, written only when changed); `IsPortable`, `DataDir` (exe folder when portable, else `%LOCALAPPDATA%\puNES`), `EnsurePortable` (empty puNES.cfg beside the exe, unless the user has a `%LOCALAPPDATA%\puNES\puNES.cfg`) |
+| `PunesLaunch.cs` | exe names, `Running`, `RomFor` (archive as is only when it holds ONE file, .zip/.7z, named after the archive; else unpacked into `<puNES>\Unpacked\<name>-<hash>\<name><ext>`; two games none named after the archive / no game: refused), `Givable` ('=' refused), the line (plugin options FIRST, then the host's line untouched, so an option on the user's platform line wins), `BindHotkeys` |
+| `PunesFirmware.cs` | where puNES looks (cfg path, exe folder, game folder, `bios\`), `disksys.rom` copied into `bios\` from the other emulators' system/bios/firmware folders (siblings under `Emulators\` and the library's), an alias copied under puNES's name |
+| `PunesSettings.cs` | options table, each a puNES switch: Screen (page, default full screen), Region `--mode`, Size, IntegerScaling `--int-scl-fullscreen`, PixelAspect, Filter, Shader, Palette, VSync, Interpolation, BackgroundPause, SaveBattery (nes only), Rewind - all but Screen "As set in puNES" by default; `CfgHas` reads puNES.cfg for "As set in puNES (value)" |
+| `PunesSettingsPage.cs` | simple page: install / version / newer tag, keys and save folders, Screen for every game, FDS BIOS status + "Look for it now" |
+| `PunesGameMenu.cs` | `GameMenu` (icon = the exe's, `LbipMenuIcon`) and the per-game window: tabs Game / Picture / Emulation, the multi-game rule (All selected games (N), groups, Various (n of N)), "As set in puNES (value)", Reset, live "N option(s) added to the command line, before the ROM path:" |
+| `PunesAhk.cs` | Running note, Exit = `WinClose, ahk_exe <the entry's exe>`, Save F1 / Load F4 (puNES's defaults) |
+| `Log.cs` | `%LOCALAPPDATA%\lb-integrations-plugins\punes.log` |
+| `docs\help\punes.html` | the user guide (embedded as `help.html`) |
+
+### Facts measured during build A (lab `G:\LB1326\lbip-punes-lab\run3`, fresh copy of the D3D9 zip + an empty puNES.cfg)
+
+- `--fullscreen=yes --fullscreen-window=yes --mode=ntsc Zelda` -> window `-3,-26,1923,1043` titled "puNES_p (NTSC, 2x, ...)": a
+  MAXIMIZED window with its frame, not a borderless one - so `--fullscreen-window` is not offered. After WM_CLOSE (exit 0)
+  puNES.cfg still said `fullscreen=no`, `fullscreen in window=no`, `preferred mode=auto`.
+- `--fullscreen=no --mode=pal --size=3x --filter=hq2x --palette=sony --rewind-minutes=disabled Zelda` -> title "puNES_p (PAL, 3x,
+  Hq2X, Sony CXA2025AS US)"; after the exit puNES.cfg still had `size window=2x`, `filter=none`, `palette=ntsc`,
+  `rewind minutes=15`, `preferred mode=auto`: options on the line apply and are NOT kept.
+- Read (cmd_line.cpp, case 't'): `--stretch-fullscreen` sets `cfg_from_file.scale = !value` (the window size) - a bug of 0.111,
+  not offered. Values are matched EXACTLY against settings.h's `opt_*` snames (objSettings.cpp `val_to_int`): the filter is
+  `none` (the help text's `nofilter` would not parse), the palettes are `pal ntsc sony mono green frbnst frbyuv raw`.
+- Read (settings.h:1139): the puNES.cfg key is spelled `use integer scaliung in fullscreen`.
+
+### Probe checks (`src\Probe\PunesCheck.cs`, wired in `src\Probe\Program.cs` after the `--rasnes9x-*` lines), all green 18/10
+
+```
+Probe.exe <Punes.dll> --punes-systems G:\LB1326\lbip-punes-lab\src-v0.111
+Probe.exe <Punes.dll> --punes-cfg G:\LB1326\lbip-punes-lab\cfg-after-run1.cfg
+Probe.exe <Punes.dll> --punes-line
+Probe.exe <Punes.dll> --punes-archives
+Probe.exe <Punes.dll> --punes-hotkeys G:\LB1326\lbip-punes-lab\run1\input.cfg
+Probe.exe <Punes.dll> --punes-bios
+Probe.exe <Punes.dll> --punes-versions G:\LB1326\lbip-punes-lab\d3d9\punes64.exe
+Probe.exe <Punes.dll> --punes-e2e
+Probe.exe <Punes.dll> --punes-fetch                                   (network: downloads the pinned zip)
+Probe.exe <Punes.dll> --punes-shot <out.png> [--emu <punes64.exe>]    (draws the page and a game's window)
+```
+
+### Not done in build A (for build B)
+
+- **Saves in LaunchBox**: no `SaveDesk` yet (`PunesSaveDesk.cs`, `PunesSaves.cs`), no `SupportsSaveManagement`. Plan unchanged
+  (section 13): ids `emu = "punes"`, `Sys = "nes" | "fds"`, `prb\<name>.prb`, states `save\<name>.p00..p0B` one row per slot
+  (`GetPotentialSaveSlots` 0..11), FDS `diff\<name>.ipf` / `.ipq`, all under `PunesCfg.DataDir(exe)`. The constructor gets
+  `_desk = new SaveDesk(...)` as its FIRST line then (the class is already `partial`).
+- **State thumbnails** (`PunesStateThumbs.cs`: the PNG from offset u32@8 to EOF -> `<state>.png`).
+- **Nothing beside the game**: nothing to move - puNES writes nothing there (fixed folders, measured stage 1); the one case is
+  FDS `write mode=original file` (logged by `WarnWriteMode`, question 5).
+- **Per-platform save folders**: not possible by a setting (question 1); puNES's own `prb\ save\ diff\` kept.
+- **Esc to quit**: not bound (puNES's "toggle menubar in fullscreen" holds it); `LbipAhk.EscapeScript` not used - question 2.
+- **Platform rows on an existing entry** (reinstall): not added - adding rows to `args.ExistingEmulator` during the Edit
+  Emulator window's update cannot be measured without LaunchBox; only `CreateEmulator` adds rows (never removes any).
+- **FDS with a real disk**: still unmeasured (no dump on this machine); the BIOS refusal and the copy are probe-checked only.
+- **Vendored copy** of the zip in `vendor\punes\`: not added (25 MB; the asset is unchanged since 2024). The lead's decision.
+
+### For the lead (integration, brief section 17)
+
+- `deploy-dev.ps1`: `'Punes' = @{ Folder = 'Nixx-puNES'; Old = @() }`, and `Punes` in the `-All` list. A dev copy of
+  `punes-0.111-x86_64-win-d3d9.zip` in `%LOCALAPPDATA%\lb-integrations-plugins\dev\` is used when present (optional).
+- `build-release.ps1`: a `$Stage` row for `Punes` / `Nixx-puNES`.
+- `src\Installer`: folder `Nixx-puNES`, assembly `Punes.dll`, its manifest; `What()`: "NES, Famicom, Famicom Disk System".
+- `src\NixxSaves\CatchAllClaims.cs` `Names`: `punes64.exe`, `punes.exe`, `punes64_p.exe`, `punes_p.exe`.
+- `README.md` row; nothing new merged (Lib.Harmony, SharpCompress as every plugin).
+- No change in any `Shared.*` folder.
