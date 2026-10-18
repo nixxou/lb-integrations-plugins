@@ -9,6 +9,8 @@
 //   --punes-e2e                             a launch as LaunchBox makes it (claim, line, FDS without/with BIOS, refusals)
 //   --punes-fetch                           the pinned build downloaded from GitHub, its SHA-256 checked, its listing
 //   --punes-shot <out.png>                  the Nixx page and a game's window, drawn
+//   --punes-savedirs                        prb\ save\ diff\ screenshot\ made junctions to Saves\<platform>, files moved, never overwritten
+//   --punes-saves [<real .p00>]             a game's rows: cartridge save, disk writes, the twelve slots; the thumbnail of a real state
 
 using System;
 using System.Collections.Generic;
@@ -423,6 +425,8 @@ namespace LbIntegrations.Probe
                 var nes = Path.Combine(games, "Zelda II - The Adventure of Link (Europe).nes"); File.WriteAllBytes(nes, new byte[16]);
                 var r = Launch("Nintendo Entertainment System", nes);
                 Check("a NES game: full screen in front, the game kept", r.WasSuccess && r.NewCommandLine == "--fullscreen=yes \"" + nes + "\"", r.NewCommandLine);
+                var prbLink = new DirectoryInfo(Path.Combine(Path.GetDirectoryName(exe), "prb"));
+                Check("its saves folder: a junction to Saves\\Nintendo Entertainment System\\prb", prbLink.Attributes.HasFlag(FileAttributes.ReparsePoint) && (prbLink.LinkTarget ?? "").TrimEnd('\\').EndsWith(Path.Combine("Saves", "Nintendo Entertainment System", "prb"), StringComparison.OrdinalIgnoreCase), prbLink.LinkTarget);
                 var appCfg = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "puNES", "puNES.cfg");
                 if (!File.Exists(appCfg)) Check("made portable (an empty puNES.cfg beside the exe)", File.Exists(Path.Combine(Path.GetDirectoryName(exe), "puNES.cfg")));
                 r = Launch("My custom NES", nes, "--vsync=off");
@@ -455,7 +459,7 @@ namespace LbIntegrations.Probe
                 notice.GetField("Instead", Any).SetValue(null, null);
                 gate.GetField("Off", Any).SetValue(null, false);
                 T(asm, "PunesSettings").GetField("PathOverride", Any).SetValue(null, null);
-                try { Directory.Delete(dir, true); } catch { }
+                Wipe(dir);   // the launches made prb\ save\ diff\ screenshot\ junctions
             }
             return Done();
         }
@@ -515,6 +519,187 @@ namespace LbIntegrations.Probe
                 Check("drawn", true, Path.GetDirectoryName(Path.GetFullPath(output)));
             }
             catch (Exception ex) { Check("ran", false, (ex.InnerException ?? ex).ToString()); }
+            return Done();
+        }
+
+        // ── the save folders ─────────────────────────────────────────────────
+
+        private static string LinkOf(string dir)
+        {
+            var info = new DirectoryInfo(dir);
+            if (!info.Exists || !info.Attributes.HasFlag(FileAttributes.ReparsePoint)) return null;
+            var t = info.LinkTarget ?? "";
+            return t.StartsWith(@"\??\", StringComparison.Ordinal) ? t.Substring(4) : t;
+        }
+
+        /// <summary>Junctions only, never what they lead to - then the rest.</summary>
+        private static void Wipe(string dir)
+        {
+            try
+            {
+                foreach (var d in Directory.EnumerateDirectories(dir, "*", SearchOption.TopDirectoryOnly))
+                    if (new DirectoryInfo(d).Attributes.HasFlag(FileAttributes.ReparsePoint)) Directory.Delete(d); else Wipe(d);
+                Directory.Delete(dir, true);
+            }
+            catch { }
+        }
+
+        public static bool SaveDirs(Assembly asm)
+        {
+            _bad = 0;
+            Console.WriteLine("-- puNES's four folders made junctions to Saves\\<platform> --");
+            var dir = Scratch("savedirs");
+            var t = T(asm, "PunesSaveDirs");
+            const string Nes = "Nintendo Entertainment System", Fds = "Nintendo Famicom Disk System", Hacks = "Nes - Super Mario Bros. Hacks";
+            try
+            {
+                var exe = Path.Combine(dir, "Nixx-puNES", "punes64.exe"); Directory.CreateDirectory(Path.GetDirectoryName(exe)); File.WriteAllText(exe, "");
+                var inst = Path.GetDirectoryName(exe);
+                File.WriteAllText(Path.Combine(inst, "puNES.cfg"), "");   // portable: the data folder is the exe's
+                string Live(string k) => Path.Combine(inst, k);
+                string Mine(string p, string k) => Path.Combine(inst, "Saves", p, k);
+                t.GetField("LibraryForProbe", Any).SetValue(null, new Func<IEnumerable<(string, string)>>(() => new[]
+                {
+                    ("Zelda II.nes", Nes), ("Other.zip", Hacks), ("Twin.nes", Nes), ("Twin.nes", Hacks),
+                }));
+
+                // puNES ran before the plugin: its folders are real ones, with files of several platforms.
+                foreach (var k in new[] { "prb", "save", "diff", "screenshot" }) Directory.CreateDirectory(Live(k));
+                File.WriteAllBytes(Path.Combine(Live("prb"), "Zelda II.prb"), new byte[] { 1, 2, 3 });
+                File.WriteAllBytes(Path.Combine(Live("prb"), "Other.prb"), new byte[] { 4 });
+                File.WriteAllBytes(Path.Combine(Live("prb"), "Twin.prb"), new byte[] { 5 });
+                File.WriteAllBytes(Path.Combine(Live("prb"), "Unknown.prb"), new byte[] { 6 });
+                File.WriteAllBytes(Path.Combine(Live("save"), "Zelda II.p00"), new byte[] { 7 });
+                File.WriteAllBytes(Path.Combine(Live("save"), "Zelda II.p00.png"), new byte[] { 8 });
+                File.WriteAllBytes(Path.Combine(Live("diff"), "Kaette.ipf"), new byte[] { 9 });
+                File.WriteAllBytes(Path.Combine(Live("screenshot"), "Other_000001.png"), new byte[] { 10 });
+                // One already in the platform folder, different: never overwritten.
+                Directory.CreateDirectory(Mine(Nes, "prb"));
+                File.WriteAllBytes(Path.Combine(Mine(Nes, "prb"), "Zelda II.prb"), new byte[] { 9, 9 });
+
+                var said = (string)t.GetMethod("Ensure", Any).Invoke(null, new object[] { exe, Hacks });
+                Console.WriteLine("    " + said);
+                bool JunctionTo(string k, string p) => string.Equals(LinkOf(Live(k))?.TrimEnd('\\'), Path.GetFullPath(Mine(p, k)), StringComparison.OrdinalIgnoreCase);
+                Check("the four folders are junctions to the launching platform's", new[] { "prb", "save", "diff", "screenshot" }.All(k => JunctionTo(k, Hacks)), said);
+                Check("a save of a library game of another platform: into that platform", File.Exists(Path.Combine(Mine(Nes, "save"), "Zelda II.p00")) && File.Exists(Path.Combine(Mine(Nes, "save"), "Zelda II.p00.png")));
+                Check("a game of two platforms: the launching one's", File.Exists(Path.Combine(Mine(Hacks, "prb"), "Twin.prb")));
+                Check("a game of the library under an archive's name: its platform", File.Exists(Path.Combine(Mine(Hacks, "prb"), "Other.prb")) && File.Exists(Path.Combine(Mine(Hacks, "screenshot"), "Other_000001.png")));
+                Check("a file of no library game: the NES's", File.Exists(Path.Combine(Mine(Nes, "prb"), "Unknown.prb")));
+                Check("a disk's writes of no library game: the Famicom Disk System's", File.Exists(Path.Combine(Mine(Fds, "diff"), "Kaette.ipf")));
+                Check("a different file already there: kept, the other to Saves\\Unsorted", File.ReadAllBytes(Path.Combine(Mine(Nes, "prb"), "Zelda II.prb")).Length == 2
+                      && File.ReadAllBytes(Path.Combine(inst, "Saves", "Unsorted", "prb", "Zelda II.prb")).SequenceEqual(new byte[] { 1, 2, 3 }));
+
+                // puNES writes through the junction (what it does, measured 18/10 in the lab's run4).
+                File.WriteAllBytes(Path.Combine(Live("prb"), "New.prb"), new byte[] { 1 });
+                Check("a file written into puNES's folder lands in the platform's", File.Exists(Path.Combine(Mine(Hacks, "prb"), "New.prb")));
+
+                // The next launch, another platform: the links move, what they led to stays.
+                said = (string)t.GetMethod("Ensure", Any).Invoke(null, new object[] { exe, Fds });
+                Check("repointed at the next platform", new[] { "prb", "save", "diff", "screenshot" }.All(k => JunctionTo(k, Fds)), said);
+                Check("the previous platform's files untouched", File.Exists(Path.Combine(Mine(Hacks, "prb"), "New.prb")) && File.Exists(Path.Combine(Mine(Hacks, "prb"), "Twin.prb")));
+                said = (string)t.GetMethod("Ensure", Any).Invoke(null, new object[] { exe, Fds });
+                Check("the same platform again: nothing done", said.StartsWith("already"), said);
+
+                // A link of the user's: never touched.
+                var elsewhere = Path.Combine(dir, "MyShots"); Directory.CreateDirectory(elsewhere);
+                Directory.Delete(Live("screenshot"));
+                var made = (bool)t.GetMethod("Junction", Any).Invoke(null, new object[] { Live("screenshot"), elsewhere, null });
+                said = (string)t.GetMethod("Ensure", Any).Invoke(null, new object[] { exe, Nes });
+                Check("a junction of the user's elsewhere: kept", made && string.Equals(LinkOf(Live("screenshot"))?.TrimEnd('\\'), Path.GetFullPath(elsewhere), StringComparison.OrdinalIgnoreCase), said);
+                Check("the others repointed", new[] { "prb", "save", "diff" }.All(k => JunctionTo(k, Nes)));
+                var dirs = (List<string>)t.GetMethod("Dirs", Any).Invoke(null, new object[] { exe, Nes, "screenshot" });
+                Check("its folder listed first (where puNES writes)", dirs.Count == 2 && string.Equals(dirs[0], Live("screenshot"), StringComparison.OrdinalIgnoreCase), string.Join(" | ", dirs));
+
+                // Names Windows refuses in a folder name.
+                var name = (string)t.GetMethod("FolderName", Any).Invoke(null, new object[] { "My: NES?" });
+                Check("a platform name with ':' and '?': a valid folder", name == "My_ NES_", name);
+                Check("no platform: the NES's folder", (string)t.GetMethod("FolderName", Any).Invoke(null, new object[] { null }) == Nes);
+            }
+            catch (Exception ex) { Check("ran", false, (ex.InnerException ?? ex).ToString()); }
+            finally
+            {
+                t.GetField("LibraryForProbe", Any).SetValue(null, null);
+                Wipe(dir);
+            }
+            return Done();
+        }
+    
+        // ── the rows of a game ───────────────────────────────────────────────
+
+        public static bool Saves(Assembly asm, string realState)
+        {
+            _bad = 0;
+            Console.WriteLine("-- a game's rows: cartridge save, disk writes, states --");
+            var dir = Scratch("saves");
+            var dirs = T(asm, "PunesSaveDirs");
+            var plugin = T(asm, "PunesPlugin");
+            const string Nes = "Nintendo Entertainment System", Fds = "Nintendo Famicom Disk System";
+            try
+            {
+                var exe = Path.Combine(dir, "Nixx-puNES", "punes64.exe"); Directory.CreateDirectory(Path.GetDirectoryName(exe)); File.WriteAllText(exe, "");
+                var inst = Path.GetDirectoryName(exe);
+                File.WriteAllText(Path.Combine(inst, "puNES.cfg"), "");
+                string Mine(string p, string k) { var d = Path.Combine(inst, "Saves", p, k); Directory.CreateDirectory(d); return d; }
+                void Put(string folder, string file, int size = 4) => File.WriteAllBytes(Path.Combine(folder, file), new byte[size]);
+                // puNES's own folders made junctions to the NES's, as a launch leaves them.
+                dirs.GetField("LibraryForProbe", Any).SetValue(null, new Func<IEnumerable<(string, string)>>(() => Array.Empty<(string, string)>()));
+                dirs.GetMethod("Ensure", Any).Invoke(null, new object[] { exe, Nes });
+
+                Put(Mine(Nes, "prb"), "Zelda II.prb", 8192);
+                Put(Mine(Nes, "save"), "Zelda II.p00");
+                Put(Mine(Nes, "save"), "Zelda II.p00.png");
+                Put(Mine(Nes, "save"), "Zelda II.p0B");
+                Put(Mine(Nes, "save"), "Zelda II.p0C");   // no 13th slot
+                Put(Mine(Nes, "save"), "Zelda II 2.p01"); // another game
+                Put(Mine(Fds, "diff"), "Kaette.ipf");
+                Put(Mine(Fds, "save"), "Kaette.p03");
+
+                List<object> Rows(string rom, string platform)
+                {
+                    var collect = plugin.GetMethod("Collect", Any);
+                    var list = Activator.CreateInstance(collect.GetParameters()[0].ParameterType);
+                    collect.Invoke(null, new object[] { list, new HashSet<string>(StringComparer.OrdinalIgnoreCase), exe, rom, "probe-game", platform, null });
+                    return ((System.Collections.IEnumerable)list).Cast<object>().ToList();
+                }
+                string Show(object r) => r.GetType().Name + " " + Path.GetFileName((string)F(r, "FileLocation")) + " slot " + (F(r, "Slot") ?? "-") + " " + F(r, "SaveGroupId");
+
+                var zelda = Rows(Path.Combine(dir, "roms", "Zelda II.nes"), Nes);
+                foreach (var r in zelda) Console.WriteLine("    " + Show(r));
+                Check("Zelda: its .prb, slots 0 and B - not the 13th, not its thumbnail, not Zelda II 2's", zelda.Count == 3
+                      && zelda.OfType<GameSaveState>().Select(s => s.Slot ?? -1).OrderBy(x => x).SequenceEqual(new[] { 0, 11 }));
+                var prb = zelda.OfType<GameSaveGame>().FirstOrDefault();
+                Check("the cartridge save's id: emu punes, kind save, sys nes, by name", prb != null && prb.SaveGroupId.StartsWith("{\"emu\":\"punes\",\"kind\":\"save\",\"sys\":\"nes\",\"by\":\"name\",\"id\":\"Zelda II\"", StringComparison.Ordinal), prb?.SaveGroupId);
+                Check("the row names the platform folder, never puNES's junction", prb != null && prb.FileLocation.IndexOf("\\Saves\\" + Nes + "\\prb\\", StringComparison.OrdinalIgnoreCase) > 0, prb?.FileLocation);
+
+                var disk = Rows(Path.Combine(dir, "roms", "Kaette.fds"), Fds);
+                foreach (var r in disk) Console.WriteLine("    " + Show(r));
+                Check("a disk: its writes (kind disk, sys fds) and its state in the FDS's folders", disk.Count == 2
+                      && disk.OfType<GameSaveGame>().Any(r => r.SaveGroupId.Contains("\"kind\":\"disk\",\"sys\":\"fds\""))
+                      && disk.OfType<GameSaveState>().Any(s => s.Slot == 3));
+                Check("the same disk on the NES platform: not the FDS's files", Rows(Path.Combine(dir, "roms", "Kaette.fds"), Nes).Count == 0);
+
+                var me = Activator.CreateInstance(plugin, true);
+                var potential = (IReadOnlyDictionary<int, string>)plugin.GetMethod("GetPotentialSaveSlots").Invoke(me, null);
+                Check("twelve slots, named as puNES shows them (0-9, A, B)", potential.Count == 12 && potential[10] == "A" && potential[11] == "B");
+                var secondary = plugin.GetMethod("IsSecondarySaveFile");
+                Check("a state's thumbnail is secondary, the state is not",
+                      (bool)secondary.Invoke(me, new object[] { Path.Combine(Mine(Nes, "save"), "Zelda II.p00.png") })
+                      && !(bool)secondary.Invoke(me, new object[] { Path.Combine(Mine(Nes, "save"), "Zelda II.p00") }));
+
+                if (realState != null && File.Exists(realState))
+                {
+                    var png = (byte[])Call(asm, "PunesStateThumbs", "Preview", File.ReadAllBytes(realState));
+                    bool ok = png != null && png.Length > 33 && png[1] == 'P' && png[2] == 'N' && png[3] == 'G';
+                    int w = ok ? (png[16] << 24 | png[17] << 16 | png[18] << 8 | png[19]) : 0, h = ok ? (png[20] << 24 | png[21] << 16 | png[22] << 8 | png[23]) : 0;
+                    Check("a real state's picture: a PNG of the NES's frame", ok && w == 256 && h == 240, png == null ? "none" : png.Length + " bytes, " + w + "x" + h);
+                }
+            }
+            catch (Exception ex) { Check("ran", false, (ex.InnerException ?? ex).ToString()); }
+            finally
+            {
+                dirs.GetField("LibraryForProbe", Any).SetValue(null, null);
+                Wipe(dir);
+            }
             return Done();
         }
     }

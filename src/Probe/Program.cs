@@ -231,6 +231,8 @@ namespace LbIntegrations.Probe
             if (Has(args, "--punes-e2e")) return PunesCheck.E2E(asm) ? 0 : 1;
             if (Has(args, "--punes-fetch")) return PunesCheck.Fetch(asm) ? 0 : 1;
             if (Has(args, "--punes-shot")) return PunesCheck.Shot(asm, Path.GetFullPath(Arg(args, "--punes-shot")), emuPath == null ? null : Path.GetFullPath(emuPath)) ? 0 : 1;
+            if (Has(args, "--punes-savedirs")) return PunesCheck.SaveDirs(asm) ? 0 : 1;
+            if (Has(args, "--punes-saves")) return PunesCheck.Saves(asm, Arg(args, "--punes-saves") is string ps && !ps.StartsWith("--") ? Path.GetFullPath(ps) : null) ? 0 : 1;
             if (Has(args, "--compat-embedded")) return CompatEmbeddedCheck.Run(asm, Arg(args, "--also") is string ca ? Path.GetFullPath(ca) : null) ? 0 : 1;
             if (Has(args, "--xenia-compat")) return XeniaCompatCheck.Run(asm, Has(args, "--online")) ? 0 : 1;
             // What a first install of Xenia sets up, and the options at launch: --xenia-setup [--xconfig f] [--account f] [--toml f].

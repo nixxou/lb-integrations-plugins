@@ -12,8 +12,9 @@
 //
 // SAVES: puNES keeps them in FIXED folders of its data folder - prb\ (cartridges), save\ (states), diff\ (disk writes),
 // screenshot\ - with no setting for any of them (src\core\common.h:35-48; the whole puNES.cfg read). So NOTHING EVER
-// LANDS BESIDE THE GAME (lot 9 holds by construction, nothing to bring back from there) - but per-platform folders cannot
-// be had through a setting either: docs\punes.md section 14, question 1.
+// LANDS BESIDE THE GAME (lot 9 holds by construction, nothing to bring back from there). The per-platform folders are
+// had by making those four folders JUNCTIONS, pointed before each launch at <puNES>\Saves\<the game's platform>\
+// (PunesSaveDirs - measured 18/10: puNES writes through them and keeps them).
 //
 // NO RETROACHIEVEMENTS: there is no rcheevos code in puNES (grep of the source at v0.111).
 //
@@ -29,6 +30,7 @@ using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 using LbIntegrations.Catalog;
 using LbIntegrations.Lbip;
+using LbIntegrations.Saves;
 
 namespace LbIntegrations.Punes
 {
@@ -43,6 +45,8 @@ namespace LbIntegrations.Punes
 
         public PunesPlugin()
         {
+            // First: the save front desk registers this plugin for the others (Shared.Saves SaveDesk).
+            _desk = new SaveDesk(this, this, SaveEmu, SaveLog);
             Log.Info("plugin constructed, assembly " + typeof(PunesPlugin).Assembly.Location);
             LbipLog.Use(Log.Info, Log.Warn, Log.Disabled, () => Log.Tracing);
             // As early as possible: the patch only sees connections opened AFTER it is installed.
@@ -380,6 +384,10 @@ namespace LbIntegrations.Punes
                 // Portable, so a first start opens no wizard; the pack's free hotkeys.
                 if (!PunesLaunch.PortableOnLine(current)) PunesCfg.EnsurePortable(exe);
                 PunesLaunch.BindHotkeys(exe);
+                // Its saves, states, disk writes and screenshots in <puNES>\Saves\<the game's platform>\ (PunesSaveDirs).
+                Log.Info("save folders: " + PunesSaveDirs.Ensure(exe, platform));
+                // A PNG beside each state (Zelda.p00 -> Zelda.p00.png), from the picture puNES puts in it, once it has quit.
+                PunesStateThumbs.AfterSession(exe, played, platform);
             }
 
             var options = PunesSettings.Args(gameId, system.Id);

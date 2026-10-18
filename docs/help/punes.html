@@ -84,10 +84,14 @@
 
 <section id="saves"><h2>Saves and save states</h2>
   <ul>
-    <li>puNES keeps them in its own folders, never beside the games: cartridge saves in <code>prb\</code>
-    (<code>&lt;game&gt;.prb</code>), save states in <code>save\</code> (<code>&lt;game&gt;.p00</code> to <code>.p0B</code>, 12 slots),
-    Famicom Disk System disk changes in <code>diff\</code>, screenshots in <code>screenshot\</code> - all in
-    <code>Emulators\Nixx-puNES</code>. puNES has no setting to move them.</li>
+    <li>Never beside the games: one folder per platform, <code>Emulators\Nixx-puNES\Saves\&lt;platform&gt;\</code>, with
+    cartridge saves in <code>prb\</code> (<code>&lt;game&gt;.prb</code>), save states in <code>save\</code>
+    (<code>&lt;game&gt;.p00</code> to <code>.p0B</code>, 12 slots), Famicom Disk System disk changes in <code>diff\</code>
+    and screenshots in <code>screenshot\</code>. puNES has no setting for these folders: its own <code>prb</code>,
+    <code>save</code>, <code>diff</code> and <code>screenshot</code> folders become links to the platform of the game
+    being launched. Files already in them are moved into the platform of their game, never over a different file
+    (that one goes to <code>Saves\Unsorted\</code>). A link you made yourself to another folder is left alone.</li>
+    <li>puNES started by hand writes into the platform last launched from LaunchBox.</li>
     <li>Keys: <kbd>F1</kbd> saves the state of the current slot, <kbd>F4</kbd> loads it, <kbd>F2</kbd> / <kbd>F3</kbd> change the slot,
     <kbd>Alt</kbd>+<kbd>Enter</kbd> full screen, <kbd>Alt</kbd>+<kbd>Q</kbd> quits - puNES's own keys. The pack's usual keys
     (F2, F4, F6, F7, F11, Esc) are bound only where puNES has nothing on them, and puNES's defaults use them all. LaunchBox's pause
