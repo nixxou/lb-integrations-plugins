@@ -454,6 +454,18 @@ namespace LbIntegrations.Probe
                 Check("portable launch prepared", refusal == null, refusal);
                 Check("the line asks the plugin: data, states, Esc, slots", pl.Contains("--nixx-data=") && pl.Contains("--nixx-states=") && pl.Contains("--nixx-esc")
                       && pl.Contains("--nixx-slots=on") && pl.Contains("--nixx-quit-confirm=on"), pl);
+                Check("the battery RAM kept beside the platform's states", pl.Contains("--nixx-battery=" + Path.Combine(temp, "emu-portable", "Saves", "Nintendo Entertainment System")), pl);
+                Check("battery file: the game file's name .srm (an archive's too)", (string)Call(asm, "ThreeDSenLaunch", "BatteryName", @"G:\roms\Zelda II (E).zip") == "Zelda II (E).srm"
+                      && (string)Call(asm, "ThreeDSenLaunch", "BatteryName", rom) == "Zelda II - The Adventure of Link (Europe).srm");
+                var broot = Path.Combine(temp, "battery-root");
+                var bsrc = Path.Combine(temp, "backup.srm");
+                File.WriteAllBytes(bsrc, Enumerable.Range(0, 8192).Select(i => (byte)i).ToArray());
+                var rb = new object[] { broot, "Zelda II.srm", bsrc, true, null, (Func<bool>)(() => true), null };
+                var whyNot = (string)T(asm, "ThreeDSenPlugin").GetMethod("RestoreBatteryTo", Any).Invoke(null, rb);
+                Check("a cartridge save restored as <root>\\<name>.srm, byte for byte", whyNot == null && File.ReadAllBytes(Path.Combine(broot, "Zelda II.srm")).SequenceEqual(File.ReadAllBytes(bsrc)), whyNot);
+                rb = new object[] { null, "Zelda II.srm", bsrc, true, null, (Func<bool>)(() => true), null };
+                whyNot = (string)T(asm, "ThreeDSenPlugin").GetMethod("RestoreBatteryTo", Any).Invoke(null, rb);
+                Check("... refused without the plugin, saying so", whyNot != null && whyNot.Contains("in-process plugin"), whyNot);
                 Check("the game's own 3dSen setting passed, nothing it did not choose", pl.Contains("--nixx-set:Volume=0.3") && !pl.Contains("--nixx-set:Fov"), pl);
                 Check("rom.json written in the portable folder", (string)Call(asm, "ThreeDSenRomJson", "RomOf", Path.Combine(pdata, "rom.json"), "73") == rom);
                 Check("... a game's line never carries a --nixx- token of an old line", ((string)Call(asm, "ThreeDSenLaunch", "CommandLine", "--nixx-esc \"" + rom + "\"", rom, new List<string>())).IndexOf("--nixx", StringComparison.Ordinal) < 0);

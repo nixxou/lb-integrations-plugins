@@ -542,3 +542,33 @@ BepInEx loads the plugin; data and states redirected; Esc twice quits with exit 
 window was not in front), AutoHotkey's Esc passed through to the plugin, the whole thing from LaunchBox - Mehdi's test.
 Probe `--3dsen` adds: the slot keys and back, the portable paths, the first-launch copy, the plugin's switches on the
 line, a restore and delete in a `States` folder.
+
+
+## 16. Cartridge saves through the plugin (19/10/2026)
+
+Mehdi pointed at a first BepInEx fix of 3dSen's missing battery saves ("Battery Save Fix": three Harmony hooks on
+`Nes3D.DefaultCore` - `Core.LoadRom` postfix reading `<rom>.srm`, `Core.CloseRom` prefix writing it, `Memory.Reset`
+replaced so `saveRam` is not zeroed). Its reading of 3dSen holds ([src] 1.1.2): `Memory.saveRam` (8 KB, `$6000-$7FFF`) is
+zeroed by `Memory.Reset`, `Engine.LoadGameProfile` resets right after `LoadRom`, and only a state ever carries it;
+`Cartridge.save_ram_present` is the iNES battery bit. What it misses, and what the pack's plugin (`tools\3dsen-bepinex\Battery.cs`,
+`--nixx-battery=<folder>`) does instead:
+
+- **Written at every way out.** `CloseRom` is reached only through `Engine.Stop` - switching games, or quitting from
+  3dSen's own menu (`Engine.Quit`). Closing the window (WM_CLOSE: AutoHotkey's Exit, LaunchBox) and the pack's Esc
+  (`Application.Quit`) never call it: the first fix lost the game there - the pack's usual way out. The plugin also writes
+  in `OnApplicationQuit`, and every 2 s when the RAM changed (a 3dSen killed or crashed loses at most that).
+- **Kept through a reset only for a battery game**, around `Memory.Reset` (prefix copy, postfix back) instead of replacing
+  its body: other games keep 3dSen's zeroing.
+- Written only when the bytes differ from the file, atomically (`.tmp` then moved); a game that never wrote its RAM (all
+  zero, no file yet) gets no file.
+- The file: `<3dSen folder>\Saves\<platform>\<game file name>.srm` (the ROM 3dSen plays is the file's name, an archive's own
+  name with `.nes`), beside the platform's `States`. The pack's rule, nothing beside the game.
+- LaunchBox: one "Cartridge save" row (GameSaveGame, chip `SRM`, id `{"emu":"3dsen","kind":"save","by":"name","id":"<rom name>"}`);
+  active in this install's folder of the game's platform; restored under the game's file name today, refused while 3dSen
+  runs (it would write its own at quit) and without the plugin (3dSen would never read it).
+- A state loaded brings the battery RAM it was made with (`Memory.LoadState`): that is what is written next, as in every
+  emulator.
+
+Probe `--3dsen`: `--nixx-battery` on the line, the file name, a restore byte for byte, the refusal without the plugin. Not
+yet measured in 3dSen: a battery game saved, 3dSen closed by its window, the `.srm` read back (Mehdi's test, with the
+build of section 15).

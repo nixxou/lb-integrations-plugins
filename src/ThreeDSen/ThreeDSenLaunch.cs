@@ -96,6 +96,22 @@ namespace LbIntegrations.ThreeDSen
         public static string StatesRoot(string exe, string platform)
             => Portable(exe) ? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(exe)), SavesFolder, PlatformFolder(platform), StatesFolder) : DataDir();
 
+        /// <summary>Where the in-process plugin keeps a game's battery RAM (&lt;rom&gt;.srm, docs\3dsen.md section 16):
+        /// &lt;install&gt;\Saves\&lt;platform&gt;; null without the plugin - 3dSen itself keeps none.</summary>
+        public static string BatteryRoot(string exe, string platform)
+            => Portable(exe) ? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(exe)), SavesFolder, PlatformFolder(platform)) : null;
+
+        /// <summary>The battery file's name for a game file, as the plugin makes it from the ROM 3dSen plays (its file's name,
+        /// an archive's own name with ".nes"): &lt;file name&gt;.srm, the characters Windows refuses replaced.</summary>
+        public static string BatteryName(string rom)
+        {
+            var name = Path.GetFileNameWithoutExtension(rom ?? "");
+            foreach (var c in Path.GetInvalidFileNameChars()) name = name.Replace(c, '_');
+            return name.Length == 0 ? null : name + BatteryExtension;
+        }
+
+        public const string BatteryExtension = ".srm";
+
         /// <summary>A platform's folder name: its name, the characters Windows refuses replaced; none: the NES's.</summary>
         public static string PlatformFolder(string platform)
         {
@@ -157,6 +173,7 @@ namespace LbIntegrations.ThreeDSen
             if (!Portable(exe)) return list;
             list.Add("--nixx-data=" + DataDir(exe));
             list.Add("--nixx-states=" + StatesRoot(exe, platform));
+            list.Add("--nixx-battery=" + BatteryRoot(exe, platform));
             list.Add("--nixx-esc");
             list.Add("--nixx-quit-confirm=" + (ThreeDSenSettings.On("QuitConfirm") ? "on" : "off"));
             list.Add("--nixx-slots=" + (ThreeDSenSettings.On("Slots") ? "on" : "off"));

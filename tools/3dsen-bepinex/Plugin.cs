@@ -1,7 +1,7 @@
 // The pack's plugin inside 3dSen (BepInEx 5, Mono x86) - the model of tools\superzsnes-bepinex (Mehdi 19/10). Its whole
 // interface is the command line the LaunchBox plugin builds (Args): the data folder and the states' (Folders), the pack's
-// keys - slots on F6 / F7, F2 / F4 into them, Esc to quit with a confirmation (Keys) - 3dSen's settings for one session
-// (Overrides) and a dump of them for measuring (Dump). Without "--nixx-" arguments it changes nothing: 3dSen started by
+// keys - slots on F6 / F7, F2 / F4 into them, Esc to quit with a confirmation (Keys) - the cartridge's battery RAM on disk
+// (Battery), 3dSen's settings for one session (Overrides) and a dump of them for measuring (Dump). Without "--nixx-" arguments it changes nothing: 3dSen started by
 // hand from its folder behaves as it always has.
 
 using System;
@@ -33,6 +33,7 @@ namespace LbIntegrations.ThreeDSen.Mod
                 var h = new Harmony(Guid);
                 Try("data folders", () => Folders.Install(h, _args, _log));
                 Try("settings", () => Overrides.Install(h, _args, _log));
+                Try("battery", () => Battery.Install(h, _args, _log));
                 _keys = new Keys(this, _args, _log);
                 if (_args.Dump) StartCoroutine(Dump.Run(folder, _log));
             }
@@ -45,10 +46,16 @@ namespace LbIntegrations.ThreeDSen.Mod
             catch (Exception ex) { _log.Error(what + ": " + (ex.InnerException ?? ex).Message); }
         }
 
+        private float _batteryAt;
+
         private void Update()
         {
             try { _keys?.Tick(); }
             catch (Exception ex) { _log.Error("keys: " + ex.Message); _keys = null; }
+            if (UnityEngine.Time.unscaledTime - _batteryAt >= 2f) { _batteryAt = UnityEngine.Time.unscaledTime; Battery.Flush("changed"); }
         }
+
+        /// <summary>The window closed or Application.Quit (the pack's Esc): 3dSen's CloseRom is not called on that way out.</summary>
+        private void OnApplicationQuit() => Battery.Flush("quit");
     }
 }

@@ -1,8 +1,10 @@
 // Save management for 3dSen - its save STATES, the only saves it has (docs\3dsen.md sections 5 and 6).
 //
-// NO BATTERY SAVE: 3dSen keeps the cartridge's RAM in memory only, zeroed at every ROM load, and writes it nowhere but
-// inside its states ([src] DefaultCore/Memory.cs; [run] Zelda II played then closed: no .sav/.srm anywhere). So there is
-// no cartridge row, and the game's window and the help say plainly that a battery game's progress lives in its states.
+// THE BATTERY SAVE: 3dSen itself keeps the cartridge's RAM in memory only, zeroed at every ROM load, and writes it nowhere
+// but inside its states ([src] DefaultCore/Memory.cs; [run] Zelda II played then closed: no .sav/.srm anywhere). The pack's
+// in-process plugin keeps it (tools\3dsen-bepinex Battery, docs\3dsen.md section 16): <install>\Saves\<platform>\<rom>.srm,
+// one GameSaveGame row "Cartridge save" per game, id {"emu":"3dsen","kind":"save","by":"name","id":"<rom name>"}. Without
+// the plugin there is none, and no such row.
 //
 // THE STATES, read through ThreeDSenSavCfg: 36 numbered slots and a quick one, sav\<slot>.sav in 3dSen's user data
 // folder (LocalLow\Geod Studio\3dSen - Unity's persistentDataPath, no setting moves it), indexed by sav.cfg, which says
@@ -61,6 +63,8 @@ namespace LbIntegrations.ThreeDSen
         /// <summary>This plugin's "emu" in the ids (Shared.Saves).</summary>
         internal const string Emu = "3dsen";
         private const string StateGroupName = "Save states";
+        private const string SaveGroupName = "Cartridge save";
+        private const string SaveChipText = "SRM";
         private const string StateChipText = "STATE";
 
         public override bool SupportsSaveManagement() => true;
@@ -72,6 +76,8 @@ namespace LbIntegrations.ThreeDSen
             for (int i = 1; i <= ThreeDSenSavCfg.Numbered; i++) slots[i] = i.ToString(CultureInfo.InvariantCulture);
             return slots;
         }
+
+        internal static string SaveIdOf(string romName) => SaveId.Write(new SaveIdData { Emu = Emu, Kind = "save", By = "name", Id = romName });
 
         internal static string StateIdOf(string profileId, int slot)
             => SaveId.Write(new SaveIdData { Emu = Emu, Kind = "state", By = "profile", Id = profileId, Slot = slot });
@@ -161,6 +167,15 @@ namespace LbIntegrations.ThreeDSen
                                     string gameId, string title, string romPath, string appId)
         {
             if (string.IsNullOrWhiteSpace(gameId) || string.IsNullOrWhiteSpace(romPath)) return;
+            // Its battery save (the in-process plugin's), whatever its profile.
+            var battery = ThreeDSenLaunch.BatteryRoot(exe, platform);
+            var batteryName = ThreeDSenLaunch.BatteryName(ResolveFullPath(romPath));
+            if (battery != null && batteryName != null)
+            {
+                var srm = Path.Combine(battery, batteryName);
+                if (SaveScan.Exists(srm) && seen.Add("save|" + srm + "|" + (appId ?? gameId)))
+                    into.Add(SaveRow(srm, gameId, appId, SaveIdOf(Path.GetFileNameWithoutExtension(batteryName))));
+            }
             // The states of the game's platform (portable mode), or 3dSen's one folder.
             var data = ThreeDSenLaunch.StatesRoot(exe, platform);
             var slots = Slots(data);
@@ -194,6 +209,19 @@ namespace LbIntegrations.ThreeDSen
                         .Select(s => (s.IsQuick ? "Quick" : "slot " + s.SlotId) + " ("
                                      + DateTimeOffset.FromUnixTimeSeconds(Math.Max(0, s.LastTime)).LocalDateTime.ToString("dd/MM HH:mm", CultureInfo.InvariantCulture) + ")")
                         .ToList();
+        }
+
+        private static GameSaveGame SaveRow(string path, string gameId, string appId, string groupId)
+        {
+            long size = 0; DateTime when = default;
+            try { var i = new FileInfo(path); size = i.Length; when = i.LastWriteTimeUtc; } catch { }
+            return new GameSaveGame
+            {
+                GameId = gameId, AdditionalApplicationId = appId, FileLocation = path, IsDirectory = false,
+                OriginalFileName = Path.GetFileName(path), SaveGroupId = groupId,
+                SaveGroupName = SaveGroupName, DisplayChipText = SaveChipText,
+                ReportedFileSizeBytes = size > 0 ? size : (long?)null, ReportedLastModifiedUtc = when == default ? (DateTime?)null : when,
+            };
         }
 
         private static GameSaveState StateRow(string path, string gameId, string appId, int slot, string groupId, string groupName)
@@ -240,6 +268,16 @@ namespace LbIntegrations.ThreeDSen
             {
                 if (!IsOurs(save) || string.IsNullOrWhiteSpace(save.FileLocation)) return true;
                 if (!File.Exists(save.FileLocation)) return false;
+                if (!(save is GameSaveState))
+                {
+                    // A battery save: live in this install's folder of the game's platform, under the game's file name.
+                    var cexe = ResolveFullPath(emulatorApplicationPath);
+                    if (!ThreeDSenLaunch.IsExe(cexe)) return true;
+                    var game = Safe(() => PluginHelper.DataManager?.GetGameById(save.GameId));
+                    var root = ThreeDSenLaunch.BatteryRoot(cexe, Safe(() => game?.Platform));
+                    return root != null && string.Equals(Path.GetFullPath(Path.GetDirectoryName(save.FileLocation)).TrimEnd('\\'),
+                                                         Path.GetFullPath(root).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+                }
                 if (!Parts(save.SaveGroupId, out var profile, out var slot)) return true;
                 // Live where its slot's file is in its own states root (the platform's, or LocalLow's), and that root is this 3dSen's.
                 var data = ThreeDSenSavCfg.RootOf(save.FileLocation);
@@ -262,6 +300,9 @@ namespace LbIntegrations.ThreeDSen
             // Portable: this install's folder of the game's platform; else every copy of 3dSen of the Windows user keeps its
             // states in the one folder.
             var game = Safe(() => PluginHelper.DataManager?.GetGameById(save.GameId));
+            if (!(save is GameSaveState))
+                return LbIntegrations.Saves.ExpectedDir.FolderOr(ThreeDSenLaunch.BatteryRoot(ResolveFullPath(path), Safe(() => game?.Platform)),
+                                                                 "3dSen keeps a cartridge save only with the pack's in-process plugin (the Nixx window, page 3dSen).");
             return LbIntegrations.Saves.ExpectedDir.Folder(ThreeDSenSavCfg.StateDir(ThreeDSenLaunch.StatesRoot(ResolveFullPath(path), Safe(() => game?.Platform))));
         }
 
@@ -287,9 +328,9 @@ namespace LbIntegrations.ThreeDSen
             {
                 var save = args?.SaveToAdd;
                 if (save == null) return new AddSaveResponse("No save was supplied.");
-                if (!(save is GameSaveState state)) return new AddSaveResponse("3dSen keeps no cartridge save - only save states can be restored to it.");
                 var source = save.FileLocation;
                 if (string.IsNullOrWhiteSpace(source) || !File.Exists(source)) return new AddSaveResponse("This 3dSen backup is not a file: " + source);
+                if (!(save is GameSaveState state)) return RestoreBattery(args, save, source);
 
                 var dm = PluginHelper.DataManager;
                 var to = SaveRows.TargetFor(save, dm, Full);
@@ -314,6 +355,44 @@ namespace LbIntegrations.ThreeDSen
                 Log.Warn("AddSaveFile failed", ex);
                 return new AddSaveResponse("Could not restore this 3dSen state: " + ex.Message);
             }
+        }
+
+        /// <summary>A battery save back as &lt;install&gt;\Saves\&lt;platform&gt;\&lt;the game's file name today&gt;.srm.</summary>
+        private AddSaveResponse RestoreBattery(AddSaveArgs args, GameSaveBase save, string source)
+        {
+            var dm = PluginHelper.DataManager;
+            var to = SaveRows.TargetFor(save, dm, Full);
+            if (to.Warning != null) Log.Warn("restore of " + save.OriginalFileName + ": " + to.Warning);
+            if (to.Refused) return new AddSaveResponse(to.Warning);
+            var game = Safe(() => dm?.GetGameById(save.GameId));
+            var exe = ExecutableOf(game);
+            if (!ThreeDSenLaunch.IsExe(exe)) return new AddSaveResponse("Could not find the 3dSen this game runs on.");
+            var refused = RestoreBatteryTo(ThreeDSenLaunch.BatteryRoot(exe, Safe(() => game?.Platform)), ThreeDSenLaunch.BatteryName(to.RomPath), source,
+                                           IsOurs(save), save, () => { try { return args.ShouldOverwriteFunc?.Invoke() ?? true; } catch { return true; } }, out var target);
+            if (refused != null) { Log.Info("restore of " + save.OriginalFileName + " refused: " + refused); return new AddSaveResponse(refused); }
+            return new AddSaveResponse(SaveRow(target, save.GameId, save.AdditionalApplicationId,
+                                               IsOurs(save) ? save.SaveGroupId : SaveIdOf(Path.GetFileNameWithoutExtension(target))));
+        }
+
+        /// <summary>The battery restore's work, host-free (the probe calls it). Null when done, else why not.</summary>
+        internal static string RestoreBatteryTo(string root, string name, string source, bool ours, GameSaveBase save, Func<bool> shouldOverwrite, out string target)
+        {
+            target = null;
+            if (root == null) return "3dSen keeps a cartridge save only with the pack's in-process plugin: turn it on in the Nixx window, page 3dSen.";
+            if (name == null) return "The game's file has no name to give its cartridge save.";
+            if (ThreeDSenLaunch.AnyRunning()) return "3dSen is running: it writes the game's cartridge save when it quits, which would undo this restore. Close it first.";
+            target = Path.Combine(root, name);
+            bool otherCard = !ours || SlotRestore.OverAnotherFile(target, save);
+            if (!SlotRestore.MayOverwrite(target, source, otherCard, "The current cartridge save", Log.Info, out var refused)) return refused;
+            if (File.Exists(target) && !(shouldOverwrite?.Invoke() ?? true)) return "Restore cancelled.";
+            var cannot = SaveCompanions.WhyNotWritable(source, target, null);
+            if (cannot != null) return cannot;
+            Directory.CreateDirectory(root);
+            var part = target + ".lbip-part";
+            File.Copy(source, part, overwrite: true);
+            File.Move(part, target, overwrite: true);
+            Log.Info("restored " + Path.GetFileName(source) + " -> " + target);
+            return null;
         }
 
         /// <summary>The restore's work, host-free (the probe calls it): <paramref name="source"/> (and its thumbnail) into the
@@ -401,6 +480,8 @@ namespace LbIntegrations.ThreeDSen
             try
             {
                 if (!IsOurs(save)) return base.RemoveSave(save);
+                if (!(save is GameSaveState) && ThreeDSenLaunch.AnyRunning())
+                    return new PluginResponse(false, "3dSen is running: it writes the game's cartridge save when it quits. Close it first.");
                 // The slot is freed in the sav.cfg beside the file (its platform's, or LocalLow's).
                 var loc = save?.FileLocation;
                 var why = Delete(string.IsNullOrWhiteSpace(loc) ? ThreeDSenLaunch.DataDir() : ThreeDSenSavCfg.RootOf(loc), loc, save?.SaveGroupId);

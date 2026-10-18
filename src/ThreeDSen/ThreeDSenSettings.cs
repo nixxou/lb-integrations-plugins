@@ -61,7 +61,8 @@ namespace LbIntegrations.ThreeDSen
         {
             OnOff("BepInEx", "In-process plugin", "on",
                   "BepInEx " + ThreeDSenBepInEx.Build + " and the pack's plugin in 3dSen's folder: Esc quits, F6 / F7 pick a save slot, "
-                  + "a game's own 3dSen settings, 3dSen's files in its own folder (portable). Off: 3dSen as it comes, nothing of it in the folder."),
+                  + "cartridge saves kept (3dSen keeps none), a game's own 3dSen settings, 3dSen's files in its own folder (portable). "
+                  + "Off: 3dSen as it comes, nothing of it in the folder."),
             OnOff("QuitConfirm", "Esc asks first", "on", "Esc shows \"Press Esc again to quit\" and quits on the second press."),
             OnOff("Slots", "Save slots on F6 / F7", "on",
                   "F6 / F7 pick 3dSen's slot (Quick, 1 to 36), F2 / F4 save and load it, each said on screen. 3dSen's camera keys move to the keypad."),

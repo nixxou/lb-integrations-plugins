@@ -132,7 +132,9 @@ namespace LbIntegrations.ThreeDSen
                     ? "F2 saves and F4 loads the slot F6 / F7 picked (Quick, 1 to 36), said on screen. Esc quits, F1 opens 3dSen's menu; its camera keys are on the keypad (4 6 8 2, + -)."
                     : "Quick save: " + (save ?? "(3dSen not run yet)") + ", quick load: " + (load ?? "(3dSen not run yet)")
                       + " - F2 and F4 are bound by the plugin when 3dSen has none. Esc quits, F1 opens 3dSen's menu (its 36 save slots, its settings)."),
-                Line("No cartridge saves: 3dSen keeps a game's progress only in its save states (a game that saves on the cartridge forgets it when 3dSen quits).")));
+                Line(portable
+                    ? "Cartridge saves (a game with a battery: Zelda, Final Fantasy...): kept by the plugin as <game file>.srm beside the platform's States folder, read back at the next launch."
+                    : "No cartridge saves: 3dSen keeps a game's progress only in its save states (a game that saves on the cartridge forgets it when 3dSen quits). The in-process plugin keeps them.")));
 
             // ── the screen ──
             var screen = new List<Control>();

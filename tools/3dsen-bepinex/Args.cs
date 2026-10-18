@@ -5,6 +5,7 @@
 //   --nixx-data=<folder>       3dSen's data folder (Info.DataPath: rom.json, input.cfg, setting.cfg, CustomProfiles,
 //                              CoverArt, Export) instead of LocalLow\Geod Studio\3dSen - the pack's portable mode
 //   --nixx-states=<folder>     its states (sav.cfg and the slot files) instead of <data>\sav - the game's platform's
+//   --nixx-battery=<folder>    the cartridge's battery RAM kept in <folder>\<rom>.srm (Battery; 3dSen keeps none)
 //   --nixx-slots=on|off        F6 / F7 pick the slot (quick, 1..36), F2 / F4 save / load it (default off)
 //   --nixx-quit-confirm=on|off Esc twice to quit, "Press Esc again" shown between (default on); Esc is ours only when given
 //   --nixx-esc=on|off          Esc quits at all (default off: 3dSen's own Esc, its menu, stays)
@@ -21,7 +22,7 @@ namespace LbIntegrations.ThreeDSen.Mod
 {
     internal sealed class Args
     {
-        public string Data, States;
+        public string Data, States, Battery;
         public bool Slots, QuitConfirm = true, Esc, Persist, Log, Dump;
         public readonly List<KeyValuePair<string, string>> Sets = new List<KeyValuePair<string, string>>();
         public readonly List<string> Unknown = new List<string>();
@@ -48,6 +49,7 @@ namespace LbIntegrations.ThreeDSen.Mod
                 {
                     case "data": a.Data = Path(value); break;
                     case "states": a.States = Path(value); break;
+                    case "battery": a.Battery = Path(value); break;
                     case "slots": a.Slots = Bool(value, true); break;
                     case "quit-confirm": a.QuitConfirm = Bool(value, true); break;
                     case "esc": a.Esc = Bool(value, true); break;
