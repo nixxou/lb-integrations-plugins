@@ -178,7 +178,7 @@ namespace LbIntegrations.ThreeDSen
             // so) with no licence, no source and no offer of it anywhere in its folder (checked in the lab's copy).
             var gpl = Line("Read before buying: 3dSen includes fceumm_core.dll (the FCEUmm emulator core, licensed under the GNU GPL v2) "
                            + "but does not distribute its source code, nor offer it - a clear breach of the GPL. "
-                           + "This is not a call to piracy, only a notice about the licence.", true);
+                           + "This is not a call to piracy, just a notice that the author is a piece of shit.", true);
             gpl.ForeColor = Color.Firebrick;
             gpl.Margin = new Padding(0, 2, 0, 12);
             layout.Controls.Add(gpl);
