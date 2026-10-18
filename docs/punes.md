@@ -422,3 +422,16 @@ Probe.exe <Punes.dll> --punes-shot <out.png> [--emu <punes64.exe>]    (draws the
 - `src\NixxSaves\CatchAllClaims.cs` `Names`: `punes64.exe`, `punes.exe`, `punes64_p.exe`, `punes_p.exe`.
 - `README.md` row; nothing new merged (Lib.Harmony, SharpCompress as every plugin).
 - No change in any `Shared.*` folder.
+
+## 16. Decisions of Mehdi (18/10)
+
+- **Hotkeys** (question 2): the pack's keys are SET over puNES's defaults - save state F2, load state F4, slot F6 / F7,
+  full screen F11, quit Esc, hard reset Shift+Esc, PAL / NTSC F10 / Shift+F10, the full-screen menu bar on no key. An
+  action the user changed is kept. ONE keyboard key per action: the second field of a line is the pad's (source:
+  settings_inp_rd_sc(..., KEYBOARD / JOYSTICK)), so puNES's F1 / F3 / Alt+Return / Alt+Q no longer do anything.
+  Measured in the lab (run5a-c): puNES keeps a MINIMAL input.cfg's lines and writes the rest with its defaults, so a
+  missing input.cfg is made with the ten lines; the moved actions must be written too, or a key lands on two actions.
+  An action that cannot take its key (another action of the user's holds it) is taken off a key another action takes.
+- **D3D9 build** (question 6): kept - ReShade is the better fit in Direct3D. What it loses: puNES's GLSL presets
+  (.glslp, OpenGL build only - wdgSettingsVideo.cpp:1153-1159); Cg presets (.cgp) stay. A D3D9 / OpenGL choice at
+  install is possible later: both exes are already told apart by their MD5.

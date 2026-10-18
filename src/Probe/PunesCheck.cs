@@ -3,7 +3,7 @@
 //   --punes-cfg <puNES.cfg>                 the editor on a copy: read, set in place, add, CRLF, no BOM, nothing dropped
 //   --punes-line                            the options on the line, before the host's; '=' refused; the game swapped
 //   --punes-archives                        an archive given as it is, unpacked under its own name, or refused
-//   --punes-hotkeys <input.cfg>             the pack's keys bound only where free (a copy of a real input.cfg)
+//   --punes-hotkeys <input.cfg>             the pack's keys set over puNES's defaults, never the user's (a copy of a real input.cfg)
 //   --punes-bios                            disksys.rom found where puNES looks, copied from another emulator's folder
 //   --punes-versions <punes64.exe>          the version of a known exe, IsUpdateAvailable's three answers
 //   --punes-e2e                             a launch as LaunchBox makes it (claim, line, FDS without/with BIOS, refusals)
@@ -273,39 +273,67 @@ namespace LbIntegrations.Probe
                 File.WriteAllBytes(Path.Combine(dir, "puNES.cfg"), new byte[0]);   // portable: input.cfg beside it
                 var copy = Path.Combine(dir, "input.cfg");
                 void Bind() => Call(asm, "PunesLaunch", "BindHotkeys", exe);
-                Bind();
-                Check("no input.cfg yet: none made", !File.Exists(copy));
-                // puNES 0.111's defaults on the pack's keys (measured on a fresh input.cfg, docs\punes.md section 10).
-                var text = File.ReadAllText(input);
                 string Put(string t, string action, string value) => System.Text.RegularExpressions.Regex.Replace(t, "(?m)^" + System.Text.RegularExpressions.Regex.Escape(action) + "=.*$", action + "=" + value);
-                var defaults = Put(Put(Put(Put(Put(Put(text, "save state", "F1,NULL"), "load state", "F4,NULL"), "decrement state slot", "F2,NULL"), "increment state slot", "F3,NULL"), "mode pal", "F6,NULL"), "mode ntsc", "F7,NULL");
-                defaults = Put(Put(Put(defaults, "hard reset", "F11,NULL"), "toggle menubar in fullscreen", "Esc,NULL"), "video fullscreen", "Alt+Return,NULL");
-                File.WriteAllText(copy, defaults.Replace("\r\n", "\n").Replace("\n", "\r\n"), new System.Text.UTF8Encoding(false));
-                var before = File.ReadAllBytes(copy);
+                void Write(string t) => File.WriteAllText(copy, t.Replace("\r\n", "\n").Replace("\n", "\r\n"), new System.Text.UTF8Encoding(false));
+                string[] Lines() => File.ReadAllLines(copy);
+                var pack = new[]
+                {
+                    "save state=F2,NULL", "load state=F4,NULL", "decrement state slot=F6,NULL", "increment state slot=F7,NULL",
+                    "video fullscreen=F11,NULL", "quit=Esc,NULL", "hard reset=Shift+Esc,NULL", "mode pal=F10,NULL", "mode ntsc=Shift+F10,NULL",
+                    "toggle menubar in fullscreen=NULL,NULL",
+                };
+                // Every keyboard key of [shortcuts] held once (what run5c measured on the real exe).
+                bool NoKeyTwice() => Lines().SkipWhile(l => l != "[shortcuts]").Skip(1).TakeWhile(l => !l.StartsWith("["))
+                    .Where(l => !l.StartsWith("#") && l.Contains('=')).Select(l => l.Substring(l.IndexOf('=') + 1).Split(',')[0].Trim())
+                    .Where(k => k.Length > 0 && k != "NULL").GroupBy(k => k, StringComparer.OrdinalIgnoreCase).All(g => g.Count() == 1);
+
                 Bind();
-                Check("puNES's defaults: every pack key taken, nothing bound, the file untouched", File.ReadAllBytes(copy).SequenceEqual(before));
-                // The user cleared decrement state slot and mode pal: F6 free -> bound; save state cleared, F2 still decrement's... cleared too.
-                var cleared = Put(Put(Put(defaults, "decrement state slot", "NULL,NULL"), "mode pal", "NULL,NULL"), "save state", "NULL,NULL");
-                File.WriteAllText(copy, cleared.Replace("\r\n", "\n").Replace("\n", "\r\n"), new System.Text.UTF8Encoding(false));
+                Check("no input.cfg yet: made with the ten lines (puNES writes the rest at its first start - measured)", File.Exists(copy)
+                      && Lines().SequenceEqual(new[] { "[shortcuts]" }.Concat(pack)), File.Exists(copy) ? string.Join(" | ", Lines()) : "none");
+                var (crlf0, lf0, bom0) = Eol(copy);
+                Check("made in CRLF, no BOM", crlf0 == lf0 && !bom0);
+
+                // A real input.cfg of puNES 0.111, its defaults; a pad button on save state.
+                var defaults = Put(File.ReadAllText(input), "save state", "F1,JOY0_BTN3");
+                Write(defaults);
+                var lineCount = Lines().Length;
                 Bind();
-                var after = File.ReadAllLines(copy);
-                Check("an empty action whose pack key is free: bound (decrement state slot = F6)", after.Contains("decrement state slot=F6,NULL"));
-                Check("save state now empty and F2 free: bound", after.Contains("save state=F2,NULL"));
-                Check("an action puNES has a key on: kept (load state = F4)", after.Contains("load state=F4,NULL"));
-                Check("increment state slot kept on F3 (puNES's)", after.Contains("increment state slot=F3,NULL"));
-                Check("F7 still mode ntsc's: nothing moved", after.Contains("mode ntsc=F7,NULL"));
+                var after = Lines();
+                Check("puNES's defaults: all ten moved to the pack's keys", pack.Skip(1).All(after.Contains) && after.Contains("save state=F2,JOY0_BTN3"), string.Join(" | ", pack.Where(l => !after.Contains(l))));
+                Check("the pad button on an action kept", after.Contains("save state=F2,JOY0_BTN3"));
+                Check("no key on two actions", NoKeyTwice());
+                Check("nothing else touched (soft reset F12, mode dendy F8)", after.Contains("soft reset=F12,NULL") && after.Contains("mode dendy=F8,NULL"));
                 var (crlf, lf, bom) = Eol(copy);
-                Check("CRLF, no BOM, as many lines", crlf == lf && !bom && after.Length == cleared.Replace("\r\n", "\n").TrimEnd('\n').Split('\n').Length, crlf + "/" + lf);
-                // A pad button on a pack key: that key is the pad's.
-                var free = Put(Put(cleared, "quit", "NULL,NULL"), "toggle menubar in fullscreen", "NULL,NULL");
-                var pad = Put(free, "P1K Start", "Esc");
-                File.WriteAllText(copy, pad.Replace("\r\n", "\n").Replace("\n", "\r\n"), new System.Text.UTF8Encoding(false));
+                Check("CRLF, no BOM, as many lines", crlf == lf && !bom && after.Length == lineCount, crlf + "/" + lf);
+                var once = File.ReadAllBytes(copy);
                 Bind();
-                Check("quit empty, Esc free of shortcuts but on the pad's Start: left empty", File.ReadAllLines(copy).Contains("quit=NULL,NULL"));
-                File.WriteAllText(copy, free.Replace("\r\n", "\n").Replace("\n", "\r\n"), new System.Text.UTF8Encoding(false));
+                Check("a second launch: the file untouched", File.ReadAllBytes(copy).SequenceEqual(once));
+
+                // The user's own keys.
+                Write(Put(Put(defaults, "quit", "CTRL+Q,NULL"), "decrement state slot", "F2,NULL"));
                 Bind();
-                Check("quit empty and Esc free everywhere: bound", File.ReadAllLines(copy).Contains("quit=Esc,NULL"));
-                Check("the AutoHotkey keys read from input.cfg", (string)Call(asm, "PunesLaunch", "KeyOf", exe, "load state", "F4") == "F4");
+                after = Lines();
+                Check("an action the user rebound: kept (quit = CTRL+Q)", after.Contains("quit=CTRL+Q,NULL"));
+                Check("a pack key on an action of the user's... decrement state slot on F2 is puNES's default: moved to F6", after.Contains("decrement state slot=F6,NULL"));
+                Write(Put(defaults, "quit", "F2,NULL"));
+                Bind();
+                after = Lines();
+                Check("the user put quit on F2: quit kept, save state left as it was (F1)", after.Contains("quit=F2,NULL") && after.Contains("save state=F1,JOY0_BTN3"));
+                Check("still no key on two actions", NoKeyTwice());
+                Write(Put(defaults, "mode dendy", "F10,NULL"));
+                Bind();
+                after = Lines();
+                Check("F10 on another action of the user's (mode dendy): mode pal off F6 (the slot's now), no key, the rest set", after.Contains("mode pal=NULL,NULL") && after.Contains("mode ntsc=Shift+F10,NULL") && after.Contains("mode dendy=F10,NULL"));
+                Check("and no key on two actions", NoKeyTwice());
+                // A keyboard button of a pad on a pack key.
+                Write(Put(defaults, "P1K Start", "Esc"));
+                Bind();
+                after = Lines();
+                Check("Esc on the pad's Start: quit left on Alt+Q", after.Contains("quit=Alt+Q,NULL"));
+
+                Write(defaults);
+                Bind();
+                Check("the AutoHotkey keys read from input.cfg (save state = F2)", (string)Call(asm, "PunesLaunch", "KeyOf", exe, "save state", "F1") == "F2");
             }
             catch (Exception ex) { Check("ran", false, (ex.InnerException ?? ex).ToString()); }
             finally { try { Directory.Delete(dir, true); } catch { } }
@@ -409,9 +437,13 @@ namespace LbIntegrations.Probe
                 var row = emu.AddNewEmulatorPlatform(); row.Platform = "My custom NES"; row.IsDefault = true; row.CommandLine = "--vsync=off";
                 var claimed = plugin.GetApplicableEmulators(new IEmulator[] { emu, new StubEmulator { Title = "other", ApplicationPath = @"C:\x\fceux.exe" } }).ToList();
                 Check("claimed: ours only", claimed.Count == 1 && claimed[0] == emu);
-                Check("hotkey scripts filled, the exit closes punes64.exe", emu.ExitAutoHotkeyScript?.Contains("WinClose, ahk_exe punes64.exe") == true && emu.SaveStateAutoHotkeyScript?.Contains("{F1 down}") == true);
+                Check("hotkey scripts filled, the exit closes punes64.exe", emu.ExitAutoHotkeyScript?.Contains("WinClose, ahk_exe punes64.exe") == true && emu.SaveStateAutoHotkeyScript?.Contains("{F2 down}") == true && emu.LoadStateAutoHotkeyScript?.Contains("{F4 down}") == true);
                 var rows = emu.GetAllEmulatorPlatforms();
                 Check("an existing platform row untouched (its tick, its line)", rows.Length == 1 && rows[0].IsDefault && rows[0].CommandLine == "--vsync=off");
+                // An entry an earlier build filled (puNES's own F1): brought to the pack's F2.
+                var old = asm.GetType("LbIntegrations.Punes.PunesAhk", true).GetField("Superseded", Any).GetValue(null) as string[];
+                emu.SaveStateAutoHotkeyScript = old[1]; plugin.GetApplicableEmulators(new IEmulator[] { emu });
+                Check("an earlier build's save script (F1) replaced by the pack's (F2)", emu.SaveStateAutoHotkeyScript?.Contains("{F2 down}") == true);
                 emu.ExitAutoHotkeyScript = "my own"; plugin.GetApplicableEmulators(new IEmulator[] { emu });
                 Check("a script the user wrote is kept", emu.ExitAutoHotkeyScript == "my own");
 

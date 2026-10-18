@@ -19,14 +19,23 @@
 // a STABLE folder of the install, <puNES>\Unpacked\<name>-<hash of the archive's path>\ (AresLaunch.Unpacked's model):
 // the saves are named after the game, the archive's name, whatever the archive holds - never %TEMP%, never beside the game.
 //
-// THE HOTKEYS, the pack's keys (Mehdi, 07/10: F2 save state, F4 load state, F6 / F7 the slot down / up, F11 full screen,
-// Esc quit) in input.cfg's [shortcuts] ("name=<keyboard>,<joystick>", Qt's key names, NULL for none - measured): each is
-// bound only when puNES has nothing on that action AND no other shortcut nor pad button holds the key. puNES 0.111's
-// defaults (measured on a fresh input.cfg): save state=F1, load state=F4, decrement state slot=F2, increment state
-// slot=F3, video fullscreen=Alt+Return, quit=Alt+Q - and F6 / F7 are "mode pal" / "mode ntsc", F11 "hard reset", Esc
-// "toggle menubar in fullscreen". So on a default install every pack key is TAKEN and nothing is bound: puNES's own keys
-// stay (PunesAhk sends them). A missing input.cfg is left so: puNES writes its defaults at its first start, and a file
-// made by the plugin would put a key on two actions.
+// THE HOTKEYS (Mehdi, 18/10): input.cfg's [shortcuts] ("name=<keyboard>,<joystick>" - ONE key per action, the second
+// field is the pad's: settings_inp_rd_sc(..., KEYBOARD / JOYSTICK), objSettings.cpp v0.111) are set to the pack's:
+//
+//   save state F2, load state F4, decrement / increment state slot F6 / F7, video fullscreen F11, quit Esc,
+//   hard reset Shift+Esc, mode pal F10, mode ntsc Shift+F10, toggle menubar in fullscreen none
+//
+// puNES 0.111's defaults on those actions (measured on a fresh input.cfg): F1, F4, F2, F3, Alt+Return, Alt+Q, F11, F6,
+// F7, Esc - so the pack's keys are all puNES's for something else, and the four actions that held them are moved too.
+// An action is set only when it holds puNES's default, nothing, or the pack's key already: one the user changed in
+// puNES's Settings > Input is theirs. Its pad button is kept. A pack key another action holds (one of the user's, or a
+// pad's keyboard button) leaves that action as it is.
+//
+// MEASURED 18/10 (lab run5a-c, punes64.exe 0.111, Zelda II, WM_CLOSE): puNES keeps the lines it is given in a MINIMAL
+// input.cfg and writes every other action with its default - so the moved actions must be written too (run5a, without
+// them: F11 both full screen and hard reset, Esc both quit and the menu bar, F6 / F7 both slot and PAL / NTSC); with
+// them, no key on two actions (run5c), Shift+Esc and Shift+F10 kept as written. So a missing input.cfg is MADE with
+// these ten lines before the first start.
 
 using System;
 using System.Collections.Generic;
@@ -187,11 +196,15 @@ namespace LbIntegrations.Punes
 
         private const string Shortcuts = "shortcuts";
 
-        /// <summary>The pack's keys, puNES's action names (input.cfg [shortcuts], measured).</summary>
-        internal static readonly (string Action, string Key)[] Hotkeys =
+        /// <summary>The pack's keys on puNES's actions (input.cfg [shortcuts]), with puNES 0.111's default for each (measured).
+        /// Null: no key.</summary>
+        internal static readonly (string Action, string Key, string PunesDefault)[] Hotkeys =
         {
-            ("save state", "F2"), ("load state", "F4"), ("decrement state slot", "F6"), ("increment state slot", "F7"),
-            ("video fullscreen", "F11"), ("quit", "Esc"),
+            ("save state", "F2", "F1"), ("load state", "F4", "F4"),
+            ("decrement state slot", "F6", "F2"), ("increment state slot", "F7", "F3"),
+            ("video fullscreen", "F11", "Alt+Return"), ("quit", "Esc", "Alt+Q"),
+            ("hard reset", "Shift+Esc", "F11"), ("mode pal", "F10", "F6"), ("mode ntsc", "Shift+F10", "F7"),
+            ("toggle menubar in fullscreen", null, "Esc"),
         };
 
         /// <summary>The keyboard half of a "name=keyboard,joystick" value; null for none (NULL, empty).</summary>
@@ -208,40 +221,60 @@ namespace LbIntegrations.Punes
             return parts.Length > 1 && parts[1].Trim().Length > 0 ? parts[1].Trim() : "NULL";
         }
 
-        /// <summary>The pack's hotkeys bound where puNES has none and nobody else holds the key. Never throws, never writes
-        /// while puNES runs, never makes input.cfg.</summary>
+        /// <summary>The pack's keys set in input.cfg (see the header) - the file made with them when puNES has not written one
+        /// yet. Never throws, never writes while puNES runs.</summary>
         public static void BindHotkeys(string exe)
         {
             try
             {
                 if (Running(exe)) return;
                 var path = PunesCfg.InputOf(exe);
-                if (!File.Exists(path)) { Log.Info("input.cfg not made yet: puNES writes its own keys at its first start - none bound"); return; }
+                bool fresh = !File.Exists(path);
                 var cfg = PunesCfg.Load(path);
-                var bound = new List<string>();
+                // The actions this pass gives a pack key: they free the key they held (an action of the user's keeps it).
+                var ours = new HashSet<string>(Hotkeys.Where(h => IsOurs(KeyboardOf(cfg.Get(Shortcuts, h.Action)), h.Key, h.PunesDefault)).Select(h => h.Action), StringComparer.OrdinalIgnoreCase);
+                var set = new List<string>();
                 var left = new List<string>();
-                foreach (var (action, key) in Hotkeys)
+                foreach (var (action, key, dflt) in Hotkeys)
                 {
                     var now = cfg.Get(Shortcuts, action);
-                    if (now == null) { left.Add(action + " (not in input.cfg)"); continue; }
-                    if (KeyboardOf(now) != null) continue;   // puNES's own, or the user's
-                    var holder = Holder(cfg, key, action);
-                    if (holder != null) { left.Add(action + " (" + key + " is " + holder + "'s)"); continue; }
-                    cfg.Set(Shortcuts, action, key + "," + JoystickOf(now));
-                    bound.Add(action + " = " + key);
+                    var k = KeyboardOf(now);
+                    if (!ours.Contains(action)) { left.Add(action + " (the user's " + k + ")"); continue; }
+                    if (key != null)
+                    {
+                        var holder = Holder(cfg, key, action, ours);
+                        if (holder != null)
+                        {
+                            // Its old key goes to another action of this pass (mode pal's F6 to the slot): taken off, never on two.
+                            bool wanted = Hotkeys.Any(h => h.Key != null && !string.Equals(h.Action, action, StringComparison.OrdinalIgnoreCase)
+                                                           && ours.Contains(h.Action) && Same(k, h.Key));
+                            if (wanted) { cfg.Set(Shortcuts, action, "NULL," + JoystickOf(now)); set.Add(action + " = none (" + key + " is " + holder + "'s, " + k + " goes to another)"); }
+                            else left.Add(action + " (" + key + " is " + holder + "'s)");
+                            continue;
+                        }
+                    }
+                    var value = (key ?? "NULL") + "," + JoystickOf(now);
+                    if (!string.Equals(now, value, StringComparison.Ordinal)) { cfg.Set(Shortcuts, action, value); set.Add(action + " = " + (key ?? "none")); }
                 }
                 cfg.SaveIfChanged();
-                if (bound.Count > 0) Log.Info("input.cfg: bound " + string.Join(", ", bound));
-                if (left.Count > 0) Log.Verbose("input.cfg: left unbound " + string.Join(", ", left));
+                if (set.Count > 0) Log.Info("input.cfg" + (fresh ? " made" : "") + ": " + string.Join(", ", set));
+                if (left.Count > 0) Log.Info("input.cfg: left as it is " + string.Join(", ", left));
             }
             catch (Exception ex) { Log.Warn("input.cfg could not be written - puNES starts with its keys as they were", ex); }
         }
 
-        /// <summary>Who holds <paramref name="key"/>: another shortcut, or a keyboard button of a pad ("P1K A=S"); null: free.</summary>
-        internal static string Holder(PunesCfg cfg, string key, string except)
+        /// <summary>An action this plugin may set: nothing on it, puNES's default, or the pack's key already.</summary>
+        private static bool IsOurs(string k, string key, string dflt) => k == null || Same(k, dflt) || Same(k, key);
+
+        private static bool Same(string a, string b) => b != null && string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>Who holds <paramref name="key"/>: another shortcut, or a keyboard button of a pad ("P1K A=S"); null: free.
+        /// The actions in <paramref name="moving"/> do not count: they are given their own pack key in the same pass.</summary>
+        internal static string Holder(PunesCfg cfg, string key, string except, ICollection<string> moving = null)
         {
             foreach (var (k, v) in cfg.Entries(Shortcuts))
-                if (!string.Equals(k, except, StringComparison.OrdinalIgnoreCase) && string.Equals(KeyboardOf(v), key, StringComparison.OrdinalIgnoreCase)) return k;
+                if (!string.Equals(k, except, StringComparison.OrdinalIgnoreCase) && !(moving?.Contains(k) ?? false)
+                    && string.Equals(KeyboardOf(v), key, StringComparison.OrdinalIgnoreCase)) return k;
             for (int port = 1; port <= 4; port++)
                 foreach (var (k, v) in cfg.Entries("port " + port))
                     if (k.StartsWith("P" + port + "K ", StringComparison.OrdinalIgnoreCase) && string.Equals(v, key, StringComparison.OrdinalIgnoreCase)) return k;
