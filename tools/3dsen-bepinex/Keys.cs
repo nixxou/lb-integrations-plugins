@@ -2,7 +2,7 @@
 // focus. 3dSen's own actions (InControl, input.cfg) are bound by the LaunchBox plugin so that none of them is on these keys.
 //
 // --nixx-slots: the pack's state keys over 3dSen's 37 slots (Mehdi 19/10) - F6 / F7 pick the slot (Quick, 1..36, around),
-// F2 saves into it, F4 loads it, each said on screen by 3dSen's own notifications. A save is 3dSen's own
+// F2 saves into it, F4 loads it, each said on screen (Toast: a white box, readable over a black screen). A save is 3dSen's own
 // Emulator.SaveStateProfile (as its menu does: sav.cfg item with the game's profile, the time, a picture), the picture taken
 // as 3dSen takes it when it pauses (ScreenRecorder.Capture) - its hotkey quick save stores none. A load is
 // Emulator.LoadStateProfile, refused on an empty slot or one holding another game's state (it would start that game).

@@ -79,8 +79,12 @@ namespace LbIntegrations.ThreeDSen.Mod
 
         // ── what the plugin uses ─────────────────────────────────────────────
 
+        /// <summary>The plugin's on-screen message: its own white box (Toast) - 3dSen's notifications, white text on nothing,
+        /// cannot be read over a black screen.</summary>
+        public static void Notify(string text, bool warning = false, float seconds = 2.5f) => Toast.Show(text, warning, seconds);
+
         /// <summary>3dSen's own on-screen message (NotificationManager.Notify, Normal or Warning), else nothing.</summary>
-        public static void Notify(string text, bool warning = false, float seconds = 2.5f)
+        public static void Notify3dSen(string text, bool warning = false, float seconds = 2.5f)
         {
             try
             {

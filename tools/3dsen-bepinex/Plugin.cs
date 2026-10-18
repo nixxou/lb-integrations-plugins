@@ -55,6 +55,11 @@ namespace LbIntegrations.ThreeDSen.Mod
             if (UnityEngine.Time.unscaledTime - _batteryAt >= 2f) { _batteryAt = UnityEngine.Time.unscaledTime; Battery.Flush("changed"); }
         }
 
+        private void OnGUI()
+        {
+            try { Toast.Draw(); } catch { }
+        }
+
         /// <summary>The window closed or Application.Quit (the pack's Esc): 3dSen's CloseRom is not called on that way out.</summary>
         private void OnApplicationQuit() => Battery.Flush("quit");
     }
