@@ -16,15 +16,17 @@
 // apart by the ROM inside each state (Cartridge.romName, ThreeDSenSavCfg.RomNameOf - the file's name, an archive's name with
 // ".nes" when 3dSen opened the archive itself) against the game's file - a 2D state of another game is not this game's.
 //
-// NOTHING BESIDE THE GAME, NOTHING TO MOVE: 3dSen never writes beside the ROM ([run], every run of stage 1 and 2), and its
-// folder is its own, shared by every copy of 3dSen of the Windows user: the states stay there (question Q4 of
-// docs\3dsen.md: the pack's <emulator>\Saves\<platform> cannot be had - a junction would put the states inside Steam's
-// folder, deleted with an uninstall, and two installs would fight over it).
+// NOTHING BESIDE THE GAME: 3dSen never writes beside the ROM ([run], every run of stage 1 and 2). WHERE THE STATES ARE
+// (ThreeDSenLaunch.StatesRoot):
+//   - with the pack's in-process plugin (portable mode, docs\3dsen.md section 15): <3dSen folder>\Saves\<platform>\States,
+//     sav.cfg and the slots side by side, one per platform and per install - so a listing reads each game's platform's;
+//   - without it: 3dSen's own folder (LocalLow), shared by every copy of 3dSen of the Windows user (question Q4).
+// A state's own root is its folder (ThreeDSenSavCfg.RootOf): active, delete and the slot freed go by it.
 //
 // THE IDS (Shared.Saves, docs\saves-lb14-routing.md §3): {"emu":"3dsen","kind":"state","by":"profile","id":"<profile id>",
 // "slot":<n>} - what 3dSen itself says a state belongs to, stable (a profile id never changes; a rom renamed changes
-// nothing). "inst" is added by the desk (docs\saves-two-installs.md): every install shares the one folder, so both answer
-// the same OwnExpectedDir and the desk takes them for one destination.
+// nothing). "inst" is added by the desk (docs\saves-two-installs.md): without the plugin every install shares the one
+// folder, so both answer the same OwnExpectedDir and the desk takes them for one destination; portable, each its own.
 //
 // ACTIVE: the file is there AND its slot still holds the card's profile - a slot 3dSen has since reused for another game is
 // not this card's live file any more.
@@ -131,23 +133,20 @@ namespace LbIntegrations.ThreeDSen
                 var exe = ResolveFullPath(Safe(() => args.Emulator.ApplicationPath));
                 if (!ThreeDSenLaunch.IsExe(exe)) return new GetSavesResponse("This emulator is not 3dSen.");
                 var found = new List<GameSaveBase>();
-                var data = ThreeDSenLaunch.DataDir();
-                var slots = Slots(data);
-                // Nothing saved by 3dSen yet (or an index it does not read back): no state, and no title matched for nothing.
-                if (slots == null || slots.All(s => s.Empty)) return new GetSavesResponse(found);
-                var profiles = Profiles(data);
+                var profiles = Profiles(ThreeDSenLaunch.DataDir(exe));
+                var roots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var games = args.Games ?? (IReadOnlyCollection<IGame>)Array.Empty<IGame>();
                 foreach (var app in args.AdditionalApplications ?? (IReadOnlyCollection<IAdditionalApplication>)Array.Empty<IAdditionalApplication>())
                 {
                     var gameId = Safe(() => app.GameId);
                     var game = games.FirstOrDefault(g => Safe(() => g.Id) == gameId) ?? Safe(() => PluginHelper.DataManager?.GetGameById(gameId));
-                    Collect(found, seen, data, slots, profiles, gameId, Safe(() => game?.Title), Safe(() => app.ApplicationPath),
+                    Collect(found, seen, roots, exe, Safe(() => game?.Platform), profiles, gameId, Safe(() => game?.Title), Safe(() => app.ApplicationPath),
                             SaveRows.TieTo(Safe(() => app.Id), Safe(() => game?.ApplicationPath), Safe(() => app.ApplicationPath), Full));
                 }
                 foreach (var game in games)
-                    Collect(found, seen, data, slots, profiles, Safe(() => game.Id), Safe(() => game.Title), Safe(() => game.ApplicationPath), null);
-                ThreeDSenStateThumbs.Orphans(data, slots);
+                    Collect(found, seen, roots, exe, Safe(() => game.Platform), profiles, Safe(() => game.Id), Safe(() => game.Title), Safe(() => game.ApplicationPath), null);
+                foreach (var root in roots) { var slots = Slots(root); if (slots != null) ThreeDSenStateThumbs.Orphans(root, slots); }
                 Log.Verbose("found " + found.Count + " state(s) for " + exe);
                 return new GetSavesResponse(found);
             }
@@ -158,10 +157,16 @@ namespace LbIntegrations.ThreeDSen
             }
         }
 
-        private static void Collect(List<GameSaveBase> into, HashSet<string> seen, string data, List<ThreeDSenSlot> slots, List<ThreeDSenProfile> profiles,
+        private static void Collect(List<GameSaveBase> into, HashSet<string> seen, HashSet<string> roots, string exe, string platform, List<ThreeDSenProfile> profiles,
                                     string gameId, string title, string romPath, string appId)
         {
             if (string.IsNullOrWhiteSpace(gameId) || string.IsNullOrWhiteSpace(romPath)) return;
+            // The states of the game's platform (portable mode), or 3dSen's one folder.
+            var data = ThreeDSenLaunch.StatesRoot(exe, platform);
+            var slots = Slots(data);
+            // Nothing saved by 3dSen yet (or an index it does not read back): no state, and no title matched for nothing.
+            if (slots == null || slots.All(s => s.Empty)) return;
+            roots.Add(data);
             var profile = ProfileOf(profiles, gameId, title, ResolveFullPath(romPath));
             if (profile == null) return;
             var context = appId ?? gameId;
@@ -176,12 +181,12 @@ namespace LbIntegrations.ThreeDSen
         }
 
         /// <summary>For the game's window: a game's states, quick first, as "Quick (18/10 17:52)", "slot 5 (...)".</summary>
-        internal static List<string> StatesText(string gameId, string title, string rom)
+        internal static List<string> StatesText(string exe, string platform, string gameId, string title, string rom)
         {
-            var data = ThreeDSenLaunch.DataDir();
+            var data = ThreeDSenLaunch.StatesRoot(exe, platform);
             var slots = ThreeDSenSavCfg.Read(ThreeDSenSavCfg.PathIn(data));
             if (slots == null) return new List<string>();
-            var profile = ProfileOf(ThreeDSenProfiles.All(data), gameId, title, rom);
+            var profile = ProfileOf(ThreeDSenProfiles.All(ThreeDSenLaunch.DataDir(exe)), gameId, title, rom);
             if (profile == null) return new List<string>();
             return slots.Where(s => s.GameId == profile.Id && s.Number >= 0 && File.Exists(ThreeDSenSavCfg.StatePath(data, s.SlotId))
                                     && StateFits(profile, ThreeDSenSavCfg.StatePath(data, s.SlotId), rom))
@@ -236,9 +241,12 @@ namespace LbIntegrations.ThreeDSen
                 if (!IsOurs(save) || string.IsNullOrWhiteSpace(save.FileLocation)) return true;
                 if (!File.Exists(save.FileLocation)) return false;
                 if (!Parts(save.SaveGroupId, out var profile, out var slot)) return true;
-                var data = ThreeDSenLaunch.DataDir();
+                // Live where its slot's file is in its own states root (the platform's, or LocalLow's), and that root is this 3dSen's.
+                var data = ThreeDSenSavCfg.RootOf(save.FileLocation);
                 var expected = ThreeDSenSavCfg.StatePath(data, ThreeDSenSavCfg.SlotIdOf(slot));
                 if (!string.Equals(Path.GetFullPath(save.FileLocation), Path.GetFullPath(expected), StringComparison.OrdinalIgnoreCase)) return false;
+                var exe = ResolveFullPath(emulatorApplicationPath);
+                if (ThreeDSenLaunch.IsExe(exe) && !IsRootOf(exe, data)) return false;
                 var path = ThreeDSenSavCfg.PathIn(data);
                 var slots = StampedCache.Get(path, "3dsen.sav.cfg", () => ThreeDSenSavCfg.Read(path));
                 var item = slots?.FirstOrDefault(s => s.Number == slot);
@@ -251,8 +259,24 @@ namespace LbIntegrations.ThreeDSen
         {
             var path = Safe(() => emulator?.ApplicationPath);
             if (save == null || !ThreeDSenLaunch.IsExe(path)) return LbIntegrations.Saves.ExpectedDir.Unknown("Could not find the 3dSen this game runs on.");
-            // Every copy of 3dSen of the Windows user keeps its states in the one folder.
-            return LbIntegrations.Saves.ExpectedDir.Folder(ThreeDSenSavCfg.StateDir(ThreeDSenLaunch.DataDir()));
+            // Portable: this install's folder of the game's platform; else every copy of 3dSen of the Windows user keeps its
+            // states in the one folder.
+            var game = Safe(() => PluginHelper.DataManager?.GetGameById(save.GameId));
+            return LbIntegrations.Saves.ExpectedDir.Folder(ThreeDSenSavCfg.StateDir(ThreeDSenLaunch.StatesRoot(ResolveFullPath(path), Safe(() => game?.Platform))));
+        }
+
+        /// <summary>A states root is this 3dSen's: LocalLow's when it is not portable, else one of its own Saves\&lt;platform&gt;\States.</summary>
+        internal static bool IsRootOf(string exe, string root)
+        {
+            try
+            {
+                var r = Path.GetFullPath(root).TrimEnd('\\');
+                if (!ThreeDSenLaunch.Portable(exe)) return string.Equals(r, Path.GetFullPath(ThreeDSenLaunch.DataDir()).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+                var saves = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(exe)), ThreeDSenLaunch.SavesFolder)).TrimEnd('\\');
+                return string.Equals(Path.GetFileName(r), ThreeDSenLaunch.StatesFolder, StringComparison.OrdinalIgnoreCase)
+                       && string.Equals(Path.GetDirectoryName(Path.GetDirectoryName(r)), saves, StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return true; }
         }
 
         // ── restore ──────────────────────────────────────────────────────────
@@ -272,8 +296,10 @@ namespace LbIntegrations.ThreeDSen
                 if (to.Warning != null) Log.Warn("restore of " + save.OriginalFileName + ": " + to.Warning);
                 if (to.Refused) return new AddSaveResponse(to.Warning);
                 var game = Safe(() => dm?.GetGameById(save.GameId));
-                var data = ThreeDSenLaunch.DataDir();
-                var profile = ProfileOf(ThreeDSenProfiles.All(data), save.GameId, Safe(() => game?.Title), to.RomPath);
+                var exe = ExecutableOf(game);
+                if (!ThreeDSenLaunch.IsExe(exe)) return new AddSaveResponse("Could not find the 3dSen this game runs on.");
+                var data = ThreeDSenLaunch.StatesRoot(exe, Safe(() => game?.Platform));
+                var profile = ProfileOf(ThreeDSenProfiles.All(ThreeDSenLaunch.DataDir(exe)), save.GameId, Safe(() => game?.Title), to.RomPath);
                 if (profile == null)
                     return new AddSaveResponse("3dSen has no profile for this game (not even its 2D Mode), so a state cannot be given to it. Choose its profile first: right-click the game > Nixx-3DSen : Options...");
                 var thumb = GetCompanionSaveFiles(source).FirstOrDefault(LbipStateThumbs.IsThumb);
@@ -351,6 +377,23 @@ namespace LbIntegrations.ThreeDSen
             return null;
         }
 
+        /// <summary>The 3dSen a restore goes to: the install it was sent to (SaveForward.WithVia), else the game's emulator,
+        /// else the first 3dSen LaunchBox has.</summary>
+        private static string ExecutableOf(IGame game)
+        {
+            try
+            {
+                var dm = PluginHelper.DataManager;
+                var id = Safe(() => game?.EmulatorId);
+                var own = LbIntegrations.Saves.SaveForward.ViaEmulator(ThreeDSenLaunch.IsExe) ?? (string.IsNullOrEmpty(id) ? null : dm?.GetEmulatorById(id));
+                var path = Safe(() => own?.ApplicationPath);
+                if (!ThreeDSenLaunch.IsExe(path))
+                    path = Safe(() => dm?.GetAllEmulators()?.FirstOrDefault(e => ThreeDSenLaunch.IsExe(Safe(() => e.ApplicationPath)))?.ApplicationPath);
+                return string.IsNullOrEmpty(path) ? null : ResolveFullPath(path);
+            }
+            catch { return null; }
+        }
+
         // ── delete ───────────────────────────────────────────────────────────
 
         PluginResponse IOwnSaves.OwnRemoveSave(GameSaveBase save)
@@ -358,7 +401,9 @@ namespace LbIntegrations.ThreeDSen
             try
             {
                 if (!IsOurs(save)) return base.RemoveSave(save);
-                var why = Delete(ThreeDSenLaunch.DataDir(), save?.FileLocation, save?.SaveGroupId);
+                // The slot is freed in the sav.cfg beside the file (its platform's, or LocalLow's).
+                var loc = save?.FileLocation;
+                var why = Delete(string.IsNullOrWhiteSpace(loc) ? ThreeDSenLaunch.DataDir() : ThreeDSenSavCfg.RootOf(loc), loc, save?.SaveGroupId);
                 return why == null ? new PluginResponse(true) : new PluginResponse(false, why);
             }
             catch (Exception ex)

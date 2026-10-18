@@ -61,7 +61,17 @@ namespace LbIntegrations.ThreeDSen
         public const byte Blank = 0xCD;
 
         public static string PathIn(string data) => Path.Combine(data, FileName);
-        public static string StateDir(string data) => Path.Combine(data, Folder);
+        /// <summary>Where the slot files of a states root are: the root itself when it is a "States" folder (the portable mode,
+        /// ThreeDSenLaunch.StatesRoot - the plugin's --nixx-states puts sav.cfg and the slots side by side), else its "sav".</summary>
+        public static string StateDir(string data)
+            => string.Equals(Path.GetFileName((data ?? "").TrimEnd('\\')), ThreeDSenLaunch.StatesFolder, StringComparison.OrdinalIgnoreCase) ? data : Path.Combine(data, Folder);
+
+        /// <summary>The states root a state file lives in (its folder, or the folder above its "sav").</summary>
+        public static string RootOf(string state)
+        {
+            var dir = Path.GetDirectoryName(Path.GetFullPath(state));
+            return string.Equals(Path.GetFileName(dir), Folder, StringComparison.OrdinalIgnoreCase) ? Path.GetDirectoryName(dir) : dir;
+        }
 
         /// <summary>sav\&lt;slot&gt;.sav (SaveConfig.SlotId's setter).</summary>
         public static string StatePath(string data, string slotId) => Path.Combine(StateDir(data), slotId + ".sav");

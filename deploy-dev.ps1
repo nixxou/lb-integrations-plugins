@@ -33,7 +33,12 @@ param(
     # For SuperZsnes only: a SUPER ZSNES folder launched once with BepInEx in it, so that
     # tools\superzsnes-bepinex can be built and embedded. Optional here (build-release.ps1 requires
     # it): without it the plugin deploys BepInEx and the docs and carries no in-process plugin.
-    [string] $SuperZsnesDir = $env:SUPERZSNES_DIR
+    [string] $SuperZsnesDir = $env:SUPERZSNES_DIR,
+
+    # For ThreeDSen only: a 3dSen folder (Unity's assemblies, 3dSen_Data\Managed) and BepInEx 5 x86's BepInEx\core, so
+    # that tools\3dsen-bepinex can be built and embedded. Optional here: without them the plugin carries no in-process plugin.
+    [string] $ThreeDSenDir = $env:THREEDSEN_DIR,
+    [string] $BepInEx5Core = $env:BEPINEX5_CORE
 )
 
 $ErrorActionPreference = 'Stop'
@@ -94,6 +99,20 @@ if ($Plugin -eq 'SuperZsnes') {
         if ($LASTEXITCODE -ne 0) { throw "Build failed: SuperZsnes.BepInEx" }
     } else {
         Write-Host "  ! no -SuperZsnesDir with BepInEx\interop - the in-process plugin is not built; SuperZsnes.dll will deploy BepInEx and the docs only" -ForegroundColor Yellow
+    }
+}
+
+# The 3dSen in-process plugin first, when a 3dSen folder and BepInEx 5's core are at hand: ThreeDSen.csproj embeds
+# build\bepinex\ThreeDSen.BepInEx.dll when it is there.
+if ($Plugin -eq 'ThreeDSen') {
+    if ($ThreeDSenDir -and $BepInEx5Core -and (Test-Path (Join-Path $ThreeDSenDir '3dSen_Data\Managed\UnityEngine.CoreModule.dll')) -and (Test-Path (Join-Path $BepInEx5Core 'BepInEx.dll'))) {
+        Write-Host "Building the 3dSen in-process plugin..." -ForegroundColor Cyan
+        $modOut = Join-Path $repo 'build\bepinex'
+        New-Item -ItemType Directory -Force -Path $modOut | Out-Null
+        dotnet build (Join-Path $repo 'tools\3dsen-bepinex\ThreeDSen.BepInEx.csproj') -c $Configuration --nologo -v quiet "-p:ThreeDSenDir=$ThreeDSenDir" "-p:BepInExCore=$BepInEx5Core" "-p:OutDir=$modOut\"
+        if ($LASTEXITCODE -ne 0) { throw "Build failed: ThreeDSen.BepInEx" }
+    } else {
+        Write-Host "  ! no -ThreeDSenDir / -BepInEx5Core - the 3dSen in-process plugin is not built; ThreeDSen.dll carries the last one built, if any" -ForegroundColor Yellow
     }
 }
 

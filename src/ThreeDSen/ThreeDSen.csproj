@@ -75,6 +75,10 @@
   <ItemGroup>
     <!-- The plugin's user guide, shown from the General tab of the Nixx window (src\Menus\Settings.cs). -->
     <EmbeddedResource Include="..\..\docs\help\3dsen.html" LogicalName="help.html" />
+    <!-- The in-process plugin (tools\3dsen-bepinex), when deploy-dev / build-release have built it into build\bepinex\
+         (it needs a 3dSen folder for Unity's assemblies): ThreeDSenBepInEx puts it into 3dSen's BepInEx\plugins. -->
+    <EmbeddedResource Include="..\..\build\bepinex\ThreeDSen.BepInEx.dll" LogicalName="bepinex/ThreeDSen.BepInEx.dll"
+                      Condition="Exists('..\..\build\bepinex\ThreeDSen.BepInEx.dll')" />
   </ItemGroup>
 
 </Project>

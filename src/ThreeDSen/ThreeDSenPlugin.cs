@@ -216,17 +216,28 @@ namespace LbIntegrations.ThreeDSen
 
                 var version = ThreeDSenInstall.VersionOf(exe);
                 Log.Info("install: " + (pick == ThreeDSenInstall.Pick.UseSteam ? "Steam's" : "the user's copy") + " " + exe + " (" + version + ")");
+
+                // THE IN-PROCESS PLUGIN, unless the Nixx page said no. Its failure is a note and never a failed install: 3dSen
+                // runs without it, as it ships.
+                string note = "";
+                if (ThreeDSenSettings.On("BepInEx"))
+                {
+                    var failed = ThreeDSenBepInEx.Deploy(Path.GetDirectoryName(exe), m => Report(args, m, null));
+                    if (failed == null) note = " BepInEx and the pack's plugin are in its folder: Esc quits (twice), F6 / F7 pick a slot, 3dSen's files in its own folder.";
+                    else { Log.Warn("bepinex: " + failed); note = " BepInEx could not be installed (" + failed + "); 3dSen works without it, and the Nixx window can retry."; }
+                }
+
                 if (args?.ExistingEmulator != null)
                 {
                     try { args.ExistingEmulator.ApplicationPath = MakeRelativeToLaunchBox(exe); } catch { }
-                    return new EmulatorInstallResponse(args.ExistingEmulator, "3dSen " + version + " - " + exe + ".");
+                    return new EmulatorInstallResponse(args.ExistingEmulator, "3dSen " + version + " - " + exe + "." + note);
                 }
                 if (args != null && !args.ShouldCreateEmulator)
-                    return new EmulatorInstallResponse("3dSen " + version + " found at " + exe + ", but no emulator entry was requested.");
+                    return new EmulatorInstallResponse("3dSen " + version + " found at " + exe + ", but no emulator entry was requested." + note);
                 var created = CreateEmulator(exe);
                 if (created == null)
                     return new EmulatorInstallResponse("3dSen was found at " + exe + " but the emulator entry couldn't be created (no data manager available).");
-                return new EmulatorInstallResponse(created, "3dSen " + version + " set up from " + exe + ".");
+                return new EmulatorInstallResponse(created, "3dSen " + version + " set up from " + exe + "." + note);
             }
             catch (Exception ex)
             {
@@ -282,13 +293,14 @@ namespace LbIntegrations.ThreeDSen
 
         private PrepareForLaunchResponse PrepareCore(PrepareForLaunchArgs args)
         {
-            string exe = null, gameId = null, rom = null, title = null;
+            string exe = null, gameId = null, rom = null, title = null, platform = null;
             try { exe = ResolveFullPath(args?.EmulatorBeingLaunched?.ApplicationPath); } catch { }
             try { gameId = args?.GameBeingLaunched?.Id; } catch { }
             try { rom = ResolveFullPath(args?.GameBeingLaunched?.ApplicationPath); } catch { }
             try { title = args?.GameBeingLaunched?.Title; } catch { }
+            try { platform = args?.GameBeingLaunched?.Platform; } catch { }
             if (!ThreeDSenLaunch.IsExe(exe) || !File.Exists(exe)) return new PrepareForLaunchResponse(success: true);
-            var refusal = Prepare(exe, gameId, title, rom, args?.CurrentCommandLine ?? "", out var line);
+            var refusal = Prepare(exe, gameId, title, rom, args?.CurrentCommandLine ?? "", out var line, platform);
             if (refusal != null)
             {
                 Log.Info("launch refused: " + refusal);
@@ -297,12 +309,12 @@ namespace LbIntegrations.ThreeDSen
             }
             Log.Info("launch: " + line);
             // A PNG beside each state: the quick slot captured as 3dSen writes it, every one made again once it has quit.
-            ThreeDSenStateThumbs.Session(exe, ThreeDSenLaunch.DataDir());
+            ThreeDSenStateThumbs.Session(exe, ThreeDSenLaunch.StatesRoot(exe, platform));
             return new PrepareForLaunchResponse(success: true) { NewCommandLine = line };
         }
 
         /// <summary>The launch's work, host-free (the probe calls it): null and the line, or why it cannot be launched.</summary>
-        internal static string Prepare(string exe, string gameId, string title, string rom, string current, out string line)
+        internal static string Prepare(string exe, string gameId, string title, string rom, string current, out string line, string platform = null)
         {
             line = null;
             if (ThreeDSenLaunch.AnyRunning())
@@ -310,7 +322,22 @@ namespace LbIntegrations.ThreeDSen
             if (string.IsNullOrWhiteSpace(rom) || !File.Exists(rom))
                 return "The game's file is not there: " + (rom ?? "(none)") + ".";
 
-            var data = ThreeDSenLaunch.DataDir();
+            // The in-process plugin: its files put back from this assembly (no network), LocalLow copied in the first time.
+            var exeDir = Path.GetDirectoryName(exe);
+            if (ThreeDSenSettings.On("BepInEx") && ThreeDSenBepInEx.HasBepInEx(exeDir))
+            {
+                var back = ThreeDSenBepInEx.PutBack(exeDir);
+                if (back != null) Log.Warn("in-process plugin: " + back);
+            }
+            else if (!ThreeDSenSettings.On("BepInEx") && ThreeDSenBepInEx.HasBepInEx(exeDir))
+            {
+                // Turned off on the Nixx page: nothing of it in 3dSen's folder (its portable data stays).
+                var removed = ThreeDSenBepInEx.Remove(exeDir);
+                Log.Info("in-process plugin turned off: BepInEx " + (removed == null ? "removed from " + exeDir : "could not be removed: " + removed));
+            }
+            var portable = ThreeDSenLaunch.Portable(exe);
+            if (portable) ThreeDSenLaunch.FirstPortable(exe);
+            var data = ThreeDSenLaunch.DataDir(exe);
             var profiles = ThreeDSenProfiles.All(data);
             ThreeDSenProfile profile;
             var chosen = ThreeDSenSettings.GameValue(gameId, ThreeDSenSettings.ProfileKey);
@@ -340,9 +367,10 @@ namespace LbIntegrations.ThreeDSen
             if (file == null) return problem;
             var written = ThreeDSenRomJson.SetRom(Path.Combine(data, ThreeDSenRomJson.FileName), profile.Id, profile.Title, file);
             if (written != null) return written;
-            ThreeDSenInput.BindStateKeys(data);
+            ThreeDSenInput.BindStateKeys(data, portable && ThreeDSenSettings.On("Slots"));
 
             var switches = ThreeDSenLaunch.Switches(profile.Id, ThreeDSenSettings.For(gameId, "Screen"), ThreeDSenSettings.For(gameId, "WindowSize"));
+            switches.AddRange(ThreeDSenLaunch.PluginSwitches(exe, platform, key => ThreeDSenSettings.For(gameId, key)));
             line = ThreeDSenLaunch.CommandLine(current, rom, switches);
             return null;
         }

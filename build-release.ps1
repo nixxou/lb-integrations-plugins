@@ -26,7 +26,12 @@ param(
     # plugin built from it is embedded into SuperZsnes.dll and deployed into every emulator folder.
     # Defaults to the SUPERZSNES_DIR environment variable. REQUIRED for a release: a pack shipped
     # without it would install BepInEx into an emulator and put nothing in it.
-    [string] $SuperZsnesDir = $env:SUPERZSNES_DIR
+    [string] $SuperZsnesDir = $env:SUPERZSNES_DIR,
+
+    # A 3dSen folder (its 3dSen_Data\Managed holds Unity's assemblies) and BepInEx 5 x86's BepInEx\core: tools\3dsen-bepinex
+    # compiles against both, and the plugin built is embedded into ThreeDSen.dll. REQUIRED for a release, as for SUPER ZSNES.
+    [string] $ThreeDSenDir = $env:THREEDSEN_DIR,
+    [string] $BepInEx5Core = $env:BEPINEX5_CORE
 )
 
 $ErrorActionPreference = 'Stop'
@@ -77,6 +82,15 @@ if (-not $SkipPlugins) {
     if ($LASTEXITCODE -ne 0) { throw "Build failed: SuperZsnes.BepInEx" }
     if (-not (Test-Path (Join-Path $modOut 'SuperZsnes.BepInEx.dll'))) { throw "SuperZsnes.BepInEx.dll missing after build" }
     Write-Host ("  built  {0,-14} {1,8:N0} KB" -f 'SuperZsnes.BepInEx.dll', ((Get-Item (Join-Path $modOut 'SuperZsnes.BepInEx.dll')).Length / 1KB))
+
+    # The 3dSen one, the same way (ThreeDSen.csproj embeds it).
+    if (-not $ThreeDSenDir -or -not $BepInEx5Core) {
+        throw "No -ThreeDSenDir / -BepInEx5Core (or THREEDSEN_DIR / BEPINEX5_CORE): tools\3dsen-bepinex cannot be built, and a release must carry it."
+    }
+    Write-Host "Building the 3dSen in-process plugin ($Configuration)..." -ForegroundColor Cyan
+    dotnet build (Join-Path $repo 'tools\3dsen-bepinex\ThreeDSen.BepInEx.csproj') -c $Configuration --nologo -v quiet "-p:ThreeDSenDir=$ThreeDSenDir" "-p:BepInExCore=$BepInEx5Core" "-p:OutDir=$modOut\"
+    if ($LASTEXITCODE -ne 0) { throw "Build failed: ThreeDSen.BepInEx" }
+    if (-not (Test-Path (Join-Path $modOut 'ThreeDSen.BepInEx.dll'))) { throw "ThreeDSen.BepInEx.dll missing after build" }
 }
 
 # ── 1. the plugins ──────────────────────────────────────────────────────────

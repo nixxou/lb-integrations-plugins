@@ -61,11 +61,108 @@ namespace LbIntegrations.ThreeDSen
         // ── the user data folder ─────────────────────────────────────────────
 
         /// <summary>Unity's Application.persistentDataPath for 3dSen: &lt;LocalLow&gt;\Geod Studio\3dSen - the company and
-        /// product of 3dSen_Data\app.info (Info.Awake: DataPath = persistentDataPath). No setting moves it.</summary>
+        /// product of 3dSen_Data\app.info (Info.Awake: DataPath = persistentDataPath). No setting of 3dSen moves it; the pack's
+        /// in-process plugin does (Portable).</summary>
         public static string DataDir()
         {
             if (DataDirOverride != null) return DataDirOverride;
             return Path.Combine(LocalLow(), "Geod Studio", "3dSen");
+        }
+
+        // ── the portable mode (the in-process plugin, Mehdi 19/10) ──────────
+
+        public const string PortableFolder = "portable", SavesFolder = "Saves", StatesFolder = "States";
+
+        /// <summary>For the probe: the in-process plugin taken as there.</summary>
+        internal static bool? PortableOverride;
+
+        /// <summary>This 3dSen runs with the pack's plugin (BepInEx and the plugin in its folder, and the Nixx page's switch on):
+        /// its data is &lt;install&gt;\portable, its states &lt;install&gt;\Saves\&lt;platform&gt;\States (the plugin's
+        /// --nixx-data / --nixx-states).</summary>
+        public static bool Portable(string exe)
+        {
+            if (PortableOverride != null) return PortableOverride.Value;
+            try { return !string.IsNullOrWhiteSpace(exe) && ThreeDSenSettings.On("BepInEx") && ThreeDSenBepInEx.IsDeployed(Path.GetDirectoryName(Path.GetFullPath(exe))); }
+            catch { return false; }
+        }
+
+        /// <summary>The data folder of THIS 3dSen: &lt;install&gt;\portable with the plugin, else LocalLow's.</summary>
+        public static string DataDir(string exe)
+            => Portable(exe) ? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(exe)), PortableFolder) : DataDir();
+
+        /// <summary>Where the states of a game of <paramref name="platform"/> are, sav.cfg with them (a folder named "States" holds
+        /// the slot files itself - ThreeDSenSavCfg.StateDir): &lt;install&gt;\Saves\&lt;platform&gt;\States with the plugin,
+        /// else 3dSen's data folder (sav.cfg there, the slots in its "sav").</summary>
+        public static string StatesRoot(string exe, string platform)
+            => Portable(exe) ? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(exe)), SavesFolder, PlatformFolder(platform), StatesFolder) : DataDir();
+
+        /// <summary>A platform's folder name: its name, the characters Windows refuses replaced; none: the NES's.</summary>
+        public static string PlatformFolder(string platform)
+        {
+            var p = string.IsNullOrWhiteSpace(platform) ? ThreeDSenPlugin.NesPlatform : platform.Trim();
+            var bad = Path.GetInvalidFileNameChars();
+            var s = new string(p.Select(c => bad.Contains(c) ? '_' : c).ToArray()).TrimEnd('.', ' ');
+            return s.Length == 0 ? ThreeDSenPlugin.NesPlatform : s;
+        }
+
+        /// <summary>The first launch in portable mode: what 3dSen has in LocalLow COPIED into the portable folder (its games'
+        /// bindings, keys, settings, custom profiles, cover art) and its states into the NES's states folder - copied, never
+        /// moved: LocalLow is every copy of 3dSen's, and stays as it was. Only when the portable folder has no rom.json yet.</summary>
+        public static void FirstPortable(string exe)
+        {
+            try
+            {
+                var data = DataDir(exe);
+                if (!Portable(exe) || File.Exists(Path.Combine(data, ThreeDSenRomJson.FileName))) return;
+                var from = DataDir();
+                Directory.CreateDirectory(data);
+                if (!Directory.Exists(from)) { Log.Info("portable: 3dSen never ran under this Windows user - starting empty"); return; }
+                int n = 0;
+                foreach (var f in new[] { ThreeDSenRomJson.FileName, ThreeDSenInput.FileName, "setting.cfg" })
+                    if (File.Exists(Path.Combine(from, f))) { File.Copy(Path.Combine(from, f), Path.Combine(data, f), false); n++; }
+                foreach (var d in new[] { "CustomProfiles", "CoverArt" })
+                    n += CopyTree(Path.Combine(from, d), Path.Combine(data, d));
+                var states = StatesRoot(exe, ThreeDSenPlugin.NesPlatform);
+                if (File.Exists(ThreeDSenSavCfg.PathIn(from)) && !File.Exists(ThreeDSenSavCfg.PathIn(states)))
+                {
+                    Directory.CreateDirectory(states);
+                    File.Copy(ThreeDSenSavCfg.PathIn(from), ThreeDSenSavCfg.PathIn(states), false); n++;
+                    var slots = ThreeDSenSavCfg.StateDir(from);
+                    if (Directory.Exists(slots))
+                        foreach (var f in Directory.GetFiles(slots)) { File.Copy(f, Path.Combine(ThreeDSenSavCfg.StateDir(states), Path.GetFileName(f)), false); n++; }
+                }
+                Log.Info("portable: " + n + " file(s) of LocalLow copied into " + data + " (LocalLow left as it was)");
+            }
+            catch (Exception ex) { Log.Warn("portable: LocalLow could not be copied", ex); }
+        }
+
+        private static int CopyTree(string from, string to)
+        {
+            if (!Directory.Exists(from)) return 0;
+            int n = 0;
+            foreach (var f in Directory.GetFiles(from, "*", SearchOption.AllDirectories))
+            {
+                var target = Path.Combine(to, Path.GetRelativePath(from, f));
+                if (File.Exists(target)) continue;
+                Directory.CreateDirectory(Path.GetDirectoryName(target));
+                File.Copy(f, target); n++;
+            }
+            return n;
+        }
+
+        /// <summary>The in-process plugin's switches for a launch: the folders, the keys, a game's 3dSen settings. None without it.</summary>
+        public static List<string> PluginSwitches(string exe, string platform, Func<string, string> valueOf)
+        {
+            var list = new List<string>();
+            if (!Portable(exe)) return list;
+            list.Add("--nixx-data=" + DataDir(exe));
+            list.Add("--nixx-states=" + StatesRoot(exe, platform));
+            list.Add("--nixx-esc");
+            list.Add("--nixx-quit-confirm=" + (ThreeDSenSettings.On("QuitConfirm") ? "on" : "off"));
+            list.Add("--nixx-slots=" + (ThreeDSenSettings.On("Slots") ? "on" : "off"));
+            if (ThreeDSenSettings.On("PluginLog")) list.Add("--nixx-log");
+            list.AddRange(ThreeDSenSettings.SetArgs(valueOf));
+            return list;
         }
 
         private static readonly Guid LocalAppDataLow = new Guid("A520A1A4-1780-4FF6-BD18-167343C5AF16");
@@ -187,7 +284,7 @@ namespace LbIntegrations.ThreeDSen
             for (int i = 0; i < t.Count; i++)
             {
                 var a = t[i];
-                if (a.StartsWith("-id=", StringComparison.OrdinalIgnoreCase)) continue;
+                if (a.StartsWith("-id=", StringComparison.OrdinalIgnoreCase) || a.StartsWith("--nixx-", StringComparison.OrdinalIgnoreCase)) continue;
                 if (OurValued.Any(o => string.Equals(o, a, StringComparison.OrdinalIgnoreCase))) { if (i + 1 < t.Count && !t[i + 1].StartsWith("-")) i++; continue; }
                 if (rom != null && !a.StartsWith("-") && string.Equals(Full(a), rom, StringComparison.OrdinalIgnoreCase)) continue;
                 kept.Add(a);

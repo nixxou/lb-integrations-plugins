@@ -29,7 +29,13 @@ namespace LbIntegrations.Probe
         }
 
         private static Type T(Assembly asm, string name) => asm.GetType("LbIntegrations.ThreeDSen." + name, true);
-        private static object Call(Assembly asm, string type, string method, params object[] a) => T(asm, type).GetMethod(method, Any).Invoke(null, a);
+        /// <summary>A static method by name: the overload taking these many arguments, its optional ones given their defaults.</summary>
+        private static object Call(Assembly asm, string type, string method, params object[] a)
+        {
+            var m = T(asm, type).GetMethods(Any).Where(x => x.Name == method).OrderBy(x => x.GetParameters().Length)
+                                .First(x => x.GetParameters().Length >= a.Length && x.GetParameters().Skip(a.Length).All(q => q.IsOptional));
+            return m.Invoke(null, a.Concat(m.GetParameters().Skip(a.Length).Select(q => q.DefaultValue)).ToArray());
+        }
         private static void SetStatic(Assembly asm, string type, string field, object value) => T(asm, type).GetField(field, Any).SetValue(null, value);
         private static object F(object o, string name) => o?.GetType().GetField(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(o);
 
@@ -73,9 +79,20 @@ namespace LbIntegrations.Probe
             var args = new object[] { Path.Combine(lab, "emu"), null };
             var found = (string)T(asm, "ThreeDSenInstall").GetMethod("ExeIn", Any).Invoke(null, args);
             Check("the install folder itself is accepted", string.Equals(found, exe, StringComparison.OrdinalIgnoreCase), found ?? (string)args[1]);
-            args = new object[] { lab, null };
-            found = (string)T(asm, "ThreeDSenInstall").GetMethod("ExeIn", Any).Invoke(null, args);
-            Check("its parent is accepted (its one sub-folder holding 3dSen.exe)", string.Equals(found, exe, StringComparison.OrdinalIgnoreCase), found ?? (string)args[1]);
+            // Its parent: a folder of its own holding a junction to the lab's copy (the lab itself may hold several copies).
+            var parent = Path.Combine(Path.GetTempPath(), "lbip-3dsen-parent-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(parent);
+            try
+            {
+                var link = Path.Combine(parent, "3dsenpc-win");
+                using (var mk = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", "/c mklink /J \"" + link + "\" \"" + Path.GetDirectoryName(exe) + "\"")
+                                                                  { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true })) mk.WaitForExit();
+                args = new object[] { parent, null };
+                found = (string)T(asm, "ThreeDSenInstall").GetMethod("ExeIn", Any).Invoke(null, args);
+                Check("its parent is accepted (its one sub-folder holding 3dSen.exe)", string.Equals(found, Path.Combine(link, "3dSen.exe"), StringComparison.OrdinalIgnoreCase), found ?? (string)args[1]);
+                Directory.Delete(link);
+            }
+            finally { try { Directory.Delete(parent, true); } catch { } }
             args = new object[] { Path.Combine(lab, "roms"), null };
             found = (string)T(asm, "ThreeDSenInstall").GetMethod("ExeIn", Any).Invoke(null, args);
             Check("a folder without 3dSen.exe is refused, saying why", found == null && ((string)args[1] ?? "").Contains("3dSen.exe"), (string)args[1]);
@@ -219,6 +236,18 @@ namespace LbIntegrations.Probe
             var afterDel = (System.Collections.IList)Call(asm, "ThreeDSenSavCfg", "Read", cfg);
             Check("deleted: the file gone, slot 5 free again", del == null && !File.Exists(target) && string.IsNullOrEmpty((string)F(Slot(afterDel, "5"), "GameId")), del);
             Check("the quick slot untouched", File.Exists(quick) && (string)F(Slot(afterDel, "quick"), "GameId") == "73");
+
+            // The portable mode: a platform's States folder, sav.cfg and the slots side by side.
+            var states = Path.Combine(temp, "portable-saves", "Nintendo Entertainment System", "States");
+            Directory.CreateDirectory(states);
+            ra = new object[] { states, backup, null, 7, group, "73", true, null, (Func<bool>)(() => true), null, null };
+            refused = (string)restore.Invoke(null, ra);
+            var seven = Path.Combine(states, "7.sav");
+            var pslots = (System.Collections.IList)Call(asm, "ThreeDSenSavCfg", "Read", Path.Combine(states, "sav.cfg"));
+            Check("portable: restored into States\\7.sav, a new sav.cfg beside it", refused == null && File.Exists(seven) && (string)F(Slot(pslots, "7"), "GameId") == "73", refused);
+            del = (string)Call(asm, "ThreeDSenPlugin", "Delete", states, seven, (string)Call(asm, "ThreeDSenPlugin", "StateIdOf", "73", 7));
+            pslots = (System.Collections.IList)Call(asm, "ThreeDSenSavCfg", "Read", Path.Combine(states, "sav.cfg"));
+            Check("portable: deleted, its slot freed", del == null && !File.Exists(seven) && string.IsNullOrEmpty((string)F(Slot(pslots, "7"), "GameId")), del);
         }
 
         private static void Input(Assembly asm, string before, string after, string temp)
@@ -239,6 +268,17 @@ namespace LbIntegrations.Probe
             System.Threading.Thread.Sleep(30);
             Call(asm, "ThreeDSenInput", "BindStateKeys", dir);
             Check("a second launch writes nothing", File.GetLastWriteTimeUtc(path) == stamp);
+            Call(asm, "ThreeDSenInput", "BindStateKeys", dir, true);
+            Check("slots: QuickSave and QuickLoad off F2 / F4 (the plugin's)", (string)Call(asm, "ThreeDSenInput", "KeyName", dir, "QuickSave") == "None"
+                  && (string)Call(asm, "ThreeDSenInput", "KeyName", dir, "QuickLoad") == "None");
+            Check("slots: the camera on the keypad (RotLeft Pad4, RotRight Pad6, ZoomIn Pad+)", (string)Call(asm, "ThreeDSenInput", "KeyName", dir, "RotLeft") == "Pad4"
+                  && (string)Call(asm, "ThreeDSenInput", "KeyName", dir, "RotRight") == "Pad6" && (string)Call(asm, "ThreeDSenInput", "KeyName", dir, "ZoomIn") == "Pad+",
+                  (string)Call(asm, "ThreeDSenInput", "KeyName", dir, "RotLeft"));
+            Check("slots: Menu still F1", (string)Call(asm, "ThreeDSenInput", "KeyName", dir, "Menu") == "F1");
+            Call(asm, "ThreeDSenInput", "BindStateKeys", dir, false);
+            Check("slots off again: F2 / F4 back, the camera back on F5 / F6", (string)Call(asm, "ThreeDSenInput", "KeyName", dir, "QuickSave") == "F2"
+                  && (string)Call(asm, "ThreeDSenInput", "KeyName", dir, "RotLeft") == "F5" && (string)Call(asm, "ThreeDSenInput", "KeyName", dir, "RotRight") == "F6",
+                  (string)Call(asm, "ThreeDSenInput", "KeyName", dir, "RotLeft"));
 
             // F2 already the user's on another action: QuickSave left unbound, QuickLoad still bound.
             File.Copy(Path.Combine(before, "input.cfg"), path, true);
@@ -374,13 +414,13 @@ namespace LbIntegrations.Probe
             SetStatic(asm, "ThreeDSenSettings", "PathOverride", Path.Combine(temp, "settings", "settings.ini"));
             var rom = Path.Combine(lab, "roms", "Zelda II - The Adventure of Link (Europe).nes");
             var prepare = T(asm, "ThreeDSenPlugin").GetMethod("Prepare", Any);
-            var a = new object[] { exe, "probe-game", "Zelda II: The Adventure of Link", rom, "\"" + rom + "\"", null };
+            var a = new object[] { exe, "probe-game", "Zelda II: The Adventure of Link", rom, "\"" + rom + "\"", null, null };
             var refusal = (string)prepare.Invoke(null, a);
             if (refusal != null && refusal.Contains("already running")) { Console.WriteLine("  (3dSen is running here - the launch checks are skipped)"); return; }
             Check("Zelda II prepared", refusal == null, refusal);
             Check("the line: profile 73 and the screen, no game path", ((string)a[5] ?? "").StartsWith("-id=73 -screen-fullscreen 1 ") && !((string)a[5]).Contains(".nes"), (string)a[5]);
             Check("rom.json: profile 73 plays the game", (string)Call(asm, "ThreeDSenRomJson", "RomOf", Path.Combine(data, "rom.json"), "73") == rom);
-            a = new object[] { exe, "probe-unknown", "Some Unknown Game", rom.Replace("Zelda II - The Adventure of Link (Europe)", "Unknown"), "", null };
+            a = new object[] { exe, "probe-unknown", "Some Unknown Game", rom.Replace("Zelda II - The Adventure of Link (Europe)", "Unknown"), "", null, null };
             File.Copy(rom, (string)a[3], true);
             try
             {
@@ -392,6 +432,33 @@ namespace LbIntegrations.Probe
                 Check("... with 2D Mode chosen in its window: launched windowed", refusal == null && ((string)a[5] ?? "").StartsWith("-id=47 -screen-fullscreen 0 -screen-width 1280 -screen-height 720"), refusal ?? (string)a[5]);
             }
             finally { try { File.Delete((string)a[3]); } catch { } }
+
+            Console.WriteLine("-- the portable mode (the in-process plugin taken as there) --");
+            var fake = Path.Combine(temp, "emu-portable", "3dSen.exe");
+            SetStatic(asm, "ThreeDSenLaunch", "PortableOverride", true);
+            try
+            {
+                var pdata = (string)Call(asm, "ThreeDSenLaunch", "DataDir", fake);
+                var proot = (string)Call(asm, "ThreeDSenLaunch", "StatesRoot", fake, "Nintendo Entertainment System");
+                Check("data: <install>\\portable", pdata == Path.Combine(temp, "emu-portable", "portable"), pdata);
+                Check("states: <install>\\Saves\\<platform>\\States", proot == Path.Combine(temp, "emu-portable", "Saves", "Nintendo Entertainment System", "States"), proot);
+                Check("a platform's name made a folder name", (string)Call(asm, "ThreeDSenLaunch", "PlatformFolder", "NES: Hacks?") == "NES_ Hacks_");
+                Check("the slots of a States folder are in it, sav.cfg beside them", (string)Call(asm, "ThreeDSenSavCfg", "StatePath", proot, "5") == Path.Combine(proot, "5.sav")
+                      && (string)Call(asm, "ThreeDSenSavCfg", "RootOf", Path.Combine(proot, "5.sav")) == proot);
+                Call(asm, "ThreeDSenLaunch", "FirstPortable", fake);
+                Check("first portable launch: LocalLow's games copied in", File.Exists(Path.Combine(pdata, "rom.json")) && File.Exists(Path.Combine(data, "rom.json")));
+                Call(asm, "ThreeDSenSettings", "SetGameValue", "probe-game", "Volume", "0.3");
+                a = new object[] { fake, "probe-game", "Zelda II: The Adventure of Link", rom, "", null, "Nintendo Entertainment System" };
+                refusal = (string)prepare.Invoke(null, a);
+                var pl = (string)a[5] ?? "";
+                Check("portable launch prepared", refusal == null, refusal);
+                Check("the line asks the plugin: data, states, Esc, slots", pl.Contains("--nixx-data=") && pl.Contains("--nixx-states=") && pl.Contains("--nixx-esc")
+                      && pl.Contains("--nixx-slots=on") && pl.Contains("--nixx-quit-confirm=on"), pl);
+                Check("the game's own 3dSen setting passed, nothing it did not choose", pl.Contains("--nixx-set:Volume=0.3") && !pl.Contains("--nixx-set:Fov"), pl);
+                Check("rom.json written in the portable folder", (string)Call(asm, "ThreeDSenRomJson", "RomOf", Path.Combine(pdata, "rom.json"), "73") == rom);
+                Check("... a game's line never carries a --nixx- token of an old line", ((string)Call(asm, "ThreeDSenLaunch", "CommandLine", "--nixx-esc \"" + rom + "\"", rom, new List<string>())).IndexOf("--nixx", StringComparison.Ordinal) < 0);
+            }
+            finally { SetStatic(asm, "ThreeDSenLaunch", "PortableOverride", null); }
         }
 
         /// <summary>A launch's preparation FOR REAL - into 3dSen's own user data folder (rom.json, input.cfg) - and the line
@@ -399,7 +466,7 @@ namespace LbIntegrations.Probe
         public static bool PrepareReal(Assembly asm, string exe, string rom, string title)
         {
             Console.WriteLine("-- a launch prepared into " + Call(asm, "ThreeDSenLaunch", "DataDir") + " --");
-            var a = new object[] { exe, "probe-real", title, rom, "\"" + rom + "\"", null };
+            var a = new object[] { exe, "probe-real", title, rom, "\"" + rom + "\"", null, null };
             var refusal = (string)T(asm, "ThreeDSenPlugin").GetMethod("Prepare", Any).Invoke(null, a);
             Console.WriteLine(refusal == null ? "LINE " + a[5] : "REFUSED " + refusal);
             return refusal == null;

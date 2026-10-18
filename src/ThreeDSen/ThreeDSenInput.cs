@@ -45,6 +45,22 @@ namespace LbIntegrations.ThreeDSen
         {
             ("QuickSave", KeyF2, KeyNone), ("QuickLoad", KeyF4, KeyNone), ("Menu", KeyF1, KeyEscape), ("FastForward", KeyL, KeyPeriod),
         };
+
+        /// <summary>With the in-process plugin's slots (Mehdi 19/10): F2 / F4 / F6 / F7 are the plugin's, read by it directly - so
+        /// 3dSen's own quick save / load are taken off F2 / F4 (back to unbound, its default), and its camera, on F5-F10 by default
+        /// (RotRight F6, RotUp F7), moves as a whole to the keypad. The third key: also this plugin's (the other table's).</summary>
+        internal static readonly (string Action, byte Key, byte Default, byte Also)[] SlotsTable =
+        {
+            ("QuickSave", KeyNone, KeyNone, KeyF2), ("QuickLoad", KeyNone, KeyNone, KeyF4), ("Menu", KeyF1, KeyEscape, KeyNone), ("FastForward", KeyL, KeyPeriod, KeyNone),
+            ("RotLeft", 0x5B, 0x12, KeyNone), ("RotRight", 0x5D, 0x13, KeyNone), ("RotUp", 0x5F, 0x14, KeyNone), ("RotDown", 0x59, 0x15, KeyNone),
+            ("ZoomIn", 0x65, 0x16, KeyNone), ("ZoomOut", 0x64, 0x17, KeyNone),
+        };
+        /// <summary>Without the slots: the table above, and the camera put back on 3dSen's own keys when it is on the keypad keys
+        /// the slots gave it (slots turned off, or the plugin taken away) - a camera the user bound elsewhere is left alone.</summary>
+        internal static readonly (string Action, byte Key, byte Default, byte Also)[] PlainTable =
+            Table.Select(t => (t.Action, t.Key, t.Default, Also: KeyNone))
+                 .Concat(SlotsTable.Where(t => t.Default != KeyNone && t.Key != KeyF1 && t.Key != KeyL).Select(t => (t.Action, t.Default, t.Default, Also: t.Key)))
+                 .ToArray();
         private static readonly string[] KeyboardSets = { "Keyboard0 Binding", "Keyboard1 Binding" };
 
         internal sealed class Binding { public int Type, IncSize, ExcSize; public ulong Inc, Exc; }
@@ -173,8 +189,9 @@ namespace LbIntegrations.ThreeDSen
 
         /// <summary>The pack's keys (Table) bound in input.cfg where the rule lets them be. Never throws; the file is written
         /// only when something changed, and left as it is when anything in it is not understood.</summary>
-        public static void BindStateKeys(string dataDir)
+        public static void BindStateKeys(string dataDir, bool slots = false)
         {
+            var table = slots ? SlotsTable : PlainTable;
             var path = Path.Combine(dataDir ?? "", FileName);
             try
             {
@@ -191,20 +208,20 @@ namespace LbIntegrations.ThreeDSen
                 if (!sets.TryGetValue(KeyboardSets[0], out var main)) { Log.Info("input.cfg has no first keyboard - nothing bound"); return; }
 
                 var done = new List<string>();
-                var ours = Table.Select(t => (t, Action: main.Actions.FirstOrDefault(a => a.Name == t.Action)))
-                                .Where(x => x.Action != null && IsOurs(x.Action, x.t.Key, x.t.Default)).ToList();
+                var ours = table.Select(t => (t, Action: main.Actions.FirstOrDefault(a => a.Name == t.Action)))
+                                .Where(x => x.Action != null && (IsOurs(x.Action, x.t.Key, x.t.Default) || (x.t.Also != KeyNone && IsOurs(x.Action, x.t.Also, KeyNone)))).ToList();
                 var moving = new HashSet<Action>(ours.Select(x => x.Action));
                 foreach (var (t, action) in ours)
                 {
                     var now = Bound(action);
-                    if (now.Count == 1 && now[0] == t.Key) continue;   // already the pack's
-                    var holder = sets.Values.SelectMany(s => s.Actions).FirstOrDefault(a => a != action && !moving.Contains(a) && Bound(a).Contains(t.Key));
+                    if (t.Key == KeyNone ? now.Count == 0 : now.Count == 1 && now[0] == t.Key) continue;   // already the pack's
+                    var holder = t.Key == KeyNone ? null : sets.Values.SelectMany(s => s.Actions).FirstOrDefault(a => a != action && !moving.Contains(a) && Bound(a).Contains(t.Key));
                     if (holder != null) { Log.Info("input.cfg: " + t.Action + " left as it is - " + KeyText(t.Key) + " is already " + holder.Name + "'s"); continue; }
                     action.Bindings.Clear();
                     action.Bindings.Add(new Binding { Type = 2, IncSize = 1, Inc = t.Key, ExcSize = 0, Exc = 0 });
-                    done.Add(t.Action + " = " + KeyText(t.Key));
+                    done.Add(t.Action + " = " + (t.Key == KeyNone ? "none" : KeyText(t.Key)));
                 }
-                foreach (var t in Table.Where(t => main.Actions.All(a => a.Name != t.Action))) Log.Info("input.cfg: no action " + t.Action);
+                foreach (var t in table.Where(t => main.Actions.All(a => a.Name != t.Action))) Log.Info("input.cfg: no action " + t.Action);
                 if (done.Count == 0) return;
 
                 for (int i = 0; i < entries.Count; i++)
@@ -236,6 +253,6 @@ namespace LbIntegrations.ThreeDSen
         }
 
         private static string KeyText(byte k) => k >= 0x0E && k <= 0x19 ? "F" + (k - 0x0D) : k == KeyEscape ? "Esc" : k >= 0x24 && k <= 0x3D ? ((char)('A' + k - 0x24)).ToString()
-                                                : k == KeyPeriod ? "Period" : "key 0x" + k.ToString("X2");
+                                                : k == KeyPeriod ? "Period" : k >= 0x57 && k <= 0x60 ? "Pad" + (k - 0x57) : k == 0x64 ? "Pad-" : k == 0x65 ? "Pad+" : "key 0x" + k.ToString("X2");
     }
 }

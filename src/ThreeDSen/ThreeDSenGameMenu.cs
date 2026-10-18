@@ -1,8 +1,9 @@
 // The right-click entry on the games 3dSen can run - one game or a selection: "Nixx-3DSen : Options...". The window,
 // dressed as every Nixx window (NixxShell): the game's 3D PROFILE - "Automatic" (matched by its title, ThreeDSenProfiles),
-// or one chosen in 3dSen's list (2D Mode included) - and its screen, each "as every game" until changed, kept in
-// games\<game id>.ini (ThreeDSenSettings). At the bottom, live, what goes on 3dSen's command line, then the pack's legend,
-// "Reset to defaults", OK and Cancel (OptionMarks).
+// or one chosen in 3dSen's list (2D Mode included) - its screen, "as every game" until changed, and its own 3dSen settings
+// ("As set in 3dSen" until changed, passed through the in-process plugin), kept in games\<game id>.ini (ThreeDSenSettings).
+// At the bottom, live, what goes on 3dSen's command line, then the pack's legend, "Reset to defaults", OK and Cancel
+// (OptionMarks).
 //
 // SEVERAL GAMES (the pack's rule, LbipSelection): "All selected games", then the games grouped by identical options; an
 // option they disagree on shows "Various (n of N)" (purple) - left so, each keeps its own; OK asks, then writes only what
@@ -29,6 +30,20 @@ namespace LbIntegrations.ThreeDSen
 
         /// <summary>A game of ours: its own emulator is a 3dSen, or it is a NES game and a 3dSen is in the library. Asked at
         /// every right-click: lookups in memory only.</summary>
+        /// <summary>The 3dSen a game runs on: its own emulator when it is one, else the first 3dSen of the library.</summary>
+        internal static string ExeOf(IGame game)
+        {
+            try
+            {
+                var dm = PluginHelper.DataManager;
+                var own = string.IsNullOrWhiteSpace(game?.EmulatorId) ? null : dm?.GetEmulatorById(game.EmulatorId);
+                var path = own != null && ThreeDSenLaunch.IsExe(own.ApplicationPath) ? own.ApplicationPath
+                         : (dm?.GetAllEmulators() ?? new IEmulator[0]).FirstOrDefault(e => e != null && ThreeDSenLaunch.IsExe(e.ApplicationPath))?.ApplicationPath;
+                return string.IsNullOrWhiteSpace(path) ? null : ThreeDSenPlugin.ResolveFullPathForUi(path);
+            }
+            catch { return null; }
+        }
+
         internal static bool IsOurs(IGame game)
         {
             try
@@ -71,15 +86,18 @@ namespace LbIntegrations.ThreeDSen
         private readonly List<Row> _rows = new List<Row>();
         private readonly List<ThreeDSenProfile> _profiles;
         private readonly IGame[] _games;
+        private readonly string _exe;
         private Dictionary<string, string> _atOpen;
         private readonly Label _count, _line;
         private bool Several => _sel.Several;
-        private static IEnumerable<string> Keys => new[] { ThreeDSenSettings.ProfileKey }.Concat(ThreeDSenSettings.All.Select(o => o.Key));
+        private static IEnumerable<ThreeDSenOption> Options => ThreeDSenSettings.All.Concat(ThreeDSenSettings.Sets);
+        private static IEnumerable<string> Keys => new[] { ThreeDSenSettings.ProfileKey }.Concat(Options.Select(o => o.Key));
 
         public ThreeDSenGameForm(IGame[] games)
         {
             _games = games;
-            _profiles = ThreeDSenProfiles.All(ThreeDSenLaunch.DataDir());
+            _exe = ThreeDSenGameMenu.ExeOf(games[0]);
+            _profiles = ThreeDSenProfiles.All(_exe == null ? ThreeDSenLaunch.DataDir() : ThreeDSenLaunch.DataDir(_exe));
             _sel = new LbipSelection(games.Select(g => new LbipSelection.Member { Title = Safe(() => g.Title) ?? "?", Stored = StoredOf(Safe(() => g.Id)), Tag = g }));
             var game = games[0];
             Text = !Several ? ThreeDSenPlugin.PackName + " - " + Safe(() => game.Title) : ThreeDSenPlugin.PackName + " - " + games.Length + " games";
@@ -117,18 +135,37 @@ namespace LbIntegrations.ThreeDSen
             if (!Several)
                 page.Controls.Add(new Label { Text = Safe(() => game.Title), AutoSize = true, UseMnemonic = false, Font = new Font("Segoe UI Semibold", 12f), Margin = new Padding(0, 2, 0, 10) });
 
-            page.Controls.Add(Card(!Several ? "Its 3D profile" : "Their 3D profile",
+            var profileCard = new List<Control>
+            {
                 RowOf(ThreeDSenSettings.ProfileKey, "Profile",
                     "3dSen draws a game in 3D from its profile: Automatic finds it by the game's title. Choose one when the title does not match "
                     + "(3dSen spells some its own way). 3dSen does not check the ROM: a wrong profile plays it with another game's 3D. "
                     + "2D Mode plays any game flat - a game no profile matches starts in it."),
-                Text_(!Several ? "File: " + (Safe(() => game.ApplicationPath) ?? "") : "Automatic: each game by its own title.")));
+                Text_(!Several ? "File: " + (Safe(() => game.ApplicationPath) ?? "") : "Automatic: each game by its own title."),
+            };
+            if (!Several && _exe != null)
+            {
+                var states = Safe(() => ThreeDSenPlugin.StatesText(_exe, Safe(() => game.Platform), Safe(() => game.Id), Safe(() => game.Title),
+                                                                   ThreeDSenPlugin.ResolveFullPathForUi(Safe(() => game.ApplicationPath)))) ?? new List<string>();
+                profileCard.Add(Text_("Its states: " + (states.Count == 0 ? "none yet" : string.Join(", ", states))));
+            }
+            page.Controls.Add(Card(!Several ? "Its 3D profile" : "Their 3D profile", profileCard.ToArray()));
 
             var screen = new List<Control>();
             foreach (var o in ThreeDSenSettings.All) screen.Add(RowOf(o.Key, o.Label, o.Hint));
             screen.Add(LbipHint.Note("Kept " + (Several ? "per game" : "for this game alone") + " (games\\<game id>.ini).",
                 "Every game's values are in the Nixx window, page 3dSen.", 640, new Padding(0, 4, 0, 2)));
             page.Controls.Add(Card(!Several ? "Its screen" : "Their screen", screen.ToArray()));
+
+            // 3dSen's own settings for this game: through the in-process plugin, for its session only.
+            var sets = new List<Control>();
+            foreach (var o in ThreeDSenSettings.Sets) sets.Add(RowOf(o.Key, o.Label, o.Hint));
+            bool portable = _exe != null && ThreeDSenLaunch.Portable(_exe);
+            sets.Add(LbipHint.Note(portable
+                    ? "Given to 3dSen for this game's session only: its own menu, and every other game, keep what 3dSen has (setting.cfg is not written)."
+                    : "Not passed: the in-process plugin is off or not in 3dSen's folder (the Nixx window, page 3dSen).",
+                "A setting changed in 3dSen's own menu during the session is kept by 3dSen.", 640, new Padding(0, 4, 0, 2)));
+            page.Controls.Add(Card(!Several ? "Its 3dSen settings" : "Their 3dSen settings", sets.ToArray()));
 
             _count = new Label { AutoSize = true, UseMnemonic = false, Margin = new Padding(0, 2, 0, 2) };
             _line = new Label { AutoSize = true, MaximumSize = new Size(640, 0), UseMnemonic = false, Font = new Font("Consolas", 9f), Margin = new Padding(0, 2, 0, 2) };
@@ -159,7 +196,7 @@ namespace LbIntegrations.ThreeDSen
         {
             var mine = new List<string>();
             if (m.Stored.TryGetValue(ThreeDSenSettings.ProfileKey, out var p)) mine.Add("profile " + (_profiles.FirstOrDefault(x => x.Id == p)?.Title ?? p));
-            mine.AddRange(ThreeDSenSettings.All.Where(o => m.Stored.ContainsKey(o.Key)).Select(o => o.Label));
+            mine.AddRange(Options.Where(o => m.Stored.ContainsKey(o.Key)).Select(o => o.Label));
             return mine.Count == 0 ? "as every game" : "its own: " + string.Join(", ", mine);
         }
 
@@ -191,9 +228,11 @@ namespace LbIntegrations.ThreeDSen
             else
             {
                 var o = ThreeDSenSettings.Option(r.Key);
-                r.Combo.Items.Add("As every game (" + o.TextOf(ThreeDSenSettings.Value(o.Key)) + ")"); r.Values.Add(null);
+                // A 3dSen setting has no "every game's": nothing chosen is what 3dSen has.
+                r.Combo.Items.Add(o.Set != null ? "As set in 3dSen" : "As every game (" + o.TextOf(ThreeDSenSettings.Value(o.Key)) + ")"); r.Values.Add(null);
                 for (int i = 0; i < o.Values.Length; i++)
                 {
+                    if (o.Set != null && o.Values[i] == ThreeDSenSettings.AsIn3dSen) continue;
                     var text = o.Texts[i];
                     if (o.Key == "Screen" && o.Values[i] == "asis") { var rem = ThreeDSenLaunch.Remembered(); if (rem != null) text += " (" + rem + ")"; }
                     r.Combo.Items.Add(text); r.Values.Add(o.Values[i]);
@@ -213,6 +252,7 @@ namespace LbIntegrations.ThreeDSen
             var size = Shown("WindowSize") ?? ThreeDSenSettings.Value("WindowSize");
             var switches = ThreeDSenLaunch.Switches(profile ?? "<profile>", screen, size);
             if (Several && Shown(ThreeDSenSettings.ProfileKey) == null) switches[0] = "-id=<each game's profile>";
+            if (_exe != null) switches.AddRange(ThreeDSenLaunch.PluginSwitches(_exe, Safe(() => _games[0].Platform), Shown));
             int various = _rows.Count(r => r.Chosen() == LbipSelection.Various);
             _count.Text = switches.Count(s => s.StartsWith("-")) + " option(s) on 3dSen's command line - the game itself goes by its profile, never by its path"
                           + (various > 0 ? " (" + various + " vary, kept per game)" : "") + ":";

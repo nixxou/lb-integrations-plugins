@@ -472,3 +472,73 @@ byte for byte), `ThreeDSenStateThumbs` (3dSen's own picture, else a capture). On
 file and that one `sav.cfg` item (every other byte for byte), asks before taking another game's slot, and is refused while
 3dSen runs. Probe `--3dsen` "save states": round trip, the encoder against 3dSen's own quick item, the ROM inside a
 state, 2D Mode's filter, a restore into slot 5 and its delete - all on copies of 3dSen's own files.
+
+## 15. The in-process plugin (BepInEx, 19/10/2026)
+
+Mehdi asked for the model of SUPER ZSNES: a BepInEx plugin inside 3dSen, to pass as much as possible on the command line
+and to make Esc ask before quitting. His choices: **portable mode**, **F6 / F7 pick the slot (Quick, 1-36)**, **Esc twice**.
+
+### What is installed, where
+
+- BepInEx **5.4.23.5, x86, Unity Mono** (3dSen 1.1.2 is Unity 2019.4, Mono, 32-bit), downloaded at install time from
+  BepInEx's GitHub release (`BepInEx_win_x86_5.4.23.5.zip`) and checked against its SHA-256
+  `37651c79e40d6f909572a4f461ac25350bb3ef8fe7fbd29f1aa8791a33b84c82` before extraction. LGPL: the pack carries none of it.
+  In 3dSen's folder: `winhttp.dll` (Doorstop, a new file - 3dSen ships none), `doorstop_config.ini`, `.doorstop_version`,
+  `BepInEx\core\`, `BepInEx\config\BepInEx.cfg` (silent: no console, no disk log; written only when absent).
+- The pack's plugin `BepInEx\plugins\ThreeDSen.BepInEx.dll` (`tools\3dsen-bepinex`, netstandard2.0, HarmonyX patches
+  resolved by name), embedded in `ThreeDSen.dll` at build time (`deploy-dev.ps1` / `build-release.ps1` take
+  `-ThreeDSenDir` and `-BepInEx5Core` to compile it). Each launch puts it back when its bytes differ; no network at launch.
+- Installed by **Download** (after Steam or a folder was chosen), or by **Install now** on the Nixx page (per 3dSen
+  folder, with **Remove**). Turned off on the Nixx page: BepInEx is taken away at the next launch; the portable data stays.
+
+### What the plugin does (its switches, all `--nixx-*`, stripped from any earlier line)
+
+| switch | effect |
+|---|---|
+| `--nixx-data=<dir>` | `Nes3D.Info.DataPath` (and its export path) set in `Info.Awake`: rom.json, input.cfg, setting.cfg, custom profiles, cover art there |
+| `--nixx-states=<dir>` | `SaveStateDB.SavFolder` set before `SaveStateDB.Awake`, and `ConfigPath` -> `<dir>\sav.cfg`: the slots and their index side by side |
+| `--nixx-esc`, `--nixx-quit-confirm=on/off` | Esc: "Press Esc again to quit" on screen, quits on a second press within 2.5 s (or at once with off) |
+| `--nixx-slots=on/off` | F6 / F7 pick the slot (Quick, 1..36, said on screen), F2 saves into it with 3dSen's own capture, F4 loads it (refused, on screen, when empty or another game's) |
+| `--nixx-set:<SettingManager property>=<value>` | one of 3dSen's settings for this session: applied after `SettingManager.Load`, swapped out around `Save` so `setting.cfg` keeps what 3dSen had; a value changed in 3dSen's own menu during the session is kept |
+| `--nixx-log` | its log, `nixx.log` in the data folder |
+| `--nixx-dump-options` | the catalogue of 3dSen's settings (how the values below were measured) |
+
+### Portable mode (the plugin on and in the folder)
+
+- Data: `<3dSen folder>\portable`. States: `<3dSen folder>\Saves\<platform>\States` (`sav.cfg` and `<slot>.sav` together;
+  `ThreeDSenSavCfg.StateDir` takes a folder named `States` as holding the slots itself).
+- First launch: what `LocalLow\Geod Studio\3dSen` has is **copied** in (rom.json, input.cfg, setting.cfg, CustomProfiles,
+  CoverArt; its states into the NES's States folder) - never moved, LocalLow stays every other copy's.
+- The saves code goes by install and by platform: listing per game platform, a state live only in its own root of this
+  install, restore into the platform's root of the install the restore is for (`SaveForward.ViaEmulator`, else the game's
+  emulator), delete frees the slot in the `sav.cfg` beside the file.
+- Without the plugin everything is as in section 14 (LocalLow, AutoHotkey's Esc closes the window).
+
+### Keys with the slots (input.cfg, `ThreeDSenInput.SlotsTable`)
+
+3dSen's QuickSave / QuickLoad taken off F2 / F4 (the plugin reads those itself), its camera (F5-F10 by default, F6 / F7
+being the pack's slot keys) moved to the keypad: RotLeft Pad4, RotRight Pad6, RotUp Pad8, RotDown Pad2, ZoomIn Pad+,
+ZoomOut Pad-. Menu F1, fast forward L as before. Slots off again (or the plugin removed): F2 / F4 back on QuickSave /
+QuickLoad and the camera back on F5-F10 when it is still on those keypad keys (`PlainTable`); a key the user chose is
+never moved.
+
+### Esc and AutoHotkey
+
+One running script for both: on Esc it reads the folder of the 3dSen it sees (`WinGet ProcessPath`); with `winhttp.dll`
+and the plugin there it sends Esc on (the plugin asks), else it closes the window. The script of build B is replaced when
+found word for word (`ThreeDSenAhk.Superseded`).
+
+### A game's own 3dSen settings (its window, "As set in 3dSen" until chosen)
+
+Measured with `--nixx-dump-options` (values = what 3dSen's own handlers set): TV system NTSC / PAL / Dendy; Speed -8..+8;
+Volume 0..1 (by 0.1); menu music; field of view 45..95 (70 + 5 per step); graphics Low / Medium / High; anti-aliasing
+None / FFAA / SMAA; frame rate 60 / 90 / 120; rendering Direct / Render texture; texture resolution Native, 2/3, 1/2, 1/3,
+1/4; background Default / Color / Gradient / Fantasy; TV frame None / TV 1-3; shadows; fast render; mirror.
+
+### Measured in the lab (`G:\LB1326\lbip-3dsen-lab\emu-bep`, a copy of 3dSen 1.1.2)
+
+BepInEx loads the plugin; data and states redirected; Esc twice quits with exit code 0; a forced Volume leaves
+`setting.cfg` identical; an F2 save has a real picture; F4 loads it. Not yet seen: a numbered slot picked with F7 (the
+window was not in front), AutoHotkey's Esc passed through to the plugin, the whole thing from LaunchBox - Mehdi's test.
+Probe `--3dsen` adds: the slot keys and back, the portable paths, the first-launch copy, the plugin's switches on the
+line, a restore and delete in a `States` folder.
