@@ -53,6 +53,7 @@ namespace LbIntegrations.SavesCatchAll
             // the pack (and the names its plugins accept: x.emu.exe is the pack's xemu, reicast is Flycast's old name)
             "ares", "bsnes", "cxbx", "demul", "flycast", "reicast", "melonds", "no$gba", "nogba", "no-gba", "no_gba", "ppsspp",
             "rasnes9x", "super zsnes", "superzsnes", "vita3k", "xenia", "x.emu", "zinc-ex",
+            "punes",
         };
 
         private static readonly ConcurrentDictionary<string, (long At, int Plugins, bool Yes)> Known = new(StringComparer.OrdinalIgnoreCase);

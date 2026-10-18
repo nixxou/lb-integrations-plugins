@@ -663,6 +663,7 @@ internal sealed class InstallerForm : Form
         Payload.Xemu => "Xbox",
         Payload.Xenia => "Xbox 360",
         Payload.ZincEx => "Arcade: Sony ZN-1 / ZN-2 (ZiNc)",
+        Payload.Punes => "NES, Famicom, Famicom Disk System",
         Payload.Menus => "right-click menus",
         Payload.Saves => "saves of emulators no plugin drives",
         _ => "",
