@@ -69,15 +69,8 @@ namespace LbIntegrations.Fceux
         /// <summary>The folders of a game of <paramref name="platform"/>: the pack's for its platform, or the user's own.</summary>
         internal static Folders FoldersFor(string exe, string platform)
         {
-            var exeDir = Path.GetDirectoryName(Path.GetFullPath(exe));
-            // A big listing reads fceux.cfg once, not once per game (SaveScan), and Game Saves while it is unchanged.
-            var cfg = SaveScan.Memo("fceux.cfg|" + exe, () => StampedCache.Get(FceuxCfg.Of(exe), "fceux.cfg", () => FceuxCfg.Load(FceuxCfg.Of(exe))));
-            string Dir(string key, string sub)
-            {
-                var v = cfg.Get(key);
-                return FceuxSavePaths.IsPacks(v, exeDir) ? FceuxSavePaths.PackDir(exe, platform, sub) : FceuxSavePaths.DirOf(cfg, exe, key);
-            }
-            return new Folders { SaveDir = Dir(FceuxCfg.SaveDir, ""), StateDir = Dir(FceuxCfg.StateDir, "States") };
+            // Where FCEUX reads them at that game's next launch (its junctions pointed at the platform's - FceuxSavePaths).
+            return new Folders { SaveDir = FceuxSavePaths.Target(exe, platform, FceuxSavePaths.Sav), StateDir = FceuxSavePaths.Target(exe, platform, FceuxSavePaths.States) };
         }
 
         /// <summary>FileBase of a game, read once per listing (an archive is opened to find the ROM inside).</summary>

@@ -1,9 +1,9 @@
 // FCEUX integration for LaunchBox / LiteBox - the NES, Famicom and Famicom Disk System emulator (TASEmulators/fceux).
 //
-// Claim the emulator (fceux64.exe, the build installed; fceux.exe, the 32-bit one LaunchBox's own FCEUX row names), install
+// Claim the emulator (bin\qfceux.exe, the Qt / SDL build installed - not the classic fceux64.exe / fceux.exe), install
 // and update its latest release (FceuxBuild), describe it to the host's catalogue for every platform it runs
 // (FceuxSystems), and at each launch: the Famicom Disk System's BIOS when the game is a disk (FceuxFirmware), the game's
-// platform's save folders, the screen and the pack's hotkeys in fceux.cfg (FceuxLaunch, FceuxSavePaths, FceuxHotkeys).
+// platform's save folders (junctions), the screen and the pack's hotkeys in fceux.cfg (FceuxLaunch, FceuxSavePaths, FceuxHotkeys).
 //
 // ONE EXECUTABLE, SEVERAL SYSTEMS - and no system to choose: FCEUX tells a cartridge from a disk by the file's content
 // (fceu.cpp FCEUI_LoadGameVirtual), so no platform row needs a line. The system the plugin works out (FceuxSystems.SystemFor:
@@ -29,7 +29,7 @@ namespace LbIntegrations.Fceux
 {
     public partial class FceuxPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
     {
-        /// <summary>Nothing: the host appends the game's path ("fceux64.exe &lt;rom&gt;"); FCEUX needs no switch to run it.</summary>
+        /// <summary>Nothing: the host appends the game's path ("qfceux.exe &lt;rom&gt;"); FCEUX needs no switch to run it.</summary>
         private const string DefaultCommandLine = "";
 
         internal const string PackName = "Nixx-FCEUX";
@@ -86,8 +86,8 @@ namespace LbIntegrations.Fceux
 
         private static string _lastClaimed;
 
-        /// <summary>By the file name of the entry's ApplicationPath: fceux64.exe or fceux.exe. No other emulator of the pack
-        /// nor of LaunchBox's metadata ships either name (the Qt build is qfceux.exe; FCE Ultra was fceu.exe).</summary>
+        /// <summary>By the file name of the entry's ApplicationPath: qfceux.exe (the Qt build). No other emulator of the pack
+        /// nor of LaunchBox's metadata ships that name; the classic build's fceux.exe / fceux64.exe are not claimed.</summary>
         public override IEnumerable<IEmulator> GetApplicableEmulators(IEnumerable<IEmulator> emulators)
         {
             var claimed = new List<IEmulator>();
@@ -257,10 +257,10 @@ namespace LbIntegrations.Fceux
 
                 bool reinstall = args?.ExistingEmulator != null;
                 string targetDir = reinstall
-                    ? Path.GetDirectoryName(ResolveFullPath(args.ExistingEmulator.ApplicationPath))
+                    ? FceuxSavePaths.InstallDir(ResolveFullPath(args.ExistingEmulator.ApplicationPath))
                     : Path.Combine(LaunchBoxRoot(), "Emulators", PackName);
                 if (string.IsNullOrWhiteSpace(targetDir)) return new EmulatorInstallResponse("Couldn't work out where to install FCEUX.");
-                var exe = Path.Combine(targetDir, FceuxLaunch.ExecutableName);
+                var exe = Path.Combine(targetDir, "bin", FceuxLaunch.ExecutableName);
                 if (FceuxLaunch.Running(exe)) return new EmulatorInstallResponse("FCEUX is running from " + targetDir + ": close it, then update again.");
                 if (!FceuxCfg.Representable(targetDir))
                     return new EmulatorInstallResponse("FCEUX cannot run from " + targetDir + ": its folder names hold characters outside Windows' ANSI code page, "
@@ -273,16 +273,16 @@ namespace LbIntegrations.Fceux
 
                 Report(args, "Extracting FCEUX...", null);
                 Archives.ExtractOver(archive, targetDir);
-                if (!File.Exists(exe)) return new EmulatorInstallResponse("FCEUX was extracted to " + targetDir + " but " + FceuxLaunch.ExecutableName + " is not there.");
-                FceuxBuild.Stamp(targetDir, release);
+                if (!File.Exists(exe)) return new EmulatorInstallResponse("FCEUX was extracted to " + targetDir + " but bin\\" + FceuxLaunch.ExecutableName + " is not there.");
+                FceuxBuild.Stamp(Path.GetDirectoryName(exe), release);
                 Log.Info("installed FCEUX " + release.Version + " to " + targetDir);
                 // Its saves, states, screenshots and cheats in folders of its own, per platform (FceuxSavePaths).
-                FceuxSavePaths.Ensure(exe);
+                Log.Info("folders: " + FceuxSavePaths.Ensure(exe, FceuxSystems.NesPlatform));
 
                 // The disk system's BIOS, when the user already has it - see FceuxFirmware.
                 Report(args, "Looking for the Famicom Disk System BIOS...", null);
                 var bios = FceuxFirmware.Ensure(exe, m => Report(args, m, null));
-                var note = bios.RightSize ? " The Famicom Disk System BIOS is there." : " The Famicom Disk System BIOS (disksys.rom) was not found: disk games need it beside fceux64.exe.";
+                var note = bios.RightSize ? " The Famicom Disk System BIOS is there." : " The Famicom Disk System BIOS (disksys.rom) was not found: disk games need it in FCEUX's bin folder, beside qfceux.exe.";
 
                 if (reinstall)
                 {
@@ -331,7 +331,7 @@ namespace LbIntegrations.Fceux
 
         // ── BIOS ─────────────────────────────────────────────────────────────
 
-        /// <summary>The disk system's disksys.rom, beside fceux64.exe: required on the Famicom Disk System, optional where a
+        /// <summary>The disk system's disksys.rom, beside qfceux.exe: required on the Famicom Disk System, optional where a
         /// .fds can be among the cartridges (the NES, the Famicom).</summary>
         public override IEnumerable<EmulatorBiosFile> GetBiosFilesForPlatform(string platform)
         {

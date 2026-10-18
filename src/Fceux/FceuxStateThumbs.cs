@@ -59,7 +59,7 @@ namespace LbIntegrations.Fceux
             {
                 if (!string.IsNullOrEmpty(exe))
                 {
-                    var pal = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(exe)), "palettes", "FCEUX.pal");
+                    var pal = Path.Combine(FceuxSavePaths.InstallDir(exe), "palettes", "FCEUX.pal");
                     if (File.Exists(pal)) { var b = File.ReadAllBytes(pal); if (b.Length >= 192) return b; }
                 }
             }

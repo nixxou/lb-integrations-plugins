@@ -1,26 +1,20 @@
-// fceux.cfg, edited in place.
+// fceux.cfg of the Qt build (bin\fceux.cfg), edited in place.
 //
-// THE FILE (measured 18/10 on FCEUX 2.7.0 win64 and win32, and read in drivers\common\config.cpp at the tag): beside the
-// executable, always (drivers\win\main.cpp: GetBaseDirectory is the exe's folder - portable, nothing under AppData). One
-// "key value" per line, the keys of a std::map written in BYTE ORDER (so the quoted keys - "fs", "odnonvol"... - come
-// first, after "!version 1"), one space between, the value to the end of the line (cfg_Parse: leading whitespace skipped,
-// the rest kept, spaces included; '#' at the start of a line is a comment; CR and LF both end a line). Integers of 1, 2 or
-// 4 bytes are decimal, every other blob "base64:" (standard alphabet, '=' padding - measured, all 22 blobs round-trip),
-// strings raw, an empty string nothing after the space. THE KEY IS WRITTEN AS IT IS IN THE FILE: "\"fs\"" with its
-// quotes, CurrentState without.
+// THE FILE (read in src\drivers\common\configSys.cpp at the fceux-2.7.0 tag, measured 18/10 on qfceux.exe 2.7.0 - the lab's
+// runqt2): beside the executable (drivers\Qt\config.cpp GetBaseDirectory: the exe's folder on Windows unless FCEUX_HOME or
+// FCEUX_CONFIG_DIR is set - portable, nothing under AppData, measured). One "name = value" per line: the name runs to the
+// first space or '=', the value from the first non-space after '=' to the end; '#' starts a comment. Made at the first
+// exit, 610 lines, CRLF (a text-mode stream), no BOM.
 //
-// LF ONLY, NO BOM, BYTES IN THE ANSI CODE PAGE (fopen "wb"; measured 412 LF, 0 CRLF; the Windows build is not Unicode -
-// main(int argc, char *argv[]) - and a Japanese path fails, measured).
+// FCEUX REWRITES IT WHOLE AT EVERY EXIT (Config::save: every option it knows, in its maps' order) and DROPS THE NAMES IT
+// DOES NOT KNOW (only its own options are written). A name that is missing keeps FCEUX's compiled default - so a file
+// holding only the plugin's lines is a valid one, filled in by FCEUX at its first exit. So: written before the launch,
+// never while it runs; whatever FCEUX holds in memory at its exit wins. AN OPTION ON THE COMMAND LINE IS STORED TOO
+// (measured: "--pal 1" left "SDL.PAL = 1" after the exit) - so the plugin writes what it wants here rather than on the line.
 //
-// FCEUX REWRITES IT WHOLE AT EVERY EXIT (main.cpp:589 DriverKill -> SaveConfig, measured: its date changes at every close)
-// and KEEPS THE KEYS IT DOES NOT KNOW (measured: "zzzUnknownKey 42" survived a session; the map is loaded, then updated).
-// A key that is missing keeps FCEUX's compiled default (config.cpp cfg_NewToOld: "if the key was not found, skip it"), so
-// a file holding only the plugin's keys is a valid one - FCEUX fills in the rest at its first exit. So: written before the
-// launch, never while it runs; whatever FCEUX holds in memory at its exit wins.
-//
-// NOTHING REORDERED, NOTHING DROPPED: a line is kept as its bytes; a key set gets its value where it stands (a CR the
-// line had kept); a new key goes where FCEUX's byte order would put it. Written only when something changed, through a
-// temporary file.
+// NOTHING REORDERED, NOTHING DROPPED: a line is kept as it is; a name set gets its value where it stands; a new one goes at
+// the end. Bytes kept as they are (read and written as Latin-1, a lossless round trip): FCEUX's paths and texts are never
+// re-encoded. Written only when something changed, through a temporary file.
 
 using System;
 using System.Collections.Generic;
@@ -35,69 +29,63 @@ namespace LbIntegrations.Fceux
     {
         public const string FileName = "fceux.cfg";
 
-        // The keys the plugin reads or writes (drivers\win\config.cpp at the tag), spelt as in the file.
-        public const string FullScreen = "\"fs\"";
-        public const string ModeWidth = "\"vmcx\"", ModeHeight = "\"vmcy\"", ModeBits = "\"vmcb\"";
-        public const string SaveDir = "\"odnonvol\"", StateDir = "\"odstates\"", SnapDir = "\"odsnaps\"", CheatDir = "\"odcheats\"";
-        public const string FdsRomDir = "\"odfdsrom\"", BaseDir = "\"odbase\"";
-        public const string CommandMapping = "FCEUD_CommandMapping_V2";
-        public const string GamePads = "GamePadConfig_V2";
-        public const string AutoHold = "autoHoldKeys", AutoHoldClear = "autoHoldClearKeys";
+        // The names the plugin reads or writes (drivers\Qt\config.cpp InitConfig at the tag).
+        public const string FullScreen = "SDL.Fullscreen";
+        public const string Pal = "SDL.PAL";
+        public const string Hotkey = "SDL.Hotkeys.";
 
-        private readonly List<byte[]> _lines;
+        private static readonly Encoding Bytes = Encoding.Latin1;
+
+        private readonly List<string> _lines;
+        private readonly string _eol;
         public string Path { get; }
         public bool Changed { get; private set; }
         /// <summary>The file was there when loaded - false on an install FCEUX never ran.</summary>
         public bool Existed { get; }
 
-        private FceuxCfg(string path, List<byte[]> lines, bool existed) { Path = path; _lines = lines; Existed = existed; }
+        private FceuxCfg(string path, List<string> lines, bool existed, string eol) { Path = path; _lines = lines; Existed = existed; _eol = eol; }
 
         public static string Of(string exe) => System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(exe)), FileName);
 
         public static FceuxCfg Load(string path)
         {
-            var lines = new List<byte[]>();
+            var lines = new List<string>();
             bool existed = File.Exists(path);
+            string eol = "\r\n";
             if (existed)
             {
-                var bytes = File.ReadAllBytes(path);
-                int start = 0;
-                for (int i = 0; i < bytes.Length; i++)
-                {
-                    if (bytes[i] != (byte)'\n') continue;
-                    lines.Add(bytes.AsSpan(start, i - start).ToArray());
-                    start = i + 1;
-                }
-                if (start < bytes.Length) lines.Add(bytes.AsSpan(start).ToArray());
+                var text = Bytes.GetString(File.ReadAllBytes(path));
+                if (text.IndexOf('\n') >= 0 && text.IndexOf("\r\n", StringComparison.Ordinal) < 0) eol = "\n";
+                lines.AddRange(text.Replace("\r\n", "\n").Split('\n'));
+                if (lines.Count > 0 && lines[lines.Count - 1].Length == 0) lines.RemoveAt(lines.Count - 1);
             }
-            return new FceuxCfg(path, lines, existed);
+            return new FceuxCfg(path, lines, existed, eol);
         }
 
-        // ── the ANSI code page ──
+        // ── ANSI ──
 
-        [DllImport("kernel32.dll")] private static extern int GetACP();
+        [DllImport("kernel32.dll")]
+        private static extern int GetACP();
 
-        private static Encoding _ansi, _ansiStrict;
+        private static Encoding _ansiStrict;
 
-        /// <summary>What FCEUX's char strings are in: the system's ANSI code page (a non-Unicode Windows program).</summary>
-        internal static Encoding Ansi => _ansi ??= Make(strict: false);
-        private static Encoding AnsiStrict => _ansiStrict ??= Make(strict: true);
+        private static Encoding AnsiStrict => _ansiStrict ??= Make();
 
-        private static Encoding Make(bool strict)
+        private static Encoding Make()
         {
             try
             {
                 Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
                 int cp = 1252;
                 try { cp = GetACP(); } catch { }
-                return strict ? Encoding.GetEncoding(cp, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback)
-                              : Encoding.GetEncoding(cp);
+                return Encoding.GetEncoding(cp, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
             }
-            catch { return strict ? Encoding.GetEncoding(1252, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback) : Encoding.GetEncoding(1252); }
+            catch { return Encoding.GetEncoding(1252, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback); }
         }
 
-        /// <summary>Can FCEUX be given this text (a path) - every character in the ANSI code page? Measured 18/10: "Zelda é.nes"
-        /// loads and saves, a Japanese name fails with "Error opening ...??????.nes!".</summary>
+        /// <summary>Can FCEUX be given this path - every character in the ANSI code page? FCEUX's main takes char arguments
+        /// (measured on the Windows build: a Japanese name fails with "Error opening ...??????.nes!"); the Qt build's main is
+        /// the same char main - kept as the rule until measured otherwise.</summary>
         public static bool Representable(string text)
         {
             if (string.IsNullOrEmpty(text)) return true;
@@ -107,104 +95,74 @@ namespace LbIntegrations.Fceux
 
         // ── reading ──
 
-        /// <summary>The key of a line as cfg_Parse reads it (leading whitespace skipped, to the next space, tab, CR), or null
-        /// for a blank line or a comment.</summary>
-        private static string KeyOf(byte[] line)
+        /// <summary>The name of a line as Config::_loadFile reads it (to the first space or '='), or null for a comment or a
+        /// line without '='.</summary>
+        private static string NameOf(string line)
         {
-            int i = 0;
-            while (i < line.Length && (line[i] == ' ' || line[i] == '\t')) i++;
-            if (i >= line.Length || line[i] == '#' || line[i] == '\r') return null;
-            int s = i;
-            while (i < line.Length && line[i] != ' ' && line[i] != '\t' && line[i] != '\r') i++;
-            return Encoding.ASCII.GetString(line, s, i - s);
+            if (string.IsNullOrEmpty(line) || line[0] == '#') return null;
+            int eq = line.IndexOf('=');
+            if (eq < 0) return null;
+            int sp = line.IndexOf(' ');
+            int end = sp >= 0 && sp < eq ? sp : eq;
+            return line.Substring(0, end);
         }
 
-        private static string ValueOf(byte[] line)
-        {
-            int i = 0;
-            while (i < line.Length && (line[i] == ' ' || line[i] == '\t')) i++;
-            while (i < line.Length && line[i] != ' ' && line[i] != '\t' && line[i] != '\r') i++;
-            while (i < line.Length && (line[i] == ' ' || line[i] == '\t')) i++;
-            int end = i;
-            while (end < line.Length && line[end] != '\r') end++;
-            return Ansi.GetString(line, i, end - i);
-        }
-
-        private int Find(string key)
+        private int Find(string name)
         {
             for (int i = 0; i < _lines.Count; i++)
-                if (string.Equals(KeyOf(_lines[i]), key, StringComparison.Ordinal)) return i;
+                if (string.Equals(NameOf(_lines[i]), name, StringComparison.Ordinal)) return i;
             return -1;
         }
 
-        /// <summary>The value of <paramref name="key"/> (spelt as in the file), or null when the file does not have it.</summary>
-        public string Get(string key)
+        /// <summary>The value of <paramref name="name"/>, or null when the file does not have it.</summary>
+        public string Get(string name)
         {
-            int at = Find(key);
-            return at < 0 ? null : ValueOf(_lines[at]);
+            int at = Find(name);
+            if (at < 0) return null;
+            var line = _lines[at];
+            int eq = line.IndexOf('=');
+            return line.Substring(eq + 1).TrimStart(' ');
         }
 
-        public int? GetInt(string key)
-            => int.TryParse(Get(key)?.Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : (int?)null;
+        public int? GetInt(string name) => int.TryParse(Get(name), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : (int?)null;
 
-        /// <summary>A "base64:" value decoded, or null (missing, or not a blob).</summary>
-        public byte[] GetBlob(string key)
+        /// <summary>Every "name = value" line whose name starts with <paramref name="prefix"/>, in the file's order.</summary>
+        public IEnumerable<(string Name, string Value)> Entries(string prefix)
         {
-            var v = Get(key)?.Trim();
-            if (v == null || !v.StartsWith("base64:", StringComparison.Ordinal)) return null;
-            try { return Convert.FromBase64String(v.Substring(7)); }
-            catch { return null; }
+            foreach (var line in _lines)
+            {
+                var name = NameOf(line);
+                if (name == null || !name.StartsWith(prefix, StringComparison.Ordinal)) continue;
+                yield return (name, line.Substring(line.IndexOf('=') + 1).TrimStart(' '));
+            }
         }
-
-        /// <summary>Every key of the file, in its order.</summary>
-        public IEnumerable<string> Keys => _lines.Select(KeyOf).Where(k => k != null);
 
         // ── writing ──
 
-        /// <summary><paramref name="key"/> set to <paramref name="value"/> - in place, or where FCEUX's byte order puts it.</summary>
-        public void Set(string key, string value)
+        /// <summary>"name = value" where the name stands, else at the end.</summary>
+        public void Set(string name, string value)
         {
             value ??= "";
-            int at = Find(key);
+            var line = name + " = " + value;
+            int at = Find(name);
             if (at >= 0)
             {
-                if (string.Equals(ValueOf(_lines[at]), value, StringComparison.Ordinal)) return;
-                bool cr = _lines[at].Length > 0 && _lines[at][_lines[at].Length - 1] == (byte)'\r';
-                _lines[at] = Line(key, value, cr);
+                if (string.Equals(Get(name), value, StringComparison.Ordinal)) return;
+                _lines[at] = line;
             }
-            else
-            {
-                int where = _lines.Count;
-                for (int i = 0; i < _lines.Count; i++)
-                {
-                    var k = KeyOf(_lines[i]);
-                    if (k != null && string.CompareOrdinal(k, key) > 0) { where = i; break; }
-                }
-                // A file FCEUX never wrote starts as FCEUX's do (LoadFCEUConfig sets it in any case).
-                if (_lines.Count == 0 && key != "!version") { _lines.Add(Line("!version", "1", false)); where = 1; }
-                _lines.Insert(where, Line(key, value, false));
-            }
+            else _lines.Add(line);
             Changed = true;
         }
 
-        public void SetInt(string key, int value) => Set(key, value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        public void SetInt(string name, int value) => Set(name, value.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
-        public void SetBlob(string key, byte[] bytes) => Set(key, "base64:" + Convert.ToBase64String(bytes));
-
-        private static byte[] Line(string key, string value, bool cr)
-        {
-            var bytes = Encoding.ASCII.GetBytes(key + " ").Concat(Ansi.GetBytes(value));
-            return (cr ? bytes.Concat(new[] { (byte)'\r' }) : bytes).ToArray();
-        }
-
-        /// <summary>Written only when something changed: the lines' own bytes, LF after each, no BOM - as FCEUX writes it.</summary>
+        /// <summary>Written only when something changed, in its own line endings (CRLF as FCEUX writes it), no BOM.</summary>
         public void SaveIfChanged()
         {
             if (!Changed) return;
             Directory.CreateDirectory(System.IO.Path.GetDirectoryName(Path));
             var tmp = Path + ".lbip-tmp";
-            using (var f = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
-                foreach (var line in _lines) { f.Write(line, 0, line.Length); f.WriteByte((byte)'\n'); }
+            File.WriteAllBytes(tmp, Bytes.GetBytes(string.Join(_eol, _lines) + _eol));
             File.Move(tmp, Path, overwrite: true);
             Changed = false;
         }

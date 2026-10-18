@@ -1,8 +1,8 @@
 // Unpacking FCEUX's release, and reading what is inside a game's archive.
 //
-// THE RELEASE ZIP is flat (fceux-2.7.0-win64.zip, 99 entries, no top folder - measured 18/10): extracted OVER the install,
-// never after clearing it. It carries no fceux.cfg (FCEUX writes it at its first exit); one found in a zip anyway (a later
-// release) never replaces the user's: the pads, hotkeys and folders are theirs. A single top folder, should a release
+// THE RELEASE ZIP (fceux-2.7.0-win64-QtSDL.zip: bin\, doc\, luaScripts\, palettes\, tools\ - measured 18/10): extracted
+// OVER the install, never after clearing it. It carries no fceux.cfg (FCEUX writes it at its first exit); one found in a
+// zip anyway (a later release) never replaces the user's: the pads and hotkeys are theirs. A single top folder, should a release
 // get one, is taken off as for bsnes.
 //
 // A GAME'S ARCHIVE is opened by FCEUX itself (7z_64.dll: zip, 7z, rar...; gzip in the core - docs\fceux.md §9): it is passed
@@ -52,9 +52,9 @@ namespace LbIntegrations.Fceux
                      + (kept > 0 ? ", " + kept + " of the user's left as they were" : ""));
         }
 
-        /// <summary>The user's config, beside the exe: fceux.cfg.</summary>
+        /// <summary>The user's config, beside the exe: bin\fceux.cfg.</summary>
         internal static bool KeptIfPresent(string key)
-            => string.Equals(key, FceuxCfg.FileName, StringComparison.OrdinalIgnoreCase);
+            => string.Equals(Path.GetFileName(key), FceuxCfg.FileName, StringComparison.OrdinalIgnoreCase);
 
         public static bool IsArchive(string path)
             => FceuxSystems.Archives.Contains(Path.GetExtension(path ?? "").ToLowerInvariant());

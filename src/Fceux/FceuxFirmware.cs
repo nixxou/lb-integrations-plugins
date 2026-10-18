@@ -1,7 +1,7 @@
 // The Famicom Disk System's BIOS, found where the user already keeps it and given to FCEUX.
 //
-// FCEUX ASKS FOR disksys.rom (file.cpp:751 FCEUMKF_FDSROM): in the "odfdsrom" folder when it is set, else beside the
-// executable. It checks the SIZE ALONE - 8 192 bytes (fds.cpp:869) - never the content. MEASURED 18/10 without it: a .fds
+// FCEUX ASKS FOR disksys.rom (file.cpp:751 FCEUMKF_FDSROM) beside the executable, bin\ (the Qt build has no setting
+// for that folder). It checks the SIZE ALONE - 8 192 bytes (fds.cpp:869) - never the content. MEASURED 18/10 without it: a .fds
 // start shows the MODAL error "FDS BIOS ROM image missing: <exe folder>\disksys.rom", which WM_CLOSE does not close - so a
 // disk game is never launched without it: the launch is refused with a notice naming the file and the folder.
 //
@@ -30,19 +30,8 @@ namespace LbIntegrations.Fceux
 
     internal static class FceuxFirmware
     {
-        /// <summary>Where FCEUX reads disksys.rom: "odfdsrom" (relative ones from the exe's folder), else the exe's folder.</summary>
-        public static string FolderOf(string exe, FceuxCfg cfg = null)
-        {
-            var exeDir = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(exe));
-            try
-            {
-                cfg ??= FceuxCfg.Load(FceuxCfg.Of(exe));
-                var v = cfg.Get(FceuxCfg.FdsRomDir);
-                if (!string.IsNullOrWhiteSpace(v)) return LbIntegrations.Saves.ExpectedDir.OfConfig(v, exeDir) ?? exeDir;
-            }
-            catch { }
-            return exeDir;
-        }
+        /// <summary>Where FCEUX reads disksys.rom: the executable's folder.</summary>
+        public static string FolderOf(string exe, FceuxCfg cfg = null) => System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(exe));
 
         public static FceuxBiosState State(string exe, FceuxCfg cfg = null)
         {

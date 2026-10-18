@@ -73,7 +73,7 @@ namespace LbIntegrations.Fceux
                 rows.Add(Line("Updates: the Download button of LaunchBox's emulator window offers a newer release when there is one."));
                 rows.Add(Line("Keys in a game: F2 saves a state in the current slot, F4 loads it, F6 / F7 change the slot, Esc quits, Alt+Enter "
                               + "switches the full screen - bound by the plugin where FCEUX had nothing else on them. No RetroAchievements in FCEUX."));
-                rows.Add(Line("Saves, states, screenshots and cheats: " + Path.Combine(Path.GetDirectoryName(exe), FceuxSavePaths.Root) + "\\<platform>."));
+                rows.Add(Line("Saves, states, screenshots and cheats: " + Path.Combine(FceuxSavePaths.InstallDir(exe), FceuxSavePaths.Root) + "\\<platform>."));
             }
             stack.Controls.Add(Card("FCEUX", rows.ToArray()));
 

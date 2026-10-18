@@ -1,15 +1,15 @@
 // The FCEUX plugin's pieces, run without a host:
 //   --fceux-systems [<fceux source folder>]   the systems / platforms table (and, with the source at the tag, the open
 //                                             dialog's filter and the archive extensions read off it)
-//   --fceux-cfg <fceux.cfg>                   the editor on a COPY: nothing changed when nothing is set, a key set in place,
-//                                             a new key in FCEUX's byte order, LF, no BOM, a CR kept, ANSI text
-//   --fceux-hotkeys <first-run fceux.cfg>     the default table rebuilt = the first-run file's; the pack's keys bound, once;
-//                                             a key of the user's never taken
+//   --fceux-cfg <fceux.cfg>                   the Qt build's editor on a COPY: nothing changed when nothing is set, a name
+//                                             set in place, a new one at the end, CRLF, no BOM, bytes kept
+//   --fceux-hotkeys <first-run fceux.cfg>     the table's defaults = the first-run file's; the pack's keys bound, once;
+//                                             a key of the user's never taken, no key on two actions
 //   --fceux-launch [<fceux.cfg>]              a launch as LaunchBox makes it, on a COPY of an install (the exe a stand-in):
-//                                             claiming, platform rows only added, folders per platform, the BIOS refusal,
-//                                             the ANSI refusal, a .unf in a zip, the files moved out of FCEUX's folders
-//   --fceux-prepare <fceux64.exe> --rom <rom> --platform <name> [--settings <ini>]
-//                                             fceux.cfg of a REAL install written as a launch does
+//                                             claiming, platform rows only added, junctions per platform, the files of
+//                                             FCEUX's real folders moved, the BIOS refusal, the ANSI refusal, a .unf in a zip
+//   --fceux-prepare <bin\qfceux.exe> --rom <rom> --platform <name> [--settings <ini>]
+//                                             fceux.cfg and the folders of a REAL install prepared as a launch does
 //                                             (for an oracle run of FCEUX afterwards - it writes there)
 //   --fceux-latest                            the latest release as GitHub has it, and IsUpdateAvailable's three answers
 //   --fceux-extract <zip> <folder>            the release zip extracted as an install does
@@ -78,7 +78,7 @@ namespace LbIntegrations.Probe
             Check("disksys.rom required on the disk system", fdsBios.Count == 1 && fdsBios[0].FileName == "disksys.rom" && fdsBios[0].Required);
             Check("disksys.rom optional on the NES (its .fds), none on the SMB hacks", nesBios.Count == 1 && !nesBios[0].Required && hackBios.Count == 0);
             var rows = ((LbIntegrations.Catalog.ILbCatalogSource)plugin).EmulatorRows().ToList();
-            Check("one catalogue row, Nixx-FCEUX, fceux64.exe, no auto-extract", rows.Count == 1 && rows[0].Name == "Nixx-FCEUX" && rows[0].BinaryFileName == "fceux64.exe" && !rows[0].AutoExtract);
+            Check("one catalogue row, Nixx-FCEUX, qfceux.exe, no auto-extract", rows.Count == 1 && rows[0].Name == "Nixx-FCEUX" && rows[0].BinaryFileName == "qfceux.exe" && !rows[0].AutoExtract);
             Check("a catalogue platform per platform, none recommended, the disk's BIOS named", rows[0].Platforms.Count == names.Count && rows[0].Platforms.All(p => !p.Recommended)
                   && rows[0].Platforms.Single(p => p.Platform == "Nintendo Famicom Disk System").RequiredBiosFile == "disksys.rom");
             if (source != null)
@@ -117,37 +117,31 @@ namespace LbIntegrations.Probe
                 var cfg = Load();
                 Save(cfg);
                 Check("loaded and saved with nothing set: the same bytes", File.ReadAllBytes(copy).SequenceEqual(original));
-                Check("\"fs\" read as 0, \"odnonvol\" as empty, CurrentState as 0", Get(cfg, "\"fs\"") == "0" && Get(cfg, "\"odnonvol\"") == "" && Get(cfg, "CurrentState") == "0",
-                      Get(cfg, "\"fs\"") + " / [" + Get(cfg, "\"odnonvol\"") + "] / " + Get(cfg, "CurrentState"));
-                Set(cfg, "\"fs\"", "0");
+                Check("SDL.Fullscreen read as 0, SDL.Hotkeys.SaveState as I", Get(cfg, "SDL.Fullscreen") == "0" && Get(cfg, "SDL.Hotkeys.SaveState") == "I",
+                      Get(cfg, "SDL.Fullscreen") + " / " + Get(cfg, "SDL.Hotkeys.SaveState"));
+                Check("a name that is a prefix of another is not taken for it", Get(cfg, "SDL.Hotkeys.LoadState") != Get(cfg, "SDL.Hotkeys.LoadState2") || Get(cfg, "SDL.Hotkeys.LoadState") == "P");
+                Set(cfg, "SDL.Fullscreen", "0");
                 Check("a value set to what it is: nothing changed", !(bool)cfgType.GetProperty("Changed").GetValue(cfg));
-                var lines = Encoding.Latin1.GetString(original).Split('\n');
-                Set(cfg, "\"odnonvol\"", @"G:\A folder\Saves é");
-                Set(cfg, "\"aaaNewKey\"", "7");      // between "988fssync"... and the others, by byte order
-                Set(cfg, "zzzLast", "1");
+                var lines = Encoding.Latin1.GetString(original).Split("\r\n");
+                int Line(string[] ls, string key) => Array.FindIndex(ls, l => l.StartsWith(key + " ="));
+                Set(cfg, "SDL.Fullscreen", "1");
+                Set(cfg, "SDL.Hotkeys.LoadState2", "");
+                Set(cfg, "SDL.zzzNew", @"G:\A folder\é");
                 Save(cfg);
                 var after = File.ReadAllBytes(copy);
-                var afterLines = Encoding.Latin1.GetString(after).Split('\n');
-                Check("one line more each for the two new keys", afterLines.Length == lines.Length + 2, lines.Length + " -> " + afterLines.Length);
-                int Line(string[] ls, string key) => Array.FindIndex(ls, l => l.StartsWith(key + " "));
-                Check("a key set where it stands", Line(afterLines, "\"odnonvol\"") == Line(lines, "\"odnonvol\"") + 1 || Line(afterLines, "\"odnonvol\"") == Line(lines, "\"odnonvol\""),
-                      Line(lines, "\"odnonvol\"") + " -> " + Line(afterLines, "\"odnonvol\""));
-                var keys = afterLines.Where(l => l.Length > 0).Select(l => l.Split(' ')[0]).ToList();
-                Check("the keys still in byte order", keys.SequenceEqual(keys.OrderBy(k => k, StringComparer.Ordinal)));
-                Check("LF only, no BOM", after[0] != 0xEF && !Encoding.Latin1.GetString(after).Contains("\r\n") && after[after.Length - 1] == (byte)'\n');
-                Check("an accented path written in the ANSI code page (é = 0xE9)", afterLines.Any(l => l == "\"odnonvol\" G:\\A folder\\Saves \u00e9"));
-                Check("read back the same", Get(Load(), "\"odnonvol\"") == @"G:\A folder\Saves é");
-                // A file someone edited with CRLF: FCEUX reads CR as an end of line; the CR is kept on the line set.
-                File.WriteAllBytes(copy, Encoding.ASCII.GetBytes("!version 1\r\n\"fs\" 0\r\nfoo bar baz\r\n"));
-                cfg = Load();
-                Check("CRLF file: values read without the CR", Get(cfg, "\"fs\"") == "0" && Get(cfg, "foo") == "bar baz");
-                Set(cfg, "\"fs\"", "1"); Save(cfg);
-                Check("CRLF file: the line set keeps its CR, the others untouched", File.ReadAllText(copy, Encoding.ASCII) == "!version 1\r\n\"fs\" 1\r\nfoo bar baz\r\n");
+                var afterLines = Encoding.Latin1.GetString(after).Split("\r\n");
+                Check("one line more for the new name, at the end", afterLines.Length == lines.Length + 1 && afterLines[afterLines.Length - 2] == "SDL.zzzNew = G:\\A folder\\\u00e9", lines.Length + " -> " + afterLines.Length);
+                Check("a name set where it stands", Line(afterLines, "SDL.Fullscreen") == Line(lines, "SDL.Fullscreen") && afterLines[Line(afterLines, "SDL.Fullscreen")] == "SDL.Fullscreen = 1");
+                Check("an emptied key: \"name = \", read back as empty", afterLines[Line(afterLines, "SDL.Hotkeys.LoadState2")] == "SDL.Hotkeys.LoadState2 = " && Get(Load(), "SDL.Hotkeys.LoadState2") == "");
+                Check("CRLF, no BOM, ending in CRLF", after[0] != 0xEF && !Encoding.Latin1.GetString(after).Replace("\r\n", "").Contains('\n') && after[after.Length - 1] == (byte)'\n' && after[after.Length - 2] == (byte)'\r');
+                Check("the other lines untouched", afterLines.Take(lines.Length - 1).Zip(lines).Count(p => p.First != p.Second) == 2);
+                Check("é kept as its one byte (0xE9)", after.Contains((byte)0xE9) && Get(Load(), "SDL.zzzNew") == @"G:\A folder\é");
                 // Made from nothing.
                 File.Delete(copy);
                 cfg = Load();
-                Set(cfg, "\"odstates\"", @"C:\x"); Set(cfg, "\"fs\"", "1"); Set(cfg, "CurrentState", "0"); Save(cfg);
-                Check("made from nothing: !version first, in byte order", File.ReadAllText(copy, Encoding.ASCII) == "!version 1\n\"fs\" 1\n\"odstates\" C:\\x\nCurrentState 0\n", File.ReadAllText(copy).Replace("\n", " | "));
+                Check("no file: not Existed", !(bool)cfgType.GetProperty("Existed").GetValue(cfg));
+                Set(cfg, "SDL.Fullscreen", "1"); Set(cfg, "SDL.Hotkeys.Quit", "Esc"); Save(cfg);
+                Check("made from nothing: the lines set, CRLF", File.ReadAllText(copy, Encoding.ASCII) == "SDL.Fullscreen = 1\r\nSDL.Hotkeys.Quit = Esc\r\n", File.ReadAllText(copy).Replace("\r\n", " | "));
                 Check("an ANSI path is representable, a Japanese one is not",
                       (bool)cfgType.GetMethod("Representable", Any).Invoke(null, new object[] { @"G:\Jeux\Zelda é.nes" })
                       && !(bool)cfgType.GetMethod("Representable", Any).Invoke(null, new object[] { "G:\\Jeux\\\u30bc\u30eb\u30c0.nes" }));
@@ -170,69 +164,78 @@ namespace LbIntegrations.Probe
                 var cfgType = T(asm, "FceuxCfg");
                 var hk = T(asm, "FceuxHotkeys");
                 object Load() => cfgType.GetMethod("Load", Any).Invoke(null, new object[] { copy });
-                byte[] Table(object c) => (byte[])cfgType.GetMethod("GetBlob", Inst).Invoke(c, new object[] { "FCEUD_CommandMapping_V2" });
-                List<int> Keys(byte[] t, int i) => (List<int>)hk.GetMethod("KeysOf", Any).Invoke(null, new object[] { t, i });
+                string Get(object c, string k) => (string)cfgType.GetMethod("Get", Inst).Invoke(c, new object[] { "SDL.Hotkeys." + k });
+                void Set(object c, string k, string v) => cfgType.GetMethod("Set", Inst).Invoke(c, new object[] { "SDL.Hotkeys." + k, v });
                 List<string> Bind(object c) => (List<string>)hk.GetMethod("Bind", Any).Invoke(null, new[] { c });
                 void Save(object c) => cfgType.GetMethod("SaveIfChanged", Inst).Invoke(c, null);
-                string Hex(List<int> k) => "{" + string.Join(",", k.Select(x => "0x" + x.ToString("X"))) + "}";
 
-                var shipped = Table(Load());
-                var rebuilt = (byte[])hk.GetMethod("DefaultTable", Any).Invoke(null, null);
-                Check("the default table rebuilt is the first-run file's, byte for byte", shipped != null && rebuilt.SequenceEqual(shipped), shipped?.Length + " / " + rebuilt.Length + " bytes");
+                // The table's defaults are FCEUX 2.7.0's, as its first-run file has them.
+                var first = Load();
+                var table = ((Array)hk.GetField("Table", Any).GetValue(null)).Cast<object>().Select(t => ((string)t.GetType().GetField("Item1").GetValue(t), (string)t.GetType().GetField("Item2").GetValue(t), (string)t.GetType().GetField("Item3").GetValue(t))).ToList();
+                var off = table.Where(t => (Get(first, t.Item1) ?? "") != t.Item3).Select(t => t.Item1 + "=" + Get(first, t.Item1)).ToList();
+                Check("every default of the table is the first-run file's", off.Count == 0, string.Join(", ", off));
 
                 var cfg = Load();
                 foreach (var s in Bind(cfg)) Console.WriteLine("    " + s);
                 Save(cfg);
-                var t = Table(Load());
-                Check("SAVE_STATE = I, F2", Hex(Keys(t, 26)) == "{0x17,0x3C}", Hex(Keys(t, 26)));
-                Check("LOAD_STATE = P, F4", Hex(Keys(t, 38)) == "{0x19,0x3E}", Hex(Keys(t, 38)));
-                Check("SAVE_SLOT_PREV = F6, SAVE_SLOT_NEXT = F7", Hex(Keys(t, 25)) == "{0x40}" && Hex(Keys(t, 24)) == "{0x41}");
-                Check("EXIT = Esc", Hex(Keys(t, 6)) == "{0x1}");
-                Check("load slots 2, 4, 6, 7 and hide-menu given up", Keys(t, 42).Count == 0 && Keys(t, 44).Count == 0 && Keys(t, 46).Count == 0 && Keys(t, 47).Count == 0 && Keys(t, 5).Count == 0);
-                Check("the other load slots, the save slots and the TAS editor's Esc kept", Hex(Keys(t, 41)) == "{0x3B}" && Hex(Keys(t, 43)) == "{0x3D}" && Hex(Keys(t, 30)) == "{0x3003C}" && Hex(Keys(t, 113)) == "{0x1}");
-                Check("full screen still Alt+Enter, F11 not bound", Hex(Keys(t, 100)) == "{0x30001C}" && !Enumerable.Range(0, 129).Any(i => Keys(t, i).Contains(0x57)));
+                var c2 = Load();
+                Check("SaveState F2, LoadState F4, F6 / F7 the slot", Get(c2, "SaveState") == "F2" && Get(c2, "LoadState") == "F4" && Get(c2, "SelectStatePrev") == "F6" && Get(c2, "SelectStateNext") == "F7");
+                Check("FullScreen F11, Quit Esc, HardReset Shift+Esc, SoftReset H", Get(c2, "FullScreen") == "F11" && Get(c2, "Quit") == "Esc" && Get(c2, "HardReset") == "Shift+Esc" && Get(c2, "SoftReset") == "H");
+                Check("Pause P, Turbo L, Screenshot F8, VolumeMute F9", Get(c2, "Pause") == "P" && Get(c2, "Turbo") == "L" && Get(c2, "Screenshot") == "F8" && Get(c2, "VolumeMute") == "F9");
+                Check("LoadState2 / 4 / 6 / 7 / 8 / 9 given up", new[] { "2", "4", "6", "7", "8", "9" }.All(n => Get(c2, "LoadState" + n) == ""));
+                Check("the other slots kept (LoadState3 = F3, SaveState1 = Shift+F1)", Get(c2, "LoadState3") == Get(first, "LoadState3") && Get(c2, "SaveState1") == Get(first, "SaveState1"), Get(c2, "LoadState3") + " / " + Get(c2, "SaveState1"));
+                var keys = cfgType.GetMethod("Entries", Inst).Invoke(c2, new object[] { "SDL.Hotkeys." }) as System.Collections.IEnumerable;
+                var bound = keys.Cast<object>().Select(e => ((string)e.GetType().GetField("Item2").GetValue(e)).Trim()).Where(v => v.Length > 0).ToList();
+                var twice = bound.GroupBy(v => v, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+                Check("no key on two actions", twice.Count == 0, string.Join(", ", twice));
                 var stamp = File.GetLastWriteTimeUtc(copy);
                 System.Threading.Thread.Sleep(20);
                 cfg = Load(); Bind(cfg); Save(cfg);
                 Check("a second launch writes nothing", File.GetLastWriteTimeUtc(copy) == stamp);
-                var only = File.ReadAllBytes(copy);
-                var orig = File.ReadAllBytes(firstRun);
-                Check("only the hotkey line changed", Encoding.Latin1.GetString(only).Split('\n').Zip(Encoding.Latin1.GetString(orig).Split('\n')).Count(p => p.First != p.Second) == 1);
+                var changed = File.ReadAllLines(copy).Zip(File.ReadAllLines(firstRun)).Count(p => p.First != p.Second);
+                Check("only hotkey lines changed", File.ReadAllLines(copy).Zip(File.ReadAllLines(firstRun)).All(p => p.First == p.Second || p.First.StartsWith("SDL.Hotkeys.")), changed + " lines");
 
-                // The user's: SAVE_STATE moved to K, F7 on a pad button, Esc on PAUSE - nothing of theirs taken.
+                // The user's: SaveState moved to K, Esc on Pause, F11 on Screenshot - nothing of theirs taken.
                 File.Copy(firstRun, copy, overwrite: true);
                 cfg = Load();
-                var mine = Table(cfg);
-                void Put(byte[] table, int index, int key) { int at = index * 92; Array.Clear(table, at, 92); BitConverter.GetBytes(key).CopyTo(table, at + 8); BitConverter.GetBytes(1u).CopyTo(table, at + 24); }
-                Put(mine, 26, 0x25);       // SAVE_STATE = K
-                Put(mine, 2, 0x01);        // PAUSE = Esc
-                cfgType.GetMethod("SetBlob", Inst).Invoke(cfg, new object[] { "FCEUD_CommandMapping_V2", mine });
-                var pads = (byte[])cfgType.GetMethod("GetBlob", Inst).Invoke(cfg, new object[] { "GamePadConfig_V2" });
-                Put(pads, 1, 0x41);        // pad 1's B = F7
-                cfgType.GetMethod("SetBlob", Inst).Invoke(cfg, new object[] { "GamePadConfig_V2", pads });
+                Set(cfg, "SaveState", "K"); Set(cfg, "Pause", "Esc"); Set(cfg, "Screenshot", "F11");
                 foreach (var s in Bind(cfg)) Console.WriteLine("    " + s);
-                t = Table(cfg);
-                Check("a command the user rebound is not touched (SAVE_STATE = K)", Hex(Keys(t, 26)) == "{0x25}" && Hex(Keys(t, 42)) == "{0x3C}", Hex(Keys(t, 26)));
-                Check("a key on a pad button is not bound (F7)", Keys(t, 24).Count == 0 && Hex(Keys(t, 47)) == "{0x41}");
-                Check("a key on another command is not bound (Esc on PAUSE)", Keys(t, 6).Count == 0 && Hex(Keys(t, 5)) == "{0x1}");
-                Check("the rest still bound (F4, F6)", Hex(Keys(t, 38)) == "{0x19,0x3E}" && Hex(Keys(t, 25)) == "{0x40}");
+                Check("an action the user rebound is not touched (SaveState = K)", Get(cfg, "SaveState") == "K");
+                Check("a key on another action of the user's is not bound (Esc on Pause): Quit left", Get(cfg, "Pause") == "Esc" && Get(cfg, "Quit") == "Ctrl+Q");
+                Check("F11 the user's Screenshot: FullScreen left on Alt+Return", Get(cfg, "Screenshot") == "F11" && Get(cfg, "FullScreen") == "Alt+Return");
+                Check("the rest still bound (F4, F6, Shift+Esc)", Get(cfg, "LoadState") == "F4" && Get(cfg, "SelectStatePrev") == "F6" && Get(cfg, "HardReset") == "Shift+Esc");
 
-                // Another version's table (2.6.4 has 128 commands): left alone.
+                // An action that keeps a key another takes (Pause left as the user's on P? no: Turbo the user's on F2).
+                File.Copy(firstRun, copy, overwrite: true);
                 cfg = Load();
-                cfgType.GetMethod("SetBlob", Inst).Invoke(cfg, new object[] { "FCEUD_CommandMapping_V2", new byte[128 * 92] });
-                var said = Bind(cfg);
-                Check("a table of another length is left alone", Table(cfg).Length == 128 * 92 && Table(cfg).All(b => b == 0), said.FirstOrDefault());
-                // No table yet (FCEUX never ran): the defaults, then the pack's keys.
-                File.WriteAllText(copy, "\"fs\" 0\n");
+                Set(cfg, "Turbo", "F2");
+                Bind(cfg);
+                Check("a pack key the user put on another action: that action kept, SaveState left on I", Get(cfg, "Turbo") == "F2" && Get(cfg, "SaveState") == "I");
+
+                // No file yet (FCEUX never ran): the pack's lines alone, FCEUX fills the rest.
+                File.Delete(copy);
                 cfg = Load(); Bind(cfg); Save(cfg);
-                t = Table(Load());
-                Check("no table yet: FCEUX's defaults with the pack's keys", t != null && t.Length == 129 * 92 && Hex(Keys(t, 26)) == "{0x17,0x3C}" && Hex(Keys(t, 4)) == "{0x58}");
+                var made = File.ReadAllLines(copy);
+                Check("no file yet: the pack's keys written, nothing else", made.Length == table.Count && made.All(l => l.StartsWith("SDL.Hotkeys.")) && made.Contains("SDL.Hotkeys.SaveState = F2") && made.Contains("SDL.Hotkeys.LoadState2 = "), made.Length + " lines");
             }
             finally { try { Directory.Delete(dir, true); } catch { } }
             return Done();
         }
 
         // ── a launch ─────────────────────────────────────────────────────────
+
+        private static bool IsJunctionTo(string link, string target)
+        {
+            try
+            {
+                var info = new DirectoryInfo(link);
+                if (!info.Exists || !info.Attributes.HasFlag(FileAttributes.ReparsePoint)) return false;
+                var t = info.LinkTarget ?? "";
+                if (t.StartsWith(@"\??\")) t = t.Substring(4);
+                return string.Equals(Path.GetFullPath(t).TrimEnd('\\'), Path.GetFullPath(target).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return false; }
+        }
 
         public static bool Launch(Assembly asm, string cfgPath)
         {
@@ -244,21 +247,26 @@ namespace LbIntegrations.Probe
             notice.GetField("Instead", Any).SetValue(null, new Action<string, string>((t, x) => said.Add(x)));
             asm.GetType("LbIntegrations.Lbip.LbipLaunchGate", true).GetField("Off", Any).SetValue(null, true);
             T(asm, "FceuxSettings").GetField("PathOverride", Any).SetValue(null, Path.Combine(dir, "settings.ini"));
+            var paths = T(asm, "FceuxSavePaths");
+            var library = new List<(string, string)>();
+            paths.GetField("LibraryForProbe", Any).SetValue(null, (Func<IEnumerable<(string, string)>>)(() => library));
             var wasDm = PluginHelper.DataManager;
             var wasPlatforms = StubDataManager.Platforms;
+            var junctions = new List<string>();
             try
             {
                 var install = Path.Combine(dir, "Emulators", "Nixx-FCEUX");
-                Directory.CreateDirectory(install);
-                var exe = Path.Combine(install, "fceux64.exe");
+                var bin = Path.Combine(install, "bin");
+                Directory.CreateDirectory(bin);
+                var exe = Path.Combine(bin, "qfceux.exe");
                 File.WriteAllText(exe, "");
-                if (cfgPath != null) File.Copy(cfgPath, Path.Combine(install, "fceux.cfg"));
-                var cfgFile = Path.Combine(install, "fceux.cfg");
+                if (cfgPath != null) File.Copy(cfgPath, Path.Combine(bin, "fceux.cfg"));
+                var cfgFile = Path.Combine(bin, "fceux.cfg");
                 var cfgType = T(asm, "FceuxCfg");
                 string Get(string k) => (string)cfgType.GetMethod("Get", Inst).Invoke(cfgType.GetMethod("Load", Any).Invoke(null, new object[] { cfgFile }), new object[] { k });
-                void SetKey(string k, string v) { var c = cfgType.GetMethod("Load", Any).Invoke(null, new object[] { cfgFile }); cfgType.GetMethod("Set", Inst).Invoke(c, new object[] { k, v }); cfgType.GetMethod("SaveIfChanged", Inst).Invoke(c, null); }
                 var games = Path.Combine(dir, "My Games");
                 Directory.CreateDirectory(games);
+                foreach (var k in new[] { "sav", "fcs", "snaps", "cheats" }) junctions.Add(Path.Combine(bin, k));
 
                 var plugin = (EmulatorPlugin)Activator.CreateInstance(asm.GetTypes().First(t => typeof(EmulatorPlugin).IsAssignableFrom(t) && !t.IsAbstract));
                 // ── claiming, and the rows of a user's entry ──
@@ -269,25 +277,23 @@ namespace LbIntegrations.Probe
                 var other = new StubEmulator { Title = "Nestopia", ApplicationPath = @"C:\Emu\nestopia.exe" };
                 var otherFds = other.AddNewEmulatorPlatform(); otherFds.Platform = "Nintendo Famicom Disk System"; otherFds.IsDefault = true;
                 PluginHelper.DataManager = new StubDataManager(emu, other);
-                var qt = new StubEmulator { Title = "qt", ApplicationPath = @"C:\Emu\qfceux.exe" };
+                var classic = new StubEmulator { Title = "classic", ApplicationPath = @"C:\Emu\fceux64.exe" };
                 var x32 = new StubEmulator { Title = "32", ApplicationPath = @"C:\Emu\FCEUX\fceux.exe" };
-                var claimed = plugin.GetApplicableEmulators(new IEmulator[] { emu, other, qt, x32 }).ToList();
-                Check("claimed: fceux64.exe and fceux.exe, not qfceux.exe nor nestopia.exe", claimed.Count == 2 && claimed.Contains(emu) && claimed.Contains(x32));
-                Check("hotkey scripts filled, the Exit one for the entry's exe", emu.ExitAutoHotkeyScript?.Contains("ahk_exe fceux64.exe") == true && x32.ExitAutoHotkeyScript?.Contains("ahk_exe fceux.exe") == true
-                      && emu.SaveStateAutoHotkeyScript?.Contains("PostMessage, 0x111, 40344, 0,, ahk_class FCEUXWindowClass ahk_exe fceux64.exe") == true
-                      && emu.LoadStateAutoHotkeyScript?.Contains("40343") == true);
+                var claimed = plugin.GetApplicableEmulators(new IEmulator[] { emu, other, classic, x32 }).ToList();
+                Check("claimed: qfceux.exe, not the classic fceux64.exe / fceux.exe nor nestopia.exe", claimed.Count == 1 && claimed.Contains(emu));
+                Check("hotkey scripts filled for the entry's exe: Exit closes it, Save / Load send F2 / F4",
+                      emu.ExitAutoHotkeyScript?.Contains("WinClose, ahk_exe qfceux.exe") == true
+                      && emu.SaveStateAutoHotkeyScript?.Contains("WinActivate, ahk_exe qfceux.exe") == true && emu.SaveStateAutoHotkeyScript.Contains("Send, {F2}")
+                      && emu.LoadStateAutoHotkeyScript?.Contains("Send, {F4}") == true);
+                var oldSave = "; FCEUX's File > Savestate > Save State: the current slot (posted to its window, no key needed).\r\nPostMessage, 0x111, 40344, 0,, ahk_class FCEUXWindowClass ahk_exe fceux64.exe";
+                var moved = new StubEmulator { Title = "moved", ApplicationPath = exe, SaveStateAutoHotkeyScript = oldSave, LoadStateAutoHotkeyScript = "; mine\r\nSend, {F9}" };
+                plugin.GetApplicableEmulators(new IEmulator[] { moved });
+                Check("the classic build's script replaced, the user's own kept", moved.SaveStateAutoHotkeyScript.Contains("Send, {F2}") && moved.LoadStateAutoHotkeyScript == "; mine\r\nSend, {F9}");
                 var rows = emu.GetAllEmulatorPlatforms();
                 Console.WriteLine("    rows: " + string.Join(", ", rows.Select(r => r.Platform + (r.IsDefault ? "*" : ""))));
                 Check("the user's rows kept, their ticks too", rows.Any(r => r.Platform == "My NES Hacks" && r.IsDefault) && rows.Any(r => r.Platform == "Nintendo Entertainment System" && r.IsDefault));
                 Check("the disk system added (the library has it), not the default (Nestopia is)", rows.Any(r => r.Platform == "Nintendo Famicom Disk System" && !r.IsDefault));
                 Check("no row for a platform the library lacks", !rows.Any(r => r.Platform == "Nintendo Famicom" || r.Platform == "Nes - Super Mario Bros. Hacks"));
-                var count = rows.Length;
-                plugin.GetApplicableEmulators(new IEmulator[] { emu });
-                Check("asked again: nothing added twice", emu.GetAllEmulatorPlatforms().Length == count);
-                var editing = new StubEmulator { Title = "being typed", ApplicationPath = exe };
-                editing.AddNewEmulatorPlatform().Platform = "";
-                plugin.GetApplicableEmulators(new IEmulator[] { editing });
-                Check("nothing added beside a row being typed", editing.GetAllEmulatorPlatforms().Length == 1);
 
                 // ── launches ──
                 PrepareForLaunchResponse Go(string platform, string rom, string id = null)
@@ -295,28 +301,39 @@ namespace LbIntegrations.Probe
                     var game = StubGame.With(StubGame.Create(id ?? ("g-" + Path.GetFileNameWithoutExtension(rom)), Path.GetFileNameWithoutExtension(rom), rom), "Platform", platform);
                     return plugin.PrepareEmulatorForLaunch(new PrepareForLaunchArgs(emu, game, "\"" + rom + "\"", null, null));
                 }
-                // A save of this game in FCEUX's own folders, from before the plugin: moved at its launch.
+                // Files in FCEUX's own (real) folders, from before the plugin: moved at the first launch.
                 var zelda = Path.Combine(games, "Zelda II - The Adventure of Link (Europe).nes");
                 File.WriteAllBytes(zelda, Encoding.ASCII.GetBytes("NES\x1a").Concat(new byte[1020]).ToArray());
-                Directory.CreateDirectory(Path.Combine(install, "sav")); Directory.CreateDirectory(Path.Combine(install, "fcs")); Directory.CreateDirectory(Path.Combine(install, "snaps"));
-                File.WriteAllBytes(Path.Combine(install, "sav", "Zelda II - The Adventure of Link (Europe).sav"), new byte[8192]);
-                File.WriteAllBytes(Path.Combine(install, "fcs", "Zelda II - The Adventure of Link (Europe).fc1"), new byte[100]);
-                File.WriteAllBytes(Path.Combine(install, "fcs", "Zelda II - The Adventure of Link (Europe)-bak.fc1"), new byte[100]);
-                File.WriteAllBytes(Path.Combine(install, "fcs", "Zelda II - The Adventure of Link (Europe) 2.fc1"), new byte[100]);   // another game's
-                File.WriteAllBytes(Path.Combine(install, "snaps", "Zelda II - The Adventure of Link (Europe)-0.png"), new byte[10]);
+                var hack = Path.Combine(games, "Super Mario Hack.nes");
+                File.WriteAllBytes(hack, Encoding.ASCII.GetBytes("NES\x1a").Concat(new byte[1020]).ToArray());
+                library.Add((zelda, "Nintendo Entertainment System"));
+                library.Add((hack, "My NES Hacks"));
+                foreach (var k in new[] { "sav", "fcs", "snaps" }) Directory.CreateDirectory(Path.Combine(bin, k));
+                File.WriteAllBytes(Path.Combine(bin, "sav", "Zelda II - The Adventure of Link (Europe).sav"), new byte[8192]);
+                File.WriteAllBytes(Path.Combine(bin, "fcs", "Zelda II - The Adventure of Link (Europe).fc1"), new byte[100]);
+                File.WriteAllBytes(Path.Combine(bin, "fcs", "Zelda II - The Adventure of Link (Europe)-bak.fc1"), new byte[100]);
+                File.WriteAllBytes(Path.Combine(bin, "fcs", "Super Mario Hack.fc0"), new byte[100]);
+                File.WriteAllBytes(Path.Combine(bin, "fcs", "Nobody's.fc3"), new byte[100]);
+                File.WriteAllBytes(Path.Combine(bin, "snaps", "Zelda II - The Adventure of Link (Europe)-0.png"), new byte[10]);
+                var nesDir = Path.Combine(install, "Saves", "Nintendo Entertainment System");
+                Directory.CreateDirectory(Path.Combine(nesDir, "States"));
+                File.WriteAllBytes(Path.Combine(nesDir, "States", "Zelda II - The Adventure of Link (Europe)-bak.fc1"), new byte[99]);   // already there, different
                 File.WriteAllBytes(Path.Combine(games, "Zelda II - The Adventure of Link (Europe).sav"), new byte[8192]);   // another emulator's, beside the game
 
                 var r = Go("Nintendo Entertainment System", zelda);
-                var nesDir = Path.Combine(install, "Saves", "Nintendo Entertainment System");
                 Check("a NES game launches, the line unchanged", r.WasSuccess && r.NewCommandLine == null, r.NewCommandLine);
-                Check("\"odnonvol\" = Saves\\Nintendo Entertainment System", Get("\"odnonvol\"") == nesDir, Get("\"odnonvol\""));
-                Check("\"odstates\" / \"odsnaps\" / \"odcheats\" under it", Get("\"odstates\"") == Path.Combine(nesDir, "States") && Get("\"odsnaps\"") == Path.Combine(nesDir, "Screenshots") && Get("\"odcheats\"") == Path.Combine(nesDir, "Cheats"));
-                Check("full screen by default, the display's mode written", Get("\"fs\"") == "1" && int.TryParse(Get("\"vmcx\""), out var w) && w > 0 && int.TryParse(Get("\"vmcy\""), out var h) && h > 0,
-                      Get("\"vmcx\"") + "x" + Get("\"vmcy\"") + "x" + Get("\"vmcb\""));
-                Check("the hotkeys bound", Get("FCEUD_CommandMapping_V2") != null);
-                Check("its .sav moved out of sav\\", File.Exists(Path.Combine(nesDir, "Zelda II - The Adventure of Link (Europe).sav")) && !File.Exists(Path.Combine(install, "sav", "Zelda II - The Adventure of Link (Europe).sav")));
-                Check("its state and the state's backup moved to States\\", File.Exists(Path.Combine(nesDir, "States", "Zelda II - The Adventure of Link (Europe).fc1")) && File.Exists(Path.Combine(nesDir, "States", "Zelda II - The Adventure of Link (Europe)-bak.fc1")));
-                Check("another game's state left", File.Exists(Path.Combine(install, "fcs", "Zelda II - The Adventure of Link (Europe) 2.fc1")));
+                Check("bin\\sav a junction to Saves\\Nintendo Entertainment System", IsJunctionTo(Path.Combine(bin, "sav"), nesDir));
+                Check("fcs / snaps / cheats junctions to States / Screenshots / Cheats", IsJunctionTo(Path.Combine(bin, "fcs"), Path.Combine(nesDir, "States"))
+                      && IsJunctionTo(Path.Combine(bin, "snaps"), Path.Combine(nesDir, "Screenshots")) && IsJunctionTo(Path.Combine(bin, "cheats"), Path.Combine(nesDir, "Cheats")));
+                Check("full screen by default (SDL.Fullscreen = 1)", Get("SDL.Fullscreen") == "1", Get("SDL.Fullscreen"));
+                Check("the hotkeys bound", Get("SDL.Hotkeys.SaveState") == "F2" && Get("SDL.Hotkeys.Quit") == "Esc");
+                Check("its .sav moved", File.Exists(Path.Combine(nesDir, "Zelda II - The Adventure of Link (Europe).sav")));
+                Check("its state moved to States\\", File.Exists(Path.Combine(nesDir, "States", "Zelda II - The Adventure of Link (Europe).fc1")));
+                Check("a backup that differs from one already there goes to Saves\\Unsorted, the one there kept",
+                      new FileInfo(Path.Combine(nesDir, "States", "Zelda II - The Adventure of Link (Europe)-bak.fc1")).Length == 99
+                      && File.Exists(Path.Combine(install, "Saves", "Unsorted", "fcs", "Zelda II - The Adventure of Link (Europe)-bak.fc1")));
+                Check("the hack's state moved to its own platform's folder", File.Exists(Path.Combine(install, "Saves", "My NES Hacks", "States", "Super Mario Hack.fc0")));
+                Check("a state of no game of the library: the NES's", File.Exists(Path.Combine(nesDir, "States", "Nobody's.fc3")));
                 Check("its screenshot moved to Screenshots\\", File.Exists(Path.Combine(nesDir, "Screenshots", "Zelda II - The Adventure of Link (Europe)-0.png")));
                 Check("the .sav beside the game (another emulator's) left where it is", File.Exists(Path.Combine(games, "Zelda II - The Adventure of Link (Europe).sav")));
                 var stamp = File.GetLastWriteTimeUtc(cfgFile);
@@ -329,29 +346,34 @@ namespace LbIntegrations.Probe
                 File.WriteAllBytes(disk, Encoding.ASCII.GetBytes("FDS\x1a").Concat(new byte[65500]).ToArray());
                 said.Clear();
                 r = Go("Nintendo Famicom Disk System", disk);
-                Check("a disk game without disksys.rom is refused, said", !r.WasSuccess && said.Count == 1 && said[0].Contains("disksys.rom") && said[0].Contains(install), said.FirstOrDefault()?.Split('\n')[0]);
-                File.WriteAllBytes(Path.Combine(install, "disksys.rom"), new byte[100]);
+                Check("a disk game without disksys.rom is refused, said", !r.WasSuccess && said.Count == 1 && said[0].Contains("disksys.rom") && said[0].Contains(bin), said.FirstOrDefault()?.Split('\n')[0]);
+                File.WriteAllBytes(Path.Combine(bin, "disksys.rom"), new byte[100]);
                 said.Clear();
                 r = Go("Nintendo Famicom Disk System", disk);
                 Check("one of the wrong size is refused, said", !r.WasSuccess && said.Count == 1 && said[0].Contains("not 8 192 bytes"));
-                File.WriteAllBytes(Path.Combine(install, "disksys.rom"), new byte[8192]);
+                File.WriteAllBytes(Path.Combine(bin, "disksys.rom"), new byte[8192]);
                 r = Go("Nintendo Famicom Disk System", disk);
-                Check("with it the disk launches, in the disk platform's folders", r.WasSuccess && Get("\"odnonvol\"") == Path.Combine(install, "Saves", "Nintendo Famicom Disk System"), Get("\"odnonvol\""));
-                r = Go("Nintendo Entertainment System", Path.Combine(games, "Zelda no Densetsu (Japan).fds"));
-                Check("a .fds among NES games launches too, in the NES folders", r.WasSuccess && Get("\"odnonvol\"") == nesDir);
+                var fdsDir = Path.Combine(install, "Saves", "Nintendo Famicom Disk System");
+                Check("with it the disk launches, the junctions pointed at the disk platform's folders", r.WasSuccess && IsJunctionTo(Path.Combine(bin, "sav"), fdsDir) && IsJunctionTo(Path.Combine(bin, "fcs"), Path.Combine(fdsDir, "States")));
+                Check("the NES's folders still there, their files too", File.Exists(Path.Combine(nesDir, "Zelda II - The Adventure of Link (Europe).sav")));
+                r = Go("Nintendo Entertainment System", disk);
+                Check("a .fds among NES games launches too, in the NES folders", r.WasSuccess && IsJunctionTo(Path.Combine(bin, "sav"), nesDir));
 
-                // The user's own folder is kept, for every platform; a stale pack folder is set again.
-                SetKey("\"odstates\"", @"D:\My States");
-                SetKey("\"odsnaps\"", Path.Combine(dir, "Old LaunchBox", "Emulators", "Nixx-FCEUX", "Saves", "Nintendo Entertainment System", "Screenshots"));
-                Go("Nes - Super Mario Bros. Hacks", zelda);
-                Check("a folder the user chose is kept", Get("\"odstates\"") == @"D:\My States");
-                Check("a pack folder of an install that moved is set again", Get("\"odsnaps\"") == Path.Combine(install, "Saves", "Nes - Super Mario Bros. Hacks", "Screenshots"), Get("\"odsnaps\""));
-                Check("the SMB hacks get their own folder", Get("\"odnonvol\"") == Path.Combine(install, "Saves", "Nes - Super Mario Bros. Hacks"));
+                // A link of the user's is kept, for every platform.
+                var mine = Path.Combine(dir, "My Shots");
+                Directory.CreateDirectory(mine);
+                Directory.Delete(Path.Combine(bin, "snaps"));
+                Call(asm, "FceuxSavePaths", "Junction", Path.Combine(bin, "snaps"), mine, null);
+                Go("My NES Hacks", hack);
+                Check("a junction the user made elsewhere is kept", IsJunctionTo(Path.Combine(bin, "snaps"), mine));
+                Check("the custom platform gets its own folders", IsJunctionTo(Path.Combine(bin, "sav"), Path.Combine(install, "Saves", "My NES Hacks")));
+                var dirs = (List<string>)Call(asm, "FceuxSavePaths", "Dirs", exe, "My NES Hacks", "snaps");
+                Check("the user's folder listed first for its kind", dirs.Count >= 1 && string.Equals(dirs[0], Path.Combine(bin, "snaps"), StringComparison.OrdinalIgnoreCase), string.Join(" | ", dirs));
 
                 // Windowed, for this game only.
                 T(asm, "FceuxSettings").GetMethod("SetGameValue", Any).Invoke(null, new object[] { "g-window", "Fullscreen", "false" });
                 Go("Nintendo Entertainment System", zelda, "g-window");
-                Check("a game set windowed: \"fs\" 0", Get("\"fs\"") == "0");
+                Check("a game set windowed: SDL.Fullscreen = 0", Get("SDL.Fullscreen") == "0");
 
                 // A path FCEUX cannot open: refused, said.
                 var japanese = Path.Combine(games, "\u30bc\u30eb\u30c0\u306e\u4f1d\u8aac.nes");
@@ -372,7 +394,7 @@ namespace LbIntegrations.Probe
                 File.Delete(unf);
                 r = Go("Nintendo Entertainment System", unfZip);
                 var unpacked = Directory.Exists(Path.Combine(install, "Unpacked")) ? Directory.GetFiles(Path.Combine(install, "Unpacked"), "*.unf", SearchOption.AllDirectories).FirstOrDefault() : null;
-                Check("a zip of a .unf: unpacked into Unpacked\\, under the ROM's name, the line pointed at it", r.WasSuccess && unpacked != null && Path.GetFileName(unpacked) == "Unif game (USA).unf"
+                Check("a zip of a .unf: unpacked into <install>\\Unpacked\\, under the ROM's name, the line pointed at it", r.WasSuccess && unpacked != null && Path.GetFileName(unpacked) == "Unif game (USA).unf"
                       && r.NewCommandLine == "\"" + unpacked + "\"", r.NewCommandLine);
 
                 // Not ours: nothing.
@@ -386,21 +408,27 @@ namespace LbIntegrations.Probe
             {
                 PluginHelper.DataManager = wasDm;
                 StubDataManager.Platforms = wasPlatforms;
+                paths.GetField("LibraryForProbe", Any).SetValue(null, null);
                 try { notice.GetField("Instead", Any).SetValue(null, null); } catch { }
+                // The junctions first (a recursive delete must never walk into what they lead to).
+                foreach (var j in junctions) try { if (new DirectoryInfo(j).Attributes.HasFlag(FileAttributes.ReparsePoint)) Directory.Delete(j); } catch { }
                 try { Directory.Delete(dir, true); } catch { }
             }
             return Done();
         }
 
-        /// <summary>A REAL install's fceux.cfg written as a launch of that game writes it (no other change), for an oracle run.</summary>
+        /// <summary>A REAL install's fceux.cfg and folders prepared as a launch of that game does (no other change), for an
+        /// oracle run.</summary>
         public static bool Prepare(Assembly asm, string exe, string rom, string platform, string settings)
         {
             if (settings != null) T(asm, "FceuxSettings").GetField("PathOverride", Any).SetValue(null, Path.GetFullPath(settings));
             Console.WriteLine("-- fceux.cfg of " + exe + " prepared for " + Path.GetFileName(rom) + " (" + platform + ") --");
             Call(asm, "FceuxLaunch", "PrepareConfig", exe, "probe-oracle", platform, rom);
             var cfg = Path.Combine(Path.GetDirectoryName(exe), "fceux.cfg");
-            foreach (var line in File.ReadAllLines(cfg).Where(l => l.StartsWith("\"od") && !l.EndsWith(" ") || l.StartsWith("\"fs\"") || l.StartsWith("\"vmc")))
+            foreach (var line in File.ReadAllLines(cfg).Where(l => l.StartsWith("SDL.Fullscreen ") || l.StartsWith("SDL.Hotkeys.")))
                 Console.WriteLine("    " + line);
+            foreach (var k in new[] { "sav", "fcs", "snaps", "cheats" })
+                Console.WriteLine("    " + k + " -> " + (new DirectoryInfo(Path.Combine(Path.GetDirectoryName(exe), k)).LinkTarget ?? "(a real folder)"));
             return true;
         }
 
@@ -413,7 +441,7 @@ namespace LbIntegrations.Probe
             var r = Call(asm, "FceuxBuild", "Latest");
             if (r == null) { Console.WriteLine("  FAIL - none"); return false; }
             foreach (var f in new[] { "Version", "Tag", "Url", "Sha256" }) Console.WriteLine("  " + f + ": " + Field(r, f));
-            Check("a version x.y.z, the win64 asset", System.Text.RegularExpressions.Regex.IsMatch((string)Field(r, "Version") ?? "", @"^\d+\.\d+\.\d+$") && ((string)Field(r, "Url")).EndsWith("-win64.zip"));
+            Check("a version x.y.z, the win64 Qt asset", System.Text.RegularExpressions.Regex.IsMatch((string)Field(r, "Version") ?? "", @"^\d+\.\d+\.\d+$") && ((string)Field(r, "Url")).EndsWith("-win64-QtSDL.zip"));
             Check("tags as GitHub has them", (string)Call(asm, "FceuxBuild", "VersionOf", "fceux-2.7.0") == "2.7.0" && (string)Call(asm, "FceuxBuild", "VersionOf", "v2.6.6") == "2.6.6"
                   && Call(asm, "FceuxBuild", "VersionOf", "interim-build") == null);
             var plugin = (EmulatorPlugin)Activator.CreateInstance(asm.GetTypes().First(t => typeof(EmulatorPlugin).IsAssignableFrom(t) && !t.IsAbstract));
@@ -421,10 +449,10 @@ namespace LbIntegrations.Probe
             var dir = Scratch("latest");
             try
             {
-                var exe = Path.Combine(dir, "fceux64.exe");
+                var exe = Path.Combine(dir, "qfceux.exe");
                 File.WriteAllText(exe, "");
                 Check("an install that is not ours: false", !plugin.IsUpdateAvailable(exe, out _));
-                File.WriteAllText(Path.Combine(dir, "lbip-fceux-build.txt"), "2.6.6\r\nfceux-2.6.6-win64.zip\r\n");
+                File.WriteAllText(Path.Combine(dir, "lbip-fceux-build.txt"), "2.6.6\r\nfceux-2.6.6-win64-QtSDL.zip\r\n");
                 Check("ours, older: true", plugin.IsUpdateAvailable(exe, out var newer) && newer?.Label == (string)Field(r, "Version"));
                 File.WriteAllText(Path.Combine(dir, "lbip-fceux-build.txt"), Field(r, "Version") + "\r\n");
                 Check("ours, the latest: false", !plugin.IsUpdateAvailable(exe, out _));
@@ -438,14 +466,16 @@ namespace LbIntegrations.Probe
         {
             _bad = 0;
             Console.WriteLine("-- " + Path.GetFileName(zip) + " -> " + folder + " --");
-            Directory.CreateDirectory(folder);
-            var cfg = Path.Combine(folder, "fceux.cfg");
-            File.WriteAllText(cfg, "zzzMine 1\n");
+            var cfg = Path.Combine(folder, "bin", "fceux.cfg");
+            Directory.CreateDirectory(Path.GetDirectoryName(cfg));
+            File.WriteAllText(cfg, "SDL.zzzMine = 1\r\n");
             Call(asm, "Archives", "ExtractOver", zip, folder);
-            Check("fceux64.exe there", File.Exists(Path.Combine(folder, "fceux64.exe")));
-            Check("7z_64.dll there (FCEUX's archives)", File.Exists(Path.Combine(folder, "7z_64.dll")));
-            Check("the user's fceux.cfg untouched", File.ReadAllText(cfg) == "zzzMine 1\n");
-            Console.WriteLine("  FCEUX says it is " + Call(asm, "FceuxBuild", "DescribedVersion", Path.Combine(folder, "fceux64.exe")));
+            var exe = Path.Combine(folder, "bin", "qfceux.exe");
+            Check(@"bin\qfceux.exe there", File.Exists(exe));
+            Check(@"bin\Qt6Core.dll and palettes\FCEUX.pal there", File.Exists(Path.Combine(folder, "bin", "Qt6Core.dll")) && File.Exists(Path.Combine(folder, "palettes", "FCEUX.pal")));
+            Check("the user's fceux.cfg untouched", File.ReadAllText(cfg) == "SDL.zzzMine = 1\r\n");
+            Check("the install's folder is bin's parent", string.Equals((string)Call(asm, "FceuxSavePaths", "InstallDir", exe), Path.GetFullPath(folder).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase));
+            Console.WriteLine("  FCEUX says it is " + Call(asm, "FceuxBuild", "DescribedVersion", exe));
             return Done();
         }
     }

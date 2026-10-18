@@ -94,10 +94,10 @@ platform row `Nintendo Entertainment System`, no Famicom Disk System row.
 
 ### Which build the plugin integrates
 
-The classic win64 build, `fceux64.exe`: native, 4.8 MB, the build LaunchBox's own row points at (as the 32-bit
-`fceux.exe`), and the one whose config and hotkey format are decoded below. The plugin claims `fceux64.exe` and
-`fceux.exe` (same code, same config). `qfceux.exe` is NOT claimed in the plan (other config format, Qt): see the open
-questions.
+**The Qt / SDL win64 build, `bin\qfceux.exe` (Mehdi's choice, 18/10)** - see §14. Its full screen is a borderless
+window (no display mode change, unlike the classic build's exclusive DirectDraw), its renderer is OpenGL (ReShade), its
+hotkeys are text. The plugin claims `qfceux.exe` only; the classic `fceux64.exe` / `fceux.exe` (LaunchBox's own row) are
+no longer claimed. §3-§6 below describe the classic build as first researched; §14 is what the plugin does now.
 
 ---
 
@@ -519,3 +519,60 @@ fceux.cfg (full screen by default): point it at a lab copy only. `--saves-selfte
 - `src\NixxSaves\CatchAllClaims.cs`: `fceux64.exe`, `fceux.exe` in `Names`.
 - `src\Probe\Program.cs`: the seven `--fceux-*` lines are already in this branch (near the `--bsnes-*` lines).
 - No change to any `Shared.*` folder.
+
+**For the integration, now:** CatchAllClaims names `qfceux.exe` (not `fceux64.exe` / `fceux.exe`).
+
+---
+
+## 14. The Qt / SDL build (18/10/2026, Mehdi: "ok, on part sur la qt/SDL")
+
+Everything below is MEASURED on `qfceux.exe` 2.7.0 (lab `G:\LB1326\lbip-fceux-lab\runqt2` and `x-extract-qt`, Zelda II,
+windowed only - no full-screen test on this machine).
+
+### Install
+- Asset `fceux-<v>-win64-QtSDL.zip` (211 entries: `bin\`, `doc\`, `luaScripts\`, `palettes\`, `tools\`), extracted as it
+  is into `Emulators\Nixx-FCEUX\`; the exe is `bin\qfceux.exe`; the stamp `lbip-fceux-build.txt` beside it. The install
+  folder (`FceuxSavePaths.InstallDir`) is `bin`'s parent. `DescribedVersion` reads "FCEUX 2.7.0" in its bytes.
+
+### fceux.cfg (`bin\fceux.cfg`, portable)
+- `name = value`, CRLF, no BOM; FCEUX rewrites it whole at exit (610 lines), keeping only the names it knows. A missing
+  name takes FCEUX's default, so the plugin may write a file holding only its own lines: MEASURED, a 19-line file
+  (screen + hotkeys) came back as 610 lines with every plugin line kept.
+- An option on the command line is stored too (`--pal 1` left `SDL.PAL = 1`): the plugin writes `SDL.Fullscreen` in the
+  file, never on the line.
+- Video driver `SDL.VideoDriver`: 0 OpenGL (default), 1 SDL, 2 QPainter, 3 Vulkan. Full screen is `showFullScreen` (a
+  borderless window, the display mode untouched).
+
+### Hotkeys (`SDL.Hotkeys.<action> = <Qt key text>`, one key per action)
+The pack's: SaveState F2, LoadState F4, SelectStatePrev / Next F6 / F7, FullScreen F11, Quit Esc, Pause P, Turbo L (held -
+the Qt build has no fast-forward toggle), Screenshot F8, VolumeMute F9, SoftReset H, HardReset Shift+Esc. FCEUX's own
+LoadState2 / 4 / 6 / 7 / 8 / 9 sat on F2 / F4 / F6 / F7 / F8 / F9: emptied. No PAL / NTSC hotkey exists. Same rule as
+puNES: only an action at its default, empty, or already the pack's is set; never a key on two actions (`FceuxHotkeys`).
+
+### Folders: junctions
+The Qt build has no setting for its folders (`drivers\Qt\config.cpp` CreateDirs, under the exe's folder). `bin\sav`,
+`bin\fcs`, `bin\snaps`, `bin\cheats` are made junctions to `Saves\<platform>`, `\States`, `\Screenshots`, `\Cheats`,
+pointed at the launching game's platform before each launch (`FceuxSavePaths.Ensure`, the puNES mechanism). MEASURED:
+F2 wrote `States\<rom>.fc0`, F8 `Screenshots\<rom>-0.png`, Esc quit (code 0) and wrote `<rom>.sav` - all through the
+junctions, which were still junctions after the exit. Files of a real folder (FCEUX run before the plugin) are moved to
+their game's platform (the library by name, else the NES), never over a different file (that one goes to
+`Saves\Unsorted\<kind>\`). A link of the user's is kept. No junctions on the volume: `lbip-fceux-folders.txt`, FCEUX
+keeps its own folders.
+
+### Pause screen scripts
+No menu command to post in Qt: Save / Load activate the window and send F2 / F4; Exit is `WinClose` (WM_CLOSE writes
+the `.sav`). The scripts written for the classic build are replaced when found as written.
+
+### BIOS
+`disksys.rom` beside the exe (`bin\`), no setting.
+
+### Probes (all green 18/10)
+`--fceux-systems`, `--fceux-cfg <qt first-run cfg>`, `--fceux-hotkeys <qt first-run cfg>`, `--fceux-launch [<cfg>]`
+(junctions, moves, Unsorted, user link kept, disk BIOS, ANSI refusal, .unf in a zip), `--fceux-extract <QtSDL zip>`,
+`--fceux-latest`, `--fceux-prepare` (used for the real run above). Fixture: `G:\LB1326\lbip-fceux-lab\qt-fceux.cfg.firstrun`
+(a first-run file - note it carries `SDL.PAL = 1` from the `--pal` measure).
+
+### Open
+- Full screen on Mehdi's real display (F11, and `SDL.Fullscreen = 1` at start).
+- Non-ANSI paths with the Qt build (kept refused, as for the classic build, until measured).
+- The FDS disk side / eject keys - not bound yet.

@@ -1,9 +1,9 @@
-// The FCEUX build this plugin installs: the project's latest numbered RELEASE, its classic 64-bit Windows build, and how
+// The FCEUX build this plugin installs: the project's latest numbered RELEASE, its 64-bit Qt / SDL build, and how
 // to tell which one is on disk.
 //
 // THE RELEASES (GitHub API, repos/TASEmulators/fceux/releases, read 18/10/2026 - docs\fceux.md §1): fceux-2.7.0 (latest,
 // 2026-10-14), v2.6.6, v2.6.5, fceux-2.6.4 - THE TAG SCHEME IS NOT STABLE, so the version is the tag's \d+.\d+.\d+ and the
-// asset's name is made from it: fceux-<version>-win64.zip (2.6.5 to 2.7.0 all name it so). 2.7.0's assets carry a SHA-256
+// asset's name is made from it: fceux-<version>-win64-QtSDL.zip (2.7.0 names it so). 2.7.0's assets carry a SHA-256
 // in the API ("digest", checked before anything is extracted); 2.6.x's do not. The release note of 2.7.0 says its tag was
 // bumped once after a bad build: a release's assets can be replaced, so the digest of the moment is the one checked.
 //
@@ -11,19 +11,20 @@
 // assets without a version in their name (fceux-win64.zip). On 18/10 it was the same commit as 2.7.0 but another binary
 // (fceux64.exe MD5 617c9f26... against the release's 1c5bba0d...). A known version is installed, never it.
 //
-// NOT THE QT BUILD (fceux-<v>-win64-QtSDL.zip, bin\qfceux.exe, 97 MB, its own config format "SDL.Key = value" CRLF): the
-// classic build (drivers\win, 4.8 MB) is the one LaunchBox's own FCEUX row points at (as its 32-bit fceux.exe), and the
-// one whose config and hotkeys are decoded here.
+// THE QT BUILD, not the classic one (fceux-<v>-win64.zip, fceux64.exe, drivers\win - Mehdi's choice, 18/10): its full
+// screen is a borderless window (the classic build's is exclusive DirectDraw, which changes the display's mode), its
+// renderer is OpenGL (ReShade-friendly), its hotkeys are text ("Shift+F10") and its config "SDL.Key = value" (FceuxCfg).
 //
 // WITHOUT GITHUB'S API (60 requests an hour to an address): HEAD on releases/latest answers 302 to .../releases/tag/<tag>
 // (measured 18/10 with curl) - the tag, and the asset's URL made from it, taken without a digest to check.
 //
-// THE VERSION ON DISK: fceux64.exe has NO version resource (measured: FileVersion empty); its bytes carry "FCEUX 2.7.0"
+// THE VERSION ON DISK: qfceux.exe has NO version resource; its bytes carry "FCEUX 2.7.0" (measured 18/10)
 // (FCEU_NAME_AND_VERSION, src\version.h) - enough to DESCRIBE a build, never to say it is ours. Ours: the stamp
 // lbip-fceux-build.txt the install writes beside the executable.
 //
-// THE ZIP IS FLAT (99 entries, no top folder, measured): fceux64.exe, 7z_64.dll, lua5.1.dll, lua51.dll, auxlib.lua,
-// fceux.chm, taseditor.chm, palettes\, luaScripts\, tools\. No fceux.cfg: FCEUX makes it at its first exit.
+// THE ZIP (211 entries, measured 18/10): bin\ (qfceux.exe, Qt6, SDL2, ffmpeg, lua), doc\, luaScripts\, palettes\, tools\ -
+// extracted as it is into the install, the executable at bin\qfceux.exe. No fceux.cfg: FCEUX makes it at its first exit,
+// beside the executable (bin\fceux.cfg).
 
 using System;
 using System.IO;
@@ -48,7 +49,7 @@ namespace LbIntegrations.Fceux
         public const string Project = "https://github.com/TASEmulators/fceux";
         public const string StampName = "lbip-fceux-build.txt";
 
-        public static string AssetName(string version) => "fceux-" + version + "-win64.zip";
+        public static string AssetName(string version) => "fceux-" + version + "-win64-QtSDL.zip";
         private static string DownloadUrl(string tag, string version) => Project + "/releases/download/" + tag + "/" + AssetName(version);
 
         private static readonly HttpClient Http = MakeClient();
