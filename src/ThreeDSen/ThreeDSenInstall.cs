@@ -174,6 +174,14 @@ namespace LbIntegrations.ThreeDSen
                 Text = text, AutoSize = true, MaximumSize = new Size(600, 0), UseMnemonic = false, Margin = new Padding(0, 2, 0, 6),
                 Font = bold ? new Font(form.Font, FontStyle.Bold) : form.Font,
             };
+            // Mehdi 19/10: 3dSen 1.1.2 ships 3dSen_Data\Plugins\x86\fceumm_core.dll (libretro's FCEUmm, GPL v2 - its strings say
+            // so) with no licence, no source and no offer of it anywhere in its folder (checked in the lab's copy).
+            var gpl = Line("Read before buying: 3dSen includes fceumm_core.dll (the FCEUmm emulator core, licensed under the GNU GPL v2) "
+                           + "but does not distribute its source code, nor offer it - a clear breach of the GPL. "
+                           + "This is not a call to piracy, only a notice about the licence.", true);
+            gpl.ForeColor = Color.Firebrick;
+            gpl.Margin = new Padding(0, 2, 0, 12);
+            layout.Controls.Add(gpl);
             layout.Controls.Add(Line("3dSen PC is a game sold on Steam: this plugin does not download it. Which 3dSen should LaunchBox use?", true));
             foreach (var l in Describe(steam)) layout.Controls.Add(Line(l));
             var error = Line("");
