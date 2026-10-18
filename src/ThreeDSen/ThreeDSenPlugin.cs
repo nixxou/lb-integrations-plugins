@@ -11,10 +11,10 @@
 // in LaunchBox's base, not a platform - and LiteBox's "Nes - Super Mario Bros. Hacks" (iNES files too). No BIOS, no
 // RetroAchievements (no RA code in 3dSen).
 //
-// SAVES: none in this first lot. 3dSen has no battery saves at all (the cartridge RAM is never written to a file,
-// docs\3dsen.md section 5) and keeps its states in its own data folder, shared by every copy, outside the install
-// (LocalLow\Geod Studio\3dSen, sections 4 and 6). Nothing is ever written beside the game - measured - so there is
-// nothing to move there. The states' listing and restore come with the next lot.
+// SAVES: its save STATES only (ThreeDSenSaves, ThreeDSenSavCfg, ThreeDSenStateThumbs, through Shared.Saves SaveDesk).
+// 3dSen has no battery saves at all (the cartridge RAM is never written to a file, docs\3dsen.md section 5) and keeps its
+// states in its own data folder, shared by every copy, outside the install (LocalLow\Geod Studio\3dSen, sections 4 and
+// 6). Nothing is ever written beside the game - measured - so there is nothing to move there.
 //
 // Like every plugin here, this talks ONLY to the public SDK, and every entry point is defensive: the host swallows
 // exceptions silently, so we catch, log and degrade instead.
@@ -31,7 +31,7 @@ using LbIntegrations.Lbip;
 
 namespace LbIntegrations.ThreeDSen
 {
-    public class ThreeDSenPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
+    public partial class ThreeDSenPlugin : EmulatorPlugin, ISystemEventsPlugin, ILbCatalogSource
     {
         internal const string NesPlatform = "Nintendo Entertainment System";
 
@@ -53,6 +53,8 @@ namespace LbIntegrations.ThreeDSen
 
         public ThreeDSenPlugin()
         {
+            // First: the save front desk registers this plugin for the others (Shared.Saves SaveDesk).
+            _desk = new LbIntegrations.Saves.SaveDesk(this, this, SaveEmu, SaveLog);
             Log.Info("plugin constructed, assembly " + typeof(ThreeDSenPlugin).Assembly.Location);
             LbipLog.Use(Log.Info, Log.Warn, Log.Disabled, () => Log.Tracing);
             LbipRowInjection.Install(InjectionId, MetadataRows());
@@ -294,6 +296,8 @@ namespace LbIntegrations.ThreeDSen
                 return new PrepareForLaunchResponse(success: false);
             }
             Log.Info("launch: " + line);
+            // A PNG beside each state: the quick slot captured as 3dSen writes it, every one made again once it has quit.
+            ThreeDSenStateThumbs.Session(exe, ThreeDSenLaunch.DataDir());
             return new PrepareForLaunchResponse(success: true) { NewCommandLine = line };
         }
 

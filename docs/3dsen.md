@@ -453,3 +453,22 @@ Branch `nes-3dsen`. `dotnet build src\ThreeDSen\ThreeDSen.csproj -c Release` is 
   `G:\LB1326\lbip-3dsen-lab`), `--3dsen-steam` (read only), `--3dsen-prepare <3dSen.exe> --rom <game> --title <title>`
   (WRITES 3dSen's real data folder - oracle use only, back it up first).
 - Shared code: **no change**.
+
+## 14. Mehdi's decisions (19/10/2026) and build B
+
+- **Q3 Esc**: Esc quits, as in the whole pack: the running AutoHotkey script closes 3dSen's window on Esc, in its window
+  only (`LbipAhk.EscapeScript`). 3dSen's **Menu moves to F1** in `input.cfg`. Fast forward moves to **L** (held: 3dSen
+  reads it with `Pressed` every frame, `Engine` re-arms 30 fast frames). Same rule as puNES / FCEUX: an action is set only
+  when unbound, on 3dSen's default (Menu Esc, FastForward Period) or on the pack's key; never one key on two actions.
+- **Q4 saves**: left in `LocalLow\Geod Studio\3dSen` - listed and restored there, no junction.
+- **Q5 no profile**: the game starts in **2D Mode** (profile 47) instead of being refused. 2D Mode is every such game, so
+  its states are told apart by the ROM inside each state (`Cartridge.romName`, `ThreeDSenSavCfg.RomNameOf`; a zip that
+  3dSen opened itself gives `<zip name>.nes`).
+- **Q6 battery**: no notice.
+
+Build B (saves): `ThreeDSenSaves` (IOwnSaves through SaveDesk), `ThreeDSenSavCfg` (sav.cfg protobuf, read / written back
+byte for byte), `ThreeDSenStateThumbs` (3dSen's own picture, else a capture). One row per slot holding the game's profile
+(0 = quick, 1..36), id `{"emu":"3dsen","kind":"state","by":"profile","id":"<profile>","slot":n}`. Restore writes the slot's
+file and that one `sav.cfg` item (every other byte for byte), asks before taking another game's slot, and is refused while
+3dSen runs. Probe `--3dsen` "save states": round trip, the encoder against 3dSen's own quick item, the ROM inside a
+state, 2D Mode's filter, a restore into slot 5 and its delete - all on copies of 3dSen's own files.

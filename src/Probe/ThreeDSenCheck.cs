@@ -53,6 +53,7 @@ namespace LbIntegrations.Probe
                 Steam(asm, temp);
                 Plugin(asm);
                 Launch(asm, exe, after, lab, temp);
+                Saves(asm, after, temp);
             }
             catch (Exception ex) { Check("no exception", false, (ex.InnerException ?? ex).ToString()); }
             finally
@@ -164,6 +165,60 @@ namespace LbIntegrations.Probe
             File.WriteAllBytes(Path.Combine(old, "rom.cfg"), new byte[] { 0x0A, 0x00 });
             err = (string)Call(asm, "ThreeDSenRomJson", "SetRom", Path.Combine(old, "rom.json"), "73", "Zelda", @"G:\z.nes");
             Check("an older rom.cfg without rom.json: refused (3dSen would delete it)", err != null && !File.Exists(Path.Combine(old, "rom.json")), err);
+        }
+
+        /// <summary>The states: sav.cfg read and written back byte for byte, the ROM inside a state, 2D Mode's states told
+        /// apart by it, a restore into another slot and its delete - on a copy of 3dSen's own files (locallow-after-tests).</summary>
+        private static void Saves(Assembly asm, string after, string temp)
+        {
+            Console.WriteLine("-- save states --");
+            if ((bool)Call(asm, "ThreeDSenLaunch", "AnyRunning")) { Console.WriteLine("  (3dSen is running here - the state checks are skipped)"); return; }
+            var data = Path.Combine(temp, "saves");
+            Directory.CreateDirectory(Path.Combine(data, "sav"));
+            File.Copy(Path.Combine(after, "sav.cfg"), Path.Combine(data, "sav.cfg"));
+            File.Copy(Path.Combine(after, "sav", "quick.sav"), Path.Combine(data, "sav", "quick.sav"));
+            var cfg = Path.Combine(data, "sav.cfg");
+            var original = File.ReadAllBytes(cfg);
+            var slots = (System.Collections.IList)Call(asm, "ThreeDSenSavCfg", "Read", cfg);
+            object Slot(System.Collections.IList l, string id) => l.Cast<object>().FirstOrDefault(s => (string)F(s, "SlotId") == id);
+            Check("sav.cfg: 37 slots, the quick one Zelda II's (profile 73)", slots != null && slots.Count == 37 && (string)F(Slot(slots, "quick"), "GameId") == "73", slots?.Count.ToString());
+            Check("written back byte for byte", ((byte[])Call(asm, "ThreeDSenSavCfg", "Write", slots)).SequenceEqual(original));
+            // The encoder a restore uses for the slot it changes, against what 3dSen itself wrote for the quick slot.
+            var q = Slot(slots, "quick");
+            var raw = (byte[])F(q, "Raw");
+            q.GetType().GetField("Raw").SetValue(q, null);
+            Check("an item encoded from its fields = 3dSen's own bytes (the quick slot, its picture included)", raw != null && ((byte[])Call(asm, "ThreeDSenSavCfg", "Encode", q)).SequenceEqual(raw));
+            q.GetType().GetField("Raw").SetValue(q, raw);
+            var quick = Path.Combine(data, "sav", "quick.sav");
+            var romName = (string)Call(asm, "ThreeDSenSavCfg", "RomNameOf", quick);
+            Check("the ROM inside quick.sav", romName == "Zelda II zipped.nes", romName);
+
+            var profileType = T(asm, "ThreeDSenProfile");
+            object Profile(string id) { var p = Activator.CreateInstance(profileType, true); profileType.GetField("Id").SetValue(p, id); profileType.GetField("Title").SetValue(p, id); return p; }
+            var fits = T(asm, "ThreeDSenPlugin").GetMethod("StateFits", Any);
+            bool Fits(string id, string rom) => (bool)fits.Invoke(null, new object[] { Profile(id), quick, rom });
+            Check("a 3D profile's state is the game's whatever its ROM", Fits("73", @"G:\roms\Anything.nes"));
+            Check("2D Mode: the state of the game it was made from (an archive's name)", Fits("47", @"G:\roms\Zelda II zipped.zip"));
+            Check("2D Mode: not another game's", !Fits("47", @"G:\roms\Mega Man.nes"));
+
+            // A backup of the quick slot restored into slot 5, then deleted.
+            var backup = Path.Combine(temp, "backup-quick.sav");
+            File.Copy(quick, backup);
+            var group = (string)Call(asm, "ThreeDSenPlugin", "StateIdOf", "73", 0);
+            var restore = T(asm, "ThreeDSenPlugin").GetMethod("Restore", Any);
+            var ra = new object[] { data, backup, null, 5, group, "73", true, null, (Func<bool>)(() => true), null, null };
+            var refused = (string)restore.Invoke(null, ra);
+            var target = Path.Combine(data, "sav", "5.sav");
+            var after5 = (System.Collections.IList)Call(asm, "ThreeDSenSavCfg", "Read", cfg);
+            Check("restored into slot 5: the file, its slot given to profile 73", refused == null && File.Exists(target) && (string)F(Slot(after5, "5"), "GameId") == "73", refused);
+            var before5 = slots.Cast<object>().Where(s => (string)F(s, "SlotId") != "5").Select(s => Convert.ToBase64String((byte[])Call(asm, "ThreeDSenSavCfg", "Encode", s))).ToList();
+            var now5 = after5.Cast<object>().Where(s => (string)F(s, "SlotId") != "5").Select(s => Convert.ToBase64String((byte[])Call(asm, "ThreeDSenSavCfg", "Encode", s))).ToList();
+            Check("every other slot of sav.cfg as it was", before5.SequenceEqual(now5));
+            var groupFive = (string)Call(asm, "ThreeDSenPlugin", "StateIdOf", "73", 5);
+            var del = (string)Call(asm, "ThreeDSenPlugin", "Delete", data, target, groupFive);
+            var afterDel = (System.Collections.IList)Call(asm, "ThreeDSenSavCfg", "Read", cfg);
+            Check("deleted: the file gone, slot 5 free again", del == null && !File.Exists(target) && string.IsNullOrEmpty((string)F(Slot(afterDel, "5"), "GameId")), del);
+            Check("the quick slot untouched", File.Exists(quick) && (string)F(Slot(afterDel, "quick"), "GameId") == "73");
         }
 
         private static void Input(Assembly asm, string before, string after, string temp)
