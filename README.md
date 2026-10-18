@@ -22,6 +22,7 @@ is published by Unbroken Software), so these are installed by hand.
 | `src/Bsnes` | bsnes (nightly) | Super Nintendo Entertainment System | download / update the project's nightly build, launch, saves and save states |
 | `src/Demul` | Demul | Sega Dreamcast, Sega Naomi, Sega Naomi 2, Sammy Atomiswave, Sega Hikaru (+ System SP, CV1000, Gaelco by platform name) | download / update (the 2025 build, kept in `vendor/demul`), launch - **closed source** |
 | `src/RaSnes9x` | RASnes9x (RetroAchievements' Snes9x) | Super Nintendo Entertainment System | download / update (1.2, from retroachievements.org or `vendor/rasnes9x`), launch, RetroAchievements login, saves and save states |
+| `src/Fceux` | FCEUX (the Qt / SDL build) | Nintendo Entertainment System, Nintendo Famicom, Nintendo Famicom Disk System (+ the hacks platform) | download / update the latest release (its SHA-256 checked), launch, FDS BIOS found and given, the pack's hotkeys, **saves, states, screenshots and cheats in one folder per platform** (junctions: FCEUX has no folder setting), a game's own options for its session only, saves and save states with their thumbnail |
 | `src/Punes` | puNES | Nintendo Entertainment System, Nintendo Famicom, Nintendo Famicom Disk System (+ the hacks platform) | download / update (0.111, its SHA-256 checked), launch, FDS BIOS found and given, **saves, disk writes and states in one folder per platform** (junctions: puNES has no folder setting), saves and save states with their thumbnail |
 | `src/ZincEx` | ZiNc EX (launcher of ZiNc 1.1) | Arcade: Sony ZN-1 / ZN-2 boards, 71 games | download / update the latest release, **the game told by its ROMs** (MAME renamed most of ZiNc's sets), BIOS under ZiNc's or MAME's names, launch, ZiNc EX's per-game settings, import wizard sorted, saves (high scores) |
 | `src/SuperZsnes` | SUPER ZSNES | Super Nintendo Entertainment System | download / update from zsnes.com, launch, RetroAchievements login (0.320+, softcore) - **closed source**, see its notes for what is measured and what is not |
@@ -286,6 +287,7 @@ file is there. Before LaunchBox 14, `Plugins\` is the only option. `<Name>` is t
 | `src/Xenia` | `Nixx-Xenia` | `Nixx-Xenia` | `Emulators\Nixx-Xenia` |
 | `src/ZincEx` | `Nixx-ZiNc-EX` | `Nixx-ZiNc-EX` | `Emulators\Nixx-ZiNc-EX` |
 | `src/Punes` | `Nixx-puNES` | `Nixx-puNES` | `Emulators\Nixx-puNES` |
+| `src/Fceux` | `Nixx-FCEUX` | `Nixx-FCEUX` | `Emulators\Nixx-FCEUX` |
 
 One constant per plugin drives that whole row, so the four cannot disagree.
 
