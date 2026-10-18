@@ -281,6 +281,8 @@ namespace LbIntegrations.Probe
                     "save state=F2,NULL", "load state=F4,NULL", "decrement state slot=F6,NULL", "increment state slot=F7,NULL",
                     "video fullscreen=F11,NULL", "quit=Esc,NULL", "hard reset=Shift+Esc,NULL", "mode pal=F10,NULL", "mode ntsc=Shift+F10,NULL",
                     "toggle menubar in fullscreen=NULL,NULL",
+                    "pause=P,NULL", "fast forward=Space,NULL", "hold fast forward=L,NULL", "save screenshot=F8,NULL", "audio enable=F9,NULL",
+                    "soft reset=H,NULL", "mode dendy=Ctrl+F10,NULL", "mode auto=Alt+F10,NULL",
                 };
                 // Every keyboard key of [shortcuts] held once (what run5c measured on the real exe).
                 bool NoKeyTwice() => Lines().SkipWhile(l => l != "[shortcuts]").Skip(1).TakeWhile(l => !l.StartsWith("["))
@@ -288,7 +290,7 @@ namespace LbIntegrations.Probe
                     .Where(k => k.Length > 0 && k != "NULL").GroupBy(k => k, StringComparer.OrdinalIgnoreCase).All(g => g.Count() == 1);
 
                 Bind();
-                Check("no input.cfg yet: made with the ten lines (puNES writes the rest at its first start - measured)", File.Exists(copy)
+                Check("no input.cfg yet: made with the pack's lines (puNES writes the rest at its first start - measured)", File.Exists(copy)
                       && Lines().SequenceEqual(new[] { "[shortcuts]" }.Concat(pack)), File.Exists(copy) ? string.Join(" | ", Lines()) : "none");
                 var (crlf0, lf0, bom0) = Eol(copy);
                 Check("made in CRLF, no BOM", crlf0 == lf0 && !bom0);
@@ -299,10 +301,10 @@ namespace LbIntegrations.Probe
                 var lineCount = Lines().Length;
                 Bind();
                 var after = Lines();
-                Check("puNES's defaults: all ten moved to the pack's keys", pack.Skip(1).All(after.Contains) && after.Contains("save state=F2,JOY0_BTN3"), string.Join(" | ", pack.Where(l => !after.Contains(l))));
+                Check("puNES's defaults: all moved to the pack's keys", pack.Skip(1).All(after.Contains) && after.Contains("save state=F2,JOY0_BTN3"), string.Join(" | ", pack.Where(l => !after.Contains(l))));
                 Check("the pad button on an action kept", after.Contains("save state=F2,JOY0_BTN3"));
                 Check("no key on two actions", NoKeyTwice());
-                Check("nothing else touched (soft reset F12, mode dendy F8)", after.Contains("soft reset=F12,NULL") && after.Contains("mode dendy=F8,NULL"));
+                Check("nothing else touched (open Alt+O, eject disk Alt+E)", after.Contains("open=Alt+O,NULL") && after.Contains("eject disk=Alt+E,NULL"));
                 var (crlf, lf, bom) = Eol(copy);
                 Check("CRLF, no BOM, as many lines", crlf == lf && !bom && after.Length == lineCount, crlf + "/" + lf);
                 var once = File.ReadAllBytes(copy);
@@ -320,10 +322,10 @@ namespace LbIntegrations.Probe
                 after = Lines();
                 Check("the user put quit on F2: quit kept, save state left as it was (F1)", after.Contains("quit=F2,NULL") && after.Contains("save state=F1,JOY0_BTN3"));
                 Check("still no key on two actions", NoKeyTwice());
-                Write(Put(defaults, "mode dendy", "F10,NULL"));
+                Write(Put(defaults, "turn off", "F10,NULL"));
                 Bind();
                 after = Lines();
-                Check("F10 on another action of the user's (mode dendy): mode pal off F6 (the slot's now), no key, the rest set", after.Contains("mode pal=NULL,NULL") && after.Contains("mode ntsc=Shift+F10,NULL") && after.Contains("mode dendy=F10,NULL"));
+                Check("F10 on another action of the user's (turn off): mode pal off F6 (the slot's now), no key, the rest set", after.Contains("mode pal=NULL,NULL") && after.Contains("mode ntsc=Shift+F10,NULL") && after.Contains("turn off=F10,NULL"));
                 Check("and no key on two actions", NoKeyTwice());
                 // A keyboard button of a pad on a pack key.
                 Write(Put(defaults, "P1K Start", "Esc"));

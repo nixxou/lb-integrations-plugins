@@ -72,7 +72,7 @@ namespace LbIntegrations.Punes
                 var latest = PunesBuild.LatestTag;
                 if (latest != null && !string.Equals(latest, PunesBuild.Tag, StringComparison.OrdinalIgnoreCase))
                     rows.Add(Line("puNES " + latest + " is out: this plugin installs " + PunesBuild.Tag + ", a newer one comes with an update of the plugin."));
-                rows.Add(Line("Keys (set in puNES's input.cfg at each launch): F2 saves the state, F4 loads it, F6 / F7 change the slot, F11 full screen, Esc quits, Shift+Esc resets, F10 / Shift+F10 PAL / NTSC."));
+                rows.Add(Line("Keys (set in puNES's input.cfg at each launch): F2 saves the state, F4 loads it, F6 / F7 change the slot, F11 full screen, Esc quits, P pause, Space fast forward (L held), F8 screenshot, F9 mute, H reset (Shift+Esc hard), F10 / Shift+F10 PAL / NTSC."));
                 rows.Add(Line(PunesSaveDirs.NoJunctions(exe)
                     ? "Saves, states and screenshots stay in puNES's own folders (" + PunesCfg.DataDir(exe) + "): links to Saves\\<platform> cannot be made there."
                     : "Saves, states and screenshots: " + Path.Combine(PunesSaveDirs.InstallDir(exe), PunesSaveDirs.Root) + "\\<platform>\\ (prb, save, diff, screenshot), set at each launch."));

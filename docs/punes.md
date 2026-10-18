@@ -435,3 +435,10 @@ Probe.exe <Punes.dll> --punes-shot <out.png> [--emu <punes64.exe>]    (draws the
 - **D3D9 build** (question 6): kept - ReShade is the better fit in Direct3D. What it loses: puNES's GLSL presets
   (.glslp, OpenGL build only - wdgSettingsVideo.cpp:1153-1159); Cg presets (.cgp) stay. A D3D9 / OpenGL choice at
   install is possible later: both exes are already told apart by their MD5.
+- **RetroArch's keys** (18/10): pause P, fast forward Space (held: L), save screenshot F8, audio enable F9, soft
+  reset H; mode dendy / mode auto (F8 / F9 by default) moved to Ctrl+F10 / Alt+F10. Measured (run5d): kept as
+  written, no key on two actions.
+- **Active slot** (18/10, read and measured, not used yet): pgs\<game>.pgs [state] "last save slot" is read at each
+  ROM load, so a plugin can preselect the slot F4 loads - but only 0-5 (opt_slot_pgs, settings.h:772: 6-B are refused
+  and reset to 0), only a slot holding a state (else save_slot.c:190 takes the HIGHEST occupied one - and F2 then
+  overwrites it), and nothing loads a state at start (no command-line option).

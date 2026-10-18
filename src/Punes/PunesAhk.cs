@@ -2,7 +2,8 @@
 //
 // THE KEYS ARE THE PACK'S, set in puNES's input.cfg by the plugin before each launch (PunesLaunch, its header - Mehdi
 // 18/10): F2 saves the state of the current slot, F4 loads it, F6 / F7 the slot down / up (12 slots, 0-9, A, B), F11 full
-// screen, Esc quits, Shift+Esc hard reset, F10 / Shift+F10 PAL / NTSC. An action the user rebinds in puNES's Settings >
+// screen, Esc quits, Shift+Esc hard reset, F10 / Shift+F10 PAL / NTSC - and RetroArch's P pause, Space fast forward (held:
+// L), F8 screenshot, F9 mute, H soft reset. An action the user rebinds in puNES's Settings >
 // Input keeps the user's key, and these scripts then send the pack's.
 //
 // QUITTING closes the window (WinClose = WM_CLOSE): measured 18/10, in a window and in full screen alike, puNES quits at

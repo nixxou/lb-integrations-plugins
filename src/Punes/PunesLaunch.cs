@@ -24,9 +24,12 @@
 //
 //   save state F2, load state F4, decrement / increment state slot F6 / F7, video fullscreen F11, quit Esc,
 //   hard reset Shift+Esc, mode pal F10, mode ntsc Shift+F10, toggle menubar in fullscreen none
+//   and, as RetroArch has them: pause P, fast forward Space (held: L), save screenshot F8, audio enable F9 (mute),
+//   soft reset H - mode dendy / mode auto, which held F8 / F9, beside PAL / NTSC: Ctrl+F10 / Alt+F10
 //
 // puNES 0.111's defaults on those actions (measured on a fresh input.cfg): F1, F4, F2, F3, Alt+Return, Alt+Q, F11, F6,
-// F7, Esc - so the pack's keys are all puNES's for something else, and the four actions that held them are moved too.
+// F7, Esc, Pause, Tab, none, Alt+X, Alt+A, F12, F8, F9 - so the pack's keys are puNES's for something else, and the
+// actions that held them are moved too.
 // An action is set only when it holds puNES's default, nothing, or the pack's key already: one the user changed in
 // puNES's Settings > Input is theirs. Its pad button is kept. A pack key another action holds (one of the user's, or a
 // pad's keyboard button) leaves that action as it is.
@@ -34,8 +37,9 @@
 // MEASURED 18/10 (lab run5a-c, punes64.exe 0.111, Zelda II, WM_CLOSE): puNES keeps the lines it is given in a MINIMAL
 // input.cfg and writes every other action with its default - so the moved actions must be written too (run5a, without
 // them: F11 both full screen and hard reset, Esc both quit and the menu bar, F6 / F7 both slot and PAL / NTSC); with
-// them, no key on two actions (run5c), Shift+Esc and Shift+F10 kept as written. So a missing input.cfg is MADE with
-// these ten lines before the first start.
+// them, no key on two actions (run5c, run5d with the RetroArch keys: F8 / F9 were mode dendy / auto's), Shift+Esc,
+// Shift+F10, Ctrl+F10, Alt+F10 and Space kept as written. So a missing input.cfg is MADE with these lines before the
+// first start.
 
 using System;
 using System.Collections.Generic;
@@ -205,6 +209,10 @@ namespace LbIntegrations.Punes
             ("video fullscreen", "F11", "Alt+Return"), ("quit", "Esc", "Alt+Q"),
             ("hard reset", "Shift+Esc", "F11"), ("mode pal", "F10", "F6"), ("mode ntsc", "Shift+F10", "F7"),
             ("toggle menubar in fullscreen", null, "Esc"),
+            // RetroArch's keys (Mehdi 18/10).
+            ("pause", "P", "Pause"), ("fast forward", "Space", "Tab"), ("hold fast forward", "L", null),
+            ("save screenshot", "F8", "Alt+X"), ("audio enable", "F9", "Alt+A"), ("soft reset", "H", "F12"),
+            ("mode dendy", "Ctrl+F10", "F8"), ("mode auto", "Alt+F10", "F9"),
         };
 
         /// <summary>The keyboard half of a "name=keyboard,joystick" value; null for none (NULL, empty).</summary>
