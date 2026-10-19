@@ -18,6 +18,9 @@ namespace LbIntegrations.Probe
 {
     internal static class MameCheck
     {
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+        private static extern bool CreateHardLink(string newFile, string existingFile, IntPtr security);
+
         private static readonly uint[] CrcTable = Enumerable.Range(0, 256).Select(i =>
         {
             uint c = (uint)i;
@@ -68,6 +71,18 @@ namespace LbIntegrations.Probe
             bool ok = true;
             foreach (var p in plans)
             {
+                // Its disks: hard links to the source CHDs (the same bytes, as the volume serves them), copies across volumes.
+                foreach (var (name, source) in p.Disks)
+                {
+                    var dir = Path.Combine(outDir, p.Set);
+                    Directory.CreateDirectory(dir);
+                    var to = Path.Combine(dir, name);
+                    if (File.Exists(to)) File.Delete(to);
+                    if (!CreateHardLink(to, source, IntPtr.Zero)) File.Copy(source, to);
+                    Console.WriteLine("  " + p.Set + "\\" + name + "  <- " + source);
+                }
+                if (p.MissingDisks.Count > 0) { Console.WriteLine("  " + p.Set + "  MISSING DISKS: " + string.Join(", ", p.MissingDisks)); ok = false; }
+                if (p.Items.Count == 0 && p.Missing.Count == 0) continue;
                 using var vz = new VirtualZip(p.Items);
                 var path = Path.Combine(outDir, p.Set + ".zip");
                 vz.WriteTo(path);
