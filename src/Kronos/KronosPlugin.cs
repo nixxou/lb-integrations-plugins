@@ -461,6 +461,8 @@ namespace LbIntegrations.Kronos
                 // The folder its settings window reads for the ST-V cartridge (2.7.5: "Cartridge/Path/" + the cartridge's name).
                 (@"Cartridge\Path\STVRomgame", KronosIniDoc.PathText(run), true, null),
                 (@"Cartridge\STVGame", set.Name, false, null),
+                // Its title bar's name (only the settings window writes it; started by -a, the title would end on "STV: ").
+                (@"Cartridge\STVGameName", set.Title, false, null),
                 (@"General\SaveStates", KronosIniDoc.PathText(states), true, null),
                 // Its screenshots beside its saves, never in Kronos's default (%LocalAppData%\kronos\screenshots).
                 (@"General\ScreenshotsDirectory", KronosIniDoc.PathText(Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(states))), "Screenshots")), true, null),

@@ -21,6 +21,11 @@
 // CHECKED BEFORE THE LAUNCH, as Kronos would: every file of the set (its zip, then its parent's), and one BIOS file of
 // stvbios.zip (beside the game, or in <kronos>\bios). A set Kronos does not know, or a file missing, is refused with what is
 // wrong - on "Arcade" a set of another board too: Kronos would only show an empty window.
+//
+// THE BIOS IS READ FROM A FILE NAMED stvbios.zip ONLY [M 19/10]: stv.c's updateGameList counts a BIOS when processBios has read
+// one, and only a zip of that name goes to processBios - the BIOS files a MAME non-merged set carries in its own zip are never
+// taken (shienryu.zip alone: an empty game list, "Cannot initialize STV emulation", in 2.7.5 as in 2.7.5b). So without a
+// stvbios.zip, one is made in the launch's folder with the BIOS files of the game's zip (or its parent's).
 
 using System;
 using System.Collections.Generic;
@@ -51,6 +56,8 @@ namespace LbIntegrations.Kronos
         public const string Arcade = "Arcade";
         public const string BiosSet = "stvbios";
         public const string RunFolder = "lbip-stv";
+        /// <summary>In ZipsFor's list: "make stvbios.zip from this zip's BIOS files" (no stvbios.zip found).</summary>
+        internal const string BiosFrom = "bios-from:";
         private const string Marker = "lbip-stv.txt";
         /// <summary>Cartridge\Type of the ST-V ROM cartridge (CART_ROMSTV).</summary>
         public const string CartType = "11";
@@ -172,13 +179,18 @@ namespace LbIntegrations.Kronos
                           + ".\n\nKronos matches each file by its name and CRC, as MAME's sets have them.";
                 return null;
             }
-            // The BIOS: in the game's own zip for MAME's non-merged sets (Kronos takes it from there - stv.c isBiosFound), else
-            // stvbios.zip.
-            if (BiosFiles.Any(b => have.Contains((b.Name.ToLowerInvariant(), b.Crc)))) return zips;
+            // The BIOS: stvbios.zip - the only file Kronos takes it from. Without one, the BIOS files of a MAME non-merged set
+            // (in the game's zip, or its parent's) make one in the launch's folder.
             var bios = BiosZip(game, exe);
             var inBios = bios == null ? null : ZipFiles(bios);
             if (inBios == null || !BiosFiles.Any(b => inBios.Contains((b.Name.ToLowerInvariant(), b.Crc))))
             {
+                if (BiosFiles.Any(b => have.Contains((b.Name.ToLowerInvariant(), b.Crc)))) { zips.Add(BiosFrom + game); return zips; }
+                if (zips.Count > 1)
+                {
+                    var inParent = ZipFiles(zips[1]);
+                    if (inParent != null && BiosFiles.Any(b => inParent.Contains((b.Name.ToLowerInvariant(), b.Crc)))) { zips.Add(BiosFrom + zips[1]); return zips; }
+                }
                 problem = "Kronos needs the ST-V BIOS, " + BiosSet + ".zip (MAME's), and " + (bios == null ? "none was found" : "the one found holds no BIOS file it knows")
                           + ".\n\nPut it beside the game (" + Path.GetDirectoryName(game) + ") or in " + KronosLaunch.BiosDirOf(exe) + ".";
                 return null;
@@ -208,6 +220,7 @@ namespace LbIntegrations.Kronos
                 int linked = 0, copied = 0;
                 foreach (var z in zips)
                 {
+                    if (z.StartsWith(BiosFrom, StringComparison.Ordinal)) { MakeBiosZip(z.Substring(BiosFrom.Length), Path.Combine(run, BiosSet + ".zip")); continue; }
                     var to = Path.Combine(run, Path.GetFileName(z));
                     if (CreateHardLink(to, z, IntPtr.Zero)) linked++;
                     else { File.Copy(z, to, true); copied++; }
@@ -219,10 +232,31 @@ namespace LbIntegrations.Kronos
                     if (File.Exists(from)) File.Copy(from, Path.Combine(run, set.Name + ext), true);
                 }
                 File.WriteAllLines(Path.Combine(run, Marker), new[] { set.Name, saves });
-                Log.Info("st-v: " + run + " - " + string.Join(", ", zips.Select(Path.GetFileName)) + " (" + linked + " linked, " + copied + " copied)");
+                Log.Info("st-v: " + run + " - " + string.Join(", ", zips.Select(z => z.StartsWith(BiosFrom, StringComparison.Ordinal)
+                         ? BiosSet + ".zip made from " + Path.GetFileName(z.Substring(BiosFrom.Length)) + "'s BIOS files" : Path.GetFileName(z)))
+                         + " (" + linked + " linked, " + copied + " copied)");
                 return run;
             }
             catch (Exception ex) { problem = "The ST-V game's folder could not be made (" + ex.Message + ")."; Log.Warn("st-v: " + run, ex); return null; }
+        }
+
+        /// <summary>stvbios.zip made of the BIOS files (name and CRC of Kronos's table) of a set's zip - their contents unchanged,
+        /// so their CRCs too.</summary>
+        internal static int MakeBiosZip(string from, string to)
+        {
+            var wanted = new HashSet<(string, string)>(BiosFiles.Select(b => (b.Name.ToLowerInvariant(), b.Crc)));
+            int n = 0;
+            using var src = ZipFile.OpenRead(from);
+            using var dst = ZipFile.Open(to, ZipArchiveMode.Create);
+            foreach (var e in src.Entries)
+            {
+                var name = Path.GetFileName(e.FullName);
+                if (!wanted.Contains((name.ToLowerInvariant(), e.Crc32.ToString("x8")))) continue;
+                var entry = dst.CreateEntry(name, CompressionLevel.Fastest);
+                using (var i = e.Open()) using (var o = entry.Open()) i.CopyTo(o);
+                n++;
+            }
+            return n;
         }
 
         /// <summary>The last launch's EEPROM and coins back to its game's saves (the folder's lbip-stv.txt says which), once
