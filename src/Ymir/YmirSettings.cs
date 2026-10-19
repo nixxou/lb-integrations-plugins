@@ -40,7 +40,7 @@ namespace LbIntegrations.Ymir
         {
             new YmirOption
             {
-                Key = Fullscreen, Label = "Screen", Default = "false", PerGame = true,
+                Key = Fullscreen, Label = "Screen", Default = "true", PerGame = true,
                 Values = new[] { "false", "true" }, Texts = new[] { "In a window", "Full screen" },
                 Hint = "Full screen: Ymir is started with -f. F11 (or Alt+Enter) switches while the game runs.",
             },
