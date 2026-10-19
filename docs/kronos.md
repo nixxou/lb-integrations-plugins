@@ -70,6 +70,14 @@ By extension (case-insensitive): `.cue` (+ its .bin), `.chd`, `.mds`, `.ccd` (+ 
 Anything else is read as a plain `.iso`. No `.m3u` and no `.7z`: multi-disc sets and other archives are the plugin's job,
 as for Ymir.
 
+CHD CODECS [S, M 19/10]: Kronos's libchdr (tools\libchdr, an old copy - lzma 16.04, flac 1.3.2) decodes zlib, cdzl, cdlz and
+cdfl only. A CHD made with `chdman createcd -c cdzs,cdfl` (Zstandard) leaves Kronos 2.7.5 on an empty window, no error said; the
+same disc in cdlz,cdzl,cdfl boots. The plugin reads the codecs in the CHD v5 header and refuses such a disc with why
+(KronosLaunch.ChdProblem). The other Saturn emulators, measured with the same file: Ymir 0.4.1 reads it (libchdr 47d7941 has
+cdzs); RetroArch's Beetle Saturn v0.9.45.1 reads it (Game ID, region in its log, as with the reference); the yabause,
+yabasanshiro and kronos libretro cores do not ("Cannot initialize ISO-File Virtual Drive" with it only). CHDSharp (the plugins'
+disc reader) reads it: same product code and hash.
+
 ## 7. Open questions
 
 - Non-ASCII paths: a CHD through a folder named "Jeux é" opened [M: its product code read, states written];

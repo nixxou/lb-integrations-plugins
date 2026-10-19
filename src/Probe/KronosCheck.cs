@@ -159,6 +159,20 @@ namespace LbIntegrations.Probe
                 File.WriteAllBytes(Path.Combine(sd, "notes.txt"), new byte[4]);
                 var found = ((IEnumerable)Call(asm, "KronosPlugin", "StatesOf", sd)).Cast<object>().Select(t => F(t, "Item2") + "#" + F(t, "Item3")).OrderBy(x => x).ToList();
                 Check("the states found: product code and pack slot", found.SequenceEqual(new[] { "MK-8109109#1", "MK-8109109#10" }), string.Join(", ", found));
+
+                Console.WriteLine("== the CHD's codecs (Kronos reads no Zstandard)");
+                var refChd = @"G:\saturn\Atlantis - The Lost Tales (FR) (Disc 1).chd";
+                var zstdChd = @"G:\LB1326\lbip-kronos-lab\formats\Atlantis-zstd.chd";
+                if (File.Exists(refChd) && File.Exists(zstdChd))
+                {
+                    var rc = string.Join(",", (IEnumerable<string>)Call(asm, "KronosLaunch", "ChdCodecs", refChd));
+                    var zc = string.Join(",", (IEnumerable<string>)Call(asm, "KronosLaunch", "ChdCodecs", zstdChd));
+                    Check("the codecs read from the header", rc == "cdlz,cdzl,cdfl" && zc == "cdzs,cdfl", rc + " / " + zc);
+                    Check("a CHD of Kronos's codecs: no problem", Call(asm, "KronosLaunch", "ChdProblem", refChd) == null);
+                    var why = (string)Call(asm, "KronosLaunch", "ChdProblem", zstdChd);
+                    Check("a Zstandard CHD: refused, said why", why != null && why.Contains("Zstandard"), why?.Split('\n')[0]);
+                }
+                else Console.WriteLine("  (the lab's CHDs are not there: not checked)");
             }
             catch (Exception ex) { Check("no exception", false, ex.ToString()); }
             finally { try { Directory.Delete(temp, true); } catch { } SetS(asm, "KronosSettings", "PathOverride", null); }

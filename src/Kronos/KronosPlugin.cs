@@ -325,6 +325,10 @@ namespace LbIntegrations.Kronos
             // The disc.
             var plan = KronosLaunch.DiscFor(rom, exe);
             if (plan.Disc == null) return Refuse("This game cannot be started: " + plan.Problem);
+            // A CHD Kronos's libchdr cannot decode (Zstandard): refused with why, rather than an empty window. Every disc of the
+            // game, so the next-disc key does not meet one either.
+            foreach (var d in plan.Discs.Prepend(plan.Disc).Distinct(StringComparer.OrdinalIgnoreCase))
+                if (KronosLaunch.ChdProblem(d) is string chd) { Log.Warn("launch refused: " + chd.Replace("\n", " ")); return Refuse(chd); }
             var disc = KronosDisc.Read(plan.Disc);
             Log.Info("launch: " + Path.GetFileName(plan.Disc) + (plan.Discs.Count > 1 ? " (disc " + (plan.Discs.IndexOf(plan.Disc) + 1) + " of " + plan.Discs.Count + ")" : "")
                      + (disc.Hash != null ? " - " + disc : " - " + disc.Problem));

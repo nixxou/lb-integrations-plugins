@@ -237,6 +237,7 @@ namespace LbIntegrations.Probe
             if (Has(args, "--ymir-real")) return YmirCheck.Real(asm, Path.GetFullPath(Arg(args, "--ymir-real")), Arg(args, "--lab") is string rl ? Path.GetFullPath(rl) : null, Arg(args, "--csv") is string rc ? Path.GetFullPath(rc) : null) ? 0 : 1;
             // The Kronos plugin's pieces, without a host - see KronosCheck.
             if (Has(args, "--kronos-selftest")) return KronosCheck.SelfTest(asm, Arg(args, "--page") is string kp ? Path.GetFullPath(kp) : null) ? 0 : 1;
+            if (Has(args, "--kronos-disc")) { var dd = asm.GetType("LbIntegrations.Kronos.KronosDisc", true).GetMethod("Read").Invoke(null, new object[] { Path.GetFullPath(Arg(args, "--kronos-disc")) }); Console.WriteLine(dd); foreach (var f in dd.GetType().GetFields()) Console.WriteLine("  " + f.Name + " = " + f.GetValue(dd)); return 0; }
             if (Has(args, "--kronos-ahk")) return KronosCheck.Ahk(asm, Path.GetFullPath(Arg(args, "--kronos-ahk"))) ? 0 : 1;
             if (Has(args, "--kronos-latest")) return KronosCheck.Latest(asm, Arg(args, "--fetch") is string kf ? Path.GetFullPath(kf) : null) ? 0 : 1;
             if (Has(args, "--kronos-real")) return KronosCheck.Real(asm, Path.GetFullPath(Arg(args, "--kronos-real")), Arg(args, "--lab") is string kl ? Path.GetFullPath(kl) : null) ? 0 : 1;
