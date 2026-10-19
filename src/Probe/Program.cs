@@ -240,6 +240,7 @@ namespace LbIntegrations.Probe
             if (Has(args, "--kronos-disc")) { var dd = asm.GetType("LbIntegrations.Kronos.KronosDisc", true).GetMethod("Read").Invoke(null, new object[] { Path.GetFullPath(Arg(args, "--kronos-disc")) }); Console.WriteLine(dd); foreach (var f in dd.GetType().GetFields()) Console.WriteLine("  " + f.Name + " = " + f.GetValue(dd)); return 0; }
             if (Has(args, "--kronos-ahk")) return KronosCheck.Ahk(asm, Path.GetFullPath(Arg(args, "--kronos-ahk"))) ? 0 : 1;
             if (Has(args, "--kronos-latest")) return KronosCheck.Latest(asm, Arg(args, "--fetch") is string kf ? Path.GetFullPath(kf) : null) ? 0 : 1;
+            if (Has(args, "--chd-names")) return KronosCheck.ChdNames(asm, Path.GetFullPath(Arg(args, "--lb")), Path.GetFullPath(Arg(args, "--chd-names"))) ? 0 : 1;
             if (Has(args, "--kronos-zstd")) return KronosCheck.Zstd(asm, Path.GetFullPath(Arg(args, "--kronos-zstd")), Arg(args, "--lab") is string kz ? Path.GetFullPath(kz) : null, Arg(args, "--lb") is string kb ? Path.GetFullPath(kb) : null, Arg(args, "--disc") is string kd ? Path.GetFullPath(kd) : null) ? 0 : 1;
             if (Has(args, "--kronos-real")) return KronosCheck.Real(asm, Path.GetFullPath(Arg(args, "--kronos-real")), Arg(args, "--lab") is string kl ? Path.GetFullPath(kl) : null) ? 0 : 1;
             // The RASnes9x plugin's pieces, without a host - see RaSnes9xCheck.

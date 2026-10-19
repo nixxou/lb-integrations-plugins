@@ -218,6 +218,109 @@ namespace LbIntegrations.Probe
         [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr h, out Rect r);
         private struct Rect { public int L, T, R, B; }
 
+        /// <summary>--chd-names --lb &lt;root&gt; &lt;chd&gt;: the helper's name= on view=chd, through the real AIM, with names made to break
+        /// it - spaces, = and " id=" (the result line's own words), % [ ] { } &amp; ; # ~ ' , ! ^ $ @ `, accents, a dash, a star,
+        /// Japanese, an emoji, a device name, 255 characters and more. For each: the name served is the one the rule gives
+        /// (computed here, apart from the helper), the file is there, its size and its bytes at five places are the uncompressed
+        /// stream's, and it is gone once released. MOUNTS DISKS, one at a time.</summary>
+        public static bool ChdNames(Assembly asm, string lb, string chd)
+        {
+            _bad = 0;
+            asm.GetType("LbIntegrations.RamDisk.RamDiskHost", true).GetMethod("UseRoot", Any).Invoke(null, new object[] { lb });
+            var drive = asm.GetType("LbIntegrations.RamDisk.RamDrive", true);
+            var attach = drive.GetMethod("AttachChd", Any);
+            var release = asm.GetType("LbIntegrations.Kronos.KronosChd", true).GetMethod("Release", Any);
+            using var plain = (Stream)asm.GetType("LbIntegrations.Disc.ChdPlain", true).GetMethod("Open", Any).Invoke(null, new object[] { chd });
+            long length = plain.Length;
+            var at = new[] { 0L, 4096L, length / 3, length / 2 + 12345, Math.Max(0, length - 65536) };
+            var expected = new byte[at.Length][];
+            for (int i = 0; i < at.Length; i++)
+            {
+                plain.Position = at[i];
+                expected[i] = new byte[65536];
+                int got = 0, n;
+                while (got < expected[i].Length && (n = plain.Read(expected[i], got, expected[i].Length - got)) > 0) got += n;
+                Array.Resize(ref expected[i], got);
+            }
+            Console.WriteLine("-- name= on view=chd: " + chd + " (" + length + " bytes uncompressed) --");
+
+            var names = new[]
+            {
+                "Atlantis - The Lost Tales (FR) (Disc 1).chd",
+                "   spaces before and after   .chd   ",
+                "a  b   c.chd",
+                "a=b=c.chd",
+                "=starts with equals.chd",
+                "#starts with a hash.chd",
+                "x id=abc file=y at=z.chd",
+                "trailing id=0123abcd.chd",
+                "100% [v1.0] {Rev 2} & co; #1 ~ ' , ! ^ $ @ `.chd",
+                "Été à Noël – ★ ゲーム.chd",
+                "🎮 Saturn 🎮.chd",
+                "CON.chd",
+                "com7.chd",
+                "name ending with dots...chd",
+                ".chd",
+                "noextension",
+                "game.chd",
+                new string('L', 251) + ".chd",
+                new string('M', 300) + ".chd",
+                "",
+            };
+            foreach (var name in names)
+            {
+                var want = Rule(name);
+                var args = new object[] { chd, null, null, name };
+                var file = (string)attach.Invoke(null, args);
+                var root = (string)args[1];
+                var shown = name.Length > 60 ? name.Substring(0, 30) + "...(" + name.Length + ")" : name;
+                if (file == null) { Check("[" + shown + "] attached", false, (string)args[2]); if (root != null) release.Invoke(null, new object[] { root }); continue; }
+                var served = Path.GetFileName(file);
+                bool same = served == want;
+                bool there = File.Exists(file);
+                bool sized = there && new FileInfo(file).Length == length;
+                bool bytes = there;
+                if (there)
+                    using (var f = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                        for (int i = 0; i < at.Length && bytes; i++)
+                        {
+                            f.Position = at[i];
+                            var b = new byte[expected[i].Length];
+                            int got = 0, n;
+                            while (got < b.Length && (n = f.Read(b, got, b.Length - got)) > 0) got += n;
+                            bytes = got == b.Length && b.AsSpan().SequenceEqual(expected[i]);
+                        }
+                bool listed = there && Directory.GetFiles(root).Select(Path.GetFileName).SequenceEqual(new[] { want });
+                release.Invoke(null, new object[] { root });
+                for (int i = 0; i < 40 && File.Exists(file); i++) System.Threading.Thread.Sleep(250);
+                bool gone = !File.Exists(file);
+                var wantShown = want.Length > 60 ? want.Substring(0, 30) + "...(" + want.Length + ")" : want;
+                Check("[" + shown + "] -> [" + wantShown + "]: served under it, listed alone, size, bytes, detached",
+                      same && there && listed && sized && bytes && gone,
+                      (same ? "" : "served [" + served + "] ") + (there ? "" : "absent ") + (listed ? "" : "listing differs ") + (sized ? "" : "size ") + (bytes ? "" : "bytes ") + (gone ? "" : "still there"));
+            }
+            Console.WriteLine(_bad == 0 ? "ALL OK" : _bad + " FAILED");
+            return _bad == 0;
+
+            // The rule, written apart from the helper: printable ASCII but \ / : * ? " < > | (each other UTF-16 unit one _), no
+            // space at either end nor dot at the end, a device name given a _ in front, 255 at most keeping the extension;
+            // the result line's reader drops spaces at both ends of what it reads, as the helper's cfg reader does.
+            static string Rule(string asked)
+            {
+                var t = (asked ?? "").Trim();
+                if (t.Length == 0) return "game.chd";
+                var s = new string(t.Select(c => c < 32 || c > 126 || "\\/:*?\"<>|".IndexOf(c) >= 0 ? '_' : c).ToArray()).Trim().TrimEnd('.').TrimEnd();
+                if (s.Length == 0) return "game.chd";
+                var dot = s.LastIndexOf('.');
+                var stem = dot > 0 ? s.Substring(0, dot) : s;
+                var ext = dot > 0 ? s.Substring(dot) : "";
+                var bare = stem.TrimEnd().ToUpperInvariant();
+                if (new[] { "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$" }.Contains(bare) || (bare.Length == 4 && (bare.StartsWith("COM") || bare.StartsWith("LPT")) && char.IsDigit(bare[3]))) stem = "_" + stem;
+                if (stem.Length + ext.Length > 255) stem = stem.Substring(0, 255 - ext.Length).TrimEnd().TrimEnd('.');
+                return stem + ext;
+            }
+        }
+
         /// <summary>The real Kronos on a Zstandard CHD it cannot read: the plugin hands it the disc uncompressed (served or
         /// copied), Kronos boots it, and once it has gone the served disc is detached. Windowed, no key sent: the window is
         /// captured with PrintWindow, then the process ended.</summary>

@@ -255,13 +255,23 @@ namespace LbIntegrations.Xemu
             return set;
         }
 
-        /// <summary>A name the volume can hold and the up-case table here knows: printable ASCII, none of \ / : * ? " &lt; &gt; |,
-        /// at most 255 characters.</summary>
+        /// <summary>A name the volume can hold and the up-case table here knows: printable ASCII, none of \ / : * ? " &lt; &gt; |
+        /// (each other character one _), no space at either end nor dot at the end, at most 255 characters - cut before its
+        /// extension, which stays; a name Win32 would open as a device (CON, NUL, COM1...) given a _ in front.</summary>
         internal static string Name(string name, string fallback = "game.iso")
         {
-            var s = new string((name ?? "").Select(c => c < 32 || c > 126 || "\\/:*?\"<>|".IndexOf(c) >= 0 ? '_' : c).ToArray()).Trim().TrimEnd('.');
+            var s = new string((name ?? "").Select(c => c < 32 || c > 126 || "\\/:*?\"<>|".IndexOf(c) >= 0 ? '_' : c).ToArray()).Trim().TrimEnd('.').TrimEnd();
             if (s.Length == 0) s = fallback;
-            return s.Length > 255 ? s.Substring(0, 255) : s;
+            var dot = s.LastIndexOf('.');
+            var stem = dot > 0 ? s.Substring(0, dot) : s;
+            var ext = dot > 0 ? s.Substring(dot) : "";
+            var bare = stem.TrimEnd().ToUpperInvariant();
+            if (bare is "CON" or "PRN" or "AUX" or "NUL" or "CONIN$" or "CONOUT$"
+                || (bare.Length == 4 && (bare.StartsWith("COM") || bare.StartsWith("LPT")) && bare[3] >= '0' && bare[3] <= '9'))
+                stem = "_" + stem;
+            if (ext.Length > 32) { stem += ext; ext = ""; }
+            if (stem.Length + ext.Length > 255) stem = stem.Substring(0, 255 - ext.Length).TrimEnd().TrimEnd('.');
+            return stem + ext;
         }
 
         // ── checksums (exFAT specification, 6.3.3, 7.2.2, 6.3.4, 7.6.4) ─────

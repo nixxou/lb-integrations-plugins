@@ -1288,7 +1288,7 @@ namespace LbIntegrations.RamDisk
                 var said = RunAndWait("image-attach", letter, image, extra);
                 if (said == null) { error = "the helper never answered"; return null; }
                 if (!said.StartsWith("OK image-attach", StringComparison.Ordinal)) { error = said; RamDiskLog.Warn("xiso attach " + Path.GetFileName(image) + ": " + said); return null; }
-                var m = System.Text.RegularExpressions.Regex.Match(said, @" file=(.+?)(?= id=|$)");
+                var m = System.Text.RegularExpressions.Regex.Match(said, @" file=(.+?)(?= id=[A-Za-z0-9-]+$|$)");   // the LAST " id=": a file name may hold one
                 root = letter + ":\\";
                 var file = m.Success ? m.Groups[1].Value.Trim() : root + "game.iso";
                 RamDiskLog.Info("attached the XISO of " + Path.GetFileName(image) + " at " + file + " - " + said);
@@ -1330,7 +1330,7 @@ namespace LbIntegrations.RamDisk
                 var said = RunAndWait("image-attach", letter, image, WithProxy(extra));
                 if (said == null) { error = "the helper never answered"; return null; }
                 if (!said.StartsWith("OK image-attach", StringComparison.Ordinal)) { error = said; RamDiskLog.Warn("chd attach " + Path.GetFileName(image) + ": " + said); return null; }
-                var m = System.Text.RegularExpressions.Regex.Match(said, @" file=(.+?)(?= id=|$)");
+                var m = System.Text.RegularExpressions.Regex.Match(said, @" file=(.+?)(?= id=[A-Za-z0-9-]+$|$)");   // the LAST " id=": a file name may hold one
                 root = letter + ":\\";
                 var file = m.Success ? m.Groups[1].Value.Trim() : root + "game.chd";
                 RamDiskLog.Info("attached " + Path.GetFileName(image) + " uncompressed at " + file + " - " + said);
