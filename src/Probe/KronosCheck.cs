@@ -218,7 +218,7 @@ namespace LbIntegrations.Probe
                 File.WriteAllText(Path.Combine(stampDir, "lbip-kronos-build.txt"), "2.7.5b\r\nGitHub nixxou/Kronos_test 64-bit\r\n");
                 Check("2.7.5b: ST-V started by -a, its source read", Starts() && (string)Call(asm, "KronosBuild", "InstalledFrom", stampExe) == "GitHub nixxou/Kronos_test 64-bit");
                 File.WriteAllText(Path.Combine(stampDir, "lbip-kronos-build.txt"), "2.7.6\r\nTradu-France 64-bit\r\n");
-                Check("a later Tradu-France build: ST-V started by -a", Starts());
+                Check("a later Tradu-France build: still through the settings window (moved to -a once measured)", !Starts());
 
                 Console.WriteLine("== the saves");
                 Check("Kronos's slot 0 is the pack's 10, its 1 the pack's 1", (int)Call(asm, "KronosPlugin", "PackSlot", 0) == 10 && (int)Call(asm, "KronosPlugin", "KronosSlot", 10) == 0

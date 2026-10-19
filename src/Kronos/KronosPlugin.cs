@@ -192,7 +192,7 @@ namespace LbIntegrations.Kronos
             try
             {
                 var release = KronosBuild.Latest();
-                if (release == null) return new EmulatorInstallResponse("Couldn't read Kronos's latest build (Tradu-France, GitHub). Try again later.");
+                if (release == null) return new EmulatorInstallResponse("Couldn't read Kronos's latest build on Tradu-France. Try again later.");
 
                 bool reinstall = args?.ExistingEmulator != null;
                 string targetDir = reinstall
@@ -210,7 +210,7 @@ namespace LbIntegrations.Kronos
                 Archives.ExtractOver(archive, targetDir);
                 if (!File.Exists(exe)) return new EmulatorInstallResponse("Kronos was extracted to " + targetDir + " but " + KronosLaunch.ExecutableName + " is not there.");
                 KronosBuild.Stamp(targetDir, release);
-                Log.Info("installed Kronos " + release.Version + " (" + release.From + ") to " + targetDir);
+                Log.Info("installed Kronos " + release.Version + " to " + targetDir);
 
                 // Its first settings and the pack's keys.
                 KronosSession.Recover();
@@ -481,8 +481,8 @@ namespace LbIntegrations.Kronos
             // No other disc: the next-disc key has nothing to do.
             KronosLaunch.WriteDiscs(exe, new KronosLaunch.Plan { Disc = rom, Discs = new List<string>() });
 
-            // From 2.7.5b, -a starts it. Tradu-France's 2.7.5 (and a Kronos the plugin did not install): neither -a nor -f, the
-            // game is started once Kronos's window is there (KronosStvStart), then put in full screen.
+            // The pack's 2.7.5b (branch kronos-gh-2.7.5b): -a starts it. Tradu-France's builds (and a Kronos the plugin did not
+            // install): neither -a nor -f, the game is started once Kronos's window is there (KronosStvStart), then full screen.
             var fullscreen = KronosSettings.BoolFor(gameId, KronosSettings.Fullscreen);
             string line;
             if (KronosBuild.StvStartsItself(exe))

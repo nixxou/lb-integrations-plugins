@@ -66,7 +66,7 @@ namespace LbIntegrations.Kronos
             // ── the install ──
             _exe = Settings.FirstExe();
             if (_exe == null)
-                stack.Controls.Add(Card("Kronos", Line("Kronos is not set up in LaunchBox yet: add the emulator Nixx-Kronos, it installs the latest 64-bit build - Tradu-France's, or the pack's 2.7.5b (nixxou/Kronos_test) while Tradu-France has nothing newer."),
+                stack.Controls.Add(Card("Kronos", Line("Kronos is not set up in LaunchBox yet: add the emulator Nixx-Kronos, it installs Tradu-France's latest 64-bit build."),
                                         Line(KronosBuild.RuntimeNote)));
             else
             {

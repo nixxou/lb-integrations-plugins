@@ -20,8 +20,11 @@ the real Kronos 2.7.5 64-bit (G:\LB1326\lbip-kronos-lab\run, Atlantis - The Lost
   Qt 5.15.2 MSVC, SDL2 2.30.8, CMake 4 - CMAKE_POLICY_VERSION_MINIMUM=3.5 in the job's environment, libchdr/zlib/m68kmake ask
   for less), laid out as Tradu-France's zip (kronos.exe, Qt, SDL2, an empty kronos.ini, vc_redist.x64.exe); a tag v* makes
   the GitHub release, its asset Kronos_2.7.5b_-_64_Bits.zip. Version "2.7.5b" (YAB_VERSION_SUFFIX), title "Kronos v2.7.5b".
-  The plugin installs the newer of Tradu-France's latest and this release (2.7.5 < 2.7.5b < 2.7.6), GitHub's size and
-  SHA-256 checked; the stamp says where it came from. [M: Shienryu started by -a; a Saturn disc boots.]
+  [M: Shienryu started by -a; a Saturn disc boots.] PUT ASIDE (Mehdi 19/10): the plugin installs Tradu-France's build
+  only; the version that also offered 2.7.5b (newest of the two, GitHub's size and SHA-256 checked) is the branch
+  kronos-gh-2.7.5b of this repo, the release stays published. To be seen again once Siskoo's next build is out: the pack's
+  PRs to BenjaminSiskoo/Kronos_test (base extui-align, 19/10) - #2 the 68k core's default, #3 the ST-V BIOS read from a
+  non-merged set's zip, #4 zstd CHDs (codecs + a V5 header bug, "requires parent" on cdzs).
 
 ## 2. Command line [S, M]
 
@@ -139,8 +142,9 @@ DRAM forced, scanlines on the Saturn screen - `LBIP_PROBE_OPTS=... --kronos-zstd
   Kronos's own default, 3, when the key is absent: Shienryu runs by -a.
 - 2.7.5 CANNOT START ONE BY ITSELF [M]: with -a, "Cannot initialize STV emulation" twice - its game list is made only by its
   settings window (the start's call, UIYabause::threadInitialized, is never made in 2.7.5; the fork fixed it later, and
-  2.7.5b has that fix: started by -a [-f] like a Saturn disc, KronosBuild.StvStartsItself - an install of ours from 2.7.5b
-  on). For 2.7.5 (or a Kronos the plugin did not install) the plugin (KronosStvStart) starts Kronos with neither -a nor -f, then through UI Automation invokes the toolbar's "Select
+  2.7.5b has that fix: started by -a [-f] like a Saturn disc, KronosBuild.StvStartsItself - the pack's 2.7.5b only, its
+  stamp saying GitHub). Every Tradu-France build, later ones too until one is measured (the settings window's route works
+  on a fixed build as well), and a Kronos the plugin did not install: the plugin (KronosStvStart) starts Kronos with neither -a nor -f, then through UI Automation invokes the toolbar's "Select
   Cartridge" (the settings window, cartridge tab: the list made), posts Enter to that window (its controls are not exposed to
   UI Automation; a posted key needs neither the foreground nor the keyboard), invokes "Run", and toggles "Fullscreen" for a
   game in full screen. [M: Shienryu and Batman Forever started in 3.4 s, no key typed.] The settings window's OK writes
