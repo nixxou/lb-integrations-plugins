@@ -19,7 +19,8 @@ namespace LbIntegrations.Ymir
     {
         private const string Exe = YmirLaunch.ExecutableName;
 
-        private const string Functions =
+        /// <summary>The first build's functions (20/10): kept word for word, so its script is recognised as ours and replaced.</summary>
+        private const string FunctionsV1 =
             "#If NixxEmulatorActive()\r\n"
             + "$F6::YmirSlot(-1)\r\n"
             + "$F7::YmirSlot(1)\r\n"
@@ -65,10 +66,34 @@ namespace LbIntegrations.Ymir
             + "    ControlSend, Edit1, {Enter}\r\n"
             + "}";
 
-        public static readonly string Running = LbIntegrations.Lbip.LbipAhk.EscapeScript(
+        /// <summary>The disc changed, said on the screen (Mehdi 20/10: the swap is too quick to be seen): "Disc 2 / 2" and the
+        /// file's name, 3 s at the top, a window that never takes the focus nor the clicks (WS_EX_NOACTIVATE | TRANSPARENT).</summary>
+        private static readonly string Functions = FunctionsV1.Replace(
+            "    ControlSend, Edit1, {Enter}\r\n}",
+            "    ControlSend, Edit1, {Enter}\r\n"
+            + "    SplitPath, path, name\r\n"
+            + "    YmirSay(\"Disc \" YmirDiscNow \" / \" count \"  -  \" name)\r\n"
+            + "}\r\n"
+            + "YmirSay(text) {\r\n"
+            + "    Gui, YmirNote:Destroy\r\n"
+            + "    Gui, YmirNote:+AlwaysOnTop -Caption +ToolWindow +E0x08000020\r\n"
+            + "    Gui, YmirNote:Margin, 18, 10\r\n"
+            + "    Gui, YmirNote:Color, 202024\r\n"
+            + "    Gui, YmirNote:Font, s13 cFFFFFF, Segoe UI Semibold\r\n"
+            + "    Gui, YmirNote:Add, Text,, %text%\r\n"
+            + "    Gui, YmirNote:Show, NoActivate xCenter y40 AutoSize\r\n"
+            + "    hide := Func(\"YmirNoteHide\")\r\n"
+            + "    SetTimer, % hide, -3000\r\n"
+            + "}\r\n"
+            + "YmirNoteHide() {\r\n"
+            + "    Gui, YmirNote:Destroy\r\n"
+            + "}");
+
+        private const string Comment =
             "; Ymir: F2 saves a state, F4 loads it, F11 full screen (bound by the Nixx plugin in Ymir.toml);\r\n"
-            + "; F6 / F7 change the slot, PageDown / PageUp the disc, Escape quits - this script, in Ymir's window only.",
-            new[] { Exe }, "WinClose, ahk_exe " + Exe, Functions);
+            + "; F6 / F7 change the slot, PageDown / PageUp the disc, Escape quits - this script, in Ymir's window only.";
+
+        public static readonly string Running = LbIntegrations.Lbip.LbipAhk.EscapeScript(Comment, new[] { Exe }, "WinClose, ahk_exe " + Exe, Functions);
 
         public const string Exit =
             "; Ymir quits cleanly, writing its settings, when its window is closed.\r\n"
@@ -86,7 +111,11 @@ namespace LbIntegrations.Ymir
             + "Sleep 50\r\n"
             + "Send {F4 up}";
 
-        /// <summary>The scripts an earlier build wrote: none yet (keep this list when a script changes).</summary>
-        public static readonly string[] Superseded = { };
+        /// <summary>The scripts an earlier build wrote (keep this list when a script changes): the first build's, without the
+        /// disc's notice.</summary>
+        public static readonly string[] Superseded =
+        {
+            LbIntegrations.Lbip.LbipAhk.EscapeScript(Comment, new[] { Exe }, "WinClose, ahk_exe " + Exe, FunctionsV1),
+        };
     }
 }
