@@ -60,6 +60,8 @@ given without a switch is taken as `-a -i <file>`.
 - Rebinding: `Shortcuts\<English action text>=<key>` in `[1.0]` [M: `Shortcuts\Save1=F8` -> F8 wrote slot 1].
 - Ctrl+2 (default Save2) wrote nothing, twice, in full screen [M]. Rebind every slot key instead of relying on the
   defaults.
+- Rebound keys with modifiers all work [M, 2nd run]: F8, Shift+F5, Ctrl+F6, Alt+F7, Ctrl+Shift+F9 each wrote its slot.
+  Only the default digit shortcuts (Ctrl/Alt + 0-9) are dead.
 - Escape does not quit [M]. WM_CLOSE quits cleanly, the files are flushed [M].
 
 ## 6. Disc formats [S]
@@ -70,8 +72,9 @@ as for Ymir.
 
 ## 7. Open questions
 
-- Non-ASCII paths (fopen narrow strings outside MDS).
-- Why Ctrl+n does nothing (a menu action hidden in full screen, or the keyboard pad catching Ctrl).
+- Non-ASCII paths: a CHD through a folder named "Jeux é" opened [M: its product code read, states written];
+  .cue/.bin and .mds with accents not measured.
+- Why the digit shortcuts do nothing (the digits 1-7 toggle the VDP layers, the keyboard pad?) - rebound, irrelevant.
 - ST-V (arcade), second batch (Mehdi 19/10): LaunchBox has the platform "Sega ST-V" (LaunchBox.Metadata.db). The games
   are MAME sets (stv.cpp, BIOS stvbios.zip); Kronos's table has ~130 of them (ctrl/src/stv.c GameList, files matched by
   name and CRC). Kronos scans EVERY zip of its ROM folder and writes gamelistv2.save there: the plugin will give it a
