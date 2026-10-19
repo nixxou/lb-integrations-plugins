@@ -78,3 +78,5 @@ as for Ymir.
   folder of its own per launch (the game's zip, its parent, stvbios.zip). No command-line switch: Cartridge\Type=11 +
   Cartridge\STVGame. Import: Flycast's filter (FlycastLbImport) - quick by the zip's name in Kronos's table, CRC by
   its files - so a whole MAME folder imported to Sega ST-V keeps only Kronos's games.
+  The platform "Arcade" is accepted too (Mehdi 19/10), filtered the same way: imported to Arcade with Nixx-Kronos, only
+  the ST-V sets of Kronos's table stay; at launch from Arcade, a set Kronos does not know is refused with a message.
