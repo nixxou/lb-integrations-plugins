@@ -94,6 +94,8 @@
     <Compile Include="..\Installer\SaveIdsBack.cs" Link="Installer\SaveIdsBack.cs" />
     <!-- The pack's switchable patches (the Compatibility page of the Nixx settings) - see src\Shared.Compat. -->
     <Compile Include="..\Shared.Compat\**\*.cs" />
+    <!-- MAME sets in another layout, as virtual zips (the RAM disk helper's view=mame). -->
+    <Compile Include="..\Shared.Mame\**\*.cs" />
   </ItemGroup>
 
 </Project>

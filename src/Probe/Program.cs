@@ -57,6 +57,8 @@ namespace LbIntegrations.Probe
             // Lot 4.0: LaunchBox's own RetroArch, Dolphin and PCSX2 integrations measured (StockSavesCheck).
             if (Has(args, "--stock-saves")) return StockSavesCheck.Run(Arg(args, "--stock-saves"), Arg(args, "--scratch")) ? 0 : 1;
             // LaunchBox 14.1, step 1: the Compatibility page's checks against an install, out of LaunchBox (CompatChecksRun).
+            // MAME sets seen in another layout (src\Shared.Mame), checked by MAME: see MameCheck.cs.
+            if (Has(args, "--mame-convert")) return MameCheck.Convert(Arg(args, "--index"), Arg(args, "--src"), Arg(args, "--layout"), Arg(args, "--out"), Arg(args, "--sets"), Arg(args, "--mame")) ? 0 : 1;
             if (Has(args, "--compat-checks")) return CompatChecksRun.Run(Arg(args, "--compat-checks")) ? 0 : 1;
             // Lot 7: the setup's way back of the save ids on a LaunchBox root - a COPY (it writes there): --saves-back <root>.
             if (Has(args, "--saves-back"))
