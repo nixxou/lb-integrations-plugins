@@ -63,7 +63,7 @@
 <section id="play"><h2>Playing a game</h2>
   <p>When you click Play, the plugin checks the console's BIOS when it needs one, binds the pack's keys in Mesen where they are
   free, points Mesen's save folders at the game's platform, and starts Mesen in full screen. When Mesen quits, the settings
-  changed for that game only (its folders, its console model) are put back as they were in Mesen.</p>
+  changed for that game only (its folders) are put back as they were in Mesen.</p>
   <table><tr><th>Key</th><th>In Mesen</th></tr>
   <tr><td><kbd>F2</kbd> / <kbd>F4</kbd></td><td>Save / load a state in the current slot</td></tr>
   <tr><td><kbd>F6</kbd> / <kbd>F7</kbd></td><td>Previous / next slot</td></tr>
@@ -77,22 +77,21 @@
   <p>Tools &gt; Nixx Integration Plugins Configuration..., Mesen page: the install, the BIOS found for each console, and full
   screen or windowed. Everything else - picture, sound, pads, each console's options - is Mesen's own: set it in Mesen's menus,
   the plugin leaves it alone.</p>
-  <p>Some platform rows of the emulator entry carry the console model on their line (Edit Emulator &gt; Associated Platforms):
-  Game Boy <code>--gameboy.model=AutoFavorGb</code>, Game Boy Color <code>--gameboy.model=AutoFavorGbc</code>, SuperGrafx
-  <code>--pcEngine.consoleType=SuperGrafx</code>, WonderSwan <code>--ws.model=Monochrome</code>, WonderSwan Color
-  <code>--ws.model=Color</code>. You may change or empty those lines; an empty one leaves the model to Mesen.</p>
+  <p>No platform row carries a console model: Mesen picks the model from the game itself (Game Boy or Color, SuperGrafx,
+  WonderSwan or Color), as set in Mesen. A switch you write on a platform row's line (Edit Emulator &gt; Associated Platforms),
+  <code>--gameboy.model=GameboyColor</code> say, is used as written.</p>
 </section>
 
 <section id="saves"><h2>Saves and save states</h2>
   <p>Mesen never writes beside your games. For a game launched from LaunchBox its files go to</p>
   <ul>
     <li><code>Emulators\Nixx-Mesen\Saves\&lt;platform&gt;\</code> - the game's save (<code>.sav</code>, <code>.srm</code>, <code>.rtc</code>...)</li>
-    <li><code>...\Saves\&lt;platform&gt;\States\</code> - its save states (<code>&lt;game&gt;_1.mss</code> ... <code>_10.mss</code>)</li>
+    <li><code>...\Saves\&lt;platform&gt;\States\</code> - its save states (<code>&lt;game&gt;_1.mss</code> ... <code>_10.mss</code>, and <code>_11.mss</code> the automatic state)</li>
     <li><code>...\Saves\&lt;platform&gt;\Screenshots\</code></li>
   </ul>
   <p>What Mesen wrote in its own <code>Saves</code> and <code>SaveStates</code> folders for a game (opened by hand) is moved into the
   platform's folder at the game's next launch. A folder you chose in Mesen's own settings is kept.</p>
-  <p>LaunchBox's Game Saves window does not list Mesen's files yet: that comes with the next version of the plugin.</p>
+  <p>LaunchBox's Game Saves window lists the game's save - with its clock (<code>.rtc</code>) or other battery files, kept together - and its save states, each with the picture Mesen stores inside the state. A state can be restored into another slot; a save is restored only while Mesen is closed (it writes the game's own when it quits).</p>
 </section>
 
 <section id="support"><h2>Consoles</h2>
@@ -116,7 +115,7 @@
     <li>A PC Engine CD game must be its <code>.cue</code> (with its tracks): Mesen opens no <code>.chd</code> and no <code>.m3u</code>.</li>
     <li>An archive holding several games: the one named after the archive is played; otherwise keep one game per archive.</li>
     <li>Mesen has no RetroAchievements.</li>
-    <li>Mesen runs one window at a time: a game launched while Mesen is open is refused - close it first.</li>
+    <li>Mesen runs one window at a time: a game launched while Mesen is open goes to that window, with the save folders of the game already there - close Mesen first.</li>
     <li>Pocket Challenge V2 needs MesenCE (2.2 or later).</li>
   </ul>
 </section>

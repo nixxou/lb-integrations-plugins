@@ -162,6 +162,12 @@
     <EmbeddedResource Include="$(PayloadDir)\Nixx-3DSen\manifest.json">
       <LogicalName>payload/Nixx-3DSen/manifest.json</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-Mesen\Mesen.dll">
+      <LogicalName>payload/Nixx-Mesen/Mesen.dll</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-Mesen\manifest.json">
+      <LogicalName>payload/Nixx-Mesen/manifest.json</LogicalName>
+    </EmbeddedResource>
     <EmbeddedResource Include="$(PayloadDir)\Nixx-Saves\NixxSaves.dll">
       <LogicalName>payload/Nixx-Saves/NixxSaves.dll</LogicalName>
     </EmbeddedResource>
