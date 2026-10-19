@@ -16,8 +16,8 @@
 // THE "SYSTEM" OF A GAME (the ares rule, Mehdi 06/10): the core comes from the extension - Mesen needs no --system - so what a
 // platform decides is the MODEL inside a core: a Game Boy game on a Game Boy or a Game Boy Color, a SuperGrafx, a mono
 // WonderSwan, the Super Game Boy (run by the SNES core). Those are configuration values a switch sets
-// (--gameboy.model=..., --ws.model=..., --pcEngine.consoleType=... - UI\Config\*Config.cs enums, names exact): a platform
-// row's line carries the platform's (MesenPlatform.Line), a game's window can force another (MesenSystem.Switch). The rest of
+// (--gameboy.model=..., --ws.model=..., --pcEngine.consoleType=... - UI\Config\*Config.cs enums, names exact). The platform
+// rows carry none (Mehdi 19/10: Mesen's own detection decides); a game's window can force one (MesenSystem.Switch). The rest of
 // the systems here (Famicom Disk System, Satellaview, Sufami Turbo...) are told apart by the extension alone, and matter for
 // their BIOS. A switch PERSISTS in settings.json (measured 18/10): MesenSession puts the user's value back after the session.
 //
@@ -73,8 +73,6 @@ namespace LbIntegrations.Mesen
         public string Platform;             // LaunchBox's name
         public string[] Systems;            // the default first; the others are what a game's window offers
         public Dictionary<string, string> ByExtension = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        /// <summary>The platform row's command line the plugin writes ("" for none): the model that platform means.</summary>
-        public string Line = "";
         /// <summary>One of LiteBox's other spellings: claimed, but a row is made for it only when the library has the platform.</summary>
         public bool OnlyIfInLibrary;
         public string Default => Systems[0];
@@ -181,10 +179,9 @@ namespace LbIntegrations.Mesen
         private static Dictionary<string, string> NesByExtension() => new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [".fds"] = "fds", [".qd"] = "fds", [".studybox"] = "studybox" };
         private static Dictionary<string, string> SnesByExtension() => new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [".bs"] = "bsx", [".st"] = "sufami" };
 
-        /// <summary>THE LINES (docs\mesen.md §6b, question 2 for Mehdi): the model a platform means. Mesen's own default,
-        /// AutoFavorGbc (2.1.1) / AutoFavorBest (CE), would run a dual-mode Game Boy game of the Game Boy platform in colour;
-        /// AutoFavorGb keeps it on the Game Boy and still runs a colour-only one on the Color. A platform with no line leaves
-        /// the model as set in Mesen.</summary>
+        /// <summary>NO LINES (Mehdi 19/10, question 2 of docs\mesen.md §14: "Détection de Mesen"): no platform gets a model
+        /// switch - Mesen picks the model from the game (its header, its extension) as set in Mesen. Only a game's own window
+        /// forces a system (MesenLaunch.SystemFor, step 1).</summary>
         public static readonly MesenPlatform[] Platforms =
         {
             new MesenPlatform { Platform = "Nintendo Entertainment System", Systems = new[] { "nes", "fds", "studybox" }, ByExtension = NesByExtension() },
@@ -193,20 +190,20 @@ namespace LbIntegrations.Mesen
             // Satellaview games are .bs dumps; a .sfc there is a cartridge of its own (the BS-X cartridge itself, a BS game
             // re-made as a cartridge) and runs as one.
             new MesenPlatform { Platform = "Nintendo Satellaview", Systems = new[] { "bsx", "snes" }, ByExtension = { [".sfc"] = "snes", [".smc"] = "snes" } },
-            new MesenPlatform { Platform = "Nintendo Game Boy", Systems = new[] { "gb", "gbc", "sgb" }, ByExtension = { [".gbc"] = "gbc" }, Line = "--gameboy.model=AutoFavorGb" },
-            new MesenPlatform { Platform = "Nintendo Game Boy Color", Systems = new[] { "gbc", "gb", "sgb" }, Line = "--gameboy.model=AutoFavorGbc" },
+            new MesenPlatform { Platform = "Nintendo Game Boy", Systems = new[] { "gb", "gbc", "sgb" }, ByExtension = { [".gbc"] = "gbc" } },
+            new MesenPlatform { Platform = "Nintendo Game Boy Color", Systems = new[] { "gbc", "gb", "sgb" } },
             P("Nintendo Game Boy Advance", "gba"),
             new MesenPlatform { Platform = "NEC TurboGrafx-16", Systems = new[] { "pce", "tg16", "sgx" }, ByExtension = { [".sgx"] = "sgx" } },
-            new MesenPlatform { Platform = "PC Engine SuperGrafx", Systems = new[] { "sgx", "pce" }, Line = "--pcEngine.consoleType=SuperGrafx" },
+            new MesenPlatform { Platform = "PC Engine SuperGrafx", Systems = new[] { "sgx", "pce" } },
             P("NEC TurboGrafx-CD", "pcecd"),
             P("Sega Master System", "sms"),
             P("Sega Game Gear", "gg"),
             P("Sega SG-1000", "sg"),
             P("ColecoVision", "cv"),
-            new MesenPlatform { Platform = "WonderSwan", Systems = new[] { "ws", "wsc", "swancrystal" }, ByExtension = { [".wsc"] = "wsc" }, Line = "--ws.model=Monochrome" },
-            new MesenPlatform { Platform = "WonderSwan Color", Systems = new[] { "wsc", "swancrystal", "ws" }, Line = "--ws.model=Color" },
+            new MesenPlatform { Platform = "WonderSwan", Systems = new[] { "ws", "wsc", "swancrystal" }, ByExtension = { [".wsc"] = "wsc" } },
+            new MesenPlatform { Platform = "WonderSwan Color", Systems = new[] { "wsc", "swancrystal", "ws" } },
             // LiteBox's own names (its metadata, Mehdi 17/10).
-            new MesenPlatform { Platform = "Pocket Challenge V2", Systems = new[] { "pc2" }, Line = "--ws.model=PocketChallenge" },
+            new MesenPlatform { Platform = "Pocket Challenge V2", Systems = new[] { "pc2" } },
             new MesenPlatform { Platform = "Nes - Super Mario Bros. Hacks", Systems = new[] { "nes", "fds", "studybox" }, ByExtension = NesByExtension() },
             P("Snes - Super Mario World Hacks", "snes"),
             // MSU-1: the .msu and .pcm files beside the ROM, read by Mesen itself (Msu1::Init).
@@ -215,7 +212,7 @@ namespace LbIntegrations.Mesen
             new MesenPlatform { Platform = "Nintendo Famicom", Systems = new[] { "nes", "fds", "studybox" }, ByExtension = NesByExtension(), OnlyIfInLibrary = true },
             new MesenPlatform { Platform = "Super Famicom", Systems = new[] { "snes", "bsx", "sufami" }, ByExtension = SnesByExtension(), OnlyIfInLibrary = true },
             new MesenPlatform { Platform = "Nintendo Sufami Turbo", Systems = new[] { "sufami" }, OnlyIfInLibrary = true },
-            new MesenPlatform { Platform = "Super Game Boy", Systems = new[] { "sgb", "gb", "gbc" }, Line = "--gameboy.model=SuperGameboy", OnlyIfInLibrary = true },
+            new MesenPlatform { Platform = "Super Game Boy", Systems = new[] { "sgb", "gb", "gbc" }, OnlyIfInLibrary = true },
             new MesenPlatform { Platform = "NEC PC Engine", Systems = new[] { "pce", "tg16", "sgx" }, ByExtension = { [".sgx"] = "sgx" }, OnlyIfInLibrary = true },
             new MesenPlatform { Platform = "NEC PC Engine-CD", Systems = new[] { "pcecd" }, OnlyIfInLibrary = true },
         };

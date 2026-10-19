@@ -124,17 +124,9 @@ namespace LbIntegrations.Probe
                 var name = (string)F(p, "Platform");
                 var systems = (string[])F(p, "Systems");
                 var by = (IDictionary<string, string>)F(p, "ByExtension");
-                var line = (string)F(p, "Line");
                 bool ok = systems.All(s => Call(asm, "MesenSystems", "System", s) != null) && by.Values.All(s => systems.Contains(s));
-                var def = Call(asm, "MesenSystems", "System", systems[0]);
-                if (line.Length > 0)
-                {
-                    var core0 = (string)F(def, "Core") == "Snes" ? "Gameboy" : (string)F(def, "Core");
-                    var meant = Call(asm, "MesenSystems", "SystemOfSwitch", line, core0);
-                    ok &= meant != null && systems.Contains(Key(meant));
-                }
                 var exts = (string)Call(asm, "MesenSystems", "AllExtensions", p);
-                Check(name + ": " + string.Join("/", systems) + (line.Length > 0 ? ", line " + line : "") + " - " + exts, ok && exts.Length > 0);
+                Check(name + ": " + string.Join("/", systems) + " - " + exts, ok && exts.Length > 0);
             }
             var every = (string)Call(asm, "MesenSystems", "EveryExtension");
             foreach (var e in new[] { ".nes", ".fds", ".qd", ".unf", ".studybox", ".sfc", ".smc", ".bs", ".st", ".gb", ".gbc", ".gba", ".pce", ".sgx", ".cue", ".sms", ".gg", ".sg", ".col", ".ws", ".wsc", ".pc2", ".zip", ".7z" })
@@ -389,17 +381,16 @@ namespace LbIntegrations.Probe
             Check("NES, a .nes: NES, nothing added", r.Key == "nes" && r.Add.Count == 0, r.From);
             r = For(null, "Nintendo Entertainment System", ".fds", "\"x.fds\"");
             Check("NES, a .fds: Famicom Disk System (the extension)", r.Key == "fds" && r.From == "the file's extension");
-            r = For(null, "Nintendo Game Boy", ".gb", "--gameboy.model=AutoFavorGb \"x.gb\"");
-            Check("Game Boy, a .gb, the plugin's line: Game Boy from the line, nothing added", r.Key == "gb" && r.From == "the platform's command line" && r.Add.Count == 0);
-            r = For(null, "Nintendo Game Boy", ".gbc", "--gameboy.model=AutoFavorGb \"x.gbc\"");
-            Check("Game Boy, a .gbc, the plugin's line: Game Boy Color - the line's switch replaced", r.Key == "gbc" && r.Add.SequenceEqual(new[] { "--gameboy.model=GameboyColor" })
-                  && r.Remove.SequenceEqual(new[] { "--gameboy.model=AutoFavorGb" }), string.Join(" ", r.Add) + " / -" + string.Join(" ", r.Remove));
+            r = For(null, "Nintendo Game Boy", ".gbc", "\"x.gbc\"");
+            Check("Game Boy, a .gbc: Game Boy Color by the extension, NO switch (Mesen's detection)", r.Key == "gbc" && r.From == "the file's extension" && r.Add.Count == 0 && r.Remove.Count == 0);
             r = For(null, "Nintendo Game Boy", ".gbc", "--gameboy.model=SuperGameboy \"x.gbc\"");
             Check("Game Boy, the user's line says Super Game Boy: the line wins", r.Key == "sgb" && r.From == "the platform's command line" && r.Add.Count == 0);
             r = For(null, "Nintendo Game Boy", ".gb", "\"x.gb\"");
-            Check("Game Boy, its line emptied: Game Boy from the table, NO switch (Mesen's own model)", r.Key == "gb" && r.Add.Count == 0 && r.From == "the platform");
+            Check("Game Boy, a .gb: Game Boy from the table, NO switch (Mesen's own model)", r.Key == "gb" && r.Add.Count == 0 && r.From == "the platform");
             r = For(null, "WonderSwan", ".wsc", "--ws.model=Monochrome \"x.wsc\"");
-            Check("WonderSwan, a .wsc: WonderSwan Color", r.Key == "wsc" && r.Add.SequenceEqual(new[] { "--ws.model=Color" }));
+            Check("WonderSwan, a .wsc, the user's line says Monochrome: the line wins, nothing added", r.Key == "ws" && r.From == "the platform's command line" && r.Add.Count == 0);
+            r = For(null, "WonderSwan", ".wsc", "\"x.wsc\"");
+            Check("WonderSwan, a .wsc, no line: WonderSwan Color by the extension, no switch", r.Key == "wsc" && r.Add.Count == 0);
             r = For(null, "My Own NES Games", ".nes", "\"x.nes\"");
             Check("a platform of the user's own, a .nes: NES by the extension", r.Key == "nes");
             r = For(null, "My Own Handhelds", ".gb", "\"x.gb\"");
@@ -545,7 +536,7 @@ namespace LbIntegrations.Probe
                 var claimed = plugin.GetApplicableEmulators(new IEmulator[] { emu, other }).ToList();
                 Check("claimed: Mesen.exe only", claimed.Count == 1 && claimed[0] == emu);
                 Check("hotkey scripts filled (WinClose for Exit, F2 / F4)", emu.ExitAutoHotkeyScript?.Contains("WinClose, ahk_exe Mesen.exe") == true && emu.SaveStateAutoHotkeyScript?.Contains("{F2 down}") == true);
-                Check("the Game Boy row's empty line: --gameboy.model=AutoFavorGb", gb.CommandLine == "--gameboy.model=AutoFavorGb", gb.CommandLine);
+                Check("the Game Boy row's empty line left empty (no model switch, Mehdi 19/10)", string.IsNullOrEmpty(gb.CommandLine), gb.CommandLine);
                 Check("a line the user wrote kept (WonderSwan --ws.model=Color)", ws.CommandLine == "--ws.model=Color");
                 Check("rows only filled: none added, none removed, ticks untouched", emu.GetAllEmulatorPlatforms().Length == 4 && !mine.IsDefault && nes.IsDefault && mine.CommandLine == "" && nes.CommandLine == "");
                 var lab = Directory.GetFiles(@"G:\LB1326\lbip-mesen-lab", "Mesen.exe", SearchOption.AllDirectories).FirstOrDefault();
@@ -589,8 +580,10 @@ namespace LbIntegrations.Probe
             var r2 = Launch("Nintendo Entertainment System", fds);
             Check("a .fds without disksys.rom: refused, the file named", !r2.WasSuccess && said.Any(s => s.Contains("disksys.rom")), said.FirstOrDefault()?.Split('\n')[0]);
             var gbc = Path.Combine(games, "Pokemon.gbc");
-            var r3 = Launch("Nintendo Game Boy", gbc, "--gameboy.model=AutoFavorGb");
-            Check("a .gbc on the Game Boy platform's line: GameboyColor in its place", r3.WasSuccess && r3.NewCommandLine.Contains("--gameboy.model=GameboyColor") && !r3.NewCommandLine.Contains("AutoFavorGb"), r3.NewCommandLine);
+            var r3 = Launch("Nintendo Game Boy", gbc);
+            Check("a .gbc on the Game Boy platform: no model switch added (Mesen's detection)", r3.WasSuccess && (r3.NewCommandLine == null || !r3.NewCommandLine.Contains("--gameboy.model")), r3.NewCommandLine);
+            var r3b = Launch("Nintendo Game Boy", gbc, "--gameboy.model=AutoFavorGb");
+            Check("... the user's own line kept as written", r3b.WasSuccess && (r3b.NewCommandLine ?? "").Contains("--gameboy.model=AutoFavorGb") && !(r3b.NewCommandLine ?? "").Contains("GameboyColor"), r3b.NewCommandLine);
             var chd = Path.Combine(games, "Ys.chd");
             var r4 = Launch("NEC TurboGrafx-CD", chd);
             Check("a .chd for the PC Engine CD: refused, the .cue asked for", !r4.WasSuccess && said.Any(s => s.Contains(".cue")));

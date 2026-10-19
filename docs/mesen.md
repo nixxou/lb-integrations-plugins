@@ -392,6 +392,13 @@ in `<install>\Screenshots\` (Mesen's default, not beside the game). Q4.
 8. LiteBox's other spellings seen in `Host\Romm\RommPlatformMap.cs` (`Nintendo Famicom`, `Super Famicom`, `Nintendo Sufami
    Turbo`, `Super Game Boy`, `NEC PC Engine`, `NEC PC Engine-CD`): claim them too?
 
+**Mehdi's answers (19/10):** 1 - MesenCE 2.2.1. 2 - no model switch on any platform row: Mesen's own detection; a
+game's window alone can force a system. 3 - the pack's keys: Esc = `Exit` (Pause unbound from Esc while it is still Mesen's
+default), F2/F4 save/load the current slot, F6/F7 slot down/up, F11 full screen - a key is taken only from Mesen's default,
+never from the user's. 4 - per platform: `Saves\<platform>`, `\States`, `\Screenshots` set before each launch and put back
+after it, what Mesen wrote in its flat folders moved at the game's next launch. 5-8: the proposals stand (`.rgd` not
+listed, `.chd` refused with a message, Vs./PlayChoice not claimed, LiteBox's spellings claimed, rows only when present).
+
 ## 15. Not measured yet (stage 2)
 
 `--fullscreen` on the real exe; FDS/GBA/CV launch without BIOS (the modal box); a `.7z`; a multi-ROM zip; PCE CD; SGB;

@@ -106,7 +106,6 @@ namespace LbIntegrations.Mesen
                 if (!MesenLaunch.IsMesenExe(path)) continue;
                 claimed.Add(emu);
                 EnsureHotkeyScripts(emu);
-                FillPlatformLines(emu);
             }
             var signature = string.Join("|", claimed.Select(e => { try { return e.Title; } catch { return "?"; } }).OrderBy(t => t));
             if (signature != _lastClaimed)
@@ -115,24 +114,6 @@ namespace LbIntegrations.Mesen
                 Log.Info("GetApplicableEmulators: claimed " + claimed.Count + " emulator(s)");
             }
             return claimed;
-        }
-
-        /// <summary>A platform row of ours whose command line is empty gets the platform's model switch. A line the user wrote is kept.</summary>
-        private static void FillPlatformLines(IEmulator emu)
-        {
-            if (!LbIntegrations.Compat.Compat.On("emulatorFields")) return;   // the Compatibility page
-            try
-            {
-                var set = new List<string>();
-                foreach (var row in emu.GetAllEmulatorPlatforms() ?? Array.Empty<IEmulatorPlatform>())
-                {
-                    var p = MesenSystems.Platform(Safe(() => row.Platform));
-                    if (p == null || p.Line.Length == 0 || !string.IsNullOrWhiteSpace(Safe(() => row.CommandLine))) continue;
-                    try { row.CommandLine = p.Line; set.Add(p.Platform); } catch { }
-                }
-                if (set.Count > 0) Log.Info("platform lines set: " + string.Join(", ", set));
-            }
-            catch (Exception ex) { Log.Warn("could not set the platforms' lines", ex); }
         }
 
         private static void EnsureHotkeyScripts(IEmulator emu)
@@ -308,7 +289,7 @@ namespace LbIntegrations.Mesen
                 // DefaultPlatform IS NOT SET - see XeniaPlugin.CreateEmulator. IsDefault on the row is what counts.
                 var row = emu.AddNewEmulatorPlatform();
                 row.Platform = p.Platform;
-                row.CommandLine = p.Line;
+                row.CommandLine = "";   // no model switch: Mesen's own detection (Mehdi 19/10)
                 row.IsDefault = !taken.Contains(p.Platform);
                 if (row.IsDefault) defaults.Add(p.Platform);
             }

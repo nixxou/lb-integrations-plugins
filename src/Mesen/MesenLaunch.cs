@@ -170,13 +170,10 @@ namespace LbIntegrations.Mesen
                 return choice;
             }
 
-            // 2. The platform row's line.
+            // 2. The platform row's line - the user's: the plugin writes none (Mehdi 19/10, Mesen's own detection).
             bool byExtension = p != null && p.ByExtension.ContainsKey(ext ?? "");
-            var lineTokens = tokens.Where(t => MesenSystems.SystemOfSwitch(t, core) != null).ToList();
-            var onLine = lineTokens.Select(t => MesenSystems.SystemOfSwitch(t, core)).LastOrDefault();
-            bool pluginLine = p != null && p.Line.Length > 0 && lineTokens.Count > 0
-                              && lineTokens.All(t => string.Equals(t, p.Line, StringComparison.OrdinalIgnoreCase));
-            if (onLine != null && !(byExtension && pluginLine))
+            var onLine = tokens.Select(t => MesenSystems.SystemOfSwitch(t, core)).LastOrDefault(s => s != null);
+            if (onLine != null)
             {
                 choice.System = onLine; choice.From = "the platform's command line";
                 return choice;
@@ -186,8 +183,6 @@ namespace LbIntegrations.Mesen
             if (byExtension)
             {
                 choice.System = MesenSystems.System(p.ByExtension[ext]); choice.From = "the file's extension";
-                // The line the plugin wrote for the platform says another model: replaced by this system's.
-                if (pluginLine && choice.System != null) Force(choice, choice.System, tokens);
                 return choice;
             }
             if (p != null)
