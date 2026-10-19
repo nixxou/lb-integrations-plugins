@@ -176,10 +176,16 @@ namespace LbIntegrations.Probe
             return true;
         }
 
-        public static bool Latest(Assembly asm)
+        public static bool Latest(Assembly asm, string fetchTo = null)
         {
             var r = Call(asm, "KronosBuild", "Latest");
             Console.WriteLine("latest: " + (r == null ? "none" : F(r, "Version") + " " + F(r, "FileName") + " " + F(r, "MiB") + " MiB\n  " + F(r, "Url")));
+            if (r != null && fetchTo != null)
+            {
+                // The plugin's own download: the site's headers, the size the page gives, a zip.
+                Call(asm, "KronosBuild", "Fetch", r, fetchTo, (Action<double>)null, (Func<bool>)null);
+                Console.WriteLine("  fetched " + new FileInfo(fetchTo).Length + " bytes -> " + fetchTo);
+            }
             return r != null;
         }
 

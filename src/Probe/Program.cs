@@ -238,7 +238,7 @@ namespace LbIntegrations.Probe
             // The Kronos plugin's pieces, without a host - see KronosCheck.
             if (Has(args, "--kronos-selftest")) return KronosCheck.SelfTest(asm, Arg(args, "--page") is string kp ? Path.GetFullPath(kp) : null) ? 0 : 1;
             if (Has(args, "--kronos-ahk")) return KronosCheck.Ahk(asm, Path.GetFullPath(Arg(args, "--kronos-ahk"))) ? 0 : 1;
-            if (Has(args, "--kronos-latest")) return KronosCheck.Latest(asm) ? 0 : 1;
+            if (Has(args, "--kronos-latest")) return KronosCheck.Latest(asm, Arg(args, "--fetch") is string kf ? Path.GetFullPath(kf) : null) ? 0 : 1;
             if (Has(args, "--kronos-real")) return KronosCheck.Real(asm, Path.GetFullPath(Arg(args, "--kronos-real")), Arg(args, "--lab") is string kl ? Path.GetFullPath(kl) : null) ? 0 : 1;
             // The RASnes9x plugin's pieces, without a host - see RaSnes9xCheck.
             if (Has(args, "--rasnes9x-conf")) return RaSnes9xCheck.Conf(asm, Path.GetFullPath(Arg(args, "--rasnes9x-conf")), Arg(args, "--settings")) ? 0 : 1;
