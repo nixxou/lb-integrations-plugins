@@ -257,10 +257,10 @@ namespace LbIntegrations.Xemu
 
         /// <summary>A name the volume can hold and the up-case table here knows: printable ASCII, none of \ / : * ? " &lt; &gt; |,
         /// at most 255 characters.</summary>
-        private static string Name(string name)
+        internal static string Name(string name, string fallback = "game.iso")
         {
             var s = new string((name ?? "").Select(c => c < 32 || c > 126 || "\\/:*?\"<>|".IndexOf(c) >= 0 ? '_' : c).ToArray()).Trim().TrimEnd('.');
-            if (s.Length == 0) s = "game.iso";
+            if (s.Length == 0) s = fallback;
             return s.Length > 255 ? s.Substring(0, 255) : s;
         }
 

@@ -1270,8 +1270,9 @@ namespace LbIntegrations.RamDisk
         /// <summary>An Xbox disc image (redump ISO, XISO, CSO, CCI, CHD) served as ONE FILE, its XISO, on a disk attached on a
         /// free letter - the helper's view=xiso, through AIM; the game partition read where it is. Returns the file's path
         /// ("K:\game.iso"), or null with the reason. <paramref name="root"/>: what DetachImage takes back. <paramref name="mediaPatch"/>:
-        /// extract-xiso's media enable patch served in the disc's .xbe files (patch=media).</summary>
-        public static string AttachXiso(string image, out string root, out string error, bool mediaPatch = false)
+        /// extract-xiso's media enable patch served in the disc's .xbe files (patch=media). <paramref name="name"/>: the file's name
+        /// on the volume (helper 1.15 - an older one serves game.iso).</summary>
+        public static string AttachXiso(string image, out string root, out string error, bool mediaPatch = false, string name = null)
         {
             error = null; root = null;
             try
@@ -1282,6 +1283,7 @@ namespace LbIntegrations.RamDisk
                 if (letter == '\0') { error = "no free drive letter"; return null; }
                 var extra = new Dictionary<string, string> { { "view", "xiso" }, { "backend", "aim" } };
                 if (mediaPatch) extra["patch"] = "media";
+                if (!string.IsNullOrWhiteSpace(name)) extra["name"] = name;
                 WithProxy(extra);
                 var said = RunAndWait("image-attach", letter, image, extra);
                 if (said == null) { error = "the helper never answered"; return null; }
@@ -1312,8 +1314,9 @@ namespace LbIntegrations.RamDisk
 
         /// <summary>A CHD served uncompressed - a CHD v5 with no compressor, decoded as it is read, its metadata the source's - as
         /// ONE FILE ("K:\game.chd") on a disk attached on a free letter, through AIM. Null with the reason. <paramref name="root"/>:
-        /// what DetachImage takes back.</summary>
-        public static string AttachChd(string image, out string root, out string error)
+        /// what DetachImage takes back. <paramref name="name"/>: the file's name on the volume, e.g. the source's own (helper 1.15 -
+        /// an older one serves game.chd; the path returned is always the one the helper said).</summary>
+        public static string AttachChd(string image, out string root, out string error, string name = null)
         {
             error = null; root = null;
             try
@@ -1322,7 +1325,9 @@ namespace LbIntegrations.RamDisk
                 if (!CanAttachChd(out error)) return null;
                 char letter = FreeDriveLetter();
                 if (letter == '\0') { error = "no free drive letter"; return null; }
-                var said = RunAndWait("image-attach", letter, image, WithProxy(new Dictionary<string, string> { { "view", "chd" }, { "backend", "aim" } }));
+                var extra = new Dictionary<string, string> { { "view", "chd" }, { "backend", "aim" } };
+                if (!string.IsNullOrWhiteSpace(name)) extra["name"] = name;
+                var said = RunAndWait("image-attach", letter, image, WithProxy(extra));
                 if (said == null) { error = "the helper never answered"; return null; }
                 if (!said.StartsWith("OK image-attach", StringComparison.Ordinal)) { error = said; RamDiskLog.Warn("chd attach " + Path.GetFileName(image) + ": " + said); return null; }
                 var m = System.Text.RegularExpressions.Regex.Match(said, @" file=(.+?)(?= id=|$)");

@@ -221,12 +221,12 @@ namespace LbIntegrations.Probe
         /// <summary>The real Kronos on a Zstandard CHD it cannot read: the plugin hands it the disc uncompressed (served or
         /// copied), Kronos boots it, and once it has gone the served disc is detached. Windowed, no key sent: the window is
         /// captured with PrintWindow, then the process ended.</summary>
-        public static bool Zstd(Assembly asm, string release, string lab, string lb = null)
+        public static bool Zstd(Assembly asm, string release, string lab, string lb = null, string disc = null)
         {
             _bad = 0;
             if (lb != null) asm.GetType("LbIntegrations.RamDisk.RamDiskHost", true).GetMethod("UseRoot", Any).Invoke(null, new object[] { lb });
             lab ??= @"G:\LB1326\lbip-kronos-lab";
-            var zstd = Path.Combine(lab, "formats", "Atlantis-zstd.chd");
+            var zstd = disc ?? Path.Combine(lab, "formats", "Atlantis-zstd.chd");
             var run = Path.Combine(lab, "probe-zstd-" + DateTime.Now.ToString("HHmmss"));
             var dir = Path.Combine(run, "Emulators", "Nixx-Kronos");
             var ra = Path.Combine(run, "Emulators", "RetroArch", "system");

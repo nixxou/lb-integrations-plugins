@@ -64,7 +64,8 @@ namespace LbIntegrations.Kronos
             if (RamDisk.RamDrive.CanAttachChd(out var cannot))
             {
                 LbIntegrations.Lbip.LbipLaunchStatus.Report("Attaching " + name + " uncompressed…");
-                var file = RamDisk.RamDrive.AttachChd(rom, out var r, out var error);
+                // Under its own name (helper 1.15): Kronos's title says the disc, not "game.chd".
+                var file = RamDisk.RamDrive.AttachChd(rom, out var r, out var error, Path.GetFileName(rom));
                 if (file != null && File.Exists(file)) { root = r; Log.Info("chd: served where it is - " + file); return file; }
                 if (r != null) Release(r);
                 Log.Warn("chd: " + name + " could not be served (" + (error ?? "the file did not appear") + ") - copied instead");

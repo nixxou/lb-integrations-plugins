@@ -171,6 +171,14 @@
 //                                  cannot read the file's codecs (Demul: zstd). The result gains " file=<the file's path>".
 //                                  An older helper reads view=chd as no view: check >= 1.14.
 //
+// -- added in 1.15 -----------------------------------------------------------------------------
+//   name     = <file name>         on image-attach with view=xiso or view=chd: the one file's name on its volume, in place of
+//                                  game.iso / game.chd - an emulator that shows the file's name, or keys something on it, sees
+//                                  the original's ("Atlantis (Disc 1).chd"). Printable ASCII: any other character, and
+//                                  \ / : * ? " < > |, becomes _ (the volume's up-case table is ASCII); 255 at most. The result's
+//                                  file= says the name served. An older helper ignores the key and serves game.iso / game.chd,
+//                                  its file= says so: read file=, never rebuild the path.
+//
 // AIM, WHAT DIFFERS FROM IMDISK. aim_ll takes imdisk's arguments almost word for word, but its disks
 // are real SCSI disks: Windows' mount manager gives a new volume a letter of its own on top of the one
 // asked for, which is taken off again (only the mount point asked for is kept), and the disk goes the
@@ -1044,6 +1052,8 @@ namespace RamDiskHelper
                 if (shmName != null) psi.Environment["LBIP_PROXY_SHM"] = shmName;
                 // 1.13: a CHD decoded on that many cores while it is read in sequence (Shared.Disc\ChdParallel).
                 if (int.TryParse(Get(kv, "chd_threads", ""), out int chdThreads) && chdThreads >= 0 && chdThreads <= 16) psi.Environment["LBIP_CHD_THREADS"] = chdThreads.ToString();
+                // 1.15: name= - the one file's name on the volume (view=xiso, view=chd).
+                if (Get(kv, "name", "").Length > 0) psi.Environment["LBIP_VIEW_NAME"] = Get(kv, "name", "");
                 server = Process.Start(psi);
                 // Listing a redump reads its tables across the image: seconds, a minute on a slow disk.
                 var first = server.StandardOutput.ReadLineAsync();
@@ -1102,7 +1112,8 @@ namespace RamDiskHelper
             if (!SetVolumeMountPoint(point.TrimEnd('\\') + "\\", volume)) return Fail("attached, but " + point + " could not be given to it (error " + Marshal.GetLastWin32Error() + ")");
             WriteAttached(dir, point, "aim", image, "");
             return "OK " + head + " " + token + " exit=0 backend=aim view=" + viewName + " proxy=" + proxy + " at=" + point
-                   + (viewName == "xiso" ? " file=" + point.TrimEnd('\\') + "\\" + XisoFileName : viewName == "chd" ? " file=" + point.TrimEnd('\\') + "\\" + ChdFileName : "");
+                   + (viewName == "xiso" ? " file=" + point.TrimEnd('\\') + "\\" + ViewName(Get(kv, "name", ""), XisoFileName)
+                      : viewName == "chd" ? " file=" + point.TrimEnd('\\') + "\\" + ViewName(Get(kv, "name", ""), ChdFileName) : "");
         }
 
         /// <summary>--xbox-serve &lt;image&gt;: the disc's FAT32 view served to the one proxy client that connects.</summary>
@@ -1152,6 +1163,10 @@ namespace RamDiskHelper
         /// <summary>The name of the one file on view=chd's volume.</summary>
         private const string ChdFileName = "game.chd";
 
+        /// <summary>The one file's name on a one-file view (1.15): name= made one the volume holds, else the view's own.</summary>
+        private static string ViewName(string asked, string fallback)
+            => string.IsNullOrWhiteSpace(asked) ? fallback : LbIntegrations.Xemu.ExfatOneFileView.Name(asked, fallback);
+
         /// <summary>--chd-serve &lt;chd&gt; (1.14): the CHD made UNCOMPRESSED (Shared.Disc\ChdPlain - its hunks decoded as they are read,
         /// its metadata, sizes and SHA-1s the source's) as the one file of an exFAT volume - for an emulator whose CHD reader is
         /// older than the file (Demul's libchd.dll crashes on a zstd one).</summary>
@@ -1161,7 +1176,7 @@ namespace RamDiskHelper
             try
             {
                 var source = LbIntegrations.Disc.ChdPlain.Open(image);
-                var view = new LbIntegrations.Xemu.ExfatOneFileView(0, source.Length, ChdFileName, "CHDPLAIN", null);
+                var view = new LbIntegrations.Xemu.ExfatOneFileView(0, source.Length, ViewName(Environment.GetEnvironmentVariable("LBIP_VIEW_NAME"), ChdFileName), "CHDPLAIN", null);
                 return Serve(source, view.Length, view.Read);
             }
             catch (Exception ex)
@@ -1196,7 +1211,7 @@ namespace RamDiskHelper
                 }
                 // patch=media: extract-xiso's media enable patch, served - one byte per .xbe that has its pattern (XboxMediaPatch).
                 var patches = mediaPatch ? LbIntegrations.Xemu.XboxMediaPatch.Find(source, listing) : null;
-                var view = new LbIntegrations.Xemu.ExfatOneFileView(listing.PartitionBase, source.Length - listing.PartitionBase, XisoFileName, "XBOXDISC", patches);
+                var view = new LbIntegrations.Xemu.ExfatOneFileView(listing.PartitionBase, source.Length - listing.PartitionBase, ViewName(Environment.GetEnvironmentVariable("LBIP_VIEW_NAME"), XisoFileName), "XBOXDISC", patches);
                 return Serve(source, view.Length, view.Read);
             }
             catch (Exception ex)
