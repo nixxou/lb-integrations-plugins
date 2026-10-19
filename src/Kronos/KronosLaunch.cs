@@ -96,6 +96,10 @@ namespace LbIntegrations.Kronos
         {
             bool changed = false;
             if (doc.GetRaw(@"Advanced\SH2Interpreter") == null) changed |= doc.SetRaw(@"Advanced\SH2Interpreter", "8");
+            // The sound CPU's core: absent, the emulation thread falls back on C68K (YabauseThread's M68KCORE_C68K) while the
+            // settings window shows and writes Musashi (QtYabause::default68kCore, 3) - started by -a without that window ever
+            // opened, Shienryu (ST-V) stayed on "BACK UP RAM INITIALIZED" [M 19/10]; with Musashi it runs. Kronos's own default.
+            if (doc.GetRaw(@"Advanced\68kCore") == null) changed |= doc.SetRaw(@"Advanced\68kCore", "3");
             return changed;
         }
 

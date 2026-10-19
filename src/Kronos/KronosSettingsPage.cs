@@ -95,7 +95,7 @@ namespace LbIntegrations.Kronos
                 finally { Cursor = Cursors.Default; }
             };
             if (_exe != null) ShowBios(KronosBios.InFolder(_exe));
-            stack.Controls.Add(Card("Saturn BIOS", LbipHint.Note("In Kronos's bios folder, known by their content - the name does not matter.",
+            stack.Controls.Add(Card("BIOS (Saturn, ST-V)", LbipHint.Note("Saturn: in Kronos's bios folder, known by their content - the name does not matter.",
                 "mpr-17933.bin (US / Europe 1.01a) runs American and European discs, sega_101.bin (Japan 1.01) Japanese ones; the plugin gives Kronos the one of "
                 + "the disc's region at each launch. A game is not started without a BIOS: the plugin says where to put one.", 600, new Padding(0, 2, 0, 4)), _bios, again));
 
@@ -123,9 +123,18 @@ namespace LbIntegrations.Kronos
         private void ShowBios(List<KronosBiosFile> files)
         {
             _bios.Controls.Clear();
+            // The ST-V BIOS: the plugin's stvbios.zip, made at the first ST-V launch when absent.
+            var stv = KronosStv.BiosZipOf(_exe);
+            var n = KronosStv.BiosFilesIn(stv);
+            _bios.Controls.Add(new Label
+            {
+                Text = n > 0 ? "ST-V: " + stv + " (" + n + " BIOS file" + (n == 1 ? "" : "s") + ")"
+                             : "ST-V: no stvbios.zip yet - put MAME's in " + KronosLaunch.BiosDirOf(_exe) + ", or the first ST-V game makes it (the stvbios.zip beside it, or the BIOS files of a MAME non-merged set).",
+                AutoSize = true, MaximumSize = new Size(600, 0), UseMnemonic = false, Margin = new Padding(0, 1, 0, 4),
+            });
             if (files.Count == 0)
             {
-                _bios.Controls.Add(new Label { Text = "None in " + KronosLaunch.BiosDirOf(_exe) + ": no game starts.", AutoSize = true, ForeColor = Color.FromArgb(0xC0, 0x60, 0x30), UseMnemonic = false });
+                _bios.Controls.Add(new Label { Text = "None in " + KronosLaunch.BiosDirOf(_exe) + ": no Saturn game starts.", AutoSize = true, ForeColor = Color.FromArgb(0xC0, 0x60, 0x30), UseMnemonic = false });
                 return;
             }
             foreach (var f in files)

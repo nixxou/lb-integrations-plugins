@@ -127,8 +127,16 @@ DRAM forced, scanlines on the Saturn screen - `LBIP_PROBE_OPTS=... --kronos-zstd
 - THE BIOS FROM A FILE NAMED stvbios.zip ONLY [M 19/10]: updateGameList counts a BIOS once processBios has read one, and only a
   zip of that name goes to processBios - the BIOS files a MAME non-merged set carries in its own zip are never taken
   (shienryu.zip alone: an empty gamelistv2.save, "Cannot initialize STV emulation", in 2.7.5 as in 2.7.5b; with stvbios.zip
-  beside it, listed and run). So without a stvbios.zip the plugin makes one in the launch's folder with the BIOS files of
-  the game's zip (or its parent's) - KronosStv.MakeBiosZip, their bytes and CRCs unchanged.
+  beside it, listed and run). So the plugin keeps its own, <kronos>\bios\stvbios.zip - a COPY (Mehdi 19/10: a ROM manager
+  rewriting the MAME folder's in place would change a link), filled at the first ST-V launch: the stvbios.zip beside the
+  game copied, else one made of the BIOS files of the game's zip or its parent's (KronosStv.EnsureBios/MakeBiosZip, their
+  bytes and CRCs unchanged: 14 files, 3.5 MB); refused only when none has a BIOS. Each launch links it. Shown in the
+  plugin page's BIOS card. Only Sport Fishing 2 (sfish2, sfish2j) has a BIOS of its own (epr18343.bin), read from its zip
+  like its other files.
+- THE SOUND CPU'S CORE [M 19/10]: absent from kronos.ini, Advanced\68kCore is C68K for the emulation thread
+  (YabauseThread) but Musashi (3) for the settings window, which writes it on OK. Started by -a, the settings window never
+  opened: Shienryu stayed on "BACK UP RAM INITIALIZED" (Batman Forever ran). The plugin's first settings (Bootstrap) write
+  Kronos's own default, 3, when the key is absent: Shienryu runs by -a.
 - 2.7.5 CANNOT START ONE BY ITSELF [M]: with -a, "Cannot initialize STV emulation" twice - its game list is made only by its
   settings window (the start's call, UIYabause::threadInitialized, is never made in 2.7.5; the fork fixed it later, and
   2.7.5b has that fix: started by -a [-f] like a Saturn disc, KronosBuild.StvStartsItself - an install of ours from 2.7.5b
