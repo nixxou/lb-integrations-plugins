@@ -99,11 +99,38 @@ DRAM forced, scanlines on the Saturn screen - `LBIP_PROBE_OPTS=... --kronos-zstd
 - Non-ASCII paths: a CHD through a folder named "Jeux é" opened [M: its product code read, states written];
   .cue/.bin and .mds with accents not measured.
 - Why the digit shortcuts do nothing (the digits 1-7 toggle the VDP layers, the keyboard pad?) - rebound, irrelevant.
-- ST-V (arcade), second batch (Mehdi 19/10): LaunchBox has the platform "Sega ST-V" (LaunchBox.Metadata.db). The games
-  are MAME sets (stv.cpp, BIOS stvbios.zip); Kronos's table has ~130 of them (ctrl/src/stv.c GameList, files matched by
-  name and CRC). Kronos scans EVERY zip of its ROM folder and writes gamelistv2.save there: the plugin will give it a
-  folder of its own per launch (the game's zip, its parent, stvbios.zip). No command-line switch: Cartridge\Type=11 +
-  Cartridge\STVGame. Import: Flycast's filter (FlycastLbImport) - quick by the zip's name in Kronos's table, CRC by
-  its files - so a whole MAME folder imported to Sega ST-V keeps only Kronos's games.
-  The platform "Arcade" is accepted too (Mehdi 19/10), filtered the same way: imported to Arcade with Nixx-Kronos, only
-  the ST-V sets of Kronos's table stay; at launch from Arcade, a set Kronos does not know is refused with a message.
+- ST-V: done, §8.
+- ST-V in full screen not measured (the plugin toggles Kronos's "Fullscreen" after Run); nor a clone set whose files
+  are in its parent's zip (MAME's split sets) - the non-merged sets of MAME 0.288 were measured.
+
+## 8. Sega ST-V [S, M 19/10]
+
+- PLATFORMS: "Sega ST-V" (LaunchBox.Metadata.db spells it so), and "Arcade" (Mehdi 19/10), never recommended; the
+  emulator gets a Sega ST-V row, never the default (MAME is).
+- THE SETS: kronos-stv.tsv, made by tools\kronos-stv\make-sets.py from stv.c's GameList (119 entries in the fork's source),
+  LaunchBox's Metadata\MAME.xml (106 sets of sega/stv.cpp, titles, parents) and kronos.exe (a name is known only when the
+  binary has it). Kronos 2.7.5 knows 106: all of MAME's but wwshin, plus tsuribor (not in this MAME.xml). The source has 13
+  more (Print Club sets...) the binary lacks - the fork's source is past 2.7.5. Parsing traps: C comments inside an entry
+  ("{ /* ADDED */"), a line commented out (a NO_DUMP file), a CRC written with 9 digits (cut to 32 bits like the compiler).
+  [M: the 106 complete, every file by name and CRC, in MAME 0.288 non-merged.]
+- HOW KRONOS LOADS ONE: Cartridge\Type=11, Cartridge\Path a FOLDER (and Cartridge\Path\STVRomgame - the settings window's
+  own key, "Cartridge/Path/" + the cartridge's name without spaces), Cartridge\STVGame the set. It reads every zip of the
+  folder, writes gamelistv2.save, takes the BIOS from stvbios.zip or from the game's own zip (non-merged sets carry it), and
+  writes <set>.nv (EEPROM, 128 bytes) and <set>.coins there when it quits.
+- 2.7.5 CANNOT START ONE BY ITSELF [M]: with -a, "Cannot initialize STV emulation" twice - its game list is made only by its
+  settings window (the start's call, UIYabause::threadInitialized, is never made in 2.7.5; the fork fixed it later). So the
+  plugin (KronosStvStart) starts Kronos with neither -a nor -f, then through UI Automation invokes the toolbar's "Select
+  Cartridge" (the settings window, cartridge tab: the list made), posts Enter to that window (its controls are not exposed to
+  UI Automation; a posted key needs neither the foreground nor the keyboard), invokes "Run", and toggles "Fullscreen" for a
+  game in full screen. [M: Shienryu and Batman Forever started in 3.4 s, no key typed.] The settings window's OK writes
+  Kronos's whole settings with the values it shows (the ones in effect - defaults where absent): harmless.
+- EACH LAUNCH: <kronos>\lbip-stv emptied, the game's zip, its parent's when a file is there, stvbios.zip unless the game's
+  zip has a BIOS - hard links (the same volume), copies otherwise; its .nv and .coins brought from Saves\<platform>\ and taken
+  back after (lbip-stv.txt says which game, for a session cut short). Checked before, as Kronos would: the set known, every
+  file by name and CRC, a BIOS - refused with what is wrong. States: "_NNN.yss" (no disc: cdip->itemnum is empty) in
+  States\<set>. Screenshots of every game in Saves\<platform>\Screenshots (Kronos's default is %LocalAppData%).
+- IMPORT: KronosLbImport (Demul's DemulLbImport): to Sega ST-V the ST-V sets stay (those Kronos does not run asked about,
+  or per the Nixx window), to Arcade only Kronos's; BIOS and the rest out, MAME's titles. [M: MAME 0.288, 43974 files: 107
+  kept for Sega ST-V, 106 for Arcade, in under 60 ms.]
+- A GAME'S OWN OPTIONS: those of every game (picture, SH-2 cache, language) and the board's region (STV\Region E/U/J/T);
+  no expansion cartridge (the ST-V cartridge is the game).

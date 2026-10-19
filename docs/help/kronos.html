@@ -35,7 +35,7 @@
   <p>Sega Saturn - what the Nixx plugin does for you, and what to expect.</p>
 </header>
 <nav>
-  <a href="#overview">In short</a><a href="#start">Getting started</a><a href="#play">Playing</a><a href="#keys">Keys</a>
+  <a href="#overview">In short</a><a href="#start">Getting started</a><a href="#stv">ST-V</a><a href="#play">Playing</a><a href="#keys">Keys</a>
   <a href="#options">Options</a><a href="#saves">Saves</a><a href="#support">What works</a><a href="#limits">Limits</a><a href="#trouble">If something goes wrong</a>
 </nav>
 
@@ -43,7 +43,7 @@
   <p>Kronos is a Sega Saturn emulator of the Yabause family, started by FCare and carried on today by Benjamin Siskoo, whose site
   Tradu-France publishes its Windows builds. It runs fast and can draw the games above their original resolution. The plugin installs
   and updates Tradu-France's 64-bit build, finds your Saturn BIOS, starts each game with its own backup RAM and its own save states,
-  and gives it the pack's keys - a key for the next disc too.</p>
+  and gives it the pack's keys - a key for the next disc too. It also runs the Sega ST-V arcade games Kronos knows - MAME's sets.</p>
 </section>
 
 <section id="start"><h2>Getting started</h2>
@@ -56,6 +56,25 @@
       Kronos is given the one of the disc's region: <code>mpr-17933.bin</code> for American and European discs, <code>sega_101.bin</code> for Japanese ones.</li>
     <li><b>Games:</b> <code>.chd</code>, <code>.cue</code> (with its .bin), <code>.ccd</code> (with its .img), <code>.mds</code>, <code>.iso</code>, a
       <code>.m3u</code> for several discs, or a <code>.zip</code> / <code>.7z</code> holding them - platform <b>Sega Saturn</b>.</li>
+  </ul>
+</section>
+
+<section id="stv"><h2>Sega ST-V (arcade)</h2>
+  <ul>
+    <li><b>Platforms:</b> <b>Sega ST-V</b>, and <b>Arcade</b> if your arcade games are all under that one. Games: MAME's zips
+      (<code>shienryu.zip</code>...), the ST-V BIOS <code>stvbios.zip</code> beside them or in <code>Emulators\Nixx-Kronos\bios</code> - MAME's
+      non-merged sets carry the BIOS inside each game's zip, nothing else is needed then.</li>
+    <li><b>Which games:</b> the 106 ST-V sets Kronos 2.7.5 knows - all of MAME's but <i>Waku Waku Shinkansen</i>. A file is known by its name,
+      as MAME names it; its files are checked by name and CRC before the launch, and what is missing is said.</li>
+    <li><b>Importing:</b> Tools &gt; Import &gt; ROM Files, emulator Nixx-Kronos. A whole MAME folder can be imported: for Sega ST-V the list keeps
+      only the ST-V sets (those Kronos does not run: asked, or as set in the Nixx window), for Arcade only Kronos's - the BIOS and every
+      other game are left out, the titles are MAME's.</li>
+    <li><b>Starting:</b> Kronos 2.7.5 cannot start an ST-V game from its command line, so the plugin opens Kronos, has its cartridge window
+      read the game and starts it - you see that window for a moment; nothing is typed. Each game gets a folder of its own with only its
+      files (<code>Emulators\Nixx-Kronos\lbip-stv</code>), never your whole MAME folder.</li>
+    <li><b>Saves:</b> the board's EEPROM (settings, high scores), <code>Saves\Sega ST-V\&lt;set&gt;.nv</code>, with its coin counters
+      (<code>.coins</code>), and the save states - all in LaunchBox's save management.</li>
+    <li>The coin, start and service buttons are Kronos's own input settings (Settings &gt; Input).</li>
   </ul>
 </section>
 
@@ -128,7 +147,7 @@
   <tr><td>Backup RAM cartridge</td><td class="yes">Yes</td><td>Per game, when it has one</td></tr>
   <tr><td>Per-game settings</td><td class="yes">Yes</td><td>Picture, emulation, expansion cartridge - for the game's session only</td></tr>
   <tr><td>Saves with RetroArch (Beetle Saturn) and Ymir</td><td class="yes">Yes</td><td>The same files</td></tr>
-  <tr><td>ST-V arcade</td><td class="no">Not yet</td><td>A later batch</td></tr>
+  <tr><td>ST-V arcade (Sega ST-V, Arcade)</td><td class="yes">Yes</td><td>The 106 sets Kronos knows, sorted at import, files checked at launch</td></tr>
   <tr><td>RetroAchievements</td><td class="no">No</td><td>Kronos has none</td></tr></table>
 </section>
 
