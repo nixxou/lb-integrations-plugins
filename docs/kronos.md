@@ -72,8 +72,11 @@ as for Ymir.
 
 CHD CODECS [S, M 19/10]: Kronos's libchdr (tools\libchdr, an old copy - lzma 16.04, flac 1.3.2) decodes zlib, cdzl, cdlz and
 cdfl only. A CHD made with `chdman createcd -c cdzs,cdfl` (Zstandard) leaves Kronos 2.7.5 on an empty window, no error said; the
-same disc in cdlz,cdzl,cdfl boots. The plugin reads the codecs in the CHD v5 header and refuses such a disc with why
-(KronosLaunch.ChdProblem). The other Saturn emulators, measured with the same file: Ymir 0.4.1 reads it (libchdr 47d7941 has
+same disc in cdlz,cdzl,cdfl boots, and so does it uncompressed (`-c none`). So the plugin reads the codecs in the CHD v5
+header and hands such a disc over UNCOMPRESSED, Demul's model (KronosChd, from DemulChd): served where it is through the RAM
+disk helper (view=chd on AIM), detached when Kronos has gone, else copied once into `<kronos>\lbip-chd\` (a 20 GB cache) -
+every disc of the game, the next-disc key's too; every other CHD as it is [M 19/10: Atlantis cdzs,cdfl copied in 3 s,
+484 MB, Kronos on the Saturn then SEGA screens - `--kronos-zstd`]. The other Saturn emulators, measured with the same file: Ymir 0.4.1 reads it (libchdr 47d7941 has
 cdzs); RetroArch's Beetle Saturn v0.9.45.1 reads it (Game ID, region in its log, as with the reference); the yabause,
 yabasanshiro and kronos libretro cores do not ("Cannot initialize ISO-File Virtual Drive" with it only). CHDSharp (the plugins'
 disc reader) reads it: same product code and hash.

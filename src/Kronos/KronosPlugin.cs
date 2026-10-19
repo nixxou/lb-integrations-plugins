@@ -325,10 +325,6 @@ namespace LbIntegrations.Kronos
             // The disc.
             var plan = KronosLaunch.DiscFor(rom, exe);
             if (plan.Disc == null) return Refuse("This game cannot be started: " + plan.Problem);
-            // A CHD Kronos's libchdr cannot decode (Zstandard): refused with why, rather than an empty window. Every disc of the
-            // game, so the next-disc key does not meet one either.
-            foreach (var d in plan.Discs.Prepend(plan.Disc).Distinct(StringComparer.OrdinalIgnoreCase))
-                if (KronosLaunch.ChdProblem(d) is string chd) { Log.Warn("launch refused: " + chd.Replace("\n", " ")); return Refuse(chd); }
             var disc = KronosDisc.Read(plan.Disc);
             Log.Info("launch: " + Path.GetFileName(plan.Disc) + (plan.Discs.Count > 1 ? " (disc " + (plan.Discs.IndexOf(plan.Disc) + 1) + " of " + plan.Discs.Count + ")" : "")
                      + (disc.Hash != null ? " - " + disc : " - " + disc.Problem));
@@ -345,6 +341,20 @@ namespace LbIntegrations.Kronos
                 Log.Warn("launch: no " + KronosBios.RegionWord(region) + " BIOS in bios\\ for this disc (area " + disc.Area + ") - Kronos is given the one there");
             var biosFile = KronosBios.PickFor(bios, region ?? "us-eu");
             Log.Info("launch: BIOS " + biosFile);
+
+            // A CHD Kronos cannot decode (a Zstandard one: an empty window) handed over uncompressed - served where it is, else
+            // copied (KronosChd) - every disc of the game, the next-disc key's too; every other disc as it is.
+            var served = new List<string>();
+            var given = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            void ReleaseServed() { foreach (var r in served) KronosChd.Release(r); served.Clear(); }
+            foreach (var d in plan.Discs.Prepend(plan.Disc).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                var shown = KronosChd.Present(d, exe, out var root, out var problem);
+                if (root != null) served.Add(root);
+                if (shown == null) { ReleaseServed(); return Refuse(problem); }
+                given[d] = shown;
+            }
+            var toKronos = new KronosLaunch.Plan { Disc = given[plan.Disc], Discs = plan.Discs.Select(d => given[d]).ToList() };
 
             // kronos.ini: its first settings, the pack's keys, and for this game only its RAM, its states' folder, its cartridge.
             var settings = KronosLaunch.SettingsOf(exe);
@@ -381,15 +391,17 @@ namespace LbIntegrations.Kronos
             }
             var forced = KronosSession.Force(doc, keys);
             try { doc.Save(settings); }
-            catch (Exception ex) { return Refuse("Kronos's settings could not be written (" + ex.Message + "): the game would use another game's backup RAM."); }
+            catch (Exception ex) { ReleaseServed(); return Refuse("Kronos's settings could not be written (" + ex.Message + "): the game would use another game's backup RAM."); }
             Log.Info("launch: backup RAM " + ram + (newRam ? " (new, formatted)" : "") + ", states in " + states);
-            KronosSession.Begin(exe, settings, forced, gameId: gameId);
+            // The CHDs served uncompressed detached once Kronos has gone.
+            var detach = served.ToList();
+            KronosSession.Begin(exe, settings, forced, detach.Count == 0 ? null : () => { foreach (var r in detach) KronosChd.Release(r); }, gameId);
 
             // The discs, for the next-disc key.
-            KronosLaunch.WriteDiscs(exe, plan);
+            KronosLaunch.WriteDiscs(exe, toKronos);
 
             var current = args?.CurrentCommandLine ?? "";
-            var line = KronosLaunch.CommandLine(current, KronosSettings.BoolFor(gameId, KronosSettings.Fullscreen), biosFile, rom, plan.Disc);
+            var line = KronosLaunch.CommandLine(current, KronosSettings.BoolFor(gameId, KronosSettings.Fullscreen), biosFile, rom, toKronos.Disc);
             Log.Info("launch: " + line);
             return new PrepareForLaunchResponse(success: true) { NewCommandLine = line };
         }

@@ -38,6 +38,9 @@
     <Compile Include="..\Shared.Menu\**\*.cs" />
     <!-- The look of the Nixx windows, LiteBox's: the theme and the shell of a game's window. -->
     <Compile Include="..\Shared.Ui\**\*.cs" />
+    <!-- A CHD Kronos cannot read (Zstandard) served uncompressed: ChdPlain, and the RAM disk helper's view=chd (KronosChd). -->
+    <Compile Include="..\Shared.Disc\**\*.cs" />
+    <Compile Include="..\Shared.RamDisk\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>

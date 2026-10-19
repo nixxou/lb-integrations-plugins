@@ -160,17 +160,16 @@ namespace LbIntegrations.Probe
                 var found = ((IEnumerable)Call(asm, "KronosPlugin", "StatesOf", sd)).Cast<object>().Select(t => F(t, "Item2") + "#" + F(t, "Item3")).OrderBy(x => x).ToList();
                 Check("the states found: product code and pack slot", found.SequenceEqual(new[] { "MK-8109109#1", "MK-8109109#10" }), string.Join(", ", found));
 
-                Console.WriteLine("== the CHD's codecs (Kronos reads no Zstandard)");
+                Console.WriteLine("== the CHDs Kronos cannot read (Zstandard): handed over uncompressed");
                 var refChd = @"G:\saturn\Atlantis - The Lost Tales (FR) (Disc 1).chd";
                 var zstdChd = @"G:\LB1326\lbip-kronos-lab\formats\Atlantis-zstd.chd";
+                var noneChd = @"G:\LB1326\lbip-kronos-lab\formats\Atlantis-none.chd";
                 if (File.Exists(refChd) && File.Exists(zstdChd))
                 {
-                    var rc = string.Join(",", (IEnumerable<string>)Call(asm, "KronosLaunch", "ChdCodecs", refChd));
-                    var zc = string.Join(",", (IEnumerable<string>)Call(asm, "KronosLaunch", "ChdCodecs", zstdChd));
-                    Check("the codecs read from the header", rc == "cdlz,cdzl,cdfl" && zc == "cdzs,cdfl", rc + " / " + zc);
-                    Check("a CHD of Kronos's codecs: no problem", Call(asm, "KronosLaunch", "ChdProblem", refChd) == null);
-                    var why = (string)Call(asm, "KronosLaunch", "ChdProblem", zstdChd);
-                    Check("a Zstandard CHD: refused, said why", why != null && why.Contains("Zstandard"), why?.Split('\n')[0]);
+                    Check("cdlz,cdzl,cdfl: read by Kronos, given as it is", Call(asm, "KronosChd", "Unreadable", refChd) == null);
+                    if (File.Exists(noneChd)) Check("uncompressed: read by Kronos (measured)", Call(asm, "KronosChd", "Unreadable", noneChd) == null);
+                    var why = (string)Call(asm, "KronosChd", "Unreadable", zstdChd);
+                    Check("cdzs: not read by Kronos", why != null && why.Contains("cdzs"), why);
                 }
                 else Console.WriteLine("  (the lab's CHDs are not there: not checked)");
             }
@@ -213,6 +212,90 @@ namespace LbIntegrations.Probe
         {
             foreach (var k in vks) { keybd_event(k, 0, 0, IntPtr.Zero); System.Threading.Thread.Sleep(60); }
             foreach (var k in vks.Reverse()) { keybd_event(k, 0, 2, IntPtr.Zero); System.Threading.Thread.Sleep(40); }
+        }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool PrintWindow(IntPtr h, IntPtr dc, uint flags);
+        [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr h, out Rect r);
+        private struct Rect { public int L, T, R, B; }
+
+        /// <summary>The real Kronos on a Zstandard CHD it cannot read: the plugin hands it the disc uncompressed (served or
+        /// copied), Kronos boots it, and once it has gone the served disc is detached. Windowed, no key sent: the window is
+        /// captured with PrintWindow, then the process ended.</summary>
+        public static bool Zstd(Assembly asm, string release, string lab)
+        {
+            _bad = 0;
+            lab ??= @"G:\LB1326\lbip-kronos-lab";
+            var zstd = Path.Combine(lab, "formats", "Atlantis-zstd.chd");
+            var run = Path.Combine(lab, "probe-zstd-" + DateTime.Now.ToString("HHmmss"));
+            var dir = Path.Combine(run, "Emulators", "Nixx-Kronos");
+            var ra = Path.Combine(run, "Emulators", "RetroArch", "system");
+            var data = Path.Combine(run, "plugin-data");
+            Directory.CreateDirectory(dir); Directory.CreateDirectory(ra); Directory.CreateDirectory(data);
+            foreach (var f in Directory.GetFiles(release, "*", SearchOption.AllDirectories))
+            {
+                var to = Path.Combine(dir, Path.GetRelativePath(release, f));
+                Directory.CreateDirectory(Path.GetDirectoryName(to));
+                File.Copy(f, to);
+            }
+            File.Copy(@"G:\LB1326\lbip-ymir-lab\prof1\roms\ipl\mpr-17933.bin", Path.Combine(ra, "mpr-17933.bin"));
+            var exe = Path.Combine(dir, "kronos.exe");
+            Console.WriteLine("-- THE REAL KRONOS ON A ZSTANDARD CHD: " + zstd + " --");
+            SetS(asm, "KronosSettings", "PathOverride", Path.Combine(data, "settings.ini"));
+            File.WriteAllText(Path.Combine(data, "settings.ini"), "Fullscreen=false\r\n");
+            var said = new List<string>();
+            asm.GetType("LbIntegrations.Lbip.LbipNotice", true).GetField("Instead", Any).SetValue(null, new Action<string, string>((t, x) => said.Add(x)));
+            asm.GetType("LbIntegrations.Lbip.LbipLaunchGate", true).GetField("Off", Any).SetValue(null, true);
+            File.WriteAllText(Path.Combine(dir, "kronos.ini"), "[1.0]\r\nSound\\Volume=90\r\n");
+
+            LbIntegrations.Catalog.LbCatalog.HostWillAsk = true;
+            var type = asm.GetTypes().Single(t => typeof(Unbroken.LaunchBox.Plugins.EmulatorPlugin).IsAssignableFrom(t) && !t.IsAbstract);
+            var plugin = (Unbroken.LaunchBox.Plugins.EmulatorPlugin)Activator.CreateInstance(type);
+            var emu = new StubEmulator { Title = "Nixx-Kronos", ApplicationPath = exe };
+            var g = StubGame.With(StubGame.Create("zstd-kronos", "Atlantis - The Lost Tales", zstd), "Platform", "Sega Saturn");
+            var r = plugin.PrepareEmulatorForLaunch(new Unbroken.LaunchBox.Plugins.PrepareForLaunchArgs(emu, g, "\"" + zstd + "\"", null, null));
+            Check("prepared", r.WasSuccess, r.NewCommandLine ?? said.FirstOrDefault());
+            if (!r.WasSuccess) return false;
+            Console.WriteLine("  line: " + r.NewCommandLine);
+            var given = System.Text.RegularExpressions.Regex.Match(r.NewCommandLine, "-i \"?(.+?)\"?$").Groups[1].Value;
+            Check("Kronos given another file than the Zstandard CHD", given.Length > 0 && !string.Equals(given, zstd, StringComparison.OrdinalIgnoreCase), given);
+            Check("that file is a CHD Kronos reads", File.Exists(given) && Call(asm, "KronosChd", "Unreadable", given) == null, given);
+
+            var psi = new System.Diagnostics.ProcessStartInfo(exe, r.NewCommandLine) { WorkingDirectory = run, UseShellExecute = false };
+            using (var p = System.Diagnostics.Process.Start(psi))
+            {
+                foreach (var at in new[] { 6, 10, 14, 20 })
+                {
+                System.Threading.Thread.Sleep(at == 6 ? 6000 : at == 10 ? 4000 : at == 14 ? 4000 : 6000);
+                p.Refresh();
+                Console.WriteLine("  window \"" + p.MainWindowTitle + "\"");
+                if (at == 20) Check("Kronos runs the disc (its title names it)", p.MainWindowTitle.IndexOf("Atlantis", StringComparison.OrdinalIgnoreCase) >= 0, p.MainWindowTitle);
+                try
+                {
+                    GetWindowRect(p.MainWindowHandle, out var wr);
+                    using var bmp = new System.Drawing.Bitmap(Math.Max(1, wr.R - wr.L), Math.Max(1, wr.B - wr.T));
+                    using (var gr = System.Drawing.Graphics.FromImage(bmp)) { var dc = gr.GetHdc(); PrintWindow(p.MainWindowHandle, dc, 2); gr.ReleaseHdc(dc); }
+                    var shot = Path.Combine(run, "zstd-window-" + at + "s.png");
+                    bmp.Save(shot, System.Drawing.Imaging.ImageFormat.Png);
+                    Console.WriteLine("  window captured: " + shot);
+                }
+                catch (Exception ex) { Console.WriteLine("  (no capture: " + ex.Message + ")"); }
+                }
+                p.Kill();
+                p.WaitForExit(10000);
+            }
+            var plan = (string)T(asm, "KronosSession").GetProperty("PlanPath", Any).GetValue(null);
+            for (int i = 0; i < 60 && File.Exists(plan); i++) System.Threading.Thread.Sleep(250);
+            Check("the session put back by the plugin's watcher", !File.Exists(plan));
+            var copied = given.Length > 0 && given.IndexOf(@"\lbip-chd\", StringComparison.OrdinalIgnoreCase) >= 0;
+            Console.WriteLine("  " + (copied ? "copied into the cache" : "served where it is"));
+            if (!copied)
+            {
+                for (int i = 0; i < 40 && File.Exists(given); i++) System.Threading.Thread.Sleep(250);
+                Check("the served disc detached once Kronos has gone", !File.Exists(given), given);
+            }
+            SetS(asm, "KronosSettings", "PathOverride", null);
+            Console.WriteLine(_bad == 0 ? "ALL OK" : _bad + " FAILED");
+            return _bad == 0;
         }
 
         public static bool Real(Assembly asm, string release, string lab)

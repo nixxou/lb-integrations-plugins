@@ -109,7 +109,7 @@
   <table><tr><th>Feature</th><th></th><th>Notes</th></tr>
   <tr><td>Install, update</td><td class="yes">Yes</td><td>Tradu-France's 64-bit build, its size checked</td></tr>
   <tr><td>.chd .cue .ccd .iso, a .zip with a .cue</td><td class="yes">Yes</td><td>Opened by Kronos itself (measured)</td></tr>
-  <tr><td>.chd compressed with Zstandard (cdzs)</td><td class="no">No</td><td>Kronos cannot read it: the plugin says so at launch. Ymir and Beetle Saturn read it</td></tr>
+  <tr><td>.chd compressed with Zstandard (cdzs)</td><td class="yes">Yes</td><td>Kronos cannot read it: the plugin hands it the disc uncompressed (see Limits)</td></tr>
   <tr><td>.mds</td><td class="partly">Should</td><td>Kronos reads it; not measured here</td></tr>
   <tr><td>.m3u, .7z, any .zip</td><td class="yes">Yes</td><td>Read / unpacked by the plugin</td></tr>
   <tr><td>Several discs</td><td class="yes">Yes</td><td>PageDown / PageUp, without a reset</td></tr>
@@ -124,6 +124,9 @@
 <section id="limits"><h2>Limits and things to know</h2>
   <ul>
     <li>A game played in Kronos before the plugin kept its saves in Kronos's own <code>bkram.bin</code> (in <code>%AppData%\kronos</code>), not in the game's file.</li>
+    <li>Kronos cannot read a <code>.chd</code> compressed with Zstandard (cdzs). The plugin gives it the same disc uncompressed: served in place
+      through the RAM disk helper when it can, otherwise copied once into <code>Emulators\Nixx-Kronos\lbip-chd</code> (a cache kept under 20 GB,
+      the copies used longest ago removed first). The first launch of such a disc takes a few seconds more. Every other CHD is given as it is.</li>
     <li>Kronos's states may not load in another version of Kronos.</li>
     <li>If you rebind Kronos's slot keys or its Eject/Load ISO (<kbd>Ctrl</kbd>+<kbd>I</kbd>), F2 / F4 and the next-disc key send the old ones.</li>
   </ul>

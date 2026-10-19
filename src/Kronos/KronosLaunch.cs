@@ -272,48 +272,6 @@ namespace LbIntegrations.Kronos
             return dir;
         }
 
-        // ── the CHD's codecs ─────────────────────────────────────────────────
-
-        /// <summary>The codecs Kronos's libchdr decodes (tools\libchdr, chd.c codec_interfaces - an old copy, about 2017): zlib and
-        /// the CD's zlib, LZMA and FLAC. Not Zstandard ("cdzs", "zstd"), nor the hard disk's lzma / huff / flac. MEASURED 19/10:
-        /// a CHD made with chdman -c cdzs,cdfl leaves Kronos 2.7.5 on an empty window, no error said.</summary>
-        internal static readonly string[] KronosCodecs = { "zlib", "cdzl", "cdlz", "cdfl" };
-
-        /// <summary>The codecs a CHD v5 names in its header (offset 16, four big-endian tags; 0 = none); empty for an older CHD
-        /// (v3 / v4 use zlib only) or a file that cannot be read.</summary>
-        internal static List<string> ChdCodecs(string path)
-        {
-            var list = new List<string>();
-            try
-            {
-                using var f = File.OpenRead(path);
-                var h = new byte[32];
-                if (f.Read(h, 0, 32) < 32 || Encoding.ASCII.GetString(h, 0, 8) != "MComprHD") return list;
-                int version = (h[12] << 24) | (h[13] << 16) | (h[14] << 8) | h[15];
-                if (version < 5) return list;
-                for (int i = 0; i < 4; i++)
-                {
-                    int at = 16 + i * 4;
-                    if (h[at] == 0 && h[at + 1] == 0 && h[at + 2] == 0 && h[at + 3] == 0) continue;
-                    list.Add(Encoding.ASCII.GetString(h, at, 4));
-                }
-            }
-            catch { }
-            return list;
-        }
-
-        /// <summary>Why Kronos cannot open this CHD (a codec its libchdr lacks), or null.</summary>
-        public static string ChdProblem(string path)
-        {
-            if (!string.Equals(Path.GetExtension(path ?? ""), ".chd", StringComparison.OrdinalIgnoreCase)) return null;
-            var unknown = ChdCodecs(path).Where(c => !KronosCodecs.Contains(c)).ToList();
-            if (unknown.Count == 0) return null;
-            bool zstd = unknown.Any(c => c == "cdzs" || c == "zstd");
-            return Path.GetFileName(path) + " is compressed with " + string.Join(", ", unknown) + (zstd ? " (Zstandard)" : "")
-                   + ", which Kronos cannot read - it would stay on an empty window.\n\nPlay it with Ymir or RetroArch's Beetle Saturn, which read it, "
-                   + "or convert it once with MAME's chdman: chdman extractcd, then chdman createcd -c cdlz,cdzl,cdfl.";
-        }
-
         /// <summary>The discs written down for the AHK script ("next disc"): the disc started first, then one per line.</summary>
         public static void WriteDiscs(string exe, Plan plan)
         {
