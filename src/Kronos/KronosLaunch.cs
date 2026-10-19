@@ -294,7 +294,7 @@ namespace LbIntegrations.Kronos
         // ── the line ─────────────────────────────────────────────────────────
 
         /// <summary>The line Kronos is started with (header): the user's switches kept, ours set, the game replaced by the disc.</summary>
-        public static string CommandLine(string current, bool fullscreen, string bios, string oldRom, string disc)
+        public static string CommandLine(string current, bool fullscreen, string bios, string oldRom, string disc, bool autostart = true)
         {
             var t = Tokenize(current);
             // Ours, put again below: -a / --autostart, -f / --fullscreen, -i / --iso= and its file, -b / --bios= and its file.
@@ -310,10 +310,13 @@ namespace LbIntegrations.Kronos
                 var full = Full(oldRom);
                 t.RemoveAll(a => string.Equals(Full(a), full, StringComparison.OrdinalIgnoreCase));
             }
-            var head = new List<string> { "-a" };
+            // Not for an ST-V game: Kronos 2.7.5 cannot start one by itself (KronosStvStart).
+            var head = new List<string>();
+            if (autostart) head.Add("-a");
             if (fullscreen) head.Add("-f");
             if (!string.IsNullOrEmpty(bios)) head.Add("--bios=" + bios);
-            return string.Join(" ", head.Concat(t).Concat(new[] { "-i", disc }).Select(Quote));
+            // No disc for an ST-V game (KronosStv): its set is in kronos.ini.
+            return string.Join(" ", head.Concat(t).Concat(disc == null ? Array.Empty<string>() : new[] { "-i", disc }).Select(Quote));
         }
 
         private static string Quote(string a) => a.Length == 0 || a.Any(char.IsWhiteSpace) || a.Contains('"') ? "\"" + a.Replace("\"", "\\\"") + "\"" : a;

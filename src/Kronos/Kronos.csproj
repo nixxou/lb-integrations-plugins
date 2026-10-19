@@ -82,6 +82,8 @@
   <ItemGroup>
     <!-- The plugin's user guide, shown from the General tab of the Nixx window (src\Menus\Settings.cs). -->
     <EmbeddedResource Include="..\..\docs\help\kronos.html" LogicalName="help.html" />
+    <!-- The ST-V sets: MAME's and Kronos's, with the files Kronos looks for (tools\kronos-stv\make-sets.py). -->
+    <EmbeddedResource Include="kronos-stv.tsv" LogicalName="kronos-stv.tsv" />
   </ItemGroup>
 
 </Project>

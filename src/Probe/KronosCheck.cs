@@ -369,6 +369,94 @@ namespace LbIntegrations.Probe
             }
         }
 
+        /// <summary>--kronos-stv <build> --game <set.zip> [--platform "Sega ST-V"|Arcade] [--lab <folder>]: the real Kronos on an
+        /// ST-V set, prepared by the plugin as LaunchBox would (its own folder, kronos.ini pointed at it). Windowed, no key sent:
+        /// the window captured with PrintWindow at a few moments, then quit with its own Quit button (UI Automation)
+        /// - its EEPROM taken back into the game's saves. One install of the build in <lab>\probe-stv, kept between runs.</summary>
+        public static bool Stv(Assembly asm, string release, string game, string platform, string lab)
+        {
+            _bad = 0;
+            lab ??= @"G:\LB1326\lbip-kronos-lab";
+            platform ??= "Sega ST-V";
+            var run = Path.Combine(lab, "probe-stv");
+            var dir = Path.Combine(run, "Emulators", "Nixx-Kronos");
+            var data = Path.Combine(run, "plugin-data");
+            if (!File.Exists(Path.Combine(dir, "kronos.exe")))
+                foreach (var f in Directory.GetFiles(release, "*", SearchOption.AllDirectories))
+                {
+                    var to = Path.Combine(dir, Path.GetRelativePath(release, f));
+                    Directory.CreateDirectory(Path.GetDirectoryName(to));
+                    File.Copy(f, to, true);
+                }
+            Directory.CreateDirectory(data);
+            var exe = Path.Combine(dir, "kronos.exe");
+            Console.WriteLine("-- THE REAL KRONOS ON AN ST-V SET: " + game + " (" + platform + ") --");
+            SetS(asm, "KronosSettings", "PathOverride", Path.Combine(data, "settings.ini"));
+            File.WriteAllText(Path.Combine(data, "settings.ini"), "Fullscreen=false\r\n");
+            var said = new List<string>();
+            asm.GetType("LbIntegrations.Lbip.LbipNotice", true).GetField("Instead", Any).SetValue(null, new Action<string, string>((t, x) => said.Add(x)));
+            asm.GetType("LbIntegrations.Lbip.LbipLaunchGate", true).GetField("Off", Any).SetValue(null, true);
+            var ini = Path.Combine(dir, "kronos.ini");
+            if (!File.Exists(ini)) File.WriteAllText(ini, "[1.0]\r\nSound\\Volume=90\r\n");
+            var before = File.ReadAllText(ini);
+
+            LbIntegrations.Catalog.LbCatalog.HostWillAsk = true;
+            var type = asm.GetTypes().Single(t => typeof(Unbroken.LaunchBox.Plugins.EmulatorPlugin).IsAssignableFrom(t) && !t.IsAbstract);
+            var plugin = (Unbroken.LaunchBox.Plugins.EmulatorPlugin)Activator.CreateInstance(type);
+            var emu = new StubEmulator { Title = "Nixx-Kronos", ApplicationPath = exe };
+            var set = Path.GetFileNameWithoutExtension(game);
+            var g = StubGame.With(StubGame.Create("stv-" + set, set, game), "Platform", platform);
+            var r = plugin.PrepareEmulatorForLaunch(new Unbroken.LaunchBox.Plugins.PrepareForLaunchArgs(emu, g, "\"" + game + "\"", null, null));
+            Check("prepared", r.WasSuccess, r.NewCommandLine ?? said.FirstOrDefault());
+            if (!r.WasSuccess) { SetS(asm, "KronosSettings", "PathOverride", null); Console.WriteLine(_bad + " FAILED"); return false; }
+            Console.WriteLine("  line: " + r.NewCommandLine);
+            var stvDir = Path.Combine(dir, "lbip-stv");
+            Console.WriteLine("  its folder: " + string.Join(", ", Directory.GetFiles(stvDir).Select(Path.GetFileName)));
+
+            var psi = new System.Diagnostics.ProcessStartInfo(exe, r.NewCommandLine) { WorkingDirectory = run, UseShellExecute = false };
+            using (var p = System.Diagnostics.Process.Start(psi))
+            {
+                foreach (var at in new[] { 8, 16, 30, 45 })
+                {
+                    System.Threading.Thread.Sleep(at == 8 ? 8000 : at == 16 ? 8000 : at == 30 ? 14000 : 15000);
+                    p.Refresh();
+                    if (p.HasExited) { Console.WriteLine("  Kronos has gone at " + at + " s, exit " + p.ExitCode); break; }
+                    Console.WriteLine("  " + at + " s: window \"" + p.MainWindowTitle + "\"");
+                    try
+                    {
+                        GetWindowRect(p.MainWindowHandle, out var wr);
+                        using var bmp = new System.Drawing.Bitmap(Math.Max(1, wr.R - wr.L), Math.Max(1, wr.B - wr.T));
+                        using (var gr = System.Drawing.Graphics.FromImage(bmp)) { var dc = gr.GetHdc(); PrintWindow(p.MainWindowHandle, dc, 2); gr.ReleaseHdc(dc); }
+                        var shot = Path.Combine(run, set + "-" + at + "s.png");
+                        bmp.Save(shot, System.Drawing.Imaging.ImageFormat.Png);
+                        Console.WriteLine("    captured: " + shot);
+                    }
+                    catch (Exception ex) { Console.WriteLine("    (no capture: " + ex.Message + ")"); }
+                }
+                Check("Kronos still running after 45 s", !p.HasExited);
+                if (!p.HasExited)
+                {
+                    // Windowed, WM_CLOSE quits Kronos cleanly (only full screen crashes on it): the EEPROM written as it goes.
+                    p.CloseMainWindow();
+                    var closed = p.WaitForExit(20000);
+                    Check("closed by WM_CLOSE (windowed), exit " + (closed ? p.ExitCode.ToString() : "-"), closed && p.ExitCode == 0);
+                    if (!closed) p.Kill();
+                }
+            }
+            var plan = (string)T(asm, "KronosSession").GetProperty("PlanPath", Any).GetValue(null);
+            for (int i = 0; i < 60 && File.Exists(plan); i++) System.Threading.Thread.Sleep(250);
+            Check("the session put back by the plugin's watcher", !File.Exists(plan));
+            var after = File.ReadAllText(ini);
+            Check("no ST-V key of the session left in kronos.ini", !after.Contains("Cartridge\\STVGame=") && !after.Contains("Cartridge\\Type=11") && !after.Contains("STVRomgame"),
+                  after.Replace("\r\n", " | "));
+            var saves = Path.Combine(dir, "Saves", platform);
+            var nv = Path.Combine(saves, set + ".nv");
+            Check("its EEPROM in the game's saves (" + nv + ")", File.Exists(nv), File.Exists(nv) ? new FileInfo(nv).Length + " bytes" : "absent; the folder had " + string.Join(", ", Directory.GetFiles(stvDir).Select(Path.GetFileName)));
+            SetS(asm, "KronosSettings", "PathOverride", null);
+            Console.WriteLine(_bad == 0 ? "ALL OK" : _bad + " FAILED");
+            return _bad == 0;
+        }
+
         /// <summary>The real Kronos on a Zstandard CHD it cannot read: the plugin hands it the disc uncompressed (served or
         /// copied), Kronos boots it, and once it has gone the served disc is detached. Windowed, no key sent: the window is
         /// captured with PrintWindow, then the process ended.</summary>

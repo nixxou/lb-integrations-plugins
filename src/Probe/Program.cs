@@ -242,6 +242,7 @@ namespace LbIntegrations.Probe
             if (Has(args, "--kronos-latest")) return KronosCheck.Latest(asm, Arg(args, "--fetch") is string kf ? Path.GetFullPath(kf) : null) ? 0 : 1;
             if (Has(args, "--chd-names")) return KronosCheck.ChdNames(asm, Path.GetFullPath(Arg(args, "--lb")), Path.GetFullPath(Arg(args, "--chd-names"))) ? 0 : 1;
             if (Has(args, "--kronos-shot")) return KronosCheck.Shot(asm, Path.GetFullPath(Arg(args, "--kronos-shot")), Path.GetFullPath(Arg(args, "--rom"))) ? 0 : 1;
+            if (Has(args, "--kronos-stv")) return KronosCheck.Stv(asm, Path.GetFullPath(Arg(args, "--kronos-stv")), Path.GetFullPath(Arg(args, "--game")), Arg(args, "--platform"), Arg(args, "--lab") is string ks ? Path.GetFullPath(ks) : null) ? 0 : 1;
             if (Has(args, "--kronos-zstd")) return KronosCheck.Zstd(asm, Path.GetFullPath(Arg(args, "--kronos-zstd")), Arg(args, "--lab") is string kz ? Path.GetFullPath(kz) : null, Arg(args, "--lb") is string kb ? Path.GetFullPath(kb) : null, Arg(args, "--disc") is string kd ? Path.GetFullPath(kd) : null) ? 0 : 1;
             if (Has(args, "--kronos-real")) return KronosCheck.Real(asm, Path.GetFullPath(Arg(args, "--kronos-real")), Arg(args, "--lab") is string kl ? Path.GetFullPath(kl) : null) ? 0 : 1;
             // The RASnes9x plugin's pieces, without a host - see RaSnes9xCheck.

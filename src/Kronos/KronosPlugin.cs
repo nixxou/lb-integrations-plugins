@@ -64,6 +64,9 @@ namespace LbIntegrations.Kronos
                 AutoExtract = false,
             };
             row.Platforms.Add(new LbCatalogPlatform { Platform = Platform, ApplicableFileExtensions = string.Join("; ", Extensions), Recommended = false, RequiredBiosFile = null });
+            // ST-V (KronosStv): MAME's zips; "Arcade" accepted too, its sets sorted at import and at launch.
+            row.Platforms.Add(new LbCatalogPlatform { Platform = KronosStv.Platform, ApplicableFileExtensions = ".zip", Recommended = false, RequiredBiosFile = "stvbios.zip" });
+            row.Platforms.Add(new LbCatalogPlatform { Platform = KronosStv.Arcade, ApplicableFileExtensions = ".zip", Recommended = false, RequiredBiosFile = null });
             yield return row;
         }
 
@@ -146,7 +149,7 @@ namespace LbIntegrations.Kronos
 
         public override EmulatorSupportResponse IsPlatformSupported(string platform)
         {
-            bool supported = string.Equals((platform ?? "").Trim(), Platform, StringComparison.OrdinalIgnoreCase);
+            bool supported = string.Equals((platform ?? "").Trim(), Platform, StringComparison.OrdinalIgnoreCase) || KronosStv.IsOurs(platform);
             // Never recommended (Mehdi, 17/10): LaunchBox pushes a recommended emulator - in the import wizard too, not installed yet.
             return new EmulatorSupportResponse(supported, false);
         }
@@ -272,6 +275,12 @@ namespace LbIntegrations.Kronos
             row.Platform = Platform;
             row.CommandLine = "";
             row.IsDefault = !taken;
+            // Sega ST-V too (KronosStv) - never the default: MAME is the arcade emulator, and Kronos runs its own sets only.
+            // "Arcade" is never added: the user adds it, and the import keeps only Kronos's sets there.
+            var stv = emu.AddNewEmulatorPlatform();
+            stv.Platform = KronosStv.Platform;
+            stv.CommandLine = "";
+            stv.IsDefault = false;
             try { dm.Save(false); } catch (Exception ex) { Log.Warn("data manager save failed", ex); }
             Log.Info("created emulator entry \"" + PackName + "\" -> " + emu.ApplicationPath + ", " + Platform + (row.IsDefault ? " (its default)" : ""));
             return emu;
@@ -283,6 +292,9 @@ namespace LbIntegrations.Kronos
         /// name (KronosBios), so a name LaunchBox looks for may be missing while Kronos has what it needs.</summary>
         public override IEnumerable<EmulatorBiosFile> GetBiosFilesForPlatform(string platform)
         {
+            if (KronosStv.IsOurs(platform))
+                return new[] { new EmulatorBiosFile(KronosLaunch.BiosFolder, KronosStv.BiosSet + ".zip", false,
+                    "ST-V BIOS (MAME's) - beside the games, or in Kronos's bios folder", null, null) };
             if (!string.Equals((platform ?? "").Trim(), Platform, StringComparison.OrdinalIgnoreCase)) return Array.Empty<EmulatorBiosFile>();
             const string folder = KronosLaunch.BiosFolder;
             return new[]
@@ -321,6 +333,9 @@ namespace LbIntegrations.Kronos
             if (KronosLaunch.Running(exe)) return Refuse("Kronos is already running from " + Path.GetDirectoryName(exe) + ": close it, then start the game again.");
             // A session LaunchBox did not see the end of: put back first.
             KronosSession.Recover();
+
+            // An ST-V game (KronosStv): its own path.
+            if (KronosStv.IsOurs(platform)) return PrepareStv(args, exe, gameId, rom, platform, Refuse);
 
             // The disc.
             var plan = KronosLaunch.DiscFor(rom, exe);
@@ -374,6 +389,8 @@ namespace LbIntegrations.Kronos
                 // 32 KB, the console's: a new file is made of that size (an 8 MB one would be Kronos's own format only).
                 (@"Memory\ExtendMemory", "false", false, null),
                 (@"General\SaveStates", KronosIniDoc.PathText(states), true, null),
+                // Its screenshots beside its saves, never in Kronos's default (%LocalAppData%\kronos\screenshots).
+                (@"General\ScreenshotsDirectory", KronosIniDoc.PathText(Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(states))), "Screenshots")), true, null),
             };
             // Its own options, from its window (KronosGameOptions).
             var options = KronosGameOptions.KeysFor(gameId, exe, doc);
@@ -411,6 +428,60 @@ namespace LbIntegrations.Kronos
             var current = args?.CurrentCommandLine ?? "";
             var line = KronosLaunch.CommandLine(current, KronosSettings.BoolFor(gameId, KronosSettings.Fullscreen), biosFile, rom, toKronos.Disc);
             Log.Info("launch: " + line);
+            return new PrepareForLaunchResponse(success: true) { NewCommandLine = line };
+        }
+
+        /// <summary>An ST-V game (KronosStv): the set checked as Kronos would, a folder of its own made, Kronos pointed at it in
+        /// kronos.ini for this session - its EEPROM and coins brought in, taken back after.</summary>
+        private PrepareForLaunchResponse PrepareStv(PrepareForLaunchArgs args, string exe, string gameId, string rom, string platform, Func<string, PrepareForLaunchResponse> refuse)
+        {
+            var why = KronosStv.WhyNotByName(rom, platform);
+            if (why != null) { Log.Warn("launch refused: " + why); return refuse(why); }
+            var set = KronosStv.SetOf(rom);
+            var zips = KronosStv.ZipsFor(rom, set, exe, out var problem);
+            if (zips == null) { Log.Warn("launch refused: " + problem.Replace("\n", " ")); return refuse(problem); }
+            var saves = RamDir(exe, platform);
+            var run = KronosStv.Prepare(exe, set, zips, saves, out problem);
+            if (run == null) return refuse(problem);
+            Log.Info("launch: ST-V " + set.Title + " (" + set.Name + ")");
+
+            var settings = KronosLaunch.SettingsOf(exe);
+            var doc = KronosIniDoc.Load(settings);
+            KronosLaunch.Bootstrap(doc);
+            var bound = KronosLaunch.BindPackKeys(doc);
+            if (bound.Count > 0) Log.Info("kronos.ini: the pack's keys bound - " + string.Join(", ", bound));
+            var states = Path.Combine(saves, "States", set.Name);
+            try { Directory.CreateDirectory(states); } catch { }
+            var keys = new List<(string, string, bool, string)>
+            {
+                (@"Cartridge\Type", KronosStv.CartType, false, null),
+                (@"Cartridge\Path", KronosIniDoc.PathText(run), true, null),
+                // The folder its settings window reads for the ST-V cartridge (2.7.5: "Cartridge/Path/" + the cartridge's name).
+                (@"Cartridge\Path\STVRomgame", KronosIniDoc.PathText(run), true, null),
+                (@"Cartridge\STVGame", set.Name, false, null),
+                (@"General\SaveStates", KronosIniDoc.PathText(states), true, null),
+                // Its screenshots beside its saves, never in Kronos's default (%LocalAppData%\kronos\screenshots).
+                (@"General\ScreenshotsDirectory", KronosIniDoc.PathText(Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(states))), "Screenshots")), true, null),
+                // The board has no backup RAM; Kronos makes one all the same - kept apart from the Saturn games' own.
+                (@"Memory\Path", KronosIniDoc.PathText(Path.Combine(run, "bkram.bin")), true, null),
+                (@"Memory\ExtendMemory", "false", false, null),
+            };
+            // Its own options, from its window - the expansion cartridge aside: the ST-V cartridge is the game.
+            var options = KronosGameOptions.KeysFor(gameId, exe, doc);
+            options.Keys.RemoveAll(k => k.Option == "Expansion");
+            var forced = KronosSession.Force(doc, keys);
+            forced.AddRange(KronosSession.Force(doc, options.Keys));
+            try { doc.Save(settings); }
+            catch (Exception ex) { return refuse("Kronos's settings could not be written (" + ex.Message + ")."); }
+            KronosSession.Begin(exe, settings, forced, () => KronosStv.TakeBack(exe), gameId);
+
+            // No other disc: the next-disc key has nothing to do.
+            KronosLaunch.WriteDiscs(exe, new KronosLaunch.Plan { Disc = rom, Discs = new List<string>() });
+
+            // Neither -a nor -f: the game is started once Kronos's window is there (KronosStvStart), then put in full screen.
+            var line = KronosLaunch.CommandLine(args?.CurrentCommandLine ?? "", false, null, rom, null, autostart: false);
+            KronosStvStart.Begin(exe, set.Name, KronosSettings.BoolFor(gameId, KronosSettings.Fullscreen));
+            Log.Info("launch: " + (line.Length == 0 ? "(nothing on the line)" : line));
             return new PrepareForLaunchResponse(success: true) { NewCommandLine = line };
         }
 
