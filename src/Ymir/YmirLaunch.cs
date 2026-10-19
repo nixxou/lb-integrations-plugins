@@ -162,6 +162,14 @@ namespace LbIntegrations.Ymir
             {
                 const string States = "Hotkeys.SaveStates", Hot = "Hotkeys";
                 var load = doc.Get(States, "QuickLoadState");
+                if (!Knows(doc, States, "QuickLoadState") || !Knows(doc, Hot, "ToggleFullScreen")) { Log.Info("hotkeys: Ymir.toml is of a newer Ymir without the keys known here - left as it is"); return bound; }
+                // The next-disc key opens Ymir's Load Disc with Ctrl+O (YmirAhk): kept there beside the user's own key.
+                var disc = doc.Get(Hot, "LoadDisc");
+                if (disc != null && !ListOf(disc).Contains("Ctrl+O", StringComparer.OrdinalIgnoreCase) && !Holds(doc, "Ctrl+O"))
+                {
+                    doc.Set(Hot, "LoadDisc", ListText(ListOf(disc).Concat(new[] { "Ctrl+O" })));
+                    bound.Add("Ctrl+O load disc (for the next-disc key)");
+                }
                 if (load == null || Same(ListOf(load), "F3"))
                 {
                     doc.Set(States, "QuickLoadState", ListText(new[] { "F4" }));
@@ -184,6 +192,14 @@ namespace LbIntegrations.Ymir
             catch (Exception ex) { Log.Warn("hotkeys: could not bind the pack's keys", ex); }
             return bound;
         }
+
+        /// <summary>The ConfigVersion of a Ymir.toml (0 when it says none).</summary>
+        internal static int ConfigVersionOf(YmirTomlDoc doc) => int.TryParse(doc.Get("", "ConfigVersion"), out var v) ? v : 0;
+
+        /// <summary>A key of Ymir.toml this plugin may write: one read in 0.4.1's settings.cpp (ConfigVersion 6) - or, in the file
+        /// of a newer Ymir (Ymir raises ConfigVersion when its settings change shape), one Ymir wrote there itself. A key renamed
+        /// by a later Ymir would be ignored by it: for the backup RAM cartridge's capacity, that is a cartridge FORMATTED (YmirCart).</summary>
+        public static bool Knows(YmirTomlDoc doc, string table, string key) => ConfigVersionOf(doc) <= ConfigVersion || doc.Get(table, key) != null;
 
         /// <summary>Some action of Ymir's holds <paramref name="key"/> alone, in [Hotkeys] or one of its sub-tables.</summary>
         private static bool Holds(YmirTomlDoc doc, string key)

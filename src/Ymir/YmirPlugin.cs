@@ -358,11 +358,14 @@ namespace LbIntegrations.Ymir
             if (!YmirLaunch.SlotKeysAreDefault(doc)) Log.Info("Ymir.toml: the slot keys 1-0 were rebound in Ymir - F6 / F7 send them all the same");
             var ram = RamPath(exe, platform, rom);
             try { Directory.CreateDirectory(Path.GetDirectoryName(ram)); } catch { }
-            var keys = new List<(string, string, string, bool)>
+            var keys = new List<(string, string, string, bool)>();
+            // Only keys this Ymir reads (YmirLaunch.Knows): a newer Ymir that renamed them would keep its own single RAM.
+            if (YmirLaunch.Knows(doc, "System", "InternalBackupRAMImagePath") && YmirLaunch.Knows(doc, "System", "InternalBackupRAMPerGame"))
             {
-                ("System", "InternalBackupRAMImagePath", YmirToml.Literal(ram), true),
-                ("System", "InternalBackupRAMPerGame", "false", false),
-            };
+                keys.Add(("System", "InternalBackupRAMImagePath", YmirToml.Literal(ram), true));
+                keys.Add(("System", "InternalBackupRAMPerGame", "false", false));
+            }
+            else Log.Warn("launch: Ymir.toml (ConfigVersion " + YmirLaunch.ConfigVersionOf(doc) + ") has no backup RAM setting known here - the game uses Ymir's own RAM");
             // Its backup cartridge, when it has one (YmirCart): 4 Mbit, its file - never for a game that needs another cartridge.
             var cart = CartPath(exe, platform, rom);
             if (File.Exists(cart))
@@ -370,6 +373,10 @@ namespace LbIntegrations.Ymir
                 var bad = YmirCart.WhyNot(cart);
                 if (bad != null) Log.Warn("launch: the game's cartridge is not plugged - " + bad);
                 else if (YmirCart.NeedsOtherCart(disc)) Log.Info("launch: the game's cartridge is not plugged - Ymir plugs the cartridge this game needs");
+                else if (!new[] { ("Cartridge", "Type"), ("Cartridge", "AutoLoadGameCarts"), ("Cartridge.BackupRAM", "Capacity"), ("Cartridge.BackupRAM", "ImagePath") }
+                             .All(k => YmirLaunch.Knows(doc, k.Item1, k.Item2)))
+                    Log.Warn("launch: the game's cartridge is not plugged - Ymir.toml (ConfigVersion " + YmirLaunch.ConfigVersionOf(doc)
+                             + ") lacks a cartridge setting known here, and a capacity Ymir did not read would format the cartridge");
                 else
                 {
                     keys.Add(("Cartridge", "Type", "'BackupRAM'", false));

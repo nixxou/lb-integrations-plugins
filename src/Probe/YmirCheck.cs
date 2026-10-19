@@ -135,6 +135,19 @@ namespace LbIntegrations.Probe
                 Check("keys the user changed are left alone; F11 still goes to full screen (free)", userBound.Count == 1
                       && (string)CallOn(userDoc, "Get", "Hotkeys.SaveStates", "QuickLoadState") == "[ 'F8' ]", string.Join(", ", userBound.Cast<object>()));
                 Check("the slot keys are Ymir's defaults", (bool)Call(asm, "YmirLaunch", "SlotKeysAreDefault", userDoc));
+                var moved = Call(asm, "YmirTomlDoc", "Parse", text.Replace("LoadDisc = [ 'Ctrl+O' ]", "LoadDisc = [ 'Ctrl+L' ]"));
+                Call(asm, "YmirLaunch", "BindPackKeys", moved);
+                Check("Load Disc moved by the user: Ctrl+O added beside it (the next-disc key needs it)", (string)CallOn(moved, "Get", "Hotkeys", "LoadDisc") == "[ 'Ctrl+L', 'Ctrl+O' ]",
+                      (string)CallOn(moved, "Get", "Hotkeys", "LoadDisc"));
+
+                Console.WriteLine("== a newer Ymir's settings");
+                var v6 = Call(asm, "YmirTomlDoc", "Parse", "ConfigVersion = 6\n[General]\nCheckForUpdates = false\n");
+                Check("ConfigVersion 6 (0.4.1's): every key known here may be written", (bool)Call(asm, "YmirLaunch", "Knows", v6, "Cartridge.BackupRAM", "Capacity"));
+                var v7 = Call(asm, "YmirTomlDoc", "Parse", text.Replace("ConfigVersion = 6", "ConfigVersion = 7").Replace("    Capacity = '32Mbit'\n", "    Size = '32Mbit'\n"));
+                Check("a newer ConfigVersion without Capacity: the cartridge's capacity is not written (it would be formatted)",
+                      !(bool)Call(asm, "YmirLaunch", "Knows", v7, "Cartridge.BackupRAM", "Capacity") && (bool)Call(asm, "YmirLaunch", "Knows", v7, "Cartridge.BackupRAM", "ImagePath"));
+                var v7keys = (IList)Call(asm, "YmirLaunch", "BindPackKeys", Call(asm, "YmirTomlDoc", "Parse", text.Replace("ConfigVersion = 6", "ConfigVersion = 7").Replace("    QuickLoadState = [ 'F3' ]\n", "")));
+                Check("a newer ConfigVersion without QuickLoadState: the keys left alone", v7keys.Count == 0);
 
                 Console.WriteLine("== the session: the game's backup RAM");
                 File.WriteAllText(toml, text);
