@@ -1,24 +1,24 @@
 // A zip that is nowhere on disk: its headers and central directory are made here, each entry's data is read from the
-// archive it is in (ZipEntryRef) - the same compressed bytes, so the same method and CRC, never decompressed. What a MAME
-// set converted from another layout (MameConvert) is served as, file by file, by the RAM disk helper's view=mame.
+// archive it is in (ZipEntryRef) - the same compressed bytes, so the same method and CRC, never decompressed. A file of a
+// virtual volume (IVolumeFile): a MAME set converted from another layout (Shared.Mame) is one.
 //
 // LAYOUT, as any zip: per entry a local header (PK 03 04) then its data; the central directory (PK 01 02 per entry); a zip64
 // end record and locator (PK 06 06, PK 06 07) when a size, an offset or the count does not fit 32 / 16 bits; the end record
-// (PK 05 06). The entries are written in the order given (MameConvert sorts them by name). Local headers carry the sizes and
-// CRC (flag bit 3, "sizes after the data", is cleared: the data descriptor of the source is not copied); bit 11 is set for
-// a name that is not ASCII.
+// (PK 05 06). The entries are written in the order given. Local headers carry the sizes and CRC (flag bit 3, "sizes after
+// the data", is cleared: the source's data descriptor is not copied); bit 11 is set for a name that is not ASCII.
 //
 // Its bytes are a list of segments - made bytes, or a range of a source archive - found by a binary search at each read.
-// Not the same file as one a ROM manager would write (TorrentZip recompresses), the same contents.
+// Nothing is opened to make it when each entry's data offset is known (a volume description gives them): its length follows
+// from the names and sizes alone. Not the same FILE as one a ROM manager writes (TorrentZip recompresses): the same contents.
 
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-namespace LbIntegrations.Mame
+namespace LbIntegrations.Volume
 {
-    internal sealed class VirtualZip : IDisposable
+    internal sealed class VirtualZip : IVolumeFile
     {
         public sealed class Item
         {
@@ -35,17 +35,21 @@ namespace LbIntegrations.Mame
             public long SourceOffset;
         }
 
-        private readonly List<Segment> _segments = new();
-        private readonly Dictionary<string, FileStream> _open = new(StringComparer.OrdinalIgnoreCase);
-        private readonly object _lock = new();
+        private readonly SourcePool _pool;
+        private readonly Segment[] _segments;
         public long Length { get; }
         public int Count { get; }
 
-        public VirtualZip(IReadOnlyList<Item> items)
+        public VirtualZip(IReadOnlyList<Item> items, SourcePool pool)
         {
+            _pool = pool;
             Count = items.Count;
+            var segments = new List<Segment>(items.Count * 2 + 2);
             var central = new MemoryStream();
+            var c2 = new BinaryWriter(central);
             long pos = 0;
+            void Add(byte[] bytes) { segments.Add(new Segment { Offset = pos, Length = bytes.Length, Bytes = bytes }); pos += bytes.Length; }
+
             foreach (var it in items)
             {
                 var e = it.Source;
@@ -56,12 +60,11 @@ namespace LbIntegrations.Mame
                 ushort flags = (ushort)((e.Flags & 0x0006) | (utf8 ? 0x800 : 0));   // compression options kept; no data descriptor
                 bool big = e.Size >= 0xFFFFFFFF || e.CompressedSize >= 0xFFFFFFFF;
                 bool farOffset = pos >= 0xFFFFFFFF;
-                long dataOffset;
-                using (var fs = Open(e.Archive)) dataOffset = e.DataOffset(fs);
+                long dataOffset = e.DataOffset(pool);
 
                 // local header
-                var local = new MemoryStream();
-                var w = new BinaryWriter(local);
+                var local = new byte[30 + nameBytes.Length + (big ? 20 : 0)];
+                var w = new BinaryWriter(new MemoryStream(local));
                 w.Write(0x04034b50u);
                 w.Write((ushort)(big ? 45 : 20));
                 w.Write(flags);
@@ -75,18 +78,16 @@ namespace LbIntegrations.Mame
                 w.Write((ushort)(big ? 20 : 0));
                 w.Write(nameBytes);
                 if (big) { w.Write((ushort)1); w.Write((ushort)16); w.Write((ulong)e.Size); w.Write((ulong)e.CompressedSize); }
-                w.Flush();
                 long localOffset = pos;
-                Add(local.ToArray(), ref pos);
+                Add(local);
                 if (e.CompressedSize > 0)
                 {
-                    _segments.Add(new Segment { Offset = pos, Length = e.CompressedSize, Archive = e.Archive, SourceOffset = dataOffset });
+                    segments.Add(new Segment { Offset = pos, Length = e.CompressedSize, Archive = e.Archive, SourceOffset = dataOffset });
                     pos += e.CompressedSize;
                 }
 
                 // its central header
                 int extra = (big ? 16 : 0) + (farOffset ? 8 : 0);
-                var c2 = new BinaryWriter(central);
                 c2.Write(0x02014b50u);
                 c2.Write((ushort)45);                  // made by: MS-DOS, spec 4.5
                 c2.Write((ushort)(big || farOffset ? 45 : 20));
@@ -111,11 +112,11 @@ namespace LbIntegrations.Mame
                     if (big) { c2.Write((ulong)e.Size); c2.Write((ulong)e.CompressedSize); }
                     if (farOffset) c2.Write((ulong)localOffset);
                 }
-                c2.Flush();
             }
+            c2.Flush();
 
             long cdOffset = pos, cdSize = central.Length;
-            Add(central.ToArray(), ref pos);
+            Add(central.ToArray());
             var end = new MemoryStream();
             var ew = new BinaryWriter(end);
             bool zip64 = Count >= 0xFFFF || cdOffset >= 0xFFFFFFFF || cdSize >= 0xFFFFFFFF;
@@ -132,54 +133,36 @@ namespace LbIntegrations.Mame
             ew.Write((uint)Math.Min(cdSize, 0xFFFFFFFF)); ew.Write((uint)Math.Min(cdOffset, 0xFFFFFFFF));
             ew.Write((ushort)0);
             ew.Flush();
-            Add(end.ToArray(), ref pos);
+            Add(end.ToArray());
             Length = pos;
+            _segments = segments.ToArray();
         }
 
-        private void Add(byte[] bytes, ref long pos)
-        {
-            _segments.Add(new Segment { Offset = pos, Length = bytes.Length, Bytes = bytes });
-            pos += bytes.Length;
-        }
-
-        private static FileStream Open(string path) =>
-            new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, 1, FileOptions.RandomAccess);
-
-        /// <summary>Its bytes at <paramref name="offset"/>; zeros past its end. Thread-safe.</summary>
+        /// <summary>Its bytes at <paramref name="offset"/>.</summary>
         public int Read(long offset, byte[] buffer, int bufferOffset, int count)
         {
             if (offset >= Length || count <= 0) return 0;
             count = (int)Math.Min(count, Length - offset);
-            lock (_lock)
+            int done = 0;
+            for (int i = Find(offset); done < count && i < _segments.Length; i++)
             {
-                int done = 0;
-                int i = Find(offset);
-                while (done < count && i < _segments.Count)
+                var s = _segments[i];
+                long at = offset + done - s.Offset;
+                int n = (int)Math.Min(count - done, s.Length - at);
+                if (s.Bytes != null) Buffer.BlockCopy(s.Bytes, (int)at, buffer, bufferOffset + done, n);
+                else
                 {
-                    var s = _segments[i];
-                    long at = offset + done - s.Offset;
-                    int n = (int)Math.Min(count - done, s.Length - at);
-                    if (s.Bytes != null) Buffer.BlockCopy(s.Bytes, (int)at, buffer, bufferOffset + done, n);
-                    else
-                    {
-                        if (!_open.TryGetValue(s.Archive, out var fs)) _open[s.Archive] = fs = Open(s.Archive);
-                        fs.Position = s.SourceOffset + at;
-                        ZipCentral.ReadExactly(fs, TempFor(n), n);
-                        Buffer.BlockCopy(_temp, 0, buffer, bufferOffset + done, n);
-                    }
-                    done += n;
-                    i++;
+                    int got = _pool.Read(s.Archive, s.SourceOffset + at, buffer, bufferOffset + done, n);
+                    if (got < n) Array.Clear(buffer, bufferOffset + done + got, n - got);   // a source cut short: zeros, never junk
                 }
-                return done;
+                done += n;
             }
+            return done;
         }
-
-        private byte[] _temp = new byte[65536];
-        private byte[] TempFor(int n) { if (_temp.Length < n) _temp = new byte[n]; return _temp; }
 
         private int Find(long offset)
         {
-            int lo = 0, hi = _segments.Count - 1;
+            int lo = 0, hi = _segments.Length - 1;
             while (lo < hi)
             {
                 int mid = (lo + hi + 1) / 2;
@@ -188,7 +171,7 @@ namespace LbIntegrations.Mame
             return lo;
         }
 
-        /// <summary>Written to a file - what the tests check with MAME, the helper never does it.</summary>
+        /// <summary>Written to a file - what the tests check with MAME; a volume never does it.</summary>
         public void WriteTo(string path)
         {
             using var o = new FileStream(path, FileMode.Create, FileAccess.Write);
@@ -199,11 +182,6 @@ namespace LbIntegrations.Mame
                 o.Write(buf, 0, n);
                 p += n;
             }
-        }
-
-        public void Dispose()
-        {
-            lock (_lock) { foreach (var fs in _open.Values) fs.Dispose(); _open.Clear(); }
         }
     }
 }

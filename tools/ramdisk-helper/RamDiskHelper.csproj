@@ -36,7 +36,7 @@
          before sending a key the older one would silently ignore. Bump it with the protocol,
          never with an ordinary fix. 1.9.1 is the one exception: the protocol of 1.9.0, self-contained - numbered
          above it so that "absent or older" replaces the framework-dependent 1.9.0 already deployed. -->
-    <Version>1.16.0</Version>
+    <Version>1.17.0</Version>
     <!-- 1.12: the shared memory proxy reads and writes its section through a pointer. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
@@ -53,6 +53,11 @@
     <Compile Include="..\..\src\Xemu\ExfatOneFileView.cs" Link="Xbox\ExfatOneFileView.cs" />
     <Compile Include="..\..\src\Xemu\XboxMediaPatch.cs" Link="Xbox\XboxMediaPatch.cs" />
     <Compile Include="..\..\src\Xemu\ZarXiso.cs" Link="Xbox\ZarXiso.cs" />
+  </ItemGroup>
+
+  <!-- 1.17: a volume described in a file (view=volume) - virtual zips, sources read through, an exFAT tree: src\Shared.Volume. -->
+  <ItemGroup>
+    <Compile Include="..\..\src\Shared.Volume\**\*.cs" LinkBase="Volume" />
   </ItemGroup>
 
   <!-- 1.8: a ZArchive (.zar) served as the disc it holds (view=xbox) - the pack's one reader. Its zstd, ZstdSharp, is EMBEDDED and

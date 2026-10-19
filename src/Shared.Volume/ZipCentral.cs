@@ -16,7 +16,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-namespace LbIntegrations.Mame
+namespace LbIntegrations.Volume
 {
     internal sealed class ZipEntryRef
     {
@@ -28,17 +28,18 @@ namespace LbIntegrations.Mame
         public long LocalOffset;
         /// <summary>The archive it is in.</summary>
         public string Archive;
-        private long _dataOffset = -1;
+        /// <summary>Where its compressed data starts in its archive; -1 until known (read from its local header, or given by a
+        /// volume description that has it).</summary>
+        public long KnownDataOffset = -1;
 
-        /// <summary>Where its compressed data starts in its archive (the local header read once).</summary>
-        public long DataOffset(Stream archive)
+        /// <summary>Where its compressed data starts in its archive (the local header read once, through the pool).</summary>
+        public long DataOffset(SourcePool pool)
         {
-            if (_dataOffset >= 0) return _dataOffset;
+            if (KnownDataOffset >= 0) return KnownDataOffset;
             var head = new byte[30];
-            archive.Position = LocalOffset;
-            ZipCentral.ReadExactly(archive, head, 30);
-            if (BitConverter.ToUInt32(head, 0) != 0x04034b50) throw new InvalidDataException(Archive + ": no local header for " + Name + " at " + LocalOffset);
-            return _dataOffset = LocalOffset + 30 + BitConverter.ToUInt16(head, 26) + BitConverter.ToUInt16(head, 28);
+            if (pool.Read(Archive, LocalOffset, head, 0, 30) != 30 || BitConverter.ToUInt32(head, 0) != 0x04034b50)
+                throw new InvalidDataException(Archive + ": no local header for " + Name + " at " + LocalOffset);
+            return KnownDataOffset = LocalOffset + 30 + BitConverter.ToUInt16(head, 26) + BitConverter.ToUInt16(head, 28);
         }
 
         public override string ToString() => Name + " " + Crc.ToString("x8") + " " + Size;

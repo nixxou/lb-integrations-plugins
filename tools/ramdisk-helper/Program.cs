@@ -179,6 +179,15 @@
 //                                  file= says the name served. An older helper ignores the key and serves game.iso / game.chd,
 //                                  its file= says so: read file=, never rebuild the path.
 //
+// -- added in 1.17 -----------------------------------------------------------------------------
+//   view     = volume              on image-attach: image= is a VOLUME DESCRIPTION (Shared.Volume\VolumeSpec, gzip text): a tree of
+//                                  files, each a source file read through as it is (a CHD) or a virtual zip whose entries are
+//                                  ranges of source zips (a MAME set in another layout, Shared.Mame) - served as one exFAT volume
+//                                  (ExfatVolumeView), nothing copied, read-only, AIM only; self-started as "--volume-serve <file>".
+//                                  A file whose source changed (size or date) since the description was made is left out, never
+//                                  served wrong: the caller checks its description beforehand (VolumeSpec.Open says which).
+//                                  An older helper reads view=volume as no view and refuses a description as an image: check >= 1.17.
+//
 // AIM, WHAT DIFFERS FROM IMDISK. aim_ll takes imdisk's arguments almost word for word, but its disks
 // are real SCSI disks: Windows' mount manager gives a new volume a letter of its own on top of the one
 // asked for, which is taken off again (only the mount point asked for is kept), and the disk goes the
@@ -224,6 +233,8 @@ namespace RamDiskHelper
             if (argv.Length == 2 && argv[0] == "--xbox-serve") return XboxServe(argv[1]);
             // 1.10: the same, the disc's XISO as one file on an exFAT volume.
             if (argv.Length == 2 && argv[0] == "--chd-serve") return ChdServe(argv[1]);
+            // 1.17: a volume described in a file (view=volume).
+            if (argv.Length == 2 && argv[0] == "--volume-serve") return VolumeServe(argv[1]);
             if ((argv.Length == 2 || argv.Length == 3) && argv[0] == "--xiso-serve") return XisoServe(argv[1], argv.Length == 3 && argv[2] == "media");
             string dir = AppContext.BaseDirectory;
             string cfgPath = Path.Combine(dir, "ramdisk.cfg");
@@ -862,6 +873,7 @@ namespace RamDiskHelper
             if (Get(kv, "view", "").Equals("xbox", StringComparison.OrdinalIgnoreCase)) return XboxAttach(kv, dir, image, "xbox");
             if (Get(kv, "view", "").Equals("xiso", StringComparison.OrdinalIgnoreCase)) return XboxAttach(kv, dir, image, "xiso");
             if (Get(kv, "view", "").Equals("chd", StringComparison.OrdinalIgnoreCase)) return XboxAttach(kv, dir, image, "chd");
+            if (Get(kv, "view", "").Equals("volume", StringComparison.OrdinalIgnoreCase)) return XboxAttach(kv, dir, image, "volume");
             string ext = Path.GetExtension(image).ToLowerInvariant();
             bool iso = ext == ".iso";
             bool raw = Array.IndexOf(RawImages, ext) >= 0;
@@ -1178,6 +1190,26 @@ namespace RamDiskHelper
                 var source = LbIntegrations.Disc.ChdPlain.Open(image);
                 var view = new LbIntegrations.Xemu.ExfatOneFileView(0, source.Length, ViewName(Environment.GetEnvironmentVariable("LBIP_VIEW_NAME"), ChdFileName), "CHDPLAIN", null);
                 return Serve(source, view.Length, view.Read);
+            }
+            catch (Exception ex)
+            {
+                try { Console.WriteLine("ERROR " + ex.GetType().Name + ": " + ex.Message); } catch { }
+                return 1;
+            }
+        }
+
+        /// <summary>--volume-serve &lt;description&gt; (1.17): the volume a VolumeSpec describes - its files read through their sources,
+        /// virtual zips made of source zips' ranges - as an exFAT volume. A file whose source has changed is left out.</summary>
+        private static int VolumeServe(string description)
+        {
+            try
+            {
+                var spec = LbIntegrations.Volume.VolumeSpec.Load(description);
+                var pool = new LbIntegrations.Volume.SourcePool(256);
+                var stale = new List<string>();
+                var files = spec.Open(pool, stale);
+                var view = new LbIntegrations.Volume.ExfatVolumeView(files, spec.Dirs, spec.Label);
+                return Serve(null, view.Length, view.Read);
             }
             catch (Exception ex)
             {

@@ -96,6 +96,8 @@
     <Compile Include="..\Shared.Compat\**\*.cs" />
     <!-- MAME sets in another layout, as virtual zips (the RAM disk helper's view=mame). -->
     <Compile Include="..\Shared.Mame\**\*.cs" />
+    <!-- Virtual volumes (zips made of source ranges, an exFAT tree): the helper's view=volume. -->
+    <Compile Include="..\Shared.Volume\**\*.cs" />
   </ItemGroup>
 
 </Project>

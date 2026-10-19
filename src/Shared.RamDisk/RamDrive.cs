@@ -1339,6 +1339,42 @@ namespace LbIntegrations.RamDisk
             catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; return null; }
         }
 
+        /// <summary>The helper that serves a VOLUME DESCRIPTION (view=volume): a tree of files read through their sources and virtual
+        /// zips made of source zips' ranges, as an exFAT volume (src\Shared.Volume) - a MAME romset in another layout.</summary>
+        public static readonly Version VolumeViewProtocol = new Version(1, 17, 0, 0);
+
+        /// <summary>Can a described volume be served (view=volume): AIM there, the helper 1.17 and its task.</summary>
+        public static bool CanAttachVolume(out string why)
+        {
+            var v = HelperVersion;
+            why = !IsAimInstalled() ? "the Arsenal Image Mounter is not installed"
+                : v == null || v < VolumeViewProtocol ? "the RAM disk helper is " + (v?.ToString() ?? "absent") + ", " + VolumeViewProtocol + " is needed"
+                : InstalledTaskName() == null ? "the RAM disk helper's task is not installed"
+                : null;
+            return why == null;
+        }
+
+        /// <summary>The volume a description (Shared.Volume\VolumeSpec, saved) describes, on a disk attached on a free letter through AIM.
+        /// Returns its root ("K:\"), what DetachImage takes back; null with the reason. Its files whose source changed since the
+        /// description was made are not served: check with VolumeSpec.Open beforehand.</summary>
+        public static string AttachVolume(string description, out string error)
+        {
+            error = null;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(description) || !OneLine(description) || !Path.IsPathFullyQualified(description)) { error = "a description path must be absolute and on one line"; return null; }
+                if (!CanAttachVolume(out error)) return null;
+                char letter = FreeDriveLetter();
+                if (letter == '\0') { error = "no free drive letter"; return null; }
+                var said = RunAndWait("image-attach", letter, description, WithProxy(new Dictionary<string, string> { { "view", "volume" }, { "backend", "aim" } }));
+                if (said == null) { error = "the helper never answered"; return null; }
+                if (!said.StartsWith("OK image-attach", StringComparison.Ordinal)) { error = said; RamDiskLog.Warn("volume attach " + Path.GetFileName(description) + ": " + said); return null; }
+                RamDiskLog.Info("attached the volume " + Path.GetFileName(description) + " - " + said);
+                return letter + ":\\";
+            }
+            catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; return null; }
+        }
+
         /// <summary>A CSO ("CISO"), a CCI ("CCIM") or a CHD ("MComprHD"), by its first bytes.</summary>
         private static bool IsCompressedImage(string path)
         {
