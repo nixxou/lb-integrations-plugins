@@ -210,8 +210,8 @@ namespace LbIntegrations.Ymir
             if (YmirCompat.Count() == 0) discCard.Add(Text_("The list is downloaded at install, and from the Nixx window (page Ymir).", Color.FromArgb(0x70, 0x70, 0x70)));
             page.Controls.Add(Card(!Several ? (discTotal > 1 ? "Its discs" : "Its disc") : "Their state in Ymir's compatibility list", discCard.ToArray()));
 
-            // ── its save, with RetroArch (YmirRetroArch) ──
-            if (!Several && _exe != null) page.Controls.Add(Card("Its save, with RetroArch", RetroArchCard(game).ToArray()));
+            // ── its save, with RetroArch and Kronos (YmirRetroArch, YmirKronos) ──
+            if (!Several && _exe != null) page.Controls.Add(Card("Its save, with RetroArch and Kronos", RetroArchCard(game).ToArray()));
 
             // ── its screen ──
             var screen = new List<Control>();
@@ -243,11 +243,10 @@ namespace LbIntegrations.Ymir
         private static List<Control> OptionRows(string group, Func<string, string, string, YmirGameOption, Control> rowOf)
             => YmirGameOptions.All.Where(o => o.Group == group).Select(o => rowOf(Opt + o.Key, o.Label, o.Hint, o)).ToList();
 
-        /// <summary>The game's backup RAM in Ymir and in RetroArch's Beetle Saturn, and the two copies between them.</summary>
+        /// <summary>The game's backup RAM in Ymir, in RetroArch's Beetle Saturn and in Kronos, and the copies between Ymir and each.</summary>
         private List<Control> RetroArchCard(IGame game)
         {
             var rows = new List<Control>();
-            var link = YmirRetroArch.Find(game);
             var rom = YmirPlugin.ResolveFullPathForUi(Safe(() => game.ApplicationPath));
             var platform = Safe(() => game.Platform);
             var ymir = YmirPlugin.RamPath(_exe, platform, rom);
@@ -257,50 +256,65 @@ namespace LbIntegrations.Ymir
             string State(string path) => File.Exists(path) ? "saved " + File.GetLastWriteTime(path).ToString("g") : "none yet";
             string Cart(string path) => !File.Exists(path) ? "no cartridge" : YmirCart.HasSaves(path) ? "cartridge with saves" : "empty cartridge";
             var ymirLine = Line("");
-            var raLine = Line("");
+            var links = new[] { YmirRetroArch.Find(game), YmirKronos.Find(game) };
+            var otherLines = links.Select(_ => Line("")).ToArray();
             void Show()
             {
                 ymirLine.Text = "Ymir: " + State(ymir) + ", " + Cart(ymirCart) + " - " + ymir;
-                raLine.Text = link.Problem != null ? "RetroArch: " + link.Problem
-                            : "RetroArch (" + link.CoreName + "): " + State(link.SaveFile) + ", " + Cart(link.CartFile) + " - " + link.SaveFile;
+                for (int i = 0; i < links.Length; i++)
+                {
+                    var l = links[i];
+                    otherLines[i].Text = l.Problem != null ? l.Name + ": " + l.Problem
+                        : l.Name + (l.CoreName != l.Name ? " (" + l.CoreName + ")" : "") + ": " + State(l.SaveFile) + ", " + Cart(l.CartFile) + " - " + l.SaveFile;
+                }
             }
             Show();
             rows.Add(ymirLine);
-            rows.Add(raLine);
-            if (link.Problem != null) return rows;
-
-            var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, AutoSize = true, Margin = new Padding(0, 6, 0, 2) };
-            var import = new Button { Text = "Import from RetroArch", AutoSize = true };
-            var export = new Button { Text = "Export to RetroArch", AutoSize = true, Margin = new Padding(8, 3, 3, 3) };
-            // The console's RAM, and the cartridge when the side it comes from has saves on one (an empty one is not carried).
-            void Carry(string fromRam, string toRam, string fromCart, string toCart, string what)
+            for (int i = 0; i < links.Length; i++)
             {
-                bool ram = File.Exists(fromRam), cart = YmirCart.HasSaves(fromCart);
-                if (!ram && !cart) { MessageBox.Show(this, "There is no save to copy: " + fromRam, YmirPlugin.PackName, MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
-                var over = new List<string>();
-                if (ram && File.Exists(toRam)) over.Add("the backup RAM (" + State(toRam) + ")");
-                if (cart && File.Exists(toCart)) over.Add("the cartridge (" + State(toCart) + ")");
-                var carried = (ram ? "the backup RAM" : "") + (ram && cart ? " and " : "") + (cart ? "the cartridge" : "");
-                if (over.Count > 0 && MessageBox.Show(this, what + " - " + carried + ".\n\nWhat is there now (" + string.Join(", ", over) + ") is kept in " + replaced + ".",
-                                                      YmirPlugin.PackName, MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
-                var why = ram ? YmirRetroArch.Copy(fromRam, toRam, replaced, _exe, link.RetroArchExe) : null;
-                if (why == null && cart) why = YmirRetroArch.Copy(fromCart, toCart, replaced, _exe, link.RetroArchExe, cart: true);
-                if (why != null) MessageBox.Show(this, "Not copied: " + why, YmirPlugin.PackName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                Show();
+                rows.Add(otherLines[i]);
+                if (links[i].Problem == null) rows.Add(CarryButtons(links[i]));
             }
-            import.Click += (_, _) => Carry(link.SaveFile, ymir, link.CartFile, ymirCart, "RetroArch's save replaces the game's save in Ymir");
-            export.Click += (_, _) => Carry(ymir, link.SaveFile, ymirCart, link.CartFile, "Ymir's save replaces the game's save in RetroArch");
-            LbipHint.Attach(import, "Copies RetroArch's save of this game over Ymir's: " + link.CoreName + "'s .bkr (the console's backup RAM, 32 KB) and, when it holds saves, "
-                                  + "its .bcr (the backup cartridge, 512 KB) - the same formats, no conversion. Ymir then plugs that cartridge for this game. "
-                                  + "What is replaced is kept, dated, in " + replaced + ".");
-            LbipHint.Attach(export, "Copies Ymir's save of this game over RetroArch's (" + Path.GetFileName(link.SaveFile) + ", and its cartridge when it holds saves). "
-                                  + "What is replaced is kept, dated, in " + replaced + ".");
-            buttons.Controls.Add(import);
-            buttons.Controls.Add(export);
-            rows.Add(buttons);
+            if (links.All(l => l.Problem != null)) return rows;
             rows.Add(LbipHint.Note("The backup RAM and cartridge only: the save states of each emulator stay their own.",
-                "A save state holds the whole machine as one emulator built it: Ymir and RetroArch cannot read each other's. Close both emulators before copying.", 640, new Padding(0, 4, 0, 2)));
+                "A save state holds the whole machine as one emulator built it: Ymir, RetroArch and Kronos cannot read each other's. Nor is the "
+                + "console's clock carried - each emulator keeps its own. Close both emulators before copying.", 640, new Padding(0, 4, 0, 2)));
             return rows;
+
+            // Import and Export with one other emulator: the console's RAM, and the cartridge when the side it comes from has
+            // saves on one (an empty one is not carried).
+            Control CarryButtons(YmirRaLink link)
+            {
+                var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, AutoSize = true, Margin = new Padding(0, 2, 0, 6) };
+                var import = new Button { Text = "Import from " + link.Name, AutoSize = true };
+                var export = new Button { Text = "Export to " + link.Name, AutoSize = true, Margin = new Padding(8, 3, 3, 3) };
+                void Carry(string fromRam, string toRam, string fromCart, string toCart, string what)
+                {
+                    bool ram = File.Exists(fromRam), cart = YmirCart.HasSaves(fromCart);
+                    if (!ram && !cart) { MessageBox.Show(this, "There is no save to copy: " + fromRam, YmirPlugin.PackName, MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+                    var over = new List<string>();
+                    if (ram && File.Exists(toRam)) over.Add("the backup RAM (" + State(toRam) + ")");
+                    if (cart && File.Exists(toCart)) over.Add("the cartridge (" + State(toCart) + ")");
+                    var carried = (ram ? "the backup RAM" : "") + (ram && cart ? " and " : "") + (cart ? "the cartridge" : "");
+                    if (over.Count > 0 && MessageBox.Show(this, what + " - " + carried + ".\n\nWhat is there now (" + string.Join(", ", over) + ") is kept in " + replaced + ".",
+                                                          YmirPlugin.PackName, MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
+                    var why = ram ? YmirRetroArch.Copy(fromRam, toRam, replaced, _exe, link.RetroArchExe, otherName: link.Name) : null;
+                    if (why == null && cart) why = YmirRetroArch.Copy(fromCart, toCart, replaced, _exe, link.RetroArchExe, cart: true, otherName: link.Name);
+                    if (why != null) MessageBox.Show(this, "Not copied: " + why, YmirPlugin.PackName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    Show();
+                }
+                import.Click += (_, _) => Carry(link.SaveFile, ymir, link.CartFile, ymirCart, link.Name + "'s save replaces the game's save in Ymir");
+                export.Click += (_, _) => Carry(ymir, link.SaveFile, ymirCart, link.CartFile, "Ymir's save replaces the game's save in " + link.Name);
+                LbipHint.Attach(import, "Copies " + link.Name + "'s save of this game over Ymir's: " + (link.Name == "RetroArch" ? link.CoreName + "'s" : "its") + " "
+                                      + Path.GetExtension(link.SaveFile) + " (the console's backup RAM, 32 KB) and, when it holds saves, its .bcr (the backup cartridge, "
+                                      + "512 KB) - the same formats, no conversion. Ymir then plugs that cartridge for this game. "
+                                      + "What is replaced is kept, dated, in " + replaced + ".");
+                LbipHint.Attach(export, "Copies Ymir's save of this game over " + link.Name + "'s (" + Path.GetFileName(link.SaveFile) + ", and its cartridge when it holds saves). "
+                                      + "What is replaced is kept, dated, in " + replaced + ".");
+                buttons.Controls.Add(import);
+                buttons.Controls.Add(export);
+                return buttons;
+            }
         }
 
         private static Dictionary<string, string> StoredOf(string id)

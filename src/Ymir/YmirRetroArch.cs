@@ -30,6 +30,8 @@ namespace LbIntegrations.Ymir
 {
     internal sealed class YmirRaLink
     {
+        /// <summary>The other emulator: "RetroArch", or "Kronos" (YmirKronos) - whose exe is in RetroArchExe.</summary>
+        public string Name = "RetroArch";
         public string RetroArchExe, Core, CoreName, SaveFile, CartFile;
         /// <summary>Why there is nothing to carry, said to the user; null when the link is usable.</summary>
         public string Problem;
@@ -174,10 +176,10 @@ namespace LbIntegrations.Ymir
 
         /// <summary><paramref name="from"/> over <paramref name="to"/>, the file there first kept in <paramref name="replacedDir"/>.
         /// Null when done, else why not.</summary>
-        public static string Copy(string from, string to, string replacedDir, string ymirExe, string raExe, bool cart = false)
+        public static string Copy(string from, string to, string replacedDir, string ymirExe, string raExe, bool cart = false, string otherName = "RetroArch")
         {
             if (ymirExe != null && YmirLaunch.Running(ymirExe)) return "Ymir is running: it writes the game's RAM when it quits. Close it first.";
-            if (raExe != null && Runs(raExe)) return "RetroArch is running: it writes the game's RAM when it quits. Close it first.";
+            if (raExe != null && Runs(raExe)) return otherName + " is running: it writes the game's RAM when it quits. Close it first.";
             var bad = cart ? YmirCart.WhyNot(from) : WhyNotRam(from);
             if (bad != null) return bad;
             try
@@ -187,14 +189,14 @@ namespace LbIntegrations.Ymir
                     Directory.CreateDirectory(replacedDir);
                     var kept = Path.Combine(replacedDir, Path.GetFileNameWithoutExtension(to) + " " + DateTime.Now.ToString("yyyy-MM-dd HHmmss") + Path.GetExtension(to));
                     File.Copy(to, kept);
-                    Log.Info("retroarch link: " + to + " kept as " + kept);
+                    Log.Info(otherName + " link: " + to + " kept as " + kept);
                 }
                 Directory.CreateDirectory(Path.GetDirectoryName(to));
                 File.Copy(from, to, overwrite: true);
-                Log.Info("retroarch link: copied " + from + " -> " + to);
+                Log.Info(otherName + " link: copied " + from + " -> " + to);
                 return null;
             }
-            catch (Exception ex) { Log.Warn("retroarch link: copy", ex); return ex.Message; }
+            catch (Exception ex) { Log.Warn(otherName + " link: copy", ex); return ex.Message; }
         }
 
         private static T Safe<T>(Func<T> get) { try { return get(); } catch { return default; } }
