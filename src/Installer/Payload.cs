@@ -37,11 +37,12 @@ internal static class Payload
     public const string ThreeDSen = "Nixx-3DSen";
     public const string Mesen = "Nixx-Mesen";
     public const string Ymir = "Nixx-Ymir";
+    public const string Kronos = "Nixx-Kronos";
     /// <summary>The catch-all of the saves (lot 6): no emulator of its own - see src\NixxSaves.</summary>
     public const string Saves = "Nixx-Saves";
 
     public static readonly string[] Folders =
-        { Ares, Bsnes, Cxbx, Demul, Flycast, MelonDs, NoGba, Ppsspp, RaSnes9x, SuperZsnes, Vita3k, Xemu, Xenia, ZincEx, Punes, Fceux, ThreeDSen, Mesen, Ymir, Saves };
+        { Ares, Bsnes, Cxbx, Demul, Flycast, MelonDs, NoGba, Ppsspp, RaSnes9x, SuperZsnes, Vita3k, Xemu, Xenia, ZincEx, Punes, Fceux, ThreeDSen, Mesen, Ymir, Kronos, Saves };
 
     /// <summary>Every folder name this pack has been installed under before the rename. They are
     /// swept on install, because PluginLoader dedupes by FILE NAME across plugin roots: a stale
@@ -69,7 +70,7 @@ internal static class Payload
     /// deleting it on the strength of its name alone is how an installer destroys something it was
     /// never told about.</summary>
     public static readonly string[] Assemblies =
-        { "Ares.dll", "Bsnes.dll", "Cxbx.dll", "Demul.dll", "Flycast.dll", "MelonDs.dll", "NoGba.dll", "Ppsspp.dll", "RaSnes9x.dll", "SuperZsnes.dll", "Vita3k.dll", "Xemu.dll", "Xenia.dll", "ZincEx.dll", "Punes.dll", "Fceux.dll", "ThreeDSen.dll", "Mesen.dll", "Ymir.dll", "NixxSaves.dll", "NixxMenus.dll" };
+        { "Ares.dll", "Bsnes.dll", "Cxbx.dll", "Demul.dll", "Flycast.dll", "MelonDs.dll", "NoGba.dll", "Ppsspp.dll", "RaSnes9x.dll", "SuperZsnes.dll", "Vita3k.dll", "Xemu.dll", "Xenia.dll", "ZincEx.dll", "Punes.dll", "Fceux.dll", "ThreeDSen.dll", "Mesen.dll", "Ymir.dll", "Kronos.dll", "NixxSaves.dll", "NixxMenus.dll" };
 
     /// <summary>The menu relay: the pack's right-click entries on games, shown for the plugins.
     ///
@@ -178,6 +179,10 @@ internal static class Payload
         new("payload/Nixx-Ymir/Ymir.dll", Ymir, "Ymir.dll"),
         new("payload/Nixx-Ymir/manifest.json", Ymir, "manifest.json"),
         new(Contract, Ymir, "LbIntegrations.Catalog.dll"),
+
+        new("payload/Nixx-Kronos/Kronos.dll", Kronos, "Kronos.dll"),
+        new("payload/Nixx-Kronos/manifest.json", Kronos, "manifest.json"),
+        new(Contract, Kronos, "LbIntegrations.Catalog.dll"),
 
         new("payload/Nixx-Saves/NixxSaves.dll",         Saves,      "NixxSaves.dll"),
         new("payload/Nixx-Saves/manifest.json",        Saves,      "manifest.json"),

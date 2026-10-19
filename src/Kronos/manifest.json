@@ -1,0 +1,19 @@
+{
+  "SchemaVersion": 1,
+  "PluginId": "33fb087c-e747-4f08-ad4a-c9777827d7e9",
+  "UserId": 0,
+  "Name": "Nixx-Kronos",
+  "Developer": "nixxou",
+  "Description": "Download, update, launch, BIOS and save integration for Kronos, the Sega Saturn emulator (Tradu-France's Windows builds): one save per game, its own states, several discs and the pack's keys.",
+  "Credits": "Many thanks to FCare and Benjamin Siskoo for Kronos, and to the Yabause team before them.",
+  "OperatingSystemFamily": "Windows",
+  "InstalledVersion": "1.0.0",
+  "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
+  "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
+  "HomePageUrl": "https://www.tradu-france.com/emulateur/Saturn/Kronos",
+  "TipJarUrl": "",
+  "SourceKind": "Local",
+  "Tags": [
+    "5aae585f-ffc5-42bc-9f95-e5e190ef99e2"
+  ]
+}

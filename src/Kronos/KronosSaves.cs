@@ -1,0 +1,402 @@
+// Save management for Kronos - the game's backup RAM, its cartridge and its save states (YmirSaves is the model of this file).
+//
+//   Backup RAM    <install>\Saves\<platform>\<game>.bkr     the console's internal backup RAM, 32 KB, ONE PER LAUNCHBOX GAME:
+//                                                          kronos.ini's Memory\Path pointed at it for the session
+//                                                          (KronosSession). <game>: the .m3u's name, or the disc's without
+//                                                          "(Disc N)" - so the discs of a game share it. Same format as
+//                                                          Beetle Saturn's .bkr and Ymir's internal RAM (measured 19/10).
+//   Cartridge     <install>\Saves\<platform>\<game>.bcr     the game's backup RAM cartridge (4 Mbit, 512 KiB), when it has one -
+//                                                          plugged for its session only; same format as Beetle's .bcr.
+//   Save states   <install>\Saves\<platform>\States\<game>\<product code>_<NNN>.yss   Kronos's slots 000-009 named by the
+//                                                          disc's product code (measured 19/10: MK-8109109_001.yss) - pack slots
+//                                                          1-10, Kronos's slot 0 the pack's 10. One folder per GAME, the
+//                                                          General\SaveStates of its session.
+//   not saves     <game>.bkr.bak / *.bad.* (Kronos's own copies when a file was damaged).
+//
+// THE IDS are the pack's JSON (Shared.Saves): {"emu":"kronos","kind":"save" | "cart","sys":"saturn","by":"name","id":"<game>"} and
+// {"emu":"kronos","kind":"state","sys":"saturn","by":"product","id":"<product code>","slot":n}. A state is restored under its
+// product code when the target game has that disc, under the target's only disc's otherwise; a game of several discs and none
+// of that code: refused, said.
+
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Text.RegularExpressions;
+using LbIntegrations.Lbip;
+using LbIntegrations.Saves;
+using Unbroken.LaunchBox.Plugins;
+using Unbroken.LaunchBox.Plugins.Data;
+
+namespace LbIntegrations.Kronos
+{
+    public partial class KronosPlugin
+    {
+        private string SaveEmu => Emu;
+        private void SaveLog(string message) => Log.Info(message);
+
+        internal const string Emu = "kronos";
+        private const string Sys = "saturn";
+        private const string RamGroupName = "Backup RAM";
+        private const string RamChipText = "RAM";
+        private const string StateGroupName = "Save states";
+        private const string StateChipText = "STATE";
+        internal const int Slots = 10;
+
+        private static readonly Regex StateFile = new Regex(@"^(?<p>.+)_(?<n>\d{3})\.yss$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        /// <summary>Kronos's slot (0-9) as the pack numbers it (1-10): its 0 is the 10th.</summary>
+        internal static int PackSlot(int kronos) => kronos == 0 ? 10 : kronos;
+        internal static int KronosSlot(int pack) => pack == 10 ? 0 : pack;
+
+        public override bool SupportsSaveManagement() => true;
+
+        public override IReadOnlyDictionary<int, string> GetPotentialSaveSlots()
+        {
+            var slots = new Dictionary<int, string>();
+            for (int i = 1; i <= Slots; i++) slots[i] = i.ToString(CultureInfo.InvariantCulture);
+            return slots;
+        }
+
+        // ── where Kronos keeps a game's ────────────────────────────────────────
+
+        /// <summary>The name a game's backup RAM is kept under (header): the file without its extension and its "(Disc N)".</summary>
+        internal static string RamName(string rom)
+        {
+            var name = Path.GetFileNameWithoutExtension(rom ?? "");
+            var ext = Path.GetExtension(rom ?? "").ToLowerInvariant();
+            return ext == ".m3u" ? name : KronosLaunch.WithoutDisc(name);
+        }
+
+        private static string SafeName(string name) => string.Concat((name ?? "").Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)).Trim();
+
+        internal static string RamDir(string exe, string platform)
+            => Path.Combine(KronosLaunch.ProfileOf(exe), "Saves", SafeName(string.IsNullOrWhiteSpace(platform) ? "Sega Saturn" : platform));
+
+        internal static string RamPath(string exe, string platform, string rom) => Path.Combine(RamDir(exe, platform), SafeName(RamName(rom)) + ".bkr");
+
+        /// <summary>The game's backup RAM cartridge, beside its RAM - plugged only when it is there (KronosCart).</summary>
+        internal static string CartPath(string exe, string platform, string rom) => Path.Combine(RamDir(exe, platform), SafeName(RamName(rom)) + ".bcr");
+
+        private const string CartGroupName = "Backup RAM cartridge";
+        private const string CartChipText = "CART";
+
+        /// <summary>A game's discs, for its states - never unpacking an archive (only one already unpacked is looked at).</summary>
+        internal static List<string> DiscsForListing(string rom, string exe)
+        {
+            try
+            {
+                var ext = Path.GetExtension(rom ?? "").ToLowerInvariant();
+                if (ext == ".m3u") return KronosLaunch.M3uDiscs(rom).Where(SaveScan.Exists).ToList();
+                if (KronosLaunch.IsNative(rom)) return KronosLaunch.DiscsOf(rom);
+                if (KronosLaunch.IsArchive(rom))
+                {
+                    var unpacked = Path.Combine(KronosLaunch.ProfileOf(exe), "Unpacked");
+                    if (!SaveScan.DirExists(unpacked)) return new List<string>();
+                    var dir = Directory.EnumerateDirectories(unpacked, Path.GetFileNameWithoutExtension(rom) + "-*").FirstOrDefault();
+                    if (dir == null) return new List<string>();
+                    var files = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).ToList();
+                    var m3u = files.FirstOrDefault(p => p.EndsWith(".m3u", StringComparison.OrdinalIgnoreCase));
+                    if (m3u != null) return KronosLaunch.M3uDiscs(m3u).Where(File.Exists).ToList();
+                    var disc = files.FirstOrDefault(p => p.EndsWith(".cue", StringComparison.OrdinalIgnoreCase)) ?? files.FirstOrDefault(KronosLaunch.IsNative);
+                    return disc == null ? new List<string>() : KronosLaunch.DiscsOf(disc);
+                }
+            }
+            catch { }
+            return new List<string>();
+        }
+
+        /// <summary>The folder of a game's save states (header).</summary>
+        internal static string StatesDir(string exe, string platform, string rom) => Path.Combine(RamDir(exe, platform), "States", SafeName(RamName(rom)));
+
+        /// <summary>The product codes of a game's discs, read once per listing.</summary>
+        internal static List<string> ProductsOf(string rom, string exe) => SaveScan.Memo("kronos.products|" + rom, () =>
+            DiscsForListing(rom, exe).Select(d => KronosDisc.Read(d)?.Product).Where(p => !string.IsNullOrWhiteSpace(p)).Distinct(StringComparer.OrdinalIgnoreCase).ToList());
+
+        /// <summary>A game's states: file, product code, pack slot (1-10).</summary>
+        internal static IEnumerable<(string Path, string Product, int Slot)> StatesOf(string dir)
+        {
+            if (!SaveScan.DirExists(dir)) yield break;
+            foreach (var path in SaveScan.Files(dir, "*.yss"))
+            {
+                var m = StateFile.Match(Path.GetFileName(path));
+                if (!m.Success) continue;
+                var n = int.Parse(m.Groups["n"].Value, CultureInfo.InvariantCulture);
+                if (n > 9) continue;
+                yield return (path, m.Groups["p"].Value, PackSlot(n));
+            }
+        }
+
+        // ── listing ──────────────────────────────────────────────────────────
+
+        GetSavesResponse IOwnSaves.OwnGetSaves(GetSavesArgs args)
+        {
+            try
+            {
+                if (args?.Emulator == null) return new GetSavesResponse("No emulator was supplied.");
+                var exe = ResolveFullPath(Safe(() => args.Emulator.ApplicationPath));
+                if (!KronosLaunch.IsKronosExe(exe)) return new GetSavesResponse("This emulator is not Kronos.");
+
+                var found = new List<GameSaveBase>();
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                int states = 0;
+                foreach (var app in args.AdditionalApplications ?? (IReadOnlyCollection<IAdditionalApplication>)Array.Empty<IAdditionalApplication>())
+                {
+                    var gameId = Safe(() => app.GameId);
+                    var game = args.Games?.FirstOrDefault(g => Safe(() => g.Id) == gameId) ?? PluginHelper.DataManager?.GetGameById(gameId);
+                    states += Collect(found, seen, exe, Safe(() => app.ApplicationPath), gameId, Safe(() => game?.Platform),
+                                      SaveRows.TieTo(Safe(() => app.Id), Safe(() => game?.ApplicationPath), Safe(() => app.ApplicationPath), Full));
+                }
+                foreach (var game in args.Games ?? (IReadOnlyCollection<IGame>)Array.Empty<IGame>())
+                    states += Collect(found, seen, exe, Safe(() => game.ApplicationPath), Safe(() => game.Id), Safe(() => game.Platform), null);
+
+                Log.Verbose("found " + (found.Count - states) + " backup RAM(s) and " + states + " state(s) for " + exe);
+                return new GetSavesResponse(found);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("GetSaves failed", ex);
+                return new GetSavesResponse("Could not read Kronos saves: " + ex.Message);
+            }
+        }
+
+        private static int Collect(List<GameSaveBase> into, HashSet<string> seen, string exe, string romPath, string gameId, string platform, string appId)
+        {
+            if (string.IsNullOrWhiteSpace(gameId) || string.IsNullOrWhiteSpace(romPath)) return 0;
+            var rom = ResolveFullPath(romPath);
+            var context = appId ?? gameId;
+
+            var ram = RamPath(exe, platform, rom);
+            if (SaveScan.Exists(ram) && seen.Add("save|" + ram + "|" + context))
+                into.Add(RamRow(ram, gameId, appId, IdOfRam(RamName(rom))));
+            var cart = CartPath(exe, platform, rom);
+            if (SaveScan.Exists(cart) && seen.Add("cart|" + cart + "|" + context))
+                into.Add(RamRow(cart, gameId, appId, IdOfCart(RamName(rom)), CartGroupName, CartChipText));
+
+            int states = 0;
+            foreach (var (path, product, slot) in StatesOf(StatesDir(exe, platform, rom)))
+            {
+                if (!seen.Add("state|" + path + "|" + context)) continue;
+                into.Add(StateRow(path, gameId, appId, slot, IdOfState(product, slot), StateGroupName));
+                states++;
+            }
+            return states;
+        }
+
+        private static string IdOfRam(string name) => SaveId.Write(new SaveIdData { Emu = Emu, Kind = "save", Sys = Sys, By = "name", Id = name });
+        private static string IdOfState(string product, int slot) => SaveId.Write(new SaveIdData { Emu = Emu, Kind = "state", Sys = Sys, By = "product", Id = product, Slot = slot });
+
+        private static string IdOfCart(string name) => SaveId.Write(new SaveIdData { Emu = Emu, Kind = "cart", Sys = Sys, By = "name", Id = name });
+
+        /// <summary>A row of the backup RAM's group, or the cartridge's.</summary>
+        private static bool IsCart(GameSaveBase save)
+            => SaveId.TryRead(save?.SaveGroupId, out var d) && d?.Kind == "cart"
+               || Path.GetExtension(save?.OriginalFileName ?? save?.FileLocation ?? "").Equals(".bcr", StringComparison.OrdinalIgnoreCase);
+
+        private static GameSaveGame RamRow(string path, string gameId, string appId, string groupId, string groupName = RamGroupName, string chip = RamChipText)
+        {
+            long size = 0; DateTime when = default;
+            try { var i = new FileInfo(path); size = i.Length; when = i.LastWriteTimeUtc; } catch { }
+            return new GameSaveGame
+            {
+                GameId = gameId, AdditionalApplicationId = appId, FileLocation = path, IsDirectory = false,
+                OriginalFileName = Path.GetFileName(path), SaveGroupId = groupId, SaveGroupName = groupName, DisplayChipText = chip,
+                ReportedFileSizeBytes = size > 0 ? size : (long?)null, ReportedLastModifiedUtc = when == default ? (DateTime?)null : when,
+            };
+        }
+
+        private static GameSaveState StateRow(string path, string gameId, string appId, int slot, string groupId, string groupName)
+        {
+            long size = 0; DateTime when = default;
+            try { var i = new FileInfo(path); size = i.Length; when = i.LastWriteTimeUtc; } catch { }
+            return new GameSaveState
+            {
+                GameId = gameId, AdditionalApplicationId = appId, FileLocation = path, IsDirectory = false,
+                OriginalFileName = Path.GetFileName(path), Slot = slot, SaveGroupId = groupId,
+                SaveGroupName = groupName ?? StateGroupName, DisplayChipText = StateChipText,
+                ReportedFileSizeBytes = size > 0 ? size : (long?)null, ReportedLastModifiedUtc = when == default ? (DateTime?)null : when,
+            };
+        }
+
+        // ── the contract ─────────────────────────────────────────────────────
+
+        bool IOwnSaves.OwnIsSaveContainer(GameSaveBase save) => false;
+
+        bool IOwnSaves.OwnUseSaveGroupIdForPersistedMatch(GameSaveBase save) => IsOurs(save);
+
+        bool IOwnSaves.OwnTryBackupSave(GameSaveBase save, string emulatorApplicationPath, string destinationFolder, out string error)
+        {
+            error = "A Kronos save is a file, not a container.";
+            return false;
+        }
+
+        /// <summary>Kronos's own copies of a damaged backup RAM (.bak, .bad): never a row.</summary>
+        bool IOwnSaves.OwnIsSecondarySaveFile(string filePath)
+        {
+            try
+            {
+                var name = Path.GetFileName(filePath ?? "").ToLowerInvariant();
+                return name.EndsWith(".bkr.bak") || name.EndsWith(".bcr.bak") || name.Contains(".bad");
+            }
+            catch { return false; }
+        }
+
+        IReadOnlyList<string> IOwnSaves.OwnGetCompanionSaveFiles(string primaryFilePath) => Array.Empty<string>();
+
+        /// <summary>Active when it is where Kronos reads it for that game now, and still there.</summary>
+        bool IOwnSaves.OwnIsSaveActive(GameSaveBase save, string emulatorApplicationPath)
+        {
+            try
+            {
+                if (!IsOurs(save) || string.IsNullOrWhiteSpace(save.FileLocation)) return true;
+                if (!File.Exists(save.FileLocation)) return false;
+                var exe = ResolveFullPath(emulatorApplicationPath);
+                if (!KronosLaunch.IsKronosExe(exe)) return true;
+                var target = TargetFileFor(save, exe, out _);
+                return target == null || string.Equals(Path.GetFullPath(target), Path.GetFullPath(save.FileLocation), StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return true; }
+        }
+
+        // ── restore ──────────────────────────────────────────────────────────
+
+        /// <summary>Where a row goes back for its game (the version it is tied to, else the game): the backup RAM's file, or the
+        /// state of its slot in the folder of the right disc. Null, with why, when there is none.</summary>
+        private static string TargetFileFor(GameSaveBase save, string exe, out string why, int? slot = null)
+        {
+            why = null;
+            var to = SaveRows.TargetFor(save, PluginHelper.DataManager, Full);
+            if (to.Refused || string.IsNullOrEmpty(to.RomPath)) { why = to.Warning ?? "Could not find the game of this save."; return null; }
+            var platform = Safe(() => PluginHelper.DataManager?.GetGameById(save.GameId)?.Platform);
+            if (!(save is GameSaveState state)) return IsCart(save) ? CartPath(exe, platform, to.RomPath) : RamPath(exe, platform, to.RomPath);
+
+            var products = ProductsOf(to.RomPath, exe);
+            string own = SaveId.TryRead(save.SaveGroupId, out var d) && d?.By == "product" ? d.Id
+                       : StateFile.Match(Path.GetFileName(save.FileLocation ?? "")) is var fm && fm.Success ? fm.Groups["p"].Value : null;
+            string product = products.FirstOrDefault(p => string.Equals(p, own, StringComparison.OrdinalIgnoreCase)) ?? (products.Count == 1 ? products[0] : null);
+            if (product == null)
+            {
+                why = products.Count == 0 ? "The game's disc could not be read, so the name Kronos gives its states is not known."
+                                          : "This state is of a disc this game does not have, and the game has " + products.Count + " discs: which one it goes to is not known.";
+                return null;
+            }
+            int n = slot ?? state.Slot ?? SlotRestore.SlotOf(save.SaveGroupId) ?? 1;
+            return Path.Combine(StatesDir(exe, platform, to.RomPath), product + "_" + KronosSlot(n).ToString("000", CultureInfo.InvariantCulture) + ".yss");
+        }
+
+        AddSaveResponse IOwnSaves.OwnAddSaveFile(AddSaveArgs args)
+        {
+            try
+            {
+                var save = args?.SaveToAdd;
+                if (save == null) return new AddSaveResponse("No save was supplied.");
+                var source = save.FileLocation;
+                if (string.IsNullOrWhiteSpace(source) || !File.Exists(source)) return new AddSaveResponse("This Kronos backup is not a file: " + source);
+                var exe = ExecutableOf(PluginHelper.DataManager?.GetGameById(save.GameId));
+                if (exe == null) return new AddSaveResponse("Could not find the Kronos this game runs on.");
+                if (KronosLaunch.Running(exe)) return new AddSaveResponse("Kronos is running: close it first.");
+
+                if (save is GameSaveState picked)
+                {
+                    var m = StateFile.Match(save.OriginalFileName ?? Path.GetFileName(source));
+                    int own = SlotRestore.SlotOf(save.SaveGroupId) ?? (m.Success ? PackSlot(int.Parse(m.Groups["n"].Value, CultureInfo.InvariantCulture) % 10) : -1);
+                    var (slot, refused) = SlotRestore.Choose(picked.Slot, own < 1 ? (int?)null : own, Enumerable.Range(1, Slots).ToList(), "Kronos");
+                    if (refused != null) { Log.Info("restore of " + save.OriginalFileName + " refused: " + refused); return new AddSaveResponse(refused); }
+                    var target = TargetFileFor(save, exe, out var why, slot);
+                    if (target == null) { Log.Info("restore of " + save.OriginalFileName + " refused: " + why); return new AddSaveResponse(why); }
+                    bool otherCard = !IsOurs(save) || slot != own || SlotRestore.OverAnotherFile(target, save);
+                    if (!SlotRestore.MayOverwrite(target, source, otherCard, "Slot " + slot, Log.Info, out var no)) return new AddSaveResponse(no);
+                    if (!Overwrite(args, target)) return new AddSaveResponse("Restore cancelled.");
+                    var cannot = SaveCompanions.WhyNotWritable(source, target, null);
+                    if (cannot != null) { Log.Info("restore refused: " + cannot); return new AddSaveResponse(cannot); }
+                    Directory.CreateDirectory(Path.GetDirectoryName(target));
+                    File.Copy(source, target, overwrite: true);
+                    Log.Info("restored a state to slot " + slot + " -> " + target);
+                    var product = StateFile.Match(Path.GetFileName(target)).Groups["p"].Value;
+                    return new AddSaveResponse(StateRow(target, picked.GameId, picked.AdditionalApplicationId, slot, IdOfState(product, slot),
+                                                        string.IsNullOrWhiteSpace(picked.SaveGroupName) ? StateGroupName : picked.SaveGroupName));
+                }
+
+                var ram = TargetFileFor(save, exe, out var whyRam);
+                if (ram == null) return new AddSaveResponse(whyRam);
+                bool cart = IsCart(save);
+                // Never a file Kronos would resize and format (KronosCart): the right size, its header.
+                var bad = cart ? KronosCart.WhyNot(source) : KronosRetroArch.WhyNotRam(source);
+                if (bad != null) { Log.Info("restore refused: " + bad); return new AddSaveResponse(bad); }
+                bool other = !IsOurs(save) || SlotRestore.OverAnotherFile(ram, save);
+                if (!SlotRestore.MayOverwrite(ram, source, other, cart ? "The game's backup cartridge" : "The game's backup RAM", Log.Info, out var nope)) return new AddSaveResponse(nope);
+                if (!Overwrite(args, ram)) return new AddSaveResponse("Restore cancelled.");
+                var cant = SaveCompanions.WhyNotWritable(source, ram, null);
+                if (cant != null) { Log.Info("restore refused: " + cant); return new AddSaveResponse(cant); }
+                Directory.CreateDirectory(Path.GetDirectoryName(ram));
+                File.Copy(source, ram, overwrite: true);
+                Log.Info("restored the backup " + (cart ? "cartridge" : "RAM") + " -> " + ram);
+                var name = Path.GetFileNameWithoutExtension(ram);
+                return new AddSaveResponse(cart ? RamRow(ram, save.GameId, save.AdditionalApplicationId, IdOfCart(name), CartGroupName, CartChipText)
+                                                : RamRow(ram, save.GameId, save.AdditionalApplicationId, IdOfRam(name)));
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("AddSaveFile failed", ex);
+                return new AddSaveResponse("Could not restore this Kronos save: " + ex.Message);
+            }
+        }
+
+        private static bool Overwrite(AddSaveArgs args, string target)
+        {
+            if (!File.Exists(target)) return true;
+            try { return args.ShouldOverwriteFunc?.Invoke() ?? true; } catch { return true; }
+        }
+
+        LbIntegrations.Saves.ExpectedDir IOwnSaves.OwnExpectedDir(IEmulator emulator, GameSaveBase save)
+        {
+            var exe = ResolveFullPath(Safe(() => emulator?.ApplicationPath));
+            if (save == null || !KronosLaunch.IsKronosExe(exe)) return LbIntegrations.Saves.ExpectedDir.Unknown("Could not find the Kronos this game runs on.");
+            var target = TargetFileFor(save, exe, out var why);
+            return target == null ? LbIntegrations.Saves.ExpectedDir.Unknown(why) : LbIntegrations.Saves.ExpectedDir.FolderOr(Path.GetDirectoryName(target), why);
+        }
+
+        private static string Full(string path) => string.IsNullOrWhiteSpace(path) ? null : ResolveFullPath(path);
+
+        /// <summary>The Kronos a game runs on: its own emulator when that is one, else the first in the library.</summary>
+        private static string ExecutableOf(IGame game)
+        {
+            try
+            {
+                var dm = PluginHelper.DataManager;
+                var id = Safe(() => game?.EmulatorId);
+                bool IsKronos(string p) => KronosLaunch.IsKronosExe(ResolveFullPath(p));
+                var own = LbIntegrations.Saves.SaveForward.ViaEmulator(IsKronos) ?? (string.IsNullOrEmpty(id) ? null : dm?.GetEmulatorById(id));
+                var path = Safe(() => own?.ApplicationPath);
+                if (!IsKronos(path))
+                    path = Safe(() => dm?.GetAllEmulators()?.FirstOrDefault(e => IsKronos(Safe(() => e.ApplicationPath)))?.ApplicationPath);
+                return string.IsNullOrEmpty(path) ? null : ResolveFullPath(path);
+            }
+            catch { return null; }
+        }
+
+        // ── delete ───────────────────────────────────────────────────────────
+
+        PluginResponse IOwnSaves.OwnRemoveSave(GameSaveBase save)
+        {
+            try
+            {
+                if (!IsOurs(save)) return base.RemoveSave(save);
+                var loc = save?.FileLocation;
+                if (string.IsNullOrWhiteSpace(loc)) return new PluginResponse(false, "This save has no location.");
+                try { if (File.Exists(loc)) File.Delete(loc); }
+                catch (Exception ex) { Log.Warn("could not delete " + loc, ex); return new PluginResponse(false, "Could not delete " + Path.GetFileName(loc) + "."); }
+                Log.Info("deleted " + loc);
+                return new PluginResponse(true);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("RemoveSave failed", ex);
+                return new PluginResponse(false, "Could not delete this Kronos save: " + ex.Message);
+            }
+        }
+
+        private static bool IsOurs(GameSaveBase save) => SaveRows.IsOurs(save?.SaveGroupId, Emu);
+    }
+}

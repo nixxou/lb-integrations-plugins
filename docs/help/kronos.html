@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kronos - Nixx plugin guide</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#ffffff; --ink:#1d1d1f; --muted:#5f6368; --line:#e3e3e0; --accent:#0a6ed1; --ok:#1e8e3e; --warn:#b06000; --no:#c5221f; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17181a; --card:#1f2124; --ink:#e8e8e6; --muted:#a0a3a7; --line:#33363a; --accent:#5aa9ff; --ok:#5bc27a; --warn:#e3a34a; --no:#ff7b72; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 "Segoe UI", system-ui, sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 64px; }
+  header h1 { margin:0 0 4px; font-size:30px; }
+  header p { margin:0; color:var(--muted); }
+  nav { margin:20px 0 8px; display:flex; flex-wrap:wrap; gap:8px; }
+  nav a { font-size:14px; color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; background:var(--card); }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 24px; margin:18px 0; }
+  h2 { margin:0 0 10px; font-size:21px; }
+  h3 { margin:18px 0 6px; font-size:17px; }
+  ul { padding-left:22px; } li { margin:4px 0; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .yes { color:var(--ok); font-weight:600; } .partly { color:var(--warn); font-weight:600; } .no { color:var(--no); font-weight:600; }
+  .tip, .warn { border-left:4px solid var(--accent); padding:8px 14px; margin:12px 0; background:color-mix(in srgb, var(--accent) 8%, transparent); border-radius:0 8px 8px 0; }
+  .warn { border-color:var(--warn); background:color-mix(in srgb, var(--warn) 10%, transparent); }
+  code, kbd { font-family:Consolas, monospace; font-size:14px; background:color-mix(in srgb, var(--ink) 8%, transparent); padding:1px 5px; border-radius:4px; }
+  footer { color:var(--muted); font-size:13px; text-align:center; margin-top:30px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Kronos</h1>
+  <p>Sega Saturn - what the Nixx plugin does for you, and what to expect.</p>
+</header>
+<nav>
+  <a href="#overview">In short</a><a href="#start">Getting started</a><a href="#play">Playing</a><a href="#keys">Keys</a>
+  <a href="#options">Options</a><a href="#saves">Saves</a><a href="#support">What works</a><a href="#limits">Limits</a><a href="#trouble">If something goes wrong</a>
+</nav>
+
+<section id="overview"><h2>In short</h2>
+  <p>Kronos is a Sega Saturn emulator of the Yabause family, started by FCare and carried on today by Benjamin Siskoo, whose site
+  Tradu-France publishes its Windows builds. It runs fast and can draw the games above their original resolution. The plugin installs
+  and updates Tradu-France's 64-bit build, finds your Saturn BIOS, starts each game with its own backup RAM and its own save states,
+  and gives it the pack's keys - a key for the next disc too.</p>
+</section>
+
+<section id="start"><h2>Getting started</h2>
+  <ul>
+    <li><b>Install:</b> Tools &gt; Manage &gt; Emulators &gt; Add, choose <b>Nixx-Kronos</b>, Download. Kronos goes to <code>Emulators\Nixx-Kronos</code>,
+      portable: its <code>kronos.ini</code>, BIOS, saves and states stay in that folder. It needs the Microsoft Visual C++ runtime (x64): its
+      installer, <code>vc_redist.x64.exe</code>, comes with it.</li>
+    <li><b>BIOS:</b> the plugin keeps the Saturn BIOS in <code>Emulators\Nixx-Kronos\bios</code>. It looks in RetroArch's <code>system</code> folder and
+      the other emulators' bios folders (Ymir's too), recognises a BIOS by its content - the name does not matter - and copies it. At each launch
+      Kronos is given the one of the disc's region: <code>mpr-17933.bin</code> for American and European discs, <code>sega_101.bin</code> for Japanese ones.</li>
+    <li><b>Games:</b> <code>.chd</code>, <code>.cue</code> (with its .bin), <code>.ccd</code> (with its .img), <code>.mds</code>, <code>.iso</code>, a
+      <code>.m3u</code> for several discs, or a <code>.zip</code> / <code>.7z</code> holding them - platform <b>Sega Saturn</b>.</li>
+  </ul>
+</section>
+
+<section id="play"><h2>Playing a game</h2>
+  <ul>
+    <li>The game starts by itself, in full screen (a choice in the Nixx window and in each game's window).</li>
+    <li>A <code>.m3u</code> starts on its first disc; an archive is unpacked once into <code>Emulators\Nixx-Kronos\Unpacked</code>.</li>
+    <li>The game gets <b>its own backup RAM</b> (the Saturn's memory where games save, 32 KB as on the console):
+      <code>Saves\Sega Saturn\&lt;game&gt;.bkr</code> in Kronos's folder, named after the .m3u or the disc without "(Disc N)" - the discs of a game
+      share it - and <b>its own folder of save states</b>, <code>Saves\Sega Saturn\States\&lt;game&gt;</code>. Kronos's own settings are put back when
+      it quits.</li>
+    <li>Quit with <kbd>Esc</kbd> or LaunchBox's Exit: Kronos closes cleanly.</li>
+  </ul>
+</section>
+
+<section id="keys"><h2>Keys</h2>
+  <table><tr><th>Key</th><th>What it does</th></tr>
+  <tr><td><kbd>F2</kbd> / <kbd>F4</kbd></td><td>Save / load a state, in the current slot</td></tr>
+  <tr><td><kbd>F6</kbd> / <kbd>F7</kbd></td><td>Slot down / up (1 to 10), said on the screen</td></tr>
+  <tr><td><kbd>PageDown</kbd> / <kbd>PageUp</kbd></td><td>Next / previous disc, said on the screen. In full screen the picture leaves it for a moment
+    while Kronos's disc window opens and closes by itself</td></tr>
+  <tr><td><kbd>F11</kbd> (or <kbd>Alt</kbd>+<kbd>Enter</kbd>)</td><td>Full screen</td></tr>
+  <tr><td><kbd>Esc</kbd></td><td>Quit</td></tr></table>
+  <p class="tip">Kronos has no "current slot", and its own Ctrl / Alt + digit keys do nothing: the plugin sets each slot's save on
+  <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F1</kbd>...<kbd>F10</kbd> and its load on <kbd>Shift</kbd>+<kbd>F1</kbd>...<kbd>F10</kbd> in kronos.ini, and the
+  AutoHotkey script of the emulator entry, active in Kronos's window only, sends them for the slot it counts. Kronos's own settings window:
+  <kbd>Ctrl</kbd>+<kbd>S</kbd> (in a window, not in full screen).</p>
+</section>
+
+<section id="options"><h2>Options</h2>
+  <ul>
+    <li><b>Nixx window</b> (Tools &gt; Nixx Integration Plugins Configuration..., page Kronos): the screen every game gets, the install, the BIOS found.</li>
+    <li><b>Right-click a game</b> &gt; Nixx-Kronos : Options...: its discs (title, product code, area), its save with RetroArch, its own screen.</li>
+    <li>Everything else is Kronos's own: its Settings window.</li>
+  </ul>
+</section>
+
+<section id="saves"><h2>Saves and save states</h2>
+  <ul>
+    <li>LaunchBox's save management sees each game's <b>backup RAM</b> and its <b>save states</b> (slots 1-10), with backups and restore. A state is
+      named by its disc's product code; it goes back to that disc of the game. Restoring needs Kronos closed.</li>
+    <li><b>The backup cartridge:</b> a game that has one (<code>Saves\Sega Saturn\&lt;game&gt;.bcr</code>, 4 Mbit) gets it plugged in Kronos for its
+      session, and listed in LaunchBox beside its backup RAM. A game without one plays with what Kronos's settings say.</li>
+    <li><b>With RetroArch and Ymir:</b> the backup RAM and the cartridge are the same files as RetroArch's Beetle Saturn (<code>.bkr</code>,
+      <code>.bcr</code>) and Ymir's - no conversion. Right-click the game &gt; Nixx-Kronos : Options... &gt; <i>Its save, with RetroArch</i>: import or
+      export. What is replaced is kept, dated, in <code>Saves\Sega Saturn\replaced</code>. Save states cannot be carried: each emulator reads only its own.</li>
+  </ul>
+</section>
+
+<section id="support"><h2>What works</h2>
+  <table><tr><th>Feature</th><th></th><th>Notes</th></tr>
+  <tr><td>Install, update</td><td class="yes">Yes</td><td>Tradu-France's 64-bit build, its size checked</td></tr>
+  <tr><td>.chd .cue .ccd .iso, a .zip with a .cue</td><td class="yes">Yes</td><td>Opened by Kronos itself (measured)</td></tr>
+  <tr><td>.mds</td><td class="partly">Should</td><td>Kronos reads it; not measured here</td></tr>
+  <tr><td>.m3u, .7z, any .zip</td><td class="yes">Yes</td><td>Read / unpacked by the plugin</td></tr>
+  <tr><td>Several discs</td><td class="yes">Yes</td><td>PageDown / PageUp, without a reset</td></tr>
+  <tr><td>One backup RAM per game</td><td class="yes">Yes</td><td>Saves\Sega Saturn\, 32 KB</td></tr>
+  <tr><td>Save states in LaunchBox</td><td class="yes">Yes</td><td>One folder per game, without a picture</td></tr>
+  <tr><td>Backup RAM cartridge</td><td class="yes">Yes</td><td>Per game, when it has one</td></tr>
+  <tr><td>Saves with RetroArch (Beetle Saturn) and Ymir</td><td class="yes">Yes</td><td>The same files</td></tr>
+  <tr><td>ST-V arcade</td><td class="no">Not yet</td><td>A later batch</td></tr>
+  <tr><td>RetroAchievements</td><td class="no">No</td><td>Kronos has none</td></tr></table>
+</section>
+
+<section id="limits"><h2>Limits and things to know</h2>
+  <ul>
+    <li>A game played in Kronos before the plugin kept its saves in Kronos's own <code>bkram.bin</code> (in <code>%AppData%\kronos</code>), not in the game's file.</li>
+    <li>Kronos's states may not load in another version of Kronos.</li>
+    <li>If you rebind Kronos's slot keys or its Eject/Load ISO (<kbd>Ctrl</kbd>+<kbd>I</kbd>), F2 / F4 and the next-disc key send the old ones.</li>
+  </ul>
+</section>
+
+<section id="trouble"><h2>If something goes wrong</h2>
+  <ul>
+    <li>The plugin's log: <code>%LOCALAPPDATA%\lb-integrations-plugins\kronos.log</code> (General tab: "Open the logs folder").</li>
+    <li>"Kronos needs a Sega Saturn BIOS": put one in <code>Emulators\Nixx-Kronos\bios</code> or RetroArch's <code>system</code> folder.</li>
+    <li>"Kronos is already running": close the Kronos already open - two would share one folder of saves.</li>
+    <li>Kronos does not start at all: install <code>vc_redist.x64.exe</code> from its folder.</li>
+  </ul>
+</section>
+
+<footer>Nixx integration plugins for LaunchBox</footer>
+</main>
+</body>
+</html>
