@@ -4,7 +4,8 @@
 //        given), settings.json edited in place (byte-identical round trip of Mesen's own file), the pack's hotkeys, the
 //        home folder and the first settings.json, the BIOS found / copied / refused, archives, the system chosen and the line
 //        for the three levels, the session put back, the catalogue row, claiming and the platform rows only filled, and
-//        launches through PrepareEmulatorForLaunch on a stand-in exe (refusals included)
+//        launches through PrepareEmulatorForLaunch on a stand-in exe (refusals included), the saves and states listed /
+//        restored / deleted with their pictures decoded from the state
 //   --mesen-latest                     MesenCE's latest release as GitHub has it, and the three answers of IsUpdateAvailable
 //   --mesen-real <Mesen.exe> --rom <a .gbc> --lab <folder>
 //        THE REAL EMULATOR: a copy of Mesen.exe in a fresh folder of <lab>, a launch prepared as LaunchBox would, Mesen started
@@ -98,6 +99,7 @@ namespace LbIntegrations.Probe
                 Session(asm, json, root);
                 Rows(asm);
                 Launches(asm, json, root, saidBox);
+                Saves(asm, json, root);
             }
             catch (Exception ex) { Check("no exception", false, ex.GetType().Name + ": " + ex.Message + "\n" + ex.StackTrace); }
             finally
@@ -444,7 +446,7 @@ namespace LbIntegrations.Probe
             Check("written before the launch: Saves\\Nintendo Game Boy, \\States, \\Screenshots", Pref(during, "SaveDataFolder") == "Saves\\Nintendo Game Boy"
                   && Pref(during, "SaveStateFolder") == "Saves\\Nintendo Game Boy\\States" && Pref(during, "ScreenshotFolder") == "Saves\\Nintendo Game Boy\\Screenshots"
                   && Pref(during, "OverrideSaveDataFolder") == "true");
-            Call(asm, "MesenSession", "Begin", exe, path, forced);
+            Call(asm, "MesenSession", "Begin", exe, path, forced, null);
             Check("the plan written down", File.Exists((string)S(asm, "MesenSession", "PlanPath")));
 
             // What Mesen does during the session: it writes the switch's model; the user sets his own screenshots folder.
@@ -546,6 +548,186 @@ namespace LbIntegrations.Probe
             finally { try { Directory.Delete(dir, true); } catch { } }
 
             Check("IsUpdateAvailable, nothing installed (the Download button): true", plugin.IsUpdateAvailable("", out _) || true, "(network: see --mesen-latest)");
+        }
+
+        // ── saves and states (lot B) ─────────────────────────────────────────
+
+        /// <summary>A Mesen state as SaveStateManager writes it: the header, the zlib frame, the rom's name (the emulation data
+        /// after it is never read by the plugin).</summary>
+        private static byte[] Mss(int console, int w, int h, ushort[] px)
+        {
+            var raw = new byte[px.Length * 2];
+            Buffer.BlockCopy(px, 0, raw, 0, raw.Length);
+            byte[] z;
+            using (var ms = new MemoryStream())
+            {
+                using (var zs = new System.IO.Compression.ZLibStream(ms, System.IO.Compression.CompressionLevel.Optimal, leaveOpen: true)) zs.Write(raw, 0, raw.Length);
+                z = ms.ToArray();
+            }
+            using var o = new MemoryStream();
+            o.Write(Encoding.ASCII.GetBytes("MSS"));
+            foreach (var v in new uint[] { 0x20201, 4, (uint)console, (uint)raw.Length, (uint)w, (uint)h, 100, (uint)z.Length }) o.Write(BitConverter.GetBytes(v));
+            o.Write(z);
+            o.Write(BitConverter.GetBytes(4u)); o.Write(Encoding.ASCII.GetBytes("game"));
+            return o.ToArray();
+        }
+
+        private static System.Drawing.Color Pixel(string png, int x, int y)
+        {
+            using var b = new System.Drawing.Bitmap(new MemoryStream(File.ReadAllBytes(png)));
+            return b.GetPixel(x, y);
+        }
+
+        private static (int W, int H) SizeOf(string png)
+        {
+            using var b = new System.Drawing.Bitmap(new MemoryStream(File.ReadAllBytes(png)));
+            return (b.Width, b.Height);
+        }
+
+        private static void Saves(Assembly asm, string json, string root)
+        {
+            Console.WriteLine("-- saves and states --");
+            var plugin = NewPlugin(asm);
+            var dir = Path.Combine(root, "saves", "Nixx-Mesen"); Directory.CreateDirectory(dir);
+            var exe = Path.Combine(dir, "Mesen.exe"); File.WriteAllText(exe, "");
+            if (json != null && File.Exists(json)) File.Copy(json, Path.Combine(dir, "settings.json"));
+            else Call(asm, "MesenLaunch", "Bootstrap", exe);
+            var games = Path.Combine(root, "saves", "My Games"); Directory.CreateDirectory(games);
+            var vault = Path.Combine(root, "saves", "vault"); Directory.CreateDirectory(vault);
+
+            // The pictures of the states: one pixel of each console's kind, decoded as Mesen's default filters do.
+            var thumbs = T(asm, "MesenStateThumbs");
+            var palettes = thumbs.GetMethod("PalettesOf", Any).Invoke(null, new object[] { exe });
+            string Thumb(byte[] state, string name)
+            {
+                var p = Path.Combine(root, "saves", name); File.WriteAllBytes(p, state);
+                Call(asm, "MesenStateThumbs", "Refresh", p, exe, palettes);
+                return File.Exists(p + ".png") ? p + ".png" : null;
+            }
+            var nes = Thumb(Mss(2, 2, 1, new ushort[] { 0x01, 0x30 }), "n_1.mss");
+            Check("NES: a palette index through Nes.UserPalette (index 1 = 002A88, 0x30 = FFFEFF)", nes != null && Pixel(nes, 0, 0).ToArgb() == unchecked((int)0xFF002A88) && Pixel(nes, 1, 0).ToArgb() == unchecked((int)0xFFFFFEFF),
+                  nes == null ? "no picture" : Pixel(nes, 0, 0) + " " + Pixel(nes, 1, 0));
+            var gb = Thumb(Mss(1, 2, 1, new ushort[] { 0x001F, 0x7C00 }), "g_1.mss");
+            Check("Game Boy: RGB555, red in the low bits", gb != null && Pixel(gb, 0, 0).ToArgb() == unchecked((int)0xFFFF0000) && Pixel(gb, 1, 0).ToArgb() == unchecked((int)0xFF0000FF));
+            var ws = Thumb(Mss(6, 1, 1, new ushort[] { 0x0F00 }), "w_1.mss");
+            Check("WonderSwan: RGB444, red in bits 8-11", ws != null && Pixel(ws, 0, 0).ToArgb() == unchecked((int)0xFFFF0000));
+            Check("not a Mesen state: no picture, nothing thrown", Thumb(Encoding.ASCII.GetBytes("FCSX not mesen"), "x_1.mss") == null);
+            var lab = @"G:\LB1326\lbip-mesen-lab\inst1\SaveStates";
+            foreach (var (file, w, h) in new[] { ("Zelda II - The Adventure of Link (Europe)_1.mss", 256, 240), ("Pokemon - Version Cristal (France)_1.mss", 160, 144), ("Secret of Mana (USA)_1.mss", 256, 239) })
+            {
+                var real = Path.Combine(lab, file);
+                if (!File.Exists(real)) continue;
+                var png = Thumb(File.ReadAllBytes(real), "real-" + file);
+                Check("a real state of the lab (" + file + "): its frame, " + w + "x" + h, png != null && SizeOf(png) == (w, h), png == null ? "no picture" : SizeOf(png).ToString());
+            }
+
+            // The files as Mesen leaves them for three games: a NES game, a Game Boy Color one (.srm and its clock), a zip.
+            var nesSaves = Path.Combine(dir, "Saves", "Nintendo Entertainment System");
+            var nesStates = Path.Combine(nesSaves, "States");
+            var gbcSaves = Path.Combine(dir, "Saves", "Nintendo Game Boy Color");
+            Directory.CreateDirectory(nesStates); Directory.CreateDirectory(gbcSaves);
+            var zelda = Path.Combine(games, "Zelda II.nes"); File.WriteAllBytes(zelda, new byte[16]);
+            var pokemon = Path.Combine(games, "Pokemon.gbc"); File.WriteAllBytes(pokemon, new byte[16]);
+            var zip = Path.Combine(games, "Archive.zip");
+            using (var z = System.IO.Compression.ZipFile.Open(zip, System.IO.Compression.ZipArchiveMode.Create))
+            using (var e = z.CreateEntry("Inner Zelda.nes").Open()) e.Write(new byte[16]);
+            File.WriteAllText(Path.Combine(nesSaves, "Zelda II.sav"), "zelda");
+            File.WriteAllText(Path.Combine(nesSaves, "Inner Zelda.sav"), "inner");
+            File.WriteAllBytes(Path.Combine(nesStates, "Zelda II_1.mss"), Mss(2, 2, 1, new ushort[] { 0x01, 0x30 }));
+            File.WriteAllText(Path.Combine(nesStates, "Zelda II_11.mss"), "the automatic state");
+            File.WriteAllText(Path.Combine(nesStates, "Zelda II_2_1.mss"), "another game's");
+            File.WriteAllText(Path.Combine(nesStates, "Zelda II_12.mss"), "no such slot");
+            File.WriteAllText(Path.Combine(gbcSaves, "Pokemon.srm"), "pokemon");
+            File.WriteAllText(Path.Combine(gbcSaves, "Pokemon.rtc"), "clock");
+
+            var emu = new StubEmulator { Title = "Nixx-Mesen", ApplicationPath = exe };
+            var g1 = StubGame.With(StubGame.Create("sv-zelda", "Zelda II", zelda, emu.Id), "Platform", "Nintendo Entertainment System");
+            var g2 = StubGame.With(StubGame.Create("sv-pokemon", "Pokemon", pokemon, emu.Id), "Platform", "Nintendo Game Boy Color");
+            var g3 = StubGame.With(StubGame.Create("sv-zip", "Archive", zip, emu.Id), "Platform", "Nintendo Entertainment System");
+            var wasDm = PluginHelper.DataManager;
+            var wasGames = StubDataManager.Games;
+            var instead = asm.GetType("LbIntegrations.Saves.SlotRestore", true).GetField("Instead", Any);
+            try
+            {
+                StubDataManager.Games = new[] { g1, g2, g3 };
+                PluginHelper.DataManager = new StubDataManager(emu);
+                instead.SetValue(null, (Func<string, string, bool>)((title, text) => true));
+
+                var slots = plugin.GetPotentialSaveSlots();
+                Check("slots 1 to 10, and 11 the automatic one", slots.Count == 11 && slots.ContainsKey(1) && slots.ContainsKey(10) && slots[11] == "Auto");
+
+                var listed = plugin.GetSaves(new GetSavesArgs { Emulator = emu, Games = new[] { g1, g2, g3 }, AdditionalApplications = Array.Empty<IAdditionalApplication>() });
+                var rows = listed?.FoundSaves?.ToList() ?? new List<GameSaveBase>();
+                var saves = rows.Where(r => !(r is GameSaveState)).ToList();
+                var states = rows.OfType<GameSaveState>().ToList();
+                Check("listed: three saves and two states", listed?.WasSuccess == true && saves.Count == 3 && states.Count == 2,
+                      string.Join(", ", rows.Select(r => Path.GetFileName(r.FileLocation))) + (listed?.Message == null ? "" : " / " + listed.Message));
+                var zs = saves.FirstOrDefault(r => r.GameId == "sv-zelda");
+                Check("the NES game's .sav, its id the pack's with the system", zs != null && zs.SaveGroupId.Contains("\"emu\":\"mesen\"") && zs.SaveGroupId.Contains("\"sys\":\"nes\"")
+                      && zs.SaveGroupId.Contains("\"id\":\"Zelda II\""), zs?.SaveGroupId);
+                Check("the states of slots 1 and 11 - never another game's (Zelda II_2_1) nor a slot Mesen has not (_12)",
+                      states.Select(s => s.Slot ?? -1).OrderBy(s => s).SequenceEqual(new[] { 1, 11 }) && states.All(s => s.GameId == "sv-zelda"));
+                Check("the state's picture made when listed", File.Exists(Path.Combine(nesStates, "Zelda II_1.mss.png")) && !File.Exists(Path.Combine(nesStates, "Zelda II_11.mss.png")));
+                Check("the zip's game: its save named after the game INSIDE", saves.Any(r => r.GameId == "sv-zip" && Path.GetFileName(r.FileLocation) == "Inner Zelda.sav"));
+                var ps = saves.FirstOrDefault(r => r.GameId == "sv-pokemon");
+                Check("Game Boy Color: ONE row, the .srm (system gbc)", ps != null && Path.GetFileName(ps.FileLocation) == "Pokemon.srm" && ps.SaveGroupId.Contains("\"sys\":\"gbc\""), ps?.SaveGroupId);
+                var companions = plugin.GetCompanionSaveFiles(Path.Combine(gbcSaves, "Pokemon.srm"));
+                Check("... its clock (.rtc) travels with it", companions.Count == 1 && companions[0].EndsWith("Pokemon.rtc"), string.Join(", ", companions));
+                Check("... the .rtc a part of another save, the .srm not", plugin.IsSecondarySaveFile(Path.Combine(gbcSaves, "Pokemon.rtc")) && !plugin.IsSecondarySaveFile(Path.Combine(gbcSaves, "Pokemon.srm")));
+                Check("a state's picture a part of it", plugin.IsSecondarySaveFile(Path.Combine(nesStates, "Zelda II_1.mss.png"))
+                      && plugin.GetCompanionSaveFiles(Path.Combine(nesStates, "Zelda II_1.mss")).Single().EndsWith("Zelda II_1.mss.png"));
+                Check("a .chr.sav is the CHR save of its game, not the save of a game \"x.chr\"",
+                      plugin.IsSecondarySaveFile(Path.Combine(nesSaves, "Zelda II.chr.sav")) == false);   // alone it is not a companion of anything listed
+                File.WriteAllText(Path.Combine(nesSaves, "Zelda II.chr.sav"), "chr");
+                Check("... beside the game's .sav it goes with it", plugin.IsSecondarySaveFile(Path.Combine(nesSaves, "Zelda II.chr.sav"))
+                      && plugin.GetCompanionSaveFiles(Path.Combine(nesSaves, "Zelda II.sav")).Single().EndsWith("Zelda II.chr.sav"));
+                File.Delete(Path.Combine(nesSaves, "Zelda II.chr.sav"));
+                Check("all active where Mesen reads them", rows.All(r => plugin.IsSaveActive(r, exe)));
+
+                // A state restored into another slot: renamed for it, its picture with it.
+                var st1 = states.First(s => s.Slot == 1);
+                var vs = Path.Combine(vault, "Zelda II_1.mss"); File.Copy(st1.FileLocation, vs); File.Copy(st1.FileLocation + ".png", vs + ".png");
+                var back = plugin.AddSaveFile(new AddSaveArgs { SaveToAdd = new GameSaveState { GameId = "sv-zelda", FileLocation = vs, OriginalFileName = "Zelda II_1.mss", Slot = 3, SaveGroupId = st1.SaveGroupId }, ShouldOverwriteFunc = () => true });
+                var s3 = Path.Combine(nesStates, "Zelda II_3.mss");
+                Check("a state restored into slot 3: Zelda II_3.mss and its picture", back?.WasSuccess == true && File.Exists(s3) && File.Exists(s3 + ".png") && back.SaveAdded is GameSaveState { Slot: 3 }, back?.Message);
+                Check("... its id says slot 3", back?.SaveAdded?.SaveGroupId?.Contains("\"slot\":3") == true, back?.SaveAdded?.SaveGroupId);
+
+                // The cartridge save restored: the .srm and its clock, each over the game's.
+                File.WriteAllText(Path.Combine(vault, "Pokemon.srm"), "old");
+                File.WriteAllText(Path.Combine(vault, "Pokemon.rtc"), "old clock");
+                var sv = plugin.AddSaveFile(new AddSaveArgs { SaveToAdd = new GameSaveGame { GameId = "sv-pokemon", FileLocation = Path.Combine(vault, "Pokemon.srm"), OriginalFileName = "Pokemon.srm", SaveGroupId = ps?.SaveGroupId }, ShouldOverwriteFunc = () => true });
+                Check("the Game Boy Color save restored with its clock", sv?.WasSuccess == true && File.ReadAllText(Path.Combine(gbcSaves, "Pokemon.srm")) == "old"
+                      && File.ReadAllText(Path.Combine(gbcSaves, "Pokemon.rtc")) == "old clock", sv?.Message);
+                File.Delete(Path.Combine(vault, "Pokemon.rtc"));
+                File.WriteAllText(Path.Combine(vault, "Pokemon.srm"), "older");
+                sv = plugin.AddSaveFile(new AddSaveArgs { SaveToAdd = new GameSaveGame { GameId = "sv-pokemon", FileLocation = Path.Combine(vault, "Pokemon.srm"), OriginalFileName = "Pokemon.srm", SaveGroupId = ps?.SaveGroupId }, ShouldOverwriteFunc = () => true });
+                Check("... a backup without its clock: the game's .rtc left as it is (a restore deletes nothing)", sv?.WasSuccess == true && File.ReadAllText(Path.Combine(gbcSaves, "Pokemon.srm")) == "older"
+                      && File.ReadAllText(Path.Combine(gbcSaves, "Pokemon.rtc")) == "old clock", sv?.Message);
+
+                // Deleted: the state with its picture; the save with its clock.
+                var del = plugin.RemoveSave(back.SaveAdded);
+                Check("a state deleted, its picture with it", del?.WasSuccess == true && !File.Exists(s3) && !File.Exists(s3 + ".png"), del?.Message);
+                del = plugin.RemoveSave(ps);
+                Check("a cartridge save deleted, its clock with it", del?.WasSuccess == true && !File.Exists(Path.Combine(gbcSaves, "Pokemon.srm")) && !File.Exists(Path.Combine(gbcSaves, "Pokemon.rtc")), del?.Message);
+
+                // A folder the user set in Mesen himself: listed there, for every platform.
+                var mine = Path.Combine(root, "saves", "My Mesen saves"); Directory.CreateDirectory(mine);
+                File.WriteAllText(Path.Combine(mine, "Zelda II.sav"), "mine");
+                var mj = Path.Combine(dir, "settings.json");
+                var node = ReadJson(mj);
+                node["Preferences"]["OverrideSaveDataFolder"] = true;
+                node["Preferences"]["SaveDataFolder"] = mine;
+                File.WriteAllText(mj, node.ToJsonString(), new UTF8Encoding(true));
+                listed = plugin.GetSaves(new GetSavesArgs { Emulator = emu, Games = new[] { g1 }, AdditionalApplications = Array.Empty<IAdditionalApplication>() });
+                Check("the user's own save folder: the save listed there", listed?.FoundSaves?.Any(r => r.FileLocation == Path.Combine(mine, "Zelda II.sav")) == true,
+                      string.Join(", ", listed?.FoundSaves?.Select(r => r.FileLocation) ?? Array.Empty<string>()));
+            }
+            finally
+            {
+                instead.SetValue(null, null);
+                StubDataManager.Games = wasGames;
+                PluginHelper.DataManager = wasDm;
+            }
         }
 
         // ── launches through the plugin ──────────────────────────────────────

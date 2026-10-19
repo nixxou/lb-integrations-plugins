@@ -7,6 +7,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Unbroken.LaunchBox.Plugins.Data;
 
 namespace LbIntegrations.Probe
@@ -26,7 +27,10 @@ namespace LbIntegrations.Probe
             return null;
         }
 
-        public IGame GetGameById(string id) => null;
+        public IGame GetGameById(string id) => Games.FirstOrDefault(g => g?.Id == id);
+
+        /// <summary>The games GetGameById finds (a probe that restores saves); none by default.</summary>
+        public static IGame[] Games = Array.Empty<IGame>();
 
         public IGame[] GetAllGames() => Array.Empty<IGame>();
         public IParent[] GetAllParents() => Array.Empty<IParent>();

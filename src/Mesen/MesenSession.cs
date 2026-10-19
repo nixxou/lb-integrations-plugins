@@ -62,7 +62,7 @@ namespace LbIntegrations.Mesen
 
         /// <summary>The plan written down and the watch on Mesen started, which puts the keys back. <paramref name="forced"/>
         /// holds what the plugin wrote itself (with what was there before) and what the line will make Mesen write. Never throws.</summary>
-        public static void Begin(string exe, string settings, List<Forced> forced)
+        public static void Begin(string exe, string settings, List<Forced> forced, Action after = null)
         {
             try
             {
@@ -75,12 +75,12 @@ namespace LbIntegrations.Mesen
                     File.WriteAllLines(PlanPath, lines);
                     Log.Info("session: " + forced.Count + " setting(s) of Mesen's for this game only, put back after it - " + string.Join(", ", forced.Select(f => f.Path + "=" + f.Value)));
                 }
-                Watch(exe);
+                Watch(exe, after);
             }
             catch (Exception ex) { Log.Warn("session: could not write the plan - the game's settings will stay in Mesen", ex); }
         }
 
-        private static void Watch(string exe)
+        private static void Watch(string exe, Action after)
         {
             var hold = LbipLaunchGate.HoldOpen();
             Task.Run(() =>
@@ -101,6 +101,7 @@ namespace LbIntegrations.Mesen
                     }
                     else Log.Info("session: Mesen never started");
                     Recover();
+                    after?.Invoke();
                 }
                 catch (Exception ex) { Log.Warn("session watch", ex); }
             });

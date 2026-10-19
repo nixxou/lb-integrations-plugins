@@ -29,6 +29,7 @@ using Unbroken.LaunchBox.Plugins;
 using Unbroken.LaunchBox.Plugins.Data;
 using LbIntegrations.Catalog;
 using LbIntegrations.Lbip;
+using LbIntegrations.Saves;
 
 namespace LbIntegrations.Mesen
 {
@@ -41,6 +42,8 @@ namespace LbIntegrations.Mesen
 
         public MesenPlugin()
         {
+            // First: the save front desk registers this plugin for the others (Shared.Saves SaveDesk).
+            _desk = new SaveDesk(this, this, SaveEmu, SaveLog);
             Log.Info("plugin constructed, assembly " + typeof(MesenPlugin).Assembly.Location);
             LbipLog.Use(Log.Info, Log.Warn, Log.Disabled, () => Log.Tracing);
             LbipRowInjection.Install(RowsId, MetadataRows());
@@ -401,7 +404,9 @@ namespace LbIntegrations.Mesen
                 forced.AddRange(MesenSession.FromLine(json, line));
                 try { json.SaveIfChanged(); }
                 catch (Exception ex) { Log.Warn("settings.json could not be written - the game starts with it as it was", ex); }
-                MesenSession.Begin(exe, json.Path, forced);
+                // Once Mesen has quit: the settings put back, the game's states given their picture.
+                var (romNow, platformNow) = (rom, platform);
+                MesenSession.Begin(exe, json.Path, forced, () => MesenStateThumbs.RefreshAll(exe, StatesOf(exe, romNow, platformNow)));
                 // What Mesen wrote for this game in its own flat folders, into the platform's.
                 if (ourFolders) MesenSavePaths.Migrate(exe, platform, system, Path.GetFileNameWithoutExtension(inner ?? ""));
             }

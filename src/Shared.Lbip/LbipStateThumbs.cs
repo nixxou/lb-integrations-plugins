@@ -69,6 +69,20 @@ namespace LbIntegrations.Lbip
             catch (Exception ex) { Debug.WriteLine("thumbnail from " + imagePath + ": " + ex.Message); return false; }
         }
 
+        /// <summary>A picture the plugin decoded from the state itself (Mesen's .mss carries its frame) kept as the state's PNG,
+        /// scaled as the others. The caller keeps <paramref name="picture"/>. Never throws.</summary>
+        public static bool FromBitmap(Image picture, string statePath)
+        {
+            try
+            {
+                if (picture == null) return false;
+                using (var small = Scale(picture))
+                    Save(small, PathOf(statePath));
+                return true;
+            }
+            catch (Exception ex) { Debug.WriteLine("thumbnail of " + statePath + ": " + ex.Message); return false; }
+        }
+
         // ── the watch ────────────────────────────────────────────────────────
 
         /// <summary>Watches <paramref name="dirs"/> while an emulator of <paramref name="exe"/> runs (a minute to appear, it
