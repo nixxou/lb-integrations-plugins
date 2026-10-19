@@ -370,7 +370,10 @@ namespace LbIntegrations.Mesen
                               + platform + ") is not one this plugin maps.");
             Log.Info("launch: " + Path.GetFileName(inner ?? "") + " as " + system.Name + " (from " + choice.From + ")");
             // The game's own options (its window): switches for its console, over the same key on the platform's line.
-            var mine = MesenSettings.SwitchesFor(gameId, system);
+            // Only what THIS Mesen has: a setting a later version renamed or dropped is left out (MesenSettings.Missing).
+            MesenJson guard = null;
+            try { guard = MesenJson.Load(MesenLaunch.SettingsOf(exe)); } catch { }
+            var mine = MesenSettings.SwitchesFor(gameId, system, guard);
             if (mine.Count > 0)
             {
                 var keys = new HashSet<string>(mine.Select(s => MesenSystems.SwitchParts(s)?.Key).Where(k => k != null));

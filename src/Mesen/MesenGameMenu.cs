@@ -333,6 +333,8 @@ namespace LbIntegrations.Mesen
                 return "As Mesen detects it" + (detected.Count == 1 && detected[0] != null ? " (" + detected[0] + ")" : "");
             }
             var one = OneSystem();
+            if (one != null && o.AppliesTo(one) && MesenSettings.Missing(MesenSettings.Switches(o, one, o.Values.First(v => o.Takes(one, v))), _json) != null)
+                return "Not in this Mesen - left out";
             var has = one == null ? null : MesenSettings.InMesen(o, one, _json);
             return "As set in Mesen" + (has != null ? " (" + has + ")" : "");
         }

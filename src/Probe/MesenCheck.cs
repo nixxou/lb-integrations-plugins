@@ -753,8 +753,14 @@ namespace LbIntegrations.Probe
             Check("... Game Gear NTSC Japan: sms.gameGearRegion", J(Sw("Region", "gg", "ntscjapan")) == "--sms.gameGearRegion=NtscJapan");
             Check("... Dendy on a SNES game: nothing (Mesen's ValidValues)", Sw("Region", "snes", "dendy").Count == 0);
             Check("... a GBA game: no region in Mesen, nothing", Sw("Region", "gba", "pal").Count == 0);
-            Check("sprite limit removed on a PC Engine game", J(Sw("SpriteLimit", "pce", "remove")) == "--pcEngine.removeSpriteLimit=true");
-            Check("... on a Game Boy game: nothing", Sw("SpriteLimit", "gb", "remove").Count == 0);
+            Check("sprite limit removed on a PC Engine game", J(Sw("SpriteLimit", "pce", "true")) == "--pcEngine.removeSpriteLimit=true");
+            Check("... on a Game Boy game: nothing", Sw("SpriteLimit", "gb", "true").Count == 0);
+            Check("overclock: NES and SNES extra lines before NMI, GBA its own", J(Sw("Overclock", "nes", "300")) == "--nes.ppuExtraScanlinesBeforeNmi=300"
+                  && J(Sw("Overclock", "snes", "300")) == "--snes.ppuExtraScanlinesBeforeNmi=300" && J(Sw("Overclock", "gba", "100")) == "--gba.overclockScanlineCount=100"
+                  && Sw("Overclock", "sgb", "300").Count == 0);
+            Check("rotation: Mesen's enum name", J(Sw("Rotation", "ws", "_90degrees")) == "--video.screenRotation=_90Degrees");
+            Check("LCD colours: not on the original Game Boy, on the Color", Sw("LcdColors", "gb", "true").Count == 0 && J(Sw("LcdColors", "gbc", "true")) == "--gameboy.gbcAdjustColors=true");
+            Check("Super Game Boy 2 only for the Super Game Boy", J(Sw("Sgb2", "sgb", "false")) == "--gameboy.useSgb2=false" && Sw("Sgb2", "gb", "false").Count == 0);
 
             if (json != null && File.Exists(json))
             {
@@ -763,6 +769,42 @@ namespace LbIntegrations.Probe
                 Check("\"As set in Mesen\" reads Mesen's own: NES region", In("Region", "nes") == "Auto - from the game", In("Region", "nes"));
                 Check("... a filter not overridden for the console: Mesen's for every console (video.videoFilter)", In("VideoFilter", "snes") == "None - the console's pixels", In("VideoFilter", "snes"));
                 Check("... the sprite limit", In("SpriteLimit", "nes") == "The console's limit per line", In("SpriteLimit", "nes"));
+                // THE GUARD AGAINST A LATER MESEN: every setting every option writes, for every console, is in this Mesen's own file.
+                var all = ((IEnumerable)S(asm, "MesenSystems", "All")).Cast<object>().ToList();
+                // Mesen's own file of each version at hand: the one given, and the lab's CE 2.2.1 one. Strict for the version
+                // the plugin installs (2.2); for an older one, what its games would lose is only listed.
+                var files = new List<string> { json };
+                var ce = @"G:\LB1326\lbip-mesen-lab\inst2\settings.json";
+                if (File.Exists(ce) && !string.Equals(Path.GetFullPath(ce), Path.GetFullPath(json), StringComparison.OrdinalIgnoreCase)) files.Add(ce);
+                foreach (var file in files)
+                {
+                    var fj = Call(asm, "MesenJson", "Load", file);
+                    var version = (string)ReadJson(file)["Version"]?.ToString() ?? "?";
+                    var absent = new List<string>();
+                    int tried = 0;
+                    foreach (var o in ((IEnumerable)S(asm, "MesenSettings", "All")).Cast<object>().Where(o => !(bool)F(o, "OnPage")))
+                        foreach (var sys in all)
+                            foreach (var v in (string[])F(o, "Values"))
+                            {
+                                var sw = (List<string>)Call(asm, "MesenSettings", "Switches", o, sys, v);
+                                if (sw.Count == 0) continue;
+                                tried++;
+                                var miss = (string)Call(asm, "MesenSettings", "Missing", sw, fj);
+                                if (miss != null && !absent.Contains(miss)) absent.Add(miss);
+                            }
+                    if (version.StartsWith("2.2"))
+                        Check("Mesen " + version + ": every option's setting, for every console and value, is in its settings.json (" + tried + " switches)", absent.Count == 0, string.Join(", ", absent));
+                    else
+                        Console.WriteLine("  (Mesen " + version + ": " + (absent.Count == 0 ? "has every option's setting" : "has not " + string.Join(", ", absent) + " - left out on such an install") + ")");
+                }
+                var holed = Call(asm, "MesenJson", "Load", json);
+                holed.GetType().GetMethod("Remove").Invoke(holed, new object[] { "Nes/Region" });
+                Call(asm, "MesenSettings", "SetGameValue", "opt-2", "Region", "pal");
+                Call(asm, "MesenSettings", "SetGameValue", "opt-2", "Scanlines", "40");
+                var kept = (List<string>)Call(asm, "MesenSettings", "SwitchesFor", "opt-2", Sys("nes"), holed);
+                Check("a setting this Mesen has not (a later Mesen dropped nes.region): left out, the others kept", J(kept) == "--video.scanlineIntensity=40", J(kept));
+                Call(asm, "MesenSettings", "SetGameValue", "opt-2", "Region", null);
+                Call(asm, "MesenSettings", "SetGameValue", "opt-2", "Scanlines", null);
             }
 
             // The window's preview: a row's choice; its own value where the row is "Various".
@@ -847,7 +889,7 @@ namespace LbIntegrations.Probe
             // A game's own options: on the line for its console, put back once Mesen is gone.
             var regionBefore = (string)ReadJson(Path.Combine(dir, "settings.json"))["Nes"]?["Region"]?.ToString();
             Call(asm, "MesenSettings", "SetGameValue", "g-Zelda II", "Region", "pal");
-            Call(asm, "MesenSettings", "SetGameValue", "g-Zelda II", "SpriteLimit", "remove");
+            Call(asm, "MesenSettings", "SetGameValue", "g-Zelda II", "SpriteLimit", "true");
             var r1b = Launch("Nintendo Entertainment System", zelda, "--nes.region=Ntsc");
             Check("the game's region and sprite limit on the line, over the platform line's region", r1b.WasSuccess && r1b.NewCommandLine.Contains("--nes.region=Pal")
                   && r1b.NewCommandLine.Contains("--nes.removeSpriteLimit=true") && !r1b.NewCommandLine.Contains("Ntsc"), r1b.NewCommandLine);
