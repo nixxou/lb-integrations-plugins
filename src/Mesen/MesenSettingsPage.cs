@@ -101,7 +101,7 @@ namespace LbIntegrations.Mesen
 
             // ── every game ──
             var rows = new List<Control>();
-            foreach (var o in MesenSettings.All)
+            foreach (var o in MesenSettings.All.Where(x => x.OnPage))
             {
                 var row = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true, Margin = new Padding(0, 2, 0, 2) };
                 row.Controls.Add(new Label { Text = o.Label, Width = 150, Height = 24, TextAlign = ContentAlignment.MiddleLeft, UseMnemonic = false });
@@ -138,7 +138,7 @@ namespace LbIntegrations.Mesen
 
         public void Save()
         {
-            foreach (var o in MesenSettings.All)
+            foreach (var o in MesenSettings.All.Where(x => x.OnPage))
             {
                 var value = o.Values[Math.Max(0, _choices[o.Key].SelectedIndex)];
                 if (MesenSettings.Value(o.Key) != value) MesenSettings.SetValue(o.Key, value);

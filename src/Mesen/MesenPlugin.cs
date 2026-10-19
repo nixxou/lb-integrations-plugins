@@ -369,6 +369,15 @@ namespace LbIntegrations.Mesen
                 return Refuse("Mesen does not know which console this game is for: its file (" + Path.GetFileName(inner ?? "") + ") is none Mesen runs, and its platform ("
                               + platform + ") is not one this plugin maps.");
             Log.Info("launch: " + Path.GetFileName(inner ?? "") + " as " + system.Name + " (from " + choice.From + ")");
+            // The game's own options (its window): switches for its console, over the same key on the platform's line.
+            var mine = MesenSettings.SwitchesFor(gameId, system);
+            if (mine.Count > 0)
+            {
+                var keys = new HashSet<string>(mine.Select(s => MesenSystems.SwitchParts(s)?.Key).Where(k => k != null));
+                choice.Remove.AddRange(MesenLaunch.Tokenize(current).Where(t => MesenSystems.SwitchParts(t) is { } p && keys.Contains(p.Key)));
+                choice.Add.AddRange(mine);
+                Log.Info("launch: the game's own options - " + string.Join(" ", mine));
+            }
             if (system.CeOnly && !MesenLaunch.IsCe(exe))
                 return Refuse(system.Name + " games need MesenCE (2.2 or later); this Mesen is " + MesenLaunch.VersionOf(exe) + ". Update it from LaunchBox's emulator window.");
             if (system.Disc && (MesenLaunch.IsArchive(rom) || !system.Extensions.Contains(ext)))

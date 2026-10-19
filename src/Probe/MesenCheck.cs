@@ -100,6 +100,7 @@ namespace LbIntegrations.Probe
                 Rows(asm);
                 Launches(asm, json, root, saidBox);
                 Saves(asm, json, root);
+                GameOptions(asm, json, root);
             }
             catch (Exception ex) { Check("no exception", false, ex.GetType().Name + ": " + ex.Message + "\n" + ex.StackTrace); }
             finally
@@ -730,6 +731,91 @@ namespace LbIntegrations.Probe
             }
         }
 
+        // ── a game's options (lot C) ─────────────────────────────────────────
+
+        private static void GameOptions(Assembly asm, string json, string root)
+        {
+            Console.WriteLine("-- a game's options --");
+            object Opt(string key) => Call(asm, "MesenSettings", "Option", key);
+            object Sys(string key) => Call(asm, "MesenSystems", "System", key);
+            List<string> Sw(string key, string sys, string value) => (List<string>)Call(asm, "MesenSettings", "Switches", Opt(key), Sys(sys), value);
+            string J(List<string> l) => string.Join(" ", l);
+
+            var f = Sw("VideoFilter", "nes", "ntscblargg");
+            Check("a NES game's filter: the NES console's own override, the flag first", J(f) == "--nes.configOverrides.overrideVideoFilter=true --nes.configOverrides.videoFilter=NtscBlargg", J(f));
+            f = Sw("VideoFilter", "gg", "lcdgrid");
+            Check("a Game Gear game's: the Game Gear's override (sms.ggConfigOverrides)", J(f) == "--sms.ggConfigOverrides.overrideVideoFilter=true --sms.ggConfigOverrides.videoFilter=LcdGrid", J(f));
+            Check("NTSC (Bisqwit) on a Game Boy game: nothing (NES only)", Sw("VideoFilter", "gbc", "ntscbisqwit").Count == 0);
+            f = Sw("AspectRatio", "snes", "standard");
+            Check("a SNES game's aspect ratio, Mesen's name", J(f) == "--snes.configOverrides.overrideAspectRatio=true --snes.configOverrides.aspectRatio=Standard", J(f));
+            Check("region: NES Dendy", J(Sw("Region", "nes", "dendy")) == "--nes.region=Dendy");
+            Check("... a Famicom Disk System game: the NES console's", J(Sw("Region", "fds", "pal")) == "--nes.region=Pal");
+            Check("... Game Gear NTSC Japan: sms.gameGearRegion", J(Sw("Region", "gg", "ntscjapan")) == "--sms.gameGearRegion=NtscJapan");
+            Check("... Dendy on a SNES game: nothing (Mesen's ValidValues)", Sw("Region", "snes", "dendy").Count == 0);
+            Check("... a GBA game: no region in Mesen, nothing", Sw("Region", "gba", "pal").Count == 0);
+            Check("sprite limit removed on a PC Engine game", J(Sw("SpriteLimit", "pce", "remove")) == "--pcEngine.removeSpriteLimit=true");
+            Check("... on a Game Boy game: nothing", Sw("SpriteLimit", "gb", "remove").Count == 0);
+
+            if (json != null && File.Exists(json))
+            {
+                var mj = Call(asm, "MesenJson", "Load", json);
+                string In(string key, string sys) => (string)Call(asm, "MesenSettings", "InMesen", Opt(key), Sys(sys), mj);
+                Check("\"As set in Mesen\" reads Mesen's own: NES region", In("Region", "nes") == "Auto - from the game", In("Region", "nes"));
+                Check("... a filter not overridden for the console: Mesen's for every console (video.videoFilter)", In("VideoFilter", "snes") == "None - the console's pixels", In("VideoFilter", "snes"));
+                Check("... the sprite limit", In("SpriteLimit", "nes") == "The console's limit per line", In("SpriteLimit", "nes"));
+            }
+
+            // The window's preview: a row's choice; its own value where the row is "Various".
+            var form = T(asm, "MesenGameForm");
+            var shownWith = form.GetMethod("SwitchesShown", Any);
+            var various = (string)form.GetField("Various", Any).GetValue(null);
+            Call(asm, "MesenSettings", "SetGameValue", "opt-1", "Region", "pal");
+            Func<string, (bool, string)> rows = key => key switch { "VideoFilter" => (true, "hq2x"), "Region" => (true, various), "Fullscreen" => (true, "false"), _ => (false, null) };
+            var preview = (List<string>)shownWith.Invoke(null, new object[] { Sys("nes"), "opt-1", rows });
+            Check("the window's preview: the filter chosen, the game's own region kept (Various), windowed",
+                  J(preview) == "--nes.configOverrides.overrideVideoFilter=true --nes.configOverrides.videoFilter=HQ2x --nes.region=Pal", J(preview));
+            Call(asm, "MesenSettings", "SetGameValue", "opt-1", "Region", null);
+        }
+
+        /// <summary>A game's window (a Game Boy game; a NES and a Game Boy Color one together), drawn into PNGs beside
+        /// <paramref name="output"/> - placed far off the screen: nothing shows on the display.</summary>
+        public static bool Shot(Assembly asm, string output, string exe)
+        {
+            _bad = 0;
+            Console.WriteLine("-- a game's window, drawn --");
+            var root = NewTemp("shot");
+            SetS(asm, "MesenSettings", "PathOverride", Path.Combine(root, "settings.ini"));
+            try
+            {
+                if (exe != null) T(asm, "MesenGameForm").GetField("ExeForProbe", Any).SetValue(null, exe);
+                Call(asm, "MesenSettings", "SetGameValue", "shot-2", "Region", "pal");
+                var g1 = StubGame.With(StubGame.Create("shot-1", "Pokemon - Version Cristal (France)", @"G:\LB1326\lbip-mesen-lab\roms\Pokemon - Version Cristal (France).gbc"), "Platform", "Nintendo Game Boy");
+                var g2 = StubGame.With(StubGame.Create("shot-2", "Zelda II - The Adventure of Link (Europe)", @"G:\LB\FakeCatalog\nes\Zelda II - The Adventure of Link (Europe).nes"), "Platform", "Nintendo Entertainment System");
+                foreach (var (name, games) in new[] { ("one", new[] { g1 }), ("two", new[] { g2, g1 }) })
+                {
+                    var form = (System.Windows.Forms.Form)Activator.CreateInstance(T(asm, "MesenGameForm"), BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new object[] { games }, null);
+                    form.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
+                    form.Location = new System.Drawing.Point(-20000, -20000);
+                    form.ShowInTaskbar = false;
+                    form.Show(); System.Windows.Forms.Application.DoEvents();
+                    System.Windows.Forms.TabControl Find(System.Windows.Forms.Control c) => c as System.Windows.Forms.TabControl ?? c.Controls.Cast<System.Windows.Forms.Control>().Select(Find).FirstOrDefault(t => t != null);
+                    var tabs = Find(form);
+                    for (int i = 0; i < tabs.TabCount; i++)
+                    {
+                        tabs.SelectedIndex = i; System.Windows.Forms.Application.DoEvents();
+                        using var bmp = new System.Drawing.Bitmap(form.Width, form.Height);
+                        form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, form.Width, form.Height));
+                        bmp.Save(Path.ChangeExtension(output, "." + name + "." + tabs.TabPages[i].Text.ToLowerInvariant() + ".png"));
+                    }
+                    form.Close();
+                }
+                Check("drawn", true, Path.GetDirectoryName(Path.GetFullPath(output)));
+            }
+            catch (Exception ex) { Check("ran", false, (ex.InnerException ?? ex).ToString()); }
+            finally { SetS(asm, "MesenSettings", "PathOverride", null); try { Directory.Delete(root, true); } catch { } }
+            return _bad == 0;
+        }
+
         // ── launches through the plugin ──────────────────────────────────────
 
         private static void Launches(Assembly asm, string json, string root, List<string> said)
@@ -757,6 +843,18 @@ namespace LbIntegrations.Probe
             Check("settings.json there (written if it was not), the pack's keys bound", File.Exists(Path.Combine(dir, "settings.json")) && Combo(sj, "SaveState") == (91, 0));
             Check("its folders put back once Mesen is gone", Pref(sj, "OverrideSaveDataFolder") != "true");
             Check("nothing written beside the game", Directory.GetFiles(games).Length == 1);
+
+            // A game's own options: on the line for its console, put back once Mesen is gone.
+            var regionBefore = (string)ReadJson(Path.Combine(dir, "settings.json"))["Nes"]?["Region"]?.ToString();
+            Call(asm, "MesenSettings", "SetGameValue", "g-Zelda II", "Region", "pal");
+            Call(asm, "MesenSettings", "SetGameValue", "g-Zelda II", "SpriteLimit", "remove");
+            var r1b = Launch("Nintendo Entertainment System", zelda, "--nes.region=Ntsc");
+            Check("the game's region and sprite limit on the line, over the platform line's region", r1b.WasSuccess && r1b.NewCommandLine.Contains("--nes.region=Pal")
+                  && r1b.NewCommandLine.Contains("--nes.removeSpriteLimit=true") && !r1b.NewCommandLine.Contains("Ntsc"), r1b.NewCommandLine);
+            var after = ReadJson(Path.Combine(dir, "settings.json"));
+            Check("... Mesen's own region back after the session", (string)after["Nes"]?["Region"]?.ToString() == regionBefore, after["Nes"]?["Region"]?.ToString());
+            Call(asm, "MesenSettings", "SetGameValue", "g-Zelda II", "Region", null);
+            Call(asm, "MesenSettings", "SetGameValue", "g-Zelda II", "SpriteLimit", null);
 
             var fds = Path.Combine(games, "Zelda no Densetsu.fds");
             var r2 = Launch("Nintendo Entertainment System", fds);
