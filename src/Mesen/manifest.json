@@ -1,0 +1,19 @@
+{
+  "SchemaVersion": 1,
+  "PluginId": "6823227e-f902-452b-a1b0-7591a7e55917",
+  "UserId": 0,
+  "Name": "Nixx-Mesen",
+  "Developer": "nixxou",
+  "Description": "Download, update, launch, BIOS and save integration for Mesen (MesenCE), the accurate multi-system emulator: NES, Famicom Disk System, Super Nintendo, Game Boy, Game Boy Advance, PC Engine, Master System, Game Gear, ColecoVision and WonderSwan.",
+  "Credits": "Many thanks to Sour, who wrote Mesen, and to the nesdev community who carry it on as MesenCE.",
+  "OperatingSystemFamily": "Windows",
+  "InstalledVersion": "1.2.2",
+  "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
+  "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
+  "HomePageUrl": "https://github.com/nesdev-org/MesenCE",
+  "TipJarUrl": "",
+  "SourceKind": "Local",
+  "Tags": [
+    "5aae585f-ffc5-42bc-9f95-e5e190ef99e2"
+  ]
+}

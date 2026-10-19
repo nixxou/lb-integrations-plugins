@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mesen - Nixx plugin guide</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#ffffff; --ink:#1d1d1f; --muted:#5f6368; --line:#e3e3e0; --accent:#0a6ed1; --ok:#1e8e3e; --warn:#b06000; --no:#c5221f; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17181a; --card:#1f2124; --ink:#e8e8e6; --muted:#a0a3a7; --line:#33363a; --accent:#5aa9ff; --ok:#5bc27a; --warn:#e3a34a; --no:#ff7b72; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 "Segoe UI", system-ui, sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 64px; }
+  header h1 { margin:0 0 4px; font-size:30px; }
+  header p { margin:0; color:var(--muted); }
+  nav { margin:20px 0 8px; display:flex; flex-wrap:wrap; gap:8px; }
+  nav a { font-size:14px; color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; background:var(--card); }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 24px; margin:18px 0; }
+  h2 { margin:0 0 10px; font-size:21px; }
+  h3 { margin:18px 0 6px; font-size:17px; }
+  ul { padding-left:22px; } li { margin:4px 0; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .yes { color:var(--ok); font-weight:600; } .partly { color:var(--warn); font-weight:600; } .no { color:var(--no); font-weight:600; }
+  .tip, .warn { border-left:4px solid var(--accent); padding:8px 14px; margin:12px 0; background:color-mix(in srgb, var(--accent) 8%, transparent); border-radius:0 8px 8px 0; }
+  .warn { border-color:var(--warn); background:color-mix(in srgb, var(--warn) 10%, transparent); }
+  code, kbd { font-family:Consolas, monospace; font-size:14px; background:color-mix(in srgb, var(--ink) 8%, transparent); padding:1px 5px; border-radius:4px; }
+  footer { color:var(--muted); font-size:13px; text-align:center; margin-top:30px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Mesen</h1>
+  <p>What the Nixx plugin does for you, and what to expect.</p>
+</header>
+<nav>
+  <a href="#overview">In short</a><a href="#start">Getting started</a><a href="#play">Playing</a><a href="#options">Options</a>
+  <a href="#saves">Saves</a><a href="#support">Consoles</a><a href="#limits">Limits</a><a href="#trouble">If something goes wrong</a>
+</nav>
+
+<section id="overview"><h2>In short</h2>
+  <p>Mesen is Sour's accurate multi-system emulator, carried on by the nesdev community as <b>MesenCE</b>. It runs the NES and
+  Famicom (with the Famicom Disk System), the Super Nintendo (with Satellaview and Sufami Turbo games), the Game Boy, Game Boy
+  Color and Super Game Boy, the Game Boy Advance, the PC Engine / TurboGrafx-16, SuperGrafx and PC Engine CD, the Master
+  System, Game Gear, SG-1000, ColecoVision, and the WonderSwan, WonderSwan Color and Pocket Challenge V2.</p>
+  <p>The plugin installs and updates MesenCE from LaunchBox, sets it up for every one of those platforms, finds the BIOS files
+  you already have, and keeps each platform's saves and save states in a folder of its own.</p>
+</section>
+
+<section id="start"><h2>Getting started</h2>
+  <ul>
+    <li>In LaunchBox: <b>Tools &gt; Manage &gt; Emulators &gt; Add</b>, pick <b>Nixx-Mesen</b> and press <b>Download</b>. MesenCE's latest
+      release goes into <code>Emulators\Nixx-Mesen</code>.</li>
+    <li><b>Nothing else to install</b>: Mesen is a native build - no .NET runtime, no Visual C++ package. Windows 10 or 11.</li>
+    <li>The emulator entry gets one row per platform. Where no emulator was the default for a platform yet, Mesen becomes it;
+      an existing choice is left as it is.</li>
+    <li>Mesen is set up "portable": its settings, BIOS and saves all stay in its own folder.</li>
+    <li>A Mesen you installed yourself is used as it is (the plugin never updates it).</li>
+  </ul>
+</section>
+
+<section id="play"><h2>Playing a game</h2>
+  <p>When you click Play, the plugin checks the console's BIOS when it needs one, binds the pack's keys in Mesen where they are
+  free, points Mesen's save folders at the game's platform, and starts Mesen in full screen. When Mesen quits, the settings
+  changed for that game only (its folders, its console model) are put back as they were in Mesen.</p>
+  <table><tr><th>Key</th><th>In Mesen</th></tr>
+  <tr><td><kbd>F2</kbd> / <kbd>F4</kbd></td><td>Save / load a state in the current slot</td></tr>
+  <tr><td><kbd>F6</kbd> / <kbd>F7</kbd></td><td>Previous / next slot</td></tr>
+  <tr><td><kbd>F11</kbd></td><td>Full screen on and off (Mesen's own)</td></tr>
+  <tr><td><kbd>Esc</kbd></td><td>Quit (Mesen's own default for Esc, Pause, moves off it)</td></tr></table>
+  <p>A key is bound only when Mesen's action has none and nothing of yours is on the key; Mesen's own defaults on those keys
+  (load slot 2/4/6/7, Pause) are taken off them then. Shift+F1..F7 still save slots 1-7, F1..F7 load them where free.</p>
+</section>
+
+<section id="options"><h2>Options</h2>
+  <p>Tools &gt; Nixx Integration Plugins Configuration..., Mesen page: the install, the BIOS found for each console, and full
+  screen or windowed. Everything else - picture, sound, pads, each console's options - is Mesen's own: set it in Mesen's menus,
+  the plugin leaves it alone.</p>
+  <p>Some platform rows of the emulator entry carry the console model on their line (Edit Emulator &gt; Associated Platforms):
+  Game Boy <code>--gameboy.model=AutoFavorGb</code>, Game Boy Color <code>--gameboy.model=AutoFavorGbc</code>, SuperGrafx
+  <code>--pcEngine.consoleType=SuperGrafx</code>, WonderSwan <code>--ws.model=Monochrome</code>, WonderSwan Color
+  <code>--ws.model=Color</code>. You may change or empty those lines; an empty one leaves the model to Mesen.</p>
+</section>
+
+<section id="saves"><h2>Saves and save states</h2>
+  <p>Mesen never writes beside your games. For a game launched from LaunchBox its files go to</p>
+  <ul>
+    <li><code>Emulators\Nixx-Mesen\Saves\&lt;platform&gt;\</code> - the game's save (<code>.sav</code>, <code>.srm</code>, <code>.rtc</code>...)</li>
+    <li><code>...\Saves\&lt;platform&gt;\States\</code> - its save states (<code>&lt;game&gt;_1.mss</code> ... <code>_10.mss</code>)</li>
+    <li><code>...\Saves\&lt;platform&gt;\Screenshots\</code></li>
+  </ul>
+  <p>What Mesen wrote in its own <code>Saves</code> and <code>SaveStates</code> folders for a game (opened by hand) is moved into the
+  platform's folder at the game's next launch. A folder you chose in Mesen's own settings is kept.</p>
+  <p>LaunchBox's Game Saves window does not list Mesen's files yet: that comes with the next version of the plugin.</p>
+</section>
+
+<section id="support"><h2>Consoles</h2>
+  <table><tr><th>Platform</th><th>Files</th><th>BIOS (in Mesen's Firmware folder)</th></tr>
+  <tr><td>Nintendo Entertainment System</td><td>.nes .unf .fds .studybox</td><td><code>disksys.rom</code> for .fds games</td></tr>
+  <tr><td>Nintendo Famicom Disk System</td><td>.fds .qd</td><td><code>disksys.rom</code> - needed</td></tr>
+  <tr><td>Super Nintendo Entertainment System</td><td>.sfc .smc .bs .st</td><td>DSP / ST chips for the few games that use one</td></tr>
+  <tr><td>Nintendo Satellaview</td><td>.bs</td><td><code>BS-X.bin</code> - needed</td></tr>
+  <tr><td>Nintendo Game Boy / Game Boy Color</td><td>.gb .gbc</td><td>boot ROMs optional; Super Game Boy: <code>SGB2.sfc</code></td></tr>
+  <tr><td>Nintendo Game Boy Advance</td><td>.gba</td><td><code>gba_bios.bin</code> - needed</td></tr>
+  <tr><td>NEC TurboGrafx-16, PC Engine SuperGrafx</td><td>.pce .sgx</td><td>-</td></tr>
+  <tr><td>NEC TurboGrafx-CD</td><td>.cue</td><td><code>syscard3.pce</code> - needed</td></tr>
+  <tr><td>Sega Master System, Game Gear, SG-1000</td><td>.sms .gg .sg</td><td>optional</td></tr>
+  <tr><td>ColecoVision</td><td>.col</td><td><code>bios.col</code> - needed</td></tr>
+  <tr><td>WonderSwan, WonderSwan Color, Pocket Challenge V2</td><td>.ws .wsc .pc2</td><td>optional</td></tr></table>
+  <p>Every platform also takes <code>.zip</code> and <code>.7z</code> archives (but the CD): Mesen opens them itself.</p>
+</section>
+
+<section id="limits"><h2>Limits and things to know</h2>
+  <ul>
+    <li>A PC Engine CD game must be its <code>.cue</code> (with its tracks): Mesen opens no <code>.chd</code> and no <code>.m3u</code>.</li>
+    <li>An archive holding several games: the one named after the archive is played; otherwise keep one game per archive.</li>
+    <li>Mesen has no RetroAchievements.</li>
+    <li>Mesen runs one window at a time: a game launched while Mesen is open is refused - close it first.</li>
+    <li>Pocket Challenge V2 needs MesenCE (2.2 or later).</li>
+  </ul>
+</section>
+
+<section id="trouble"><h2>If something goes wrong</h2>
+  <ul>
+    <li>The plugin's log: <code>%LOCALAPPDATA%\lb-integrations-plugins\mesen.log</code> (General tab: "Open the logs folder").</li>
+    <li>A game refused for its BIOS: the message names the file and the folder; put the file there under that name.</li>
+    <li>Mesen shows its setup wizard: its <code>settings.json</code> is missing; launching any game from LaunchBox writes a first one.</li>
+  </ul>
+</section>
+
+<footer>Nixx integration plugins for LaunchBox</footer>
+</main>
+</body>
+</html>

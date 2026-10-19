@@ -226,6 +226,10 @@ namespace LbIntegrations.Probe
             if (Has(args, "--fceux-latest")) return FceuxCheck.Latest(asm) ? 0 : 1;
             if (Has(args, "--fceux-extract")) { int at = Array.IndexOf(args, "--fceux-extract"); return FceuxCheck.Extract(asm, Path.GetFullPath(args[at + 1]), Path.GetFullPath(args[at + 2])) ? 0 : 1; }
             if (Has(args, "--fceux-shot")) return FceuxCheck.Shot(asm, Path.GetFullPath(Arg(args, "--fceux-shot")), emuPath == null ? null : Path.GetFullPath(emuPath)) ? 0 : 1;
+            // The Mesen plugin's pieces, without a host - see MesenCheck.
+            if (Has(args, "--mesen-selftest")) return MesenCheck.SelfTest(asm, Arg(args, "--json") is string mj ? Path.GetFullPath(mj) : null, Arg(args, "--core") is string mc ? Path.GetFullPath(mc) : null, Arg(args, "--db") is string md ? Path.GetFullPath(md) : null) ? 0 : 1;
+            if (Has(args, "--mesen-latest")) return MesenCheck.Latest(asm) ? 0 : 1;
+            if (Has(args, "--mesen-real")) return MesenCheck.Real(asm, Path.GetFullPath(Arg(args, "--mesen-real")), Path.GetFullPath(Arg(args, "--rom")), Path.GetFullPath(Arg(args, "--lab"))) ? 0 : 1;
             // The RASnes9x plugin's pieces, without a host - see RaSnes9xCheck.
             if (Has(args, "--rasnes9x-conf")) return RaSnes9xCheck.Conf(asm, Path.GetFullPath(Arg(args, "--rasnes9x-conf")), Arg(args, "--settings")) ? 0 : 1;
             if (Has(args, "--rasnes9x-saves")) { int at = Array.IndexOf(args, "--rasnes9x-saves"); return RaSnes9xCheck.Saves(asm, Path.GetFullPath(args[at + 1]), Path.GetFullPath(args[at + 2])) ? 0 : 1; }
