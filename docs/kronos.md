@@ -14,6 +14,14 @@ the real Kronos 2.7.5 64-bit (G:\LB1326\lbip-kronos-lab\run, Atlantis - The Lost
   (the string "2.7.5" is in it, and the window title reads "Kronos v2.7.5"), sha256 F75441A4...26E12. Defender: clean.
   Qt 5.14, SDL2, its own vc_redist.x64.exe (not run).
 - The live code is Siskoo's fork: its last commits before the release are dated 17-19/08.
+- 2.7.5b, the pack's own (Mehdi 19/10): nixxou/Kronos_test, branch lbip-2.7.5b - 2.7.5's source (66bd0836d, the last commit
+  before it; no stv.c change between it and the release) with the fork's fix of 23/08 (UIYabause calls threadInitialized()
+  itself: the ST-V game list made at start, §8). Built by the branch's workflow (lbip-windows-release.yml: windows-latest,
+  Qt 5.15.2 MSVC, SDL2 2.30.8, CMake 4 - CMAKE_POLICY_VERSION_MINIMUM=3.5 in the job's environment, libchdr/zlib/m68kmake ask
+  for less), laid out as Tradu-France's zip (kronos.exe, Qt, SDL2, an empty kronos.ini, vc_redist.x64.exe); a tag v* makes
+  the GitHub release, its asset Kronos_2.7.5b_-_64_Bits.zip. Version "2.7.5b" (YAB_VERSION_SUFFIX), title "Kronos v2.7.5b".
+  The plugin installs the newer of Tradu-France's latest and this release (2.7.5 < 2.7.5b < 2.7.6), GitHub's size and
+  SHA-256 checked; the stamp says where it came from. [M: Shienryu started by -a; a Saturn disc boots.]
 
 ## 2. Command line [S, M]
 
@@ -100,8 +108,8 @@ DRAM forced, scanlines on the Saturn screen - `LBIP_PROBE_OPTS=... --kronos-zstd
   .cue/.bin and .mds with accents not measured.
 - Why the digit shortcuts do nothing (the digits 1-7 toggle the VDP layers, the keyboard pad?) - rebound, irrelevant.
 - ST-V: done, §8.
-- ST-V in full screen not measured (the plugin toggles Kronos's "Fullscreen" after Run); nor a clone set whose files
-  are in its parent's zip (MAME's split sets) - the non-merged sets of MAME 0.288 were measured.
+- ST-V in full screen not measured (2.7.5: the plugin toggles Kronos's "Fullscreen" after Run; 2.7.5b: -a -f); nor a clone
+  set whose files are in its parent's zip (MAME's split sets) - the non-merged sets of MAME 0.288 were measured.
 
 ## 8. Sega ST-V [S, M 19/10]
 
@@ -115,17 +123,23 @@ DRAM forced, scanlines on the Saturn screen - `LBIP_PROBE_OPTS=... --kronos-zstd
   [M: the 106 complete, every file by name and CRC, in MAME 0.288 non-merged.]
 - HOW KRONOS LOADS ONE: Cartridge\Type=11, Cartridge\Path a FOLDER (and Cartridge\Path\STVRomgame - the settings window's
   own key, "Cartridge/Path/" + the cartridge's name without spaces), Cartridge\STVGame the set. It reads every zip of the
-  folder, writes gamelistv2.save, takes the BIOS from stvbios.zip or from the game's own zip (non-merged sets carry it), and
-  writes <set>.nv (EEPROM, 128 bytes) and <set>.coins there when it quits.
+  folder, writes gamelistv2.save, and writes <set>.nv (EEPROM, 128 bytes) and <set>.coins there when it quits.
+- THE BIOS FROM A FILE NAMED stvbios.zip ONLY [M 19/10]: updateGameList counts a BIOS once processBios has read one, and only a
+  zip of that name goes to processBios - the BIOS files a MAME non-merged set carries in its own zip are never taken
+  (shienryu.zip alone: an empty gamelistv2.save, "Cannot initialize STV emulation", in 2.7.5 as in 2.7.5b; with stvbios.zip
+  beside it, listed and run). So without a stvbios.zip the plugin makes one in the launch's folder with the BIOS files of
+  the game's zip (or its parent's) - KronosStv.MakeBiosZip, their bytes and CRCs unchanged.
 - 2.7.5 CANNOT START ONE BY ITSELF [M]: with -a, "Cannot initialize STV emulation" twice - its game list is made only by its
-  settings window (the start's call, UIYabause::threadInitialized, is never made in 2.7.5; the fork fixed it later). So the
-  plugin (KronosStvStart) starts Kronos with neither -a nor -f, then through UI Automation invokes the toolbar's "Select
+  settings window (the start's call, UIYabause::threadInitialized, is never made in 2.7.5; the fork fixed it later, and
+  2.7.5b has that fix: started by -a [-f] like a Saturn disc, KronosBuild.StvStartsItself - an install of ours from 2.7.5b
+  on). For 2.7.5 (or a Kronos the plugin did not install) the plugin (KronosStvStart) starts Kronos with neither -a nor -f, then through UI Automation invokes the toolbar's "Select
   Cartridge" (the settings window, cartridge tab: the list made), posts Enter to that window (its controls are not exposed to
   UI Automation; a posted key needs neither the foreground nor the keyboard), invokes "Run", and toggles "Fullscreen" for a
   game in full screen. [M: Shienryu and Batman Forever started in 3.4 s, no key typed.] The settings window's OK writes
   Kronos's whole settings with the values it shows (the ones in effect - defaults where absent): harmless.
-- EACH LAUNCH: <kronos>\lbip-stv emptied, the game's zip, its parent's when a file is there, stvbios.zip unless the game's
-  zip has a BIOS - hard links (the same volume), copies otherwise; its .nv and .coins brought from Saves\<platform>\ and taken
+- EACH LAUNCH: <kronos>\lbip-stv emptied, the game's zip, its parent's when a file is there, stvbios.zip (or one made of
+  the game's BIOS files) - hard links (the same volume), copies otherwise; Cartridge\STVGameName the set's title (the title
+  bar's - only the settings window writes it); its .nv and .coins brought from Saves\<platform>\ and taken
   back after (lbip-stv.txt says which game, for a session cut short). Checked before, as Kronos would: the set known, every
   file by name and CRC, a BIOS - refused with what is wrong. States: "_NNN.yss" (no disc: cdip->itemnum is empty) in
   States\<set>. Screenshots of every game in Saves\<platform>\Screenshots (Kronos's default is %LocalAppData%).

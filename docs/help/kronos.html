@@ -42,7 +42,7 @@
 <section id="overview"><h2>In short</h2>
   <p>Kronos is a Sega Saturn emulator of the Yabause family, started by FCare and carried on today by Benjamin Siskoo, whose site
   Tradu-France publishes its Windows builds. It runs fast and can draw the games above their original resolution. The plugin installs
-  and updates Tradu-France's 64-bit build, finds your Saturn BIOS, starts each game with its own backup RAM and its own save states,
+  and updates the newest 64-bit build - Tradu-France's, or the pack's 2.7.5b while Tradu-France has nothing newer, finds your Saturn BIOS, starts each game with its own backup RAM and its own save states,
   and gives it the pack's keys - a key for the next disc too. It also runs the Sega ST-V arcade games Kronos knows - MAME's sets.</p>
 </section>
 
@@ -63,14 +63,16 @@
   <ul>
     <li><b>Platforms:</b> <b>Sega ST-V</b>, and <b>Arcade</b> if your arcade games are all under that one. Games: MAME's zips
       (<code>shienryu.zip</code>...), the ST-V BIOS <code>stvbios.zip</code> beside them or in <code>Emulators\Nixx-Kronos\bios</code> - MAME's
-      non-merged sets carry the BIOS inside each game's zip, nothing else is needed then.</li>
+      non-merged sets carry the BIOS inside each game's zip, nothing else is needed then (Kronos reads it from a <code>stvbios.zip</code> only:
+      the plugin makes one for the game from those files).</li>
     <li><b>Which games:</b> the 106 ST-V sets Kronos 2.7.5 knows - all of MAME's but <i>Waku Waku Shinkansen</i>. A file is known by its name,
       as MAME names it; its files are checked by name and CRC before the launch, and what is missing is said.</li>
     <li><b>Importing:</b> Tools &gt; Import &gt; ROM Files, emulator Nixx-Kronos. A whole MAME folder can be imported: for Sega ST-V the list keeps
       only the ST-V sets (those Kronos does not run: asked, or as set in the Nixx window), for Arcade only Kronos's - the BIOS and every
       other game are left out, the titles are MAME's.</li>
-    <li><b>Starting:</b> Kronos 2.7.5 cannot start an ST-V game from its command line, so the plugin opens Kronos, has its cartridge window
-      read the game and starts it - you see that window for a moment; nothing is typed. Each game gets a folder of its own with only its
+    <li><b>Starting:</b> the pack's Kronos 2.7.5b starts an ST-V game like a Saturn disc. Tradu-France's 2.7.5 cannot start one from its
+      command line, so with it the plugin opens Kronos, has its cartridge window read the game and starts it - you see that window for a
+      moment; nothing is typed. Each game gets a folder of its own with only its
       files (<code>Emulators\Nixx-Kronos\lbip-stv</code>), never your whole MAME folder.</li>
     <li><b>Saves:</b> the board's EEPROM (settings, high scores), <code>Saves\Sega ST-V\&lt;set&gt;.nv</code>, with its coin counters
       (<code>.coins</code>), and the save states - all in LaunchBox's save management.</li>
@@ -136,7 +138,7 @@
 
 <section id="support"><h2>What works</h2>
   <table><tr><th>Feature</th><th></th><th>Notes</th></tr>
-  <tr><td>Install, update</td><td class="yes">Yes</td><td>Tradu-France's 64-bit build, its size checked</td></tr>
+  <tr><td>Install, update</td><td class="yes">Yes</td><td>The newest of Tradu-France's 64-bit build (its size checked) and the pack's 2.7.5b on GitHub (nixxou/Kronos_test, its SHA-256 checked) - 2.7.5b is 2.7.5 with the ST-V start fixed</td></tr>
   <tr><td>.chd .cue .ccd .iso, a .zip with a .cue</td><td class="yes">Yes</td><td>Opened by Kronos itself (measured)</td></tr>
   <tr><td>.chd compressed with Zstandard (cdzs)</td><td class="yes">Yes</td><td>Kronos cannot read it: the plugin hands it the disc uncompressed (see Limits)</td></tr>
   <tr><td>.mds</td><td class="partly">Should</td><td>Kronos reads it; not measured here</td></tr>
