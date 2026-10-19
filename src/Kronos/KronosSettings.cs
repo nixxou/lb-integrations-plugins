@@ -41,7 +41,23 @@ namespace LbIntegrations.Kronos
                 Values = new[] { "false", "true" }, Texts = new[] { "In a window", "Full screen" },
                 Hint = "Full screen: Kronos is started with -f (2.7.5 and later). F11 (or Alt+Enter) switches while the game runs.",
             },
+            new KronosOption
+            {
+                Key = ImportSort, Label = "ST-V import", Default = "true",
+                Values = new[] { "true", "false" }, Texts = new[] { "Kronos's sets only", "As LaunchBox lists it" },
+                Hint = "LaunchBox's Import ROM Files to Nixx-Kronos for Sega ST-V or Arcade: the last list keeps only the ST-V sets Kronos runs - "
+                       + "a whole MAME folder holds thousands of others (KronosLbImport).",
+            },
+            new KronosOption
+            {
+                Key = ImportUnknownSets, Label = "ST-V sets Kronos does not run", Default = "ask",
+                Values = new[] { "ask", "keep", "drop" }, Texts = new[] { "Asked at each import", "Kept", "Left out" },
+                Hint = "Imported to Sega ST-V, the ST-V sets that are not in Kronos's list (in 2.7.5: wwshin) - another emulator of the platform "
+                       + "may run them. Imported to Arcade, they are always left out.",
+            },
         };
+
+        public const string ImportSort = "ImportSort", ImportUnknownSets = "ImportUnknownSets";
 
         public static KronosOption Option(string key) => All.First(o => string.Equals(o.Key, key, StringComparison.OrdinalIgnoreCase));
 

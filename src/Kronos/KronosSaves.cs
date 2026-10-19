@@ -13,6 +13,12 @@
 //                                                          General\SaveStates of its session.
 //   not saves     <game>.bkr.bak / *.bad.* (Kronos's own copies when a file was damaged).
 //
+// AN ST-V GAME (KronosStv) has no backup RAM: its EEPROM, <install>\Saves\<platform>\<set>.nv (128 bytes), its coin counters
+// beside it (<set>.coins, a companion), both brought to the launch's folder and back (KronosStv.Prepare / TakeBack). Its
+// states are named with no product code - there is no disc ("_001.yss", measured 19/10: Kronos's cdip->itemnum is empty) - in
+// its own folder, States\<set>. Ids: {"kind":"eeprom","sys":"stv","by":"name","id":"<set>"} and {"kind":"state","sys":"stv",
+// "by":"name","id":"<set>","slot":n}.
+//
 // THE IDS are the pack's JSON (Shared.Saves): {"emu":"kronos","kind":"save" | "cart","sys":"saturn","by":"name","id":"<game>"} and
 // {"emu":"kronos","kind":"state","sys":"saturn","by":"product","id":"<product code>","slot":n}. A state is restored under its
 // product code when the target game has that disc, under the target's only disc's otherwise; a game of several discs and none
@@ -44,7 +50,8 @@ namespace LbIntegrations.Kronos
         private const string StateChipText = "STATE";
         internal const int Slots = 10;
 
-        private static readonly Regex StateFile = new Regex(@"^(?<p>.+)_(?<n>\d{3})\.yss$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        // The product code may be empty: an ST-V game's states ("_001.yss").
+        private static readonly Regex StateFile = new Regex(@"^(?<p>.*)_(?<n>\d{3})\.yss$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
         /// <summary>Kronos's slot (0-9) as the pack numbers it (1-10): its 0 is the 10th.</summary>
         internal static int PackSlot(int kronos) => kronos == 0 ? 10 : kronos;
@@ -81,6 +88,12 @@ namespace LbIntegrations.Kronos
 
         private const string CartGroupName = "Backup RAM cartridge";
         private const string CartChipText = "CART";
+        private const string EepromGroupName = "EEPROM";
+        private const string EepromChipText = "NVRAM";
+
+        /// <summary>An ST-V game's EEPROM (header), named by its set as Kronos names it.</summary>
+        internal static string EepromPath(string exe, string platform, string rom)
+            => Path.Combine(RamDir(exe, platform), Path.GetFileNameWithoutExtension(rom ?? "") + ".nv");
 
         /// <summary>A game's discs, for its states - never unpacking an archive (only one already unpacked is looked at).</summary>
         internal static List<string> DiscsForListing(string rom, string exe)
@@ -167,6 +180,23 @@ namespace LbIntegrations.Kronos
             var rom = ResolveFullPath(romPath);
             var context = appId ?? gameId;
 
+            // An ST-V game: its EEPROM and its states (header).
+            if (KronosStv.IsOurs(platform))
+            {
+                var set = Path.GetFileNameWithoutExtension(rom);
+                var nv = EepromPath(exe, platform, rom);
+                if (SaveScan.Exists(nv) && seen.Add("eeprom|" + nv + "|" + context))
+                    into.Add(RamRow(nv, gameId, appId, IdOfEeprom(set), EepromGroupName, EepromChipText));
+                int stvStates = 0;
+                foreach (var (path, _, slot) in StatesOf(StatesDir(exe, platform, rom)))
+                {
+                    if (!seen.Add("state|" + path + "|" + context)) continue;
+                    into.Add(StateRow(path, gameId, appId, slot, IdOfStvState(set, slot), StateGroupName));
+                    stvStates++;
+                }
+                return stvStates;
+            }
+
             var ram = RamPath(exe, platform, rom);
             if (SaveScan.Exists(ram) && seen.Add("save|" + ram + "|" + context))
                 into.Add(RamRow(ram, gameId, appId, IdOfRam(RamName(rom))));
@@ -188,6 +218,13 @@ namespace LbIntegrations.Kronos
         private static string IdOfState(string product, int slot) => SaveId.Write(new SaveIdData { Emu = Emu, Kind = "state", Sys = Sys, By = "product", Id = product, Slot = slot });
 
         private static string IdOfCart(string name) => SaveId.Write(new SaveIdData { Emu = Emu, Kind = "cart", Sys = Sys, By = "name", Id = name });
+        private static string IdOfEeprom(string set) => SaveId.Write(new SaveIdData { Emu = Emu, Kind = "eeprom", Sys = "stv", By = "name", Id = set });
+        private static string IdOfStvState(string set, int slot) => SaveId.Write(new SaveIdData { Emu = Emu, Kind = "state", Sys = "stv", By = "name", Id = set, Slot = slot });
+
+        /// <summary>A row of an ST-V game's EEPROM.</summary>
+        private static bool IsEeprom(GameSaveBase save)
+            => SaveId.TryRead(save?.SaveGroupId, out var d) && d?.Kind == "eeprom"
+               || Path.GetExtension(save?.OriginalFileName ?? save?.FileLocation ?? "").Equals(".nv", StringComparison.OrdinalIgnoreCase);
 
         /// <summary>A row of the backup RAM's group, or the cartridge's.</summary>
         private static bool IsCart(GameSaveBase save)
@@ -242,7 +279,17 @@ namespace LbIntegrations.Kronos
             catch { return false; }
         }
 
-        IReadOnlyList<string> IOwnSaves.OwnGetCompanionSaveFiles(string primaryFilePath) => Array.Empty<string>();
+        /// <summary>An ST-V game's EEPROM goes with its coin counters (<set>.coins beside it).</summary>
+        IReadOnlyList<string> IOwnSaves.OwnGetCompanionSaveFiles(string primaryFilePath)
+        {
+            try
+            {
+                if (!string.Equals(Path.GetExtension(primaryFilePath ?? ""), ".nv", StringComparison.OrdinalIgnoreCase)) return Array.Empty<string>();
+                var coins = Path.ChangeExtension(primaryFilePath, ".coins");
+                return File.Exists(coins) ? new[] { coins } : Array.Empty<string>();
+            }
+            catch { return Array.Empty<string>(); }
+        }
 
         /// <summary>Active when it is where Kronos reads it for that game now, and still there.</summary>
         bool IOwnSaves.OwnIsSaveActive(GameSaveBase save, string emulatorApplicationPath)
@@ -269,6 +316,13 @@ namespace LbIntegrations.Kronos
             var to = SaveRows.TargetFor(save, PluginHelper.DataManager, Full);
             if (to.Refused || string.IsNullOrEmpty(to.RomPath)) { why = to.Warning ?? "Could not find the game of this save."; return null; }
             var platform = Safe(() => PluginHelper.DataManager?.GetGameById(save.GameId)?.Platform);
+            // An ST-V game: its EEPROM, or its state in its slot (no product code).
+            if (KronosStv.IsOurs(platform))
+            {
+                if (!(save is GameSaveState stvState)) return EepromPath(exe, platform, to.RomPath);
+                int k = slot ?? stvState.Slot ?? SlotRestore.SlotOf(save.SaveGroupId) ?? 1;
+                return Path.Combine(StatesDir(exe, platform, to.RomPath), "_" + KronosSlot(k).ToString("000", CultureInfo.InvariantCulture) + ".yss");
+            }
             if (!(save is GameSaveState state)) return IsCart(save) ? CartPath(exe, platform, to.RomPath) : RamPath(exe, platform, to.RomPath);
 
             var products = ProductsOf(to.RomPath, exe);
@@ -314,25 +368,33 @@ namespace LbIntegrations.Kronos
                     File.Copy(source, target, overwrite: true);
                     Log.Info("restored a state to slot " + slot + " -> " + target);
                     var product = StateFile.Match(Path.GetFileName(target)).Groups["p"].Value;
-                    return new AddSaveResponse(StateRow(target, picked.GameId, picked.AdditionalApplicationId, slot, IdOfState(product, slot),
+                    var stvSet = KronosStv.IsOurs(Safe(() => PluginHelper.DataManager?.GetGameById(picked.GameId)?.Platform)) ? Path.GetFileName(Path.GetDirectoryName(target)) : null;
+                    return new AddSaveResponse(StateRow(target, picked.GameId, picked.AdditionalApplicationId, slot, stvSet != null ? IdOfStvState(stvSet, slot) : IdOfState(product, slot),
                                                         string.IsNullOrWhiteSpace(picked.SaveGroupName) ? StateGroupName : picked.SaveGroupName));
                 }
 
                 var ram = TargetFileFor(save, exe, out var whyRam);
                 if (ram == null) return new AddSaveResponse(whyRam);
-                bool cart = IsCart(save);
-                // Never a file Kronos would resize and format (KronosCart): the right size, its header.
-                var bad = cart ? KronosCart.WhyNot(source) : KronosRetroArch.WhyNotRam(source);
+                bool cart = IsCart(save), eeprom = IsEeprom(save) || ram.EndsWith(".nv", StringComparison.OrdinalIgnoreCase);
+                // Never a file Kronos would resize and format (KronosCart): the right size, its header. An EEPROM is the board's own.
+                var bad = eeprom ? null : cart ? KronosCart.WhyNot(source) : KronosRetroArch.WhyNotRam(source);
                 if (bad != null) { Log.Info("restore refused: " + bad); return new AddSaveResponse(bad); }
                 bool other = !IsOurs(save) || SlotRestore.OverAnotherFile(ram, save);
-                if (!SlotRestore.MayOverwrite(ram, source, other, cart ? "The game's backup cartridge" : "The game's backup RAM", Log.Info, out var nope)) return new AddSaveResponse(nope);
+                if (!SlotRestore.MayOverwrite(ram, source, other, eeprom ? "The game's EEPROM" : cart ? "The game's backup cartridge" : "The game's backup RAM", Log.Info, out var nope)) return new AddSaveResponse(nope);
                 if (!Overwrite(args, ram)) return new AddSaveResponse("Restore cancelled.");
                 var cant = SaveCompanions.WhyNotWritable(source, ram, null);
                 if (cant != null) { Log.Info("restore refused: " + cant); return new AddSaveResponse(cant); }
                 Directory.CreateDirectory(Path.GetDirectoryName(ram));
                 File.Copy(source, ram, overwrite: true);
-                Log.Info("restored the backup " + (cart ? "cartridge" : "RAM") + " -> " + ram);
+                Log.Info("restored the " + (eeprom ? "EEPROM" : cart ? "backup cartridge" : "backup RAM") + " -> " + ram);
                 var name = Path.GetFileNameWithoutExtension(ram);
+                if (eeprom)
+                {
+                    // Its coin counters with it, when the backup has them.
+                    var coins = Path.ChangeExtension(source, ".coins");
+                    if (File.Exists(coins)) File.Copy(coins, Path.ChangeExtension(ram, ".coins"), overwrite: true);
+                    return new AddSaveResponse(RamRow(ram, save.GameId, save.AdditionalApplicationId, IdOfEeprom(name), EepromGroupName, EepromChipText));
+                }
                 return new AddSaveResponse(cart ? RamRow(ram, save.GameId, save.AdditionalApplicationId, IdOfCart(name), CartGroupName, CartChipText)
                                                 : RamRow(ram, save.GameId, save.AdditionalApplicationId, IdOfRam(name)));
             }

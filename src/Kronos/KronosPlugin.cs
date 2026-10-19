@@ -49,6 +49,8 @@ namespace LbIntegrations.Kronos
             LbipRowInjection.Install(RowsId, MetadataRows());
             // A session LaunchBox did not see the end of (it was closed or crashed while Kronos ran): kronos.ini put back.
             try { KronosSession.Recover(); } catch (Exception ex) { Log.Warn("session recovery at start", ex); }
+            // LaunchBox's import wizard, to Kronos for Sega ST-V or Arcade: the list sorted to Kronos's sets (KronosLbImport).
+            KronosLbImport.Install();
         }
 
         /// <summary>The catalogue's row. AutoExtract false: the plugin unpacks an archive itself, a .cue with its .bin files.</summary>

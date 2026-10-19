@@ -210,6 +210,26 @@ namespace LbIntegrations.Probe
                 var found = ((IEnumerable)Call(asm, "KronosPlugin", "StatesOf", sd)).Cast<object>().Select(t => F(t, "Item2") + "#" + F(t, "Item3")).OrderBy(x => x).ToList();
                 Check("the states found: product code and pack slot", found.SequenceEqual(new[] { "MK-8109109#1", "MK-8109109#10" }), string.Join(", ", found));
 
+                Console.WriteLine("== an ST-V game's saves");
+                var stvRom = @"C:\mame\shienryu.zip";
+                var stvSaves = Path.Combine(Path.GetDirectoryName(exe), "Saves", "Sega ST-V");
+                Directory.CreateDirectory(Path.Combine(stvSaves, "States", "shienryu"));
+                File.WriteAllBytes(Path.Combine(stvSaves, "shienryu.nv"), new byte[128]);
+                File.WriteAllText(Path.Combine(stvSaves, "shienryu.coins"), "3 0\n");
+                File.WriteAllBytes(Path.Combine(stvSaves, "States", "shienryu", "_001.yss"), new byte[4]);
+                Check("its EEPROM: <set>.nv in Saves\\Sega ST-V", ((string)Call(asm, "KronosPlugin", "EepromPath", exe, "Sega ST-V", stvRom)) == Path.Combine(stvSaves, "shienryu.nv"));
+                var rows = Activator.CreateInstance(typeof(List<>).MakeGenericType(T(asm, "KronosPlugin").Assembly.GetType("Unbroken.LaunchBox.Plugins.Data.GameSaveBase")
+                                                    ?? typeof(Unbroken.LaunchBox.Plugins.Data.GameSaveBase)));
+                var listed = (int)Call(asm, "KronosPlugin", "Collect", rows, new HashSet<string>(StringComparer.OrdinalIgnoreCase), exe, stvRom, "g-stv", "Sega ST-V", null);
+                var rowText = ((IEnumerable)rows).Cast<Unbroken.LaunchBox.Plugins.Data.GameSaveBase>()
+                    .Select(r => r.SaveGroupName + ":" + r.OriginalFileName + (r is Unbroken.LaunchBox.Plugins.Data.GameSaveState s ? "#" + s.Slot : "") + " " + r.SaveGroupId).ToList();
+                Check("listed: the EEPROM, and the state with no product code in slot 1", listed == 1 && rowText.Count == 2
+                      && rowText.Any(x => x.StartsWith("EEPROM:shienryu.nv") && x.Contains("\"eeprom\"") && x.Contains("\"stv\""))
+                      && rowText.Any(x => x.StartsWith("Save states:_001.yss#1") && x.Contains("\"shienryu\"")), string.Join(" | ", rowText));
+                var plugin0 = Activator.CreateInstance(T(asm, "KronosPlugin"));
+                var companions = (IEnumerable<string>)T(asm, "KronosPlugin").GetInterfaces().First(i => i.Name == "IOwnSaves").GetMethod("OwnGetCompanionSaveFiles").Invoke(plugin0, new object[] { Path.Combine(stvSaves, "shienryu.nv") });
+                Check("its coin counters go with it", companions.SequenceEqual(new[] { Path.Combine(stvSaves, "shienryu.coins") }), string.Join(", ", companions));
+
                 Console.WriteLine("== the CHDs Kronos cannot read (Zstandard): handed over uncompressed");
                 var refChd = @"G:\saturn\Atlantis - The Lost Tales (FR) (Disc 1).chd";
                 var zstdChd = @"G:\LB1326\lbip-kronos-lab\formats\Atlantis-zstd.chd";
@@ -369,6 +389,41 @@ namespace LbIntegrations.Probe
                 if (stem.Length + ext.Length > 255) stem = stem.Substring(0, 255 - ext.Length).TrimEnd().TrimEnd('.');
                 return stem + ext;
             }
+        }
+
+        /// <summary>--kronos-import <folder>: the import filter (KronosLbImport.Filter) on every file of a folder - a whole MAME
+        /// folder - as the wizard's last list would hold them, for Sega ST-V then Arcade (Quiet: the ST-V sets Kronos does not run
+        /// kept on Sega ST-V). What stays must be exactly Kronos's sets present there (and, on Sega ST-V, the ST-V sets it does not
+        /// run), titled with MAME's names; the BIOS and everything else out.</summary>
+        public static bool Import(Assembly asm, string folder)
+        {
+            _bad = 0;
+            T(asm, "KronosLbImport").GetField("Quiet", Any).SetValue(null, true);
+            var files = Directory.GetFiles(folder);
+            var sets = (IDictionary)T(asm, "KronosStv").GetProperty("Sets", Any).GetValue(null);
+            bool KnownSet(string n) => sets.Contains(n) && (bool)sets[n].GetType().GetField("Known").GetValue(sets[n]);
+            var present = files.Where(f => Path.GetExtension(f).Equals(".zip", StringComparison.OrdinalIgnoreCase)).Select(Path.GetFileNameWithoutExtension).ToList();
+            var known = present.Where(KnownSet).OrderBy(n => n).ToList();
+            var stvAll = present.Where(n => sets.Contains(n)).OrderBy(n => n).ToList();
+            Console.WriteLine("-- the import filter on " + folder + ": " + files.Length + " files, " + stvAll.Count + " ST-V sets, " + known.Count + " of them Kronos's --");
+            foreach (var platform in new[] { "Sega ST-V", "Arcade" })
+            {
+                var list = new FlycastSettingsCheck.FakeList();
+                foreach (var f in files) list.Games.Add(new FlycastSettingsCheck.FakeRecord { ApplicationPath = f, Title = Path.GetFileNameWithoutExtension(f) });
+                var w = System.Diagnostics.Stopwatch.StartNew();
+                Call(asm, "KronosLbImport", "Filter", null, list, platform);
+                var kept = list.Games.Select(g => Path.GetFileNameWithoutExtension(g.ApplicationPath)).OrderBy(n => n).ToList();
+                var want = platform == "Arcade" ? known : stvAll;
+                Console.WriteLine("  " + platform + ": " + kept.Count + " kept of " + files.Length + " in " + w.ElapsedMilliseconds + " ms");
+                Check(platform + ": exactly " + (platform == "Arcade" ? "Kronos's sets" : "the ST-V sets (Kronos's, and those it does not run - kept, Quiet)"),
+                      kept.SequenceEqual(want), "kept but not wanted: " + string.Join(", ", kept.Except(want).Take(10)) + " / wanted, not kept: " + string.Join(", ", want.Except(kept).Take(10)));
+                Check(platform + ": the BIOS out", !kept.Contains("stvbios"));
+                var shienryu = list.Games.FirstOrDefault(g => Path.GetFileNameWithoutExtension(g.ApplicationPath) == "shienryu");
+                Check(platform + ": a set titled from MAME's name", shienryu != null && shienryu.Title.StartsWith("Shienryu"), shienryu?.Title);
+            }
+            T(asm, "KronosLbImport").GetField("Quiet", Any).SetValue(null, false);
+            Console.WriteLine(_bad == 0 ? "ALL OK" : _bad + " FAILED");
+            return _bad == 0;
         }
 
         /// <summary>--kronos-stv <build> --game <set.zip> [--platform "Sega ST-V"|Arcade] [--lab <folder>]: the real Kronos on an
