@@ -72,4 +72,9 @@ as for Ymir.
 
 - Non-ASCII paths (fopen narrow strings outside MDS).
 - Why Ctrl+n does nothing (a menu action hidden in full screen, or the keyboard pad catching Ctrl).
-- ST-V (arcade): `Cartridge\Type=11` + `Cartridge\STVGame`, a second platform if wanted.
+- ST-V (arcade), second batch (Mehdi 19/10): LaunchBox has the platform "Sega ST-V" (LaunchBox.Metadata.db). The games
+  are MAME sets (stv.cpp, BIOS stvbios.zip); Kronos's table has ~130 of them (ctrl/src/stv.c GameList, files matched by
+  name and CRC). Kronos scans EVERY zip of its ROM folder and writes gamelistv2.save there: the plugin will give it a
+  folder of its own per launch (the game's zip, its parent, stvbios.zip). No command-line switch: Cartridge\Type=11 +
+  Cartridge\STVGame. Import: Flycast's filter (FlycastLbImport) - quick by the zip's name in Kronos's table, CRC by
+  its files - so a whole MAME folder imported to Sega ST-V keeps only Kronos's games.
