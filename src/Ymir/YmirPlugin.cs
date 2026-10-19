@@ -358,11 +358,28 @@ namespace LbIntegrations.Ymir
             if (!YmirLaunch.SlotKeysAreDefault(doc)) Log.Info("Ymir.toml: the slot keys 1-0 were rebound in Ymir - F6 / F7 send them all the same");
             var ram = RamPath(exe, platform, rom);
             try { Directory.CreateDirectory(Path.GetDirectoryName(ram)); } catch { }
-            var forced = YmirSession.Force(doc, new[]
+            var keys = new List<(string, string, string, bool)>
             {
                 ("System", "InternalBackupRAMImagePath", YmirToml.Literal(ram), true),
                 ("System", "InternalBackupRAMPerGame", "false", false),
-            });
+            };
+            // Its backup cartridge, when it has one (YmirCart): 4 Mbit, its file - never for a game that needs another cartridge.
+            var cart = CartPath(exe, platform, rom);
+            if (File.Exists(cart))
+            {
+                var bad = YmirCart.WhyNot(cart);
+                if (bad != null) Log.Warn("launch: the game's cartridge is not plugged - " + bad);
+                else if (YmirCart.NeedsOtherCart(disc)) Log.Info("launch: the game's cartridge is not plugged - Ymir plugs the cartridge this game needs");
+                else
+                {
+                    keys.Add(("Cartridge", "Type", "'BackupRAM'", false));
+                    keys.Add(("Cartridge", "AutoLoadGameCarts", "false", false));
+                    keys.Add(("Cartridge.BackupRAM", "Capacity", "'4Mbit'", false));
+                    keys.Add(("Cartridge.BackupRAM", "ImagePath", YmirToml.Literal(cart), true));
+                    Log.Info("launch: backup cartridge " + cart);
+                }
+            }
+            var forced = YmirSession.Force(doc, keys);
             try { doc.Save(settings); }
             catch (Exception ex) { return Refuse("Ymir's settings could not be written (" + ex.Message + "): the game would use another game's backup RAM."); }
             Log.Info("launch: backup RAM " + ram + (File.Exists(ram) ? "" : " (new - Ymir formats it)"));

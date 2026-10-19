@@ -255,6 +255,20 @@ namespace LbIntegrations.Probe
             var m3u = Path.Combine(games, "Atlantis - The Lost Tales (FR).m3u");
             File.WriteAllLines(m3u, chds);
 
+            // The game's backup cartridge: RetroArch's Beetle Saturn .bcr, a mark in its third block where a save would start - Ymir
+            // formatting it (a file it did not take) would clear the mark.
+            var cart = Path.Combine(dir, "Saves", "Sega Saturn", "Atlantis - The Lost Tales (FR).bcr");
+            var bcr = Directory.GetFiles(@"G:\LB1326\Emulators\RetroArch\saves\Beetle Saturn", "Atlantis*.bcr").FirstOrDefault();
+            if (bcr != null)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(cart));
+                var bytes = File.ReadAllBytes(bcr);
+                var mark = Encoding.ASCII.GetBytes("LBIPTEST___");
+                bytes[1024] = 0x80; Array.Copy(mark, 0, bytes, 1028, mark.Length);
+                File.WriteAllBytes(cart, bytes);
+            }
+            Check("RetroArch's .bcr made the game's cartridge", bcr != null, bcr);
+
             LbIntegrations.Catalog.LbCatalog.HostWillAsk = true;
             var type = asm.GetTypes().Single(t => typeof(Unbroken.LaunchBox.Plugins.EmulatorPlugin).IsAssignableFrom(t) && !t.IsAbstract);
             var plugin = (Unbroken.LaunchBox.Plugins.EmulatorPlugin)Activator.CreateInstance(type);
@@ -291,6 +305,14 @@ namespace LbIntegrations.Probe
             var after = File.ReadAllText(toml);
             Check("Ymir wrote its whole Ymir.toml", after.Length > 5000, after.Length + " chars");
             Check("the RAM path taken out again (Ymir's own next time)", !after.Contains("Atlantis"), after.Split('\n').FirstOrDefault(l => l.Contains("InternalBackupRAMImagePath")));
+            if (bcr != null)
+            {
+                var c = File.ReadAllBytes(cart);
+                Check("Ymir took Beetle's cartridge as it is: 512 KB, the mark still there (not formatted)",
+                      c.Length == 512 * 1024 && c[1024] == 0x80 && Encoding.ASCII.GetString(c, 1028, 11) == "LBIPTEST___", c.Length + " bytes");
+                Check("the cartridge unplugged after the game (Type None again)", !after.Contains("Type = 'BackupRAM'"),
+                      after.Split('\n').FirstOrDefault(l => l.TrimStart().StartsWith("Type =")));
+            }
             Check("the pack's keys kept by Ymir", after.Contains("QuickLoadState = [ 'F4' ]") && after.Contains("ToggleFullScreen = [ 'Alt+Return', 'F11' ]") && after.Contains("ToggleDebugTrace = []"));
             Check("its update check off", after.Contains("CheckForUpdates = false"));
             Check("nothing beside the game", Directory.GetFiles(games).Length == 1);

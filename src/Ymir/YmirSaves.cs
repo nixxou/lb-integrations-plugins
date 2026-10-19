@@ -5,13 +5,15 @@
 //                                                          the session (YmirSession). <game>: the .m3u's name, or the disc's
 //                                                          without "(Disc N)" - so the discs of a game share it, and a game
 //                                                          in LaunchBox as one entry per disc too.
+//   Cartridge     <install>\Saves\<platform>\<game>.bcr     the game's backup RAM cartridge (4 Mbit, 512 KiB), when it has one -
+//                                                          plugged for its session only (YmirCart); same format as Beetle's .bcr
 //   Save states   <install>\savestates\<disc hash>\0.savestate .. 9.savestate   slots 1 to 10 (Ymir numbers from 0, measured
 //                                                          20/10), one folder per DISC (YmirDisc's hash) - a game of two
 //                                                          discs has its states in two folders.
 //   not saves     <n>-1.savestate (the state a save replaced, for Ymir's "undo save"), meta.txt; state\bup-int.bin (Ymir's
-//                 own RAM, for a disc opened by hand); a backup RAM cartridge's backup\games\bup-ext-*.bin (not listed yet).
+//                 own RAM, for a disc opened by hand); the cartridges Ymir makes itself in backup\games\ (a cartridge set by hand).
 //
-// THE IDS are the pack's JSON (Shared.Saves): {"emu":"ymir","kind":"save","sys":"saturn","by":"name","id":"<game>"} and
+// THE IDS are the pack's JSON (Shared.Saves): {"emu":"ymir","kind":"save" | "cart","sys":"saturn","by":"name","id":"<game>"} and
 // {"emu":"ymir","kind":"state","sys":"saturn","by":"hash","id":"<disc hash>","slot":n}. A state is restored to the disc of
 // its hash when the target game has it, to the target's only disc otherwise; a game of several discs and none of the hash:
 // refused, said.
@@ -71,6 +73,12 @@ namespace LbIntegrations.Ymir
             => Path.Combine(YmirLaunch.ProfileOf(exe), "Saves", SafeName(string.IsNullOrWhiteSpace(platform) ? "Sega Saturn" : platform));
 
         internal static string RamPath(string exe, string platform, string rom) => Path.Combine(RamDir(exe, platform), SafeName(RamName(rom)) + ".bin");
+
+        /// <summary>The game's backup RAM cartridge, beside its RAM - plugged only when it is there (YmirCart).</summary>
+        internal static string CartPath(string exe, string platform, string rom) => Path.Combine(RamDir(exe, platform), SafeName(RamName(rom)) + ".bcr");
+
+        private const string CartGroupName = "Backup RAM cartridge";
+        private const string CartChipText = "CART";
 
         /// <summary>A game's discs, for its states - never unpacking an archive (only one already unpacked is looked at).</summary>
         internal static List<string> DiscsForListing(string rom, string exe)
@@ -156,6 +164,9 @@ namespace LbIntegrations.Ymir
             var ram = RamPath(exe, platform, rom);
             if (SaveScan.Exists(ram) && seen.Add("save|" + ram + "|" + context))
                 into.Add(RamRow(ram, gameId, appId, IdOfRam(RamName(rom))));
+            var cart = CartPath(exe, platform, rom);
+            if (SaveScan.Exists(cart) && seen.Add("cart|" + cart + "|" + context))
+                into.Add(RamRow(cart, gameId, appId, IdOfCart(RamName(rom)), CartGroupName, CartChipText));
 
             int states = 0;
             foreach (var hash in HashesOf(rom, exe))
@@ -171,14 +182,21 @@ namespace LbIntegrations.Ymir
         private static string IdOfRam(string name) => SaveId.Write(new SaveIdData { Emu = Emu, Kind = "save", Sys = Sys, By = "name", Id = name });
         private static string IdOfState(string hash, int slot) => SaveId.Write(new SaveIdData { Emu = Emu, Kind = "state", Sys = Sys, By = "hash", Id = hash, Slot = slot });
 
-        private static GameSaveGame RamRow(string path, string gameId, string appId, string groupId)
+        private static string IdOfCart(string name) => SaveId.Write(new SaveIdData { Emu = Emu, Kind = "cart", Sys = Sys, By = "name", Id = name });
+
+        /// <summary>A row of the backup RAM's group, or the cartridge's.</summary>
+        private static bool IsCart(GameSaveBase save)
+            => SaveId.TryRead(save?.SaveGroupId, out var d) && d?.Kind == "cart"
+               || Path.GetExtension(save?.OriginalFileName ?? save?.FileLocation ?? "").Equals(".bcr", StringComparison.OrdinalIgnoreCase);
+
+        private static GameSaveGame RamRow(string path, string gameId, string appId, string groupId, string groupName = RamGroupName, string chip = RamChipText)
         {
             long size = 0; DateTime when = default;
             try { var i = new FileInfo(path); size = i.Length; when = i.LastWriteTimeUtc; } catch { }
             return new GameSaveGame
             {
                 GameId = gameId, AdditionalApplicationId = appId, FileLocation = path, IsDirectory = false,
-                OriginalFileName = Path.GetFileName(path), SaveGroupId = groupId, SaveGroupName = RamGroupName, DisplayChipText = RamChipText,
+                OriginalFileName = Path.GetFileName(path), SaveGroupId = groupId, SaveGroupName = groupName, DisplayChipText = chip,
                 ReportedFileSizeBytes = size > 0 ? size : (long?)null, ReportedLastModifiedUtc = when == default ? (DateTime?)null : when,
             };
         }
@@ -248,7 +266,7 @@ namespace LbIntegrations.Ymir
             var to = SaveRows.TargetFor(save, PluginHelper.DataManager, Full);
             if (to.Refused || string.IsNullOrEmpty(to.RomPath)) { why = to.Warning ?? "Could not find the game of this save."; return null; }
             var platform = Safe(() => PluginHelper.DataManager?.GetGameById(save.GameId)?.Platform);
-            if (!(save is GameSaveState state)) return RamPath(exe, platform, to.RomPath);
+            if (!(save is GameSaveState state)) return IsCart(save) ? CartPath(exe, platform, to.RomPath) : RamPath(exe, platform, to.RomPath);
 
             var hashes = HashesOf(to.RomPath, exe);
             string own = SaveId.TryRead(save.SaveGroupId, out var d) && d?.By == "hash" ? d.Id : Path.GetFileName(Path.GetDirectoryName(save.FileLocation) ?? "");
@@ -298,15 +316,21 @@ namespace LbIntegrations.Ymir
 
                 var ram = TargetFileFor(save, exe, out var whyRam);
                 if (ram == null) return new AddSaveResponse(whyRam);
+                bool cart = IsCart(save);
+                // Never a file Ymir would resize and format (YmirCart): the right size, its header.
+                var bad = cart ? YmirCart.WhyNot(source) : YmirRetroArch.WhyNotRam(source);
+                if (bad != null) { Log.Info("restore refused: " + bad); return new AddSaveResponse(bad); }
                 bool other = !IsOurs(save) || SlotRestore.OverAnotherFile(ram, save);
-                if (!SlotRestore.MayOverwrite(ram, source, other, "The game's backup RAM", Log.Info, out var nope)) return new AddSaveResponse(nope);
+                if (!SlotRestore.MayOverwrite(ram, source, other, cart ? "The game's backup cartridge" : "The game's backup RAM", Log.Info, out var nope)) return new AddSaveResponse(nope);
                 if (!Overwrite(args, ram)) return new AddSaveResponse("Restore cancelled.");
                 var cant = SaveCompanions.WhyNotWritable(source, ram, null);
                 if (cant != null) { Log.Info("restore refused: " + cant); return new AddSaveResponse(cant); }
                 Directory.CreateDirectory(Path.GetDirectoryName(ram));
                 File.Copy(source, ram, overwrite: true);
-                Log.Info("restored the backup RAM -> " + ram);
-                return new AddSaveResponse(RamRow(ram, save.GameId, save.AdditionalApplicationId, IdOfRam(Path.GetFileNameWithoutExtension(ram))));
+                Log.Info("restored the backup " + (cart ? "cartridge" : "RAM") + " -> " + ram);
+                var name = Path.GetFileNameWithoutExtension(ram);
+                return new AddSaveResponse(cart ? RamRow(ram, save.GameId, save.AdditionalApplicationId, IdOfCart(name), CartGroupName, CartChipText)
+                                                : RamRow(ram, save.GameId, save.AdditionalApplicationId, IdOfRam(name)));
             }
             catch (Exception ex)
             {
