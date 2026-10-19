@@ -398,7 +398,7 @@ namespace LbIntegrations.Kronos
             KronosSession.Begin(exe, settings, forced, detach.Count == 0 ? null : () => { foreach (var r in detach) KronosChd.Release(r); }, gameId);
 
             // The discs, for the next-disc key.
-            KronosLaunch.WriteDiscs(exe, toKronos);
+            KronosLaunch.WriteDiscs(exe, toKronos, plan.Discs.Select(Path.GetFileName).ToList());
 
             var current = args?.CurrentCommandLine ?? "";
             var line = KronosLaunch.CommandLine(current, KronosSettings.BoolFor(gameId, KronosSettings.Fullscreen), biosFile, rom, toKronos.Disc);

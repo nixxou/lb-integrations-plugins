@@ -273,14 +273,16 @@ namespace LbIntegrations.Kronos
         }
 
         /// <summary>The discs written down for the AHK script ("next disc"): the disc started first, then one per line.</summary>
-        public static void WriteDiscs(string exe, Plan plan)
+        /// <summary>One line per disc: its path, then a tab and the name the next-disc key says when <paramref name="shownAs"/>
+        /// gives one (a disc handed over as another file - a CHD served as K:\game.chd says its own name).</summary>
+        public static void WriteDiscs(string exe, Plan plan, IList<string> shownAs = null)
         {
             var path = Path.Combine(ProfileOf(exe), DiscsFile);
             try
             {
                 int at = Math.Max(0, plan.Discs.FindIndex(d => string.Equals(Path.GetFullPath(d), Path.GetFullPath(plan.Disc), StringComparison.OrdinalIgnoreCase)));
                 var lines = new List<string> { (at + 1).ToString(CultureInfo.InvariantCulture) };
-                lines.AddRange(plan.Discs.Select(Path.GetFullPath));
+                lines.AddRange(plan.Discs.Select((d, i) => Path.GetFullPath(d) + (shownAs != null && i < shownAs.Count && !string.IsNullOrEmpty(shownAs[i]) ? "\t" + shownAs[i] : "")));
                 File.WriteAllLines(path, lines, new UTF8Encoding(true));
             }
             catch (Exception ex) { Log.Warn("could not write " + path + " - the next-disc key will do nothing", ex); }

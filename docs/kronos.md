@@ -76,7 +76,9 @@ same disc in cdlz,cdzl,cdfl boots, and so does it uncompressed (`-c none`). So t
 header and hands such a disc over UNCOMPRESSED, Demul's model (KronosChd, from DemulChd): served where it is through the RAM
 disk helper (view=chd on AIM), detached when Kronos has gone, else copied once into `<kronos>\lbip-chd\` (a 20 GB cache) -
 every disc of the game, the next-disc key's too; every other CHD as it is [M 19/10: Atlantis cdzs,cdfl copied in 3 s,
-484 MB, Kronos on the Saturn then SEGA screens - `--kronos-zstd`]. The other Saturn emulators, measured with the same file: Ymir 0.4.1 reads it (libchdr 47d7941 has
+484 MB, Kronos on the Saturn then SEGA screens - `--kronos-zstd`; served through AIM with the helper 1.14 of G:\LB1326
+(`--lb`): Z:\game.chd, the same screens, Z: detached once Kronos had gone]. The next-disc key says each disc's own name
+(lbip-discs.txt: path, a tab, the name), not "game". The other Saturn emulators, measured with the same file: Ymir 0.4.1 reads it (libchdr 47d7941 has
 cdzs); RetroArch's Beetle Saturn v0.9.45.1 reads it (Game ID, region in its log, as with the reference); the yabause,
 yabasanshiro and kronos libretro cores do not ("Cannot initialize ISO-File Virtual Drive" with it only). CHDSharp (the plugins'
 disc reader) reads it: same product code and hash.

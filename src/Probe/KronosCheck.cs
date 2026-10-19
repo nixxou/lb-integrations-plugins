@@ -221,9 +221,10 @@ namespace LbIntegrations.Probe
         /// <summary>The real Kronos on a Zstandard CHD it cannot read: the plugin hands it the disc uncompressed (served or
         /// copied), Kronos boots it, and once it has gone the served disc is detached. Windowed, no key sent: the window is
         /// captured with PrintWindow, then the process ended.</summary>
-        public static bool Zstd(Assembly asm, string release, string lab)
+        public static bool Zstd(Assembly asm, string release, string lab, string lb = null)
         {
             _bad = 0;
+            if (lb != null) asm.GetType("LbIntegrations.RamDisk.RamDiskHost", true).GetMethod("UseRoot", Any).Invoke(null, new object[] { lb });
             lab ??= @"G:\LB1326\lbip-kronos-lab";
             var zstd = Path.Combine(lab, "formats", "Atlantis-zstd.chd");
             var run = Path.Combine(lab, "probe-zstd-" + DateTime.Now.ToString("HHmmss"));
@@ -268,7 +269,7 @@ namespace LbIntegrations.Probe
                 System.Threading.Thread.Sleep(at == 6 ? 6000 : at == 10 ? 4000 : at == 14 ? 4000 : 6000);
                 p.Refresh();
                 Console.WriteLine("  window \"" + p.MainWindowTitle + "\"");
-                if (at == 20) Check("Kronos runs the disc (its title names it)", p.MainWindowTitle.IndexOf("Atlantis", StringComparison.OrdinalIgnoreCase) >= 0, p.MainWindowTitle);
+                if (at == 20) Check("Kronos runs the disc (its title names the file it was given)", p.MainWindowTitle.IndexOf(Path.GetFileName(given), StringComparison.OrdinalIgnoreCase) >= 0, p.MainWindowTitle);
                 try
                 {
                     GetWindowRect(p.MainWindowHandle, out var wr);
