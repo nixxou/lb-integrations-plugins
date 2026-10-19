@@ -136,12 +136,19 @@ namespace LbIntegrations.Probe
                 Call(asm, "KronosGameOptions", "SetGameValue", "g2", "Expansion", "dram32");
                 Call(asm, "KronosGameOptions", "SetGameValue", "g2", "Filter", "raw:11");
                 var odoc = Call(asm, "KronosIniDoc", "Load", ini);
-                var forG2 = Call(asm, "KronosGameOptions", "KeysFor", "g2", exe, odoc);
+                Call(asm, "KronosGameOptions", "SetGameValue", "g2", "StvRegion", "J");
+                var forG2 = Call(asm, "KronosGameOptions", "KeysFor", "g2", exe, odoc, false);
                 var okeys = ((IEnumerable)forG2.GetType().GetField("Item1").GetValue(forG2)).Cast<object>()
                     .Select(t => (string)t.GetType().GetField("Item1").GetValue(t) + "=" + (string)t.GetType().GetField("Item2").GetValue(t)).ToList();
-                Check("the keys: 4x, French, 4 MB RAM (its path held as it is), a value Kronos wrote kept",
+                Check("the keys: 4x, French, 4 MB RAM (its path held as it is), a value Kronos wrote kept - the ST-V region not for a Saturn game",
                       okeys.SequenceEqual(new[] { "Video\\resolution_mode=32", "Video\\filter_type=11", "General\\SystemLanguageID=2", "Cartridge\\Type=7", "Cartridge\\Path=C:/old/cart.bin" }),
                       string.Join(", ", okeys));
+                var forStv = Call(asm, "KronosGameOptions", "KeysFor", "g2", exe, odoc, true);
+                var skeys = ((IEnumerable)forStv.GetType().GetField("Item1").GetValue(forStv)).Cast<object>()
+                    .Select(t => (string)t.GetType().GetField("Item1").GetValue(t) + "=" + (string)t.GetType().GetField("Item2").GetValue(t)).ToList();
+                Check("the same values for an ST-V game: its region, no expansion cartridge",
+                      skeys.SequenceEqual(new[] { "Video\\resolution_mode=32", "Video\\filter_type=11", "General\\SystemLanguageID=2", "STV\\Region=J" }), string.Join(", ", skeys));
+                Call(asm, "KronosGameOptions", "SetGameValue", "g2", "StvRegion", null);
                 var oforced = (IList)Call(asm, "KronosSession", "Force", odoc, forG2.GetType().GetField("Item1").GetValue(forG2));
                 CallOn(odoc, "Save", ini);
                 Call(asm, "KronosSession", "Begin", exe, ini, oforced, null, "g2");
@@ -161,7 +168,7 @@ namespace LbIntegrations.Probe
                     .Select(t => (string)t.GetType().GetField("Item1").GetValue(t)).ToList();
                 Check("the cart folder's ROM offered", choices.Contains("rom:snk\\kof95 é.bin"), string.Join(", ", choices));
                 Call(asm, "KronosGameOptions", "SetGameValue", "g3", "Expansion", "rom:snk\\kof95 é.bin");
-                var forG3 = Call(asm, "KronosGameOptions", "KeysFor", "g3", exe, Call(asm, "KronosIniDoc", "Load", ini));
+                var forG3 = Call(asm, "KronosGameOptions", "KeysFor", "g3", exe, Call(asm, "KronosIniDoc", "Load", ini), false);
                 var rkeys = ((IEnumerable)forG3.GetType().GetField("Item1").GetValue(forG3)).Cast<object>()
                     .Select(t => (string)t.GetType().GetField("Item1").GetValue(t) + "=" + (string)t.GetType().GetField("Item2").GetValue(t)).ToList();
                 var romText = Path.Combine(cartDir, "snk", "kof95 é.bin").Replace('\\', '/');
@@ -171,7 +178,7 @@ namespace LbIntegrations.Probe
                 Check("read back from kronos.ini relative to the cart folder", (string)Call(asm, "KronosGameOptions", "FromIni", "Expansion", rdoc, exe) == "rom:snk\\kof95 é.bin",
                       (string)Call(asm, "KronosGameOptions", "FromIni", "Expansion", rdoc, exe));
                 File.Delete(Path.Combine(cartDir, "snk", "kof95 é.bin"));
-                var gone = Call(asm, "KronosGameOptions", "KeysFor", "g3", exe, rdoc);
+                var gone = Call(asm, "KronosGameOptions", "KeysFor", "g3", exe, rdoc, false);
                 var left = ((IEnumerable)gone.GetType().GetField("Item2").GetValue(gone)).Cast<string>().ToList();
                 Check("its file gone: the option left out, said", ((IEnumerable)gone.GetType().GetField("Item1").GetValue(gone)).Cast<object>().Count() == 0 && left.Count == 1, string.Join(", ", left));
                 Check("a backup cartridge in the ini is not this option's", (string)((Delegate)T(asm, "KronosGameOption").GetField("Read").GetValue(Call(asm, "KronosGameOptions", "Option", "Expansion")))
