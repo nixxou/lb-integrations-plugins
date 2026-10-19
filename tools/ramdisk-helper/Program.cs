@@ -171,7 +171,7 @@
 //                                  cannot read the file's codecs (Demul: zstd). The result gains " file=<the file's path>".
 //                                  An older helper reads view=chd as no view: check >= 1.14.
 //
-// -- added in 1.15 -----------------------------------------------------------------------------
+// -- added in 1.16 (a 1.15 was built, then reverted: its number is not reused) -----------------------------------------------------------------------------
 //   name     = <file name>         on image-attach with view=xiso or view=chd: the one file's name on its volume, in place of
 //                                  game.iso / game.chd - an emulator that shows the file's name, or keys something on it, sees
 //                                  the original's ("Atlantis (Disc 1).chd"). Printable ASCII: any other character, and
@@ -1052,7 +1052,7 @@ namespace RamDiskHelper
                 if (shmName != null) psi.Environment["LBIP_PROXY_SHM"] = shmName;
                 // 1.13: a CHD decoded on that many cores while it is read in sequence (Shared.Disc\ChdParallel).
                 if (int.TryParse(Get(kv, "chd_threads", ""), out int chdThreads) && chdThreads >= 0 && chdThreads <= 16) psi.Environment["LBIP_CHD_THREADS"] = chdThreads.ToString();
-                // 1.15: name= - the one file's name on the volume (view=xiso, view=chd).
+                // 1.16: name= - the one file's name on the volume (view=xiso, view=chd).
                 if (Get(kv, "name", "").Length > 0) psi.Environment["LBIP_VIEW_NAME"] = Get(kv, "name", "");
                 server = Process.Start(psi);
                 // Listing a redump reads its tables across the image: seconds, a minute on a slow disk.
@@ -1163,7 +1163,7 @@ namespace RamDiskHelper
         /// <summary>The name of the one file on view=chd's volume.</summary>
         private const string ChdFileName = "game.chd";
 
-        /// <summary>The one file's name on a one-file view (1.15): name= made one the volume holds, else the view's own.</summary>
+        /// <summary>The one file's name on a one-file view (1.16): name= made one the volume holds, else the view's own.</summary>
         private static string ViewName(string asked, string fallback)
             => string.IsNullOrWhiteSpace(asked) ? fallback : LbIntegrations.Xemu.ExfatOneFileView.Name(asked, fallback);
 

@@ -1271,7 +1271,7 @@ namespace LbIntegrations.RamDisk
         /// free letter - the helper's view=xiso, through AIM; the game partition read where it is. Returns the file's path
         /// ("K:\game.iso"), or null with the reason. <paramref name="root"/>: what DetachImage takes back. <paramref name="mediaPatch"/>:
         /// extract-xiso's media enable patch served in the disc's .xbe files (patch=media). <paramref name="name"/>: the file's name
-        /// on the volume (helper 1.15 - an older one serves game.iso).</summary>
+        /// on the volume (helper 1.16 - an older one serves game.iso).</summary>
         public static string AttachXiso(string image, out string root, out string error, bool mediaPatch = false, string name = null)
         {
             error = null; root = null;
@@ -1314,7 +1314,7 @@ namespace LbIntegrations.RamDisk
 
         /// <summary>A CHD served uncompressed - a CHD v5 with no compressor, decoded as it is read, its metadata the source's - as
         /// ONE FILE ("K:\game.chd") on a disk attached on a free letter, through AIM. Null with the reason. <paramref name="root"/>:
-        /// what DetachImage takes back. <paramref name="name"/>: the file's name on the volume, e.g. the source's own (helper 1.15 -
+        /// what DetachImage takes back. <paramref name="name"/>: the file's name on the volume, e.g. the source's own (helper 1.16 -
         /// an older one serves game.chd; the path returned is always the one the helper said).</summary>
         public static string AttachChd(string image, out string root, out string error, string name = null)
         {
