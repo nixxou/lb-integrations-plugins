@@ -98,8 +98,36 @@ account as CSV per tab (`/gviz/tq?tqx=out:csv&sheet=<tab>`). Tabs NTSC-U (324 ga
 Intro, Menus, In-game, Playable, Perfect), Ymir version, BIOS, Tester, Additional notes. Matching: the disc hash
 (exact), then the product code + title. Precedents: Vita3kCompat, XeniaCompat.
 
-## 11. Not measured yet
+## 11. Measured 20/10 (lab `prof1`, Atlantis FR, BIOS US/EU 1.01a)
 
-The first-run Ymir.toml and the hotkey value format; full screen and exit with posted keys; WM_CLOSE flushing the backup
-RAM; the save-state format (a picture inside?); a .cue / .iso / .mds / .ccd launch; the AVX2 / SSE2 choice; disc swap
-through the Load Disc dialog.
+- `-p <empty folder>`: no dialog, the profile's folders made; **Ymir.toml written at exit** (WM_CLOSE: clean, code 0).
+  Keys are TOML string lists: `QuickSaveState = [ 'F2' ]`, `LoadState1 = [ 'Ctrl+Alpha1' ]`, `ToggleFullScreen = [
+  'Alt+Return' ]`, `ExitApp = []`. Tables written indented (`    [Hotkeys.SaveStates]`).
+- **The "Automatic update checks" popup** shows at every start until `<profile>\state\updates\.onboarded` exists (an
+  empty file Ymir writes on Accept; `update_onboarding_window.cpp`); while it shows, it takes the keyboard - F2 did
+  nothing. With the file: F2 wrote `0.savestate`, "3" then F2 `2.savestate`, F4 (rebound) loaded. `CheckForUpdates =
+  false` by default. The plugin writes the marker: no popup, updates through LiteBox (Mehdi 20/10).
+- **Save states are numbered from 0**: slot 1 -> `0.savestate` (5.5 MB for Atlantis), slot 3 -> `2.savestate`.
+- **Esc cannot be bound in Ymir**: `settings.cpp` 2155 skips every Escape bind (`ExitApp = ['Escape']` was rewritten to
+  `[]`). Esc quits through the AHK script (WinClose = WM_CLOSE, clean).
+- `InternalBackupRAMImagePath` absolute: used (the file made at that path, 32 KB); Ymir writes it back relative to
+  `state\` (`'..\..\saves\...'`). `F4` for QuickLoadState kept.
+- **Disc swap**: Ctrl+O opens a standard Windows dialog (`#32770`, "Load Sega Saturn disc image"); the path typed in its
+  file name box + Enter -> the window title went from "ATLANTIS CD1" to "ATLANTIS CD2", the game running on.
+- Region: the PAL disc ran at 50 fps with the US/EU BIOS.
+
+## 12. Mehdi's answers (20/10)
+
+1. Saves: one internal backup RAM PER LAUNCHBOX GAME - `InternalBackupRAMImagePath` set before each launch to a file named
+   after the game (its .m3u for several discs), so the discs of a game share it and two games never mix.
+2. Several discs: a pack key for "next disc", the .m3u read by the plugin, the swap done through Ymir's Load Disc dialog.
+3. The pack's keys: F2 save (Ymir's own), F4 load (instead of F3), F6 / F7 slot -/+ (AHK selecting the slot with 1-0),
+   F11 full screen (Ymir's debug trace taken off F11 only while it is its default), Esc quits (AHK).
+4. The compatibility list: in the game's window and at the launch.
+5. No update popup at start; updates through LiteBox. Stable releases only (months apart; the nightly is rebuilt at every
+   push).
+
+## 13. Not measured yet
+
+The save-state format (a picture inside?); .cue / .iso / .mds / .ccd launches; AVX2 / SSE2 choice; full screen by `-f`;
+the backup RAM written at WM_CLOSE after an in-game save; a game swapping discs as it asks.
