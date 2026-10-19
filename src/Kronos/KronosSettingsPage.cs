@@ -66,13 +66,13 @@ namespace LbIntegrations.Kronos
             // ── the install ──
             _exe = Settings.FirstExe();
             if (_exe == null)
-                stack.Controls.Add(Card("Kronos", Line("Kronos is not set up in LaunchBox yet: add the emulator Nixx-Kronos, it installs Tradu-France's latest 64-bit build."),
+                stack.Controls.Add(Card("Kronos", Line("Kronos is not set up in LaunchBox yet: add the emulator Nixx-Kronos, it installs the latest 64-bit build - Tradu-France's, or the pack's 2.7.5b (nixxou/Kronos_test) while Tradu-France has nothing newer."),
                                         Line(KronosBuild.RuntimeNote)));
             else
             {
                 var ours = KronosBuild.InstalledVersion(_exe);
                 stack.Controls.Add(Card("Kronos",
-                    Line("Kronos " + (ours ?? "") + (ours == null ? "(an install this plugin did not make: updates are yours)" : " (Tradu-France's 64-bit build)") + " - " + _exe),
+                    Line("Kronos " + (ours ?? "") + (ours == null ? "(an install this plugin did not make: updates are yours)" : " (" + (KronosBuild.InstalledFrom(_exe) ?? "Tradu-France 64-bit") + ")") + " - " + _exe),
                     Line("Its settings: " + KronosLaunch.SettingsOf(_exe) + "; its saves and states: " + Path.Combine(KronosLaunch.ProfileOf(_exe), "Saves")),
                     Line(KronosBuild.RuntimeNote),
                     LbIntegrations.Lbip.LbipHint.Note("Keys: F2 save state, F4 load, F6 / F7 the slot, F11 full screen, PageDown / PageUp the disc, Esc quit.",

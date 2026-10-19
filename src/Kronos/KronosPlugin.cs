@@ -192,7 +192,7 @@ namespace LbIntegrations.Kronos
             try
             {
                 var release = KronosBuild.Latest();
-                if (release == null) return new EmulatorInstallResponse("Couldn't read Kronos's latest build on Tradu-France. Try again later.");
+                if (release == null) return new EmulatorInstallResponse("Couldn't read Kronos's latest build (Tradu-France, GitHub). Try again later.");
 
                 bool reinstall = args?.ExistingEmulator != null;
                 string targetDir = reinstall
@@ -209,8 +209,8 @@ namespace LbIntegrations.Kronos
                 Report(args, "Extracting Kronos...", null);
                 Archives.ExtractOver(archive, targetDir);
                 if (!File.Exists(exe)) return new EmulatorInstallResponse("Kronos was extracted to " + targetDir + " but " + KronosLaunch.ExecutableName + " is not there.");
-                KronosBuild.Stamp(targetDir, release.Version);
-                Log.Info("installed Kronos " + release.Version + " to " + targetDir);
+                KronosBuild.Stamp(targetDir, release);
+                Log.Info("installed Kronos " + release.Version + " (" + release.From + ") to " + targetDir);
 
                 // Its first settings and the pack's keys.
                 KronosSession.Recover();
@@ -479,9 +479,17 @@ namespace LbIntegrations.Kronos
             // No other disc: the next-disc key has nothing to do.
             KronosLaunch.WriteDiscs(exe, new KronosLaunch.Plan { Disc = rom, Discs = new List<string>() });
 
-            // Neither -a nor -f: the game is started once Kronos's window is there (KronosStvStart), then put in full screen.
-            var line = KronosLaunch.CommandLine(args?.CurrentCommandLine ?? "", false, null, rom, null, autostart: false);
-            KronosStvStart.Begin(exe, set.Name, KronosSettings.BoolFor(gameId, KronosSettings.Fullscreen));
+            // From 2.7.5b, -a starts it. Tradu-France's 2.7.5 (and a Kronos the plugin did not install): neither -a nor -f, the
+            // game is started once Kronos's window is there (KronosStvStart), then put in full screen.
+            var fullscreen = KronosSettings.BoolFor(gameId, KronosSettings.Fullscreen);
+            string line;
+            if (KronosBuild.StvStartsItself(exe))
+                line = KronosLaunch.CommandLine(args?.CurrentCommandLine ?? "", fullscreen, null, rom, null);
+            else
+            {
+                line = KronosLaunch.CommandLine(args?.CurrentCommandLine ?? "", false, null, rom, null, autostart: false);
+                KronosStvStart.Begin(exe, set.Name, fullscreen);
+            }
             Log.Info("launch: " + (line.Length == 0 ? "(nothing on the line)" : line));
             return new PrepareForLaunchResponse(success: true) { NewCommandLine = line };
         }

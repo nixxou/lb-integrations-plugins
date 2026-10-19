@@ -203,6 +203,22 @@ namespace LbIntegrations.Probe
                 var best = builds.Cast<object>().First(b => (string)F(b, "Version") == "2.7.5");
                 Check("2.7.5: 49.13 MiB, its link", (double)F(best, "MiB") == 49.13 && ((string)F(best, "Url")).StartsWith("https://tradu-france.com/include/pages/download.php?file="), (string)F(best, "Url"));
                 Check("2.7.5 newer than 2.7.0 and 2.6.1", (bool)Call(asm, "KronosBuild", "IsNewer", "2.7.5", "2.7.0") && !(bool)Call(asm, "KronosBuild", "IsNewer", "2.6.1", "2.7.0"));
+                Check("2.7.5b: newer than 2.7.5, older than 2.7.6 and 2.7.5c", (bool)Call(asm, "KronosBuild", "IsNewer", "2.7.5b", "2.7.5")
+                      && !(bool)Call(asm, "KronosBuild", "IsNewer", "2.7.5b", "2.7.6") && (bool)Call(asm, "KronosBuild", "IsNewer", "2.7.6", "2.7.5b")
+                      && !(bool)Call(asm, "KronosBuild", "IsNewer", "2.7.5b", "2.7.5b") && (bool)Call(asm, "KronosBuild", "IsNewer", "2.7.5c", "2.7.5b")
+                      && (bool)Call(asm, "KronosBuild", "IsNewer", "2.7.10", "2.7.9"));
+                var b275b = (IList)Call(asm, "KronosBuild", "Parse", "<a href=\"/include/pages/download.php?file=x%2FKronos_2.7.5b_-_64_Bits.zip\">Kronos_2.7.5b_-_64_Bits.zip</a>");
+                Check("a lettered build's name read: 2.7.5b", b275b.Count == 1 && (string)F(b275b[0], "Version") == "2.7.5b");
+                var stampDir = Path.Combine(temp, "stamp"); Directory.CreateDirectory(stampDir);
+                var stampExe = Path.Combine(stampDir, "kronos.exe"); File.WriteAllBytes(stampExe, new byte[1]);
+                bool Starts() => (bool)Call(asm, "KronosBuild", "StvStartsItself", stampExe);
+                Check("no stamp (the user's own Kronos): ST-V through the settings window", !Starts());
+                File.WriteAllText(Path.Combine(stampDir, "lbip-kronos-build.txt"), "2.7.5\r\nTradu-France 64-bit\r\n");
+                Check("Tradu-France's 2.7.5: ST-V through the settings window", !Starts());
+                File.WriteAllText(Path.Combine(stampDir, "lbip-kronos-build.txt"), "2.7.5b\r\nGitHub nixxou/Kronos_test 64-bit\r\n");
+                Check("2.7.5b: ST-V started by -a, its source read", Starts() && (string)Call(asm, "KronosBuild", "InstalledFrom", stampExe) == "GitHub nixxou/Kronos_test 64-bit");
+                File.WriteAllText(Path.Combine(stampDir, "lbip-kronos-build.txt"), "2.7.6\r\nTradu-France 64-bit\r\n");
+                Check("a later Tradu-France build: ST-V started by -a", Starts());
 
                 Console.WriteLine("== the saves");
                 Check("Kronos's slot 0 is the pack's 10, its 1 the pack's 1", (int)Call(asm, "KronosPlugin", "PackSlot", 0) == 10 && (int)Call(asm, "KronosPlugin", "KronosSlot", 10) == 0

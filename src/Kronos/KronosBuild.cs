@@ -6,11 +6,17 @@
 // ("(49,13 Mo)"); older names read "Kronos 2.6.1 64 Bits.zip". The site answers 403 without a browser's User-Agent and the
 // page as Referer.
 //
-// NO HASH IS PUBLISHED: the file downloaded is checked against the size the page gives (to the hundredth of a MiB) and must
-// be a zip. 2.7.5: 51 516 897 bytes (49,13 Mo), sha256 672536ac...debbca - measured 19/10.
+// AND THE PACK'S OWN 2.7.5b (Mehdi 19/10): Tradu-France's 2.7.5 cannot start an ST-V game from its command line (§8), so
+// nixxou/Kronos_test publishes 2.7.5b - the same source (66bd0836d) with the fork's later fix - as a GitHub release. The
+// newer of the two is installed: 2.7.5b over 2.7.5, Tradu-France's next build (2.7.6...) over 2.7.5b.
 //
-// THE VERSION is the one in the file's name ("2.7.5"), written in a stamp beside the exe at install (lbip-kronos-build.txt):
-// the version of an install of OURS - a Kronos the user installed is his to update. 64-bit only.
+// NO HASH ON TRADU-FRANCE: the file downloaded is checked against the size the page gives (to the hundredth of a MiB) and
+// must be a zip. 2.7.5: 51 516 897 bytes (49,13 Mo), sha256 672536ac...debbca - measured 19/10. GitHub's API gives the
+// asset's exact size and its SHA-256 ("digest"), both checked.
+//
+// THE VERSION is the one in the file's name ("2.7.5", "2.7.5b"), written in a stamp beside the exe at install
+// (lbip-kronos-build.txt) with where it came from: the version of an install of OURS - a Kronos the user installed is his
+// to update. 64-bit only.
 
 using System;
 using System.Collections.Generic;
@@ -19,6 +25,8 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Security.Cryptography;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace LbIntegrations.Kronos
@@ -28,6 +36,11 @@ namespace LbIntegrations.Kronos
         public string Version, Url, FileName;
         /// <summary>The size the page gives, in MiB (two decimals); null when it gives none.</summary>
         public double? MiB;
+        /// <summary>GitHub's: the exact size and SHA-256; null for Tradu-France's.</summary>
+        public long? Bytes;
+        public string Sha256;
+        /// <summary>"Tradu-France" or "GitHub".</summary>
+        public string From = KronosBuild.FromTraduFrance;
     }
 
     internal static class KronosBuild
@@ -36,7 +49,12 @@ namespace LbIntegrations.Kronos
         public const string Archives = Site + "/archives/Kronos?arch=64-bits";
         public const string Home = "https://www.tradu-france.com/emulateur/Saturn/Kronos";
         public const string Source = "https://github.com/BenjaminSiskoo/Kronos_test";
+        public const string Repo = "nixxou/Kronos_test";
+        public const string Api = "https://api.github.com/repos/" + Repo + "/releases/latest";
+        public const string FromTraduFrance = "Tradu-France", FromGitHub = "GitHub";
         public const string StampName = "lbip-kronos-build.txt";
+        /// <summary>The first build whose command line starts an ST-V game (-a) by itself.</summary>
+        public const string StvStartsItselfFrom = "2.7.5b";
         private const string Browser = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
 
         /// <summary>What the install says about what Windows needs.</summary>
@@ -48,30 +66,75 @@ namespace LbIntegrations.Kronos
         {
             var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = true, AutomaticDecompression = DecompressionMethods.All }) { Timeout = TimeSpan.FromMinutes(10) };
             client.DefaultRequestHeaders.UserAgent.ParseAdd(Browser);
-            client.DefaultRequestHeaders.Referrer = new Uri(Archives);
             return client;
         }
 
         private static KronosRelease _latest;
         private static DateTime _asked;
 
+        /// <summary>The newer of Tradu-France's latest and the pack's GitHub release; either alone when the other is unreachable.</summary>
         public static KronosRelease Latest()
         {
             if (_latest != null && DateTime.UtcNow - _asked < TimeSpan.FromMinutes(10)) return _latest;
+            var both = new[] { FromTradu(), FromGitHubRelease() }.Where(r => r != null).ToList();
+            var best = both.OrderByDescending(r => r.Version, Comparer<string>.Create(Compare)).FirstOrDefault();
+            if (best == null) return null;
+            _latest = best;
+            _asked = DateTime.UtcNow;
+            return best;
+        }
+
+        private static KronosRelease FromTradu()
+        {
             try
             {
-                var page = Http.GetStringAsync(Archives).GetAwaiter().GetResult();
-                var best = Parse(page).OrderByDescending(r => Pad(r.Version)).FirstOrDefault();
-                if (best == null) { Log.Warn("Tradu-France's Kronos page lists no 64-bit build"); return null; }
-                _latest = best;
-                _asked = DateTime.UtcNow;
+                using var req = new HttpRequestMessage(HttpMethod.Get, Archives);
+                req.Headers.Referrer = new Uri(Archives);
+                using var resp = Http.SendAsync(req).GetAwaiter().GetResult();
+                resp.EnsureSuccessStatusCode();
+                var page = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                var best = Parse(page).OrderByDescending(r => r.Version, Comparer<string>.Create(Compare)).FirstOrDefault();
+                if (best == null) Log.Warn("Tradu-France's Kronos page lists no 64-bit build");
                 return best;
             }
             catch (Exception ex) { Log.Warn("could not read Tradu-France's Kronos page", ex); return null; }
         }
 
+        private static KronosRelease FromGitHubRelease()
+        {
+            try
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Get, Api);
+                req.Headers.Accept.ParseAdd("application/vnd.github+json");
+                using var resp = Http.SendAsync(req).GetAwaiter().GetResult();
+                if (resp.StatusCode == HttpStatusCode.NotFound) return null;  // no release published
+                resp.EnsureSuccessStatusCode();
+                using var doc = JsonDocument.Parse(resp.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+                var root = doc.RootElement;
+                if (root.TryGetProperty("prerelease", out var pre) && pre.ValueKind == JsonValueKind.True) return null;
+                foreach (var asset in root.GetProperty("assets").EnumerateArray())
+                {
+                    var name = asset.GetProperty("name").GetString() ?? "";
+                    var v = NameVersion.Match(name);
+                    if (!v.Success) continue;
+                    string sha = null;
+                    if (asset.TryGetProperty("digest", out var d) && d.ValueKind == JsonValueKind.String && d.GetString().StartsWith("sha256:"))
+                        sha = d.GetString().Substring(7);
+                    return new KronosRelease
+                    {
+                        Version = v.Groups["v"].Value, Url = asset.GetProperty("browser_download_url").GetString(), FileName = name,
+                        Bytes = asset.TryGetProperty("size", out var s) && s.ValueKind == JsonValueKind.Number ? s.GetInt64() : (long?)null,
+                        Sha256 = sha, From = FromGitHub,
+                    };
+                }
+                Log.Warn(Repo + "'s latest release has no 64-bit Kronos zip");
+            }
+            catch (Exception ex) { Log.Warn("could not read " + Repo + "'s latest release", ex); }
+            return null;
+        }
+
         private static readonly Regex Link = new Regex(@"href=""(?<href>/include/pages/download\.php\?file=[^""]+)""", RegexOptions.IgnoreCase);
-        private static readonly Regex NameVersion = new Regex(@"Kronos[ _](?<v>\d+(?:\.\d+){1,3})[ _]+(?:-[ _]+)?64[ _]Bits\.zip$", RegexOptions.IgnoreCase);
+        private static readonly Regex NameVersion = new Regex(@"Kronos[ _](?<v>\d+(?:\.\d+){1,3}[a-z]?)[ _]+(?:-[ _]+)?64[ _]Bits\.zip$", RegexOptions.IgnoreCase);
         private static readonly Regex Size = new Regex(@"\((?<n>\d+(?:[,.]\d+)?)\s*Mo\)", RegexOptions.IgnoreCase);
 
         /// <summary>Every 64-bit build the archives page lists, with its size when the page gives it.</summary>
@@ -102,10 +165,11 @@ namespace LbIntegrations.Kronos
         public static void Fetch(KronosRelease release, string destination, Action<double> progress, Func<bool> shouldCancel)
         {
             using (var req = new HttpRequestMessage(HttpMethod.Get, release.Url))
-            using (var resp = Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead).GetAwaiter().GetResult())
             {
+                if (release.From == FromTraduFrance) req.Headers.Referrer = new Uri(Archives);
+                using var resp = Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead).GetAwaiter().GetResult();
                 resp.EnsureSuccessStatusCode();
-                long? total = resp.Content.Headers.ContentLength;
+                long? total = resp.Content.Headers.ContentLength ?? release.Bytes;
                 if (total == null && release.MiB != null) total = (long)(release.MiB.Value * 1048576);
                 long done = 0;
                 var buffer = new byte[81920];
@@ -121,26 +185,47 @@ namespace LbIntegrations.Kronos
                 }
             }
             var length = new FileInfo(destination).Length;
+            if (release.Bytes != null && length != release.Bytes.Value)
+                throw new InvalidDataException("the downloaded " + release.FileName + " is " + length + " bytes, not the " + release.Bytes.Value + " GitHub gives");
             if (release.MiB != null && Math.Abs(length / 1048576.0 - release.MiB.Value) > 0.006)
                 throw new InvalidDataException("the downloaded " + release.FileName + " is " + length + " bytes, not the "
                                                + release.MiB.Value.ToString("0.00", CultureInfo.InvariantCulture) + " MiB Tradu-France gives");
+            if (release.Sha256 != null)
+            {
+                using var sha = SHA256.Create();
+                using var s = File.OpenRead(destination);
+                var actual = Convert.ToHexString(sha.ComputeHash(s)).ToLowerInvariant();
+                if (!string.Equals(actual, release.Sha256, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("the downloaded " + release.FileName + " is not the file GitHub publishes (SHA-256 " + actual + ")");
+            }
             using (var probe = File.OpenRead(destination))
             {
                 var head = new byte[2];
                 if (probe.Read(head, 0, 2) != 2 || head[0] != (byte)'P' || head[1] != (byte)'K')
                     throw new InvalidDataException("the downloaded " + release.FileName + " is not a zip (the site sent a page?)");
             }
-            Log.Info("downloaded Kronos " + release.Version + " (" + release.FileName + ", " + length + " bytes" + (release.MiB != null ? ", the size Tradu-France gives" : "") + ")");
+            Log.Info("downloaded Kronos " + release.Version + " from " + release.From + " (" + release.FileName + ", " + length + " bytes"
+                     + (release.Sha256 != null ? ", SHA-256 checked" : release.MiB != null ? ", the size Tradu-France gives" : "") + ")");
         }
 
-        public static void Stamp(string installDir, string version)
+        public static void Stamp(string installDir, KronosRelease release)
         {
-            try { File.WriteAllText(Path.Combine(installDir, StampName), (version ?? "") + Environment.NewLine + "Tradu-France 64-bit" + Environment.NewLine); }
+            var from = release?.From == FromGitHub ? "GitHub " + Repo : "Tradu-France";
+            try { File.WriteAllText(Path.Combine(installDir, StampName), (release?.Version ?? "") + Environment.NewLine + from + " 64-bit" + Environment.NewLine); }
             catch (Exception ex) { Log.Info("could not write the build stamp - " + ex.Message); }
         }
 
         /// <summary>The version of an install of OURS (its stamp), else null.</summary>
-        public static string InstalledVersion(string exe)
+        public static string InstalledVersion(string exe) => StampOf(exe)?[0];
+
+        /// <summary>Where an install of ours came from ("Tradu-France 64-bit", "GitHub nixxou/Kronos_test 64-bit"), else null.</summary>
+        public static string InstalledFrom(string exe)
+        {
+            var lines = StampOf(exe);
+            return lines != null && lines.Length > 1 && !string.IsNullOrWhiteSpace(lines[1]) ? lines[1].Trim() : null;
+        }
+
+        private static string[] StampOf(string exe)
         {
             try
             {
@@ -148,24 +233,44 @@ namespace LbIntegrations.Kronos
                 var path = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(exe)), StampName);
                 if (!File.Exists(path)) return null;
                 var lines = File.ReadAllLines(path);
-                return lines.Length > 0 && !string.IsNullOrWhiteSpace(lines[0]) ? lines[0].Trim() : null;
+                if (lines.Length == 0 || string.IsNullOrWhiteSpace(lines[0])) return null;
+                lines[0] = lines[0].Trim();
+                return lines;
             }
             catch { return null; }
+        }
+
+        /// <summary>Whether this Kronos starts an ST-V game from its command line: an install of ours from 2.7.5b on. Any
+        /// other (Tradu-France's 2.7.5, one the user installed) is started through its settings window (KronosStvStart).</summary>
+        public static bool StvStartsItself(string exe)
+        {
+            var v = InstalledVersion(exe);
+            return v != null && Compare(v, StvStartsItselfFrom) >= 0;
         }
 
         public static bool IsNewer(string candidate, string installed)
         {
             if (string.IsNullOrWhiteSpace(installed)) return true;
-            return Pad(candidate) > Pad(installed);
+            return Compare(candidate, installed) > 0;
         }
 
-        private static Version Pad(string v)
+        /// <summary>"2.7.5" &lt; "2.7.5b" &lt; "2.7.6": the numbers, then the letters after them (none before "a").</summary>
+        internal static int Compare(string a, string b)
+        {
+            var (na, sa) = Split(a);
+            var (nb, sb) = Split(b);
+            var c = na.CompareTo(nb);
+            return c != 0 ? c : string.CompareOrdinal(sa, sb);
+        }
+
+        private static (Version, string) Split(string v)
         {
             v = (v ?? "").Trim();
-            var m = Regex.Match(v, @"^\d+(\.\d+){0,3}");
-            v = m.Success ? m.Value : "0";
-            if (!v.Contains('.')) v += ".0";
-            return Version.TryParse(v, out var r) ? r : new Version(0, 0);
+            var m = Regex.Match(v, @"^(?<n>\d+(\.\d+){0,3})(?<s>[a-z]*)", RegexOptions.IgnoreCase);
+            if (!m.Success) return (new Version(0, 0, 0, 0), "");
+            var parts = m.Groups["n"].Value.Split('.').Select(p => int.TryParse(p, out var i) ? i : 0).ToList();
+            while (parts.Count < 4) parts.Add(0);
+            return (new Version(parts[0], parts[1], parts[2], parts[3]), m.Groups["s"].Value.ToLowerInvariant());
         }
     }
 }
