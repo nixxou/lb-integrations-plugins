@@ -366,9 +366,16 @@ namespace LbIntegrations.Ymir
                 keys.Add(("System", "InternalBackupRAMPerGame", "false", false));
             }
             else Log.Warn("launch: Ymir.toml (ConfigVersion " + YmirLaunch.ConfigVersionOf(doc) + ") has no backup RAM setting known here - the game uses Ymir's own RAM");
-            // Its backup cartridge, when it has one (YmirCart): 4 Mbit, its file - never for a game that needs another cartridge.
+            // Its own options, from its window (YmirGameOptions) - those this Ymir has.
+            var options = YmirGameOptions.KeysFor(gameId, exe, doc);
+            if (options.LeftOut.Count > 0) Log.Warn("launch: not in this Ymir (ConfigVersion " + YmirLaunch.ConfigVersionOf(doc) + "), left out - " + string.Join(", ", options.LeftOut));
+            var expansion = YmirGameOptions.GameValue(gameId, "Expansion");
+            // Its backup cartridge, when it has one (YmirCart): 4 Mbit, its file - never for a game that needs another cartridge,
+            // nor when its window forces an expansion cartridge.
             var cart = CartPath(exe, platform, rom);
-            if (File.Exists(cart))
+            if (File.Exists(cart) && expansion != null && expansion != "auto")
+                Log.Info("launch: the game's cartridge is not plugged - its window forces an expansion cartridge");
+            else if (File.Exists(cart))
             {
                 var bad = YmirCart.WhyNot(cart);
                 if (bad != null) Log.Warn("launch: the game's cartridge is not plugged - " + bad);
@@ -384,13 +391,15 @@ namespace LbIntegrations.Ymir
                     keys.Add(("Cartridge.BackupRAM", "Capacity", "'4Mbit'", false));
                     keys.Add(("Cartridge.BackupRAM", "ImagePath", YmirToml.Literal(cart), true));
                     Log.Info("launch: backup cartridge " + cart);
+                    options.Keys.RemoveAll(k => k.Option == "Expansion");
                 }
             }
             var forced = YmirSession.Force(doc, keys);
+            forced.AddRange(YmirSession.Force(doc, options.Keys));
             try { doc.Save(settings); }
             catch (Exception ex) { return Refuse("Ymir's settings could not be written (" + ex.Message + "): the game would use another game's backup RAM."); }
             Log.Info("launch: backup RAM " + ram + (File.Exists(ram) ? "" : " (new - Ymir formats it)"));
-            YmirSession.Begin(exe, settings, forced);
+            YmirSession.Begin(exe, settings, forced, gameId: gameId);
 
             // The discs, for the next-disc key.
             YmirLaunch.WriteDiscs(exe, plan);

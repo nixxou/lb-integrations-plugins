@@ -45,6 +45,8 @@ namespace LbIntegrations.Probe
         private static object F(object o, string n) => o?.GetType().GetField(n, Inst)?.GetValue(o) ?? o?.GetType().GetProperty(n, Inst)?.GetValue(o);
         private static void SetS(Assembly asm, string type, string n, object v) => T(asm, type).GetField(n, Any).SetValue(null, v);
 
+        private static bool Regex(string text, string pattern) => System.Text.RegularExpressions.Regex.IsMatch(text, pattern);
+
         private static string NewTemp(string what)
         {
             var d = Path.Combine(Path.GetTempPath(), "lbip-ymir-" + what + "-" + Guid.NewGuid().ToString("N").Substring(0, 8));
@@ -161,13 +163,53 @@ namespace LbIntegrations.Probe
                 var forced = (IList)Call(asm, "YmirSession", "Force", sdoc, keys);
                 CallOn(sdoc, "Save", toml);
                 Check("the RAM path forced (PerGame already false: left out)", forced.Count == 1, forced.Count + " forced");
-                Call(asm, "YmirSession", "Begin", exe, toml, forced, null);
+                Call(asm, "YmirSession", "Begin", exe, toml, forced, null, null);
                 // What Ymir writes when it quits: the path relative to its state folder.
                 var relative = Path.GetRelativePath(Path.Combine(profile, "state"), ram);
                 File.WriteAllText(toml, File.ReadAllText(toml).Replace("InternalBackupRAMImagePath = '" + ram + "'", "InternalBackupRAMImagePath = '" + relative + "'"));
                 Call(asm, "YmirSession", "Recover");
                 Check("put back once Ymir has quit, though Ymir wrote it relative", File.ReadAllText(toml).Contains("\nInternalBackupRAMImagePath = 'bup-int.bin'\n"), relative);
                 Check("the plan is done", !File.Exists((string)T(asm, "YmirSession").GetProperty("PlanPath", Any).GetValue(null)));
+
+                Console.WriteLine("== a game's own options (YmirGameOptions)");
+                File.WriteAllText(toml, text);
+                var before = File.ReadAllText(toml);
+                Call(asm, "YmirGameOptions", "SetGameValue", "g1", "Aspect", "'16:9'");
+                Call(asm, "YmirGameOptions", "SetGameValue", "g1", "Rotation", "'90CW'");
+                Call(asm, "YmirGameOptions", "SetGameValue", "g1", "Region", "Japan");
+                Call(asm, "YmirGameOptions", "SetGameValue", "g1", "Port2", "'VirtuaGun'");
+                var odoc = Call(asm, "YmirTomlDoc", "Load", toml);
+                var forOpts = Call(asm, "YmirGameOptions", "KeysFor", "g1", exe, odoc);
+                var okeys = (IList)F(forOpts, "Item1");
+                Check("the game's keys: aspect (2), rotation, region (3), port 2", okeys.Count == 7, okeys.Count + " keys");
+                var force5 = T(asm, "YmirSession").GetMethods(Any).First(m => m.Name == "Force" && m.GetParameters()[1].ParameterType.ToString().Contains("String,System.String,System.String,System.String,System.String"));
+                var oforced = (IList)force5.Invoke(null, new[] { odoc, okeys });
+                CallOn(odoc, "Save", toml);
+                var during = File.ReadAllText(toml);
+                Check("written for the session", during.Contains("ForcedAspect = '16:9'") && during.Contains("Rotation = '90CW'") && during.Contains("PeripheralType = 'VirtuaGun'")
+                      && during.Contains("AutoDetectRegion = false") && during.Contains("'Japan', 'NorthAmerica'"), oforced.Count + " forced");
+                var begin = T(asm, "YmirSession").GetMethod("Begin", Any);
+                begin.Invoke(null, new object[] { exe, toml, oforced, null, "g1" });
+                // In game the user turns the picture 180 and plugs a pad Ymir has and this plugin does not know.
+                File.WriteAllText(toml, during.Replace("Rotation = '90CW'", "Rotation = '180'").Replace("PeripheralType = 'VirtuaGun'", "PeripheralType = 'Keyboard'"));
+                Call(asm, "YmirSession", "Recover");
+                var oafter = File.ReadAllText(toml);
+                Check("every game's values put back", oafter.TrimEnd() == before.TrimEnd(), oafter == before ? null : string.Join(" | ", oafter.Split((char)10).Zip(before.Split((char)10), (x, y) => x == y ? null : y + " -> " + x).Where(x => x != null)) + " (lines " + oafter.Split((char)10).Length + "/" + before.Split((char)10).Length + ")");
+                Check("changed in Ymir: now the game's own (rotation)", (string)Call(asm, "YmirGameOptions", "GameValue", "g1", "Rotation") == "'180'");
+                var port2 = (string)Call(asm, "YmirGameOptions", "GameValue", "g1", "Port2");
+                Check("a value this plugin does not list kept as Ymir wrote it", port2 == "raw:'Keyboard'", port2);
+                var port2opt = Call(asm, "YmirGameOptions", "Option", "Port2");
+                Check("... shown \"(set in Ymir)\"", (string)Call(asm, "YmirGameOptions", "TextOf", port2opt, port2, exe) == "Keyboard (set in Ymir)");
+                Check("left alone in Ymir: the game's value unchanged (aspect)", (string)Call(asm, "YmirGameOptions", "GameValue", "g1", "Aspect") == "'16:9'");
+                var oagain = (IList)F(Call(asm, "YmirGameOptions", "KeysFor", "g1", exe, Call(asm, "YmirTomlDoc", "Load", toml)), "Item1");
+                Check("... and written back as it is at the next launch", oagain.Cast<object>().Any(k => (string)F(k, "Item3") == "'Keyboard'"));
+                var newer = Call(asm, "YmirTomlDoc", "Parse", text.Replace("ConfigVersion = 6", "ConfigVersion = 7").Replace("Rotation = ", "Rotate = "));
+                var leftOut = (IList)F(Call(asm, "YmirGameOptions", "KeysFor", "g1", exe, newer), "Item2");
+                Check("a newer Ymir without the key: the option left out, said", leftOut.Count == 1 && (string)leftOut[0] == "Rotation", string.Join(", ", leftOut.Cast<string>()));
+                Call(asm, "YmirGameOptions", "SetGameValue", "g1", "Bios", "auto");
+                var held = (IList)F(Call(asm, "YmirGameOptions", "KeysFor", "g1", exe, Call(asm, "YmirTomlDoc", "Load", toml)), "Item1");
+                Check("BIOS \"Ymir's choice\": Override off, the Path Ymir rewrites held to be put back",
+                      held.Cast<object>().Count(k => (string)F(k, "Item1") == "System.IPL") == (before.Contains("[System.IPL]") && Regex(before, @"\[System\.IPL\][^\[]*\bPath\s*=") ? 2 : 1));
 
                 Console.WriteLine("== discs, names, the line");
                 if (chds.Count == 2)

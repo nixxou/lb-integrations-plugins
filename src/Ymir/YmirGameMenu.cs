@@ -4,6 +4,9 @@
 //     product code and area from its header, its hash - and its state in Ymir's compatibility list, the state's colour, the
 //     list's notes, a link to the list. Several games: each game's state, one line each;
 //   - ITS SCREEN, "as every game" until changed (games\<game id>.ini - YmirSettings);
+//   - ITS OWN OPTIONS (Mehdi 20/10: picture, emulation, pads, sound, expansion cartridge - YmirGameOptions): "As set in Ymir"
+//     (Ymir's own value now, read in Ymir.toml) until changed; a value Ymir wrote that is not in the list "(set in Ymir)"; an
+//     option this Ymir does not have says so, and is left out at launch;
 //   - what goes on Ymir's command line, live; the pack's legend, "Reset to defaults", OK and Cancel (OptionMarks).
 //
 // SEVERAL GAMES (the pack's rule, LbipSelection): "All selected games", then the games grouped by identical options; an
@@ -98,6 +101,8 @@ namespace LbIntegrations.Ymir
         private sealed class Row
         {
             public string Key, Label;
+            /// <summary>A game option (YmirGameOptions), Key "opt." + its key; null: a setting of the plugin's (YmirSettings).</summary>
+            public YmirGameOption Option;
             public ComboBox Combo;
             public readonly List<string> Values = new List<string>();
             public Panel Bar;
@@ -110,21 +115,24 @@ namespace LbIntegrations.Ymir
         private readonly string _exe;
         private Dictionary<string, string> _atOpen;
         private readonly Label _line;
+        private readonly YmirTomlDoc _doc;
         private bool Several => _sel.Several;
         private static IEnumerable<YmirOption> Options => YmirSettings.All.Where(o => o.PerGame);
-        private static IEnumerable<string> Keys => Options.Select(o => o.Key);
+        private const string Opt = "opt.";
+        private static IEnumerable<string> Keys => Options.Select(o => o.Key).Concat(YmirGameOptions.All.Select(o => Opt + o.Key));
 
         public YmirGameForm(IGame[] games)
         {
             _games = games;
             _exe = YmirGameMenu.ExeOf(games[0]);
+            try { if (_exe != null && File.Exists(YmirLaunch.SettingsOf(_exe))) _doc = YmirTomlDoc.Load(YmirLaunch.SettingsOf(_exe)); } catch { }
             _sel = new LbipSelection(games.Select(g => new LbipSelection.Member { Title = Safe(() => g.Title) ?? "?", Stored = StoredOf(Safe(() => g.Id)), Tag = g }));
             var game = games[0];
             Text = !Several ? YmirPlugin.PackName + " - " + Safe(() => game.Title) : YmirPlugin.PackName + " - " + games.Length + " games";
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.Sizable;
             MinimizeBox = false;
-            ClientSize = new Size(720, 600);
+            ClientSize = new Size(720, 760);
             Font = new Font("Segoe UI", 9f);
 
             var page = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(14, 10, 14, 6) };
@@ -141,9 +149,9 @@ namespace LbIntegrations.Ymir
                 Text = text, AutoSize = true, MaximumSize = new Size(640, 0), UseMnemonic = false, Margin = new Padding(0, 2, 0, 2),
                 ForeColor = color ?? SystemColors.ControlText, Font = font ?? Font,
             };
-            Control RowOf(string key, string label, string hint)
+            Control RowOf(string key, string label, string hint, YmirGameOption option = null)
             {
-                var r = new Row { Key = key, Label = label, Bar = new Panel { Width = 4, Height = 18, Margin = new Padding(0, 3, 8, 0) } };
+                var r = new Row { Key = key, Label = label, Option = option, Bar = new Panel { Width = 4, Height = 18, Margin = new Padding(0, 3, 8, 0) } };
                 var line = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true, Margin = new Padding(0, 2, 0, 2) };
                 line.Controls.Add(r.Bar);
                 line.Controls.Add(new Label { Text = label, Width = 130, Height = 24, TextAlign = ContentAlignment.MiddleLeft, UseMnemonic = false });
@@ -208,9 +216,13 @@ namespace LbIntegrations.Ymir
             // ── its screen ──
             var screen = new List<Control>();
             foreach (var o in Options) screen.Add(RowOf(o.Key, o.Label, o.Hint));
+            screen.AddRange(OptionRows("Picture", RowOf));
             screen.Add(LbipHint.Note("Kept " + (Several ? "per game" : "for this game alone") + " (games\\<game id>.ini).",
-                "Every game's value is in the Nixx window, page Ymir. Ymir's other settings are its own: F10 in Ymir.", 640, new Padding(0, 4, 0, 2)));
+                "Screen: every game's value is in the Nixx window, page Ymir. The others are Ymir's own settings (F10 in Ymir), written in Ymir.toml "
+                + "for this game's session only and put back after it - changed in Ymir during the game, they become the game's own.", 640, new Padding(0, 4, 0, 2)));
             page.Controls.Add(Card(!Several ? "Its screen" : "Their screen", screen.ToArray()));
+            foreach (var group in YmirGameOptions.Groups.Where(g => g != "Picture"))
+                page.Controls.Add(Card((!Several ? "Its " : "Their ") + group.ToLowerInvariant(), OptionRows(group, RowOf).ToArray()));
 
             _line = new Label { AutoSize = true, MaximumSize = new Size(640, 0), UseMnemonic = false, Font = new Font("Consolas", 9f), Margin = new Padding(0, 2, 0, 2) };
             page.Controls.Add(Card("Command line", _line));
@@ -227,6 +239,9 @@ namespace LbIntegrations.Ymir
             if (_sel.Source != null) _sel.Source.SelectedIndex = 0; else ShowValues(_sel.From(_sel.Members[0], Keys));
             LbIntegrations.Ui.NixxShell.Dress(this);
         }
+
+        private static List<Control> OptionRows(string group, Func<string, string, string, YmirGameOption, Control> rowOf)
+            => YmirGameOptions.All.Where(o => o.Group == group).Select(o => rowOf(Opt + o.Key, o.Label, o.Hint, o)).ToList();
 
         /// <summary>The game's backup RAM in Ymir and in RetroArch's Beetle Saturn, and the two copies between them.</summary>
         private List<Control> RetroArchCard(IGame game)
@@ -292,13 +307,16 @@ namespace LbIntegrations.Ymir
         {
             var d = new Dictionary<string, string>(StringComparer.Ordinal);
             if (string.IsNullOrEmpty(id)) return d;
-            foreach (var k in Keys) { var v = YmirSettings.GameValue(id, k); if (v != null) d[k] = v; }
+            foreach (var o in Options) { var v = YmirSettings.GameValue(id, o.Key); if (v != null) d[o.Key] = v; }
+            foreach (var o in YmirGameOptions.All) { var v = YmirGameOptions.GameValue(id, o.Key); if (v != null) d[Opt + o.Key] = v; }
             return d;
         }
 
         private string Describe(LbipSelection.Member m)
         {
-            var mine = Options.Where(o => m.Stored.ContainsKey(o.Key)).Select(o => o.Label + " " + o.TextOf(m.Stored[o.Key]).ToLowerInvariant()).ToList();
+            var mine = Options.Where(o => m.Stored.ContainsKey(o.Key)).Select(o => o.Label + " " + o.TextOf(m.Stored[o.Key]).ToLowerInvariant())
+                .Concat(YmirGameOptions.All.Where(o => m.Stored.ContainsKey(Opt + o.Key)).Select(o => o.Label.ToLowerInvariant() + " " + YmirGameOptions.TextOf(o, m.Stored[Opt + o.Key], _exe)))
+                .ToList();
             return mine.Count == 0 ? "as every game" : "its own: " + string.Join(", ", mine);
         }
 
@@ -312,10 +330,31 @@ namespace LbIntegrations.Ymir
         private void Fill(Row r, string value)
         {
             r.Combo.Items.Clear(); r.Values.Clear();
+            if (r.Option != null) { FillOption(r, value); return; }
             var o = YmirSettings.Option(r.Key);
             if (value == LbipSelection.Various) { r.Combo.Items.Add(_sel.VariousText(r.Key)); r.Values.Add(LbipSelection.Various); }
             r.Combo.Items.Add("As every game (" + o.TextOf(YmirSettings.Value(o.Key)) + ")"); r.Values.Add(null);
             for (int i = 0; i < o.Values.Length; i++) { r.Combo.Items.Add(o.Texts[i]); r.Values.Add(o.Values[i]); }
+            r.Combo.SelectedIndex = Math.Max(0, r.Values.IndexOf(value));
+            r.Bar.BackColor = LbipSelection.BarOf(r.Chosen());
+        }
+
+        /// <summary>A game option's list: Ymir's own value first ("As set in Ymir"), the values offered, and the game's when it is
+        /// none of them (one Ymir wrote, a BIOS or ROM no longer there).</summary>
+        private void FillOption(Row r, string value)
+        {
+            var o = r.Option;
+            if (value == LbipSelection.Various) { r.Combo.Items.Add(_sel.VariousText(r.Key)); r.Values.Add(LbipSelection.Various); }
+            string head;
+            if (!YmirGameOptions.InYmir(o, _doc)) head = "As set in Ymir - not in this Ymir (ConfigVersion " + YmirLaunch.ConfigVersionOf(_doc) + "), never written";
+            else
+            {
+                var now = YmirGameOptions.Current(o, _doc);
+                head = "As set in Ymir" + (now != null ? " (" + YmirGameOptions.TextOf(o, now, _exe) + ")" : _doc == null ? "" : " (Ymir's default)");
+            }
+            r.Combo.Items.Add(head); r.Values.Add(null);
+            foreach (var (v, text) in o.Choices(_exe)) { r.Combo.Items.Add(text); r.Values.Add(v); }
+            if (value != null && value != LbipSelection.Various && !r.Values.Contains(value)) { r.Combo.Items.Add(YmirGameOptions.TextOf(o, value, _exe)); r.Values.Add(value); }
             r.Combo.SelectedIndex = Math.Max(0, r.Values.IndexOf(value));
             r.Bar.BackColor = LbipSelection.BarOf(r.Chosen());
         }
@@ -362,7 +401,8 @@ namespace LbIntegrations.Ymir
                     merged.TryGetValue(k, out var v);
                     m.Stored.TryGetValue(k, out var before);
                     if (string.Equals(v, before, StringComparison.Ordinal)) continue;
-                    YmirSettings.SetGameValue(id, k, v);
+                    if (k.StartsWith(Opt)) YmirGameOptions.SetGameValue(id, k.Substring(Opt.Length), v);
+                    else YmirSettings.SetGameValue(id, k, v);
                     any = true;
                 }
                 if (any) written++;

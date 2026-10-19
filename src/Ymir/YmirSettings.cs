@@ -90,6 +90,21 @@ namespace LbIntegrations.Ymir
             if (path != null) Write(path, key, value);
         }
 
+        /// <summary>A value of the game's file as it is (YmirGameOptions: raw TOML, case kept), null when absent.</summary>
+        public static string GameRaw(string gameId, string key)
+        {
+            var path = GamePath(gameId);
+            if (path == null) return null;
+            return Read(path).TryGetValue(key, out var s) && !string.IsNullOrWhiteSpace(s) ? s.Trim() : null;
+        }
+
+        /// <summary>The same written; null takes it out.</summary>
+        public static void SetGameRaw(string gameId, string key, string value)
+        {
+            var path = GamePath(gameId);
+            if (path != null) Write(path, key, value);
+        }
+
         public static string For(string gameId, string key) => GameValue(gameId, key) ?? Value(key);
 
         public static bool BoolFor(string gameId, string key) => For(gameId, key) == "true";

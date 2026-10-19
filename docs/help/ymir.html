@@ -91,7 +91,13 @@
   <ul>
     <li><b>Nixx window</b> (Tools &gt; Nixx Integration Plugins Configuration..., page Ymir): the screen every game gets, when the compatibility
       state is shown at launch (always, only when the game may not play, never), the BIOS found, the list.</li>
-    <li><b>Right-click a game</b> &gt; Nixx-Ymir : Options...: its discs and their state, its own screen.</li>
+    <li><b>Right-click a game</b> &gt; Nixx-Ymir : Options...: its discs and their state, its own screen, and its own Ymir settings:
+      deinterlacing, transparent meshes, aspect ratio, integer scaling, rotation, rendering (processor or graphics card); SH-2 cache,
+      CPU clock, CD read speed, region, BIOS; what is plugged in ports 1 and 2; sound interpolation, a forced expansion cartridge.</li>
+    <li>Ymir has no per-game settings: a game's own values are written in Ymir's settings for that game only and put back when Ymir
+      closes. Left on <b>As set in Ymir</b>, the value you set in Ymir applies.</li>
+    <li>Changed in Ymir (<kbd>F10</kbd>) during a game, a setting the game's window sets becomes that game's own value; the other games keep theirs.</li>
+    <li>A value Ymir has and the list does not offer is kept, shown "(set in Ymir)". A setting a newer Ymir no longer has is said so and not written.</li>
     <li>Everything else is Ymir's own: <kbd>F10</kbd> in Ymir.</li>
   </ul>
 </section>
@@ -129,6 +135,7 @@
     <li>Save states are only guaranteed between stable releases of Ymir (its own rule).</li>
     <li>A game played in Ymir before the plugin kept its saves in Ymir's single <code>state\bup-int.bin</code>, not in the game's own file.</li>
     <li>If you rebind Ymir's keys 1-0 or Ctrl+O, F6 / F7 and the next-disc key send the old ones.</li>
+    <li>A game whose window forces an expansion cartridge does not get its backup cartridge plugged.</li>
   </ul>
 </section>
 

@@ -83,6 +83,8 @@ namespace LbIntegrations.Ymir
 
         public static string IplDirOf(string exe, YmirTomlDoc doc = null) => Override(exe, doc, "IPLROMImages", Path.Combine("roms", "ipl"));
 
+        public static string CartDirOf(string exe, YmirTomlDoc doc = null) => Override(exe, doc, "ROMCartImages", Path.Combine("roms", "cart"));
+
         private static string Override(string exe, YmirTomlDoc doc, string key, string standard)
         {
             var profile = ProfileOf(exe);
