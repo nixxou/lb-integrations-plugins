@@ -599,10 +599,10 @@ namespace LbIntegrations.Probe
         }
 
         /// <summary>--kronos-shot <png> --rom <disc>: a game's window drawn off screen (a stub game), tall enough for every card.</summary>
-        public static bool Shot(Assembly asm, string png, string rom)
+        public static bool Shot(Assembly asm, string png, string rom, string platform = null)
         {
             SetS(asm, "KronosSettings", "PathOverride", Path.Combine(Path.GetTempPath(), "lbip-kronos-shot-settings.ini"));
-            var game = StubGame.With(StubGame.Create("kronos-shot", Path.GetFileNameWithoutExtension(rom), rom), "Platform", "Sega Saturn");
+            var game = StubGame.With(StubGame.Create("kronos-shot", Path.GetFileNameWithoutExtension(rom), rom), "Platform", platform ?? "Sega Saturn");
             var formType = asm.GetType("LbIntegrations.Kronos.KronosGameForm", true);
             using var form = (System.Windows.Forms.Form)Activator.CreateInstance(formType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new object[] { new Unbroken.LaunchBox.Plugins.Data.IGame[] { game } }, null);
             form.StartPosition = System.Windows.Forms.FormStartPosition.Manual; form.Location = new System.Drawing.Point(-4000, 0);

@@ -11,7 +11,9 @@
 //   Emulation   SH-2 cache (General\SH2Cache), the console's language (General\SystemLanguageID "0"-"5": the BIOS's own setting,
 //               which many games follow for their text)
 //   Cartridge   an expansion cartridge (Cartridge\Type: 0 none, 6 = 8 Mbit DRAM, 7 = 32 Mbit DRAM, 9 = 16 Mbit ROM + Cartridge\Path,
-//               a file of <kronos>\cart). Forced, the game's backup cartridge (KronosCart) is not plugged.
+//               a file of <kronos>\cart). Forced, the game's backup cartridge (KronosCart) is not plugged. Saturn games only.
+//   ST-V        the board's region (STV\Region E / U / J / T: the BIOS of that region in the set's zips is the one used - the
+//               game's texts and warnings follow it). ST-V games only.
 // Not here: the video core (Kronos forces its compute-shader core whatever the file says), the region (a Saturn's comes from the
 // disc; STV\Region is ST-V's), the SH-2 interpreter (8 is the only one this build starts with).
 //
@@ -27,6 +29,8 @@ namespace LbIntegrations.Kronos
     internal sealed class KronosGameOption
     {
         public string Key, Label, Hint, Group;
+        /// <summary>Which games it is for: null every game, true the ST-V games only (KronosStv), false the Saturn's only.</summary>
+        public bool? Stv;
         /// <summary>The ini keys it writes ("Video\VideoCore"), and whether each is a path.</summary>
         public (string Key, bool IsPath)[] Keys;
         /// <summary>The values offered (stored value, text), for the Kronos at that exe.</summary>
@@ -92,11 +96,15 @@ namespace LbIntegrations.Kronos
             Simple("Emulation", "Language", "Console language", @"General\SystemLanguageID",
                 "The language set in the console - many games show their text in it, when they have it.",
                 ("0", "English"), ("1", "Deutsch"), ("2", "Français"), ("3", "Español"), ("4", "Italiano"), ("5", "日本語 (Japanese)")),
+            ForStv(Simple("Emulation", "StvRegion", "Board region", @"STV\Region",
+                "The ST-V board's region: the BIOS of that region is the one started (it must be in the set's zip or stvbios.zip) - the "
+                + "game's texts, its warning screen and some of its rules follow it.",
+                ("E", "Europe"), ("U", "USA"), ("J", "Japan"), ("T", "Asia (Taiwan)"))),
 
             // ── sound and cartridge ──
             new KronosGameOption
             {
-                Group = "Sound and cartridge", Key = "Expansion", Label = "Expansion cartridge",
+                Group = "Sound and cartridge", Key = "Expansion", Label = "Expansion cartridge", Stv = false,
                 Hint = "A cartridge in the console's slot for this game: the RAM expansion some games need (1 MB: KoF '95 era fighting games; "
                        + "4 MB: X-Men vs. Street Fighter, Marvel Super Heroes vs. Street Fighter...) or a ROM cartridge (KoF '95, Ultraman) "
                        + "- its file in Kronos's cart folder. Forced, the game's backup cartridge is not plugged.",
@@ -140,6 +148,11 @@ namespace LbIntegrations.Kronos
                 },
             },
         };
+
+        private static KronosGameOption ForStv(KronosGameOption o) { o.Stv = true; return o; }
+
+        /// <summary>Is the option for that game: an ST-V one (<paramref name="stv"/>) or a Saturn one.</summary>
+        public static bool AppliesTo(KronosGameOption o, bool stv) => o.Stv == null || o.Stv == stv;
 
         public static KronosGameOption Option(string key) => All.FirstOrDefault(o => string.Equals(o.Key, key, StringComparison.OrdinalIgnoreCase));
 
@@ -193,11 +206,11 @@ namespace LbIntegrations.Kronos
 
         /// <summary>The keys a game's options write for its launch, each with whether it is a path and its option; and why an
         /// option was left out (a ROM cartridge whose file is gone).</summary>
-        public static (List<(string Key, string Value, bool IsPath, string Option)> Keys, List<string> LeftOut) KeysFor(string gameId, string exe, KronosIniDoc doc)
+        public static (List<(string Key, string Value, bool IsPath, string Option)> Keys, List<string> LeftOut) KeysFor(string gameId, string exe, KronosIniDoc doc, bool stv = false)
         {
             var keys = new List<(string, string, bool, string)>();
             var leftOut = new List<string>();
-            foreach (var o in All)
+            foreach (var o in All.Where(x => AppliesTo(x, stv)))
             {
                 var value = GameValue(gameId, o.Key);
                 if (value == null) continue;

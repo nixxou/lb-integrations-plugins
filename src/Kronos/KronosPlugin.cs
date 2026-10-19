@@ -468,9 +468,8 @@ namespace LbIntegrations.Kronos
                 (@"Memory\Path", KronosIniDoc.PathText(Path.Combine(run, "bkram.bin")), true, null),
                 (@"Memory\ExtendMemory", "false", false, null),
             };
-            // Its own options, from its window - the expansion cartridge aside: the ST-V cartridge is the game.
-            var options = KronosGameOptions.KeysFor(gameId, exe, doc);
-            options.Keys.RemoveAll(k => k.Option == "Expansion");
+            // Its own options, from its window - an ST-V game's (no expansion cartridge: the ST-V cartridge is the game).
+            var options = KronosGameOptions.KeysFor(gameId, exe, doc, stv: true);
             var forced = KronosSession.Force(doc, keys);
             forced.AddRange(KronosSession.Force(doc, options.Keys));
             try { doc.Save(settings); }

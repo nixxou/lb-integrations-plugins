@@ -116,6 +116,9 @@ namespace LbIntegrations.Kronos
         private readonly Label _line;
         private readonly KronosIniDoc _doc;
         private bool Several => _sel.Several;
+        /// <summary>Every game of the window an ST-V game (KronosStv); one of them at least.</summary>
+        private readonly bool _stv, _anyStv;
+        private bool Shows(KronosGameOption o) => o.Stv == null || (o.Stv == true ? _stv : !_anyStv);
         private static IEnumerable<KronosOption> Options => KronosSettings.All.Where(o => o.PerGame);
         private const string Opt = "opt.";
         private static IEnumerable<string> Keys => Options.Select(o => o.Key).Concat(KronosGameOptions.All.Select(o => Opt + o.Key));
@@ -124,6 +127,8 @@ namespace LbIntegrations.Kronos
         {
             _games = games;
             _exe = KronosGameMenu.ExeOf(games[0]);
+            _stv = games.All(g => KronosStv.IsOurs(Safe(() => g.Platform)));
+            _anyStv = games.Any(g => KronosStv.IsOurs(Safe(() => g.Platform)));
             try { if (_exe != null && File.Exists(KronosLaunch.SettingsOf(_exe))) _doc = KronosIniDoc.Load(KronosLaunch.SettingsOf(_exe)); } catch { }
             _sel = new LbipSelection(games.Select(g => new LbipSelection.Member { Title = Safe(() => g.Title) ?? "?", Stored = StoredOf(Safe(() => g.Id)), Tag = g }));
             var game = games[0];
@@ -165,10 +170,33 @@ namespace LbIntegrations.Kronos
             if (!Several)
                 page.Controls.Add(new Label { Text = Safe(() => game.Title), AutoSize = true, UseMnemonic = false, Font = new Font("Segoe UI Semibold", 12f), Margin = new Padding(0, 2, 0, 10) });
 
-            // ── its discs ──
+            // ── an ST-V game: its set (KronosStv) - what Kronos will find, read now ──
             var discCard = new List<Control>();
             int discTotal = 0;
-            if (!Several)
+            if (_stv)
+            {
+                foreach (var g in Several ? games : new[] { game })
+                {
+                    var rom = Safe(() => KronosPlugin.ResolveFullPathForUi(g.ApplicationPath));
+                    var head = Several ? (Safe(() => g.Title) ?? "?") + ": " : "";
+                    if (!Several) discCard.Add(Text_("File: " + (rom ?? "")));
+                    var why = KronosStv.WhyNotByName(rom, Safe(() => g.Platform));
+                    var set = KronosStv.SetOf(rom);
+                    if (why != null) { discCard.Add(Text_(head + why, Color.FromArgb(0xC0, 0x60, 0x30))); continue; }
+                    discCard.Add(Text_(head + set.Title + " [" + set.Name + "]" + (set.Parent != null ? ", a clone of " + set.Parent : ""), font: Several ? null : new Font("Segoe UI Semibold", 9f)));
+                    if (Several) continue;
+                    string problem = null;
+                    var zips = _exe == null ? null : KronosStv.ZipsFor(rom, set, _exe, out problem);
+                    if (_exe == null) discCard.Add(Text_("    Its files are checked once Kronos is installed.", Color.FromArgb(0x70, 0x70, 0x70)));
+                    else if (zips == null) discCard.Add(Text_("    " + problem.Replace("\n\n", " "), Color.FromArgb(0xC0, 0x60, 0x30)));
+                    else discCard.Add(Text_("    Its " + set.Files.Length + " files are there" + (zips.Count > 1 ? " (" + string.Join(", ", zips.Skip(1).Select(Path.GetFileName)) + " beside it)" : ", the BIOS in its zip")
+                                            + " - its EEPROM is " + set.Name + ".nv, its states _<slot>.yss in its own folder.", Color.FromArgb(0x70, 0x70, 0x70)));
+                }
+                page.Controls.Add(Card(!Several ? "Its ST-V set" : "Their ST-V sets", discCard.ToArray()));
+                discCard.Clear();
+            }
+            // ── its discs ──
+            else if (!Several)
             {
                 discCard.Add(Text_("File: " + (Safe(() => game.ApplicationPath) ?? "")));
                 var discs = KronosGameMenu.DiscsOf(game, _exe);
@@ -192,10 +220,10 @@ namespace LbIntegrations.Kronos
                     var first = KronosGameMenu.DiscsOf(g, _exe).FirstOrDefault();
                     discCard.Add(Text_((Safe(() => g.Title) ?? "?") + ": " + (first == null ? "no disc found" : first.Title + " [" + first.Product + "]")));
                 }
-            if (discCard.Count > 0) page.Controls.Add(Card(!Several ? (discTotal > 1 ? "Its discs" : "Its disc") : "Their discs", discCard.ToArray()));
+            if (discCard.Count > 0 && !_anyStv) page.Controls.Add(Card(!Several ? (discTotal > 1 ? "Its discs" : "Its disc") : "Their discs", discCard.ToArray()));
 
-            // ── its save, with RetroArch (KronosRetroArch) ──
-            if (!Several && _exe != null) page.Controls.Add(Card("Its save, with RetroArch", RetroArchCard(game).ToArray()));
+            // ── its save, with RetroArch (KronosRetroArch) - a Saturn game's ──
+            if (!Several && _exe != null && !_stv) page.Controls.Add(Card("Its save, with RetroArch", RetroArchCard(game).ToArray()));
 
             // ── its screen ──
             var screen = new List<Control>();
@@ -205,8 +233,8 @@ namespace LbIntegrations.Kronos
                 "Screen: every game's value is in the Nixx window, page Kronos. The others are Kronos's own settings, written in kronos.ini "
                 + "for this game's session only and put back after it - changed in Kronos during the game, they become the game's own.", 640, new Padding(0, 4, 0, 2)));
             page.Controls.Add(Card(!Several ? "Its screen" : "Their screen", screen.ToArray()));
-            foreach (var group in KronosGameOptions.Groups.Where(g => g != "Picture" && KronosGameOptions.All.Any(o => o.Group == g)))
-                page.Controls.Add(Card((!Several ? "Its " : "Their ") + group.ToLowerInvariant(), OptionRows(group, RowOf).ToArray()));
+            foreach (var group in KronosGameOptions.Groups.Where(g => g != "Picture" && KronosGameOptions.All.Any(o => o.Group == g && Shows(o))))
+                page.Controls.Add(Card((!Several ? "Its " : "Their ") + (group == "Sound and cartridge" && _stv ? "sound" : group.ToLowerInvariant()), OptionRows(group, RowOf).ToArray()));
 
             _line = new Label { AutoSize = true, MaximumSize = new Size(640, 0), UseMnemonic = false, Font = new Font("Consolas", 9f), Margin = new Padding(0, 2, 0, 2) };
             page.Controls.Add(Card("Command line", _line));
@@ -224,8 +252,8 @@ namespace LbIntegrations.Kronos
             LbIntegrations.Ui.NixxShell.Dress(this);
         }
 
-        private static List<Control> OptionRows(string group, Func<string, string, string, KronosGameOption, Control> rowOf)
-            => KronosGameOptions.All.Where(o => o.Group == group).Select(o => rowOf(Opt + o.Key, o.Label, o.Hint, o)).ToList();
+        private List<Control> OptionRows(string group, Func<string, string, string, KronosGameOption, Control> rowOf)
+            => KronosGameOptions.All.Where(o => o.Group == group && Shows(o)).Select(o => rowOf(Opt + o.Key, o.Label, o.Hint, o)).ToList();
 
         /// <summary>The game's backup RAM in Kronos and in RetroArch's Beetle Saturn, and the two copies between them.</summary>
         private List<Control> RetroArchCard(IGame game)
@@ -351,6 +379,8 @@ namespace LbIntegrations.Kronos
             var v = r.Chosen();
             bool various = v == LbipSelection.Various;
             bool full = (v == null || various ? KronosSettings.Value(KronosSettings.Fullscreen) : v) == "true";
+            // An ST-V game's: nothing - its set is in kronos.ini, and the plugin starts it once Kronos is open (KronosStvStart).
+            if (_stv) { _line.Text = "(nothing - the set is in kronos.ini; the plugin starts it once Kronos is open" + (full ? ", then full screen)" : ")"); return; }
             // KronosLaunch.CommandLine's: -a (start at once), -f, the BIOS of the disc's region, -i the disc - the rest is in kronos.ini.
             _line.Text = "-a" + (various ? " [-f: per game]" : full ? " -f" : "") + " --bios=\"<the BIOS of the disc's region>\" -i \"<"
                          + (Several ? "each game's disc" : "the game's first disc") + ">\"";
