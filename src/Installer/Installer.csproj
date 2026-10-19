@@ -168,6 +168,12 @@
     <EmbeddedResource Include="$(PayloadDir)\Nixx-Mesen\manifest.json">
       <LogicalName>payload/Nixx-Mesen/manifest.json</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-Ymir\Ymir.dll">
+      <LogicalName>payload/Nixx-Ymir/Ymir.dll</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(PayloadDir)\Nixx-Ymir\manifest.json">
+      <LogicalName>payload/Nixx-Ymir/manifest.json</LogicalName>
+    </EmbeddedResource>
     <EmbeddedResource Include="$(PayloadDir)\Nixx-Saves\NixxSaves.dll">
       <LogicalName>payload/Nixx-Saves/NixxSaves.dll</LogicalName>
     </EmbeddedResource>

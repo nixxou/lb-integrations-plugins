@@ -1,0 +1,19 @@
+{
+  "SchemaVersion": 1,
+  "PluginId": "97e147ad-dd14-4a6a-9de0-1abc034aea63",
+  "UserId": 0,
+  "Name": "Nixx-Ymir",
+  "Developer": "nixxou",
+  "Description": "Download, update, launch, BIOS, save and compatibility integration for Ymir, the Sega Saturn emulator: one save per game, several discs, the pack's keys, and each game's state in Ymir's compatibility list.",
+  "Credits": "Many thanks to StrikerX3 and the Ymir team, and to the testers of Ymir's compatibility list.",
+  "OperatingSystemFamily": "Windows",
+  "InstalledVersion": "1.0.0",
+  "SourceCodeUrl": "https://github.com/nixxou/lb-integrations-plugins",
+  "SupportUrl": "https://github.com/nixxou/lb-integrations-plugins/issues",
+  "HomePageUrl": "https://github.com/ymir-emu/Ymir",
+  "TipJarUrl": "",
+  "SourceKind": "Local",
+  "Tags": [
+    "5aae585f-ffc5-42bc-9f95-e5e190ef99e2"
+  ]
+}

@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ymir - Nixx plugin guide</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#ffffff; --ink:#1d1d1f; --muted:#5f6368; --line:#e3e3e0; --accent:#0a6ed1; --ok:#1e8e3e; --warn:#b06000; --no:#c5221f; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17181a; --card:#1f2124; --ink:#e8e8e6; --muted:#a0a3a7; --line:#33363a; --accent:#5aa9ff; --ok:#5bc27a; --warn:#e3a34a; --no:#ff7b72; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 "Segoe UI", system-ui, sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 64px; }
+  header h1 { margin:0 0 4px; font-size:30px; }
+  header p { margin:0; color:var(--muted); }
+  nav { margin:20px 0 8px; display:flex; flex-wrap:wrap; gap:8px; }
+  nav a { font-size:14px; color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; background:var(--card); }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 24px; margin:18px 0; }
+  h2 { margin:0 0 10px; font-size:21px; }
+  h3 { margin:18px 0 6px; font-size:17px; }
+  ul { padding-left:22px; } li { margin:4px 0; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .yes { color:var(--ok); font-weight:600; } .partly { color:var(--warn); font-weight:600; } .no { color:var(--no); font-weight:600; }
+  .tip, .warn { border-left:4px solid var(--accent); padding:8px 14px; margin:12px 0; background:color-mix(in srgb, var(--accent) 8%, transparent); border-radius:0 8px 8px 0; }
+  .warn { border-color:var(--warn); background:color-mix(in srgb, var(--warn) 10%, transparent); }
+  code, kbd { font-family:Consolas, monospace; font-size:14px; background:color-mix(in srgb, var(--ink) 8%, transparent); padding:1px 5px; border-radius:4px; }
+  footer { color:var(--muted); font-size:13px; text-align:center; margin-top:30px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Ymir</h1>
+  <p>Sega Saturn - what the Nixx plugin does for you, and what to expect.</p>
+</header>
+<nav>
+  <a href="#overview">In short</a><a href="#start">Getting started</a><a href="#play">Playing</a><a href="#keys">Keys</a><a href="#compat">Compatibility</a>
+  <a href="#options">Options</a><a href="#saves">Saves</a><a href="#support">What works</a><a href="#limits">Limits</a><a href="#trouble">If something goes wrong</a>
+</nav>
+
+<section id="overview"><h2>In short</h2>
+  <p>Ymir is a young, accurate Sega Saturn emulator (github.com/ymir-emu/Ymir). The plugin installs and updates its stable releases,
+  finds your Saturn BIOS, starts each game with its own backup RAM, gives it the pack's keys - a key for the next disc too - and shows
+  each game's state in Ymir's own compatibility list.</p>
+</section>
+
+<section id="start"><h2>Getting started</h2>
+  <ul>
+    <li><b>Install:</b> Tools &gt; Manage &gt; Emulators &gt; Add, choose <b>Nixx-Ymir</b>, Download. Ymir goes to <code>Emulators\Nixx-Ymir</code>, portable:
+      its settings, BIOS, saves and states stay in that folder. The build matches your processor (AVX2, else SSE2; ARM64).</li>
+    <li><b>BIOS:</b> Ymir needs a Saturn BIOS in <code>roms\ipl</code>. The plugin looks in RetroArch's <code>system</code> folder and the other
+      emulators' bios folders, recognises a BIOS by its content (as Ymir does - the name does not matter) and copies it. <code>mpr-17933.bin</code>
+      runs American and European discs, <code>sega_101.bin</code> Japanese ones.</li>
+    <li><b>Games:</b> <code>.chd</code>, <code>.cue</code> (with its .bin), <code>.ccd</code>, <code>.mds</code>, <code>.iso</code>, a <code>.m3u</code>
+      for several discs, or a <code>.zip</code> / <code>.7z</code> holding them - platform <b>Sega Saturn</b>.</li>
+    <li>Ymir's update popup never shows: updates come through LaunchBox (stable releases only).</li>
+  </ul>
+</section>
+
+<section id="play"><h2>Playing a game</h2>
+  <ul>
+    <li>A <code>.m3u</code> starts on its first disc; an archive is unpacked once into <code>Emulators\Nixx-Ymir\Unpacked</code>.</li>
+    <li>The game gets <b>its own backup RAM</b> (the Saturn's memory where games save): <code>Saves\Sega Saturn\&lt;game&gt;.bin</code> in Ymir's folder,
+      named after the .m3u or the disc without "(Disc N)" - the discs of a game share it. Ymir's own setting is put back when it quits.</li>
+    <li>Its state in Ymir's compatibility list shows for a few seconds at the top of the screen (on the loading bar in LiteBox).</li>
+    <li>Quit with <kbd>Esc</kbd> or LaunchBox's Exit: Ymir closes cleanly.</li>
+  </ul>
+</section>
+
+<section id="keys"><h2>Keys</h2>
+  <table><tr><th>Key</th><th>What it does</th></tr>
+  <tr><td><kbd>F2</kbd> / <kbd>F4</kbd></td><td>Save / load a state, in the current slot</td></tr>
+  <tr><td><kbd>F6</kbd> / <kbd>F7</kbd></td><td>Slot down / up (1 to 10) - <kbd>1</kbd> to <kbd>0</kbd> pick one directly</td></tr>
+  <tr><td><kbd>PageDown</kbd> / <kbd>PageUp</kbd></td><td>Next / previous disc: Ymir's Load Disc window opens and closes by itself with the disc</td></tr>
+  <tr><td><kbd>F11</kbd> (or <kbd>Alt</kbd>+<kbd>Enter</kbd>)</td><td>Full screen</td></tr>
+  <tr><td><kbd>Esc</kbd></td><td>Quit</td></tr>
+  <tr><td><kbd>F10</kbd></td><td>Ymir's settings (picture, sound, pads...)</td></tr></table>
+  <p class="tip">F4 and F11 are set in Ymir only where it still had its own default (F3 loads, F11 is a debug trace). F6 / F7 / PageDown / PageUp /
+  Esc are the AutoHotkey script of the emulator entry, active in Ymir's window only.</p>
+</section>
+
+<section id="compat"><h2>Compatibility list</h2>
+  <p>Ymir's testers keep a list of games and how far each plays: <span class="no">Nothing</span>, Intro, Menus, <span class="partly">In-game</span>,
+  <span class="yes">Playable</span>, <span class="yes">Perfect</span>. The plugin finds each disc in it by Ymir's own disc hash - the exact dump. When only
+  the product code matches it says so (another release may share it). The list is downloaded at install and again when it is a week old; the
+  Nixx window has a button to download it now. Right-click a game &gt; <b>Nixx-Ymir : Options...</b> shows each disc's state and the testers' notes.</p>
+</section>
+
+<section id="options"><h2>Options</h2>
+  <ul>
+    <li><b>Nixx window</b> (Tools &gt; Nixx Integration Plugins Configuration..., page Ymir): the screen every game gets, when the compatibility
+      state is shown at launch (always, only when the game may not play, never), the BIOS found, the list.</li>
+    <li><b>Right-click a game</b> &gt; Nixx-Ymir : Options...: its discs and their state, its own screen.</li>
+    <li>Everything else is Ymir's own: <kbd>F10</kbd> in Ymir.</li>
+  </ul>
+</section>
+
+<section id="saves"><h2>Saves and save states</h2>
+  <ul>
+    <li>LaunchBox's save management sees each game's <b>backup RAM</b> and its <b>save states</b> (slots 1-10, one folder per disc in
+      <code>savestates</code>), with backups and restore. A state goes back to the disc it was made on; restoring needs Ymir closed.</li>
+    <li>Ymir's own <code>state\bup-int.bin</code> stays for a disc opened by hand in Ymir.</li>
+  </ul>
+</section>
+
+<section id="support"><h2>What works</h2>
+  <table><tr><th>Feature</th><th></th><th>Notes</th></tr>
+  <tr><td>Install, update</td><td class="yes">Yes</td><td>Stable releases, SHA-256 checked</td></tr>
+  <tr><td>.chd .cue .ccd .mds .iso</td><td class="yes">Yes</td><td>Opened by Ymir itself</td></tr>
+  <tr><td>.m3u, .zip, .7z</td><td class="yes">Yes</td><td>Read / unpacked by the plugin</td></tr>
+  <tr><td>Several discs</td><td class="yes">Yes</td><td>PageDown / PageUp</td></tr>
+  <tr><td>One backup RAM per game</td><td class="yes">Yes</td><td>Saves\Sega Saturn\</td></tr>
+  <tr><td>Save states in LaunchBox</td><td class="yes">Yes</td><td>Without a picture</td></tr>
+  <tr><td>Backup RAM cartridge saves</td><td class="partly">Ymir's</td><td>Kept by Ymir in backup\games, not listed in LaunchBox yet</td></tr>
+  <tr><td>RetroAchievements</td><td class="no">No</td><td>Ymir has none</td></tr></table>
+</section>
+
+<section id="limits"><h2>Limits and things to know</h2>
+  <ul>
+    <li>Save states are only guaranteed between stable releases of Ymir (its own rule).</li>
+    <li>A game played in Ymir before the plugin kept its saves in Ymir's single <code>state\bup-int.bin</code>, not in the game's own file.</li>
+    <li>If you rebind Ymir's keys 1-0 or Ctrl+O, F6 / F7 and the next-disc key send the old ones.</li>
+  </ul>
+</section>
+
+<section id="trouble"><h2>If something goes wrong</h2>
+  <ul>
+    <li>The plugin's log: <code>%LOCALAPPDATA%\lb-integrations-plugins\ymir.log</code> (General tab: "Open the logs folder").</li>
+    <li>"Ymir needs a Sega Saturn BIOS": put one in <code>Emulators\Nixx-Ymir\roms\ipl</code> or RetroArch's <code>system</code> folder.</li>
+    <li>"Ymir is already running": close the Ymir already open - two would share one folder of saves.</li>
+  </ul>
+</section>
+
+<footer>Nixx integration plugins for LaunchBox</footer>
+</main>
+</body>
+</html>

@@ -58,6 +58,7 @@ $Stage = [ordered]@{
     'Fceux' = 'Nixx-FCEUX'
     'ThreeDSen' = 'Nixx-3DSen'
     'Mesen' = 'Nixx-Mesen'
+    'Ymir' = 'Nixx-Ymir'
     'NixxSaves' = 'Nixx-Saves'
 }
 

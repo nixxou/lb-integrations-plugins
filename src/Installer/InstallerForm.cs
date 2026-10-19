@@ -667,6 +667,7 @@ internal sealed class InstallerForm : Form
         Payload.Fceux => "NES, Famicom, Famicom Disk System",
         Payload.ThreeDSen => "NES in 3D (3dSen, from Steam)",
         Payload.Mesen => "NES, SNES, Game Boy, GBA, PC Engine, Master System, WonderSwan (Mesen)",
+        Payload.Ymir => "Sega Saturn",
         Payload.Menus => "right-click menus",
         Payload.Saves => "saves of emulators no plugin drives",
         _ => "",
