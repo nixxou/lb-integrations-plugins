@@ -178,10 +178,12 @@ namespace LbIntegrations.Probe
                       .DynamicInvoke(new Func<string, string>(k => k == "Cartridge\\Type" ? "2" : null)) == null);
 
                 Console.WriteLine("== the line");
-                var line = (string)Call(asm, "KronosLaunch", "CommandLine", "-ns \"C:\\g\\a b.m3u\" -f -i x", true, @"C:\K\bios\mpr-17933.bin", @"C:\g\a b.m3u", @"C:\g\a b (Disc 1).chd");
+                var line = (string)Call(asm, "KronosLaunch", "CommandLine", "-ns \"C:\\g\\a b.m3u\" -f -i x", true, @"C:\K\bios\mpr-17933.bin", @"C:\g\a b.m3u", @"C:\g\a b (Disc 1).chd", true);
                 Check("-a -f --bios= then the user's -ns, -i <disc> last, the .m3u and our switches gone", line == "-a -f --bios=C:\\K\\bios\\mpr-17933.bin -ns -i \"C:\\g\\a b (Disc 1).chd\"", line);
-                var line2 = (string)Call(asm, "KronosLaunch", "CommandLine", "", false, null, null, @"C:\g\x.cue");
+                var line2 = (string)Call(asm, "KronosLaunch", "CommandLine", "", false, null, null, @"C:\g\x.cue", true);
                 Check("windowed, no BIOS found: -a -i <disc>", line2 == "-a -i C:\\g\\x.cue", line2);
+                var line3 = (string)Call(asm, "KronosLaunch", "CommandLine", "-ns \"C:\\mame\\shienryu.zip\" -f", false, null, @"C:\mame\shienryu.zip", null, false);
+                Check("an ST-V game (PrepareStv: no full screen on the line): neither -a nor -f nor a disc, the set gone, the user's -ns kept", line3 == "-ns", line3);
 
                 Console.WriteLine("== Tradu-France's archives page");
                 var html = page != null && File.Exists(page) ? File.ReadAllText(page)
