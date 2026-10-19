@@ -129,6 +129,54 @@ namespace LbIntegrations.Probe
                 Check("Kronos's own changes kept", after.Contains("Sound\\Volume=50") && after.Contains("General\\Geometry"));
                 Check("the plan is done", !File.Exists((string)T(asm, "KronosSession").GetProperty("PlanPath", Any).GetValue(null)));
 
+                Console.WriteLine("== a game's own options");
+                File.WriteAllText(ini, "[1.0]\r\nVideo\\resolution_mode=1\r\nGeneral\\SystemLanguageID=0\r\nCartridge\\Type=6\r\nCartridge\\Path=C:/old/cart.bin\r\nVideo\\filter_type=0\r\n");
+                Call(asm, "KronosGameOptions", "SetGameValue", "g2", "Resolution", "32");
+                Call(asm, "KronosGameOptions", "SetGameValue", "g2", "Language", "2");
+                Call(asm, "KronosGameOptions", "SetGameValue", "g2", "Expansion", "dram32");
+                Call(asm, "KronosGameOptions", "SetGameValue", "g2", "Filter", "raw:11");
+                var odoc = Call(asm, "KronosIniDoc", "Load", ini);
+                var forG2 = Call(asm, "KronosGameOptions", "KeysFor", "g2", exe, odoc);
+                var okeys = ((IEnumerable)forG2.GetType().GetField("Item1").GetValue(forG2)).Cast<object>()
+                    .Select(t => (string)t.GetType().GetField("Item1").GetValue(t) + "=" + (string)t.GetType().GetField("Item2").GetValue(t)).ToList();
+                Check("the keys: 4x, French, 4 MB RAM (its path held as it is), a value Kronos wrote kept",
+                      okeys.SequenceEqual(new[] { "Video\\resolution_mode=32", "Video\\filter_type=11", "General\\SystemLanguageID=2", "Cartridge\\Type=7", "Cartridge\\Path=C:/old/cart.bin" }),
+                      string.Join(", ", okeys));
+                var oforced = (IList)Call(asm, "KronosSession", "Force", odoc, forG2.GetType().GetField("Item1").GetValue(forG2));
+                CallOn(odoc, "Save", ini);
+                Call(asm, "KronosSession", "Begin", exe, ini, oforced, null, "g2");
+                // During the game the user sets 3x in Kronos's settings window; Kronos writes everything back when it quits.
+                File.WriteAllText(ini, File.ReadAllText(ini).Replace("Video\\resolution_mode=32", "Video\\resolution_mode=128"));
+                Call(asm, "KronosSession", "Recover");
+                var oafter = File.ReadAllText(ini);
+                Check("every game's values put back", oafter.Contains("Video\\resolution_mode=1\r\n") && oafter.Contains("General\\SystemLanguageID=0") && oafter.Contains("Cartridge\\Type=6")
+                      && oafter.Contains("Video\\filter_type=0"), oafter.Replace("\r\n", " | "));
+                Check("changed in Kronos during the game: 3x now the game's own", (string)Call(asm, "KronosGameOptions", "GameValue", "g2", "Resolution") == "128");
+                Check("the others its own as they were", (string)Call(asm, "KronosGameOptions", "GameValue", "g2", "Language") == "2" && (string)Call(asm, "KronosGameOptions", "GameValue", "g2", "Expansion") == "dram32");
+                // A ROM cartridge: its file in Kronos's cart folder, written whole; gone, the option is left out.
+                var cartDir = (string)Call(asm, "KronosLaunch", "CartDirOf", exe);
+                Directory.CreateDirectory(Path.Combine(cartDir, "snk"));
+                File.WriteAllBytes(Path.Combine(cartDir, "snk", "kof95 é.bin"), new byte[16]);
+                var choices = ((IEnumerable)((Delegate)T(asm, "KronosGameOption").GetField("Choices").GetValue(Call(asm, "KronosGameOptions", "Option", "Expansion"))).DynamicInvoke(exe)).Cast<object>()
+                    .Select(t => (string)t.GetType().GetField("Item1").GetValue(t)).ToList();
+                Check("the cart folder's ROM offered", choices.Contains("rom:snk\\kof95 é.bin"), string.Join(", ", choices));
+                Call(asm, "KronosGameOptions", "SetGameValue", "g3", "Expansion", "rom:snk\\kof95 é.bin");
+                var forG3 = Call(asm, "KronosGameOptions", "KeysFor", "g3", exe, Call(asm, "KronosIniDoc", "Load", ini));
+                var rkeys = ((IEnumerable)forG3.GetType().GetField("Item1").GetValue(forG3)).Cast<object>()
+                    .Select(t => (string)t.GetType().GetField("Item1").GetValue(t) + "=" + (string)t.GetType().GetField("Item2").GetValue(t)).ToList();
+                var romText = Path.Combine(cartDir, "snk", "kof95 é.bin").Replace('\\', '/');
+                Check("ROM cartridge: type 9 and the file whole", rkeys.SequenceEqual(new[] { "Cartridge\\Type=9", "Cartridge\\Path=" + romText }), string.Join(", ", rkeys));
+                var rdoc = Call(asm, "KronosIniDoc", "Load", ini);
+                Call(asm, "KronosSession", "Force", rdoc, forG3.GetType().GetField("Item1").GetValue(forG3));
+                Check("read back from kronos.ini relative to the cart folder", (string)Call(asm, "KronosGameOptions", "FromIni", "Expansion", rdoc, exe) == "rom:snk\\kof95 é.bin",
+                      (string)Call(asm, "KronosGameOptions", "FromIni", "Expansion", rdoc, exe));
+                File.Delete(Path.Combine(cartDir, "snk", "kof95 é.bin"));
+                var gone = Call(asm, "KronosGameOptions", "KeysFor", "g3", exe, rdoc);
+                var left = ((IEnumerable)gone.GetType().GetField("Item2").GetValue(gone)).Cast<string>().ToList();
+                Check("its file gone: the option left out, said", ((IEnumerable)gone.GetType().GetField("Item1").GetValue(gone)).Cast<object>().Count() == 0 && left.Count == 1, string.Join(", ", left));
+                Check("a backup cartridge in the ini is not this option's", (string)((Delegate)T(asm, "KronosGameOption").GetField("Read").GetValue(Call(asm, "KronosGameOptions", "Option", "Expansion")))
+                      .DynamicInvoke(new Func<string, string>(k => k == "Cartridge\\Type" ? "2" : null)) == null);
+
                 Console.WriteLine("== the line");
                 var line = (string)Call(asm, "KronosLaunch", "CommandLine", "-ns \"C:\\g\\a b.m3u\" -f -i x", true, @"C:\K\bios\mpr-17933.bin", @"C:\g\a b.m3u", @"C:\g\a b (Disc 1).chd");
                 Check("-a -f --bios= then the user's -ns, -i <disc> last, the .m3u and our switches gone", line == "-a -f --bios=C:\\K\\bios\\mpr-17933.bin -ns -i \"C:\\g\\a b (Disc 1).chd\"", line);
@@ -356,6 +404,9 @@ namespace LbIntegrations.Probe
             var plugin = (Unbroken.LaunchBox.Plugins.EmulatorPlugin)Activator.CreateInstance(type);
             var emu = new StubEmulator { Title = "Nixx-Kronos", ApplicationPath = exe };
             var g = StubGame.With(StubGame.Create("zstd-kronos", "Atlantis - The Lost Tales", zstd), "Platform", "Sega Saturn");
+            // LBIP_PROBE_OPTS="Filter=6;Resolution=32": the game's own options for this run (its window's values).
+            foreach (var kv in (Environment.GetEnvironmentVariable("LBIP_PROBE_OPTS") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries))
+                Call(asm, "KronosGameOptions", "SetGameValue", "zstd-kronos", kv.Split('=')[0], kv.Substring(kv.IndexOf('=') + 1));
             var r = plugin.PrepareEmulatorForLaunch(new Unbroken.LaunchBox.Plugins.PrepareForLaunchArgs(emu, g, "\"" + zstd + "\"", null, null));
             Check("prepared", r.WasSuccess, r.NewCommandLine ?? said.FirstOrDefault());
             if (!r.WasSuccess) return false;
@@ -400,6 +451,24 @@ namespace LbIntegrations.Probe
             SetS(asm, "KronosSettings", "PathOverride", null);
             Console.WriteLine(_bad == 0 ? "ALL OK" : _bad + " FAILED");
             return _bad == 0;
+        }
+
+        /// <summary>--kronos-shot <png> --rom <disc>: a game's window drawn off screen (a stub game), tall enough for every card.</summary>
+        public static bool Shot(Assembly asm, string png, string rom)
+        {
+            SetS(asm, "KronosSettings", "PathOverride", Path.Combine(Path.GetTempPath(), "lbip-kronos-shot-settings.ini"));
+            var game = StubGame.With(StubGame.Create("kronos-shot", Path.GetFileNameWithoutExtension(rom), rom), "Platform", "Sega Saturn");
+            var formType = asm.GetType("LbIntegrations.Kronos.KronosGameForm", true);
+            using var form = (System.Windows.Forms.Form)Activator.CreateInstance(formType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new object[] { new Unbroken.LaunchBox.Plugins.Data.IGame[] { game } }, null);
+            form.StartPosition = System.Windows.Forms.FormStartPosition.Manual; form.Location = new System.Drawing.Point(-4000, 0);
+            form.ShowInTaskbar = false;
+            form.ClientSize = new System.Drawing.Size(720, 1900);
+            form.Show(); System.Windows.Forms.Application.DoEvents(); System.Threading.Thread.Sleep(300); System.Windows.Forms.Application.DoEvents();
+            using var bmp = new System.Drawing.Bitmap(form.Width, form.Height);
+            form.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, form.Width, form.Height));
+            bmp.Save(png);
+            Console.WriteLine("  " + png);
+            return true;
         }
 
         public static bool Real(Assembly asm, string release, string lab)

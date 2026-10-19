@@ -375,9 +375,16 @@ namespace LbIntegrations.Kronos
                 (@"Memory\ExtendMemory", "false", false, null),
                 (@"General\SaveStates", KronosIniDoc.PathText(states), true, null),
             };
-            // Its backup cartridge, when it has one (KronosCart): 4 Mbit, its file - never for a game that needs another cartridge.
+            // Its own options, from its window (KronosGameOptions).
+            var options = KronosGameOptions.KeysFor(gameId, exe, doc);
+            if (options.LeftOut.Count > 0) Log.Warn("launch: left out - " + string.Join(", ", options.LeftOut));
+            var expansion = options.Keys.Any(k => k.Option == "Expansion");
+            // Its backup cartridge, when it has one (KronosCart): 4 Mbit, its file - never for a game that needs another cartridge,
+            // nor when its window forces an expansion cartridge.
             var cart = CartPath(exe, platform, rom);
-            if (File.Exists(cart))
+            if (File.Exists(cart) && expansion)
+                Log.Info("launch: the game's cartridge is not plugged - its window forces an expansion cartridge");
+            else if (File.Exists(cart))
             {
                 var bad = KronosCart.WhyNot(cart);
                 if (bad != null) Log.Warn("launch: the game's cartridge is not plugged - " + bad);
@@ -390,6 +397,7 @@ namespace LbIntegrations.Kronos
                 }
             }
             var forced = KronosSession.Force(doc, keys);
+            forced.AddRange(KronosSession.Force(doc, options.Keys));
             try { doc.Save(settings); }
             catch (Exception ex) { ReleaseServed(); return Refuse("Kronos's settings could not be written (" + ex.Message + "): the game would use another game's backup RAM."); }
             Log.Info("launch: backup RAM " + ram + (newRam ? " (new, formatted)" : "") + ", states in " + states);

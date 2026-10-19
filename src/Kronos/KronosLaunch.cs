@@ -86,6 +86,9 @@ namespace LbIntegrations.Kronos
 
         public static string BiosDirOf(string exe) => Path.Combine(ProfileOf(exe), BiosFolder);
 
+        /// <summary>Where the ROM cartridges a game's window offers are (KronosGameOptions' Expansion): Kronos's "cart" folder.</summary>
+        public static string CartDirOf(string exe) => Path.Combine(ProfileOf(exe), "cart");
+
         // ── its settings ─────────────────────────────────────────────────────
 
         /// <summary>Its first settings, each only when absent (header). True when the file changed.</summary>

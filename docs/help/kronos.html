@@ -88,7 +88,17 @@
 <section id="options"><h2>Options</h2>
   <ul>
     <li><b>Nixx window</b> (Tools &gt; Nixx Integration Plugins Configuration..., page Kronos): the screen every game gets, the install, the BIOS found.</li>
-    <li><b>Right-click a game</b> &gt; Nixx-Kronos : Options...: its discs (title, product code, area), its save with RetroArch, its own screen.</li>
+    <li><b>Right-click a game</b> &gt; Nixx-Kronos : Options...: its discs (title, product code, area), its save with RetroArch, its own screen,
+      and its own Kronos settings:
+      <ul>
+        <li><b>Picture:</b> internal resolution (1x to 6x, or the window's), aspect ratio, filter (scanlines, CRT, deinterlacing...), upscaling
+          (xBRZ, FSR...), meshes drawn as true transparency, smoothed shading.</li>
+        <li><b>Emulation:</b> the SH-2 cache, the console's language (many games show their text in it).</li>
+        <li><b>Expansion cartridge:</b> the 1 MB or 4 MB RAM expansion some games need, or a ROM cartridge (KoF '95, Ultraman) - its file in
+          <code>Emulators\Nixx-Kronos\cart</code>. Forced, the game's backup cartridge is not plugged.</li>
+      </ul>
+      Each is "As set in Kronos" until changed: written in kronos.ini for the game's session only, put back after it. Changed in Kronos's own
+      settings window during the game, it becomes the game's own.</li>
     <li>Everything else is Kronos's own: its Settings window.</li>
   </ul>
 </section>
@@ -116,6 +126,7 @@
   <tr><td>One backup RAM per game</td><td class="yes">Yes</td><td>Saves\Sega Saturn\, 32 KB</td></tr>
   <tr><td>Save states in LaunchBox</td><td class="yes">Yes</td><td>One folder per game, without a picture</td></tr>
   <tr><td>Backup RAM cartridge</td><td class="yes">Yes</td><td>Per game, when it has one</td></tr>
+  <tr><td>Per-game settings</td><td class="yes">Yes</td><td>Picture, emulation, expansion cartridge - for the game's session only</td></tr>
   <tr><td>Saves with RetroArch (Beetle Saturn) and Ymir</td><td class="yes">Yes</td><td>The same files</td></tr>
   <tr><td>ST-V arcade</td><td class="no">Not yet</td><td>A later batch</td></tr>
   <tr><td>RetroAchievements</td><td class="no">No</td><td>Kronos has none</td></tr></table>

@@ -11,7 +11,8 @@
 //
 // AFTER: Kronos writes kronos.ini whole when it quits, every key it read written back as it read it (measured 19/10). Each key
 // still holding the value forced (a path compared resolved) gets its old value back, or is taken out again; one the user
-// changed in Kronos's settings during the game is his and stays.
+// changed in Kronos's settings during the game is his and stays - but a key of a game's own option (KronosGameOptions) changed
+// there makes that value the game's own, and every game's value is put back.
 //
 // A CRASH IN BETWEEN (LaunchBox gone before Kronos): the plan is on disk (session.txt beside the plugin's settings); the next
 // launch, the next install and the plugin's next start finish it first - never while that Kronos runs.
@@ -139,17 +140,43 @@ namespace LbIntegrations.Kronos
                     if (settings != null && File.Exists(settings))
                     {
                         var doc = KronosIniDoc.Load(settings);
+                        var gameId = Field("game");
                         var back = new List<string>();
                         bool changed = false;
+                        var keys = new List<Forced>();
                         foreach (var l in lines.Where(x => x.StartsWith("key|")))
                         {
                             var p = l.Split('|');
                             if (p.Length < 6) continue;
-                            var f = new Forced { Key = Unescape(p[1]), Before = Unescape(p[2]), Value = Unescape(p[3]), IsPath = p[4] == "path", Option = p[5] == "-" ? null : p[5] };
-                            var now = doc.GetRaw(f.Key);
-                            if (now == null || !Same(now, f.Value, f.IsPath)) continue;   // changed in Kronos: the user's
+                            keys.Add(new Forced { Key = Unescape(p[1]), Before = Unescape(p[2]), Value = Unescape(p[3]), IsPath = p[4] == "path", Option = p[5] == "-" ? null : p[5] });
+                        }
+                        void PutBack(Forced f)
+                        {
                             changed |= doc.SetRaw(f.Key, f.Before);
                             back.Add(f.Key + (f.Before == null ? " (taken out)" : "=" + f.Before));
+                        }
+                        // The plugin's own keys: put back while they hold what was forced; changed in Kronos, they are the user's.
+                        foreach (var f in keys.Where(k => k.Option == null))
+                        {
+                            var now = doc.GetRaw(f.Key);
+                            if (now == null || !Same(now, f.Value, f.IsPath)) continue;
+                            PutBack(f);
+                        }
+                        // A game option: changed in Kronos during the game (its settings window), it becomes the game's own; every
+                        // game's value put back.
+                        foreach (var group in keys.Where(k => k.Option != null).GroupBy(k => k.Option))
+                        {
+                            bool moved = group.Any(f => { var now = doc.GetRaw(f.Key); return now == null || !Same(now, f.Value, f.IsPath); });
+                            if (moved && !string.IsNullOrEmpty(gameId))
+                            {
+                                var value = KronosGameOptions.FromIni(group.Key, doc, exe);
+                                if (value != null)
+                                {
+                                    KronosGameOptions.SetGameValue(gameId, group.Key, value);
+                                    Log.Info("session: " + group.Key + " changed in Kronos during the game - now the game's own: " + value);
+                                }
+                            }
+                            foreach (var f in group) PutBack(f);
                         }
                         if (changed) { doc.Save(settings); Log.Info("session: put back in kronos.ini - " + string.Join(", ", back)); }
                     }

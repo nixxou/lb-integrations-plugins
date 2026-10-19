@@ -3,7 +3,7 @@
 //   - ITS DISCS: each disc Kronos is given - its file, its title, product code and area from its header;
 //   - ITS SAVE, WITH RETROARCH: the backup RAM and cartridge copied to / from Beetle Saturn (KronosRetroArch);
 //   - ITS SCREEN, "as every game" until changed (games\<game id>.ini - KronosSettings);
-//   - ITS OWN OPTIONS (KronosGameOptions - none yet in the first batch): "As set in Kronos"
+//   - ITS OWN OPTIONS (KronosGameOptions: picture, emulation, expansion cartridge): "As set in Kronos"
 //     (Kronos's own value now, read in kronos.ini) until changed; a value Kronos wrote that is not in the list "(set in Kronos)"; an
 //     option this Kronos does not have says so, and is left out at launch;
 //   - what goes on Kronos's command line, live; the pack's legend, "Reset to defaults", OK and Cancel (OptionMarks).
@@ -351,8 +351,9 @@ namespace LbIntegrations.Kronos
             var v = r.Chosen();
             bool various = v == LbipSelection.Various;
             bool full = (v == null || various ? KronosSettings.Value(KronosSettings.Fullscreen) : v) == "true";
-            var profile = _exe == null ? "<Kronos's folder>" : KronosLaunch.ProfileOf(_exe);
-            _line.Text = "-p \"" + profile + "\"" + (various ? " [-f: per game]" : full ? " -f" : "") + " \"<" + (Several ? "each game's disc" : "the game's first disc") + ">\"";
+            // KronosLaunch.CommandLine's: -a (start at once), -f, the BIOS of the disc's region, -i the disc - the rest is in kronos.ini.
+            _line.Text = "-a" + (various ? " [-f: per game]" : full ? " -f" : "") + " --bios=\"<the BIOS of the disc's region>\" -i \"<"
+                         + (Several ? "each game's disc" : "the game's first disc") + ">\"";
         }
 
         private void Reset()

@@ -83,6 +83,17 @@ cdzs); RetroArch's Beetle Saturn v0.9.45.1 reads it (Game ID, region in its log,
 yabasanshiro and kronos libretro cores do not ("Cannot initialize ISO-File Virtual Drive" with it only). CHDSharp (the plugins'
 disc reader) reads it: same product code and hash.
 
+## 6b. A game's own options [S, M 19/10]
+
+KronosGameOptions, Ymir's model: keys of kronos.ini written for the game's session, put back after it (KronosSession); changed
+in Kronos during the game, the option becomes the game's own. Read where Kronos reads them at each start
+(YabauseThread::reloadSettings), values as UISettings writes them: Video\resolution_mode (1 the default, 8, 128, 32, 256, 64 =
+the window's), Video\AspectRatio 0-3, Video\filter_type, Video\upscale_type, Video\MeshMode, Video\BandingMode,
+General\SH2Cache, General\SystemLanguageID "0"-"5", Cartridge\Type 0 / 6 (8 Mbit DRAM) / 7 (32 Mbit) / 9 (16 Mbit ROM +
+Cartridge\Path, a file of <kronos>\cart). Left out on purpose: Video\VideoCore (forced to the compute-shader core whatever the
+file says), the region (from the disc; STV\Region is ST-V's), the SH-2 interpreter (8 only). [M: filter 6 + 4x + 32 Mbit
+DRAM forced, scanlines on the Saturn screen - `LBIP_PROBE_OPTS=... --kronos-zstd`.]
+
 ## 7. Open questions
 
 - Non-ASCII paths: a CHD through a folder named "Jeux é" opened [M: its product code read, states written];
